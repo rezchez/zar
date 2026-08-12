@@ -16,9 +16,21 @@ type PocketBaseCookie = {
 
 export type AuthenticatedUser = {
   id: string;
+  role: 'user' | 'manager' | 'admin';
+  status: 'active' | 'blocked';
   email?: string;
   name?: string;
   verified?: boolean;
+  lastLoginAt?: string;
+  lastLogoutAt?: string;
+  blockedUntil?: string;
+  nationalCode?: string;
+  nationalCodeEditable: boolean;
+  twoFactorEnabled: boolean;
+  authenticatorEnabled: boolean;
+  authenticatorSetupAt?: string;
+  avatar?: string;
+  avatarUrl?: string;
 };
 
 function readCookie(value: string | undefined): PocketBaseCookie | null {
@@ -39,7 +51,7 @@ function readCookie(value: string | undefined): PocketBaseCookie | null {
   }
 }
 
-export async function getServerAuth(): Promise<AuthenticatedUser | null> {
+export async function getServerAuthContext() {
   const cookieStore = await cookies();
   const cookieValue = cookieStore.get(PB_AUTH_COOKIE)?.value;
   const parsedCookie = readCookie(cookieValue);
@@ -65,8 +77,13 @@ export async function getServerAuth(): Promise<AuthenticatedUser | null> {
       return null;
     }
 
-    return {
+    const role = refreshedRecord.record?.role;
+    const status = refreshedRecord.record?.status;
+
+    const user: AuthenticatedUser = {
       id: userId,
+      role: role === 'admin' || role === 'manager' ? role : 'user',
+      status: status === 'blocked' ? 'blocked' : 'active',
       email: typeof refreshedRecord.record?.email === 'string'
         ? refreshedRecord.record.email
         : undefined,
@@ -74,7 +91,42 @@ export async function getServerAuth(): Promise<AuthenticatedUser | null> {
         ? refreshedRecord.record.name
         : undefined,
       verified: refreshedRecord.record?.verified === true,
+      lastLoginAt: typeof refreshedRecord.record?.lastLoginAt === 'string'
+        ? refreshedRecord.record.lastLoginAt
+        : undefined,
+      lastLogoutAt: typeof refreshedRecord.record?.lastLogoutAt === 'string'
+        ? refreshedRecord.record.lastLogoutAt
+        : undefined,
+      blockedUntil: typeof refreshedRecord.record?.blockedUntil === 'string'
+        ? refreshedRecord.record.blockedUntil
+        : undefined,
+      nationalCode: typeof refreshedRecord.record?.nationalCode === 'string'
+        ? refreshedRecord.record.nationalCode
+        : undefined,
+      nationalCodeEditable: refreshedRecord.record?.nationalCodeEditable === true,
+      twoFactorEnabled: refreshedRecord.record?.twoFactorEnabled === true,
+      authenticatorEnabled: refreshedRecord.record?.authenticatorEnabled === true,
+      authenticatorSetupAt: typeof refreshedRecord.record?.authenticatorSetupAt === 'string'
+        ? refreshedRecord.record.authenticatorSetupAt
+        : undefined,
+      avatar: typeof refreshedRecord.record?.avatar === 'string'
+        ? refreshedRecord.record.avatar
+        : undefined,
+      avatarUrl: typeof refreshedRecord.record?.avatar === 'string'
+        ? pb.files.getURL(refreshedRecord.record, refreshedRecord.record.avatar)
+        : undefined,
     };
+
+    return { pb, user, record: refreshedRecord.record };
+  } catch {
+    return null;
+  }
+}
+
+export async function getServerAuth(): Promise<AuthenticatedUser | null> {
+  try {
+    const context = await getServerAuthContext();
+    return context?.user ?? null;
   } catch {
     return null;
   }
