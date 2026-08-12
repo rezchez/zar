@@ -1,26 +1,72 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --background: #0f172a;
+  --foreground: #f8fafc;
 }
 
 body {
-  background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--background);
+  min-height: 100vh;
+  margin: 0;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+}
+
+/* افکت Gooey */
+.gooey-bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  z-index: -1;
+  background: #0f172a;
+  filter: url('#goo');
+}
+
+.blob {
+  position: absolute;
+  border-radius: 50%;
+  background: #3b82f6;
+  animation: move 8s infinite alternate cubic-bezier(0.54, 0.03, 0.46, 0.98);
+}
+
+.blob:nth-child(1) {
+  width: 200px;
+  height: 200px;
+  left: 30%;
+  top: 30%;
+  background: #60a5fa;
+  animation-delay: 0s;
+}
+
+.blob:nth-child(2) {
+  width: 250px;
+  height: 250px;
+  right: 20%;
+  bottom: 20%;
+  background: #818cf8;
+  animation-delay: -2s;
+}
+
+.blob:nth-child(3) {
+  width: 150px;
+  height: 150px;
+  left: 40%;
+  bottom: 10%;
+  background: #c084fc;
+  animation-delay: -4s;
+}
+
+@keyframes move {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  100% {
+    transform: translate(100px, -100px) scale(1.2);
+  }
 }
