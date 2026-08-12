@@ -1,45 +1,79 @@
-import { cookies } from "next/headers";
-import { createPocketBaseClient } from "./pocketbase";
+import 'server-only';
 
-const COOKIE_NAME = process.env.PB_AUTH_COOKIE || "pb_auth";
+import { cookies } from 'next/headers';
+import type { AuthRecord } from 'pocketbase';
 
-type AuthCookiePayload = {
-  token: string;
-  model: {
-    id: string;
-    email: string;
-    collectionName: string;
-    [key: string]: unknown;
-  };
+import {
+  createPocketBaseClient,
+  PB_AUTH_COOKIE,
+} from '@/lib/pocketbase';
+
+type PocketBaseCookie = {
+  token?: string;
+  record?: AuthRecord | null;
+  model?: AuthRecord | null;
 };
 
-export async function getAuthFromCookie() {
-  const cookieStore = await cookies();
-  const authCookie = cookieStore.get(COOKIE_NAME)?.value;
+export type AuthenticatedUser = {
+  id: string;
+  email?: string;
+  name?: string;
+  verified?: boolean;
+};
 
-  if (!authCookie) {
+function readCookie(value: string | undefined): PocketBaseCookie | null {
+  if (!value) {
     return null;
   }
 
   try {
-    const parsed = JSON.parse(authCookie) as AuthCookiePayload;
+    const parsed = JSON.parse(value) as PocketBaseCookie;
 
-    if (!parsed?.token || !parsed?.model?.id) {
+    if (!parsed.token) {
       return null;
     }
 
-    const pb = createPocketBaseClient();
-    pb.authStore.save(parsed.token, parsed.model);
+    return parsed;
+  } catch {
+    return null;
+  }
+}
 
-    try {
-      await pb.collection("users").authRefresh();
-    } catch {
+export async function getServerAuth(): Promise<AuthenticatedUser | null> {
+  const cookieStore = await cookies();
+  const cookieValue = cookieStore.get(PB_AUTH_COOKIE)?.value;
+  const parsedCookie = readCookie(cookieValue);
+
+  if (!parsedCookie?.token) {
+    return null;
+  }
+
+  const pb = createPocketBaseClient();
+  const record = parsedCookie.record ?? parsedCookie.model ?? null;
+
+  pb.authStore.save(parsedCookie.token, record);
+
+  if (!pb.authStore.isValid) {
+    return null;
+  }
+
+  try {
+    const refreshedRecord = await pb.collection('users').authRefresh();
+    const userId = String(refreshedRecord.record?.id ?? '');
+
+    if (!userId) {
       return null;
     }
 
     return {
-      token: pb.authStore.token,
-      user: pb.authStore.record,
+      id: userId,
+      email: typeof refreshedRecord.record?.email === 'string'
+        ? refreshedRecord.record.email
+        : undefined,
+      name: typeof refreshedRecord.record?.name === 'string'
+        ? refreshedRecord.record.name
+        : undefined,
+      verified: refreshedRecord.record?.verified === true,
     };
   } catch {
     return null;

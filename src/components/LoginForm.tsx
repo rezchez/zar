@@ -2,19 +2,18 @@
 
 import { FormEvent, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { pb } from '@/lib/pocketbase';
 
 export default function LoginForm() {
   const router = useRouter();
-
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const isDisabled = useMemo(() => {
-    return loading || !email.trim() || !password.trim();
-  }, [email, password, loading]);
+  const isDisabled = useMemo(
+    () => loading || !email.trim() || !password,
+    [email, password, loading],
+  );
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -22,75 +21,94 @@ export default function LoginForm() {
     setLoading(true);
 
     try {
-      await pb.collection('users').authWithPassword(email, password);
-      router.push('/dashboard');
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      });
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as
+          | { message?: string }
+          | null;
+
+        setErrorMessage(data?.message ?? 'ورود انجام نشد.');
+        return;
+      }
+
+      router.replace('/dashboard');
       router.refresh();
-    } catch (error) {
-      setErrorMessage('ایمیل یا رمز عبور اشتباه است.');
-      console.error(error);
+    } catch {
+      setErrorMessage(
+        'ارتباط با سرور برقرار نشد. مطمئن شوید PocketBase در حال اجراست.',
+      );
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="relative w-full max-w-md">
-      <div className="gooey-blob gooey-blob-1" />
-      <div className="gooey-blob gooey-blob-2" />
-      <div className="gooey-blob gooey-blob-3" />
+    <main className="gooey-page" dir="rtl">
+      <div className="gooey-background" aria-hidden="true">
+        <div className="gooey-blob gooey-blob-one" />
+        <div className="gooey-blob gooey-blob-two" />
+        <div className="gooey-blob gooey-blob-three" />
+      </div>
 
-      <div className="relative overflow-hidden rounded-[32px] border border-white/10 bg-white/8 p-8 shadow-2xl backdrop-blur-2xl">
-        <div className="mb-8 text-center">
-          <h1 className="text-3xl font-bold text-white">ورود</h1>
-          <p className="mt-2 text-sm text-white/70">
-            برای ورود به داشبورد، ایمیل و رمز عبور را وارد کن
-          </p>
+      <section className="login-card" aria-labelledby="login-title">
+        <div className="login-brand" aria-hidden="true">
+          Z
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="mb-2 block text-sm text-white/85">ایمیل</label>
+        <div className="login-heading">
+          <p className="eyebrow">ZARFOLIO</p>
+          <h1 id="login-title">ورود به حساب</h1>
+          <p>برای ورود به داشبورد، اطلاعات حساب خود را وارد کنید.</p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="login-form">
+          <div className="field">
+            <label htmlFor="email">ایمیل</label>
             <input
+              id="email"
+              name="email"
               type="email"
               inputMode="email"
               autoComplete="email"
+              placeholder="you@example.com"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
-              placeholder="example@email.com"
-              className="h-12 w-full rounded-2xl border border-white/10 bg-black/20 px-4 text-white outline-none transition placeholder:text-white/30 focus:border-cyan-400/60 focus:bg-black/30"
+              required
             />
           </div>
 
-          <div>
-            <label className="mb-2 block text-sm text-white/85">رمز عبور</label>
+          <div className="field">
+            <label htmlFor="password">رمز عبور</label>
             <input
+              id="password"
+              name="password"
               type="password"
               autoComplete="current-password"
+              placeholder="رمز عبور خود را وارد کنید"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              placeholder="رمز عبور"
-              className="h-12 w-full rounded-2xl border border-white/10 bg-black/20 px-4 text-white outline-none transition placeholder:text-white/30 focus:border-fuchsia-400/60 focus:bg-black/30"
+              required
             />
           </div>
 
           {errorMessage ? (
-            <div className="rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+            <p className="form-error" role="alert">
               {errorMessage}
-            </div>
+            </p>
           ) : null}
 
-          <button
-            type="submit"
-            disabled={isDisabled}
-            className="group relative flex h-12 w-full items-center justify-center overflow-hidden rounded-2xl bg-white font-semibold text-slate-950 transition disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <span className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.95),transparent_45%),radial-gradient(circle_at_bottom_right,rgba(217,70,239,0.9),transparent_45%),linear-gradient(135deg,#ffffff,#dbeafe)] opacity-100 transition group-hover:scale-105" />
-            <span className="relative z-10">
-              {loading ? 'در حال ورود...' : 'ورود به داشبورد'}
-            </span>
+          <button type="submit" disabled={isDisabled}>
+            {loading ? 'در حال بررسی...' : 'ورود به داشبورد'}
           </button>
         </form>
-      </div>
-    </div>
+      </section>
+    </main>
   );
 }
