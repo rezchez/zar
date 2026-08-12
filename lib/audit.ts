@@ -18,7 +18,13 @@ export type AuditEvent =
   | 'user_blocked'
   | 'user_unblocked'
   | 'national_code_permission_granted'
-  | 'password_reset_requested';
+  | 'password_reset_requested'
+  | 'customer_created'
+  | 'customer_updated'
+  | 'customer_deleted'
+  | 'transaction_created'
+  | 'transaction_updated'
+  | 'settings_updated';
 
 export function getRequestMetadata(request: Request) {
   const forwarded = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
@@ -40,12 +46,20 @@ export async function recordAuditEvent({
   event,
   request,
   details,
+  entityType,
+  entityId,
+  entityLabel,
+  changes,
   authenticatedClient,
 }: {
   userId: string;
   event: AuditEvent;
   request: Request;
   details?: string;
+  entityType?: string;
+  entityId?: string;
+  entityLabel?: string;
+  changes?: Record<string, unknown> | string;
   authenticatedClient?: PocketBase;
 }) {
   const metadata = getRequestMetadata(request);
@@ -56,6 +70,10 @@ export async function recordAuditEvent({
     operatingSystem: metadata.operatingSystem,
     userAgent: metadata.userAgent.slice(0, 500),
     details: (details ?? '').slice(0, 2000),
+    entityType: (entityType ?? '').slice(0, 40),
+    entityId: (entityId ?? '').slice(0, 80),
+    entityLabel: (entityLabel ?? '').slice(0, 240),
+    changes: serializeChanges(changes),
   };
 
   try {
@@ -71,6 +89,17 @@ export async function recordAuditEvent({
     } catch {
       return false;
     }
+  }
+}
+
+function serializeChanges(changes?: Record<string, unknown> | string) {
+  if (!changes) return '';
+  if (typeof changes === 'string') return changes.slice(0, 10000);
+
+  try {
+    return JSON.stringify(changes).slice(0, 10000);
+  } catch {
+    return '';
   }
 }
 

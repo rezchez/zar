@@ -3,7 +3,10 @@ import PDFDocument from 'pdfkit';
 import * as XLSX from 'xlsx';
 
 import { getServerAuthContext } from '@/lib/auth';
-import { mapCustomer } from '@/lib/customer';
+import { currencyDisplay, mapCustomer } from '@/lib/customer';
+import { getCustomersWithBalances } from '@/lib/customer-service';
+
+export const runtime = 'nodejs';
 
 function dateLabel(value: string) {
   if (!value) return '';
@@ -22,10 +25,8 @@ export async function GET(request: Request) {
   }
 
   try {
-    const records = await context.pb.collection('customers').getFullList({
-      sort: 'customerCode',
-    });
-    const customers = records.map((record) => mapCustomer(context.pb, record));
+    const customers = (await getCustomersWithBalances(context.pb))
+      .sort((left, right) => left.customerCode - right.customerCode);
 
     if (format === 'xlsx') {
       const rows = customers.map((customer) => ({
@@ -34,12 +35,14 @@ export async function GET(request: Request) {
         'گروه': customer.groupName,
         'رسته': customer.category,
         'شهر': customer.city,
+        'جنسیت': customer.gender === 'male' ? 'آقا' : customer.gender === 'female' ? 'خانم' : '',
         'تلفن': customer.phone1,
         'طلا (گرم)': customer.goldBalance,
         'نقره (گرم)': customer.silverBalance,
         'پلاتین (گرم)': customer.platinumBalance,
         'مانده ریالی': customer.rialBalance,
-        'مانده ارزی': customer.foreignBalance,
+        [`مانده ارز دوم (${currencyDisplay(customer.secondaryCurrency, customer.secondaryCurrencySymbol)})`]: customer.foreignBalance,
+        [`مانده ارز سوم (${currencyDisplay(customer.tertiaryCurrency, customer.tertiaryCurrencySymbol)})`]: customer.tertiaryBalance,
         'تاریخ افتتاح': dateLabel(customer.accountOpenedAt),
       }));
       const workbook = XLSX.utils.book_new();
@@ -47,7 +50,7 @@ export async function GET(request: Request) {
       worksheet['!cols'] = [
         { wch: 12 }, { wch: 28 }, { wch: 16 }, { wch: 16 }, { wch: 16 },
         { wch: 18 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 18 },
-        { wch: 18 }, { wch: 16 },
+        { wch: 18 }, { wch: 22 }, { wch: 22 }, { wch: 16 },
       ];
       XLSX.utils.book_append_sheet(workbook, worksheet, 'طرف حساب‌ها');
       const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
@@ -98,7 +101,8 @@ function createCustomersPdf(customers: Array<ReturnType<typeof mapCustomer>>) {
             `Group: ${customer.groupName || '-'} | City: ${customer.city || '-'} | `
               + `Gold: ${customer.goldBalance} g | Silver: ${customer.silverBalance} g | `
               + `Platinum: ${customer.platinumBalance} g | Rial: ${customer.rialBalance} | `
-              + `Foreign: ${customer.foreignBalance}`,
+              + `Currency 2 (${currencyDisplay(customer.secondaryCurrency, customer.secondaryCurrencySymbol)}): ${customer.foreignBalance} | `
+              + `Currency 3 (${currencyDisplay(customer.tertiaryCurrency, customer.tertiaryCurrencySymbol)}): ${customer.tertiaryBalance}`,
           );
         document.moveDown(0.5);
       });

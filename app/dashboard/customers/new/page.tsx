@@ -1,13 +1,29 @@
 import { redirect } from 'next/navigation';
 
-import { getServerAuth } from '@/lib/auth';
+import { getServerAuthContext } from '@/lib/auth';
 import CustomerForm from '@/src/components/CustomerForm';
 import DashboardShell from '@/src/components/DashboardShell';
 
 export const dynamic = 'force-dynamic';
 
 export default async function NewCustomerPage() {
-  const user = await getServerAuth();
-  if (!user) redirect('/');
-  return <DashboardShell user={user}><CustomerForm /></DashboardShell>;
+  const context = await getServerAuthContext();
+  if (!context) redirect('/');
+
+  let nextCustomerCode = 1;
+  try {
+    const records = await context.pb.collection('customers').getList(1, 1, {
+      sort: '-customerCode',
+      fields: 'customerCode',
+    });
+    nextCustomerCode = Number(records.items[0]?.customerCode ?? 0) + 1;
+  } catch {
+    nextCustomerCode = 1;
+  }
+
+  return (
+    <DashboardShell user={context.user}>
+      <CustomerForm nextCustomerCode={nextCustomerCode} />
+    </DashboardShell>
+  );
 }

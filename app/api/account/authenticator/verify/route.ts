@@ -41,6 +41,16 @@ export async function POST(request: Request) {
       event: 'authenticator_enabled',
       request,
       details: 'رمزساز فعال شد',
+      entityType: 'user',
+      entityId: context.user.id,
+      entityLabel: context.user.name || context.user.email || 'کاربر',
+      changes: {
+        authenticatorEnabled: {
+          label: 'رمزساز',
+          before: false,
+          after: true,
+        },
+      },
       authenticatedClient: context.pb,
     });
 

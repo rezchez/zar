@@ -51,7 +51,16 @@ async function main() {
   let customerCode = Number(latest.items[0]?.customerCode ?? 0) + 1;
 
   for (const [index, name] of names.entries()) {
-    await pb.collection('customers').create({
+    const balances = {
+      goldAmount: index % 2 === 0 ? -(index + 1) * 0.25 : (index + 1) * 0.18,
+      silverAmount: index % 3 === 0 ? -(index + 1) * 1.5 : 0,
+      platinumAmount: index % 5 === 0 ? (index + 1) * 0.05 : 0,
+      rialAmount: index % 2 === 0 ? -(index + 1) * 1250000 : (index + 1) * 850000,
+      foreignAmount: index % 4 === 0 ? (index + 1) * 10 : 0,
+      tertiaryAmount: 0,
+    };
+
+    const customer = await pb.collection('customers').create({
       customerCode,
       name,
       groupName: index % 4 === 0 ? 'supplier' : 'customer',
@@ -59,16 +68,33 @@ async function main() {
       city: ['تهران', 'اصفهان', 'شیراز', 'تبریز', 'مشهد'][index % 5],
       metalType: ['gold', 'silver', 'platinum'][index % 3],
       primaryCurrency: 'rial',
+      secondaryCurrency: index % 4 === 0 ? 'usd' : '',
       phone1: `0912${String(1000000 + index).slice(-7)}`,
-      goldBalance: index % 2 === 0 ? -(index + 1) * 0.25 : (index + 1) * 0.18,
-      silverBalance: index % 3 === 0 ? -(index + 1) * 1.5 : 0,
-      platinumBalance: index % 5 === 0 ? (index + 1) * 0.05 : 0,
-      rialBalance: index % 2 === 0 ? -(index + 1) * 1250000 : (index + 1) * 850000,
-      foreignBalance: index % 4 === 0 ? (index + 1) * 10 : 0,
       showBalanceByUnit: true,
       detailedDescription: 'داده آزمایشی برای سنجش عملکرد فهرست طرف‌حساب‌ها',
       privateDescription: seedMarker,
       createdBy: owner.id,
+    });
+
+    const openingTransaction = await pb.collection('transactions').create({
+      customer: customer.id,
+      customerCode,
+      createdBy: owner.id,
+      updatedBy: owner.id,
+      transactionType: 'opening_balance',
+      status: 'posted',
+      isOpeningBalance: true,
+      sourceKey: `opening:${customer.id}`,
+      transactionDate: customer.created,
+      description: 'مانده اول دوره',
+      ...balances,
+      foreignCurrency: customer.secondaryCurrency ?? '',
+      foreignCurrencySymbol: customer.secondaryCurrencySymbol ?? '',
+      tertiaryCurrency: customer.tertiaryCurrency ?? '',
+      tertiaryCurrencySymbol: customer.tertiaryCurrencySymbol ?? '',
+    });
+    await pb.collection('customers').update(customer.id, {
+      openingBalanceTransaction: openingTransaction.id,
     });
     customerCode += 1;
   }

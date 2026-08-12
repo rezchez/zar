@@ -2,14 +2,31 @@ import { NextResponse } from 'next/server';
 
 import {
   customerDateFields,
+  emptyCustomerBalances,
   customerNumberFields,
   customerTextFields,
-  mapCustomer,
+  type CustomerBalanceValues,
 } from '@/lib/customer';
 import { getServerAuthContext } from '@/lib/auth';
+import { recordAuditEvent } from '@/lib/audit';
+import { buildCustomerChanges } from '@/lib/customer-audit';
+import {
+  getCustomerWithBalances,
+  getCustomersWithBalances,
+} from '@/lib/customer-service';
+import { syncOpeningBalanceTransaction } from '@/lib/transaction-service';
 
 function readFormValue(formData: FormData, field: string) {
   return String(formData.get(field) ?? '').trim();
+}
+
+function readBalanceValues(formData: FormData): CustomerBalanceValues {
+  const balances = emptyCustomerBalances();
+  for (const field of Object.keys(balances) as Array<keyof CustomerBalanceValues>) {
+    const value = Number(readFormValue(formData, field) || 0);
+    balances[field] = Number.isFinite(value) ? value : 0;
+  }
+  return balances;
 }
 
 function buildPayload(formData: FormData, ownerId: string, customerCode: number) {
@@ -46,6 +63,18 @@ async function nextCustomerCode(context: NonNullable<Awaited<ReturnType<typeof g
   return Number(records.items[0]?.customerCode ?? 0) + 1;
 }
 
+function readCustomerCode(formData: FormData) {
+  const mode = readFormValue(formData, 'customerCodeMode');
+  if (mode !== 'manual') return null;
+
+  const value = Number(readFormValue(formData, 'customerCode'));
+  if (!Number.isInteger(value) || value < 1) {
+    throw new Error('کد حساب دستی باید یک عدد صحیح بزرگ‌تر از صفر باشد.');
+  }
+
+  return value;
+}
+
 export async function GET() {
   const context = await getServerAuthContext();
   if (!context) {
@@ -53,11 +82,8 @@ export async function GET() {
   }
 
   try {
-    const records = await context.pb.collection('customers').getFullList({
-      sort: '-customerCode',
-    });
     return NextResponse.json({
-      customers: records.map((record) => mapCustomer(context.pb, record)),
+      customers: await getCustomersWithBalances(context.pb),
     });
   } catch {
     return NextResponse.json({ message: 'دریافت طرف‌حساب‌ها انجام نشد.' }, { status: 500 });
@@ -76,14 +102,89 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: 'نام طرف‌حساب باید حداقل ۲ حرف داشته باشد.' }, { status: 400 });
   }
 
+  let requestedCode: number | null;
+  try {
+    requestedCode = readCustomerCode(formData);
+  } catch (error) {
+    return NextResponse.json(
+      { message: error instanceof Error ? error.message : 'کد حساب معتبر نیست.' },
+      { status: 400 },
+    );
+  }
+
+  if (requestedCode !== null) {
+    try {
+      const existing = await context.pb.collection('customers').getFirstListItem(
+        context.pb.filter('customerCode = {:customerCode}', {
+          customerCode: requestedCode,
+        }),
+      );
+      if (existing) {
+        return NextResponse.json(
+          { message: 'این کد حساب قبلاً استفاده شده است. کد دیگری وارد کنید.' },
+          { status: 409 },
+        );
+      }
+    } catch {
+      // A not-found response is expected here.
+    }
+  }
+
+  const openingBalances = readBalanceValues(formData);
+
   for (let attempt = 0; attempt < 5; attempt += 1) {
     try {
-      const code = await nextCustomerCode(context);
+      const code = requestedCode ?? await nextCustomerCode(context);
       const record = await context.pb.collection('customers').create(
         buildPayload(formData, context.user.id, code),
       );
-      return NextResponse.json({ customer: mapCustomer(context.pb, record) }, { status: 201 });
+      const customer = (await getCustomerWithBalances(context.pb, record)).customer;
+      try {
+        await syncOpeningBalanceTransaction(
+          context.pb,
+          customer,
+          openingBalances,
+          context.user.id,
+        );
+      } catch {
+        return NextResponse.json(
+          {
+            message:
+              'طرف‌حساب ثبت شد، اما ثبت مانده اول دوره در دفتر تراکنش انجام نشد. لطفاً دوباره ذخیره کنید.',
+            customer,
+            transactionSyncFailed: true,
+          },
+          { status: 202 },
+        );
+      }
+
+      const hydratedCustomer = (
+        await getCustomerWithBalances(
+          context.pb,
+          await context.pb.collection('customers').getOne(record.id),
+        )
+      ).customer;
+
+      await recordAuditEvent({
+        userId: context.user.id,
+        event: 'customer_created',
+        request,
+        details: `طرف‌حساب «${hydratedCustomer.name}» با کد ${hydratedCustomer.customerCode} ثبت شد.`,
+        entityType: 'customer',
+        entityId: hydratedCustomer.id,
+        entityLabel: `${hydratedCustomer.customerCode} - ${hydratedCustomer.name}`,
+        changes: buildCustomerChanges(null, hydratedCustomer),
+        authenticatedClient: context.pb,
+      });
+
+      return NextResponse.json({ customer: hydratedCustomer }, { status: 201 });
     } catch {
+      if (requestedCode !== null) {
+        return NextResponse.json(
+          { message: 'ثبت کد حساب انجام نشد؛ احتمالاً این کد هم‌زمان استفاده شده است.' },
+          { status: 409 },
+        );
+      }
       if (attempt === 4) {
         return NextResponse.json({ message: 'ثبت طرف‌حساب انجام نشد. دوباره تلاش کنید.' }, { status: 400 });
       }

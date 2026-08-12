@@ -4,10 +4,17 @@ import QRCode from 'qrcode';
 const TOTP_STEP_SECONDS = 30;
 const TOTP_DIGITS = 6;
 
+export class TotpConfigurationError extends Error {
+  constructor() {
+    super('TOTP_ENCRYPTION_KEY is not configured correctly.');
+    this.name = 'TotpConfigurationError';
+  }
+}
+
 function getEncryptionKey() {
   const value = process.env.TOTP_ENCRYPTION_KEY ?? '';
   if (!/^[a-f0-9]{64}$/i.test(value)) {
-    throw new Error('TOTP_ENCRYPTION_KEY must be a 32-byte hex key.');
+    throw new TotpConfigurationError();
   }
 
   return Buffer.from(value, 'hex');

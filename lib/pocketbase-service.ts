@@ -2,6 +2,13 @@ import 'server-only';
 
 import { createPocketBaseClient } from '@/lib/pocketbase';
 
+export class PocketBaseServiceConfigurationError extends Error {
+  constructor(message = 'PocketBase service credentials are not configured.') {
+    super(message);
+    this.name = 'PocketBaseServiceConfigurationError';
+  }
+}
+
 export async function getPocketBaseServiceClient() {
   const pb = createPocketBaseClient();
   const token = process.env.POCKETBASE_SUPERUSER_TOKEN;
@@ -15,8 +22,8 @@ export async function getPocketBaseServiceClient() {
   const password = process.env.POCKETBASE_SUPERUSER_PASSWORD;
 
   if (!email || !password) {
-    throw new Error(
-      'Set POCKETBASE_SUPERUSER_TOKEN or POCKETBASE_SUPERUSER_EMAIL and POCKETBASE_SUPERUSER_PASSWORD.',
+    throw new PocketBaseServiceConfigurationError(
+      'POCKETBASE_SUPERUSER_TOKEN یا POCKETBASE_SUPERUSER_EMAIL و POCKETBASE_SUPERUSER_PASSWORD تنظیم نشده‌اند.',
     );
   }
 

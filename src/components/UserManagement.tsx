@@ -8,6 +8,7 @@ import {
   KeyRound,
   MailCheck,
   RefreshCw,
+  Save,
   Search,
   ShieldAlert,
   UserRoundCheck,
@@ -41,6 +42,10 @@ type AuthEvent = {
   operatingSystem: string;
   userAgent: string;
   details: string;
+  entityType: string;
+  entityId: string;
+  entityLabel: string;
+  changes: Record<string, unknown> | null;
   created: string;
 };
 
@@ -59,6 +64,12 @@ const eventLabels: Record<string, string> = {
   user_unblocked: 'رفع مسدودی',
   national_code_permission_granted: 'مجوز ویرایش کد ملی',
   password_reset_requested: 'درخواست بازنشانی رمز',
+  customer_created: 'افزودن طرف‌حساب',
+  customer_updated: 'ویرایش طرف‌حساب',
+  customer_deleted: 'حذف طرف‌حساب',
+  transaction_created: 'ثبت تراکنش',
+  transaction_updated: 'ویرایش تراکنش',
+  settings_updated: 'تغییر تنظیمات',
 };
 
 function formatDate(value: string | null) {
@@ -147,7 +158,7 @@ export default function UserManagement({
     blockedUntil: string | null,
     nationalCodeEditable: boolean,
     name?: string,
-  ) {
+  ): Promise<boolean> {
     setSavingId(id);
     setErrorMessage('');
     setSuccessMessage('');
@@ -171,15 +182,17 @@ export default function UserManagement({
 
       if (!response.ok || !data?.user) {
         setErrorMessage(data?.message ?? 'ذخیره تغییرات انجام نشد.');
-        return;
+        return false;
       }
 
       setUsers((current) =>
         current.map((user) => (user.id === id ? data.user as ManagedUser : user)),
       );
       setSuccessMessage('تغییرات کاربر ذخیره شد.');
+      return true;
     } catch {
       setErrorMessage('ذخیره تغییرات انجام نشد.');
+      return false;
     } finally {
       setSavingId('');
     }
@@ -189,7 +202,12 @@ export default function UserManagement({
     const name = (nameDrafts[user.id] ?? user.name).trim();
     if (name === user.name) return;
 
-    await updateUser(
+    if (!window.confirm(`آیا از ذخیره نام «${name}» برای این کاربر مطمئن هستید؟`)) {
+      setNameDrafts((current) => ({ ...current, [user.id]: user.name }));
+      return;
+    }
+
+    const saved = await updateUser(
       user.id,
       user.role,
       user.status,
@@ -197,7 +215,9 @@ export default function UserManagement({
       user.nationalCodeEditable,
       name,
     );
-    setNameDrafts((current) => ({ ...current, [user.id]: name }));
+    if (saved) {
+      setNameDrafts((current) => ({ ...current, [user.id]: name }));
+    }
   }
 
   async function confirmRoleChange() {
@@ -350,7 +370,7 @@ export default function UserManagement({
 
       <section className="dashboard-panel users-table-panel">
         <div className="users-toolbar">
-          <label className="users-search">
+          <label className="users-search gooey-search">
             <Search size={16} />
             <input
               value={query}
@@ -582,8 +602,7 @@ function UserRow({
               <div className="managed-user-name-edit">
                 <input
                   value={nameValue}
-                  onChange={(event) => onNameChange(event.target.value)}
-                  onBlur={onNameSave}
+                    onChange={(event) => onNameChange(event.target.value)}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter') {
                       event.preventDefault();
@@ -593,6 +612,18 @@ function UserRow({
                   disabled={saving || cannotEdit}
                   aria-label="نام کاربر"
                 />
+                {nameValue.trim() !== user.name && !cannotEdit ? (
+                  <button
+                    type="button"
+                    className="user-name-save-button"
+                    onClick={onNameSave}
+                    disabled={saving}
+                    title="ذخیره نام"
+                    aria-label="ذخیره نام"
+                  >
+                    <Save size={14} />
+                  </button>
+                ) : null}
               </div>
               <small>{user.email}</small>
               {isCurrentUser ? <em>حساب فعلی</em> : null}
@@ -698,7 +729,27 @@ function UserRow({
                       IP: {event.ipAddress || 'نامشخص'} · سیستم‌عامل: {event.operatingSystem || 'نامشخص'}
                     </small>
                     {event.userAgent ? <small>مرورگر: {event.userAgent}</small> : null}
+                    {event.entityLabel ? <small>موضوع: {event.entityLabel}</small> : null}
                     {event.details ? <small>{event.details}</small> : null}
+                    {event.changes && Object.keys(event.changes).length ? (
+                      <div className="user-event-changes">
+                        {Object.entries(event.changes).map(([field, change]) => {
+                          const item = change && typeof change === 'object'
+                            ? change as {
+                              label?: string;
+                              before?: unknown;
+                              after?: unknown;
+                            }
+                            : null;
+
+                          return (
+                            <small key={field}>
+                              {item?.label || field}: {String(item?.before ?? '—')} ← {String(item?.after ?? '—')}
+                            </small>
+                          );
+                        })}
+                      </div>
+                    ) : null}
                   </div>
                 ))}
               </div>

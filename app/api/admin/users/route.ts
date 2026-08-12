@@ -127,6 +127,13 @@ export async function PATCH(request: Request) {
     );
   }
 
+  if (context.user.role === 'manager' && role === 'admin') {
+    return NextResponse.json(
+      { message: 'Manager اجازه ارتقای کاربر به Admin را ندارد.' },
+      { status: 403 },
+    );
+  }
+
   let targetUser;
   try {
     targetUser = await context.pb.collection('users').getOne(id);
@@ -153,27 +160,54 @@ export async function PATCH(request: Request) {
       nationalCodeEditable,
     });
 
+    const entityLabel = `${String(user.name ?? targetUser.name ?? '') || 'کاربر'} · ${String(
+      user.email ?? targetUser.email ?? targetUser.username ?? '',
+    )}`;
+
     if (targetUser.role !== role) {
       await recordAuditEvent({
-        userId: id,
+        userId: context.user.id,
         event: 'role_changed',
         request,
         details: `نقش از ${targetUser.role} به ${role} توسط ${context.user.name || context.user.email || 'مدیر'} تغییر کرد`,
+        entityType: 'user',
+        entityId: id,
+        entityLabel,
+        changes: {
+          role: {
+            label: 'نقش',
+            before: targetUser.role,
+            after: role,
+          },
+        },
         authenticatedClient: context.pb,
       });
     }
     if (name !== undefined && targetUser.name !== name) {
       await recordAuditEvent({
-        userId: id,
+        userId: context.user.id,
         event: 'name_changed',
         request,
         details: `نام کاربر توسط ${context.user.name || context.user.email || 'مدیر'} ویرایش شد`,
+        entityType: 'user',
+        entityId: id,
+        entityLabel,
+        changes: {
+          name: {
+            label: 'نام',
+            before: String(targetUser.name ?? ''),
+            after: name,
+          },
+        },
         authenticatedClient: context.pb,
       });
     }
-    if (targetUser.status !== status) {
+    if (
+      targetUser.status !== status
+      || String(targetUser.blockedUntil ?? '') !== String(blockedUntil ?? '')
+    ) {
       await recordAuditEvent({
-        userId: id,
+        userId: context.user.id,
         event: status === 'blocked' ? 'user_blocked' : 'user_unblocked',
         request,
         details: status === 'blocked'
@@ -182,15 +216,40 @@ export async function PATCH(request: Request) {
             timeStyle: 'short',
           }).format(new Date(blockedUntil))}` : 'دائمی'} توسط ${context.user.name || context.user.email || 'مدیر'}`
           : `مسدودی توسط ${context.user.name || context.user.email || 'مدیر'} برداشته شد`,
+        entityType: 'user',
+        entityId: id,
+        entityLabel,
+        changes: {
+          status: {
+            label: 'وضعیت',
+            before: targetUser.status,
+            after: status,
+          },
+          blockedUntil: {
+            label: 'پایان مسدودی',
+            before: targetUser.blockedUntil ?? null,
+            after: blockedUntil,
+          },
+        },
         authenticatedClient: context.pb,
       });
     }
     if (targetUser.nationalCodeEditable !== nationalCodeEditable && nationalCodeEditable) {
       await recordAuditEvent({
-        userId: id,
+        userId: context.user.id,
         event: 'national_code_permission_granted',
         request,
         details: `مجوز یک‌بار ویرایش کد ملی توسط ${context.user.name || context.user.email || 'مدیر'} اعطا شد`,
+        entityType: 'user',
+        entityId: id,
+        entityLabel,
+        changes: {
+          nationalCodeEditable: {
+            label: 'مجوز ویرایش کد ملی',
+            before: targetUser.nationalCodeEditable === true,
+            after: nationalCodeEditable,
+          },
+        },
         authenticatedClient: context.pb,
       });
     }

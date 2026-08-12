@@ -1,14 +1,14 @@
 import { redirect } from 'next/navigation';
 
 import { getServerAuthContext } from '@/lib/auth';
-import { getCustomersWithBalances } from '@/lib/customer-service';
 import type { Customer } from '@/lib/customer';
-import CustomerManagement from '@/src/components/CustomerManagement';
+import { getCustomersWithBalances } from '@/lib/customer-service';
+import CustomerReports from '@/src/components/CustomerReports';
 import DashboardShell from '@/src/components/DashboardShell';
 
 export const dynamic = 'force-dynamic';
 
-export default async function CustomersPage() {
+export default async function ReportsPage() {
   const context = await getServerAuthContext();
   if (!context) redirect('/');
 
@@ -19,5 +19,9 @@ export default async function CustomersPage() {
     customers = [];
   }
 
-  return <DashboardShell user={context.user}><CustomerManagement initialCustomers={customers} canDelete={context.user.role === 'admin' || context.user.role === 'manager'} /></DashboardShell>;
+  return (
+    <DashboardShell user={context.user}>
+      <CustomerReports customers={customers} />
+    </DashboardShell>
+  );
 }

@@ -3,6 +3,8 @@ import * as XLSX from 'xlsx';
 
 import { getServerAuthContext } from '@/lib/auth';
 
+export const runtime = 'nodejs';
+
 const eventLabels: Record<string, string> = {
   login: 'ورود موفق',
   logout: 'خروج',
@@ -18,7 +20,24 @@ const eventLabels: Record<string, string> = {
   user_unblocked: 'رفع مسدودی',
   national_code_permission_granted: 'اعطای مجوز ویرایش کد ملی',
   password_reset_requested: 'درخواست بازنشانی رمز',
+  customer_created: 'افزودن طرف‌حساب',
+  customer_updated: 'ویرایش طرف‌حساب',
+  customer_deleted: 'حذف طرف‌حساب',
+  transaction_created: 'ثبت تراکنش',
+  transaction_updated: 'ویرایش تراکنش',
+  settings_updated: 'تغییر تنظیمات',
 };
+
+function formatChanges(value: unknown) {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
 
 export async function GET(
   _request: Request,
@@ -46,7 +65,10 @@ export async function GET(
     }
 
     const events = await context.pb.collection('auth_events').getFullList({
-      filter: context.pb.filter('user = {:userId}', { userId: id }),
+      filter: context.pb.filter(
+        'user = {:userId} || entityId = {:userId}',
+        { userId: id },
+      ),
       sort: '-created',
     });
 
@@ -56,10 +78,14 @@ export async function GET(
         dateStyle: 'medium',
         timeStyle: 'medium',
       }).format(new Date(event.created)),
+      'نوع موضوع': String(event.entityType ?? ''),
+      'شناسه موضوع': String(event.entityId ?? ''),
+      'عنوان موضوع': String(event.entityLabel ?? ''),
       'IP': String(event.ipAddress ?? ''),
       'سیستم‌عامل': String(event.operatingSystem ?? 'نامشخص'),
       'User-Agent': String(event.userAgent ?? ''),
       'جزئیات': String(event.details ?? ''),
+      'تغییرات فیلدها': formatChanges(event.changes),
     }));
 
     const workbook = XLSX.utils.book_new();
@@ -68,9 +94,13 @@ export async function GET(
       { wch: 28 },
       { wch: 24 },
       { wch: 18 },
+      { wch: 28 },
+      { wch: 36 },
+      { wch: 18 },
       { wch: 16 },
       { wch: 52 },
       { wch: 70 },
+      { wch: 100 },
     ];
     XLSX.utils.book_append_sheet(workbook, worksheet, 'گزارش فعالیت');
     const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });

@@ -37,10 +37,20 @@ export async function POST(
 
     await context.pb.collection('users').requestPasswordReset(user.email);
     await recordAuditEvent({
-      userId: user.id,
+      userId: context.user.id,
       event: 'password_reset_requested',
       request: _request,
       details: `درخواست بازنشانی رمز توسط ${context.user.name || context.user.email || 'مدیر'}`,
+      entityType: 'user',
+      entityId: user.id,
+      entityLabel: `${String(user.name ?? '') || 'کاربر'} · ${String(user.email ?? '')}`,
+      changes: {
+        passwordResetRequested: {
+          label: 'درخواست بازنشانی رمز',
+          before: false,
+          after: true,
+        },
+      },
       authenticatedClient: context.pb,
     });
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Eye, EyeOff, LockKeyhole, Mail } from 'lucide-react';
@@ -21,6 +21,7 @@ export default function LoginForm() {
     authenticatorAvailable: boolean;
     emailOtpAvailable: boolean;
   } | null>(null);
+  const formRef = useRef<HTMLFormElement>(null);
 
   const isDisabled = useMemo(
     () =>
@@ -124,7 +125,7 @@ export default function LoginForm() {
           <p>برای ورود به داشبورد، اطلاعات حساب خود را وارد کنید.</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="login-form">
+        <form ref={formRef} onSubmit={handleSubmit} className="login-form">
           <div className="field">
             <label htmlFor="email">ایمیل</label>
             <div className="field-shell">
@@ -204,10 +205,21 @@ export default function LoginForm() {
                       : 'کد ۶ رقمی رمزساز'
                   }
                   value={authMethod === 'email' ? otpCode : totpCode}
-                  onChange={(event) =>
-                    authMethod === 'email'
-                      ? setOtpCode(event.target.value)
-                      : setTotpCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                  onChange={(event) => {
+                    const nextValue = authMethod === 'email'
+                      ? event.target.value.replace(/\D/g, '').slice(0, 6)
+                      : event.target.value.replace(/\D/g, '').slice(0, 6);
+
+                    if (authMethod === 'email') {
+                      setOtpCode(nextValue);
+                    } else {
+                      setTotpCode(nextValue);
+                    }
+
+                    if (nextValue.length === 6 && !loading) {
+                      window.setTimeout(() => formRef.current?.requestSubmit(), 0);
+                    }
+                  }}
                   required
                 />
               </div>

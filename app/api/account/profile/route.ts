@@ -78,6 +78,8 @@ export async function PATCH(request: Request) {
   try {
     const previousName = context.user.name ?? '';
     const previousEmail = context.user.email ?? '';
+    const previousNationalCode = context.user.nationalCode ?? '';
+    const previousAvatar = context.user.avatar ? 'دارد' : 'ندارد';
     const previousTwoFactor = context.user.twoFactorEnabled === true;
     const updateData = new FormData();
     updateData.append('name', name);
@@ -116,6 +118,16 @@ export async function PATCH(request: Request) {
         event: 'name_changed',
         request,
         details: 'نام کاربری تغییر کرد',
+        entityType: 'user',
+        entityId: context.user.id,
+        entityLabel: name,
+        changes: {
+          name: {
+            label: 'نام',
+            before: previousName,
+            after: name,
+          },
+        },
         authenticatedClient: context.pb,
       });
     }
@@ -125,6 +137,16 @@ export async function PATCH(request: Request) {
         event: 'email_change_requested',
         request,
         details: 'درخواست تغییر ایمیل ثبت شد',
+        entityType: 'user',
+        entityId: context.user.id,
+        entityLabel: name,
+        changes: {
+          email: {
+            label: 'ایمیل',
+            before: previousEmail,
+            after: email,
+          },
+        },
         authenticatedClient: context.pb,
       });
     }
@@ -136,6 +158,49 @@ export async function PATCH(request: Request) {
         details: twoFactorEnabled
           ? 'تایید دومرحله‌ای فعال شد'
           : 'تایید دومرحله‌ای غیرفعال شد',
+        entityType: 'user',
+        entityId: context.user.id,
+        entityLabel: name,
+        changes: {
+          twoFactorEnabled: {
+            label: 'تایید دومرحله‌ای',
+            before: previousTwoFactor,
+            after: twoFactorEnabled,
+          },
+        },
+        authenticatedClient: context.pb,
+      });
+    }
+
+    const profileChanges: Record<string, {
+      label: string;
+      before: unknown;
+      after: unknown;
+    }> = {};
+    if (nationalCodeChanged) {
+      profileChanges.nationalCode = {
+        label: 'کد ملی',
+        before: previousNationalCode || 'ثبت نشده',
+        after: nationalCode || 'ثبت نشده',
+      };
+    }
+    if (avatar || (removeAvatar && !avatar)) {
+      profileChanges.avatar = {
+        label: 'آواتار',
+        before: previousAvatar,
+        after: avatar ? 'دارد' : 'ندارد',
+      };
+    }
+    if (Object.keys(profileChanges).length) {
+      await recordAuditEvent({
+        userId: context.user.id,
+        event: 'settings_updated',
+        request,
+        details: 'اطلاعات تکمیلی حساب کاربری تغییر کرد',
+        entityType: 'user',
+        entityId: context.user.id,
+        entityLabel: name,
+        changes: profileChanges,
         authenticatedClient: context.pb,
       });
     }
@@ -155,7 +220,7 @@ export async function PATCH(request: Request) {
   }
 }
 
-export async function DELETE() {
+export async function DELETE(request: Request) {
   const context = await getServerAuthContext();
 
   if (!context) {
@@ -166,6 +231,23 @@ export async function DELETE() {
     const updateData = new FormData();
     updateData.append('avatar', '');
     await context.pb.collection('users').update(context.user.id, updateData);
+    await recordAuditEvent({
+      userId: context.user.id,
+      event: 'settings_updated',
+      request,
+      details: 'آواتار حذف شد',
+      entityType: 'user',
+      entityId: context.user.id,
+      entityLabel: context.user.name || context.user.email || 'کاربر',
+      changes: {
+        avatar: {
+          label: 'آواتار',
+          before: 'دارد',
+          after: 'ندارد',
+        },
+      },
+      authenticatedClient: context.pb,
+    });
 
     return NextResponse.json({ success: true });
   } catch {

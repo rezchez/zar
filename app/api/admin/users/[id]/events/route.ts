@@ -2,6 +2,17 @@ import { NextResponse } from 'next/server';
 
 import { getServerAuthContext } from '@/lib/auth';
 
+function parseChanges(value: unknown) {
+  if (!value) return null;
+  if (typeof value === 'object') return value;
+
+  try {
+    return JSON.parse(String(value));
+  } catch {
+    return null;
+  }
+}
+
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -28,7 +39,10 @@ export async function GET(
     }
 
     const events = await context.pb.collection('auth_events').getList(1, 5, {
-      filter: context.pb.filter('user = {:userId}', { userId: id }),
+      filter: context.pb.filter(
+        'user = {:userId} || entityId = {:userId}',
+        { userId: id },
+      ),
       sort: '-created',
     });
 
@@ -40,6 +54,10 @@ export async function GET(
         operatingSystem: event.operatingSystem ?? 'نامشخص',
         userAgent: event.userAgent ?? '',
         details: event.details ?? '',
+        entityType: event.entityType ?? '',
+        entityId: event.entityId ?? '',
+        entityLabel: event.entityLabel ?? '',
+        changes: parseChanges(event.changes),
         created: event.created,
       })),
     });

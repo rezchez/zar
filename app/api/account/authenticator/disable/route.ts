@@ -36,6 +36,16 @@ export async function POST(request: Request) {
       event: 'authenticator_disabled',
       request,
       details: 'رمزساز غیرفعال شد',
+      entityType: 'user',
+      entityId: context.user.id,
+      entityLabel: context.user.name || context.user.email || 'کاربر',
+      changes: {
+        authenticatorEnabled: {
+          label: 'رمزساز',
+          before: true,
+          after: false,
+        },
+      },
       authenticatedClient: context.pb,
     });
 

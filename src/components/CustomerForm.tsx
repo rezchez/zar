@@ -1,15 +1,33 @@
 'use client';
 
-import { ChevronDown, ImagePlus, Save, Trash2 } from 'lucide-react';
+import {
+  Check,
+  ChevronDown,
+  ImagePlus,
+  LoaderCircle,
+  Plus,
+  Save,
+  Trash2,
+} from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-import { customerDateFields, customerNumberFields, customerTextFields, type Customer } from '@/lib/customer';
+import {
+  currencyDisplay,
+  currencyOptions,
+  customerBalanceFields,
+  customerDateFields,
+  customerNumberFields,
+  customerTextFields,
+  emptyCustomerBalances,
+  type Customer,
+} from '@/lib/customer';
 
 type FormState = Record<string, string | number | boolean>;
 
 const textLabels: Record<string, string> = {
   name: 'نام / عنوان طرف‌حساب',
+  gender: 'جنسیت',
   groupName: 'گروه',
   category: 'رسته',
   city: 'شهر',
@@ -44,7 +62,8 @@ const numberLabels: Record<string, string> = {
   silverBalance: 'مانده نقره (گرم)',
   platinumBalance: 'مانده پلاتین (گرم)',
   rialBalance: 'مانده ریالی',
-  foreignBalance: 'مانده ارزی',
+  foreignBalance: 'مانده ارز دوم',
+  tertiaryBalance: 'مانده ارز سوم',
   collectionLevel: 'میزان تحصیلات',
   discountLevel: 'میزان تخفیف',
   satisfactionLevel: 'میزان رضایت',
@@ -54,40 +73,174 @@ const numberLabels: Record<string, string> = {
 };
 
 function initialState(customer?: Customer): FormState {
+  const openingBalances = customer?.openingBalances ?? emptyCustomerBalances();
   const state: FormState = {
     name: customer?.name ?? '',
+    gender: customer?.gender ?? '',
     groupName: customer?.groupName ?? '',
     category: customer?.category ?? '',
     city: customer?.city ?? '',
     metalType: customer?.metalType ?? 'gold',
     primaryCurrency: customer?.primaryCurrency ?? 'rial',
     secondaryCurrency: customer?.secondaryCurrency ?? '',
+    secondaryCurrencySymbol: customer?.secondaryCurrencySymbol ?? '',
+    tertiaryCurrency: customer?.tertiaryCurrency ?? '',
+    tertiaryCurrencySymbol: customer?.tertiaryCurrencySymbol ?? '',
     showBalanceByUnit: customer?.showBalanceByUnit ?? true,
+    customerCodeMode: 'auto',
+    customerCode: customer?.customerCode ?? '',
   };
 
   for (const field of customerTextFields) state[field] = customer?.[field] ?? '';
   for (const field of customerNumberFields) state[field] = customer?.[field] ?? 0;
+  for (const field of customerBalanceFields) {
+    state[field] = openingBalances[field];
+  }
   for (const field of customerDateFields) {
     state[field] = customer?.[field] ? String(customer[field]).slice(0, 10) : '';
   }
   return state;
 }
 
-export default function CustomerForm({ customer }: { customer?: Customer }) {
+function initialOptionalBalances(customer?: Customer) {
+  if (!customer) return [] as string[];
+  const opening = customer.openingBalances;
+  const optional = ['silverBalance', 'platinumBalance', 'foreignBalance', 'tertiaryBalance'];
+  return optional.filter((field) => {
+    if (field === 'foreignBalance') {
+      return Boolean(customer.secondaryCurrency || opening.foreignBalance);
+    }
+    if (field === 'tertiaryBalance') {
+      return Boolean(customer.tertiaryCurrency || opening.tertiaryBalance);
+    }
+    return Number(opening[field as keyof typeof opening]) !== 0;
+  });
+}
+
+export default function CustomerForm({
+  customer,
+  nextCustomerCode,
+}: {
+  customer?: Customer;
+  nextCustomerCode?: number;
+}) {
   const router = useRouter();
   const [state, setState] = useState<FormState>(() => initialState(customer));
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState(customer?.avatarUrl ?? '');
   const [removeAvatar, setRemoveAvatar] = useState(false);
   const [showAdditional, setShowAdditional] = useState(false);
+  const [showBalanceOptions, setShowBalanceOptions] = useState(false);
+  const [enabledOptionalBalances, setEnabledOptionalBalances] = useState<string[]>(
+    () => initialOptionalBalances(customer),
+  );
+  const [customerCodeMode, setCustomerCodeMode] = useState<'auto' | 'manual'>('auto');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [isDirty, setIsDirty] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   function setValue(field: string, value: string | number | boolean) {
+    setIsDirty(true);
     setState((current) => ({ ...current, [field]: value }));
   }
+
+  function toggleOptionalBalance(field: string) {
+    setIsDirty(true);
+    setEnabledOptionalBalances((current) => {
+      if (current.includes(field)) return current.filter((item) => item !== field);
+      return [...current, field];
+    });
+
+    if (enabledOptionalBalances.includes(field)) {
+      if (field === 'foreignBalance') {
+        setState((current) => ({
+          ...current,
+          foreignBalance: 0,
+          secondaryCurrency: '',
+          secondaryCurrencySymbol: '',
+        }));
+      }
+      if (field === 'tertiaryBalance') {
+        setState((current) => ({
+          ...current,
+          tertiaryBalance: 0,
+          tertiaryCurrency: '',
+          tertiaryCurrencySymbol: '',
+        }));
+      }
+      if (field === 'silverBalance' || field === 'platinumBalance') {
+        setState((current) => ({ ...current, [field]: 0 }));
+      }
+    }
+  }
+
+  useEffect(() => {
+    if (!isDirty) return;
+
+    function handleBeforeUnload(event: BeforeUnloadEvent) {
+      event.preventDefault();
+      event.returnValue = '';
+    }
+
+    function handleNavigationAttempt(event: Event) {
+      if (!window.confirm('اطلاعاتی وارد کرده‌اید. آیا مطمئن هستید می‌خواهید از این صفحه خارج شوید؟')) {
+        event.preventDefault();
+      }
+    }
+
+    function handleAnchorClick(event: MouseEvent) {
+      if (
+        event.defaultPrevented
+        || event.button !== 0
+        || event.metaKey
+        || event.ctrlKey
+        || event.shiftKey
+        || event.altKey
+      ) {
+        return;
+      }
+
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const link = target.closest('a[href]');
+      if (!link) return;
+
+      const href = link.getAttribute('href');
+      if (!href || href.startsWith('#') || link.getAttribute('target') === '_blank') return;
+
+      const destination = new URL(href, window.location.href);
+      if (destination.origin !== window.location.origin || destination.href === window.location.href) return;
+
+      if (!window.confirm('اطلاعاتی وارد کرده‌اید. آیا مطمئن هستید می‌خواهید از این صفحه خارج شوید؟')) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    }
+
+    window.history.pushState({ zarCustomerFormGuard: true }, '', window.location.href);
+
+    function handlePopState() {
+      if (window.confirm('اطلاعاتی وارد کرده‌اید. آیا مطمئن هستید می‌خواهید از این صفحه خارج شوید؟')) {
+        return;
+      }
+
+      window.history.pushState({ zarCustomerFormGuard: true }, '', window.location.href);
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('zar:navigation-attempt', handleNavigationAttempt);
+    window.addEventListener('popstate', handlePopState);
+    document.addEventListener('click', handleAnchorClick, true);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('zar:navigation-attempt', handleNavigationAttempt);
+      window.removeEventListener('popstate', handlePopState);
+      document.removeEventListener('click', handleAnchorClick, true);
+    };
+  }, [isDirty]);
 
   async function save(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -96,12 +249,37 @@ export default function CustomerForm({ customer }: { customer?: Customer }) {
     setErrorMessage('');
 
     const formData = new FormData();
-    for (const field of customerTextFields) formData.append(field, String(state[field] ?? ''));
+    for (const field of customerTextFields) {
+      const optionalCurrencyIsDisabled =
+        (field === 'secondaryCurrency' || field === 'secondaryCurrencySymbol')
+        && !enabledOptionalBalances.includes('foreignBalance');
+      const tertiaryCurrencyIsDisabled =
+        (field === 'tertiaryCurrency' || field === 'tertiaryCurrencySymbol')
+        && !enabledOptionalBalances.includes('tertiaryBalance');
+      const value = optionalCurrencyIsDisabled || tertiaryCurrencyIsDisabled
+        ? ''
+        : state[field];
+      formData.append(field, String(value ?? ''));
+    }
     for (const field of customerNumberFields) formData.append(field, String(state[field] ?? 0));
+    for (const field of customerBalanceFields) {
+      const isEnabled = field === 'goldBalance'
+        || field === 'rialBalance'
+        || enabledOptionalBalances.includes(field);
+      formData.append(field, isEnabled ? String(state[field] ?? 0) : '0');
+    }
     for (const field of customerDateFields) {
       if (state[field]) formData.append(field, String(state[field]));
     }
     formData.append('showBalanceByUnit', String(state.showBalanceByUnit === true));
+    if (customer) {
+      formData.append('customerCode', String(state.customerCode ?? customer.customerCode));
+    } else {
+      formData.append('customerCodeMode', customerCodeMode);
+      if (customerCodeMode === 'manual') {
+        formData.append('customerCode', String(state.customerCode ?? ''));
+      }
+    }
     formData.append('removeAvatar', String(removeAvatar));
     if (avatarFile) formData.append('avatar', avatarFile);
 
@@ -123,6 +301,7 @@ export default function CustomerForm({ customer }: { customer?: Customer }) {
           ? 'اطلاعات طرف‌حساب ذخیره شد.'
           : `طرف‌حساب با کد ${data.customer.customerCode} ثبت شد.`,
       );
+      setIsDirty(false);
       if (!customer) {
         router.replace(`/dashboard/customers/${data.customer.id}`);
       } else {
@@ -141,6 +320,7 @@ export default function CustomerForm({ customer }: { customer?: Customer }) {
     if (!file) return;
     setAvatarFile(file);
     setRemoveAvatar(false);
+    setIsDirty(true);
     setAvatarPreview(URL.createObjectURL(file));
   }
 
@@ -153,6 +333,15 @@ export default function CustomerForm({ customer }: { customer?: Customer }) {
     return Number(state[field]) < 0 ? 'debit' : 'credit';
   }
 
+  const secondaryCurrencyLabel = currencyDisplay(
+    String(state.secondaryCurrency ?? ''),
+    String(state.secondaryCurrencySymbol ?? ''),
+  );
+  const tertiaryCurrencyLabel = currencyDisplay(
+    String(state.tertiaryCurrency ?? ''),
+    String(state.tertiaryCurrencySymbol ?? ''),
+  );
+
   return (
     <form className="customer-form-page" onSubmit={save}>
       <div className="dashboard-page-heading">
@@ -161,7 +350,7 @@ export default function CustomerForm({ customer }: { customer?: Customer }) {
           <h1>{customer ? 'ویرایش طرف‌حساب' : 'افزودن طرف‌حساب'}</h1>
           <p>اطلاعات هویتی، ارتباطی و مانده اولیه را با دقت ثبت کنید.</p>
         </div>
-        {customer ? <span className="customer-code-badge">کد {customer.customerCode}</span> : null}
+        {customer ? <span className="customer-code-badge">کد فعلی {customer.customerCode}</span> : null}
       </div>
 
       {message ? <p className="account-message">{message}</p> : null}
@@ -174,9 +363,69 @@ export default function CustomerForm({ customer }: { customer?: Customer }) {
             <Field label="نام / عنوان طرف‌حساب" required>
               <input value={String(state.name)} onChange={(e) => setValue('name', e.target.value)} required />
             </Field>
-            <Field label="کد حساب">
-              <input value={customer?.customerCode ?? 'پس از ثبت به‌صورت خودکار'} disabled />
+            {customer ? (
+              <Field label="کد حساب">
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={String(state.customerCode ?? customer.customerCode)}
+                  onChange={(event) => setValue('customerCode', event.target.value)}
+                />
+              </Field>
+            ) : (
+              <div className="customer-code-mode-field">
+                <div className="customer-code-mode-header"><span>کد حساب</span></div>
+                <div className="customer-code-mode-buttons" role="group" aria-label="روش تعیین کد حساب">
+                  <button
+                    type="button"
+                    className={customerCodeMode === 'auto' ? 'is-active' : ''}
+                    onClick={() => setCustomerCodeMode('auto')}
+                  >
+                    کد بعدی خودکار
+                  </button>
+                  <button
+                    type="button"
+                    className={customerCodeMode === 'manual' ? 'is-active' : ''}
+                    onClick={() => setCustomerCodeMode('manual')}
+                  >
+                    ورود دستی
+                  </button>
+                </div>
+                {customerCodeMode === 'manual' ? (
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={String(state.customerCode ?? '')}
+                    onChange={(event) => setValue('customerCode', event.target.value)}
+                    placeholder="مثلاً ۱۰۱"
+                    required
+                  />
+                ) : (
+                  <input
+                    type="number"
+                    value={nextCustomerCode ?? Number(state.customerCode ?? 0)}
+                    readOnly
+                    aria-label="کد حساب خودکار"
+                  />
+                )}
+              </div>
+            )}
+            <Field label="تلفن تماس">
+              <input
+                value={String(state.phone1 ?? '')}
+                onChange={(event) => setValue('phone1', event.target.value)}
+                inputMode="tel"
+                placeholder="مثلاً ۰۹۱۲۱۲۳۴۵۶۷۸"
+              />
             </Field>
+            <SelectField
+              label="جنسیت"
+              value={String(state.gender ?? '')}
+              onChange={(value) => setValue('gender', value)}
+              options={[['', 'انتخاب نشده'], ['male', 'آقا'], ['female', 'خانم']]}
+            />
             <SelectField label="گروه" value={String(state.groupName)} onChange={(v) => setValue('groupName', v)} options={[
               ['', 'بدون گروه'], ['customer', 'مشتری'], ['supplier', 'تأمین‌کننده'], ['buyer', 'خریدار'], ['seller', 'فروشنده'],
             ]} />
@@ -187,9 +436,6 @@ export default function CustomerForm({ customer }: { customer?: Customer }) {
             ]} />
             <SelectField label="نوع ارز اول" value={String(state.primaryCurrency)} onChange={(v) => setValue('primaryCurrency', v)} options={[
               ['rial', 'ریال'], ['usd', 'دلار'], ['eur', 'یورو'], ['aed', 'درهم'], ['other', 'سایر'],
-            ]} />
-            <SelectField label="نوع ارز دوم" value={String(state.secondaryCurrency)} onChange={(v) => setValue('secondaryCurrency', v)} options={[
-              ['', 'انتخاب نشده'], ['rial', 'ریال'], ['usd', 'دلار'], ['eur', 'یورو'], ['aed', 'درهم'], ['other', 'سایر'],
             ]} />
           </div>
         </div>
@@ -209,7 +455,7 @@ export default function CustomerForm({ customer }: { customer?: Customer }) {
             <div className="customer-form-section">
               <div className="account-panel-heading"><h2>اطلاعات تماس و نشانی</h2></div>
               <div className="customer-form-grid">
-                {['phone1', 'phone2', 'phone3', 'telegramId', 'email', 'postalCode', 'nationalId', 'fatherName'].map((field) => (
+                {['phone2', 'phone3', 'telegramId', 'email', 'postalCode', 'nationalId', 'fatherName'].map((field) => (
                   <Field key={field} label={textLabels[field]}>
                     <input value={String(state[field])} onChange={(e) => setValue(field, e.target.value)} />
                   </Field>
@@ -239,11 +485,87 @@ export default function CustomerForm({ customer }: { customer?: Customer }) {
 
         <div className="customer-form-section">
           <div className="account-panel-heading"><h2>مانده‌های حساب</h2></div>
+          <button
+            type="button"
+            className="customer-add-balance-button"
+            onClick={() => setShowBalanceOptions((value) => !value)}
+            aria-expanded={showBalanceOptions}
+          >
+            <Plus size={15} />
+            افزودن فلز یا ارز
+            <ChevronDown size={14} className={showBalanceOptions ? 'is-rotated' : ''} />
+          </button>
+          {showBalanceOptions ? (
+            <div className="customer-balance-options">
+              {[
+                ['silverBalance', 'نقره'],
+                ['platinumBalance', 'پلاتین'],
+                ['foreignBalance', 'ارز دوم'],
+                ['tertiaryBalance', 'ارز سوم'],
+              ].map(([field, label]) => (
+                <button
+                  type="button"
+                  key={field}
+                  className={enabledOptionalBalances.includes(field) ? 'is-active' : ''}
+                  onClick={() => toggleOptionalBalance(field)}
+                >
+                  {enabledOptionalBalances.includes(field) ? <Check size={14} /> : <Plus size={14} />}
+                  {label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {enabledOptionalBalances.includes('foreignBalance') ? (
+            <div className="customer-form-grid customer-currency-grid">
+              <SelectField
+                label="نوع ارز دوم"
+                value={String(state.secondaryCurrency)}
+                onChange={(value) => setValue('secondaryCurrency', value)}
+                options={currencyOptions}
+              />
+              {state.secondaryCurrency === 'other' ? (
+                <Field label="نماد ارز دوم">
+                  <input
+                    value={String(state.secondaryCurrencySymbol ?? '')}
+                    onChange={(event) => setValue('secondaryCurrencySymbol', event.target.value)}
+                    maxLength={12}
+                    placeholder="مثلاً $"
+                  />
+                </Field>
+              ) : null}
+            </div>
+          ) : null}
+          {enabledOptionalBalances.includes('tertiaryBalance') ? (
+            <div className="customer-form-grid customer-currency-grid">
+              <SelectField
+                label="نوع ارز سوم"
+                value={String(state.tertiaryCurrency ?? '')}
+                onChange={(value) => setValue('tertiaryCurrency', value)}
+                options={currencyOptions}
+              />
+              {state.tertiaryCurrency === 'other' ? (
+                <Field label="نماد ارز سوم">
+                  <input
+                    value={String(state.tertiaryCurrencySymbol ?? '')}
+                    onChange={(event) => setValue('tertiaryCurrencySymbol', event.target.value)}
+                    maxLength={12}
+                    placeholder="مثلاً ₺"
+                  />
+                </Field>
+              ) : null}
+            </div>
+          ) : null}
           <div className="customer-balance-grid">
-            {customerNumberFields.slice(0, 5).map((field) => (
+            {(['goldBalance', 'rialBalance', ...enabledOptionalBalances] as string[]).map((field) => (
               <BalanceField
                 key={field}
-                label={numberLabels[field]}
+                label={
+                  field === 'foreignBalance'
+                    ? `مانده ${secondaryCurrencyLabel}`
+                    : field === 'tertiaryBalance'
+                      ? `مانده ${tertiaryCurrencyLabel}`
+                    : numberLabels[field]
+                }
                 value={String(state[field])}
                 direction={balanceDirection(field)}
                 onChange={(value) => setValue(field, value)}
@@ -260,7 +582,7 @@ export default function CustomerForm({ customer }: { customer?: Customer }) {
         {showAdditional ? <div className="customer-form-section">
           <div className="account-panel-heading"><h2>شرایط و تصویر</h2></div>
           <div className="customer-form-grid">
-            {customerNumberFields.slice(5).map((field) => (
+            {customerNumberFields.map((field) => (
               <Field key={field} label={numberLabels[field]}>
                 <input type="number" step="any" value={String(state[field])} onChange={(e) => setValue(field, e.target.value)} />
               </Field>
@@ -279,7 +601,7 @@ export default function CustomerForm({ customer }: { customer?: Customer }) {
             <button type="button" className="dashboard-secondary-button" onClick={() => fileRef.current?.click()}>
               <ImagePlus size={15} /> انتخاب تصویر
             </button>
-            <button type="button" className="account-danger-button" disabled={!avatarPreview} onClick={() => { setAvatarPreview(''); setAvatarFile(null); setRemoveAvatar(true); }}>
+            <button type="button" className="account-danger-button" disabled={!avatarPreview} onClick={() => { setAvatarPreview(''); setAvatarFile(null); setRemoveAvatar(true); setIsDirty(true); }}>
               <Trash2 size={15} /> حذف تصویر
             </button>
             <input ref={fileRef} hidden type="file" accept="image/png,image/jpeg,image/webp" onChange={chooseAvatar} />
@@ -287,8 +609,9 @@ export default function CustomerForm({ customer }: { customer?: Customer }) {
         </div> : null}
       </section>
 
-      <button className="account-save-button" disabled={loading} type="submit">
-        <Save size={16} /> {loading ? 'در حال ذخیره...' : 'ذخیره طرف‌حساب'}
+      <button className="customer-save-button" disabled={loading} type="submit">
+        {loading ? <LoaderCircle size={17} className="spin" /> : <Save size={17} />}
+        {loading ? 'در حال ذخیره...' : customer ? 'ذخیره تغییرات طرف‌حساب' : 'ذخیره طرف‌حساب'}
       </button>
     </form>
   );
@@ -346,9 +669,6 @@ function BalanceField({
           طلبکار از ما
         </button>
       </div>
-      <small>
-        مقدار منفی یعنی بدهکار به ما و مقدار مثبت یعنی طلبکار از ما.
-      </small>
     </Field>
   );
 }

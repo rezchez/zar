@@ -4,17 +4,22 @@ import {
   ChevronDown,
   ChevronRight,
   ContactRound,
+  BarChart3,
+  FilePlus2,
   LayoutDashboard,
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
+  Plus,
+  Search,
   Settings,
+  ScrollText,
   UserRoundCog,
   X,
   type LucideIcon,
 } from 'lucide-react';
 import { usePathname, useRouter } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTheme, type ThemeMode } from '@/src/components/ThemeProvider';
 import LogoutButton from '@/src/components/LogoutButton';
 
@@ -49,6 +54,7 @@ type NavItemData = {
           { id: 'customer-new', title: 'افزودن طرف‌حساب', icon: ContactRound, href: '/dashboard/customers/new' },
         ],
       },
+      { id: 'reports', title: 'گزارشات', icon: BarChart3, href: '/dashboard/reports' },
     ],
   },
 ];
@@ -141,7 +147,19 @@ export default function DashboardShell({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [selectedItem, setSelectedItem] = useState('home');
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [quickAccessOpen, setQuickAccessOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const { mode, changeTheme } = useTheme();
+
+  function navigateTo(href: string) {
+    const navigationAttempt = new Event('zar:navigation-attempt', {
+      cancelable: true,
+    });
+    window.dispatchEvent(navigationAttempt);
+    if (!navigationAttempt.defaultPrevented) router.push(href);
+  }
 
   const navGroups = useMemo(() => {
     const groups = coreGroups.map((group) => ({
@@ -158,6 +176,18 @@ export default function DashboardShell({
           icon: UserRoundCog,
           href: '/dashboard/users',
         },
+        {
+          id: 'activity-log',
+          title: 'لاگ برنامه',
+          icon: ScrollText,
+          href: '/dashboard/activity-log',
+        },
+        {
+          id: 'program-settings',
+          title: 'تنظیمات کلی برنامه',
+          icon: Settings,
+          href: '/dashboard/settings',
+        },
       ];
     }
 
@@ -171,25 +201,72 @@ export default function DashboardShell({
 
   const activeId = pathname === '/dashboard/users'
     ? 'user-management'
-    : pathname === '/dashboard/customers'
-      ? 'customer-list'
-      : pathname === '/dashboard/customers/new'
-        ? 'customer-new'
-        : pathname.startsWith('/dashboard/customers/')
-          ? 'customer-list'
-          : selectedItem;
+    : pathname === '/dashboard/activity-log'
+      ? 'activity-log'
+      : pathname === '/dashboard/settings'
+        ? 'program-settings'
+        : pathname === '/dashboard/reports'
+          ? 'reports'
+          : pathname === '/dashboard/customers'
+            ? 'customer-list'
+            : pathname === '/dashboard/customers/new'
+              ? 'customer-new'
+              : pathname.startsWith('/dashboard/customers/')
+                ? 'customer-list'
+                : selectedItem;
 
   function handleSelect(item: NavItemData) {
     setSelectedItem(item.id);
     setSidebarOpen(false);
 
     if (item.href) {
-      router.push(item.href);
+      navigateTo(item.href);
     }
   }
 
   const activeTitle =
     allItems.find((item) => item.id === activeId)?.title ?? 'خانه';
+
+  useEffect(() => {
+    function handleShortcut(event: KeyboardEvent) {
+      if (event.altKey && (event.key.toLowerCase() === 'z' || event.code === 'KeyZ')) {
+        event.preventDefault();
+        setSearchOpen(true);
+      }
+      if (event.key === 'Escape') {
+        closeSearch();
+      }
+    }
+
+    window.addEventListener('keydown', handleShortcut);
+    return () => window.removeEventListener('keydown', handleShortcut);
+  }, []);
+
+  useEffect(() => {
+    if (searchOpen) {
+      window.setTimeout(() => searchInputRef.current?.focus(), 0);
+    }
+  }, [searchOpen]);
+
+  const searchResults = useMemo(() => {
+    const normalized = searchQuery.trim().toLocaleLowerCase();
+    if (!normalized) return allItems.filter((item) => item.href);
+    return allItems.filter((item) =>
+      item.href
+      && `${item.title} ${item.id}`.toLocaleLowerCase().includes(normalized),
+    );
+  }, [allItems, searchQuery]);
+
+  function openSearchResult(item: NavItemData) {
+    if (!item.href) return;
+    closeSearch();
+    navigateTo(item.href);
+  }
+
+  function closeSearch() {
+    setSearchOpen(false);
+    setSearchQuery('');
+  }
 
   return (
     <main className="dashboard-app" dir="rtl">
@@ -273,6 +350,16 @@ export default function DashboardShell({
           </div>
 
           <div className="dashboard-topbar-actions">
+            <button
+              type="button"
+              className="dashboard-search-trigger"
+              onClick={() => setSearchOpen(true)}
+              aria-label="جست‌وجوی سریع"
+            >
+              <Search size={15} />
+              <span>جست‌وجوی سریع</span>
+              <kbd>Alt+Z</kbd>
+            </button>
             <div className="dashboard-user-menu">
               <button
                 type="button"
@@ -300,8 +387,8 @@ export default function DashboardShell({
                   mode={mode}
                   onThemeChange={changeTheme}
                   onAccount={() => {
-                    setUserMenuOpen(false);
-                    router.push('/dashboard/account');
+                  setUserMenuOpen(false);
+                    navigateTo('/dashboard/account');
                   }}
                   onClose={() => setUserMenuOpen(false)}
                 />
@@ -311,6 +398,76 @@ export default function DashboardShell({
         </header>
 
         <div className="dashboard-content">{children}</div>
+        {searchOpen ? (
+          <div
+            className="dashboard-search-backdrop"
+            role="presentation"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) closeSearch();
+            }}
+          >
+            <section className="dashboard-search-dialog" role="dialog" aria-modal="true" aria-label="جست‌وجوی سریع">
+              <div className="dashboard-search-input-row">
+                <Search size={17} />
+                <input
+                  ref={searchInputRef}
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder="نام بخش را وارد کنید..."
+                />
+                <button type="button" onClick={closeSearch} aria-label="بستن">
+                  <X size={17} />
+                </button>
+              </div>
+              <div className="dashboard-search-results">
+                {searchResults.length ? searchResults.map((item) => (
+                  <button key={item.id} type="button" onClick={() => openSearchResult(item)}>
+                    <item.icon size={16} />
+                    <span>{item.title}</span>
+                  </button>
+                )) : (
+                  <div className="dashboard-empty-search">بخشی با این عبارت پیدا نشد.</div>
+                )}
+              </div>
+            </section>
+          </div>
+        ) : null}
+        <div className={`dashboard-quick-access ${quickAccessOpen ? 'is-open' : ''}`}>
+          {quickAccessOpen ? (
+            <div className="dashboard-quick-menu">
+              <button
+                type="button"
+                onClick={() => {
+                  setQuickAccessOpen(false);
+                  navigateTo('/dashboard/customers/new');
+                }}
+              >
+                <ContactRound size={17} />
+                افزودن مخاطب
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setQuickAccessOpen(false);
+                  navigateTo('/dashboard/documents/new');
+                }}
+              >
+                <FilePlus2 size={17} />
+                ثبت سند
+                <small>به‌زودی</small>
+              </button>
+            </div>
+          ) : null}
+          <button
+            type="button"
+            className="dashboard-quick-trigger"
+            onClick={() => setQuickAccessOpen((value) => !value)}
+            aria-expanded={quickAccessOpen}
+            aria-label="دسترسی سریع"
+          >
+            <Plus size={23} />
+          </button>
+        </div>
       </section>
 
     </main>

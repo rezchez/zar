@@ -54,6 +54,11 @@ export async function POST(request: Request) {
   }
 
   const pb = createPocketBaseClient();
+  let accountSecurity: {
+    id: string;
+    authenticatorEnabled: boolean;
+    twoFactorEnabled: boolean;
+  } | null = null;
 
   try {
     try {
@@ -89,11 +94,20 @@ export async function POST(request: Request) {
           { status: 403 },
         );
       }
+
+      accountSecurity = {
+        id: account.id,
+        authenticatorEnabled: account.authenticatorEnabled === true,
+        twoFactorEnabled: account.twoFactorEnabled === true,
+      };
     } catch {
       // Continue with PocketBase authentication when the service account is unavailable.
     }
 
     if (mfaId && authMethod === 'totp') {
+      // Authenticator سفارشی برنامه است؛ ابتدا رمز عبور را دوباره بررسی می‌کنیم
+      // و بعد از تأیید TOTP، همان نشست احراز‌شده را صادر می‌کنیم.
+      await pb.collection('users').authWithPassword(email, password);
       const service = await getPocketBaseServiceClient();
       const user = await service.collection('users').getFirstListItem(
         service.filter('email = {:email} && authenticatorEnabled = true', { email }),
@@ -114,18 +128,26 @@ export async function POST(request: Request) {
           { status: 401 },
         );
       }
-
-      const authResponse = await pb.send('/api/collections/users/auth-with-password', {
-        method: 'POST',
-        body: { identity: email, password, mfaId },
-        query: { mfaId },
-      });
-      pb.authStore.save(authResponse.token, authResponse.record);
     } else if (mfaId && authMethod === 'email') {
       await pb.collection('users').authWithOTP(otpId, otpCode, { mfaId });
     } else {
       try {
         await pb.collection('users').authWithPassword(email, password);
+
+        if (accountSecurity?.authenticatorEnabled) {
+          // نشست مرحله اول هرگز به مرورگر ارسال نمی‌شود.
+          pb.authStore.clear();
+          return NextResponse.json(
+            {
+              mfaRequired: true,
+              mfaId: 'custom-authenticator',
+              authenticatorAvailable: true,
+              emailOtpAvailable: false,
+              message: 'کد رمزساز خود را وارد کنید.',
+            },
+            { status: 401 },
+          );
+        }
       } catch (error) {
         const response = error as {
           response?: { mfaId?: string };

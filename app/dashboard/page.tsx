@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation';
+import Link from 'next/link';
 
 import { getServerAuth } from '@/lib/auth';
 import DashboardShell from '@/src/components/DashboardShell';
@@ -53,7 +54,9 @@ export default async function DashboardPage() {
         </article>
       </div>
 
-      <section className="dashboard-panel dashboard-welcome-panel">
+      <section className="dashboard-panel dashboard-welcome-panel dashboard-gooey-panel">
+        <div className="dashboard-gooey-orb dashboard-gooey-orb-one" aria-hidden="true" />
+        <div className="dashboard-gooey-orb dashboard-gooey-orb-two" aria-hidden="true" />
         <div className="dashboard-panel-heading">
           <div>
             <p className="eyebrow">شروع سریع</p>
@@ -61,10 +64,11 @@ export default async function DashboardPage() {
           </div>
           <span className="dashboard-panel-icon">Z</span>
         </div>
-        <p>
-          از منوی کناری برای جابه‌جایی بین بخش‌ها استفاده کنید. امکانات پروژه،
-          تیم و گزارش‌ها در مراحل بعدی به همین ساختار اضافه می‌شوند.
-        </p>
+        <p>از اینجا می‌توانید مدیریت مخاطب‌ها را شروع کنید یا با دکمه + پایین صفحه، به دسترسی‌های سریع برسید.</p>
+        <div className="dashboard-gooey-actions">
+          <Link href="/dashboard/customers/new">افزودن مخاطب</Link>
+          <Link href="/dashboard/customers">مشاهده فهرست طرف‌حساب‌ها</Link>
+        </div>
       </section>
     </DashboardShell>
   );
