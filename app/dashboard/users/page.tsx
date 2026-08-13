@@ -37,6 +37,8 @@ export default async function UserManagementPage() {
       status: record.status === 'blocked' ? 'blocked' : 'active',
       blockedUntil: record.blockedUntil ?? null,
       nationalCodeEditable: record.nationalCodeEditable === true,
+      phone: String(record.phone ?? ''),
+      phoneEditable: record.phoneEditable === true,
       verified: record.verified === true,
       created: record.created,
       lastLoginAt: record.lastLoginAt ?? null,

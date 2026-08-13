@@ -2,7 +2,7 @@
 
 import { FormEvent, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Eye, EyeOff, LockKeyhole, Mail, UserRound } from 'lucide-react';
+import { Eye, EyeOff, LockKeyhole, Mail, Phone, UserRound } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 export default function RegisterForm() {
@@ -11,14 +11,15 @@ export default function RegisterForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
+  const [phone, setPhone] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showPasswordConfirm, setShowPasswordConfirm] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [loading, setLoading] = useState(false);
 
   const isDisabled = useMemo(
-    () => loading || !name.trim() || !email.trim() || !password || !passwordConfirm,
-    [email, loading, name, password, passwordConfirm],
+    () => loading || !name.trim() || !email.trim() || !phone.trim() || !password || !passwordConfirm,
+    [email, loading, name, password, passwordConfirm, phone],
   );
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -33,6 +34,7 @@ export default function RegisterForm() {
         body: JSON.stringify({
           name,
           email,
+          phone,
           password,
           passwordConfirm,
         }),
@@ -74,6 +76,24 @@ export default function RegisterForm() {
         </div>
 
         <form onSubmit={handleSubmit} className="login-form">
+          <div className="field">
+            <label htmlFor="register-phone">شماره تلفن همراه</label>
+            <div className="field-shell">
+              <Phone className="field-icon" size={18} aria-hidden="true" />
+              <input
+                id="register-phone"
+                name="phone"
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
+                placeholder="۰۹۱۲۱۲۳۴۵۶۷۸"
+                value={phone}
+                onChange={(event) => setPhone(event.target.value)}
+                required
+              />
+            </div>
+          </div>
+
           <div className="field">
             <label htmlFor="name">نام و نام خانوادگی</label>
             <div className="field-shell">

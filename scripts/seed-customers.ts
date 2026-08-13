@@ -1,7 +1,7 @@
 import PocketBase from 'pocketbase';
 
 const pocketbaseUrl = process.env.POCKETBASE_URL ?? 'http://127.0.0.1:8090';
-const seedMarker = '__zar_seed_demo_50__';
+const seedMarker = '__zar_seed_demo_40__';
 
 const names = [
   'علی رضایی', 'محمد کریمی', 'زهرا احمدی', 'مریم حسینی', 'حسین مرادی',
@@ -14,7 +14,7 @@ const names = [
   'پرستو حبیبی', 'اشکان قاسمی', 'سحر فلاح', 'بهنام یزدانی', 'نازنین صادقی',
   'وحید جعفری', 'نگین رضوانی', 'مسعود کمال‌زاده', 'آرزو حسینی', 'کیارش رحیمی',
   'مونا رفیعی', 'سامان نوری', 'سپیده اکبری', 'داریوش مرادی', 'هانیه کریمی',
-];
+].slice(0, 40);
 
 async function main() {
   const pb = new PocketBase(pocketbaseUrl);
@@ -99,7 +99,7 @@ async function main() {
     customerCode += 1;
   }
 
-  console.log(`۵۰ طرف‌حساب آزمایشی با مالک ${owner.email || owner.username} ایجاد شد.`);
+  console.log(`۴۰ طرف‌حساب آزمایشی با مالک ${owner.email || owner.username} ایجاد شد.`);
 }
 
 await main();

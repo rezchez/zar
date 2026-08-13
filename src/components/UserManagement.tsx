@@ -29,6 +29,8 @@ export type ManagedUser = {
   status: Status;
   blockedUntil: string | null;
   nationalCodeEditable: boolean;
+  phone: string;
+  phoneEditable: boolean;
   verified: boolean;
   created: string;
   lastLoginAt: string | null;
@@ -157,6 +159,7 @@ export default function UserManagement({
     status: Status,
     blockedUntil: string | null,
     nationalCodeEditable: boolean,
+    phoneEditable: boolean,
     name?: string,
   ): Promise<boolean> {
     setSavingId(id);
@@ -173,6 +176,7 @@ export default function UserManagement({
           status,
           blockedUntil,
           nationalCodeEditable,
+          phoneEditable,
           ...(name !== undefined ? { name } : {}),
         }),
       });
@@ -213,6 +217,7 @@ export default function UserManagement({
       user.status,
       user.blockedUntil,
       user.nationalCodeEditable,
+      user.phoneEditable,
       name,
     );
     if (saved) {
@@ -229,6 +234,7 @@ export default function UserManagement({
       user.status,
       user.blockedUntil,
       user.nationalCodeEditable,
+      user.phoneEditable,
       user.name,
     );
     setRoleChange(null);
@@ -243,6 +249,7 @@ export default function UserManagement({
       'blocked',
       getBlockDate(blockDuration),
       blockTarget.nationalCodeEditable,
+      blockTarget.phoneEditable,
     );
     setBlockTarget(null);
   }
@@ -438,6 +445,7 @@ export default function UserManagement({
                         'active',
                         null,
                         user.nationalCodeEditable,
+                        user.phoneEditable,
                       )}
                     onResetPassword={() => void sendPasswordReset(user)}
                     onToggleNationalCode={() =>
@@ -447,6 +455,16 @@ export default function UserManagement({
                         user.status,
                         user.blockedUntil,
                         !user.nationalCodeEditable,
+                        user.phoneEditable,
+                      )}
+                    onTogglePhone={() =>
+                      void updateUser(
+                        user.id,
+                        user.role,
+                        user.status,
+                        user.blockedUntil,
+                        user.nationalCodeEditable,
+                        !user.phoneEditable,
                       )}
                     onToggleEvents={toggleEvents}
                   />
@@ -567,6 +585,7 @@ function UserRow({
   onUnblock,
   onResetPassword,
   onToggleNationalCode,
+  onTogglePhone,
   onToggleEvents,
 }: {
   user: ManagedUser;
@@ -584,6 +603,7 @@ function UserRow({
   onUnblock: () => void;
   onResetPassword: () => void;
   onToggleNationalCode: () => void;
+  onTogglePhone: () => void;
   onToggleEvents: (id: string) => Promise<void>;
 }) {
   const isCurrentUser = user.id === currentUserId;
@@ -626,6 +646,7 @@ function UserRow({
                 ) : null}
               </div>
               <small>{user.email}</small>
+              <small>{user.phone || 'تلفن همراه ثبت نشده'}</small>
               {isCurrentUser ? <em>حساب فعلی</em> : null}
             </div>
           </div>
@@ -709,6 +730,18 @@ function UserRow({
               }
             >
               <KeyRound size={15} />
+            </button>
+            <button
+              type="button"
+              className={`user-reset-button ${user.phoneEditable ? 'is-enabled' : ''}`}
+              disabled={saving || cannotEdit}
+              onClick={onTogglePhone}
+              title={user.phoneEditable
+                ? 'مجوز مصرف شده؛ پس از ویرایش دوباره نیاز به مجوز دارد'
+                : 'اجازه یک‌بار ویرایش تلفن همراه'}
+              aria-label="مجوز ویرایش تلفن همراه"
+            >
+              <span aria-hidden="true">☎</span>
             </button>
           </div>
         </td>

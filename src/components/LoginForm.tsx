@@ -3,7 +3,7 @@
 import { FormEvent, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Eye, EyeOff, LockKeyhole, Mail } from 'lucide-react';
+import { Eye, EyeOff, LockKeyhole, Mail, Phone } from 'lucide-react';
 
 export default function LoginForm() {
   const router = useRouter();
@@ -12,6 +12,10 @@ export default function LoginForm() {
   const [errorMessage, setErrorMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [loginMode, setLoginMode] = useState<'email' | 'phone'>('email');
+  const [phone, setPhone] = useState('');
+  const [phoneChallenge, setPhoneChallenge] = useState<{ id: string; expiresAt: number } | null>(null);
+  const [phoneCode, setPhoneCode] = useState('');
   const [otpCode, setOtpCode] = useState('');
   const [totpCode, setTotpCode] = useState('');
   const [authMethod, setAuthMethod] = useState<'email' | 'totp'>('email');
@@ -26,13 +30,13 @@ export default function LoginForm() {
   const isDisabled = useMemo(
     () =>
       loading
-      || !email.trim()
-      || !password
+      || (loginMode === 'email' && (!email.trim() || !password))
+      || (loginMode === 'phone' && (!phone.trim() || (phoneChallenge && phoneCode.length !== 6)))
       || Boolean(
         mfaChallenge
         && (authMethod === 'email' ? !otpCode.trim() : !totpCode.trim()),
       ),
-    [authMethod, email, loading, mfaChallenge, otpCode, password, totpCode],
+    [authMethod, email, loading, loginMode, mfaChallenge, otpCode, password, phone, phoneChallenge, phoneCode, totpCode],
   );
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -41,6 +45,36 @@ export default function LoginForm() {
     setLoading(true);
 
     try {
+      if (loginMode === 'phone') {
+        const endpoint = phoneChallenge ? '/api/auth/bale/verify' : '/api/auth/bale/request';
+        const payload = phoneChallenge
+          ? { phone, challengeId: phoneChallenge.id, code: phoneCode }
+          : { phone };
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = (await response.json().catch(() => null)) as
+          | { message?: string; challengeId?: string; expiresIn?: number; needsBaleLink?: boolean }
+          | null;
+        if (!response.ok) {
+          setErrorMessage(data?.message ?? 'ورود با تلفن انجام نشد.');
+          return;
+        }
+        if (!phoneChallenge && data?.challengeId) {
+          setPhoneChallenge({
+            id: data.challengeId,
+            expiresAt: Date.now() + (data.expiresIn ?? 120) * 1000,
+          });
+          setErrorMessage('کد ورود در بله ارسال شد. تا ۱۲۰ ثانیه فرصت دارید.');
+          return;
+        }
+        router.replace('/dashboard');
+        router.refresh();
+        return;
+      }
+
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: {
@@ -126,7 +160,32 @@ export default function LoginForm() {
         </div>
 
         <form ref={formRef} onSubmit={handleSubmit} className="login-form">
-          <div className="field">
+          <div className="mfa-method-switcher login-mode-switcher">
+            <button type="button" className={loginMode === 'email' ? 'is-active' : ''} onClick={() => { setLoginMode('email'); setPhoneChallenge(null); setErrorMessage(''); }}>ورود با ایمیل</button>
+            <button type="button" className={loginMode === 'phone' ? 'is-active' : ''} onClick={() => { setLoginMode('phone'); setMfaChallenge(null); setErrorMessage(''); }}>ورود با تلفن و بله</button>
+          </div>
+
+          {loginMode === 'phone' ? (
+            <div className="field">
+              <label htmlFor="login-phone">شماره تلفن همراه</label>
+              <div className="field-shell">
+                <Phone className="field-icon" size={18} aria-hidden="true" />
+                <input id="login-phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="۰۹۱۲۱۲۳۴۵۶۷۸" value={phone} onChange={(event) => setPhone(event.target.value)} required />
+              </div>
+              {phoneChallenge ? <small className="mfa-hint">کد ۶ رقمی ارسال‌شده در بله را وارد کنید.</small> : null}
+            </div>
+          ) : null}
+
+          {loginMode === 'phone' && phoneChallenge ? (
+            <div className="field">
+              <label htmlFor="bale-code">کد ورود بله</label>
+              <div className="field-shell">
+                <input id="bale-code" inputMode="numeric" autoComplete="one-time-code" value={phoneCode} onChange={(event) => setPhoneCode(event.target.value.replace(/\D/g, '').slice(0, 6))} required />
+              </div>
+            </div>
+          ) : null}
+
+          {loginMode === 'email' ? <div className="field">
             <label htmlFor="email">ایمیل</label>
             <div className="field-shell">
               <Mail className="field-icon" size={18} aria-hidden="true" />
@@ -142,9 +201,9 @@ export default function LoginForm() {
                 required
               />
             </div>
-          </div>
+          </div> : null}
 
-          {!mfaChallenge ? (
+          {loginMode === 'email' && !mfaChallenge ? (
             <div className="field">
             <label htmlFor="password">رمز عبور</label>
             <div className="field-shell">
@@ -169,9 +228,9 @@ export default function LoginForm() {
               </button>
             </div>
             </div>
-          ) : (
+          ) : loginMode === 'email' ? (
             <div className="field">
-              <div className="mfa-method-switcher">
+              {mfaChallenge ? <div className="mfa-method-switcher">
                 <button
                   type="button"
                   className={authMethod === 'email' ? 'is-active' : ''}
@@ -189,7 +248,7 @@ export default function LoginForm() {
                     رمزساز
                   </button>
                 ) : null}
-              </div>
+              </div> : null}
               <label htmlFor={authMethod === 'email' ? 'otp-code' : 'totp-code'}>
                 {authMethod === 'email' ? 'کد تایید ایمیل' : 'کد Authenticator'}
               </label>
@@ -229,7 +288,7 @@ export default function LoginForm() {
                   : 'کد فعلی را از برنامه Google Authenticator یا رمزساز مشابه وارد کنید.'}
               </small>
             </div>
-          )}
+          ) : null}
 
           {errorMessage ? (
             <p className="form-error" role="alert">
@@ -241,8 +300,10 @@ export default function LoginForm() {
             {loading
               ? 'در حال بررسی...'
               : mfaChallenge
-                ? 'تایید و ورود'
-                : 'ورود به داشبورد'}
+              ? 'تایید و ورود'
+                : loginMode === 'phone'
+                  ? phoneChallenge ? 'تایید کد بله' : 'ارسال کد در بله'
+                  : 'ورود به داشبورد'}
           </button>
         </form>
 

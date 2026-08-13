@@ -33,10 +33,12 @@ const eventOptions = [
 ];
 
 function formatDate(value: string) {
+  const date = new Date(value);
+  if (!value || Number.isNaN(date.getTime())) return '—';
   return new Intl.DateTimeFormat('fa-IR', {
     dateStyle: 'medium',
     timeStyle: 'medium',
-  }).format(new Date(value));
+  }).format(date);
 }
 
 function actorLabel(actor: Activity['actor']) {

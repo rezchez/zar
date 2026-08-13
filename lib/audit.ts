@@ -18,6 +18,7 @@ export type AuditEvent =
   | 'user_blocked'
   | 'user_unblocked'
   | 'national_code_permission_granted'
+  | 'phone_permission_granted'
   | 'password_reset_requested'
   | 'customer_created'
   | 'customer_updated'

@@ -1,6 +1,6 @@
 'use client';
 
-import { FileSearch, LoaderCircle, Search } from 'lucide-react';
+import { Download, FileSearch, LoaderCircle, Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 import type { Customer } from '@/lib/customer';
@@ -99,6 +99,15 @@ export default function CustomerReports({
           </select>
         </label>
       </section>
+
+      {selectedCustomer ? (
+        <div className="customer-export-actions">
+          <a className="dashboard-secondary-button" href={`/api/customers/${selectedCustomer.id}/transactions/export`} download>
+            <Download size={15} />
+            دانلود گزارش ریزحساب PDF
+          </a>
+        </div>
+      ) : null}
 
       {message ? <p className="form-error">{message}</p> : null}
       {loading ? (

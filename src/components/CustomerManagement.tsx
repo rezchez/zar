@@ -21,7 +21,7 @@ function formatNumber(value: number) {
 
 function balanceLabel(value: number, unit: string) {
   if (value === 0) return 'بدون مانده';
-  return `${formatNumber(Math.abs(value))} ${unit} ${value < 0 ? 'بدهکار' : 'بستانکار'}`;
+  return `${formatNumber(Math.abs(value))} ${unit} ${value > 0 ? 'بدهی ما' : 'طلب ما'}`;
 }
 
 function balanceTone(value: number) {
@@ -185,7 +185,7 @@ function BalanceSummaryCard({ label, value, unit }: { label: string; value: numb
     <article className={`customer-balance-summary ${balanceTone(value)}`}>
       <span>{label}</span>
       <strong>{value === 0 ? '۰' : formatNumber(Math.abs(value))}</strong>
-      <small>{value === 0 ? 'بدون مانده' : value > 0 ? `ما بدهکاریم · ${unit}` : `ما طلبکاریم · ${unit}`}</small>
+      <small>{value === 0 ? 'بدون مانده' : value > 0 ? `بدهی ما به طرف‌حساب · ${unit}` : `طلب ما از طرف‌حساب · ${unit}`}</small>
     </article>
   );
 }

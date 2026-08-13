@@ -36,6 +36,14 @@ export type CustomerTransaction = {
   foreignCurrencySymbol: string;
   tertiaryCurrency: string;
   tertiaryCurrencySymbol: string;
+  documentNature: 'received' | 'paid' | '';
+  documentTab: string;
+  documentSubType: string;
+  documentDateJalali: string;
+  settlementMethod: string;
+  balanceSource: string;
+  documentDetails: string;
+  documentLineNumber: number;
   created: string;
   updated: string;
 };
@@ -75,6 +83,14 @@ export function mapTransaction(record: RecordModel): CustomerTransaction {
     foreignCurrencySymbol: readText(record, 'foreignCurrencySymbol'),
     tertiaryCurrency: readText(record, 'tertiaryCurrency'),
     tertiaryCurrencySymbol: readText(record, 'tertiaryCurrencySymbol'),
+    documentNature: readText(record, 'documentNature') as 'received' | 'paid' | '',
+    documentTab: readText(record, 'documentTab'),
+    documentSubType: readText(record, 'documentSubType'),
+    documentDateJalali: readText(record, 'documentDateJalali'),
+    settlementMethod: readText(record, 'settlementMethod'),
+    balanceSource: readText(record, 'balanceSource'),
+    documentDetails: readText(record, 'documentDetails'),
+    documentLineNumber: readNumber(record, 'documentLineNumber'),
     created: readText(record, 'created'),
     updated: readText(record, 'updated'),
   };

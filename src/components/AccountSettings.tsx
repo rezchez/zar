@@ -6,6 +6,7 @@ import {
   ImagePlus,
   KeyRound,
   Mail,
+  Phone,
   Save,
   ShieldCheck,
   Trash2,
@@ -18,6 +19,8 @@ type AccountUser = {
   email?: string;
   nationalCode?: string;
   nationalCodeEditable: boolean;
+  phone?: string;
+  phoneEditable: boolean;
   twoFactorEnabled: boolean;
   authenticatorEnabled: boolean;
   avatarUrl?: string;
@@ -27,6 +30,7 @@ export default function AccountSettings({ user }: { user: AccountUser }) {
   const [name, setName] = useState(user.name ?? '');
   const [email, setEmail] = useState(user.email ?? '');
   const [nationalCode, setNationalCode] = useState(user.nationalCode ?? '');
+  const [phone, setPhone] = useState(user.phone ?? '');
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(user.twoFactorEnabled);
   const [authenticatorEnabled, setAuthenticatorEnabled] = useState(
     user.authenticatorEnabled,
@@ -53,6 +57,7 @@ export default function AccountSettings({ user }: { user: AccountUser }) {
     formData.append('name', name);
     formData.append('email', email);
     formData.append('nationalCode', nationalCode);
+    formData.append('phone', phone);
     formData.append('twoFactorEnabled', String(twoFactorEnabled));
     formData.append('removeAvatar', String(removeAvatar));
     if (avatarFile) formData.append('avatar', avatarFile);
@@ -267,6 +272,22 @@ export default function AccountSettings({ user }: { user: AccountUser }) {
             <label className="account-field">
               <span><UserRound size={15} />نام و نام خانوادگی</span>
               <input value={name} onChange={(event) => setName(event.target.value)} />
+            </label>
+            <label className="account-field">
+              <span><Phone size={15} />تلفن همراه</span>
+              <input
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
+                value={phone}
+                disabled={Boolean(user.phone) && !user.phoneEditable}
+                onChange={(event) => setPhone(event.target.value)}
+              />
+              <small>
+                {user.phone && !user.phoneEditable
+                  ? 'ویرایش این مقدار باید توسط مدیر مجاز شود.'
+                  : 'شماره تلفن همراه تکراری قابل ثبت نیست.'}
+              </small>
             </label>
             <label className="account-field">
               <span><Mail size={15} />ایمیل</span>

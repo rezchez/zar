@@ -16,6 +16,7 @@ const eventLabels: Record<string, string> = {
   user_blocked: 'مسدودسازی کاربر',
   user_unblocked: 'رفع مسدودی',
   national_code_permission_granted: 'مجوز ویرایش کد ملی',
+  phone_permission_granted: 'مجوز ویرایش تلفن همراه',
   password_reset_requested: 'درخواست بازنشانی رمز',
   customer_created: 'افزودن طرف‌حساب',
   customer_updated: 'ویرایش طرف‌حساب',

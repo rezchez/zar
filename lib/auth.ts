@@ -7,6 +7,8 @@ import {
   createPocketBaseClient,
   PB_AUTH_COOKIE,
 } from '@/lib/pocketbase';
+import { BALE_PHONE_COOKIE } from '@/lib/bale';
+import { hashPhoneSessionToken } from '@/lib/phone-session';
 
 type PocketBaseCookie = {
   token?: string;
@@ -26,6 +28,8 @@ export type AuthenticatedUser = {
   blockedUntil?: string;
   nationalCode?: string;
   nationalCodeEditable: boolean;
+  phone?: string;
+  phoneEditable: boolean;
   twoFactorEnabled: boolean;
   authenticatorEnabled: boolean;
   authenticatorSetupAt?: string;
@@ -53,6 +57,31 @@ function readCookie(value: string | undefined): PocketBaseCookie | null {
 
 export async function getServerAuthContext() {
   const cookieStore = await cookies();
+  const phoneSessionToken = cookieStore.get(BALE_PHONE_COOKIE)?.value;
+  if (phoneSessionToken) {
+    try {
+      const service = await (await import('@/lib/pocketbase-service')).getPocketBaseServiceClient();
+      const session = await service.collection('phone_sessions').getFirstListItem(
+        service.filter('tokenHash = {:tokenHash} && expiresAt > {:now}', {
+          tokenHash: hashPhoneSessionToken(phoneSessionToken),
+          now: new Date().toISOString(),
+        }),
+        { expand: 'user' },
+      );
+      const sessionUser = session.expand?.user ?? await service.collection('users').getOne(String(session.user));
+      if (sessionUser?.id) {
+        return {
+          pb: service,
+          user: mapAuthenticatedUser(service, sessionUser),
+          record: sessionUser,
+          phoneSession: true,
+        };
+      }
+    } catch {
+      // Fall through to the regular PocketBase auth cookie.
+    }
+  }
+
   const cookieValue = cookieStore.get(PB_AUTH_COOKIE)?.value;
   const parsedCookie = readCookie(cookieValue);
 
@@ -77,50 +106,57 @@ export async function getServerAuthContext() {
       return null;
     }
 
-    const role = refreshedRecord.record?.role;
-    const status = refreshedRecord.record?.status;
+    const user = mapAuthenticatedUser(pb, refreshedRecord.record);
 
-    const user: AuthenticatedUser = {
-      id: userId,
-      role: role === 'admin' || role === 'manager' ? role : 'user',
-      status: status === 'blocked' ? 'blocked' : 'active',
-      email: typeof refreshedRecord.record?.email === 'string'
-        ? refreshedRecord.record.email
-        : undefined,
-      name: typeof refreshedRecord.record?.name === 'string'
-        ? refreshedRecord.record.name
-        : undefined,
-      verified: refreshedRecord.record?.verified === true,
-      lastLoginAt: typeof refreshedRecord.record?.lastLoginAt === 'string'
-        ? refreshedRecord.record.lastLoginAt
-        : undefined,
-      lastLogoutAt: typeof refreshedRecord.record?.lastLogoutAt === 'string'
-        ? refreshedRecord.record.lastLogoutAt
-        : undefined,
-      blockedUntil: typeof refreshedRecord.record?.blockedUntil === 'string'
-        ? refreshedRecord.record.blockedUntil
-        : undefined,
-      nationalCode: typeof refreshedRecord.record?.nationalCode === 'string'
-        ? refreshedRecord.record.nationalCode
-        : undefined,
-      nationalCodeEditable: refreshedRecord.record?.nationalCodeEditable === true,
-      twoFactorEnabled: refreshedRecord.record?.twoFactorEnabled === true,
-      authenticatorEnabled: refreshedRecord.record?.authenticatorEnabled === true,
-      authenticatorSetupAt: typeof refreshedRecord.record?.authenticatorSetupAt === 'string'
-        ? refreshedRecord.record.authenticatorSetupAt
-        : undefined,
-      avatar: typeof refreshedRecord.record?.avatar === 'string'
-        ? refreshedRecord.record.avatar
-        : undefined,
-      avatarUrl: typeof refreshedRecord.record?.avatar === 'string'
-        ? pb.files.getURL(refreshedRecord.record, refreshedRecord.record.avatar)
-        : undefined,
-    };
-
-    return { pb, user, record: refreshedRecord.record };
+    return { pb, user, record: refreshedRecord.record, phoneSession: false };
   } catch {
     return null;
   }
+}
+
+function mapAuthenticatedUser(
+  pb: ReturnType<typeof createPocketBaseClient>,
+  record: NonNullable<AuthRecord>,
+): AuthenticatedUser {
+  const user: AuthenticatedUser = {
+      id: String(record.id ?? ''),
+      role: record.role === 'admin' || record.role === 'manager' ? record.role : 'user',
+      status: record.status === 'blocked' ? 'blocked' : 'active',
+      email: typeof record.email === 'string'
+        ? record.email
+        : undefined,
+      name: typeof record.name === 'string'
+        ? record.name
+        : undefined,
+      verified: record.verified === true,
+      lastLoginAt: typeof record.lastLoginAt === 'string'
+        ? record.lastLoginAt
+        : undefined,
+      lastLogoutAt: typeof record.lastLogoutAt === 'string'
+        ? record.lastLogoutAt
+        : undefined,
+      blockedUntil: typeof record.blockedUntil === 'string'
+        ? record.blockedUntil
+        : undefined,
+      nationalCode: typeof record.nationalCode === 'string'
+        ? record.nationalCode
+        : undefined,
+      nationalCodeEditable: record.nationalCodeEditable === true,
+      phone: typeof record.phone === 'string' ? record.phone : undefined,
+      phoneEditable: record.phoneEditable === true,
+      twoFactorEnabled: record.twoFactorEnabled === true,
+      authenticatorEnabled: record.authenticatorEnabled === true,
+      authenticatorSetupAt: typeof record.authenticatorSetupAt === 'string'
+        ? record.authenticatorSetupAt
+        : undefined,
+      avatar: typeof record.avatar === 'string'
+        ? record.avatar
+        : undefined,
+      avatarUrl: typeof record.avatar === 'string'
+        ? pb.files.getURL(record, record.avatar)
+        : undefined,
+    };
+  return user;
 }
 
 export async function getServerAuth(): Promise<AuthenticatedUser | null> {

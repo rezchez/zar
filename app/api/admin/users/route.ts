@@ -34,6 +34,8 @@ export async function GET() {
         status: user.status ?? 'active',
         blockedUntil: user.blockedUntil ?? null,
         nationalCodeEditable: user.nationalCodeEditable === true,
+        phone: String(user.phone ?? ''),
+        phoneEditable: user.phoneEditable === true,
         verified: user.verified === true,
         created: user.created,
         lastLoginAt: user.lastLoginAt ?? null,
@@ -61,6 +63,7 @@ export async function PATCH(request: Request) {
     status?: unknown;
     blockedUntil?: unknown;
     nationalCodeEditable?: unknown;
+    phoneEditable?: unknown;
     name?: unknown;
   };
 
@@ -82,6 +85,7 @@ export async function PATCH(request: Request) {
       ? body.blockedUntil
       : null;
   const nationalCodeEditable = body.nationalCodeEditable === true;
+  const phoneEditable = body.phoneEditable === true;
   const name = typeof body.name === 'string' ? body.name.trim() : undefined;
 
   if (!id || !allowedRoles.has(role) || !allowedStatuses.has(status)) {
@@ -158,6 +162,7 @@ export async function PATCH(request: Request) {
       status,
       blockedUntil,
       nationalCodeEditable,
+      phoneEditable,
     });
 
     const entityLabel = `${String(user.name ?? targetUser.name ?? '') || 'کاربر'} · ${String(
@@ -253,6 +258,25 @@ export async function PATCH(request: Request) {
         authenticatedClient: context.pb,
       });
     }
+    if (targetUser.phoneEditable !== phoneEditable && phoneEditable) {
+      await recordAuditEvent({
+        userId: context.user.id,
+        event: 'phone_permission_granted',
+        request,
+        details: `مجوز یک‌بار ویرایش تلفن همراه توسط ${context.user.name || context.user.email || 'مدیر'} اعطا شد`,
+        entityType: 'user',
+        entityId: targetUser.id,
+        entityLabel: targetUser.name || targetUser.email || targetUser.id,
+        changes: {
+          phoneEditable: {
+            label: 'مجوز ویرایش تلفن همراه',
+            before: targetUser.phoneEditable === true,
+            after: phoneEditable,
+          },
+        },
+        authenticatedClient: context.pb,
+      });
+    }
 
     return NextResponse.json({
       user: {
@@ -263,6 +287,8 @@ export async function PATCH(request: Request) {
         status: user.status ?? status,
         blockedUntil: user.blockedUntil ?? null,
         nationalCodeEditable: user.nationalCodeEditable === true,
+        phone: String(user.phone ?? ''),
+        phoneEditable: user.phoneEditable === true,
         verified: user.verified === true,
         created: user.created,
         lastLoginAt: user.lastLoginAt ?? null,

@@ -1,5 +1,69 @@
 @import "tailwindcss";
 
+@font-face {
+  font-family: "Vazirmatn";
+  src: url("/fonts/vazirmatn/Vazirmatn-Regular.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Vazirmatn";
+  src: url("/fonts/vazirmatn/Vazirmatn-Bold.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 700 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "DoranNoEn";
+  src: url("/fonts/doran/DoranNoEn-Thin.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 100;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "DoranNoEn";
+  src: url("/fonts/doran/DoranNoEn-Light.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "DoranNoEn";
+  src: url("/fonts/doran/DoranNoEn-Regular.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "DoranNoEn";
+  src: url("/fonts/doran/DoranNoEn-Medium.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "DoranNoEn";
+  src: url("/fonts/doran/DoranNoEn-Bold.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "DoranNoEn";
+  src: url("/fonts/doran/DoranNoEn-ExtraBold.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+}
+
 :root {
   --background: #07111f;
   --foreground: #f8fafc;
@@ -18,7 +82,40 @@ body {
   margin: 0;
   color: var(--foreground);
   background: var(--background);
-  font-family: Tahoma, "Segoe UI", sans-serif;
+  font-family: "Vazirmatn", Tahoma, "Segoe UI", sans-serif;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.dashboard-page-heading h1,
+.dashboard-panel h2,
+.account-panel-heading h2,
+.login-heading h1,
+.login-heading .eyebrow,
+.eyebrow {
+  font-family: "DoranNoEn", "Vazirmatn", sans-serif;
+}
+
+h1,
+.dashboard-page-heading h1,
+.login-heading h1 {
+  font-weight: 800;
+}
+
+h2,
+h3,
+h4,
+h5,
+h6,
+.dashboard-panel h2,
+.account-panel-heading h2 {
+  font-weight: 700;
 }
 
 button,
@@ -3357,5 +3454,417 @@ button:disabled {
 
   .customer-transaction-balance-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Document entry */
+.document-form-page {
+  display: grid;
+  gap: 18px;
+}
+
+.document-current-time {
+  border: 1px solid #dce8eb;
+  border-radius: 999px;
+  background: #f7fcfc;
+  padding: 8px 12px;
+  color: #17816d;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.document-account-panel,
+.document-entry-panel {
+  display: grid;
+  gap: 20px;
+  padding: 22px;
+}
+
+.document-account-search-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(260px, 0.8fr);
+  align-items: end;
+  gap: 14px;
+}
+
+.document-account-search-field {
+  position: relative;
+}
+
+.document-search-shell {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 44px;
+  border: 1px solid #e1e8ed;
+  border-radius: 11px;
+  padding: 0 12px;
+  color: #8490a1;
+}
+
+.document-search-shell input {
+  height: 42px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  padding: 0;
+  color: #253149;
+  font-size: 12px;
+}
+
+.document-search-shell input:focus {
+  box-shadow: none;
+}
+
+.document-customer-suggestions {
+  position: absolute;
+  top: calc(100% + 5px);
+  right: 0;
+  left: 0;
+  z-index: 30;
+  display: grid;
+  gap: 3px;
+  border: 1px solid #dfe8ec;
+  border-radius: 12px;
+  background: white;
+  padding: 5px;
+  box-shadow: 0 18px 45px rgba(31, 45, 68, 0.16);
+}
+
+.document-customer-suggestions button,
+.document-selected-customer {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  padding: 9px;
+  color: #4b5a70;
+  text-align: right;
+}
+
+.document-customer-suggestions button:hover {
+  background: #f0f8fa;
+}
+
+.document-customer-suggestions button > span:nth-child(2),
+.document-selected-customer > div {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 3px;
+}
+
+.document-customer-suggestions strong,
+.document-selected-customer strong {
+  overflow: hidden;
+  color: #253149;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.document-customer-suggestions small,
+.document-selected-customer small {
+  color: #9aa4b4;
+  font-size: 9px;
+}
+
+.document-suggestion-avatar {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  place-items: center;
+  border-radius: 10px;
+  background: #e5f8f8;
+  color: #087b88;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.document-selected-customer {
+  min-height: 56px;
+  border: 1px solid #d4ebe6;
+  background: #f5fcfa;
+}
+
+.document-selected-customer button {
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  padding: 6px 8px;
+  color: #087b88;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.document-account-hint {
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  border: 1px dashed #d8e1e8;
+  border-radius: 11px;
+  padding: 0 13px;
+  color: #96a1af;
+  font-size: 11px;
+}
+
+.document-meta-grid {
+  display: grid;
+  grid-template-columns: 0.8fr 1.35fr 1fr 1fr;
+  gap: 13px;
+  align-items: end;
+}
+
+.document-segmented-control {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  min-height: 42px;
+  border: 1px solid #e2e8ef;
+  border-radius: 9px;
+  background: #fbfcfd;
+  padding: 4px;
+}
+
+.document-segmented-control button {
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #8b96a6;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.document-segmented-control button.is-active.received {
+  background: #e7f8f2;
+  color: #168b7b;
+}
+
+.document-segmented-control button.is-active.paid {
+  background: #fff0f2;
+  color: #b55362;
+}
+
+.document-tabs-wrap {
+  overflow-x: auto;
+  border-top: 1px solid #edf1f4;
+  border-bottom: 3px solid #0fbd1b;
+  padding-top: 8px;
+}
+
+.document-tabs {
+  display: flex;
+  min-width: max-content;
+  gap: 2px;
+}
+
+.document-tabs button {
+  min-width: 65px;
+  border: 0;
+  border-radius: 8px 8px 0 0;
+  background: transparent;
+  padding: 10px 11px;
+  color: #778497;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.document-tabs button:hover,
+.document-tabs button.is-active {
+  background: #edf8f9;
+  color: #087b88;
+}
+
+.document-operation-panel,
+.document-amount-panel {
+  display: grid;
+  gap: 16px;
+  border: 1px solid #e7edf1;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #ffffff, #fbfdfd);
+  padding: 18px;
+}
+
+.document-operation-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.document-operation-heading h2 {
+  margin: 0;
+  color: #253149;
+  font-size: 16px;
+}
+
+.document-operation-heading > .account-field {
+  min-width: 190px;
+}
+
+.document-detail-grid,
+.document-amount-grid,
+.document-description-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 13px;
+}
+
+.document-amount-grid {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.document-description-grid {
+  grid-template-columns: 0.8fr 3.2fr;
+  align-items: end;
+}
+
+.document-field-wide {
+  grid-column: 1 / -1;
+}
+
+.document-description-grid textarea {
+  min-height: 72px;
+  width: 100%;
+  resize: vertical;
+}
+
+.document-nature-badge {
+  border-radius: 999px;
+  padding: 7px 11px;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.document-nature-badge.received {
+  background: #e7f8f2;
+  color: #168b7b;
+}
+
+.document-nature-badge.paid {
+  background: #fff0f2;
+  color: #b55362;
+}
+
+.document-amount-note {
+  margin: 0;
+  border-radius: 9px;
+  background: #f7fafc;
+  padding: 9px 11px;
+  color: #8b96a6;
+  font-size: 10px;
+  line-height: 1.8;
+}
+
+.document-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.document-primary-button,
+.document-secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 44px;
+  border-radius: 11px;
+  padding: 0 17px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.document-primary-button {
+  border: 0;
+  background: linear-gradient(135deg, #087b88, #18a6a4);
+  color: white;
+  box-shadow: 0 12px 28px rgba(15, 156, 169, 0.2);
+}
+
+.document-secondary-button {
+  border: 1px solid #cfe3e6;
+  background: #f7fcfc;
+  color: #087b88;
+}
+
+.document-primary-button:disabled,
+.document-secondary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+[data-theme="dark"] .document-current-time,
+[data-theme="dark"] .document-selected-customer,
+[data-theme="dark"] .document-operation-panel,
+[data-theme="dark"] .document-amount-panel,
+[data-theme="dark"] .document-secondary-button,
+[data-theme="dark"] .document-account-hint,
+[data-theme="dark"] .document-amount-note {
+  border-color: #344258;
+  background: #172236;
+  color: #dbe4f0;
+}
+
+[data-theme="dark"] .document-customer-suggestions {
+  border-color: #344258;
+  background: #172236;
+}
+
+[data-theme="dark"] .document-customer-suggestions button:hover,
+[data-theme="dark"] .document-tabs button:hover,
+[data-theme="dark"] .document-tabs button.is-active {
+  background: #213348;
+}
+
+[data-theme="dark"] .document-customer-suggestions strong,
+[data-theme="dark"] .document-selected-customer strong,
+[data-theme="dark"] .document-operation-heading h2 {
+  color: #f8fafc;
+}
+
+[data-theme="dark"] .document-segmented-control {
+  border-color: #344258;
+  background: #172236;
+}
+
+@media (max-width: 1000px) {
+  .document-meta-grid,
+  .document-amount-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .document-account-search-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 650px) {
+  .document-current-time {
+    display: none;
+  }
+
+  .document-meta-grid,
+  .document-detail-grid,
+  .document-amount-grid,
+  .document-description-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .document-operation-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .document-operation-heading > .account-field {
+    min-width: 0;
+  }
+
+  .document-primary-button,
+  .document-secondary-button {
+    width: 100%;
   }
 }

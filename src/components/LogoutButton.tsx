@@ -11,7 +11,18 @@ export default function LogoutButton() {
     setLoading(true);
 
     try {
-      await fetch('/api/auth/logout', { method: 'DELETE' });
+      const response = await fetch('/api/auth/logout', {
+        method: 'DELETE',
+        cache: 'no-store',
+      });
+      // Navigation is still performed when the API is unavailable so the
+      // user is never trapped on a stale authenticated screen.
+      if (!response.ok) {
+        console.warn('logout_request_failed', response.status);
+      }
+    } catch {
+      // The server-side cookie is cleared by the route when reachable; the
+      // local navigation below remains the safe fallback.
     } finally {
       router.replace('/');
       router.refresh();

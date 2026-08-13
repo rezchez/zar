@@ -54,6 +54,7 @@ type NavItemData = {
           { id: 'customer-new', title: 'افزودن طرف‌حساب', icon: ContactRound, href: '/dashboard/customers/new' },
         ],
       },
+      { id: 'document-new', title: 'ثبت سند', icon: FilePlus2, href: '/dashboard/documents/new' },
       { id: 'reports', title: 'گزارشات', icon: BarChart3, href: '/dashboard/reports' },
     ],
   },
@@ -207,6 +208,8 @@ export default function DashboardShell({
         ? 'program-settings'
         : pathname === '/dashboard/reports'
           ? 'reports'
+          : pathname === '/dashboard/documents/new'
+            ? 'document-new'
           : pathname === '/dashboard/customers'
             ? 'customer-list'
             : pathname === '/dashboard/customers/new'
@@ -454,7 +457,6 @@ export default function DashboardShell({
               >
                 <FilePlus2 size={17} />
                 ثبت سند
-                <small>به‌زودی</small>
               </button>
             </div>
           ) : null}

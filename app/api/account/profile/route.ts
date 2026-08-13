@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 
 import { recordAuditEvent } from '@/lib/audit';
 import { getServerAuthContext } from '@/lib/auth';
+import { isIranianMobile, normalizePhone } from '@/lib/bale';
+import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
 
 function isValidNationalCode(value: string) {
   return /^\d{10}$/.test(value);
@@ -18,6 +20,7 @@ export async function PATCH(request: Request) {
   const name = String(formData.get('name') ?? '').trim();
   const email = String(formData.get('email') ?? '').trim();
   const nationalCode = String(formData.get('nationalCode') ?? '').trim();
+  const phone = normalizePhone(String(formData.get('phone') ?? ''));
   const twoFactorEnabled = formData.get('twoFactorEnabled') === 'true';
   const removeAvatar = formData.get('removeAvatar') === 'true';
   const avatarEntry = formData.get('avatar');
@@ -47,8 +50,15 @@ export async function PATCH(request: Request) {
       { status: 400 },
     );
   }
+  if (phone && !isIranianMobile(phone)) {
+    return NextResponse.json(
+      { message: 'شماره تلفن همراه معتبر وارد کنید.' },
+      { status: 400 },
+    );
+  }
 
   const nationalCodeChanged = nationalCode !== (context.user.nationalCode ?? '');
+  const phoneChanged = phone !== normalizePhone(context.user.phone ?? '');
 
   if (
     context.user.nationalCode
@@ -57,6 +67,12 @@ export async function PATCH(request: Request) {
   ) {
     return NextResponse.json(
       { message: 'ویرایش کد ملی شما هنوز توسط مدیر مجاز نشده است.' },
+      { status: 403 },
+    );
+  }
+  if (context.user.phone && phoneChanged && !context.user.phoneEditable) {
+    return NextResponse.json(
+      { message: 'ویرایش تلفن همراه شما هنوز توسط مدیر مجاز نشده است.' },
       { status: 403 },
     );
   }
@@ -81,6 +97,22 @@ export async function PATCH(request: Request) {
     const previousNationalCode = context.user.nationalCode ?? '';
     const previousAvatar = context.user.avatar ? 'دارد' : 'ندارد';
     const previousTwoFactor = context.user.twoFactorEnabled === true;
+    const previousPhone = normalizePhone(context.user.phone ?? '');
+    if (phoneChanged) {
+      const service = await getPocketBaseServiceClient();
+      const duplicate = await service.collection('users').getFirstListItem(
+        service.filter('phone = {:phone} && id != {:id}', {
+          phone,
+          id: context.user.id,
+        }),
+      ).catch(() => null);
+      if (duplicate) {
+        return NextResponse.json(
+          { message: 'این شماره تلفن قبلاً برای کاربر دیگری ثبت شده است.' },
+          { status: 409 },
+        );
+      }
+    }
     const updateData = new FormData();
     updateData.append('name', name);
     updateData.append('twoFactorEnabled', String(twoFactorEnabled));
@@ -94,6 +126,10 @@ export async function PATCH(request: Request) {
     }
 
     updateData.append('nationalCode', nationalCode);
+    updateData.append('phone', phone);
+    if (phoneChanged && context.user.phone && context.user.phoneEditable) {
+      updateData.append('phoneEditable', 'false');
+    }
 
     if (avatar) {
       updateData.append('avatar', avatar, avatar.name);
@@ -182,6 +218,13 @@ export async function PATCH(request: Request) {
         label: 'کد ملی',
         before: previousNationalCode || 'ثبت نشده',
         after: nationalCode || 'ثبت نشده',
+      };
+    }
+    if (phoneChanged) {
+      profileChanges.phone = {
+        label: 'تلفن همراه',
+        before: previousPhone || 'ثبت نشده',
+        after: phone || 'ثبت نشده',
       };
     }
     if (avatar || (removeAvatar && !avatar)) {

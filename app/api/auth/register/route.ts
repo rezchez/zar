@@ -1,12 +1,14 @@
 import { NextResponse } from 'next/server';
 
 import { createPocketBaseClient } from '@/lib/pocketbase';
+import { isIranianMobile, normalizePhone } from '@/lib/bale';
 
 type RegisterBody = {
   name?: unknown;
   email?: unknown;
   password?: unknown;
   passwordConfirm?: unknown;
+  phone?: unknown;
 };
 
 export async function POST(request: Request) {
@@ -27,6 +29,7 @@ export async function POST(request: Request) {
   const passwordConfirm = typeof body.passwordConfirm === 'string'
     ? body.passwordConfirm
     : '';
+  const phone = normalizePhone(typeof body.phone === 'string' ? body.phone : '');
 
   if (!name || name.length < 2 || name.length > 80) {
     return NextResponse.json(
@@ -48,6 +51,12 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
+  if (!isIranianMobile(phone)) {
+    return NextResponse.json(
+      { message: 'شماره تلفن همراه معتبر وارد کنید.' },
+      { status: 400 },
+    );
+  }
 
   const pb = createPocketBaseClient();
 
@@ -57,6 +66,8 @@ export async function POST(request: Request) {
       email,
       password,
       passwordConfirm,
+      phone,
+      phoneEditable: false,
       role: 'user',
       status: 'active',
     });

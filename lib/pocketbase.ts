@@ -8,5 +8,11 @@ export const POCKETBASE_URL =
 export const PB_AUTH_COOKIE = process.env.PB_AUTH_COOKIE ?? 'pb_auth';
 
 export function createPocketBaseClient() {
-  return new PocketBase(POCKETBASE_URL);
+  const pb = new PocketBase(POCKETBASE_URL);
+  // Server requests are short-lived and may legitimately run in parallel
+  // (for example auth refresh + data loading). PocketBase's default
+  // autocancellation can cancel a valid request when the same client is
+  // reused, so cancellation is managed explicitly by the route layer.
+  pb.autoCancellation(false);
+  return pb;
 }
