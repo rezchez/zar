@@ -1,6 +1,6 @@
 # dependencies
 node_modules/
-/.pnp
+/.pnp/
 .pnp.*
 .yarn/*
 !.yarn/patches
@@ -11,14 +11,14 @@ node_modules/
 # testing
 /coverage
 
-# next.js
+# Next.js build output
 .next/
 .next-build/
 .next-build-documents/
-out/
+/out/
 
 # production
-build/
+/build/
 
 # misc
 .DS_Store
@@ -53,3 +53,14 @@ pb_aux/
 .vscode/
 *.swp
 *.swo
+
+# local development data
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+
+# generated reports and exports
+*.csv
+*.xlsx
+*.pdf
