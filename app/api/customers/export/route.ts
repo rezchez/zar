@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
-import PDFDocument from 'pdfkit';
 import * as XLSX from 'xlsx';
 
 import { getServerAuthContext } from '@/lib/auth';
-import { currencyDisplay, mapCustomer } from '@/lib/customer';
+import { currencyDisplay } from '@/lib/customer';
 import { getCustomersWithBalances } from '@/lib/customer-service';
+import { createCustomersPdf } from '@/lib/pdf-reports';
 
 export const runtime = 'nodejs';
 
@@ -64,50 +64,22 @@ export async function GET(request: Request) {
       });
     }
 
-    const pdfBuffer = await createCustomersPdf(customers);
-    return new NextResponse(new Uint8Array(pdfBuffer), {
+    const reportBuffer = await createCustomersPdf(customers);
+    return new NextResponse(new Uint8Array(reportBuffer), {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': 'attachment; filename="customers.pdf"',
+        'Content-Length': String(reportBuffer.byteLength),
         'Cache-Control': 'no-store',
       },
     });
   } catch {
-    return NextResponse.json({ message: 'ساخت خروجی انجام نشد.' }, { status: 500 });
+    return new NextResponse('ساخت گزارش PDF انجام نشد.', {
+      status: 500,
+      headers: {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Cache-Control': 'no-store',
+      },
+    });
   }
-}
-
-function createCustomersPdf(customers: Array<ReturnType<typeof mapCustomer>>) {
-  return new Promise<Buffer>((resolve, reject) => {
-    const document = new PDFDocument({ size: 'A4', margin: 36 });
-    const chunks: Buffer[] = [];
-    document.on('data', (chunk: Buffer) => chunks.push(chunk));
-    document.on('end', () => resolve(Buffer.concat(chunks)));
-    document.on('error', reject);
-    document.fontSize(18).text('Zarfolio - Customers', { align: 'center' });
-    document.moveDown();
-    document.fontSize(9);
-
-    if (!customers.length) {
-      document.text('No customer records.');
-    } else {
-      customers.forEach((customer, index) => {
-        document
-          .fontSize(10)
-          .text(`${index + 1}. ${customer.customerCode} - ${customer.name}`);
-        document
-          .fontSize(8)
-          .text(
-            `Group: ${customer.groupName || '-'} | City: ${customer.city || '-'} | `
-              + `Gold: ${customer.goldBalance} g | Silver: ${customer.silverBalance} g | `
-              + `Platinum: ${customer.platinumBalance} g | Rial: ${customer.rialBalance} | `
-              + `Currency 2 (${currencyDisplay(customer.secondaryCurrency, customer.secondaryCurrencySymbol)}): ${customer.foreignBalance} | `
-              + `Currency 3 (${currencyDisplay(customer.tertiaryCurrency, customer.tertiaryCurrencySymbol)}): ${customer.tertiaryBalance}`,
-          );
-        document.moveDown(0.5);
-      });
-    }
-
-    document.end();
-  });
 }
