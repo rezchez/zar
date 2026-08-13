@@ -98,6 +98,21 @@ export async function PATCH(request: Request) {
     const previousAvatar = context.user.avatar ? 'دارد' : 'ندارد';
     const previousTwoFactor = context.user.twoFactorEnabled === true;
     const previousPhone = normalizePhone(context.user.phone ?? '');
+    if (nationalCodeChanged && nationalCode) {
+      const service = await getPocketBaseServiceClient();
+      const duplicate = await service.collection('users').getFirstListItem(
+        service.filter('nationalCode = {:nationalCode} && id != {:id}', {
+          nationalCode,
+          id: context.user.id,
+        }),
+      ).catch(() => null);
+      if (duplicate) {
+        return NextResponse.json(
+          { message: 'این کد ملی قبلاً برای کاربر دیگری ثبت شده است.' },
+          { status: 409 },
+        );
+      }
+    }
     if (phoneChanged) {
       const service = await getPocketBaseServiceClient();
       const duplicate = await service.collection('users').getFirstListItem(
@@ -139,7 +154,8 @@ export async function PATCH(request: Request) {
       updateData.append('avatar', '');
     }
 
-    await context.pb.collection('users').update(context.user.id, updateData);
+    const writer = await getPocketBaseServiceClient().catch(() => context.pb);
+    await writer.collection('users').update(context.user.id, updateData);
 
     let emailChangeRequested = false;
 
@@ -273,7 +289,8 @@ export async function DELETE(request: Request) {
   try {
     const updateData = new FormData();
     updateData.append('avatar', '');
-    await context.pb.collection('users').update(context.user.id, updateData);
+    const writer = await getPocketBaseServiceClient().catch(() => context.pb);
+    await writer.collection('users').update(context.user.id, updateData);
     await recordAuditEvent({
       userId: context.user.id,
       event: 'settings_updated',
