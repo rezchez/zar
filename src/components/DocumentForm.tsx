@@ -1,16 +1,33 @@
 'use client';
 
+/**
+ * DocumentForm — ثبت سند چندردیفی با جریان «پیش‌نویس ردیف»:
+ * - کاربر یک ردیف را در ویرایشگر بالا کامل می‌کند؛ وقتی داده‌ی معنادار
+ *   (مثل وزن، عیار، انگ/ری‌گیری یا مبلغ) وارد شد، دکمه‌ی «ثبت ردیف» ظاهر می‌شود.
+ * - با ثبت ردیف، ردیف به فهرست پایین منتقل و ویرایشگر برای ردیف بعدی خالی می‌شود.
+ * - کل سند (طرف‌حساب، تاریخ، ردیف‌ها و ردیف ناتمام) به‌صورت خودکار در
+ *   localStorage ذخیره می‌شود تا سند نصفه‌رها‌شده از دست نرود؛
+ *   هنگام بازگشت به صفحه، پیش‌نویس بازیابی می‌شود.
+ * - «ثبت کل سند» فقط ردیف‌های ثبت‌شده را نهایی می‌کند و پیش‌نویس را پاک می‌کند.
+ */
 import {
   CalendarDays,
   Check,
+  ClipboardList,
+  Eraser,
   FileCheck2,
+  History,
+  ListPlus,
   LoaderCircle,
+  PencilLine,
   Plus,
+  Scale,
   Search,
   Trash2,
   UserRound,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { currencyDisplay, type Customer } from '@/lib/customer';
 import { documentTabs, type DocumentNature, type DocumentTab } from '@/lib/document';
@@ -47,6 +64,7 @@ const amountFields: Array<{ id: AmountField; label: string; unit: string }> = [
   { id: 'tertiaryAmount', label: 'ارز سوم', unit: 'واحد' },
 ];
 const MITHQAL_18K_GRAMS = 4.3318;
+const DRAFT_STORAGE_KEY = 'zarfolio-document-draft';
 
 const operationOptions: Record<DocumentTab, Array<[string, string]>> = {
   general: [['general', 'سند عمومی']],
@@ -164,6 +182,33 @@ function deriveLineAmounts(line: DocumentLine) {
   return amounts;
 }
 
+/**
+ * آماده‌بودن ردیف برای ثبت: حداقل یک مقدار معنادار (وزن/مبلغ) وارد شده باشد.
+ * برای آبشده/خام، وزن خام کافی است (عیار و انگ در جزئیات می‌ماند).
+ */
+function isLineReady(line: DocumentLine) {
+  const derived = deriveLineAmounts(line);
+  if (amountFields.some(({ id }) => derived[id] > 0)) return true;
+  return Boolean(line.description.trim());
+}
+
+function faNumber(value: number, fractionDigits = 0) {
+  return new Intl.NumberFormat('fa-IR', {
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  }).format(value);
+}
+
+type DraftSnapshot = {
+  customerQuery: string;
+  selectedCustomerId: string;
+  documentNumber: string;
+  dateParts: { year: number; month: number; day: number };
+  committedLines: DocumentLine[];
+  draftLine: DocumentLine;
+  savedAt: string;
+};
+
 export default function DocumentForm({
   customers,
   nextDocumentNumber,
@@ -177,10 +222,16 @@ export default function DocumentForm({
   const [documentNumber, setDocumentNumber] = useState(String(nextDocumentNumber));
   const [dateParts, setDateParts] = useState(initialDate);
   const [dateOpen, setDateOpen] = useState(false);
-  const [lines, setLines] = useState<DocumentLine[]>([createLine()]);
+  // ردیف ناتمام در حال ویرایش + ردیف‌های ثبت‌شده‌ی موقت
+  const [draftLine, setDraftLine] = useState<DocumentLine>(() => createLine());
+  const [committedLines, setCommittedLines] = useState<DocumentLine[]>([]);
+  const [editingLineId, setEditingLineId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [restoredAt, setRestoredAt] = useState('');
+  const [hydrated, setHydrated] = useState(false);
+  const saveTimer = useRef<number | null>(null);
 
   const selectedCustomer = customers.find((customer) => customer.id === selectedCustomerId);
   const suggestions = useMemo(() => {
@@ -194,21 +245,122 @@ export default function DocumentForm({
   }, [customerQuery, customers, selectedCustomer]);
 
   const documentDateJalali = buildJalaliDate(dateParts.year, dateParts.month, dateParts.day);
+  const draftReady = isLineReady(draftLine);
 
-  function updateLine(lineId: string, update: Partial<DocumentLine>) {
-    setLines((current) => current.map((line) => line.id === lineId ? { ...line, ...update } : line));
+  // ---------- بازیابی پیش‌نویس موقت ----------
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(DRAFT_STORAGE_KEY);
+      if (raw) {
+        const snapshot = JSON.parse(raw) as DraftSnapshot;
+        const hasContent =
+          snapshot.committedLines?.length
+          || snapshot.selectedCustomerId
+          || (snapshot.draftLine && isLineReady(snapshot.draftLine));
+        if (hasContent) {
+          setCustomerQuery(snapshot.customerQuery ?? '');
+          setSelectedCustomerId(snapshot.selectedCustomerId ?? '');
+          setDocumentNumber(snapshot.documentNumber ?? String(nextDocumentNumber));
+          if (snapshot.dateParts) setDateParts(snapshot.dateParts);
+          setCommittedLines(snapshot.committedLines ?? []);
+          if (snapshot.draftLine) setDraftLine(snapshot.draftLine);
+          setRestoredAt(snapshot.savedAt ?? '');
+        }
+      }
+    } catch {
+      // پیش‌نویس‌ی خراب نادیده گرفته می‌شود
+    }
+    setHydrated(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ---------- ذخیره‌ی خودکار پیش‌نویس (دیبانس) ----------
+  useEffect(() => {
+    if (!hydrated) return;
+    if (saveTimer.current) window.clearTimeout(saveTimer.current);
+    saveTimer.current = window.setTimeout(() => {
+      const snapshot: DraftSnapshot = {
+        customerQuery,
+        selectedCustomerId,
+        documentNumber,
+        dateParts,
+        committedLines,
+        draftLine,
+        savedAt: new Date().toISOString(),
+      };
+      try {
+        window.localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(snapshot));
+      } catch {
+        // پر بودن حافظه‌ی مرورگر مهم نیست
+      }
+    }, 450);
+    return () => {
+      if (saveTimer.current) window.clearTimeout(saveTimer.current);
+    };
+  }, [hydrated, customerQuery, selectedCustomerId, documentNumber, dateParts, committedLines, draftLine]);
+
+  function clearDraftStorage() {
+    try {
+      window.localStorage.removeItem(DRAFT_STORAGE_KEY);
+    } catch {
+      // ignore
+    }
   }
 
-  function updateLineDetail(lineId: string, field: string, value: string) {
-    setLines((current) => current.map((line) => line.id === lineId
-      ? { ...line, details: { ...line.details, [field]: value } }
-      : line));
+  function updateDraft(update: Partial<DocumentLine>) {
+    setDraftLine((current) => ({ ...current, ...update }));
   }
 
-  function updateLineAmount(lineId: string, field: AmountField, value: string) {
-    setLines((current) => current.map((line) => line.id === lineId
-      ? { ...line, amounts: { ...line.amounts, [field]: value } }
-      : line));
+  function updateDraftDetail(field: string, value: string) {
+    setDraftLine((current) => ({ ...current, details: { ...current.details, [field]: value } }));
+  }
+
+  function updateDraftAmount(field: AmountField, value: string) {
+    setDraftLine((current) => ({ ...current, amounts: { ...current.amounts, [field]: value } }));
+  }
+
+  function changeDraftTab(tab: DocumentTab) {
+    updateDraft({
+      documentTab: tab,
+      documentSubType: operationOptions[tab][0]?.[0] ?? 'general',
+    });
+  }
+
+  /** ثبت ردیف: انتقال پیش‌نویس به فهرست ردیف‌ها و آماده‌سازی ویرایشگر */
+  function commitDraftLine() {
+    if (!draftReady) return;
+    if (editingLineId) {
+      setCommittedLines((current) =>
+        current.map((line) => (line.id === editingLineId ? draftLine : line)),
+      );
+      setEditingLineId(null);
+    } else {
+      setCommittedLines((current) => [...current, draftLine]);
+    }
+    setDraftLine(createLine());
+  }
+
+  /** ویرایش ردیف ثبت‌شده: بازگشت به ویرایشگر */
+  function editLine(line: DocumentLine) {
+    setCommittedLines((current) => current.filter((item) => item.id !== line.id));
+    setDraftLine(line);
+    setEditingLineId(line.id);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function removeLine(lineId: string) {
+    setCommittedLines((current) => current.filter((item) => item.id !== lineId));
+  }
+
+  /** پاک‌سازی کامل پیش‌نویس (سند رهاشده) */
+  function discardDraft() {
+    clearDraftStorage();
+    setCommittedLines([]);
+    setDraftLine(createLine());
+    setEditingLineId(null);
+    setRestoredAt('');
+    setMessage('');
+    setErrorMessage('');
   }
 
   async function chooseCustomer(customer: Customer) {
@@ -221,13 +373,6 @@ export default function DocumentForm({
     } catch {
       // The initial number remains available if the optional refresh fails.
     }
-  }
-
-  function changeLineTab(lineId: string, tab: DocumentTab) {
-    updateLine(lineId, {
-      documentTab: tab,
-      documentSubType: operationOptions[tab][0]?.[0] ?? 'general',
-    });
   }
 
   async function save(andNew: boolean) {
@@ -245,6 +390,13 @@ export default function DocumentForm({
       setSaving(false);
       return;
     }
+    if (!committedLines.length) {
+      setErrorMessage(draftReady
+        ? 'ردیف ناتمام دارید؛ ابتدا «ثبت ردیف» را بزنید.'
+        : 'هنوز هیچ ردیفی ثبت نشده است.');
+      setSaving(false);
+      return;
+    }
 
     try {
       const response = await fetch('/api/documents', {
@@ -254,7 +406,7 @@ export default function DocumentForm({
           customerId: customerIdToSave,
           documentNumber,
           documentDateJalali,
-          lines: lines.map((line) => ({
+          lines: committedLines.map((line) => ({
             documentNature: line.documentNature,
             documentTab: line.documentTab,
             documentSubType: line.documentSubType,
@@ -275,9 +427,15 @@ export default function DocumentForm({
       }
 
       const nextNumber = Number(data?.documentNumber ?? documentNumber) + 1;
-      setMessage(`سند شماره ${data?.documentNumber ?? documentNumber} با ${lines.length} ردیف ثبت شد.`);
+      setMessage(`سند شماره ${data?.documentNumber ?? documentNumber} با ${toPersianDigits(String(committedLines.length))} ردیف ثبت شد.`);
       setDocumentNumber(String(nextNumber));
-      if (andNew) setLines([createLine()]);
+      // سند نهایی شد؛ پیش‌نویس موقت پاک می‌شود
+      clearDraftStorage();
+      setCommittedLines([]);
+      setDraftLine(createLine());
+      setEditingLineId(null);
+      setRestoredAt('');
+      if (!andNew) window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch {
       setErrorMessage('ارتباط با سرور برقرار نشد.');
     } finally {
@@ -292,19 +450,61 @@ export default function DocumentForm({
     ? currencyDisplay(selectedCustomer.tertiaryCurrency, selectedCustomer.tertiaryCurrencySymbol)
     : 'ارز سوم';
 
+  // جمع مقادیر ردیف‌های ثبت‌شده برای نوار جمع سند
+  const totals = useMemo(() => {
+    const sum = emptyAmounts() as unknown as Record<AmountField, number>;
+    for (const key of Object.keys(sum) as AmountField[]) sum[key] = 0;
+    committedLines.forEach((line) => {
+      const derived = deriveLineAmounts(line);
+      amountFields.forEach(({ id }) => {
+        sum[id] += line.documentNature === 'received' ? derived[id] : -derived[id];
+      });
+    });
+    return sum;
+  }, [committedLines]);
+
   return (
     <div className="document-form-page">
       <div className="dashboard-page-heading">
         <div>
           <p className="eyebrow">دفتر اسناد</p>
           <h1>ثبت سند جدید</h1>
-          <p>یک سند می‌تواند چند ردیف دریافتی یا پرداختی برای یک طرف‌حساب داشته باشد.</p>
+          <p>ردیف‌ها را یکی‌یکی ثبت کنید؛ سند تا «ثبت کل» به‌صورت پیش‌نویس محفوظ می‌ماند.</p>
         </div>
+        <span className="document-autosave-pill" title="ذخیره‌ی خودکار پیش‌نویس">
+          <span className="document-autosave-dot" />
+          پیش‌نویس خودکار
+        </span>
       </div>
+
+      {/* بنر بازیابی پیش‌نویس ناتمام */}
+      <AnimatePresence>
+        {restoredAt ? (
+          <motion.div
+            className="document-draft-banner"
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+          >
+            <History size={16} />
+            <span>
+              پیش‌نویس ناتمام بازیابی شد
+              {restoredAt
+                ? ` (${new Intl.DateTimeFormat('fa-IR', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(restoredAt))})`
+                : ''}
+            </span>
+            <button type="button" onClick={discardDraft}>
+              <Eraser size={14} />
+              حذف پیش‌نویس
+            </button>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
       {message ? <p className="account-message"><Check size={15} />{message}</p> : null}
       {errorMessage ? <p className="form-error">{errorMessage}</p> : null}
 
+      {/* انتخاب طرف‌حساب */}
       <section className="dashboard-panel document-account-panel">
         <div className="account-panel-heading">
           <div>
@@ -356,10 +556,11 @@ export default function DocumentForm({
         </div>
       </section>
 
-      <section className="dashboard-panel document-entry-panel">
+      {/* سربرگ سند: شماره و تاریخ */}
+      <section className="dashboard-panel document-meta-panel">
         <div className="document-header-grid">
           <Field label="شماره سند">
-            <input value={documentNumber} readOnly aria-label="شماره سند خودکار" />
+            <input value={toPersianDigits(documentNumber)} readOnly aria-label="شماره سند خودکار" />
           </Field>
           <Field label="تاریخ سند">
             <div className="jalali-picker">
@@ -386,63 +587,238 @@ export default function DocumentForm({
             </div>
           </Field>
         </div>
-
-        {lines.map((line, index) => (
-          <DocumentLineEditor
-            key={line.id}
-            line={line}
-            index={index}
-            canRemove={lines.length > 1}
-            foreignLabel={foreignLabel}
-            tertiaryLabel={tertiaryLabel}
-            onChange={(update) => updateLine(line.id, update)}
-            onDetailChange={(field, value) => updateLineDetail(line.id, field, value)}
-            onAmountChange={(field, value) => updateLineAmount(line.id, field, value)}
-            onTabChange={(tab) => changeLineTab(line.id, tab)}
-            onRemove={() => setLines((current) => current.filter((item) => item.id !== line.id))}
-          />
-        ))}
-
-        <button type="button" className="document-add-line-button" onClick={() => setLines((current) => [...current, createLine()])}>
-          <Plus size={16} /> افزودن ردیف سند
-        </button>
       </section>
 
+      {/* ویرایشگر ردیف (پیش‌نویس) */}
+      <section className="dashboard-panel document-entry-panel document-draft-editor">
+        <div className="document-draft-editor-head">
+          <div>
+            <p className="eyebrow">{editingLineId ? 'ویرایش ردیف' : 'ردیف جدید'}</p>
+            <h2>
+              {editingLineId
+                ? 'اصلاح ردیف انتخاب‌شده'
+                : `ردیف ${toPersianDigits(String(committedLines.length + 1))} سند`}
+            </h2>
+          </div>
+          {editingLineId ? (
+            <button
+              type="button"
+              className="document-cancel-edit"
+              onClick={() => {
+                setCommittedLines((current) => [...current, draftLine]);
+                setDraftLine(createLine());
+                setEditingLineId(null);
+              }}
+            >
+              انصراف از ویرایش
+            </button>
+          ) : null}
+        </div>
+
+        <DocumentLineEditor
+          line={draftLine}
+          foreignLabel={foreignLabel}
+          tertiaryLabel={tertiaryLabel}
+          onChange={updateDraft}
+          onDetailChange={updateDraftDetail}
+          onAmountChange={updateDraftAmount}
+          onTabChange={changeDraftTab}
+        />
+
+        {/* دکمه‌ی ثبت ردیف — فقط وقتی داده‌ی معنادار وارد شده ظاهر می‌شود */}
+        <AnimatePresence>
+          {draftReady ? (
+            <motion.button
+              type="button"
+              className="document-commit-line-button"
+              onClick={commitDraftLine}
+              initial={{ opacity: 0, y: 14, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8, scale: 0.97 }}
+              transition={{ type: 'spring', stiffness: 380, damping: 26 }}
+              whileHover={{ y: -2 }}
+              whileTap={{ scale: 0.97 }}
+            >
+              <ListPlus size={18} />
+              {editingLineId ? 'ثبت اصلاح ردیف' : 'ثبت ردیف در سند'}
+            </motion.button>
+          ) : (
+            <motion.p
+              className="document-draft-hint"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            >
+              با وارد کردن وزن، عیار، انگ یا مبلغ، دکمه‌ی «ثبت ردیف» نمایان می‌شود.
+            </motion.p>
+          )}
+        </AnimatePresence>
+      </section>
+
+      {/* فهرست ردیف‌های ثبت‌شده‌ی موقت */}
+      <section className="dashboard-panel document-lines-panel">
+        <div className="document-lines-head">
+          <div>
+            <p className="eyebrow">ردیف‌های سند</p>
+            <h2>
+              <ClipboardList size={18} style={{ verticalAlign: '-3px', marginLeft: 6 }} />
+              {committedLines.length
+                ? `${toPersianDigits(String(committedLines.length))} ردیف ثبت موقت`
+                : 'هنوز ردیفی ثبت نشده'}
+            </h2>
+          </div>
+        </div>
+
+        <AnimatePresence initial={false}>
+          {committedLines.map((line, index) => (
+            <CommittedLineRow
+              key={line.id}
+              line={line}
+              index={index}
+              foreignLabel={foreignLabel}
+              tertiaryLabel={tertiaryLabel}
+              onEdit={() => editLine(line)}
+              onRemove={() => removeLine(line.id)}
+            />
+          ))}
+        </AnimatePresence>
+
+        {!committedLines.length ? (
+          <div className="document-lines-empty">
+            <Scale size={26} strokeWidth={1.4} />
+            <p>ردیف‌ها اینجا به‌صورت موقت نگه‌داری می‌شوند تا وقتی «ثبت کل سند» را بزنید.</p>
+          </div>
+        ) : null}
+
+        {/* نوار جمع سند */}
+        {committedLines.length ? (
+          <div className="document-totals-bar">
+            <span>جمع سند (دریافتی − پرداختی):</span>
+            <div>
+              {amountFields
+                .filter(({ id }) => totals[id] !== 0)
+                .map(({ id, label, unit }) => (
+                  <strong key={id} className={totals[id] >= 0 ? 'is-positive' : 'is-negative'}>
+                    {faNumber(Math.abs(totals[id]), id === 'goldAmount' || id === 'silverAmount' || id === 'platinumAmount' ? 3 : 0)}
+                    {' '}
+                    {unit} {label}
+                  </strong>
+                ))}
+            </div>
+          </div>
+        ) : null}
+      </section>
+
+      {/* اکشن‌های نهایی */}
       <div className="document-actions">
-        <button type="button" className="document-primary-button" onClick={() => void save(false)} disabled={saving}>
+        <button type="button" className="document-primary-button" onClick={() => void save(false)} disabled={saving || !committedLines.length}>
           {saving ? <LoaderCircle size={17} className="spin" /> : <FileCheck2 size={17} />}
           {saving ? 'در حال ثبت کل سند...' : 'ثبت کل سند'}
         </button>
-        <button type="button" className="document-secondary-button" onClick={() => void save(true)} disabled={saving}>
+        <button type="button" className="document-secondary-button" onClick={() => void save(true)} disabled={saving || !committedLines.length}>
           ثبت کل سند و سند بعدی
         </button>
+        {committedLines.length ? (
+          <button type="button" className="document-discard-button" onClick={discardDraft} disabled={saving}>
+            <Trash2 size={15} />
+            حذف پیش‌نویس
+          </button>
+        ) : null}
       </div>
     </div>
   );
 }
 
-function DocumentLineEditor({
+/** خلاصه‌ی یک ردیف ثبت‌شده در فهرست پایین صفحه */
+function CommittedLineRow({
   line,
   index,
-  canRemove,
+  foreignLabel,
+  tertiaryLabel,
+  onEdit,
+  onRemove,
+}: {
+  line: DocumentLine;
+  index: number;
+  foreignLabel: string;
+  tertiaryLabel: string;
+  onEdit: () => void;
+  onRemove: () => void;
+}) {
+  const derived = deriveLineAmounts(line);
+  const tabLabel = documentTabs.find((tab) => tab.id === line.documentTab)?.label ?? 'سند';
+  const subTypeLabel = operationOptions[line.documentTab]
+    .find(([value]) => value === line.documentSubType)?.[1];
+  const figures = amountFields
+    .map((field) => ({
+      ...field,
+      label: field.id === 'foreignAmount' ? foreignLabel : field.id === 'tertiaryAmount' ? tertiaryLabel : field.label,
+      value: derived[field.id],
+    }))
+    .filter((field) => field.value !== 0);
+  const labInfo = [line.details.purity && `عیار ${faNumber(numberValue(line.details.purity))}`, line.details.assayNumber && `ری‌گیری ${line.details.assayNumber}`, line.details.labName]
+    .filter(Boolean)
+    .join(' · ');
+
+  return (
+    <motion.article
+      layout
+      className={`document-line-row ${line.documentNature}`}
+      initial={{ opacity: 0, y: 16, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, x: -24, scale: 0.97 }}
+      transition={{ type: 'spring', stiffness: 320, damping: 28 }}
+    >
+      <span className="document-line-row-index">{toPersianDigits(String(index + 1))}</span>
+      <div className="document-line-row-main">
+        <div className="document-line-row-title">
+          <strong>{subTypeLabel ?? tabLabel}</strong>
+          <span className={`document-nature-badge ${line.documentNature}`}>
+            {line.documentNature === 'received' ? 'دریافتی' : 'پرداختی'}
+          </span>
+        </div>
+        <small>
+          {labInfo || tabLabel}
+          {line.description ? ` — ${line.description}` : ''}
+        </small>
+      </div>
+      <div className="document-line-row-figures">
+        {figures.length ? figures.map((field) => (
+          <span key={field.id}>
+            <strong>{faNumber(field.value, field.unit === 'گرم' ? 3 : 0)}</strong>
+            {' '}{field.unit} {field.label}
+          </span>
+        )) : <span>بدون مبلغ</span>}
+      </div>
+      <div className="document-line-row-actions">
+        <button type="button" onClick={onEdit} aria-label="ویرایش ردیف" title="ویرایش ردیف">
+          <PencilLine size={15} />
+        </button>
+        <button type="button" className="is-danger" onClick={onRemove} aria-label="حذف ردیف" title="حذف ردیف">
+          <Trash2 size={15} />
+        </button>
+      </div>
+    </motion.article>
+  );
+}
+
+/** ویرایشگر یک ردیف — بدون دکمه‌ی حذف؛ چون فقط یک پیش‌نویس فعال وجود دارد */
+function DocumentLineEditor({
+  line,
   foreignLabel,
   tertiaryLabel,
   onChange,
   onDetailChange,
   onAmountChange,
   onTabChange,
-  onRemove,
 }: {
   line: DocumentLine;
-  index: number;
-  canRemove: boolean;
   foreignLabel: string;
   tertiaryLabel: string;
   onChange: (update: Partial<DocumentLine>) => void;
   onDetailChange: (field: string, value: string) => void;
   onAmountChange: (field: AmountField, value: string) => void;
   onTabChange: (tab: DocumentTab) => void;
-  onRemove: () => void;
 }) {
   const dynamicMetalLabel = line.details.metalType === 'silver'
     ? 'نقره'
@@ -453,21 +829,16 @@ function DocumentLineEditor({
   return (
     <article className={`document-line-card ${line.documentNature}`}>
       <div className="document-line-heading">
-        <div>
-          <span className="document-line-number">ردیف {toPersianDigits(String(index + 1))}</span>
-          <strong>{line.documentTab === 'our-claim' ? 'طلب / بدهی' : documentTabs.find((tab) => tab.id === line.documentTab)?.label}</strong>
-        </div>
-        <div className="document-line-heading-actions">
+        <div className="document-line-heading-actions document-nature-row">
           <div className="document-nature-toggle">
             <button type="button" className={line.documentNature === 'received' ? 'is-active received' : ''} onClick={() => onChange({ documentNature: 'received' })}>دریافتی</button>
             <button type="button" className={line.documentNature === 'paid' ? 'is-active paid' : ''} onClick={() => onChange({ documentNature: 'paid' })}>پرداختی</button>
           </div>
-          {canRemove ? <button type="button" className="document-remove-line" onClick={onRemove} aria-label="حذف ردیف"><Trash2 size={15} /></button> : null}
         </div>
       </div>
 
       <div className="document-tabs-wrap document-line-tabs-wrap">
-        <div className="document-tabs" role="tablist" aria-label={`تب ردیف ${index + 1}`}>
+        <div className="document-tabs" role="tablist" aria-label="نوع ردیف سند">
           {documentTabs.map((tab, tabIndex) => (
             <button type="button" role="tab" aria-selected={line.documentTab === tab.id} className={line.documentTab === tab.id ? 'is-active' : ''} key={`${tab.id}-${tab.label}-${tabIndex}`} onClick={() => onTabChange(tab.id)}>
               {tab.label}
@@ -488,13 +859,23 @@ function DocumentLineEditor({
         </Field>
       </div>
 
-      {line.documentTab === 'gold-sale' ? (
-        <GoldTradeFields details={line.details} onChange={onDetailChange} />
-      ) : line.documentTab === 'raw-gold' || line.documentTab === 'base' ? (
-        <RawMetalFields metalLabel={dynamicMetalLabel} details={line.details} onChange={onDetailChange} />
-      ) : (
-        <OperationFields tab={line.documentTab} details={line.details} onChange={onDetailChange} />
-      )}
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.div
+          key={line.documentTab}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -6 }}
+          transition={{ duration: 0.18, ease: 'easeOut' }}
+        >
+          {line.documentTab === 'gold-sale' ? (
+            <GoldTradeFields details={line.details} onChange={onDetailChange} />
+          ) : line.documentTab === 'raw-gold' || line.documentTab === 'base' ? (
+            <RawMetalFields metalLabel={dynamicMetalLabel} details={line.details} onChange={onDetailChange} />
+          ) : (
+            <OperationFields tab={line.documentTab} details={line.details} onChange={onDetailChange} />
+          )}
+        </motion.div>
+      </AnimatePresence>
 
       <div className="document-amount-panel document-line-amount-panel">
         <div className="document-operation-heading">

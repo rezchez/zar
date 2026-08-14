@@ -1,0 +1,461 @@
+
+/* ============================================================
+   ثبت سند چندردیفی — ویرایشگر پیش‌نویس، فهرست ردیف‌ها، جمع سند
+   ============================================================ */
+
+.document-form-page {
+  display: grid;
+  gap: 16px;
+}
+
+/* نشان ذخیره‌ی خودکار پیش‌نویس */
+.document-autosave-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #f0e3bd;
+  border-radius: 999px;
+  background: #fdf8ea;
+  padding: 8px 13px;
+  color: var(--gold-deep);
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.document-autosave-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--gold);
+  animation: gold-pulse 2.2s ease-out infinite;
+}
+
+/* بنر بازیابی پیش‌نویس ناتمام */
+.document-draft-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #ecdfc0;
+  border-radius: 13px;
+  background: linear-gradient(140deg, #fffaf0, #fdf3dc);
+  padding: 12px 16px;
+  color: #6d5a1e;
+  font-size: 12px;
+  font-weight: 800;
+  box-shadow: 0 10px 24px rgba(176, 127, 60, 0.1);
+}
+
+.document-draft-banner svg {
+  flex: 0 0 auto;
+  color: var(--gold-deep);
+}
+
+.document-draft-banner span {
+  flex: 1;
+}
+
+.document-draft-banner button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #ecd9d9;
+  border-radius: 9px;
+  background: white;
+  padding: 7px 11px;
+  color: #b55362;
+  font-size: 11px;
+  font-weight: 800;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+
+.document-draft-banner button:hover {
+  border-color: #e3b6bd;
+  background: #fff2f3;
+}
+
+/* پنل شماره/تاریخ سند */
+.document-meta-panel {
+  padding: 18px 22px;
+}
+
+/* ویرایشگر پیش‌نویس ردیف */
+.document-draft-editor {
+  position: relative;
+  padding: 20px 22px 22px;
+  background:
+    radial-gradient(circle at 6% 0%, rgba(231, 195, 90, 0.09), transparent 30%),
+    white;
+}
+
+.document-draft-editor-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.document-draft-editor-head h2 {
+  margin: 0;
+  color: #172033;
+  font-size: 17px;
+}
+
+.document-cancel-edit {
+  border: 1px solid #e6eaf0;
+  border-radius: 9px;
+  background: white;
+  padding: 8px 12px;
+  color: #8b95a7;
+  font-size: 11px;
+  font-weight: 800;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+.document-cancel-edit:hover {
+  background: #f6f8fa;
+  color: #172033;
+}
+
+/* دکمه‌ی ثبت ردیف — ظاهرشدن با اسپرینگ */
+.document-commit-line-button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  margin-top: 16px;
+  border: 0;
+  border-radius: 13px;
+  background: linear-gradient(135deg, #d9b13b, #b8860b);
+  padding: 14px;
+  color: #fffbe9;
+  font-size: 13px;
+  font-weight: 800;
+  text-shadow: 0 1px 2px rgba(90, 60, 5, 0.3);
+  box-shadow: 0 14px 30px rgba(184, 134, 11, 0.32);
+}
+
+.document-draft-hint {
+  margin: 16px 0 0;
+  border: 1px dashed #e3d9ba;
+  border-radius: 11px;
+  background: #fffdf6;
+  padding: 11px 14px;
+  color: #a38a3e;
+  font-size: 11px;
+  text-align: center;
+}
+
+/* پنل فهرست ردیف‌ها */
+.document-lines-panel {
+  padding: 20px 22px;
+}
+
+.document-lines-head h2 {
+  margin: 0;
+  color: #172033;
+  font-size: 17px;
+}
+
+.document-lines-empty {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  border: 1px dashed #e3e8ef;
+  border-radius: 13px;
+  padding: 28px 16px;
+  color: #a2aaba;
+  text-align: center;
+}
+
+.document-lines-empty p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.9;
+}
+
+/* ردیف ثبت‌شده‌ی موقت */
+.document-line-row {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  margin-top: 10px;
+  border: 1px solid #e9edf3;
+  border-radius: 13px;
+  background: white;
+  padding: 12px 14px;
+  box-shadow: 0 8px 20px rgba(31, 45, 68, 0.03);
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.document-line-row:hover {
+  border-color: #ecdfc0;
+  box-shadow: 0 12px 26px rgba(176, 127, 60, 0.1);
+}
+
+.document-line-row.received {
+  border-right: 3px solid #18b7a0;
+}
+
+.document-line-row.paid {
+  border-right: 3px solid #b55362;
+}
+
+.document-line-row-index {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  place-items: center;
+  border-radius: 10px;
+  background: #faf3e0;
+  color: var(--gold-deep);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.document-line-row-main {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 4px;
+}
+
+.document-line-row-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.document-line-row-title strong {
+  color: #253149;
+  font-size: 13px;
+}
+
+.document-line-row-main small {
+  overflow: hidden;
+  color: #9aa4b4;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.document-line-row-figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.document-line-row-figures > span {
+  border: 1px solid #f0e8d2;
+  border-radius: 8px;
+  background: #fffdf8;
+  padding: 5px 9px;
+  color: #a38a3e;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.document-line-row-figures strong {
+  color: #3a3117;
+  font-variant-numeric: tabular-nums;
+}
+
+.document-line-row-actions {
+  display: flex;
+  gap: 5px;
+}
+
+.document-line-row-actions button {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid #e6eaf0;
+  border-radius: 9px;
+  background: white;
+  color: #8b95a7;
+  transition: background 160ms ease, color 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+.document-line-row-actions button:hover {
+  border-color: #ecdfc0;
+  background: #fffaf0;
+  color: var(--gold-deep);
+  transform: translateY(-1px);
+}
+
+.document-line-row-actions button.is-danger:hover {
+  border-color: #ecd9d9;
+  background: #fff2f3;
+  color: #b55362;
+}
+
+/* نوار جمع سند */
+.document-totals-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 16px;
+  border: 1px solid #ecdfc0;
+  border-radius: 13px;
+  background: linear-gradient(140deg, #fffaf0, #fdf3dc);
+  padding: 13px 16px;
+}
+
+.document-totals-bar > span {
+  color: #a38a3e;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.document-totals-bar > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.document-totals-bar strong {
+  border-radius: 8px;
+  background: white;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 3px 8px rgba(176, 127, 60, 0.1);
+}
+
+.document-totals-bar strong.is-positive {
+  color: #168b7b;
+}
+
+.document-totals-bar strong.is-negative {
+  color: #b55362;
+}
+
+/* دکمه‌ی حذف پیش‌نویس */
+.document-discard-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid #ecd9d9;
+  border-radius: 9px;
+  background: white;
+  padding: 9px 12px;
+  color: #b55362;
+  font-size: 11px;
+  font-weight: 800;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+
+.document-discard-button:hover {
+  border-color: #e3b6bd;
+  background: #fff2f3;
+}
+
+/* ---------- حالت تاریک ---------- */
+
+[data-theme="dark"] .document-autosave-pill {
+  border-color: #3d3823;
+  background: #221f14;
+  color: var(--gold-bright);
+}
+
+[data-theme="dark"] .document-draft-banner {
+  border-color: #3d3823;
+  background: linear-gradient(140deg, #221f14, #1c1a12);
+  color: #e7c35a;
+}
+
+[data-theme="dark"] .document-draft-banner button {
+  border-color: #4a3238;
+  background: #2a1e22;
+  color: #e598a4;
+}
+
+[data-theme="dark"] .document-draft-editor {
+  background:
+    radial-gradient(circle at 6% 0%, rgba(231, 195, 90, 0.07), transparent 30%),
+    #172236;
+}
+
+[data-theme="dark"] .document-draft-editor-head h2,
+[data-theme="dark"] .document-lines-head h2,
+[data-theme="dark"] .document-line-row-title strong,
+[data-theme="dark"] .document-line-row-figures strong {
+  color: #f8fafc;
+}
+
+[data-theme="dark"] .document-cancel-edit,
+[data-theme="dark"] .document-line-row-actions button {
+  border-color: #2e3a52;
+  background: #1b2740;
+  color: #9aa4b4;
+}
+
+[data-theme="dark"] .document-draft-hint {
+  border-color: #3d3823;
+  background: #1c1a12;
+  color: var(--gold-bright);
+}
+
+[data-theme="dark"] .document-line-row {
+  border-color: #2e3a52;
+  background: #1b2740;
+}
+
+[data-theme="dark"] .document-line-row:hover {
+  border-color: var(--gold);
+}
+
+[data-theme="dark"] .document-line-row-index {
+  background: #2a2f1e;
+  color: var(--gold-bright);
+}
+
+[data-theme="dark"] .document-line-row-figures > span {
+  border-color: #3d3823;
+  background: #221f14;
+}
+
+[data-theme="dark"] .document-lines-empty {
+  border-color: #2e3a52;
+}
+
+[data-theme="dark"] .document-totals-bar {
+  border-color: #3d3823;
+  background: linear-gradient(140deg, #221f14, #1c1a12);
+}
+
+[data-theme="dark"] .document-totals-bar strong {
+  background: #1b2740;
+}
+
+[data-theme="dark"] .document-discard-button {
+  border-color: #4a3238;
+  background: #2a1e22;
+  color: #e598a4;
+}
+
+/* ---------- ریسپانسیو ---------- */
+
+@media (max-width: 720px) {
+  .document-line-row {
+    flex-wrap: wrap;
+  }
+
+  .document-line-row-figures {
+    justify-content: flex-start;
+  }
+
+  .document-totals-bar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
