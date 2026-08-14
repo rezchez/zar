@@ -8,19 +8,23 @@ import {
   FilePlus2,
   LayoutDashboard,
   Menu,
+  Moon,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
   Search,
   Settings,
   ScrollText,
+  Sun,
   UserRoundCog,
   X,
   type LucideIcon,
 } from 'lucide-react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useTheme, type ThemeMode } from '@/src/components/ThemeProvider';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useTheme } from '@/src/components/ThemeProvider';
+import Breadcrumbs from '@/src/components/Breadcrumbs';
 import LogoutButton from '@/src/components/LogoutButton';
 
 type DashboardUser = {
@@ -152,7 +156,6 @@ export default function DashboardShell({
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const { mode, changeTheme } = useTheme();
 
   function navigateTo(href: string) {
     const navigationAttempt = new Event('zar:navigation-attempt', {
@@ -227,9 +230,6 @@ export default function DashboardShell({
     }
   }
 
-  const activeTitle =
-    allItems.find((item) => item.id === activeId)?.title ?? 'خانه';
-
   useEffect(() => {
     function handleShortcut(event: KeyboardEvent) {
       if (event.altKey && (event.key.toLowerCase() === 'z' || event.code === 'KeyZ')) {
@@ -273,6 +273,21 @@ export default function DashboardShell({
 
   return (
     <main className="dashboard-app" dir="rtl">
+      {/* فیلتر Gooey برای ادغام مایع دکمه دسترسی سریع با آیتم‌های منو */}
+      <svg className="gooey-defs" width="0" height="0" aria-hidden="true" focusable="false">
+        <defs>
+          <filter id="gooey-liquid">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="7" result="blur" />
+            <feColorMatrix
+              in="blur"
+              mode="matrix"
+              values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 19 -9"
+              result="gooey"
+            />
+            <feComposite in="SourceGraphic" in2="gooey" operator="atop" />
+          </filter>
+        </defs>
+      </svg>
       {sidebarOpen ? (
         <button
           type="button"
@@ -326,7 +341,7 @@ export default function DashboardShell({
 
       <section className="dashboard-main">
         <header className="dashboard-topbar">
-          <div className="dashboard-breadcrumb">
+          <div className="dashboard-topbar-leading">
             <button
               type="button"
               className="dashboard-icon-button dashboard-mobile-menu"
@@ -347,9 +362,8 @@ export default function DashboardShell({
                 <PanelLeftClose size={18} />
               )}
             </button>
-            <span>Zarfolio</span>
-            <span>/</span>
-            <strong>{activeTitle}</strong>
+            {/* مسیر ناوبری پویا */}
+            <Breadcrumbs />
           </div>
 
           <div className="dashboard-topbar-actions">
@@ -363,6 +377,8 @@ export default function DashboardShell({
               <span>جست‌وجوی سریع</span>
               <kbd>Alt+Z</kbd>
             </button>
+            {/* سوییچ روز/شب در سربرگ — از منوی کاربر حذف شده است */}
+            <ThemeToggle />
             <div className="dashboard-user-menu">
               <button
                 type="button"
@@ -387,8 +403,6 @@ export default function DashboardShell({
 
               {userMenuOpen ? (
                 <UserMenu
-                  mode={mode}
-                  onThemeChange={changeTheme}
                   onAccount={() => {
                   setUserMenuOpen(false);
                     navigateTo('/dashboard/account');
@@ -435,7 +449,7 @@ export default function DashboardShell({
             </section>
           </div>
         ) : null}
-        <div className={`dashboard-quick-access ${quickAccessOpen ? 'is-open' : ''}`}>
+        <div className={`dashboard-quick-access gooey-cluster ${quickAccessOpen ? 'is-open' : ''}`}>
           {quickAccessOpen ? (
             <div className="dashboard-quick-menu">
               <button
@@ -476,14 +490,53 @@ export default function DashboardShell({
   );
 }
 
+/**
+ * ThemeToggle — سوییچ روز/شب در سربرگ با انیمیشن چرخشی آیکون.
+ * منطق انتخاب تم از ThemeProvider می‌آید.
+ */
+function ThemeToggle() {
+  const { changeTheme } = useTheme();
+  // تم اعمال‌شده روی <html> را می‌خوانیم تا حالت «خودکار» هم درست کار کند
+  const [isDark, setIsDark] = useState(false);
+
+  useEffect(() => {
+    setIsDark(document.documentElement.dataset.theme === 'dark');
+  }, []);
+
+  function handleToggle() {
+    const next = isDark ? 'light' : 'dark';
+    setIsDark(!isDark);
+    changeTheme(next);
+  }
+
+  return (
+    <button
+      type="button"
+      className={`dashboard-theme-toggle ${isDark ? 'is-dark' : ''}`}
+      onClick={handleToggle}
+      aria-label={isDark ? 'حالت روز' : 'حالت شب'}
+      title={isDark ? 'حالت روز' : 'حالت شب'}
+    >
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.span
+          key={isDark ? 'moon' : 'sun'}
+          initial={{ rotate: -70, opacity: 0, scale: 0.6 }}
+          animate={{ rotate: 0, opacity: 1, scale: 1 }}
+          exit={{ rotate: 70, opacity: 0, scale: 0.6 }}
+          transition={{ duration: 0.22, ease: 'easeOut' }}
+          className="dashboard-theme-toggle-icon"
+        >
+          {isDark ? <Moon size={16} /> : <Sun size={16} />}
+        </motion.span>
+      </AnimatePresence>
+    </button>
+  );
+}
+
 function UserMenu({
-  mode,
-  onThemeChange,
   onAccount,
   onClose,
 }: {
-  mode: ThemeMode;
-  onThemeChange: (mode: ThemeMode) => void;
   onAccount: () => void;
   onClose: () => void;
 }) {
@@ -500,25 +553,6 @@ function UserMenu({
           <Settings size={16} />
           مدیریت حساب کاربری
         </button>
-        <div className="dashboard-theme-menu">
-          <span>رنگ داشبورد</span>
-          <div>
-            {([
-              ['light', 'روز'],
-              ['dark', 'شب'],
-              ['system', 'خودکار'],
-            ] as Array<[ThemeMode, string]>).map(([value, label]) => (
-              <button
-                type="button"
-                key={value}
-                className={mode === value ? 'is-active' : ''}
-                onClick={() => onThemeChange(value)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
         <div className="dashboard-user-dropdown-separator" />
         <LogoutButton />
       </div>

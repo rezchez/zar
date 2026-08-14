@@ -3868,3 +3868,761 @@ button:disabled {
     width: 100%;
   }
 }
+
+/* ============================================================
+   ZARFOLIO — ابزارک‌های طلا و جواهر / بردکرامب / تم‌تاگل / Gooey
+   ============================================================ */
+
+:root {
+  /* لهجه‌های لوکس طلایی/برنزی */
+  --gold: #c9a227;
+  --gold-bright: #e7c35a;
+  --gold-deep: #8f6b12;
+  --bronze: #b07f3c;
+}
+
+/* فیلتر SVG gooey بدون فضای اشغالی */
+.gooey-defs {
+  position: absolute;
+}
+
+/* خوشه‌ی شناور با ادغام مایع آیتم‌ها */
+.gooey-cluster {
+  filter: url(#gooey-liquid);
+}
+
+/* ---------- بردکرامب سربرگ ---------- */
+
+.dashboard-topbar-leading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 9px;
+}
+
+.breadcrumbs {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 2px;
+  color: #9aa4b4;
+  font-size: 12px;
+}
+
+.breadcrumbs-home {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 8px;
+  color: #a38a3e;
+  transition: background 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+.breadcrumbs-home:hover {
+  background: #faf5e6;
+  color: var(--gold-deep);
+  transform: translateY(-1px);
+}
+
+.breadcrumbs-item {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 2px;
+}
+
+.breadcrumbs-separator {
+  color: #d5dae2;
+}
+
+.breadcrumbs-item a {
+  overflow: hidden;
+  border-radius: 7px;
+  padding: 4px 7px;
+  color: #8b95a7;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+.breadcrumbs-item a:hover {
+  background: #faf5e6;
+  color: var(--gold-deep);
+}
+
+.breadcrumbs-item strong {
+  overflow: hidden;
+  padding: 4px 7px;
+  color: #172033;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- سوییچ روز/شب سربرگ ---------- */
+
+.dashboard-theme-toggle {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid #ecdfc0;
+  border-radius: 12px;
+  background: linear-gradient(150deg, #fffaf0, #fdf3dc);
+  color: var(--gold-deep);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 4px 12px rgba(176, 127, 60, 0.12);
+  transition: border-color 200ms ease, box-shadow 200ms ease, transform 200ms ease;
+}
+
+.dashboard-theme-toggle:hover {
+  border-color: var(--gold-bright);
+  box-shadow: 0 0 0 4px rgba(201, 162, 39, 0.12), 0 8px 18px rgba(176, 127, 60, 0.2);
+  transform: translateY(-1px);
+}
+
+.dashboard-theme-toggle:active {
+  transform: scale(0.94);
+}
+
+.dashboard-theme-toggle-icon {
+  display: grid;
+  place-items: center;
+}
+
+.dashboard-theme-toggle.is-dark {
+  border-color: #3d4a63;
+  background: linear-gradient(150deg, #1c2941, #141f33);
+  color: var(--gold-bright);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+/* ---------- اکشن‌های سریع حسابداری طلا ---------- */
+
+.quick-gold-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.quick-gold-action {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #ece2c8;
+  border-radius: 13px;
+  background: linear-gradient(140deg, #fffdf7, #fbf4e2);
+  padding: 13px 15px;
+  color: #6d5a1e;
+  font-size: 12px;
+  font-weight: 800;
+  text-align: right;
+  box-shadow: 0 8px 20px rgba(176, 127, 60, 0.07);
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+
+/* برق مایع طلایی هنگام هاور */
+.quick-gold-action::before {
+  position: absolute;
+  top: -40%;
+  right: -30%;
+  width: 90px;
+  height: 160%;
+  background: linear-gradient(100deg, transparent, rgba(231, 195, 90, 0.35), transparent);
+  content: "";
+  transform: rotate(18deg) translateX(-140%);
+  transition: transform 600ms ease;
+}
+
+.quick-gold-action:hover::before {
+  transform: rotate(18deg) translateX(160%);
+}
+
+.quick-gold-action:hover {
+  border-color: var(--gold-bright);
+  box-shadow: 0 14px 30px rgba(176, 127, 60, 0.16);
+}
+
+.quick-gold-action.is-accent {
+  border-color: var(--gold);
+  background: linear-gradient(135deg, #d9b13b, #b8860b);
+  color: #fffbe9;
+  text-shadow: 0 1px 2px rgba(90, 60, 5, 0.35);
+}
+
+.quick-gold-action.is-accent:hover {
+  box-shadow: 0 16px 34px rgba(184, 134, 11, 0.4);
+}
+
+/* ---------- نوار زنده قیمت طلا ---------- */
+
+.gold-ticker {
+  margin-bottom: 18px;
+  padding: 20px 22px;
+  background:
+    radial-gradient(circle at 92% 8%, rgba(231, 195, 90, 0.1), transparent 34%),
+    white;
+}
+
+.gold-ticker-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid #f0e3bd;
+  border-radius: 999px;
+  background: #fdf8ea;
+  padding: 6px 11px;
+  color: #8f6b12;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+/* پالس مایع وضعیت زنده */
+.gold-ticker-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: 0 0 0 0 rgba(201, 162, 39, 0.5);
+  animation: gold-pulse 2.2s ease-out infinite;
+}
+
+@keyframes gold-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(201, 162, 39, 0.5); }
+  70% { box-shadow: 0 0 0 8px rgba(201, 162, 39, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(201, 162, 39, 0); }
+}
+
+.gold-ticker-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.gold-ticker-card {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #f0e8d2;
+  border-radius: 12px;
+  background: #fffdf8;
+  padding: 13px 14px;
+  transition: border-color 200ms ease, box-shadow 200ms ease, transform 200ms ease;
+}
+
+.gold-ticker-card:hover {
+  border-color: var(--gold-bright);
+  box-shadow: 0 10px 24px rgba(176, 127, 60, 0.12);
+  transform: translateY(-2px);
+}
+
+.gold-ticker-card-top {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #a38a3e;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.gold-ticker-card strong {
+  display: block;
+  color: #3a3117;
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.gold-ticker-card-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.gold-ticker-card-bottom small {
+  color: #b3a275;
+  font-size: 9px;
+}
+
+.gold-ticker-change {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.gold-ticker-card.is-up .gold-ticker-change {
+  color: #168b7b;
+}
+
+.gold-ticker-card.is-down .gold-ticker-change {
+  color: #b55362;
+}
+
+/* ---------- شاخص‌های تراز وزن و ریال ---------- */
+
+.gold-balance-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.gold-balance-card {
+  display: grid;
+  gap: 9px;
+  border: 1px solid #e7ebf1;
+  border-radius: 14px;
+  background: white;
+  padding: 16px;
+  box-shadow: 0 10px 24px rgba(31, 45, 68, 0.035);
+  transition: box-shadow 200ms ease, transform 200ms ease;
+}
+
+.gold-balance-card:hover {
+  box-shadow: 0 16px 34px rgba(31, 45, 68, 0.08);
+  transform: translateY(-2px);
+}
+
+.gold-balance-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #7d8798;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.gold-balance-icon {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 9px;
+  background: #faf3e0;
+  color: var(--gold-deep);
+}
+
+.gold-balance-value {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  color: #172033;
+  font-size: 21px;
+  font-variant-numeric: tabular-nums;
+}
+
+.gold-balance-value small {
+  color: #9aa4b4;
+  font-size: 10px;
+  font-weight: 400;
+}
+
+/* نوار پیشرفت با گرادیان طلایی */
+.gold-balance-bar {
+  overflow: hidden;
+  height: 6px;
+  border-radius: 999px;
+  background: #f1f3f7;
+}
+
+.gold-balance-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--gold-bright), var(--gold-deep));
+}
+
+.gold-balance-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.gold-balance-card-foot small {
+  color: #9aa4b4;
+  font-size: 10px;
+}
+
+.gold-balance-card-foot > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.gold-balance-card-foot > span.is-up {
+  color: #168b7b;
+}
+
+.gold-balance-card-foot > span.is-down {
+  color: #b55362;
+}
+
+/* ---------- شبکه‌ی تقویم + دفتر عیار ---------- */
+
+.dashboard-widgets-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  gap: 15px;
+}
+
+.jalali-calendar,
+.karat-ledger {
+  padding: 20px 22px;
+}
+
+.jalali-calendar-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.jalali-calendar-nav button {
+  display: grid;
+  min-width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid #e7ebf1;
+  border-radius: 8px;
+  background: white;
+  color: #7d8798;
+  transition: background 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+.jalali-calendar-nav button:hover {
+  background: #faf5e6;
+  color: var(--gold-deep);
+  transform: translateY(-1px);
+}
+
+.jalali-calendar-nav .jalali-calendar-today-btn {
+  padding: 0 11px;
+  color: var(--gold-deep);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.jalali-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+  margin-top: 16px;
+}
+
+.jalali-calendar-weekday {
+  padding: 6px 0;
+  color: #a2aaba;
+  font-size: 10px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.jalali-calendar-weekday.is-friday {
+  color: #c07d86;
+}
+
+.jalali-calendar-cell {
+  display: grid;
+  aspect-ratio: 1;
+  max-height: 38px;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: #43526d;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  cursor: default;
+}
+
+.jalali-calendar-cell:not(.is-empty):hover {
+  border-color: #ecdfc0;
+  background: #fffaf0;
+}
+
+.jalali-calendar-cell.is-friday:not(.is-today) {
+  color: #c07d86;
+}
+
+.jalali-calendar-cell.is-holiday:not(.is-today) {
+  background: #fdf1f2;
+  color: #b55362;
+}
+
+.jalali-calendar-cell.has-event {
+  position: relative;
+}
+
+/* نقطه‌ی رویداد زیر عدد روز */
+.jalali-calendar-cell.has-event::after {
+  position: absolute;
+  bottom: 3px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--gold);
+  content: "";
+}
+
+/* هایلایت امروز با حلقه‌ی طلایی */
+.jalali-calendar-cell.is-today {
+  border-color: var(--gold);
+  background: linear-gradient(140deg, #f7e6b0, #e9c86a);
+  color: #5c470f;
+  font-weight: 800;
+  box-shadow: 0 6px 16px rgba(201, 162, 39, 0.35);
+}
+
+.jalali-calendar-footer {
+  margin-top: 14px;
+  border-top: 1px dashed #ece2c8;
+  padding-top: 12px;
+  color: #a38a3e;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+/* ---------- دفتر عیار ---------- */
+
+.karat-ledger-more {
+  border: 1px solid #ecdfc0;
+  border-radius: 9px;
+  background: #fdf8ea;
+  padding: 7px 12px;
+  color: var(--gold-deep);
+  font-size: 11px;
+  font-weight: 800;
+  text-decoration: none;
+  transition: background 160ms ease, box-shadow 160ms ease;
+}
+
+.karat-ledger-more:hover {
+  background: #fbf1d7;
+  box-shadow: 0 8px 18px rgba(176, 127, 60, 0.15);
+}
+
+.karat-ledger-list {
+  display: grid;
+  gap: 4px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.karat-ledger-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  border-radius: 10px;
+  padding: 9px 8px;
+  transition: background 160ms ease;
+}
+
+.karat-ledger-row:hover {
+  background: #fbf8f0;
+}
+
+.karat-ledger-kind {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  place-items: center;
+  border-radius: 9px;
+}
+
+.karat-ledger-kind.is-buy {
+  background: #effbf7;
+  color: #168b7b;
+}
+
+.karat-ledger-kind.is-sell {
+  background: #fff2f3;
+  color: #b55362;
+}
+
+.karat-ledger-main {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 3px;
+}
+
+.karat-ledger-main strong {
+  overflow: hidden;
+  color: #253149;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.karat-ledger-main small {
+  color: #9aa4b4;
+  font-size: 10px;
+}
+
+.karat-ledger-figures {
+  display: grid;
+  gap: 3px;
+  text-align: left;
+}
+
+.karat-ledger-figures strong {
+  color: #3a3117;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.karat-ledger-figures small {
+  color: #b3a275;
+  font-size: 9px;
+}
+
+/* ---------- حالت تاریک ابزارک‌ها ---------- */
+
+[data-theme="dark"] .breadcrumbs-item strong,
+[data-theme="dark"] .gold-balance-value,
+[data-theme="dark"] .karat-ledger-main strong {
+  color: #f8fafc;
+}
+
+[data-theme="dark"] .breadcrumbs-home:hover,
+[data-theme="dark"] .breadcrumbs-item a:hover,
+[data-theme="dark"] .jalali-calendar-nav button:hover {
+  background: #2a2f1e;
+  color: var(--gold-bright);
+}
+
+[data-theme="dark"] .quick-gold-action {
+  border-color: #3d3823;
+  background: linear-gradient(140deg, #221f14, #1c1a12);
+  color: #e7c35a;
+  box-shadow: none;
+}
+
+[data-theme="dark"] .quick-gold-action:hover {
+  border-color: var(--gold);
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.4);
+}
+
+[data-theme="dark"] .quick-gold-action.is-accent {
+  background: linear-gradient(135deg, #d9b13b, #a5770a);
+  color: #1c1503;
+  text-shadow: none;
+}
+
+[data-theme="dark"] .gold-ticker {
+  background:
+    radial-gradient(circle at 92% 8%, rgba(231, 195, 90, 0.08), transparent 34%),
+    #172236;
+}
+
+[data-theme="dark"] .gold-ticker-live {
+  border-color: #3d3823;
+  background: #221f14;
+  color: var(--gold-bright);
+}
+
+[data-theme="dark"] .gold-ticker-card {
+  border-color: #2e3a52;
+  background: #1b2740;
+}
+
+[data-theme="dark"] .gold-ticker-card:hover {
+  border-color: var(--gold);
+}
+
+[data-theme="dark"] .gold-ticker-card strong,
+[data-theme="dark"] .karat-ledger-figures strong {
+  color: #f3ead0;
+}
+
+[data-theme="dark"] .gold-balance-card {
+  border-color: #2e3a52;
+  background: #172236;
+}
+
+[data-theme="dark"] .gold-balance-icon {
+  background: #2a2f1e;
+  color: var(--gold-bright);
+}
+
+[data-theme="dark"] .gold-balance-bar {
+  background: #223050;
+}
+
+[data-theme="dark"] .jalali-calendar-nav button {
+  border-color: #2e3a52;
+  background: #1b2740;
+  color: #9aa4b4;
+}
+
+[data-theme="dark"] .jalali-calendar-cell {
+  color: #c7d0de;
+}
+
+[data-theme="dark"] .jalali-calendar-cell:not(.is-empty):hover {
+  border-color: #4a4426;
+  background: #221f14;
+}
+
+[data-theme="dark"] .jalali-calendar-cell.is-holiday:not(.is-today) {
+  background: #3a222c;
+}
+
+[data-theme="dark"] .jalali-calendar-cell.is-today {
+  border-color: var(--gold-bright);
+  color: #3a2c06;
+}
+
+[data-theme="dark"] .jalali-calendar-footer {
+  border-top-color: #3d3823;
+  color: var(--gold-bright);
+}
+
+[data-theme="dark"] .karat-ledger-more {
+  border-color: #3d3823;
+  background: #221f14;
+  color: var(--gold-bright);
+}
+
+[data-theme="dark"] .karat-ledger-row:hover {
+  background: #1b2740;
+}
+
+/* ---------- ریسپانسیو ---------- */
+
+@media (max-width: 1000px) {
+  .quick-gold-actions,
+  .gold-ticker-grid,
+  .gold-balance-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboard-widgets-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .quick-gold-actions,
+  .gold-ticker-grid,
+  .gold-balance-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .breadcrumbs-item:not(:last-child) {
+    display: none;
+  }
+}
