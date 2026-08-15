@@ -11,6 +11,8 @@ import {
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
+  Pin,
+  PinOff,
   Plus,
   Search,
   Settings,
@@ -44,6 +46,8 @@ type NavItemData = {
   shortcut?: string;
   children?: NavItemData[];
 };
+
+const TOPBAR_PIN_STORAGE_KEY = 'zarfolio-topbar-pinned';
 
   const coreGroups: Array<{ heading?: string; items: NavItemData[] }> = [
   {
@@ -155,7 +159,31 @@ export default function DashboardShell({
   const [quickAccessOpen, setQuickAccessOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [topbarPinned, setTopbarPinned] = useState(true);
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        setTopbarPinned(window.localStorage.getItem(TOPBAR_PIN_STORAGE_KEY) !== 'false');
+      } catch {
+        setTopbarPinned(true);
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  function toggleTopbarPin() {
+    setTopbarPinned((current) => {
+      const next = !current;
+      try {
+        window.localStorage.setItem(TOPBAR_PIN_STORAGE_KEY, String(next));
+      } catch {
+        // ذخیره‌سازی محلی ممکن است در مرورگر غیرفعال باشد.
+      }
+      return next;
+    });
+  }
 
   function navigateTo(href: string) {
     const navigationAttempt = new Event('zar:navigation-attempt', {
@@ -340,7 +368,7 @@ export default function DashboardShell({
       </aside>
 
       <section className="dashboard-main">
-        <header className="dashboard-topbar">
+        <header className={`dashboard-topbar ${topbarPinned ? 'is-pinned' : ''}`}>
           <div className="dashboard-topbar-leading">
             <button
               type="button"
@@ -376,6 +404,16 @@ export default function DashboardShell({
               <Search size={15} />
               <span>جست‌وجوی سریع</span>
               <kbd>Alt+Z</kbd>
+            </button>
+            <button
+              type="button"
+              className={`dashboard-pin-toggle ${topbarPinned ? 'is-pinned' : ''}`}
+              onClick={toggleTopbarPin}
+              aria-pressed={topbarPinned}
+              aria-label={topbarPinned ? 'برداشتن پین سربرگ' : 'پین کردن سربرگ'}
+              title={topbarPinned ? 'سربرگ پین است؛ برای آزاد کردن کلیک کنید' : 'پین کردن سربرگ'}
+            >
+              {topbarPinned ? <Pin size={16} /> : <PinOff size={16} />}
             </button>
             {/* سوییچ روز/شب در سربرگ — از منوی کاربر حذف شده است */}
             <ThemeToggle />
@@ -500,7 +538,19 @@ function ThemeToggle() {
   const [isDark, setIsDark] = useState(false);
 
   useEffect(() => {
-    setIsDark(document.documentElement.dataset.theme === 'dark');
+    const updateFromDocument = () => {
+      setIsDark(document.documentElement.dataset.theme === 'dark');
+    };
+    const timer = window.setTimeout(updateFromDocument, 0);
+    const observer = new MutationObserver(updateFromDocument);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    });
+    return () => {
+      window.clearTimeout(timer);
+      observer.disconnect();
+    };
   }, []);
 
   function handleToggle() {

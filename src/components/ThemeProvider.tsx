@@ -12,6 +12,7 @@ function applyTheme(mode: ThemeMode) {
 
   document.documentElement.dataset.theme = theme;
   document.documentElement.dataset.themeMode = mode;
+  document.documentElement.style.colorScheme = theme;
 }
 
 export default function ThemeProvider({
