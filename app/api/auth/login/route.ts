@@ -7,6 +7,7 @@ import {
 import { recordAuditEvent } from '@/lib/audit';
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
 import { decryptTotpSecret, verifyTotpCode } from '@/lib/totp';
+import { isSecureRequest } from '@/lib/request';
 
 type LoginBody = {
   email?: unknown;
@@ -20,9 +21,25 @@ type LoginBody = {
 
 export async function POST(request: Request) {
   let body: LoginBody;
+  const contentType = request.headers.get('content-type')?.toLowerCase() ?? '';
+  const isNativeFormSubmit = contentType.includes('application/x-www-form-urlencoded')
+    || contentType.includes('multipart/form-data');
 
   try {
-    body = (await request.json()) as LoginBody;
+    if (isNativeFormSubmit) {
+      const formData = await request.formData();
+      body = {
+        email: formData.get('email'),
+        password: formData.get('password'),
+        mfaId: formData.get('mfaId'),
+        otpId: formData.get('otpId'),
+        otpCode: formData.get('otpCode'),
+        totpCode: formData.get('totpCode'),
+        authMethod: formData.get('authMethod'),
+      };
+    } else {
+      body = (await request.json()) as LoginBody;
+    }
   } catch {
     return NextResponse.json(
       { message: 'اطلاعات ورود معتبر نیست.' },
@@ -240,13 +257,15 @@ export async function POST(request: Request) {
       }
     }
 
-    const response = NextResponse.json({ success: true });
+    const response = isNativeFormSubmit
+      ? NextResponse.redirect(new URL('/dashboard', request.url), 303)
+      : NextResponse.json({ success: true });
     response.headers.set(
       'Set-Cookie',
       pb.authStore.exportToCookie(
         {
           httpOnly: true,
-          secure: process.env.NODE_ENV === 'production',
+          secure: isSecureRequest(request),
           sameSite: 'lax',
           path: '/',
         },

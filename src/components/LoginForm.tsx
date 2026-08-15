@@ -1,9 +1,14 @@
 'use client';
 
-import { FormEvent, useMemo, useRef, useState } from 'react';
+import { FormEvent, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Eye, EyeOff, LockKeyhole, Mail, Phone } from 'lucide-react';
+import { normalizeDigits } from '@/lib/jalali';
+
+function digitsOnly(value: string) {
+  return normalizeDigits(value).replace(/\D/g, '').slice(0, 6);
+}
 
 export default function LoginForm() {
   const router = useRouter();
@@ -27,29 +32,66 @@ export default function LoginForm() {
   } | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
 
-  const isDisabled = useMemo(
-    () =>
-      loading
-      || (loginMode === 'email' && (!email.trim() || !password))
-      || (loginMode === 'phone' && (!phone.trim() || (phoneChallenge && phoneCode.length !== 6)))
-      || Boolean(
-        mfaChallenge
-        && (authMethod === 'email' ? !otpCode.trim() : !totpCode.trim()),
-      ),
-    [authMethod, email, loading, loginMode, mfaChallenge, otpCode, password, phone, phoneChallenge, phoneCode, totpCode],
-  );
-
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setErrorMessage('');
+
+    const formData = new FormData(event.currentTarget);
+    const submittedEmail = String(formData.get('email') ?? '').trim() || email.trim();
+    const submittedPassword = String(formData.get('password') ?? '') || password;
+    const submittedPhone = String(formData.get('phone') ?? '').trim() || phone.trim();
+    const submittedPhoneCode = digitsOnly(
+      String(formData.get('phoneCode') ?? '') || phoneCode,
+    );
+    const submittedOtpCode = digitsOnly(
+      String(formData.get('otpCode') ?? '') || otpCode,
+    );
+    const submittedTotpCode = digitsOnly(
+      String(formData.get('totpCode') ?? '') || totpCode,
+    );
+
+    if (loginMode === 'email' && (!submittedEmail || !submittedPassword)) {
+      setErrorMessage('ایمیل و رمز عبور را وارد کنید.');
+      return;
+    }
+    if (loginMode === 'phone' && !submittedPhone) {
+      setErrorMessage('شماره تلفن همراه را وارد کنید.');
+      return;
+    }
+    if (loginMode === 'phone' && phoneChallenge && submittedPhoneCode.length !== 6) {
+      setErrorMessage('کد ۶ رقمی ارسال‌شده در بله را کامل وارد کنید.');
+      return;
+    }
+    if (
+      mfaChallenge
+      && (
+        authMethod === 'email'
+          ? submittedOtpCode.length !== 6
+          : submittedTotpCode.length !== 6
+      )
+    ) {
+      setErrorMessage('کد تأیید ۶ رقمی را کامل وارد کنید.');
+      return;
+    }
+
+    setEmail(submittedEmail);
+    setPassword(submittedPassword);
+    setPhone(submittedPhone);
+    setPhoneCode(submittedPhoneCode);
+    setOtpCode(submittedOtpCode);
+    setTotpCode(submittedTotpCode);
     setLoading(true);
 
     try {
       if (loginMode === 'phone') {
         const endpoint = phoneChallenge ? '/api/auth/bale/verify' : '/api/auth/bale/request';
         const payload = phoneChallenge
-          ? { phone, challengeId: phoneChallenge.id, code: phoneCode }
-          : { phone };
+          ? {
+              phone: submittedPhone,
+              challengeId: phoneChallenge.id,
+              code: submittedPhoneCode,
+            }
+          : { phone: submittedPhone };
         const response = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -81,12 +123,12 @@ export default function LoginForm() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          email,
-          password,
+          email: submittedEmail,
+          password: submittedPassword,
           mfaId: mfaChallenge?.mfaId,
           otpId: mfaChallenge?.otpId,
-          otpCode,
-          totpCode,
+          otpCode: submittedOtpCode,
+          totpCode: submittedTotpCode,
           authMethod,
         }),
       });
@@ -159,7 +201,13 @@ export default function LoginForm() {
           <p>برای ورود به داشبورد، اطلاعات حساب خود را وارد کنید.</p>
         </div>
 
-        <form ref={formRef} onSubmit={handleSubmit} className="login-form">
+        <form
+          ref={formRef}
+          onSubmit={handleSubmit}
+          action="/api/auth/login"
+          method="post"
+          className="login-form"
+        >
           <div className="mfa-method-switcher login-mode-switcher">
             <button type="button" className={loginMode === 'email' ? 'is-active' : ''} onClick={() => { setLoginMode('email'); setPhoneChallenge(null); setErrorMessage(''); }}>ورود با ایمیل</button>
             <button type="button" className={loginMode === 'phone' ? 'is-active' : ''} onClick={() => { setLoginMode('phone'); setMfaChallenge(null); setErrorMessage(''); }}>ورود با تلفن و بله</button>
@@ -170,7 +218,7 @@ export default function LoginForm() {
               <label htmlFor="login-phone">شماره تلفن همراه</label>
               <div className="field-shell">
                 <Phone className="field-icon" size={18} aria-hidden="true" />
-                <input id="login-phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="۰۹۱۲۱۲۳۴۵۶۷۸" value={phone} onChange={(event) => setPhone(event.target.value)} required />
+                <input id="login-phone" name="phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="۰۹۱۲۱۲۳۴۵۶۷۸" value={phone} onChange={(event) => setPhone(event.target.value)} required />
               </div>
               {phoneChallenge ? <small className="mfa-hint">کد ۶ رقمی ارسال‌شده در بله را وارد کنید.</small> : null}
             </div>
@@ -180,14 +228,14 @@ export default function LoginForm() {
             <div className="field">
               <label htmlFor="bale-code">کد ورود بله</label>
               <div className="field-shell">
-                <input id="bale-code" inputMode="numeric" autoComplete="one-time-code" value={phoneCode} onChange={(event) => setPhoneCode(event.target.value.replace(/\D/g, '').slice(0, 6))} required />
+                <input id="bale-code" name="phoneCode" inputMode="numeric" autoComplete="one-time-code" value={phoneCode} onChange={(event) => setPhoneCode(digitsOnly(event.target.value))} required />
               </div>
             </div>
           ) : null}
 
           {loginMode === 'email' ? <div className="field">
             <label htmlFor="email">ایمیل</label>
-            <div className="field-shell">
+            <div className="field-shell password-field-shell">
               <Mail className="field-icon" size={18} aria-hidden="true" />
               <input
                 id="email"
@@ -223,8 +271,10 @@ export default function LoginForm() {
                 className="password-toggle"
                 onClick={() => setShowPassword((value) => !value)}
                 aria-label={showPassword ? 'مخفی کردن رمز عبور' : 'نمایش رمز عبور'}
+                aria-pressed={showPassword}
               >
                 {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                <span>{showPassword ? 'مخفی' : 'نمایش'}</span>
               </button>
             </div>
             </div>
@@ -265,9 +315,7 @@ export default function LoginForm() {
                   }
                   value={authMethod === 'email' ? otpCode : totpCode}
                   onChange={(event) => {
-                    const nextValue = authMethod === 'email'
-                      ? event.target.value.replace(/\D/g, '').slice(0, 6)
-                      : event.target.value.replace(/\D/g, '').slice(0, 6);
+                    const nextValue = digitsOnly(event.target.value);
 
                     if (authMethod === 'email') {
                       setOtpCode(nextValue);
@@ -296,7 +344,7 @@ export default function LoginForm() {
             </p>
           ) : null}
 
-          <button type="submit" disabled={isDisabled}>
+          <button type="submit" disabled={loading}>
             {loading
               ? 'در حال بررسی...'
               : mfaChallenge

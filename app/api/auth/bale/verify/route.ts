@@ -4,6 +4,7 @@ import { BALE_PHONE_COOKIE, hashBaleValue, isIranianMobile, normalizePhone } fro
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
 import { createPhoneSessionToken, hashPhoneSessionToken, PHONE_SESSION_DAYS } from '@/lib/phone-session';
 import { recordAuditEvent, getRequestMetadata } from '@/lib/audit';
+import { isSecureRequest } from '@/lib/request';
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null) as {
@@ -64,7 +65,7 @@ export async function POST(request: Request) {
       name: BALE_PHONE_COOKIE,
       value: token,
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: isSecureRequest(request),
       sameSite: 'lax',
       path: '/',
       maxAge: PHONE_SESSION_DAYS * 86_400,

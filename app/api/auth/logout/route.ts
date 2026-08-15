@@ -6,6 +6,7 @@ import { PB_AUTH_COOKIE } from '@/lib/pocketbase';
 import { BALE_PHONE_COOKIE } from '@/lib/bale';
 import { hashPhoneSessionToken } from '@/lib/phone-session';
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
+import { isSecureRequest } from '@/lib/request';
 
 export async function DELETE(request: Request) {
   const context = await getServerAuthContext();
@@ -53,7 +54,7 @@ export async function DELETE(request: Request) {
     name: PB_AUTH_COOKIE,
     value: '',
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: isSecureRequest(request),
     sameSite: 'lax',
     path: '/',
     maxAge: 0,
@@ -62,7 +63,7 @@ export async function DELETE(request: Request) {
     name: BALE_PHONE_COOKIE,
     value: '',
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: isSecureRequest(request),
     sameSite: 'lax',
     path: '/',
     maxAge: 0,
