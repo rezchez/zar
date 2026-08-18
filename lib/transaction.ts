@@ -10,7 +10,7 @@ export type TransactionType =
   | 'adjustment'
   | 'reversal';
 
-export type TransactionStatus = 'posted' | 'voided';
+export type TransactionStatus = 'temporary' | 'final' | 'posted' | 'voided';
 
 export type CustomerTransaction = {
   id: string;
@@ -98,7 +98,7 @@ export function mapTransaction(record: RecordModel): CustomerTransaction {
 
 export function sumPostedTransactions(transactions: CustomerTransaction[]) {
   return transactions
-    .filter((transaction) => transaction.status === 'posted')
+    .filter((transaction) => transaction.status === 'final' || transaction.status === 'posted')
     .reduce(
       (sum, transaction) => ({
         goldAmount: sum.goldAmount + transaction.goldAmount,

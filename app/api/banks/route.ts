@@ -1,0 +1,99 @@
+import { NextResponse } from 'next/server';
+
+import { getServerAuthContext } from '@/lib/auth';
+import { mapBankAccount } from '@/lib/bank';
+import { ensureBankAccountsCollection } from '@/lib/bank-collection';
+import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
+
+function text(value: unknown, max = 120) {
+  return typeof value === 'string' ? value.trim().slice(0, max) : '';
+}
+
+function amount(value: unknown) {
+  const parsed = Number(String(value ?? '').replace(/,/g, ''));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+async function writerFor(context: Awaited<ReturnType<typeof getServerAuthContext>>) {
+  if (!context) return null;
+  try {
+    return await getPocketBaseServiceClient();
+  } catch {
+    return context.pb;
+  }
+}
+
+export async function GET() {
+  const context = await getServerAuthContext();
+  if (!context) {
+    return NextResponse.json({ message: 'ابتدا وارد حساب شوید.' }, { status: 401 });
+  }
+
+  try {
+    const service = await getPocketBaseServiceClient().catch(() => null);
+    if (service) await ensureBankAccountsCollection(service);
+    const records = await context.pb.collection('bank_accounts').getFullList({
+      sort: 'bankName,accountNumber',
+    });
+    return NextResponse.json({ banks: records.map((record) => mapBankAccount(record)) });
+  } catch (error) {
+    console.error('bank_accounts_list_failed', error);
+    return NextResponse.json(
+      { message: 'دریافت حساب‌های بانکی انجام نشد.' },
+      { status: 500 },
+    );
+  }
+}
+
+export async function POST(request: Request) {
+  const context = await getServerAuthContext();
+  if (!context) {
+    return NextResponse.json({ message: 'ابتدا وارد حساب شوید.' }, { status: 401 });
+  }
+
+  const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+  const bankName = text(body?.bankName);
+  const accountNumber = text(body?.accountNumber, 80);
+  const accountCodeZero = text(body?.accountCodeZero, 80);
+  const balance = amount(body?.balance ?? 0);
+
+  if (!bankName || !accountNumber || !accountCodeZero || balance === null || balance < 0) {
+    return NextResponse.json(
+      { message: 'نام بانک، شماره حساب، حساب کد صفر و موجودی معتبر الزامی است.' },
+      { status: 400 },
+    );
+  }
+
+  const writer = await writerFor(context);
+  if (!writer) {
+    return NextResponse.json({ message: 'اتصال به پایگاه داده برقرار نشد.' }, { status: 500 });
+  }
+
+  try {
+    await ensureBankAccountsCollection(writer);
+    const duplicate = await writer.collection('bank_accounts').getFirstListItem(
+      writer.filter('accountNumber = {:accountNumber}', { accountNumber }),
+    ).catch(() => null);
+
+    if (duplicate) {
+      return NextResponse.json({ message: 'این شماره حساب قبلاً ثبت شده است.' }, { status: 409 });
+    }
+
+    const record = await writer.collection('bank_accounts').create({
+      bankName,
+      accountNumber,
+      balance,
+      accountCodeZero,
+      createdBy: context.user.id,
+      updatedBy: context.user.id,
+    });
+
+    return NextResponse.json({ bank: mapBankAccount(record) }, { status: 201 });
+  } catch (error) {
+    console.error('bank_account_create_failed', error);
+    return NextResponse.json(
+      { message: 'ثبت حساب بانکی انجام نشد. ابتدا کالکشن bank_accounts را در PocketBase بسازید.' },
+      { status: 400 },
+    );
+  }
+}

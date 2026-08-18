@@ -7,6 +7,7 @@ import GoldBalanceTrackers from '@/src/components/GoldBalanceTrackers';
 import JalaliCalendar from '@/src/components/JalaliCalendar';
 import KaratLedgerWidget from '@/src/components/KaratLedgerWidget';
 import QuickGoldActions from '@/src/components/QuickGoldActions';
+import BankBalancesWidget from '@/src/components/dashboard/BankBalancesWidget';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,6 +47,8 @@ export default async function DashboardPage() {
         <JalaliCalendar />
         <KaratLedgerWidget />
       </div>
+
+      <BankBalancesWidget />
     </DashboardShell>
   );
 }

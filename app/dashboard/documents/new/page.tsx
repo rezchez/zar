@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation';
 
 import { getServerAuthContext } from '@/lib/auth';
 import { getCustomersWithBalances } from '@/lib/customer-service';
-import { getNextDocumentNumber } from '@/lib/document-service';
+import { getNextDocumentSequence } from '@/lib/document-service';
 import DashboardShell from '@/src/components/dashboard/DashboardShell';
 import DocumentForm from '@/src/components/DocumentForm';
 
@@ -16,7 +16,7 @@ export default async function NewDocumentPage() {
   // avoids SDK request autocancellation and gives the page a clear failure
   // boundary when the database is temporarily unavailable.
   const customers = await getCustomersWithBalances(context.pb);
-  const nextDocumentNumber = await getNextDocumentNumber(context.pb);
+  const nextDocumentNumber = await getNextDocumentSequence(context.pb, context.user.id);
 
   return (
     <DashboardShell user={context.user}>

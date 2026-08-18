@@ -177,7 +177,8 @@ export default function DashboardShell({
   }, [user.role]);
 
   const allItems = useMemo(
-    () => flattenItems(navGroups.flatMap((group) => group.items)),
+    () => flattenItems(navGroups.flatMap((group) => group.items))
+      .filter((item): item is NavItemData & { href: string } => Boolean(item.href)),
     [navGroups],
   );
 

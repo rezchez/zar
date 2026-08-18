@@ -8,7 +8,6 @@ import {
   ClipboardList,
   Clock3,
   Eraser,
-  FileCheck2,
   FlaskConical,
   History,
   ListPlus,
@@ -19,11 +18,15 @@ import {
   Sparkles,
   Trash2,
   UserRound,
+  Wallet,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { currencyDisplay, type Customer } from '@/lib/customer';
+import DocumentSubmitActions from '@/components/documents/document-submit-actions';
+import DocumentEntryTabs from '@/src/components/documents/DocumentEntryTabs';
+import DocumentOperationTypeSelector from '@/src/components/documents/DocumentOperationTypeSelector';
 import type { DocumentNature } from '@/lib/document';
 import {
   formatJalaliDate,
@@ -40,21 +43,31 @@ type DateParts = {
 };
 
 type DetailState = {
-  metalType: 'gold';
+  metalType: 'gold' | 'silver' | 'platinum';
   rawKind: RawOperationKind;
   rawWeight: string;
   purity: string;
   labName: string;
   pocketNumber: string;
   stampNumber: string;
+  currencyUnit: string;
+  currencyQuantity: string;
+  currencyUnitPrice: string;
+  currencyTotalAmount: string;
+  unsettledTrade: boolean;
+  currencyTradeId: string;
+  settlementCurrencyUnit: string;
+  settlementQuantity: string;
+  settlesTradeId: string;
+  inventorySourceId: string;
 };
 
 type DocumentLine = {
   id: string;
   documentNature: DocumentNature;
-  documentTab: 'raw-gold';
+  documentTab: 'raw-gold' | 'currency' | 'cash';
   documentSubType: string;
-  settlementMethod: 'weight';
+  settlementMethod: 'weight' | 'cash' | 'unsettled';
   balanceSource: 'current';
   description: string;
   details: DetailState;
@@ -69,6 +82,15 @@ type DraftSnapshot = {
   committedLines: DocumentLine[];
   draftLine: DocumentLine;
   savedAt: string;
+};
+
+type MeltedInventoryItem = {
+  id: string;
+  weight: number;
+  remainingWeight: number;
+  purity: number;
+  stampNumber: string;
+  customerName: string;
 };
 
 const DRAFT_STORAGE_KEY = 'zarfolio-document-draft';
@@ -140,8 +162,19 @@ function faNumber(value: number, fractionDigits = 0) {
   }).format(value);
 }
 
+function convertedTo750(weight: string, purity: string) {
+  const actualWeight = numberValue(weight);
+  const carat = numberValue(purity);
+  if (actualWeight <= 0 || carat <= 0) return 0;
+  return (actualWeight * carat) / 750;
+}
+
 function documentSubType(nature: DocumentNature, kind: RawOperationKind) {
   return `${nature === 'received' ? 'incoming' : 'outgoing'}-${kind}`;
+}
+
+function currencyDocumentSubType(nature: DocumentNature) {
+  return nature === 'received' ? 'currency-purchase' : 'currency-sale';
 }
 
 function operationKindFromSubtype(value: string): RawOperationKind {
@@ -168,6 +201,30 @@ function createLine(nature: DocumentNature = 'received'): DocumentLine {
       labName: '',
       pocketNumber: '',
       stampNumber: '',
+      currencyUnit: 'USD',
+      currencyQuantity: '',
+      currencyUnitPrice: '',
+      currencyTotalAmount: '',
+      unsettledTrade: false,
+      currencyTradeId: '',
+      settlementCurrencyUnit: 'USD',
+      settlementQuantity: '',
+      settlesTradeId: '',
+      inventorySourceId: '',
+    },
+  };
+}
+
+function createCurrencyLine(nature: DocumentNature = 'received'): DocumentLine {
+  const line = createLine(nature);
+  return {
+    ...line,
+    documentTab: 'currency',
+    documentSubType: currencyDocumentSubType(nature),
+    settlementMethod: 'cash',
+    details: {
+      ...line.details,
+      currencyTradeId: line.id,
     },
   };
 }
@@ -178,17 +235,28 @@ function normalizeRestoredLine(
 ): DocumentLine {
   const nature = source?.documentNature === 'paid' ? 'paid' : fallbackNature;
   const restoredDetails = source?.details as Partial<DetailState> | undefined;
+  const tab = source?.documentTab === 'currency' ? 'currency' : 'raw-gold';
   const rawKind = restoredDetails?.rawKind
     ?? operationKindFromSubtype(source?.documentSubType ?? '');
-  const base = createLine(nature);
+  const base = tab === 'currency' ? createCurrencyLine(nature) : createLine(nature);
 
   return {
     ...base,
     id: typeof source?.id === 'string' && source.id ? source.id : base.id,
     description: typeof source?.description === 'string' ? source.description : '',
-    documentSubType: documentSubType(nature, rawKind),
+    documentTab: tab,
+    documentSubType: tab === 'currency'
+      ? currencyDocumentSubType(nature)
+      : documentSubType(nature, rawKind),
+    settlementMethod: tab === 'currency' && restoredDetails?.unsettledTrade
+      ? 'unsettled'
+      : base.settlementMethod,
     details: {
-      metalType: 'gold',
+      metalType: restoredDetails?.metalType === 'silver'
+        ? 'silver'
+        : restoredDetails?.metalType === 'platinum'
+          ? 'platinum'
+          : 'gold',
       rawKind,
       rawWeight: restoredDetails?.rawWeight ?? '',
       purity: rawKind === 'conditional' ? '' : restoredDetails?.purity ?? '750',
@@ -197,17 +265,46 @@ function normalizeRestoredLine(
       stampNumber: restoredDetails?.stampNumber
         ?? (restoredDetails as unknown as Record<string, string> | undefined)?.assayNumber
         ?? '',
+      currencyUnit: restoredDetails?.currencyUnit ?? 'USD',
+      currencyQuantity: restoredDetails?.currencyQuantity ?? '',
+      currencyUnitPrice: restoredDetails?.currencyUnitPrice ?? '',
+      currencyTotalAmount: restoredDetails?.currencyTotalAmount ?? '',
+      unsettledTrade: Boolean(restoredDetails?.unsettledTrade),
+      currencyTradeId: restoredDetails?.currencyTradeId ?? base.id,
+      settlementCurrencyUnit: restoredDetails?.settlementCurrencyUnit ?? 'USD',
+      settlementQuantity: restoredDetails?.settlementQuantity ?? '',
+      settlesTradeId: restoredDetails?.settlesTradeId ?? '',
+      inventorySourceId: restoredDetails?.inventorySourceId ?? '',
     },
   };
 }
 
 function isLineReady(line: DocumentLine) {
+  if (line.documentTab === 'currency') {
+    return numberValue(line.details.currencyQuantity) > 0
+      && numberValue(line.details.currencyUnitPrice) > 0
+      && numberValue(line.details.currencyTotalAmount) > 0;
+  }
   return numberValue(line.details.rawWeight) > 0;
 }
 
 function validateLine(line: DocumentLine) {
+  if (line.documentTab === 'currency') {
+    if (!line.details.currencyUnit) return 'واحد ارز را انتخاب کنید.';
+    if (numberValue(line.details.currencyQuantity) <= 0) return 'تعداد ارز باید بیشتر از صفر باشد.';
+    if (numberValue(line.details.currencyUnitPrice) <= 0) return 'قیمت هر واحد باید بیشتر از صفر باشد.';
+    if (numberValue(line.details.currencyTotalAmount) <= 0) return 'مبلغ کل باید بیشتر از صفر باشد.';
+    return '';
+  }
   if (numberValue(line.details.rawWeight) <= 0) {
     return 'وزن طلای خام باید بیشتر از صفر باشد.';
+  }
+  if (
+    line.documentNature === 'paid'
+    && line.details.rawKind === 'molten'
+    && !line.details.inventorySourceId
+  ) {
+    return 'برای خروج آبشده، یک موجودی فعال انتخاب کنید.';
   }
   if (
     line.details.rawKind !== 'conditional'
@@ -290,11 +387,13 @@ export default function DocumentForm({
   const [draftLine, setDraftLine] = useState<DocumentLine>(() => createLine('received'));
   const [committedLines, setCommittedLines] = useState<DocumentLine[]>([]);
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
+  const [activeEntryTab, setActiveEntryTab] = useState('metals');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [restoredAt, setRestoredAt] = useState('');
   const [hydrated, setHydrated] = useState(false);
+  const [meltedInventory, setMeltedInventory] = useState<MeltedInventoryItem[]>([]);
   const saveTimer = useRef<number | null>(null);
   const datePickerRef = useRef<HTMLDivElement>(null);
 
@@ -315,8 +414,23 @@ export default function DocumentForm({
   }, [customerQuery, customers, selectedCustomer]);
 
   const documentDateJalali = buildJalaliDate(dateParts);
+  const documentNumberPreview = selectedCustomer
+    ? `ZF${normalizeDigits(documentDateJalali).replace(/\D/g, '')}${selectedCustomer.customerCode}${documentNumber}`
+    : `ZF${normalizeDigits(documentDateJalali).replace(/\D/g, '')}—${documentNumber}`;
   const distanceLabel = dateDistanceLabel(dateParts);
   const draftReady = isLineReady(draftLine);
+  const currencyUnits = useMemo(() => {
+    const units = [
+      selectedCustomer?.secondaryCurrency,
+      selectedCustomer?.tertiaryCurrency,
+      'USD',
+      'EUR',
+      'AED',
+      'TRY',
+      'GBP',
+    ].filter((value): value is string => Boolean(value?.trim()));
+    return [...new Set(units)];
+  }, [selectedCustomer]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -374,13 +488,13 @@ export default function DocumentForm({
     })
       .then(async (response) => {
         const data = (await response.json()) as {
-          nextDocumentNumber?: number;
+          nextDocumentSequence?: number;
           message?: string;
         };
-        if (!response.ok || typeof data.nextDocumentNumber !== 'number') {
+        if (!response.ok || typeof data.nextDocumentSequence !== 'number') {
           throw new Error(data.message ?? 'شماره سند دریافت نشد.');
         }
-        setDocumentNumber(String(data.nextDocumentNumber));
+        setDocumentNumber(String(data.nextDocumentSequence));
       })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === 'AbortError') return;
@@ -392,6 +506,14 @@ export default function DocumentForm({
 
     return () => controller.abort();
   }, [hydrated, nextDocumentNumber, selectedCustomerId]);
+
+  useEffect(() => {
+    if (!hydrated || documentNature !== 'paid' || draftLine.details.rawKind !== 'molten') return;
+    fetch('/api/documents?inventory=melted', { cache: 'no-store' })
+      .then((response) => response.ok ? response.json() : Promise.reject())
+      .then((data: { inventory?: MeltedInventoryItem[] }) => setMeltedInventory(data.inventory ?? []))
+      .catch(() => setMeltedInventory([]));
+  }, [documentNature, draftLine.details.rawKind, hydrated]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -490,13 +612,57 @@ export default function DocumentForm({
     setDraftLine((current) => ({
       ...current,
       documentNature: nature,
-      documentSubType: documentSubType(nature, current.details.rawKind),
+      documentSubType: current.documentTab === 'currency'
+        ? currencyDocumentSubType(nature)
+        : documentSubType(nature, current.details.rawKind),
     }));
     setCommittedLines((current) => current.map((line) => ({
       ...line,
       documentNature: nature,
-      documentSubType: documentSubType(nature, line.details.rawKind),
+      documentSubType: line.documentTab === 'currency'
+        ? currencyDocumentSubType(nature)
+        : documentSubType(nature, line.details.rawKind),
     })));
+  }
+
+  function changeEntryTab(tab: string) {
+    setActiveEntryTab(tab);
+    if (editingLineId || (tab !== 'metals' && tab !== 'currency')) return;
+
+    const nextTab = tab === 'currency' ? 'currency' : 'raw-gold';
+    if (draftLine.documentTab === nextTab) return;
+    setDraftLine(nextTab === 'currency'
+      ? createCurrencyLine(documentNature)
+      : createLine(documentNature));
+  }
+
+  function updateCurrencyValue(
+    field: 'currencyQuantity' | 'currencyUnitPrice' | 'currencyTotalAmount',
+    value: string,
+  ) {
+    setDraftLine((current) => {
+      const details = { ...current.details, [field]: value };
+      const quantity = numberValue(details.currencyQuantity);
+      const unitPrice = numberValue(details.currencyUnitPrice);
+      const total = numberValue(details.currencyTotalAmount);
+
+      if (field === 'currencyQuantity') {
+        if (unitPrice > 0) details.currencyTotalAmount = String(quantity * unitPrice);
+        else if (total > 0 && quantity > 0) details.currencyUnitPrice = String(total / quantity);
+      } else if (field === 'currencyUnitPrice') {
+        if (quantity > 0) details.currencyTotalAmount = String(quantity * unitPrice);
+        else if (total > 0 && unitPrice > 0) details.currencyQuantity = String(total / unitPrice);
+      } else if (field === 'currencyTotalAmount') {
+        if (quantity > 0) details.currencyUnitPrice = String(total / quantity);
+        else if (unitPrice > 0) details.currencyQuantity = String(total / unitPrice);
+      }
+
+      return {
+        ...current,
+        settlementMethod: details.unsettledTrade ? 'unsettled' : 'cash',
+        details,
+      };
+    });
   }
 
   function changeRawKind(kind: RawOperationKind) {
@@ -536,12 +702,15 @@ export default function DocumentForm({
     } else {
       setCommittedLines((current) => [...current, draftLine]);
     }
-    setDraftLine(createLine(documentNature));
+    setDraftLine(draftLine.documentTab === 'currency'
+      ? createCurrencyLine(documentNature)
+      : createLine(documentNature));
   }
 
   function editLine(line: DocumentLine) {
     setDraftLine(line);
     setEditingLineId(line.id);
+    setActiveEntryTab(line.documentTab === 'currency' ? 'currency' : 'metals');
     setErrorMessage('');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -549,6 +718,7 @@ export default function DocumentForm({
   function cancelEdit() {
     setDraftLine(createLine(documentNature));
     setEditingLineId(null);
+    setActiveEntryTab('metals');
     setErrorMessage('');
   }
 
@@ -565,6 +735,7 @@ export default function DocumentForm({
     setRestoredAt('');
     setMessage('');
     setErrorMessage('');
+    setActiveEntryTab('metals');
   }
 
   function goToPreviousMonth() {
@@ -595,39 +766,34 @@ export default function DocumentForm({
     setDateOpen(false);
   }
 
-  async function save(andNew: boolean) {
+  async function save(status: 'temporary' | 'final') {
     setSaving(true);
     setMessage('');
     setErrorMessage('');
 
-    if (!selectedCustomerId) {
-      setErrorMessage('ابتدا طرف‌حساب را از فهرست نتایج انتخاب کنید.');
-      setSaving(false);
-      return;
-    }
-    if (documentNumberLoading) {
-      setErrorMessage('لطفاً تا پایان استعلام شماره سند صبر کنید.');
-      setSaving(false);
-      return;
-    }
-    if (!committedLines.length) {
-      setErrorMessage(
-        draftReady
-          ? 'اطلاعات ردیف وارد شده است؛ ابتدا «ثبت ردیف در سند» را بزنید.'
-          : 'هنوز هیچ ردیفی به سند اضافه نشده است.',
-      );
-      setSaving(false);
-      return;
-    }
-
     try {
+      if (!selectedCustomerId) {
+        throw new Error('ابتدا طرف‌حساب را از فهرست نتایج انتخاب کنید.');
+      }
+      if (documentNumberLoading) {
+        throw new Error('لطفاً تا پایان استعلام شماره سند صبر کنید.');
+      }
+      if (!committedLines.length) {
+        throw new Error(
+          draftReady
+            ? 'اطلاعات ردیف وارد شده است؛ ابتدا «ثبت ردیف در سند» را بزنید.'
+            : 'هنوز هیچ ردیفی به سند اضافه نشده است.',
+        );
+      }
+
       const response = await fetch('/api/documents', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
           customerId: selectedCustomerId,
           documentNumber,
           documentDateJalali,
+          status,
           lines: committedLines.map((line) => ({
             documentNature: line.documentNature,
             documentTab: line.documentTab,
@@ -636,38 +802,60 @@ export default function DocumentForm({
             balanceSource: line.balanceSource,
             description: line.description,
             documentDetails: line.details,
-            goldAmount: numberValue(line.details.rawWeight),
-            silverAmount: 0,
-            platinumAmount: 0,
-            rialAmount: 0,
-            foreignAmount: 0,
+            goldAmount: line.documentTab === 'raw-gold' && line.details.metalType === 'gold'
+              ? numberValue(line.details.rawWeight)
+              : 0,
+            silverAmount: line.documentTab === 'raw-gold' && line.details.metalType === 'silver'
+              ? numberValue(line.details.rawWeight)
+              : 0,
+            platinumAmount: line.documentTab === 'raw-gold' && line.details.metalType === 'platinum'
+              ? numberValue(line.details.rawWeight)
+              : 0,
+            // An unsettled deal intentionally has no cash-side amount. The
+            // currency quantity remains on the customer's ledger until it is
+            // settled from the cash drawer in a later document.
+            rialAmount: line.documentTab === 'currency' && !line.details.unsettledTrade
+              ? numberValue(line.details.currencyTotalAmount)
+              : 0,
+            foreignAmount: line.documentTab === 'currency'
+              ? numberValue(line.details.currencyQuantity)
+              : 0,
             tertiaryAmount: 0,
           })),
         }),
       });
       const data = (await response.json().catch(() => null)) as
-        | { message?: string; documentNumber?: string }
+        | {
+          message?: string;
+          documentNumber?: string;
+          nextDocumentSequence?: number;
+        }
         | null;
 
       if (!response.ok) {
-        setErrorMessage(data?.message ?? 'ثبت سند انجام نشد.');
-        return;
+        throw new Error(data?.message ?? 'ثبت سند انجام نشد.');
       }
 
       const registeredNumber = data?.documentNumber ?? documentNumber;
       setMessage(
         `سند شماره ${toPersianDigits(registeredNumber)} با ${faNumber(committedLines.length)} ردیف ثبت شد.`,
       );
-      setDocumentNumber(String(Number(registeredNumber) + 1));
+      const nextSequence = Number(data?.nextDocumentSequence ?? documentNumber);
+      setDocumentNumber(String(Number.isFinite(nextSequence) ? nextSequence : 1));
       clearDraftStorage();
       setCommittedLines([]);
-      setDraftLine(createLine(documentNature));
+      setDraftLine(activeEntryTab === 'currency'
+        ? createCurrencyLine(documentNature)
+        : createLine(documentNature));
       setEditingLineId(null);
       setRestoredAt('');
 
-      if (!andNew) window.scrollTo({ top: 0, behavior: 'smooth' });
-    } catch {
-      setErrorMessage('ارتباط با سرور برقرار نشد.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      if (status === 'temporary') {
+        setMessage(`سند شماره ${toPersianDigits(registeredNumber)} به‌صورت موقت ذخیره شد.`);
+      }
+    } catch (error) {
+      throw error instanceof Error ? error : new Error('ارتباط با سرور برقرار نشد.');
     } finally {
       setSaving(false);
     }
@@ -815,11 +1003,27 @@ export default function DocumentForm({
           <Field label="شماره سند خودکار">
             <div className="document-number-field">
               <input
-                value={documentNumberLoading ? 'در حال استعلام...' : toPersianDigits(documentNumber)}
+                value={documentNumberLoading ? 'در حال استعلام...' : toPersianDigits(documentNumberPreview)}
                 readOnly
                 aria-label="شماره سند خودکار"
               />
               {documentNumberLoading ? <LoaderCircle size={16} className="spin" /> : <Check size={15} />}
+            </div>
+            <div className="mt-4">
+              <span className="mb-2 block text-xs font-bold text-slate-600 dark:text-slate-300">
+                جنس فلز
+              </span>
+              <select
+                value={draftLine.details.metalType}
+                onChange={(event) => updateDraftDetail(
+                  'metalType',
+                  event.target.value as DetailState['metalType'],
+                )}
+              >
+                <option value="gold">طلای خام</option>
+                <option value="silver">نقره</option>
+                <option value="platinum">پلاتین</option>
+              </select>
             </div>
           </Field>
 
@@ -857,6 +1061,28 @@ export default function DocumentForm({
                 <Clock3 size={13} />
                 {distanceLabel}
               </small>
+
+              <div className="document-nature-switch-wrap mt-4">
+                <span>نوع سند</span>
+                <button
+                  type="button"
+                  className={`document-nature-switch ${documentNature}`}
+                  onClick={() => changeNature(documentNature === 'received' ? 'paid' : 'received')}
+                  role="switch"
+                  aria-checked={documentNature === 'received'}
+                >
+                  <span className="document-nature-switch-track">
+                    <motion.span
+                      className="document-nature-switch-thumb"
+                      animate={{ x: documentNature === 'received' ? 0 : -42 }}
+                      transition={{ type: 'spring', stiffness: 450, damping: 30 }}
+                    />
+                  </span>
+                    <strong>
+                    سند {documentNature === 'received' ? 'دریافتی' : 'پرداختی'}
+                  </strong>
+                </button>
+              </div>
             </div>
           </Field>
         </div>
@@ -879,87 +1105,44 @@ export default function DocumentForm({
           ) : null}
         </div>
 
-        <div className="document-mode-toolbar">
-          <div className="document-nature-switch-wrap">
-            <span>وضعیت سند</span>
-            <button
-              type="button"
-              className={`document-nature-switch ${documentNature}`}
-              onClick={() => changeNature(documentNature === 'received' ? 'paid' : 'received')}
-              role="switch"
-              aria-checked={documentNature === 'received'}
-            >
-              <span className="document-nature-switch-track">
-                <motion.span
-                  className="document-nature-switch-thumb"
-                  animate={{ x: documentNature === 'received' ? 0 : -42 }}
-                  transition={{ type: 'spring', stiffness: 450, damping: 30 }}
-                />
-              </span>
-              <strong>
-                سند {documentNature === 'received' ? 'دریافتی' : 'پرداختی'}
-              </strong>
-            </button>
-            <small>
-              {documentNature === 'received'
-                ? 'بستانکار شدن طرف‌حساب و افزایش بدهی ما'
-                : 'بدهکار شدن طرف‌حساب و کاهش بدهی ما'}
-            </small>
-          </div>
-
-          <Field label="جنس فلز">
-            <select
-              value={draftLine.details.metalType}
-              onChange={(event) => updateDraftDetail(
-                'metalType',
-                event.target.value as DetailState['metalType'],
-              )}
-            >
-              <option value="gold">طلای خام</option>
-            </select>
-          </Field>
-        </div>
-
-        <div className="document-operation-section">
-          <div className="document-operation-title">
-            <div>
-              <p className="eyebrow">نوع عملیات</p>
-              <h3>نوع {documentNature === 'received' ? 'ورود' : 'خروج'} را انتخاب کنید</h3>
-            </div>
-            <span className={`document-nature-badge ${documentNature}`}>
-              {documentNature === 'received' ? 'دریافتی / بستانکار' : 'پرداختی / بدهکار'}
-            </span>
-          </div>
-
-          <div className="document-operation-options" role="radiogroup" aria-label="نوع عملیات طلای خام">
-            {rawOperationLabels[documentNature].map((option) => (
-              <button
-                type="button"
-                role="radio"
-                aria-checked={draftLine.details.rawKind === option.id}
-                className={draftLine.details.rawKind === option.id ? 'is-active' : ''}
-                key={option.id}
-                onClick={() => changeRawKind(option.id)}
-              >
-                <span className="document-radio-dot" />
-                <span>
-                  <strong>{option.label}</strong>
-                  <small>{option.help}</small>
+        <DocumentEntryTabs
+          accountCodeZero="0"
+          nature={documentNature}
+          metalsTabLabel={`${draftLine.details.metalType === 'silver' ? 'ورود نقره خام' : draftLine.details.metalType === 'platinum' ? 'ورود پلاتین خام' : 'ورود طلا خام'}`.replace(
+            /^ورود/,
+            documentNature === 'received' ? 'ورود' : 'خروج',
+          )}
+          activeTab={activeEntryTab}
+          onActiveTabChange={changeEntryTab}
+          firstTabContent={(
+            <div className="space-y-5">
+              <div className="document-operation-section">
+              <div className="document-operation-title">
+                <div>
+                  <p className="eyebrow">نوع عملیات</p>
+                  <h3>نوع {documentNature === 'received' ? 'ورود' : 'خروج'} را انتخاب کنید</h3>
+                </div>
+                <span className={`document-nature-badge ${documentNature}`}>
+                  {documentNature === 'received' ? 'دریافتی / بستانکار' : 'پرداختی / بدهکار'}
                 </span>
-              </button>
-            ))}
-          </div>
-        </div>
+              </div>
 
-        <AnimatePresence mode="wait" initial={false}>
-          <motion.div
-            key={`${documentNature}-${draftLine.details.rawKind}`}
-            className="document-dynamic-fields"
-            initial={{ opacity: 0, y: 12, filter: 'blur(4px)' }}
-            animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-            exit={{ opacity: 0, y: -8, filter: 'blur(3px)' }}
-            transition={{ duration: 0.22, ease: 'easeOut' }}
-          >
+              <DocumentOperationTypeSelector
+                nature={documentNature}
+                value={draftLine.details.rawKind}
+                onChange={changeRawKind}
+              />
+              </div>
+
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.div
+                  key={`${documentNature}-${draftLine.details.rawKind}`}
+                  className="document-dynamic-fields"
+                  initial={{ opacity: 0, y: 12, filter: 'blur(4px)' }}
+                  animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+                  exit={{ opacity: 0, y: -8, filter: 'blur(3px)' }}
+                  transition={{ duration: 0.22, ease: 'easeOut' }}
+                >
             <div className="document-dynamic-fields-heading">
               <FlaskConical size={18} />
               <div>
@@ -971,6 +1154,38 @@ export default function DocumentForm({
             </div>
 
             <div className="document-special-grid raw-gold-fields">
+              {documentNature === 'paid' && draftLine.details.rawKind === 'molten' ? (
+                <Field label="انتخاب موجودی آبشده" wide>
+                  <select
+                    value={draftLine.details.inventorySourceId}
+                    onChange={(event) => {
+                      const source = meltedInventory.find((item) => item.id === event.target.value);
+                      setDraftLine((current) => ({
+                        ...current,
+                        details: {
+                          ...current.details,
+                          inventorySourceId: event.target.value,
+                          rawWeight: source ? String(source.remainingWeight) : current.details.rawWeight,
+                          purity: source ? String(source.purity || 750) : current.details.purity,
+                          stampNumber: source?.stampNumber ?? current.details.stampNumber,
+                        },
+                      }));
+                    }}
+                  >
+                    <option value="">انتخاب از موجودی فعال...</option>
+                    {meltedInventory.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.stampNumber || 'بدون انگ'} · {item.customerName} · {item.remainingWeight.toFixed(3)} گرم · عیار {item.purity}
+                      </option>
+                    ))}
+                  </select>
+                  {!meltedInventory.length ? (
+                    <small className="mt-1 block text-xs text-slate-500 dark:text-slate-400">
+                      موجودی آبشده فعالی برای خروج پیدا نشد.
+                    </small>
+                  ) : null}
+                </Field>
+              ) : null}
               <Field label="وزن (گرم)">
                 <input
                   type="number"
@@ -997,6 +1212,21 @@ export default function DocumentForm({
                   />
                 </Field>
               ) : null}
+
+              <Field label="تبدیل‌شده به ۷۵۰">
+                <input
+                  value={faNumber(
+                    convertedTo750(
+                      draftLine.details.rawWeight,
+                      draftLine.details.purity,
+                    ),
+                    3,
+                  )}
+                  readOnly
+                  aria-label="وزن تبدیل‌شده به عیار ۷۵۰"
+                  className="computed-field"
+                />
+              </Field>
 
               {draftLine.details.rawKind !== 'misc' ? (
                 <>
@@ -1050,35 +1280,205 @@ export default function DocumentForm({
                 </span>
               </div>
             </div>
-          </motion.div>
-        </AnimatePresence>
+                </motion.div>
+              </AnimatePresence>
 
-        <AnimatePresence mode="wait">
-          {draftReady ? (
-            <motion.button
-              type="button"
-              className="document-commit-line-button"
-              onClick={commitDraftLine}
-              initial={{ opacity: 0, y: 14, scale: 0.96 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 8, scale: 0.97 }}
-              transition={{ type: 'spring', stiffness: 380, damping: 26 }}
-              whileHover={{ y: -2 }}
-              whileTap={{ scale: 0.98 }}
-            >
-              <ListPlus size={18} />
-              {editingLineId ? 'ثبت اصلاح ردیف' : 'ثبت ردیف در سند'}
-            </motion.button>
-          ) : (
-            <motion.p
-              className="document-draft-hint"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-            >
-              با وارد کردن وزن، دکمه «ثبت ردیف در سند» فعال می‌شود.
-            </motion.p>
+              <AnimatePresence mode="wait">
+                {draftReady ? (
+                  <motion.button
+                    type="button"
+                    className="document-commit-line-button"
+                    onClick={commitDraftLine}
+                    initial={{ opacity: 0, y: 14, scale: 0.96 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 8, scale: 0.97 }}
+                    transition={{ type: 'spring', stiffness: 380, damping: 26 }}
+                    whileHover={{ y: -2 }}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    <ListPlus size={18} />
+                    {editingLineId ? 'ثبت اصلاح ردیف' : 'ثبت ردیف در سند'}
+                  </motion.button>
+                ) : (
+                  <motion.p
+                    className="document-draft-hint"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                  >
+                    با وارد کردن وزن، دکمه «ثبت ردیف در سند» فعال می‌شود.
+                  </motion.p>
+                )}
+              </AnimatePresence>
+            </div>
           )}
-        </AnimatePresence>
+          currencyTabContent={(
+            <div className="space-y-5">
+              <div className="document-operation-title">
+                <div>
+                  <p className="eyebrow">عملیات ارزی</p>
+                  <h3>{documentNature === 'received' ? 'خرید ارز' : 'فروش ارز'}</h3>
+                </div>
+                <span className={`document-nature-badge ${documentNature}`}>
+                  {documentNature === 'received' ? 'خرید ارز' : 'فروش ارز'}
+                </span>
+              </div>
+
+              <div className="document-special-grid raw-gold-fields">
+                <Field label="واحد ارز">
+                  <select
+                    value={draftLine.details.currencyUnit}
+                    onChange={(event) => updateDraftDetail('currencyUnit', event.target.value)}
+                  >
+                    {currencyUnits.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
+                  </select>
+                </Field>
+                <Field label="تعداد">
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    inputMode="decimal"
+                    value={draftLine.details.currencyQuantity}
+                    onChange={(event) => updateCurrencyValue('currencyQuantity', event.target.value)}
+                    placeholder="۰"
+                  />
+                </Field>
+                <Field label="قیمت هر واحد (ریال)">
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    inputMode="decimal"
+                    value={draftLine.details.currencyUnitPrice}
+                    onChange={(event) => updateCurrencyValue('currencyUnitPrice', event.target.value)}
+                    placeholder="۰"
+                  />
+                </Field>
+                <Field label="مبلغ کل (ریال)">
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    inputMode="decimal"
+                    value={draftLine.details.currencyTotalAmount}
+                    onChange={(event) => updateCurrencyValue('currencyTotalAmount', event.target.value)}
+                    placeholder="۰"
+                  />
+                </Field>
+                <label className="flex min-h-12 items-center gap-3 rounded-xl border border-amber-300/70 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900 dark:border-amber-700/60 dark:bg-amber-950/30 dark:text-amber-200">
+                  <input
+                    type="checkbox"
+                    checked={draftLine.details.unsettledTrade}
+                    onChange={(event) => setDraftLine((current) => ({
+                      ...current,
+                      settlementMethod: event.target.checked ? 'unsettled' : 'cash',
+                      details: { ...current.details, unsettledTrade: event.target.checked },
+                    }))}
+                  />
+                  <span>
+                    بدون تسویه
+                    <small className="mt-1 block text-xs font-normal opacity-80">
+                      مبلغ نقدی اکنون ثبت نمی‌شود و بدهی/بستانکاری ارز در حساب طرف‌حساب می‌ماند.
+                    </small>
+                  </span>
+                </label>
+                <Field label="توضیحات" wide>
+                  <textarea
+                    value={draftLine.description}
+                    onChange={(event) => setDraftLine((current) => ({
+                      ...current,
+                      description: event.target.value,
+                    }))}
+                    placeholder="توضیحات معامله ارزی..."
+                  />
+                </Field>
+              </div>
+
+              <div className={`raw-metal-result ${documentNature}`}>
+                <Wallet size={17} />
+                <div>
+                  <strong>{documentNature === 'received' ? 'خرید ارز' : 'فروش ارز'}</strong>
+                  <span>
+                    {draftLine.details.currencyQuantity
+                      ? `${toPersianDigits(draftLine.details.currencyQuantity)} ${draftLine.details.currencyUnit}`
+                      : 'تعداد وارد نشده'}
+                    {draftLine.details.currencyTotalAmount
+                      ? ` · ${toPersianDigits(draftLine.details.currencyTotalAmount)} ریال`
+                      : ''}
+                    {draftLine.details.unsettledTrade ? ' · بدون تسویه' : ''}
+                  </span>
+                </div>
+              </div>
+
+              <AnimatePresence mode="wait">
+                {draftReady ? (
+                  <motion.button
+                    type="button"
+                    className="document-commit-line-button"
+                    onClick={commitDraftLine}
+                    initial={{ opacity: 0, y: 14, scale: 0.96 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 8, scale: 0.97 }}
+                  >
+                    <ListPlus size={18} />
+                    {editingLineId ? 'ثبت اصلاح ردیف' : 'ثبت ردیف ارزی در سند'}
+                  </motion.button>
+                ) : (
+                  <motion.p className="document-draft-hint" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                    با وارد کردن دو مقدار، مقدار سوم خودکار محاسبه می‌شود.
+                  </motion.p>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
+          cashTabContent={(
+            <div className="grid gap-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+              <div className="flex items-center gap-3">
+                <Wallet className="text-emerald-600" size={24} />
+                <div>
+                  <p className="text-sm font-bold text-slate-700 dark:text-slate-200">تسویه معاملات بدون تسویه</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">ارز و مقدار معامله باز را برای تسویه بعدی انتخاب کنید.</p>
+                </div>
+              </div>
+              <select
+                value={draftLine.details.settlesTradeId}
+                onChange={(event) => {
+                  const trade = committedLines.find((line) => line.id === event.target.value);
+                  setDraftLine((current) => ({
+                    ...current,
+                    details: {
+                      ...current.details,
+                      settlesTradeId: event.target.value,
+                      settlementCurrencyUnit: trade?.details.currencyUnit ?? current.details.settlementCurrencyUnit,
+                      settlementQuantity: trade?.details.currencyQuantity ?? current.details.settlementQuantity,
+                    },
+                  }));
+                }}
+              >
+                <option value="">انتخاب معامله باز...</option>
+                {committedLines.filter((line) => line.documentTab === 'currency' && line.details.unsettledTrade).map((line) => (
+                  <option key={line.id} value={line.id}>
+                    {line.details.currencyQuantity || '۰'} {line.details.currencyUnit} · {line.details.currencyTotalAmount || '۰'} ریال
+                  </option>
+                ))}
+              </select>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="واحد ارز تسویه">
+                  <input value={draftLine.details.settlementCurrencyUnit} readOnly />
+                </Field>
+                <Field label="مقدار تسویه">
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={draftLine.details.settlementQuantity}
+                    onChange={(event) => updateDraftDetail('settlementQuantity', event.target.value)}
+                  />
+                </Field>
+              </div>
+            </div>
+          )}
+        />
       </section>
 
       <section className="dashboard-panel document-lines-panel">
@@ -1124,23 +1524,11 @@ export default function DocumentForm({
       </section>
 
       <div className="document-actions">
-        <button
-          type="button"
-          className="document-primary-button"
-          onClick={() => void save(false)}
-          disabled={saving || !committedLines.length || documentNumberLoading}
-        >
-          {saving ? <LoaderCircle size={17} className="spin" /> : <FileCheck2 size={17} />}
-          {saving ? 'در حال ثبت سند...' : 'ثبت کل سند'}
-        </button>
-        <button
-          type="button"
-          className="document-secondary-button"
-          onClick={() => void save(true)}
-          disabled={saving || !committedLines.length || documentNumberLoading}
-        >
-          ثبت سند و آماده‌سازی سند بعدی
-        </button>
+        <DocumentSubmitActions
+          onSubmit={async (status) => {
+            await save(status);
+          }}
+        />
         {committedLines.length || draftReady ? (
           <button
             type="button"
@@ -1350,6 +1738,57 @@ function CommittedLineRow({
   onEdit: () => void;
   onRemove: () => void;
 }) {
+  if (line.documentTab === 'currency') {
+    const isPurchase = line.documentNature === 'received';
+    return (
+      <motion.article
+        layout
+        className={`document-line-row ${line.documentNature}`}
+        initial={{ opacity: 0, y: 16, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, x: -24, scale: 0.97 }}
+        transition={{ type: 'spring', stiffness: 320, damping: 28 }}
+      >
+        <span className="document-line-row-index">{faNumber(index + 1)}</span>
+        <div className="document-line-row-main">
+          <div className="document-line-row-title">
+            <strong>{isPurchase ? 'خرید ارز' : 'فروش ارز'}</strong>
+            <span className={`document-nature-badge ${line.documentNature}`}>
+              {line.details.unsettledTrade ? 'بدون تسویه' : isPurchase ? 'خرید' : 'فروش'}
+            </span>
+          </div>
+          <small>
+            {line.details.currencyUnit} · قیمت واحد {toPersianDigits(line.details.currencyUnitPrice || '۰')} ریال
+            {line.description ? ` — ${line.description}` : ''}
+          </small>
+        </div>
+        <div className="document-line-row-figures">
+          <span>
+            <strong>{faNumber(numberValue(line.details.currencyQuantity), 2)}</strong>
+            {' '}{line.details.currencyUnit}
+            <small className="block">
+              {faNumber(numberValue(line.details.currencyTotalAmount))} ریال
+            </small>
+          </span>
+        </div>
+        <div className="document-line-row-actions">
+          <button type="button" onClick={onEdit} aria-label="ویرایش ردیف" title="ویرایش ردیف">
+            <PencilLine size={15} />
+          </button>
+          <button
+            type="button"
+            className="is-danger"
+            onClick={onRemove}
+            aria-label="حذف ردیف"
+            title="حذف ردیف"
+          >
+            <Trash2 size={15} />
+          </button>
+        </div>
+      </motion.article>
+    );
+  }
+
   const kind = line.details.rawKind;
   const labInfo = [
     line.details.purity && `عیار ${toPersianDigits(line.details.purity)}`,

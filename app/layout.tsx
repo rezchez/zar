@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import Script from 'next/script'
 import './globals.css'
 import './document-form.css'
 import ThemeProvider from '@/src/components/ThemeProvider'
@@ -53,14 +54,10 @@ export default function RootLayout({
     <html lang="fa" dir="rtl" suppressHydrationWarning>
       <head>
         <meta name="color-scheme" content="dark light" />
-        <template
+        <Script
           id="zarfolio-theme-bootstrap"
+          strategy="beforeInteractive"
           dangerouslySetInnerHTML={{ __html: themeBootstrap }}
-        />
-        <script
-          dangerouslySetInnerHTML={{
-            __html: "document.currentScript.previousElementSibling?.content?.firstChild?.data && eval(document.currentScript.previousElementSibling.content.firstChild.data)",
-          }}
         />
       </head>
       <body suppressHydrationWarning>

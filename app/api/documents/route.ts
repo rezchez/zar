@@ -6,7 +6,10 @@ import { getServerAuthContext } from '@/lib/auth';
 import {
   serializeDocumentDetails,
 } from '@/lib/document';
-import { getNextDocumentNumber } from '@/lib/document-service';
+import {
+  buildDocumentNumber,
+  getNextDocumentSequence,
+} from '@/lib/document-service';
 import { jalaliDateToIso, normalizeDigits } from '@/lib/jalali';
 import { mapDocument } from '@/lib/document';
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
@@ -67,9 +70,47 @@ export async function GET(request: Request) {
   }
 
   try {
-    const customerId = new URL(request.url).searchParams.get('customerId') ?? '';
+    const url = new URL(request.url);
+    if (url.searchParams.get('inventory') === 'melted') {
+      const records = await context.pb.collection('transactions').getFullList({
+        filter: 'documentSubType = "incoming-molten" || documentSubType = "outgoing-molten"',
+        sort: 'created',
+        expand: 'customer',
+      });
+      const inflows = new Map<string, {
+        id: string;
+        weight: number;
+        remainingWeight: number;
+        purity: number;
+        stampNumber: string;
+        customerName: string;
+      }>();
+      for (const record of records) {
+        const details = typeof record.documentDetails === 'string'
+          ? (() => { try { return JSON.parse(record.documentDetails) as Record<string, unknown>; } catch { return {}; } })()
+          : {};
+        const weight = Math.abs(Number(record.goldAmount ?? 0));
+        if (record.documentNature === 'received' && weight > 0) {
+          inflows.set(record.id, {
+            id: record.id,
+            weight,
+            remainingWeight: weight,
+            purity: Number(details.purity ?? 750) || 750,
+            stampNumber: String(details.stampNumber ?? ''),
+            customerName: String(record.expand?.customer?.name ?? record.customerCode ?? ''),
+          });
+        }
+        if (record.documentNature === 'paid' && typeof details.inventorySourceId === 'string') {
+          const source = inflows.get(details.inventorySourceId);
+          if (source) source.remainingWeight = Math.max(0, source.remainingWeight - weight);
+        }
+      }
+      return NextResponse.json({
+        inventory: [...inflows.values()].filter((item) => item.remainingWeight > 0.0000001),
+      });
+    }
     return NextResponse.json({
-      nextDocumentNumber: await getNextDocumentNumber(context.pb, customerId || undefined),
+      nextDocumentSequence: await getNextDocumentSequence(context.pb, context.user.id),
     });
   } catch {
     return NextResponse.json(
@@ -91,6 +132,7 @@ export async function POST(request: Request) {
   }
 
   const documentDateJalali = readString(body.documentDateJalali, 20);
+  const requestedStatus = body.status === 'temporary' ? 'temporary' : 'final';
   const transactionDate = jalaliDateToIso(documentDateJalali);
   if (!transactionDate) {
     return NextResponse.json(
@@ -110,12 +152,35 @@ export async function POST(request: Request) {
 
     // The number is assigned on the server so two browser tabs cannot
     // accidentally reuse a stale number shown in the form.
-    const documentNumber = String(await getNextDocumentNumber(context.pb, customer.id));
+    const documentSequence = await getNextDocumentSequence(context.pb, context.user.id);
+    const documentNumber = buildDocumentNumber(
+      documentDateJalali,
+      Number(customer.customerCode ?? 0),
+      documentSequence,
+    );
     const documentId = readString(body.documentId, 80) || randomUUID();
     const requestedLines = Array.isArray(body.lines) ? body.lines : [body];
     const lines = requestedLines.length
       ? requestedLines
       : [body];
+    const inventoryRecords = await context.pb.collection('transactions').getFullList({
+      filter: 'documentSubType = "incoming-molten" || documentSubType = "outgoing-molten"',
+      sort: 'created',
+    });
+    const availableMelted = new Map<string, number>();
+    for (const record of inventoryRecords) {
+      const weight = Math.abs(Number(record.goldAmount ?? 0));
+      const details = typeof record.documentDetails === 'string'
+        ? (() => { try { return JSON.parse(record.documentDetails) as Record<string, unknown>; } catch { return {}; } })()
+        : {};
+      if (record.documentNature === 'received' && weight > 0) availableMelted.set(record.id, weight);
+      if (record.documentNature === 'paid' && typeof details.inventorySourceId === 'string') {
+        availableMelted.set(
+          details.inventorySourceId,
+          Math.max(0, (availableMelted.get(details.inventorySourceId) ?? 0) - weight),
+        );
+      }
+    }
 
     const preparedLines = lines.map((rawLine, index) => {
       const line = rawLine && typeof rawLine === 'object' && !Array.isArray(rawLine)
@@ -135,13 +200,27 @@ export async function POST(request: Request) {
       if (!hasAmount(lineAmounts)) {
         throw new Error(`ردیف ${index + 1} باید حداقل یک مبلغ یا وزن غیرصفر داشته باشد.`);
       }
+      const details = normalizeDetails(line.documentDetails);
+      if (
+        lineNature === 'paid'
+        && line.documentSubType === 'outgoing-molten'
+        && typeof details.inventorySourceId === 'string'
+        && details.inventorySourceId
+      ) {
+        const requestedWeight = Math.abs(lineAmounts.goldAmount ?? 0);
+        const availableWeight = availableMelted.get(details.inventorySourceId) ?? 0;
+        if (requestedWeight > availableWeight + 0.0000001) {
+          throw new Error(`وزن خروجی ردیف ${index + 1} از موجودی آبشده بیشتر است.`);
+        }
+        availableMelted.set(details.inventorySourceId, availableWeight - requestedWeight);
+      }
 
       return {
         line,
         lineNature,
         lineAmounts,
         lineNumber: index + 1,
-        documentDetails: normalizeDetails(line.documentDetails),
+        documentDetails: details,
       };
     });
 
@@ -151,7 +230,7 @@ export async function POST(request: Request) {
       createdBy: context.user.id,
       updatedBy: context.user.id,
       transactionType: 'document',
-      status: 'posted',
+      status: requestedStatus,
       isOpeningBalance: false,
       sourceKey: `document:${documentId}:${prepared.lineNumber}`,
       transactionDate,
@@ -224,6 +303,7 @@ export async function POST(request: Request) {
       transaction: mapDocument(records[0]),
       documentId,
       documentNumber,
+      nextDocumentSequence: documentSequence + 1,
       registeredAt: records[0].created,
     }, { status: 201 });
   } catch (error) {
