@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 
 import { getServerAuthContext } from '@/lib/auth';
-import DashboardShell from '@/src/components/DashboardShell';
+import DashboardShell from '@/src/components/dashboard/DashboardShell';
 import UserManagement, { type ManagedUser } from '@/src/components/UserManagement';
 
 export const dynamic = 'force-dynamic';

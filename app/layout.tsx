@@ -1,5 +1,4 @@
 import type { Metadata } from 'next'
-import Script from 'next/script'
 import './globals.css'
 import './document-form.css'
 import ThemeProvider from '@/src/components/ThemeProvider'
@@ -9,6 +8,42 @@ export const metadata: Metadata = {
   description: 'Zarfolio workspace',
 }
 
+const themeBootstrap = `
+(() => {
+  try {
+    const stored = localStorage.getItem('zarfolio-theme');
+    const mode = (stored === 'light' || stored === 'dark' || stored === 'system')
+      ? stored
+      : 'system';
+
+    const theme = mode === 'system'
+      ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+      : mode;
+
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.dataset.themeMode = mode;
+    document.documentElement.style.colorScheme = theme;
+
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  } catch {
+    const theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.dataset.themeMode = 'system';
+    document.documentElement.style.colorScheme = theme;
+
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }
+})()
+`
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -16,28 +51,19 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="fa" dir="rtl" suppressHydrationWarning>
-      <body>
-        <Script id="zarfolio-theme-bootstrap" strategy="beforeInteractive">
-          {`(() => {
-            try {
-              const stored = localStorage.getItem('zarfolio-theme');
-              const mode = stored === 'light' || stored === 'dark' || stored === 'system'
-                ? stored
-                : 'system';
-              const theme = mode === 'system'
-                ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-                : mode;
-              document.documentElement.dataset.theme = theme;
-              document.documentElement.dataset.themeMode = mode;
-              document.documentElement.style.colorScheme = theme;
-            } catch {
-              const theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-              document.documentElement.dataset.theme = theme;
-              document.documentElement.dataset.themeMode = 'system';
-              document.documentElement.style.colorScheme = theme;
-            }
-          })();`}
-        </Script>
+      <head>
+        <meta name="color-scheme" content="dark light" />
+        <template
+          id="zarfolio-theme-bootstrap"
+          dangerouslySetInnerHTML={{ __html: themeBootstrap }}
+        />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: "document.currentScript.previousElementSibling?.content?.firstChild?.data && eval(document.currentScript.previousElementSibling.content.firstChild.data)",
+          }}
+        />
+      </head>
+      <body suppressHydrationWarning>
         <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>

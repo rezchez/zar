@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { getServerAuthContext } from '@/lib/auth';
 import { getCustomersWithBalances } from '@/lib/customer-service';
 import { getNextDocumentNumber } from '@/lib/document-service';
-import DashboardShell from '@/src/components/DashboardShell';
+import DashboardShell from '@/src/components/dashboard/DashboardShell';
 import DocumentForm from '@/src/components/DocumentForm';
 
 export const dynamic = 'force-dynamic';

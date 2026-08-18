@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation';
 
 import { getServerAuth } from '@/lib/auth';
 import AccountSettings from '@/src/components/AccountSettings';
-import DashboardShell from '@/src/components/DashboardShell';
+import DashboardShell from '@/src/components/dashboard/DashboardShell';
 
 export const dynamic = 'force-dynamic';
 

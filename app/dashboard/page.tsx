@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 
 import { getServerAuth } from '@/lib/auth';
-import DashboardShell from '@/src/components/DashboardShell';
+import DashboardShell from '@/src/components/dashboard/DashboardShell';
 import GoldMarketTicker from '@/src/components/GoldMarketTicker';
 import GoldBalanceTrackers from '@/src/components/GoldBalanceTrackers';
 import JalaliCalendar from '@/src/components/JalaliCalendar';

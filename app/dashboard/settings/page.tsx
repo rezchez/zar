@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 
 import { getServerAuthContext } from '@/lib/auth';
-import DashboardShell from '@/src/components/DashboardShell';
+import DashboardShell from '@/src/components/dashboard/DashboardShell';
 import ProgramSettings from '@/src/components/ProgramSettings';
 
 export const dynamic = 'force-dynamic';

@@ -4712,3 +4712,18 @@ button:disabled {
     display: none;
   }
 }
+.dashboard-topbar {
+  position: relative;
+  z-index: 20;
+}
+
+@media (min-width: 1024px) {
+  .dashboard-topbar.is-pinned {
+    position: sticky;
+    top: 0;
+  }
+
+  .dashboard-topbar:not(.is-pinned) {
+    position: relative;
+  }
+}

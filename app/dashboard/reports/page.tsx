@@ -4,7 +4,7 @@ import { getServerAuthContext } from '@/lib/auth';
 import type { Customer } from '@/lib/customer';
 import { getCustomersWithBalances } from '@/lib/customer-service';
 import CustomerReports from '@/src/components/CustomerReports';
-import DashboardShell from '@/src/components/DashboardShell';
+import DashboardShell from '@/src/components/dashboard/DashboardShell';
 
 export const dynamic = 'force-dynamic';
 
