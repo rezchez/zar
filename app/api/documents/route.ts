@@ -163,6 +163,22 @@ export async function POST(request: Request) {
     const lines = requestedLines.length
       ? requestedLines
       : [body];
+    const existingDocument = await context.pb.collection('transactions').getFullList({
+      filter: context.pb.filter(
+        'documentId = {:documentId} && is_deleted = false',
+        { documentId },
+      ),
+      sort: 'documentLineNumber',
+    }).catch(() => []);
+    if (existingDocument.length > 0) {
+      return NextResponse.json({
+        transactions: existingDocument.map(mapDocument),
+        transaction: mapDocument(existingDocument[0]),
+        documentId,
+        documentNumber: String(existingDocument[0].documentNumber ?? ''),
+        alreadyExists: true,
+      }, { status: 200 });
+    }
     const inventoryRecords = await context.pb.collection('transactions').getFullList({
       filter: 'documentSubType = "incoming-molten" || documentSubType = "outgoing-molten"',
       sort: 'created',

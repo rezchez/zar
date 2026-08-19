@@ -186,7 +186,11 @@ export async function DELETE(
     const id = (await params).id;
     const record = await context.pb.collection('customers').getOne(id);
     const customer = (await getCustomerWithBalances(context.pb, record)).customer;
-    await context.pb.collection('customers').delete(id);
+    await context.pb.collection('customers').update(id, {
+      is_deleted: true,
+      deleted_at: new Date().toISOString(),
+      deleted_by: context.user.id,
+    });
     await recordAuditEvent({
       userId: context.user.id,
       event: 'customer_deleted',

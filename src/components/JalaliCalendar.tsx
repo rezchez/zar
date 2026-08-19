@@ -54,7 +54,7 @@ function todayJalali() {
 }
 
 export default function JalaliCalendar() {
-  const today = useMemo(todayJalali, []);
+  const today = useMemo(() => todayJalali(), []);
   const [view, setView] = useState({ year: today.year, month: today.month });
 
   const cells = useMemo(() => {

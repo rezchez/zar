@@ -15,7 +15,10 @@ export default function AuditRecovery() {
     setContacts(data.contacts ?? []);
     setDocuments(data.documents ?? []);
   }
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void load(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
   async function restore(type: 'contact' | 'document', id: string) {
     await fetch('/api/audit-logs', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ type, id }) });
     await load();

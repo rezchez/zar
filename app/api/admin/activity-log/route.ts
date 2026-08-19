@@ -21,6 +21,7 @@ const eventLabels: Record<string, string> = {
   customer_created: 'افزودن طرف‌حساب',
   customer_updated: 'ویرایش طرف‌حساب',
   customer_deleted: 'حذف طرف‌حساب',
+  transaction_deleted: 'حذف سند',
   transaction_created: 'ثبت تراکنش',
   transaction_updated: 'ویرایش تراکنش',
   settings_updated: 'تغییر تنظیمات',

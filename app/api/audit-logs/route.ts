@@ -33,12 +33,25 @@ export async function PATCH(request: Request) {
   }
   const collection = body.type === 'contact' ? 'customers' : 'transactions';
   try {
-    const record = await result.context!.pb.collection(collection).update(body.id, {
+    const record = await result.context!.pb.collection(collection).getOne(body.id);
+    const updates = {
       is_deleted: false,
       deleted_at: '',
       deleted_by: '',
-    });
-    return NextResponse.json({ success: true, id: record.id });
+    };
+    if (body.type === 'document' && record.documentId) {
+      const siblings = await result.context!.pb.collection(collection).getFullList({
+        filter: result.context!.pb.filter('documentId = {:documentId} && is_deleted = true', {
+          documentId: record.documentId,
+        }),
+      });
+      for (const sibling of siblings) {
+        await result.context!.pb.collection(collection).update(sibling.id, updates);
+      }
+      return NextResponse.json({ success: true, id: record.id, restoredCount: siblings.length });
+    }
+    const restored = await result.context!.pb.collection(collection).update(body.id, updates);
+    return NextResponse.json({ success: true, id: restored.id, restoredCount: 1 });
   } catch {
     return NextResponse.json({ message: 'بازیابی انجام نشد.' }, { status: 400 });
   }

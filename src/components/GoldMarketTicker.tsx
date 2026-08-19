@@ -36,10 +36,6 @@ export default function GoldMarketTicker() {
   const timerRef = useRef<number | null>(null);
 
   useEffect(() => {
-    setLastUpdate(
-      new Intl.DateTimeFormat('fa-IR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date()),
-    );
-
     // شبیه‌سازی نوسان لحظه‌ای بازار — با وب‌سوکت/پولینگ واقعی جایگزین شود
     timerRef.current = window.setInterval(() => {
       setQuotes((current) =>

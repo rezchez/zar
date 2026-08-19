@@ -45,6 +45,7 @@ export default function BankOperation({ accountCodeZero }: BankOperationProps) {
   const [newBankName, setNewBankName] = useState('');
   const [newAccountNumber, setNewAccountNumber] = useState('');
   const [newBalance, setNewBalance] = useState('0');
+  const [newCurrency, setNewCurrency] = useState('IRR');
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
 
@@ -95,6 +96,7 @@ export default function BankOperation({ accountCodeZero }: BankOperationProps) {
           bankName: newBankName,
           accountNumber: newAccountNumber,
           balance: newBalance,
+          currency: newCurrency,
           accountCodeZero,
         }),
       });
@@ -105,6 +107,7 @@ export default function BankOperation({ accountCodeZero }: BankOperationProps) {
       setNewBankName('');
       setNewAccountNumber('');
       setNewBalance('0');
+      setNewCurrency('IRR');
       setShowCreate(false);
       setNotice({ tone: 'success', text: 'حساب بانکی با موفقیت ثبت شد.' });
     } catch (error) {
@@ -163,13 +166,14 @@ export default function BankOperation({ accountCodeZero }: BankOperationProps) {
         <div className="grid gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4 sm:grid-cols-3">
           <input value={newBankName} onChange={(event) => setNewBankName(event.target.value)} placeholder="نام بانک" className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900" />
           <input value={newAccountNumber} onChange={(event) => setNewAccountNumber(event.target.value)} placeholder="شماره حساب" className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900" />
+          <input value={newCurrency} onChange={(event) => setNewCurrency(event.target.value.toUpperCase())} placeholder="واحد ارز (IRR/USD)" className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900" />
           <div className="flex gap-2">
             <input value={newBalance} onChange={(event) => setNewBalance(event.target.value)} inputMode="decimal" placeholder="موجودی اولیه" className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900" />
             <button type="button" onClick={() => void createBank()} disabled={loading} className="rounded-xl bg-slate-900 px-3 text-white disabled:opacity-50 dark:bg-white dark:text-slate-900">
               {loading ? <LoaderCircle size={16} className="animate-spin" /> : <Check size={16} />}
             </button>
           </div>
-          <p className="text-xs text-slate-500 sm:col-span-3">حساب جدید زیرمجموعه حساب کد صفر {accountCodeZero} ثبت می‌شود.</p>
+          <p className="text-xs text-slate-500 sm:col-span-3">حساب جدید با واحد {newCurrency || 'IRR'} زیرمجموعه حساب کد صفر {accountCodeZero} ثبت می‌شود.</p>
         </div>
       ) : null}
 

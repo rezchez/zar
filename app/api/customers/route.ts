@@ -56,9 +56,10 @@ function buildPayload(formData: FormData, ownerId: string, customerCode: number)
 }
 
 async function nextCustomerCode(context: NonNullable<Awaited<ReturnType<typeof getServerAuthContext>>>) {
-  const records = await context.pb.collection('customers').getList(1, 1, {
-    sort: '-customerCode',
-    fields: 'customerCode',
+    const records = await context.pb.collection('customers').getList(1, 1, {
+      sort: '-customerCode',
+      fields: 'customerCode',
+      filter: 'is_deleted = false',
   });
   return Number(records.items[0]?.customerCode ?? 0) + 1;
 }

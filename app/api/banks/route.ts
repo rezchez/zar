@@ -55,6 +55,7 @@ export async function POST(request: Request) {
   const bankName = text(body?.bankName);
   const accountNumber = text(body?.accountNumber, 80);
   const accountCodeZero = text(body?.accountCodeZero, 80);
+  const currency = text(body?.currency, 16).toUpperCase() || 'IRR';
   const balance = amount(body?.balance ?? 0);
 
   if (!bankName || !accountNumber || !accountCodeZero || balance === null || balance < 0) {
@@ -84,6 +85,7 @@ export async function POST(request: Request) {
       accountNumber,
       balance,
       accountCodeZero,
+      currency,
       createdBy: context.user.id,
       updatedBy: context.user.id,
     });

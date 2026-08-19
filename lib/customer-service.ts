@@ -16,7 +16,7 @@ export async function getCustomerTransactions(
   customerId: string,
 ) {
   const records = await pb.collection('transactions').getFullList({
-    filter: pb.filter('customer = {:customerId}', { customerId }),
+    filter: pb.filter('customer = {:customerId} && is_deleted = false', { customerId }),
     sort: '-transactionDate,-created',
   });
   return records.map(mapTransaction);
@@ -56,12 +56,14 @@ export async function getCustomerWithBalances(
 export async function getCustomersWithBalances(pb: PocketBase) {
   const records = await pb.collection('customers').getFullList({
     sort: '-customerCode',
+    filter: 'is_deleted = false',
   });
 
   let transactionRecords: RecordModel[] = [];
   try {
     transactionRecords = await pb.collection('transactions').getFullList({
       sort: '-transactionDate,-created',
+      filter: 'is_deleted = false',
     });
   } catch {
     transactionRecords = [];

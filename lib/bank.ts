@@ -4,6 +4,7 @@ export type BankAccount = {
   accountNumber: string;
   balance: number;
   accountCodeZero: string;
+  currency: string;
   created: string;
   updated: string;
 };
@@ -19,6 +20,7 @@ export function mapBankAccount(record: Record<string, unknown>): BankAccount {
       ? record.balance
       : 0,
     accountCodeZero: typeof record.accountCodeZero === 'string' ? record.accountCodeZero : '',
+    currency: typeof record.currency === 'string' && record.currency ? record.currency : 'IRR',
     created: typeof record.created === 'string' ? record.created : '',
     updated: typeof record.updated === 'string' ? record.updated : '',
   };

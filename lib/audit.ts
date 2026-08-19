@@ -23,6 +23,7 @@ export type AuditEvent =
   | 'customer_created'
   | 'customer_updated'
   | 'customer_deleted'
+  | 'transaction_deleted'
   | 'transaction_created'
   | 'transaction_updated'
   | 'settings_updated';

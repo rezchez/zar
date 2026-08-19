@@ -182,6 +182,15 @@ export default function DashboardTopbarSearch({
 
   function selectItem(item: DashboardTopbarSearchItem) {
     if (!item.href) return;
+    void fetch('/api/search', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        query,
+        counterpartyName: item.title,
+      }),
+      keepalive: true,
+    }).catch(() => undefined);
     onNavigate(item.href);
     closeSearch();
   }

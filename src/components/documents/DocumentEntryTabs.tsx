@@ -17,6 +17,7 @@ import type { ReactNode } from 'react';
 import { useState } from 'react';
 
 import BankOperation from '@/src/components/documents/BankOperation';
+import CashOperation from '@/src/components/documents/CashOperation';
 
 type DocumentEntryTabsProps = {
   firstTabContent: ReactNode;
@@ -87,7 +88,7 @@ export default function DocumentEntryTabs({
       id: 'cash',
       label: 'وجه نقد',
       icon: Wallet,
-      content: cashTabContent ?? <PlaceholderTab label="عملیات وجه نقد" />,
+      content: cashTabContent ?? <CashOperation />,
     },
     {
       id: 'bank',
