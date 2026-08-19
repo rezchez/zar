@@ -7,9 +7,7 @@ import {
   ChevronRight,
   ClipboardList,
   Clock3,
-  Eraser,
   FlaskConical,
-  History,
   ListPlus,
   LoaderCircle,
   PencilLine,
@@ -26,7 +24,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { currencyDisplay, type Customer } from '@/lib/customer';
 import DocumentSubmitActions from '@/components/documents/document-submit-actions';
 import DocumentEntryTabs from '@/src/components/documents/DocumentEntryTabs';
-import DocumentOperationTypeSelector from '@/src/components/documents/DocumentOperationTypeSelector';
+import DocumentOperationTypeSelector, {
+  RawMetalOperationTypeSelector,
+} from '@/src/components/documents/DocumentOperationTypeSelector';
 import type { DocumentNature } from '@/lib/document';
 import {
   formatJalaliDate,
@@ -34,7 +34,9 @@ import {
   normalizeDigits,
 } from '@/lib/jalali';
 
-type RawOperationKind = 'molten' | 'misc' | 'conditional' | 'question';
+type RawOperationKind = 'molten' | 'misc' | 'conditional' | 'question' | 'unsettled';
+type CalculationMethod = 'weight' | 'money';
+type MetalPriceType = 'mesghal17' | 'gram18' | 'ounceUsd';
 
 type DateParts = {
   year: number;
@@ -47,6 +49,10 @@ type DetailState = {
   rawKind: RawOperationKind;
   rawWeight: string;
   purity: string;
+  calculationMethod: CalculationMethod;
+  metalPriceType: MetalPriceType;
+  metalPrice: string;
+  totalAmount: string;
   labName: string;
   pocketNumber: string;
   stampNumber: string;
@@ -65,23 +71,12 @@ type DetailState = {
 type DocumentLine = {
   id: string;
   documentNature: DocumentNature;
-  documentTab: 'raw-gold' | 'currency' | 'cash';
+  documentTab: 'raw-gold' | 'gold-sale' | 'currency' | 'cash';
   documentSubType: string;
   settlementMethod: 'weight' | 'cash' | 'unsettled';
   balanceSource: 'current';
   description: string;
   details: DetailState;
-};
-
-type DraftSnapshot = {
-  customerQuery: string;
-  selectedCustomerId: string;
-  documentNumber: string;
-  dateParts: DateParts;
-  documentNature: DocumentNature;
-  committedLines: DocumentLine[];
-  draftLine: DocumentLine;
-  savedAt: string;
 };
 
 type MeltedInventoryItem = {
@@ -92,8 +87,6 @@ type MeltedInventoryItem = {
   stampNumber: string;
   customerName: string;
 };
-
-const DRAFT_STORAGE_KEY = 'zarfolio-document-draft';
 
 const jalaliMonthNames = [
   'فروردین',
@@ -112,23 +105,8 @@ const jalaliMonthNames = [
 
 const weekDayNames = ['ش', 'ی', 'د', 'س', 'چ', 'پ', 'ج'];
 
-const rawOperationLabels: Record<
-  DocumentNature,
-  Array<{ id: RawOperationKind; label: string; help: string }>
-> = {
-  received: [
-    { id: 'molten', label: 'ورود آبشده', help: 'طلای آبشده با مشخصات کامل ری‌گیری' },
-    { id: 'misc', label: 'ورود متفرقه', help: 'ورود ساده بر پایه وزن و عیار' },
-    { id: 'conditional', label: 'ورود شرطی', help: 'ورود موقت بدون تعیین عیار' },
-    { id: 'question', label: 'ورود سواله', help: 'ورود سواله با مشخصات کامل آزمایشگاه' },
-  ],
-  paid: [
-    { id: 'molten', label: 'خروج آبشده', help: 'طلای آبشده با مشخصات کامل ری‌گیری' },
-    { id: 'misc', label: 'خروج متفرقه', help: 'خروج ساده بر پایه وزن و عیار' },
-    { id: 'conditional', label: 'خروج شرطی', help: 'خروج موقت بدون تعیین عیار' },
-    { id: 'question', label: 'خروج سواله', help: 'خروج سواله با مشخصات کامل آزمایشگاه' },
-  ],
-};
+const MESGHAL_17_TO_GRAM_18 = 4.3318;
+const TROY_OUNCE_GRAMS = 31.1035;
 
 function toPersianDigits(value: string) {
   return value.replace(/\d/g, (digit) => '۰۱۲۳۴۵۶۷۸۹'[Number(digit)]);
@@ -169,19 +147,45 @@ function convertedTo750(weight: string, purity: string) {
   return (actualWeight * carat) / 750;
 }
 
+function metalPriceLabel(type: MetalPriceType) {
+  if (type === 'mesghal17') return 'قیمت فلز هر مثقال';
+  if (type === 'gram18') return 'قیمت فلز هر گرم';
+  return 'قیمت فلز هر اونس';
+}
+
+function pricePer750Gram(type: MetalPriceType, price: string) {
+  const value = numberValue(price);
+  if (value <= 0) return 0;
+  if (type === 'mesghal17') return value / MESGHAL_17_TO_GRAM_18;
+  if (type === 'ounceUsd') return value / TROY_OUNCE_GRAMS;
+  return value;
+}
+
+function totalFromWeight(weight: string, purity: string, type: MetalPriceType, price: string) {
+  return Math.round(convertedTo750(weight, purity) * pricePer750Gram(type, price));
+}
+
+function convertedWeightFromTotal(total: string, type: MetalPriceType, price: string) {
+  const perGram = pricePer750Gram(type, price);
+  return perGram > 0 ? numberValue(total) / perGram : 0;
+}
+
+function actualWeightFromMoney(details: Pick<DetailState, 'totalAmount' | 'purity' | 'metalPriceType' | 'metalPrice'>) {
+  const purityNumber = numberValue(details.purity);
+  if (purityNumber <= 0) return 0;
+  return (convertedWeightFromTotal(details.totalAmount, details.metalPriceType, details.metalPrice) * 750) / purityNumber;
+}
+
 function documentSubType(nature: DocumentNature, kind: RawOperationKind) {
   return `${nature === 'received' ? 'incoming' : 'outgoing'}-${kind}`;
 }
 
-function currencyDocumentSubType(nature: DocumentNature) {
-  return nature === 'received' ? 'currency-purchase' : 'currency-sale';
+function goldSaleSubType(nature: DocumentNature, kind: RawOperationKind) {
+  return `${nature === 'received' ? 'gold-purchase' : 'gold-sale'}-${kind}`;
 }
 
-function operationKindFromSubtype(value: string): RawOperationKind {
-  if (value.endsWith('-misc')) return 'misc';
-  if (value.endsWith('-conditional')) return 'conditional';
-  if (value.endsWith('-question')) return 'question';
-  return 'molten';
+function currencyDocumentSubType(nature: DocumentNature) {
+  return nature === 'received' ? 'currency-purchase' : 'currency-sale';
 }
 
 function createLine(nature: DocumentNature = 'received'): DocumentLine {
@@ -198,6 +202,10 @@ function createLine(nature: DocumentNature = 'received'): DocumentLine {
       rawKind: 'molten',
       rawWeight: '',
       purity: '750',
+      calculationMethod: 'weight',
+      metalPriceType: 'gram18',
+      metalPrice: '',
+      totalAmount: '',
       labName: '',
       pocketNumber: '',
       stampNumber: '',
@@ -229,63 +237,19 @@ function createCurrencyLine(nature: DocumentNature = 'received'): DocumentLine {
   };
 }
 
-function normalizeRestoredLine(
-  source: Partial<DocumentLine> | undefined,
-  fallbackNature: DocumentNature,
-): DocumentLine {
-  const nature = source?.documentNature === 'paid' ? 'paid' : fallbackNature;
-  const restoredDetails = source?.details as Partial<DetailState> | undefined;
-  const tab = source?.documentTab === 'currency' ? 'currency' : 'raw-gold';
-  const rawKind = restoredDetails?.rawKind
-    ?? operationKindFromSubtype(source?.documentSubType ?? '');
-  const base = tab === 'currency' ? createCurrencyLine(nature) : createLine(nature);
-
-  return {
-    ...base,
-    id: typeof source?.id === 'string' && source.id ? source.id : base.id,
-    description: typeof source?.description === 'string' ? source.description : '',
-    documentTab: tab,
-    documentSubType: tab === 'currency'
-      ? currencyDocumentSubType(nature)
-      : documentSubType(nature, rawKind),
-    settlementMethod: tab === 'currency' && restoredDetails?.unsettledTrade
-      ? 'unsettled'
-      : base.settlementMethod,
-    details: {
-      metalType: restoredDetails?.metalType === 'silver'
-        ? 'silver'
-        : restoredDetails?.metalType === 'platinum'
-          ? 'platinum'
-          : 'gold',
-      rawKind,
-      rawWeight: restoredDetails?.rawWeight ?? '',
-      purity: rawKind === 'conditional' ? '' : restoredDetails?.purity ?? '750',
-      labName: restoredDetails?.labName ?? '',
-      pocketNumber: restoredDetails?.pocketNumber ?? '',
-      stampNumber: restoredDetails?.stampNumber
-        ?? (restoredDetails as unknown as Record<string, string> | undefined)?.assayNumber
-        ?? '',
-      currencyUnit: restoredDetails?.currencyUnit ?? 'USD',
-      currencyQuantity: restoredDetails?.currencyQuantity ?? '',
-      currencyUnitPrice: restoredDetails?.currencyUnitPrice ?? '',
-      currencyTotalAmount: restoredDetails?.currencyTotalAmount ?? '',
-      unsettledTrade: Boolean(restoredDetails?.unsettledTrade),
-      currencyTradeId: restoredDetails?.currencyTradeId ?? base.id,
-      settlementCurrencyUnit: restoredDetails?.settlementCurrencyUnit ?? 'USD',
-      settlementQuantity: restoredDetails?.settlementQuantity ?? '',
-      settlesTradeId: restoredDetails?.settlesTradeId ?? '',
-      inventorySourceId: restoredDetails?.inventorySourceId ?? '',
-    },
-  };
-}
-
 function isLineReady(line: DocumentLine) {
   if (line.documentTab === 'currency') {
     return numberValue(line.details.currencyQuantity) > 0
       && numberValue(line.details.currencyUnitPrice) > 0
       && numberValue(line.details.currencyTotalAmount) > 0;
   }
-  return numberValue(line.details.rawWeight) > 0;
+  const rawWeight = line.details.calculationMethod === 'money'
+    ? actualWeightFromMoney(line.details)
+    : numberValue(line.details.rawWeight);
+  if (line.documentTab === 'raw-gold') return rawWeight > 0;
+  return rawWeight > 0
+    && numberValue(line.details.totalAmount) > 0
+    && numberValue(line.details.metalPrice) > 0;
 }
 
 function validateLine(line: DocumentLine) {
@@ -296,8 +260,15 @@ function validateLine(line: DocumentLine) {
     if (numberValue(line.details.currencyTotalAmount) <= 0) return 'مبلغ کل باید بیشتر از صفر باشد.';
     return '';
   }
-  if (numberValue(line.details.rawWeight) <= 0) {
+  const rawWeight = line.details.calculationMethod === 'money'
+    ? actualWeightFromMoney(line.details)
+    : numberValue(line.details.rawWeight);
+  if (rawWeight <= 0) {
     return 'وزن طلای خام باید بیشتر از صفر باشد.';
+  }
+  if (line.documentTab === 'gold-sale'
+    && (numberValue(line.details.metalPrice) <= 0 || numberValue(line.details.totalAmount) <= 0)) {
+    return 'نوع فی، قیمت فلز و مبلغ کل را کامل وارد کنید.';
   }
   if (
     line.documentNature === 'paid'
@@ -307,8 +278,7 @@ function validateLine(line: DocumentLine) {
     return 'برای خروج آبشده، یک موجودی فعال انتخاب کنید.';
   }
   if (
-    line.details.rawKind !== 'conditional'
-    && (numberValue(line.details.purity) < 1 || numberValue(line.details.purity) > 999)
+    (numberValue(line.details.purity) < 1 || numberValue(line.details.purity) > 999)
   ) {
     return 'عیار باید عددی بین ۱ تا ۹۹۹ باشد.';
   }
@@ -361,8 +331,12 @@ function dateDistanceLabel(dateParts: DateParts) {
 }
 
 function rawOperationLabel(nature: DocumentNature, kind: RawOperationKind) {
-  return rawOperationLabels[nature].find((item) => item.id === kind)?.label
-    ?? rawOperationLabels[nature][0].label;
+  if (kind === 'conditional') return nature === 'received' ? 'ورود شرطی' : 'خروج شرطی';
+  if (kind === 'question') return nature === 'received' ? 'ورود سواله' : 'خروج سواله';
+  const prefix = nature === 'received' ? 'خرید' : 'فروش';
+  if (kind === 'misc') return `${prefix} متفرقه`;
+  if (kind === 'unsettled') return `${prefix} بدون تسویه`;
+  return `${prefix} آب‌شده`;
 }
 
 export default function DocumentForm({
@@ -388,13 +362,24 @@ export default function DocumentForm({
   const [committedLines, setCommittedLines] = useState<DocumentLine[]>([]);
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
   const [activeEntryTab, setActiveEntryTab] = useState('metals');
-  const [saving, setSaving] = useState(false);
+  const [, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
-  const [restoredAt, setRestoredAt] = useState('');
-  const [hydrated, setHydrated] = useState(false);
   const [meltedInventory, setMeltedInventory] = useState<MeltedInventoryItem[]>([]);
-  const saveTimer = useRef<number | null>(null);
+  const [weightPrecision] = useState(() => {
+    if (typeof window === 'undefined') return 3;
+    try {
+      const raw = window.localStorage.getItem('zar-program-settings-preview');
+      const configured = raw
+        ? Number((JSON.parse(raw) as { decimalScale?: string }).decimalScale)
+        : 3;
+      return Number.isFinite(configured)
+        ? Math.min(8, Math.max(0, configured))
+        : 3;
+    } catch {
+      return 3;
+    }
+  });
   const datePickerRef = useRef<HTMLDivElement>(null);
 
   const selectedCustomer = customers.find(
@@ -433,50 +418,6 @@ export default function DocumentForm({
   }, [selectedCustomer]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      try {
-        const raw = window.localStorage.getItem(DRAFT_STORAGE_KEY);
-        if (raw) {
-          const snapshot = JSON.parse(raw) as Partial<DraftSnapshot>;
-          const restoredNature = snapshot.documentNature === 'paid' ? 'paid' : 'received';
-          const restoredDraft = normalizeRestoredLine(snapshot.draftLine, restoredNature);
-          const restoredLines = Array.isArray(snapshot.committedLines)
-            ? snapshot.committedLines.map((line) => normalizeRestoredLine(line, restoredNature))
-            : [];
-          const hasContent = Boolean(
-            restoredLines.length
-            || snapshot.selectedCustomerId
-            || isLineReady(restoredDraft),
-          );
-
-          if (hasContent) {
-            setCustomerQuery(snapshot.customerQuery ?? '');
-            setSelectedCustomerId(snapshot.selectedCustomerId ?? '');
-            setDocumentNumber(snapshot.documentNumber ?? String(nextDocumentNumber));
-            setDocumentNumberLoading(Boolean(snapshot.selectedCustomerId));
-            if (snapshot.dateParts) {
-              setDateParts(snapshot.dateParts);
-              setCalendarView({
-                year: snapshot.dateParts.year,
-                month: snapshot.dateParts.month,
-              });
-            }
-            setDocumentNature(restoredNature);
-            setCommittedLines(restoredLines);
-            setDraftLine(restoredDraft);
-            setRestoredAt(snapshot.savedAt ?? '');
-          }
-        }
-      } catch {
-        // پیش‌نویس ناسازگار یا ناقص نادیده گرفته می‌شود.
-      }
-      setHydrated(true);
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [nextDocumentNumber]);
-
-  useEffect(() => {
-    if (!hydrated) return;
     if (!selectedCustomerId) {
       return;
     }
@@ -505,50 +446,15 @@ export default function DocumentForm({
       });
 
     return () => controller.abort();
-  }, [hydrated, nextDocumentNumber, selectedCustomerId]);
+  }, [nextDocumentNumber, selectedCustomerId]);
 
   useEffect(() => {
-    if (!hydrated || documentNature !== 'paid' || draftLine.details.rawKind !== 'molten') return;
+    if (documentNature !== 'paid' || draftLine.details.rawKind !== 'molten') return;
     fetch('/api/documents?inventory=melted', { cache: 'no-store' })
       .then((response) => response.ok ? response.json() : Promise.reject())
       .then((data: { inventory?: MeltedInventoryItem[] }) => setMeltedInventory(data.inventory ?? []))
       .catch(() => setMeltedInventory([]));
-  }, [documentNature, draftLine.details.rawKind, hydrated]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(() => {
-      const snapshot: DraftSnapshot = {
-        customerQuery,
-        selectedCustomerId,
-        documentNumber,
-        dateParts,
-        documentNature,
-        committedLines,
-        draftLine,
-        savedAt: new Date().toISOString(),
-      };
-      try {
-        window.localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(snapshot));
-      } catch {
-        // پر بودن یا غیرفعال بودن localStorage مانع کار فرم نمی‌شود.
-      }
-    }, 450);
-
-    return () => {
-      if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    };
-  }, [
-    committedLines,
-    customerQuery,
-    dateParts,
-    documentNature,
-    documentNumber,
-    draftLine,
-    hydrated,
-    selectedCustomerId,
-  ]);
+  }, [documentNature, draftLine.details.rawKind]);
 
   useEffect(() => {
     function closeOnOutsideClick(event: MouseEvent) {
@@ -571,14 +477,6 @@ export default function DocumentForm({
     window.addEventListener('zar:navigation-attempt', handleNavigationAttempt);
     return () => window.removeEventListener('zar:navigation-attempt', handleNavigationAttempt);
   }, [committedLines.length, draftReady]);
-
-  function clearDraftStorage() {
-    try {
-      window.localStorage.removeItem(DRAFT_STORAGE_KEY);
-    } catch {
-      // فرم بدون localStorage نیز قابل استفاده است.
-    }
-  }
 
   function updateDraftDetail<K extends keyof DetailState>(
     field: K,
@@ -614,26 +512,30 @@ export default function DocumentForm({
       documentNature: nature,
       documentSubType: current.documentTab === 'currency'
         ? currencyDocumentSubType(nature)
-        : documentSubType(nature, current.details.rawKind),
+        : current.documentTab === 'gold-sale'
+          ? goldSaleSubType(nature, current.details.rawKind)
+          : documentSubType(nature, current.details.rawKind),
     }));
     setCommittedLines((current) => current.map((line) => ({
       ...line,
       documentNature: nature,
       documentSubType: line.documentTab === 'currency'
         ? currencyDocumentSubType(nature)
-        : documentSubType(nature, line.details.rawKind),
+        : line.documentTab === 'gold-sale'
+          ? goldSaleSubType(nature, line.details.rawKind)
+          : documentSubType(nature, line.details.rawKind),
     })));
   }
 
   function changeEntryTab(tab: string) {
     setActiveEntryTab(tab);
-    if (editingLineId || (tab !== 'metals' && tab !== 'currency')) return;
+    if (editingLineId || (tab !== 'metals' && tab !== 'gold-sale' && tab !== 'currency')) return;
 
-    const nextTab = tab === 'currency' ? 'currency' : 'raw-gold';
+    const nextTab = tab === 'currency' ? 'currency' : tab === 'gold-sale' ? 'gold-sale' : 'raw-gold';
     if (draftLine.documentTab === nextTab) return;
     setDraftLine(nextTab === 'currency'
       ? createCurrencyLine(documentNature)
-      : createLine(documentNature));
+      : { ...createLine(documentNature), documentTab: nextTab });
   }
 
   function updateCurrencyValue(
@@ -670,16 +572,55 @@ export default function DocumentForm({
       const details: DetailState = {
         ...current.details,
         rawKind: kind,
-        purity: kind === 'conditional'
-          ? ''
-          : current.details.purity || '750',
+        purity: kind === 'conditional' ? '' : current.details.purity || '750',
         labName: kind === 'misc' ? '' : current.details.labName,
         pocketNumber: kind === 'misc' ? '' : current.details.pocketNumber,
         stampNumber: kind === 'misc' ? '' : current.details.stampNumber,
       };
       return {
         ...current,
-        documentSubType: documentSubType(documentNature, kind),
+        documentSubType: current.documentTab === 'gold-sale'
+          ? goldSaleSubType(documentNature, kind)
+          : documentSubType(documentNature, kind),
+        settlementMethod: kind === 'unsettled' ? 'unsettled' : 'weight',
+        details,
+      };
+    });
+  }
+
+  function updateMetalValue(
+    field: 'rawWeight' | 'purity' | 'calculationMethod' | 'metalPriceType' | 'metalPrice' | 'totalAmount',
+    value: string,
+  ) {
+    setDraftLine((current) => {
+      const details = { ...current.details, [field]: value } as DetailState;
+      if (field === 'calculationMethod') {
+        details.calculationMethod = value as CalculationMethod;
+      }
+      const converted = convertedTo750(details.rawWeight, details.purity);
+      if (details.calculationMethod === 'weight') {
+        if (field !== 'totalAmount') {
+          details.totalAmount = String(totalFromWeight(
+            details.rawWeight,
+            details.purity,
+            details.metalPriceType,
+            details.metalPrice,
+          ) || '');
+        }
+      } else {
+        const computed = convertedWeightFromTotal(
+          details.totalAmount,
+          details.metalPriceType,
+          details.metalPrice,
+        );
+        if (computed > 0) details.rawWeight = String((computed * 750) / Math.max(1, numberValue(details.purity)));
+      }
+      if (details.calculationMethod === 'weight' && field === 'metalPriceType' && converted > 0) {
+        details.totalAmount = String(totalFromWeight(details.rawWeight, details.purity, details.metalPriceType, details.metalPrice) || '');
+      }
+      return {
+        ...current,
+        settlementMethod: details.rawKind === 'unsettled' ? 'unsettled' : 'weight',
         details,
       };
     });
@@ -704,13 +645,15 @@ export default function DocumentForm({
     }
     setDraftLine(draftLine.documentTab === 'currency'
       ? createCurrencyLine(documentNature)
-      : createLine(documentNature));
+      : { ...createLine(documentNature), documentTab: draftLine.documentTab });
   }
 
   function editLine(line: DocumentLine) {
     setDraftLine(line);
     setEditingLineId(line.id);
-    setActiveEntryTab(line.documentTab === 'currency' ? 'currency' : 'metals');
+    setActiveEntryTab(line.documentTab === 'currency'
+      ? 'currency'
+      : line.documentTab === 'gold-sale' ? 'gold-sale' : 'metals');
     setErrorMessage('');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -725,17 +668,6 @@ export default function DocumentForm({
   function removeLine(lineId: string) {
     setCommittedLines((current) => current.filter((line) => line.id !== lineId));
     if (editingLineId === lineId) cancelEdit();
-  }
-
-  function discardDraft() {
-    clearDraftStorage();
-    setCommittedLines([]);
-    setDraftLine(createLine(documentNature));
-    setEditingLineId(null);
-    setRestoredAt('');
-    setMessage('');
-    setErrorMessage('');
-    setActiveEntryTab('metals');
   }
 
   function goToPreviousMonth() {
@@ -802,21 +734,25 @@ export default function DocumentForm({
             balanceSource: line.balanceSource,
             description: line.description,
             documentDetails: line.details,
-            goldAmount: line.documentTab === 'raw-gold' && line.details.metalType === 'gold'
-              ? numberValue(line.details.rawWeight)
+            goldAmount: (line.documentTab === 'raw-gold' || line.documentTab === 'gold-sale') && line.details.metalType === 'gold'
+              ? line.details.calculationMethod === 'money'
+                ? actualWeightFromMoney(line.details)
+                : numberValue(line.details.rawWeight)
               : 0,
-            silverAmount: line.documentTab === 'raw-gold' && line.details.metalType === 'silver'
-              ? numberValue(line.details.rawWeight)
+            silverAmount: (line.documentTab === 'raw-gold' || line.documentTab === 'gold-sale') && line.details.metalType === 'silver'
+              ? line.details.calculationMethod === 'money' ? actualWeightFromMoney(line.details) : numberValue(line.details.rawWeight)
               : 0,
-            platinumAmount: line.documentTab === 'raw-gold' && line.details.metalType === 'platinum'
-              ? numberValue(line.details.rawWeight)
+            platinumAmount: (line.documentTab === 'raw-gold' || line.documentTab === 'gold-sale') && line.details.metalType === 'platinum'
+              ? line.details.calculationMethod === 'money' ? actualWeightFromMoney(line.details) : numberValue(line.details.rawWeight)
               : 0,
             // An unsettled deal intentionally has no cash-side amount. The
             // currency quantity remains on the customer's ledger until it is
             // settled from the cash drawer in a later document.
-            rialAmount: line.documentTab === 'currency' && !line.details.unsettledTrade
-              ? numberValue(line.details.currencyTotalAmount)
-              : 0,
+            rialAmount: line.documentTab === 'currency'
+              ? (!line.details.unsettledTrade ? numberValue(line.details.currencyTotalAmount) : 0)
+              : line.documentTab === 'gold-sale'
+                ? numberValue(line.details.totalAmount)
+                : 0,
             foreignAmount: line.documentTab === 'currency'
               ? numberValue(line.details.currencyQuantity)
               : 0,
@@ -842,13 +778,11 @@ export default function DocumentForm({
       );
       const nextSequence = Number(data?.nextDocumentSequence ?? documentNumber);
       setDocumentNumber(String(Number.isFinite(nextSequence) ? nextSequence : 1));
-      clearDraftStorage();
       setCommittedLines([]);
       setDraftLine(activeEntryTab === 'currency'
         ? createCurrencyLine(documentNature)
-        : createLine(documentNature));
+        : { ...createLine(documentNature), documentTab: activeEntryTab === 'gold-sale' ? 'gold-sale' : 'raw-gold' });
       setEditingLineId(null);
-      setRestoredAt('');
 
       window.scrollTo({ top: 0, behavior: 'smooth' });
       if (status === 'temporary') {
@@ -865,7 +799,9 @@ export default function DocumentForm({
     () => committedLines.reduce(
       (sum, line) => sum + (
         line.documentNature === 'received' ? 1 : -1
-      ) * numberValue(line.details.rawWeight),
+      ) * (line.details.calculationMethod === 'money'
+        ? actualWeightFromMoney(line.details)
+        : numberValue(line.details.rawWeight)),
       0,
     ),
     [committedLines],
@@ -873,42 +809,6 @@ export default function DocumentForm({
 
   return (
     <div className="document-form-page">
-      <div className="dashboard-page-heading document-page-heading">
-        <div>
-          <p className="eyebrow">دفتر اسناد</p>
-          <h1>ثبت سند طلای خام</h1>
-          <p>ورود و خروج طلای خام را به‌صورت چندردیفی و با جزئیات ری‌گیری ثبت کنید.</p>
-        </div>
-        <span className="document-autosave-pill" title="ذخیره خودکار پیش‌نویس">
-          <span className="document-autosave-dot" />
-          پیش‌نویس خودکار
-        </span>
-      </div>
-
-      <AnimatePresence>
-        {restoredAt ? (
-          <motion.div
-            className="document-draft-banner"
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-          >
-            <History size={16} />
-            <span>
-              پیش‌نویس ناتمام بازیابی شد
-              {` (${new Intl.DateTimeFormat('fa-IR', {
-                dateStyle: 'medium',
-                timeStyle: 'short',
-              }).format(new Date(restoredAt))})`}
-            </span>
-            <button type="button" onClick={discardDraft}>
-              <Eraser size={14} />
-              حذف پیش‌نویس
-            </button>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
-
       {message ? <p className="account-message"><Check size={15} />{message}</p> : null}
       {errorMessage ? <p className="form-error">{errorMessage}</p> : null}
 
@@ -1009,22 +909,6 @@ export default function DocumentForm({
               />
               {documentNumberLoading ? <LoaderCircle size={16} className="spin" /> : <Check size={15} />}
             </div>
-            <div className="mt-4">
-              <span className="mb-2 block text-xs font-bold text-slate-600 dark:text-slate-300">
-                جنس فلز
-              </span>
-              <select
-                value={draftLine.details.metalType}
-                onChange={(event) => updateDraftDetail(
-                  'metalType',
-                  event.target.value as DetailState['metalType'],
-                )}
-              >
-                <option value="gold">طلای خام</option>
-                <option value="silver">نقره</option>
-                <option value="platinum">پلاتین</option>
-              </select>
-            </div>
           </Field>
 
           <Field label="تاریخ سند">
@@ -1061,29 +945,40 @@ export default function DocumentForm({
                 <Clock3 size={13} />
                 {distanceLabel}
               </small>
-
-              <div className="document-nature-switch-wrap mt-4">
-                <span>نوع سند</span>
-                <button
-                  type="button"
-                  className={`document-nature-switch ${documentNature}`}
-                  onClick={() => changeNature(documentNature === 'received' ? 'paid' : 'received')}
-                  role="switch"
-                  aria-checked={documentNature === 'received'}
-                >
-                  <span className="document-nature-switch-track">
-                    <motion.span
-                      className="document-nature-switch-thumb"
-                      animate={{ x: documentNature === 'received' ? 0 : -42 }}
-                      transition={{ type: 'spring', stiffness: 450, damping: 30 }}
-                    />
-                  </span>
-                    <strong>
-                    سند {documentNature === 'received' ? 'دریافتی' : 'پرداختی'}
-                  </strong>
-                </button>
-              </div>
             </div>
+          </Field>
+
+          <Field label="جنس فلز">
+            <select
+              value={draftLine.details.metalType}
+              onChange={(event) => updateDraftDetail(
+                'metalType',
+                event.target.value as DetailState['metalType'],
+              )}
+            >
+              <option value="gold">طلای خام</option>
+              <option value="silver">نقره</option>
+              <option value="platinum">پلاتین</option>
+            </select>
+          </Field>
+
+          <Field label="نوع سند">
+            <button
+              type="button"
+              className={`document-nature-switch ${documentNature}`}
+              onClick={() => changeNature(documentNature === 'received' ? 'paid' : 'received')}
+              role="switch"
+              aria-checked={documentNature === 'received'}
+            >
+              <span className="document-nature-switch-track">
+                <motion.span
+                  className="document-nature-switch-thumb"
+                  animate={{ x: documentNature === 'received' ? 0 : -42 }}
+                  transition={{ type: 'spring', stiffness: 450, damping: 30 }}
+                />
+              </span>
+              <strong>سند {documentNature === 'received' ? 'دریافتی' : 'پرداختی'}</strong>
+            </button>
           </Field>
         </div>
       </section>
@@ -1108,22 +1003,124 @@ export default function DocumentForm({
         <DocumentEntryTabs
           accountCodeZero="0"
           nature={documentNature}
-          metalsTabLabel={`${draftLine.details.metalType === 'silver' ? 'ورود نقره خام' : draftLine.details.metalType === 'platinum' ? 'ورود پلاتین خام' : 'ورود طلا خام'}`.replace(
-            /^ورود/,
-            documentNature === 'received' ? 'ورود' : 'خروج',
-          )}
+          metalsTabLabel={`${documentNature === 'received' ? 'ورود' : 'خروج'} ${
+            draftLine.details.metalType === 'silver'
+              ? 'نقره'
+              : draftLine.details.metalType === 'platinum'
+                ? 'پلاتین'
+                : 'طلا'
+          }`}
+          goldSaleTabLabel={`${documentNature === 'received' ? 'خرید' : 'فروش'} ${
+            draftLine.details.metalType === 'silver'
+              ? 'نقره'
+              : draftLine.details.metalType === 'platinum'
+                ? 'پلاتین'
+                : 'طلا'
+          }`}
           activeTab={activeEntryTab}
           onActiveTabChange={changeEntryTab}
           firstTabContent={(
+            <div className="space-y-5">
+              <div className="document-operation-title">
+                <div>
+                  <p className="eyebrow">ورود و خروج فلزات</p>
+                  <h3>نوع {documentNature === 'received' ? 'ورود' : 'خروج'} را انتخاب کنید</h3>
+                </div>
+                <span className={`document-nature-badge ${documentNature}`}>
+                  {documentNature === 'received' ? 'دریافتی' : 'پرداختی'}
+                </span>
+              </div>
+              <RawMetalOperationTypeSelector
+                nature={documentNature}
+                value={draftLine.details.rawKind}
+                onChange={changeRawKind}
+              />
+              <div className="document-dynamic-fields">
+                <div className="document-special-grid raw-gold-fields">
+                  {documentNature === 'paid' && draftLine.details.rawKind === 'molten' ? (
+                    <Field label="انتخاب موجودی آبشده" wide>
+                      <select
+                        value={draftLine.details.inventorySourceId}
+                        onChange={(event) => {
+                          const source = meltedInventory.find((item) => item.id === event.target.value);
+                          setDraftLine((current) => ({
+                            ...current,
+                            details: {
+                              ...current.details,
+                              inventorySourceId: event.target.value,
+                              rawWeight: source ? String(source.remainingWeight) : current.details.rawWeight,
+                              purity: source ? String(source.purity || 750) : current.details.purity,
+                              stampNumber: source?.stampNumber ?? current.details.stampNumber,
+                            },
+                          }));
+                        }}
+                      >
+                        <option value="">انتخاب از موجودی فعال...</option>
+                        {meltedInventory.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.stampNumber || 'بدون انگ'} · {item.customerName} · {item.remainingWeight.toFixed(3)} گرم · عیار {item.purity}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  ) : null}
+                  <Field label="وزن (گرم)">
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.001"
+                      value={draftLine.details.rawWeight}
+                      onChange={(event) => updateDraftDetail('rawWeight', event.target.value)}
+                    />
+                  </Field>
+                  {draftLine.details.rawKind !== 'conditional' ? (
+                    <Field label="عیار">
+                      <input
+                        type="number"
+                        min="1"
+                        max="999"
+                        step="1"
+                        value={draftLine.details.purity}
+                        onChange={(event) => updateDraftDetail('purity', event.target.value)}
+                      />
+                    </Field>
+                  ) : null}
+                  <Field label="تبدیل‌شده به ۷۵۰">
+                    <input
+                      readOnly
+                      className="computed-field"
+                      value={faNumber(convertedTo750(draftLine.details.rawWeight, draftLine.details.purity), 3)}
+                    />
+                  </Field>
+                  {draftLine.details.rawKind !== 'misc' ? (
+                    <>
+                      <Field label="نام آزمایشگاه ری‌گیری"><input value={draftLine.details.labName} onChange={(event) => updateDraftDetail('labName', event.target.value)} /></Field>
+                      <Field label="شماره پاکت"><input value={draftLine.details.pocketNumber} onChange={(event) => updateDraftDetail('pocketNumber', event.target.value)} /></Field>
+                      <Field label="شماره انگ"><input value={draftLine.details.stampNumber} onChange={(event) => updateDraftDetail('stampNumber', event.target.value)} /></Field>
+                    </>
+                  ) : null}
+                  <Field label="توضیحات" wide>
+                    <textarea value={draftLine.description} onChange={(event) => setDraftLine((current) => ({ ...current, description: event.target.value }))} />
+                  </Field>
+                </div>
+              </div>
+              {draftReady ? (
+                <button type="button" className="document-commit-line-button" onClick={commitDraftLine}>
+                  <ListPlus size={18} /> {editingLineId ? 'ثبت اصلاح ردیف' : 'ثبت ردیف در سند'}
+                </button>
+              ) : null}
+            </div>
+          )}
+          goldSaleTabContent={(
             <div className="space-y-5">
               <div className="document-operation-section">
               <div className="document-operation-title">
                 <div>
                   <p className="eyebrow">نوع عملیات</p>
-                  <h3>نوع {documentNature === 'received' ? 'ورود' : 'خروج'} را انتخاب کنید</h3>
+                  <h3>نوع {documentNature === 'received' ? 'خرید' : 'فروش'} را انتخاب کنید</h3>
                 </div>
                 <span className={`document-nature-badge ${documentNature}`}>
-                  {documentNature === 'received' ? 'دریافتی / بستانکار' : 'پرداختی / بدهکار'}
+                  {documentNature === 'received' ? 'خرید / بستانکار' : 'فروش / بدهکار'}
                 </span>
               </div>
 
@@ -1149,7 +1146,7 @@ export default function DocumentForm({
                 <strong>
                   مشخصات {rawOperationLabel(documentNature, draftLine.details.rawKind)}
                 </strong>
-                <small>اطلاعات وزن و ری‌گیری را دقیق وارد کنید.</small>
+                <small>اطلاعات وزن، عیار و نحوه محاسبه را دقیق وارد کنید.</small>
               </div>
             </div>
 
@@ -1186,41 +1183,56 @@ export default function DocumentForm({
                   ) : null}
                 </Field>
               ) : null}
-              <Field label="وزن (گرم)">
+              <div className="col-span-full flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 p-2 dark:border-slate-700 dark:bg-slate-900">
+                <span className="text-xs font-bold text-slate-600 dark:text-slate-300">نحوه محاسبه</span>
+                <div className="flex gap-2">
+                  {(['weight', 'money'] as CalculationMethod[]).map((method) => (
+                    <button
+                      type="button"
+                      key={method}
+                      className={`rounded-lg px-3 py-2 text-xs font-bold ${draftLine.details.calculationMethod === method ? 'bg-amber-500 text-white' : 'bg-white text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}
+                      onClick={() => updateMetalValue('calculationMethod', method)}
+                    >
+                      {method === 'weight' ? 'وزنی' : 'پولی'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {draftLine.details.calculationMethod === 'weight' ? <Field label="وزن ترازویی (گرم)">
                 <input
                   type="number"
                   min="0"
-                  step="0.001"
+                  step={10 ** -weightPrecision}
                   inputMode="decimal"
                   value={draftLine.details.rawWeight}
-                  onChange={(event) => updateDraftDetail('rawWeight', event.target.value)}
+                  onChange={(event) => updateMetalValue('rawWeight', event.target.value)}
                   placeholder="۰٫۰۰۰"
+                  className="w-[8ch]"
+                />
+              </Field> : null}
+
+              <Field label="عیار">
+                <input
+                  type="number"
+                  min="1"
+                  max="999"
+                  step="1"
+                  inputMode="numeric"
+                  value={draftLine.details.purity}
+                  onChange={(event) => updateMetalValue('purity', event.target.value)}
+                  placeholder="۷۵۰"
+                  className="w-[8ch]"
                 />
               </Field>
-
-              {draftLine.details.rawKind !== 'conditional' ? (
-                <Field label="عیار">
-                  <input
-                    type="number"
-                    min="1"
-                    max="999"
-                    step="1"
-                    inputMode="numeric"
-                    value={draftLine.details.purity}
-                    onChange={(event) => updateDraftDetail('purity', event.target.value)}
-                    placeholder="۷۵۰"
-                  />
-                </Field>
-              ) : null}
 
               <Field label="تبدیل‌شده به ۷۵۰">
                 <input
                   value={faNumber(
-                    convertedTo750(
-                      draftLine.details.rawWeight,
-                      draftLine.details.purity,
-                    ),
-                    3,
+                    draftLine.details.calculationMethod === 'money'
+                      ? convertedWeightFromTotal(draftLine.details.totalAmount, draftLine.details.metalPriceType, draftLine.details.metalPrice)
+                      : convertedTo750(draftLine.details.rawWeight, draftLine.details.purity),
+                    weightPrecision,
                   )}
                   readOnly
                   aria-label="وزن تبدیل‌شده به عیار ۷۵۰"
@@ -1228,7 +1240,36 @@ export default function DocumentForm({
                 />
               </Field>
 
-              {draftLine.details.rawKind !== 'misc' ? (
+              <Field label="نوع فی">
+                <select
+                  value={draftLine.details.metalPriceType}
+                  onChange={(event) => updateMetalValue('metalPriceType', event.target.value)}
+                >
+                  <option value="mesghal17">مثقال ۱۷ عیار</option>
+                  <option value="gram18">گرم ۱۸ عیار</option>
+                  <option value="ounceUsd">هر اونس (دلاری)</option>
+                </select>
+              </Field>
+              <Field label={metalPriceLabel(draftLine.details.metalPriceType)}>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={draftLine.details.metalPrice}
+                  onChange={(event) => updateMetalValue('metalPrice', event.target.value)}
+                />
+              </Field>
+              <Field label="مبلغ کل">
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={draftLine.details.totalAmount}
+                  onChange={(event) => updateMetalValue('totalAmount', event.target.value)}
+                />
+              </Field>
+
+              {draftLine.details.rawKind === 'molten' ? (
                 <>
                   <Field label="نام آزمایشگاه ری‌گیری">
                     <input
@@ -1271,10 +1312,10 @@ export default function DocumentForm({
               <div>
                 <strong>{rawOperationLabel(documentNature, draftLine.details.rawKind)}</strong>
                 <span>
-                  {draftLine.details.rawWeight
-                    ? `${toPersianDigits(draftLine.details.rawWeight)} گرم`
+                  {draftLine.details.rawWeight || draftLine.details.totalAmount
+                    ? `${toPersianDigits(faNumber(draftLine.details.calculationMethod === 'money' ? actualWeightFromMoney(draftLine.details) : numberValue(draftLine.details.rawWeight), weightPrecision))} گرم`
                     : 'وزن وارد نشده'}
-                  {draftLine.details.rawKind !== 'conditional' && draftLine.details.purity
+                  {draftLine.details.purity
                     ? ` · عیار ${toPersianDigits(draftLine.details.purity)}`
                     : ''}
                 </span>
@@ -1529,17 +1570,6 @@ export default function DocumentForm({
             await save(status);
           }}
         />
-        {committedLines.length || draftReady ? (
-          <button
-            type="button"
-            className="document-discard-button"
-            onClick={discardDraft}
-            disabled={saving}
-          >
-            <Trash2 size={15} />
-            حذف پیش‌نویس
-          </button>
-        ) : null}
       </div>
     </div>
   );
@@ -1821,8 +1851,14 @@ function CommittedLineRow({
       </div>
       <div className="document-line-row-figures">
         <span>
-          <strong>{faNumber(numberValue(line.details.rawWeight), 3)}</strong>
+          <strong>{faNumber(
+            line.details.calculationMethod === 'money'
+              ? actualWeightFromMoney(line.details)
+              : numberValue(line.details.rawWeight),
+            3,
+          )}</strong>
           {' '}گرم طلا
+          <small className="block">{faNumber(numberValue(line.details.totalAmount))} مبلغ کل</small>
         </span>
       </div>
       <div className="document-line-row-actions">

@@ -89,6 +89,20 @@ export default function DashboardTopbarSearch({
       .sort((a, b) => b.score - a.score)
       .map((entry) => entry.item);
   }, [items, query]);
+  const safeActiveIndex = Math.min(
+    activeIndex,
+    Math.max(filteredItems.length - 1, 0),
+  );
+
+  useEffect(() => {
+    if (!open) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -144,7 +158,7 @@ export default function DashboardTopbarSearch({
       if (event.key === 'Enter') {
         event.preventDefault();
 
-        const item = filteredItems[activeIndex];
+        const item = filteredItems[safeActiveIndex];
         if (item && item.href) {
           selectItem(item);
         }
@@ -156,11 +170,9 @@ export default function DashboardTopbarSearch({
     return () => {
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [activeIndex, filteredItems, open]);
-
-  useEffect(() => {
-    setActiveIndex(0);
-  }, [query, open]);
+  // closeSearch/selectItem are stable for the lifetime of this interaction.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredItems, open, safeActiveIndex]);
 
   function closeSearch() {
     onOpenChange(false);
@@ -219,7 +231,7 @@ export default function DashboardTopbarSearch({
             <div className="dashboard-search-results">
               {filteredItems.length ? (
                 filteredItems.map((item, index) => {
-                  const isActive = index === activeIndex;
+                  const isActive = index === safeActiveIndex;
                   const Icon = item.icon;
 
                   return (

@@ -2,18 +2,12 @@
 
 import {
   Banknote,
-  Building2,
   CircleDollarSign,
   Coins,
-  FileCheck2,
   Gem,
   HandCoins,
   Landmark,
-  Layers3,
   Package,
-  Receipt,
-  Scale,
-  ShieldCheck,
   Sparkles,
   Wallet,
   Wrench,
@@ -26,6 +20,8 @@ import BankOperation from '@/src/components/documents/BankOperation';
 
 type DocumentEntryTabsProps = {
   firstTabContent: ReactNode;
+  goldSaleTabContent?: ReactNode;
+  goldSaleTabLabel?: string;
   currencyTabContent?: ReactNode;
   cashTabContent?: ReactNode;
   accountCodeZero?: string;
@@ -57,6 +53,8 @@ function PlaceholderTab({ label }: { label: string }) {
 
 export default function DocumentEntryTabs({
   firstTabContent,
+  goldSaleTabContent,
+  goldSaleTabLabel,
   currencyTabContent,
   cashTabContent,
   accountCodeZero = '0',
@@ -75,6 +73,7 @@ export default function DocumentEntryTabs({
 
   const tabs: TabDefinition[] = [
     { id: 'metals', label: metalsTabLabel, icon: Gem, content: firstTabContent },
+    { id: 'gold-sale', label: goldSaleTabLabel ?? (nature === 'received' ? 'خرید طلا' : 'فروش طلا'), icon: Gem, content: goldSaleTabContent ?? <PlaceholderTab label="خرید و فروش فلزات" /> },
     { id: 'goods', label: 'کالا و جواهر', icon: Package, content: <PlaceholderTab label="کالا و جواهر" /> },
     {
       id: 'currency',
@@ -96,15 +95,19 @@ export default function DocumentEntryTabs({
       icon: Landmark,
       content: <BankOperation accountCodeZero={accountCodeZero} />,
     },
-    { id: 'transfer', label: 'انتقال حساب', icon: Building2, content: <PlaceholderTab label="انتقال حساب به حساب" /> },
-    { id: 'check', label: 'چک', icon: FileCheck2, content: <PlaceholderTab label="عملیات چک" /> },
-    { id: 'expense', label: 'هزینه', icon: Receipt, content: <PlaceholderTab label="ثبت هزینه" /> },
-    { id: 'income', label: 'درآمد', icon: Banknote, content: <PlaceholderTab label="ثبت درآمد" /> },
-    { id: 'claim', label: 'طلب و بدهی', icon: HandCoins, content: <PlaceholderTab label="طلب و بدهی" /> },
-    { id: 'workmanship', label: 'کارساخت', icon: Wrench, content: <PlaceholderTab label="کارساخت" /> },
-    { id: 'adjustment', label: 'اصلاح حساب', icon: Scale, content: <PlaceholderTab label="اصلاح حساب" /> },
-    { id: 'opening', label: 'افتتاحیه', icon: Layers3, content: <PlaceholderTab label="مانده افتتاحیه" /> },
-    { id: 'security', label: 'کنترل و تایید', icon: ShieldCheck, content: <PlaceholderTab label="کنترل و تایید سند" /> },
+    {
+      id: 'income-expense',
+      label: nature === 'received' ? 'درآمد' : 'هزینه',
+      icon: Banknote,
+      content: <PlaceholderTab label={nature === 'received' ? 'ثبت درآمد' : 'ثبت هزینه'} />,
+    },
+    {
+      id: 'claim',
+      label: nature === 'received' ? 'طلب ما' : 'بدهی ما',
+      icon: HandCoins,
+      content: <PlaceholderTab label={nature === 'received' ? 'طلب ما' : 'بدهی ما'} />,
+    },
+    { id: 'workmanship', label: 'کار ساخته', icon: Wrench, content: <PlaceholderTab label="کار ساخته" /> },
   ];
 
   const selectedTab = tabs.find((tab) => tab.id === activeTab) ?? tabs[0];

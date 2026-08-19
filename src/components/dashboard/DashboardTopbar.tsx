@@ -187,25 +187,16 @@ export default function DashboardTopbar({
 }
 
 function ThemeToggle() {
-  const { changeTheme } = useTheme();
-  const [isDark, setIsDark] = useState(false);
+  const { changeTheme, resolvedTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    const updateTheme = () => {
-      setIsDark(document.documentElement.classList.contains('dark'));
-    };
-
-    updateTheme();
-
-    const observer = new MutationObserver(updateTheme);
-
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['class'],
-    });
-
-    return () => observer.disconnect();
+    // Delay theme-dependent icon rendering until the client has mounted.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMounted(true);
   }, []);
+
+  const isDark = mounted && resolvedTheme === 'dark';
 
   return (
     <button
@@ -213,6 +204,7 @@ function ThemeToggle() {
       className={`dashboard-theme-toggle ${isDark ? 'is-dark' : ''}`}
       onClick={() => changeTheme(isDark ? 'light' : 'dark')}
       aria-label={isDark ? 'فعال کردن حالت روشن' : 'فعال کردن حالت تاریک'}
+      title={isDark ? 'فعال کردن حالت روشن' : 'فعال کردن حالت تاریک'}
       aria-pressed={isDark}
     >
       <AnimatePresence mode="wait" initial={false}>

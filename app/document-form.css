@@ -1,62 +1,13 @@
 /* ============================================================
-   فرم ثبت سند طلای خام
+   فرم ثبت سند
    ============================================================ */
 
 .document-form-page {
   display: grid;
   gap: 16px;
+  padding-bottom: 360px;
 }
 
-.document-page-heading {
-  margin-bottom: 8px;
-}
-
-.document-autosave-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  border: 1px solid #f0e3bd;
-  border-radius: 999px;
-  background: #fdf8ea;
-  padding: 8px 13px;
-  color: var(--gold-deep);
-  font-size: 11px;
-  font-weight: 800;
-  white-space: nowrap;
-}
-
-.document-autosave-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--gold);
-  animation: gold-pulse 2.2s ease-out infinite;
-}
-
-.document-draft-banner {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  border: 1px solid #ecdfc0;
-  border-radius: 13px;
-  background: linear-gradient(140deg, #fffaf0, #fdf3dc);
-  padding: 12px 16px;
-  color: #6d5a1e;
-  font-size: 12px;
-  font-weight: 800;
-  box-shadow: 0 10px 24px rgba(176, 127, 60, 0.1);
-}
-
-.document-draft-banner > span {
-  flex: 1;
-}
-
-.document-draft-banner > svg {
-  flex: 0 0 auto;
-  color: var(--gold-deep);
-}
-
-.document-draft-banner button,
 .document-cancel-edit,
 .document-discard-button {
   display: inline-flex;
@@ -73,7 +24,6 @@
   transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
 }
 
-.document-draft-banner button:hover,
 .document-discard-button:hover {
   border-color: #e3b6bd;
   background: #fff2f3;
@@ -106,14 +56,14 @@
 
 .document-account-layout {
   display: grid;
-  grid-template-columns: minmax(240px, 0.72fr) minmax(250px, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   align-items: end;
   gap: 12px;
 }
 
 .document-account-search-field {
   position: relative;
-  max-width: 430px;
+  max-width: 260px;
 }
 
 .document-search-shell {
@@ -418,7 +368,7 @@
 
 .document-header-grid {
   display: grid;
-  grid-template-columns: minmax(180px, 0.7fr) minmax(260px, 1.3fr);
+  grid-template-columns: minmax(8rem, 0.7fr) minmax(9rem, 0.8fr) minmax(8rem, 0.7fr) minmax(10rem, 0.9fr);
   align-items: start;
   gap: 14px;
 }
@@ -444,6 +394,7 @@
 
 .jalali-picker {
   position: relative;
+  z-index: 60;
 }
 
 .jalali-picker-trigger {
@@ -495,7 +446,7 @@
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  z-index: 50;
+  z-index: 100;
   width: min(328px, calc(100vw - 48px));
   border: 1px solid #e4e9ef;
   border-radius: 17px;
@@ -922,7 +873,13 @@
 
 /* ردیف‌های موقت */
 .document-lines-panel {
+  position: sticky;
+  bottom: 16px;
+  z-index: 20;
+  max-height: min(36vh, 360px);
+  overflow-y: auto;
   padding: 19px 21px;
+  box-shadow: 0 -10px 30px rgba(31, 45, 68, 0.08);
 }
 
 .document-lines-head h2 {
@@ -1109,20 +1066,12 @@
 }
 
 /* حالت تاریک */
-[data-theme="dark"] .document-autosave-pill {
-  border-color: #3d3823;
-  background: #221f14;
-  color: var(--gold-bright);
-}
-
-[data-theme="dark"] .document-draft-banner,
 [data-theme="dark"] .document-totals-bar {
   border-color: #3d3823;
   background: linear-gradient(140deg, #221f14, #1c1a12);
   color: #e7c35a;
 }
 
-[data-theme="dark"] .document-draft-banner button,
 [data-theme="dark"] .document-discard-button {
   border-color: #4a3238;
   background: #2a1e22;
@@ -1299,6 +1248,17 @@
     max-width: none;
   }
 
+  .document-form-page {
+    padding-bottom: 0;
+  }
+
+  .document-lines-panel {
+    position: static;
+    max-height: none;
+    overflow: visible;
+    box-shadow: none;
+  }
+
   .document-liquid-balance {
     align-items: flex-start;
     flex-direction: column;
@@ -1354,8 +1314,4 @@
     flex-direction: column;
   }
 
-  .document-draft-banner {
-    align-items: flex-start;
-    flex-wrap: wrap;
-  }
 }

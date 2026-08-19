@@ -384,6 +384,7 @@ button:disabled {
   }
 }
 
+
 /* Gooey search, account-code controls, balance summaries and quick access */
 .gooey-search {
   position: relative;
@@ -4712,6 +4713,56 @@ button:disabled {
     display: none;
   }
 }
+
+/* لایه‌بندی مشترک داشبورد: محتوای عادی < سایدبار < سربرگ < جست‌وجو */
+:root {
+  --zar-z-sidebar: 40;
+  --zar-z-topbar: 50;
+  --zar-z-drawer-overlay: 70;
+  --zar-z-drawer: 80;
+  --zar-z-search: 1000;
+}
+
+body {
+  line-height: 1.65;
+}
+
+.dashboard-app {
+  overflow: visible;
+}
+
+.dashboard-sidebar {
+  z-index: var(--zar-z-sidebar);
+}
+
+.dashboard-topbar {
+  z-index: var(--zar-z-topbar);
+}
+
+.dashboard-mobile-backdrop {
+  z-index: var(--zar-z-drawer-overlay);
+}
+
+.dashboard-search-backdrop {
+  z-index: var(--zar-z-search);
+}
+
+.dashboard-search-dialog {
+  z-index: calc(var(--zar-z-search) + 1);
+}
+
+.dashboard-nav-item,
+.dashboard-search-trigger,
+.dashboard-user-chip,
+.breadcrumbs {
+  line-height: 1.6;
+}
+
+@media (max-width: 900px) {
+  .dashboard-sidebar {
+    z-index: var(--zar-z-drawer);
+  }
+}
 .dashboard-topbar {
   position: relative;
   z-index: 20;
@@ -4726,4 +4777,9 @@ button:disabled {
   .dashboard-topbar:not(.is-pinned) {
     position: relative;
   }
+}
+
+/* Keep the final cascade aligned with the shared stacking contract. */
+.dashboard-topbar {
+  z-index: var(--zar-z-topbar);
 }

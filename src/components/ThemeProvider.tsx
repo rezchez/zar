@@ -6,13 +6,18 @@ export type ThemeMode = 'light' | 'dark' | 'system';
 
 const STORAGE_KEY = 'zarfolio-theme';
 
-function applyTheme(mode: ThemeMode) {
+function resolveTheme(mode: ThemeMode) {
   const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-  const theme = mode === 'system' ? (prefersDark ? 'dark' : 'light') : mode;
+  return mode === 'system' ? (prefersDark ? 'dark' : 'light') : mode;
+}
 
+function applyTheme(mode: ThemeMode) {
+  const theme = resolveTheme(mode);
   document.documentElement.dataset.theme = theme;
   document.documentElement.dataset.themeMode = mode;
   document.documentElement.style.colorScheme = theme;
+  document.documentElement.classList.toggle('dark', theme === 'dark');
+  return theme;
 }
 
 export default function ThemeProvider({
@@ -23,18 +28,25 @@ export default function ThemeProvider({
   const [mode, setMode] = useState<ThemeMode>(() => {
     if (typeof window === 'undefined') return 'system';
 
-    const stored = window.localStorage.getItem(STORAGE_KEY) as ThemeMode | null;
-    return stored === 'light' || stored === 'dark' || stored === 'system'
-      ? stored
-      : 'system';
+    try {
+      const stored = window.localStorage.getItem(STORAGE_KEY) as ThemeMode | null;
+      return stored === 'light' || stored === 'dark' || stored === 'system'
+        ? stored
+        : 'system';
+    } catch {
+      return 'system';
+    }
   });
+  const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>('light');
 
   useEffect(() => {
-    applyTheme(mode);
+    // Theme application is an external DOM synchronization.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setResolvedTheme(applyTheme(mode));
 
     const media = window.matchMedia('(prefers-color-scheme: dark)');
     const handleChange = () => {
-      if (mode === 'system') applyTheme('system');
+      if (mode === 'system') setResolvedTheme(applyTheme('system'));
     };
 
     media.addEventListener('change', handleChange);
@@ -43,12 +55,16 @@ export default function ThemeProvider({
 
   function changeTheme(nextMode: ThemeMode) {
     setMode(nextMode);
-    window.localStorage.setItem(STORAGE_KEY, nextMode);
-    applyTheme(nextMode);
+    setResolvedTheme(applyTheme(nextMode));
+    try {
+      window.localStorage.setItem(STORAGE_KEY, nextMode);
+    } catch {
+      // تنظیمات تم بدون localStorage نیز باید قابل استفاده باشد.
+    }
   }
 
   return (
-    <ThemeContext.Provider value={{ mode, changeTheme }}>
+    <ThemeContext.Provider value={{ mode, resolvedTheme, changeTheme }}>
       {children}
     </ThemeContext.Provider>
   );
@@ -56,11 +72,13 @@ export default function ThemeProvider({
 
 type ThemeContextValue = {
   mode: ThemeMode;
+  resolvedTheme: 'light' | 'dark';
   changeTheme: (mode: ThemeMode) => void;
 };
 
 const ThemeContext = createContext<ThemeContextValue>({
   mode: 'system',
+  resolvedTheme: 'light',
   changeTheme: () => undefined,
 });
 

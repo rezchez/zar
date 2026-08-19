@@ -27,6 +27,7 @@ export type DashboardUser = {
 };
 
 const TOPBAR_PIN_STORAGE_KEY = 'zarfolio-topbar-pinned';
+const SIDEBAR_STATE_STORAGE_KEY = 'zar-sidebar-state';
 
 const navGroupsBase: NavGroupData[] = [
   {
@@ -97,8 +98,21 @@ export default function DashboardShell({
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [selectedItem, setSelectedItem] = useState('home');
-  const [quickAccessOpen, setQuickAccessOpen] = useState(false);
   const [topbarPinned, setTopbarPinned] = useState(true);
+
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(SIDEBAR_STATE_STORAGE_KEY);
+      if (stored === 'open' || stored === 'closed') {
+        // The initial server value remains deterministic; persistence is applied
+        // only after hydration to avoid a server/client markup mismatch.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setSidebarCollapsed(stored === 'closed');
+      }
+    } catch {
+      // A blocked or malformed preference falls back to the expanded sidebar.
+    }
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -127,6 +141,21 @@ export default function DashboardShell({
         // localStorage ممکن است غیرفعال باشد.
       }
 
+      return next;
+    });
+  }
+
+  function toggleSidebarCollapsed() {
+    setSidebarCollapsed((current) => {
+      const next = !current;
+      try {
+        window.localStorage.setItem(
+          SIDEBAR_STATE_STORAGE_KEY,
+          next ? 'closed' : 'open',
+        );
+      } catch {
+        // localStorage ممکن است در حالت خصوصی یا محدود غیرفعال باشد.
+      }
       return next;
     });
   }
@@ -209,6 +238,28 @@ export default function DashboardShell({
     }
   }
 
+  useEffect(() => {
+    // A route change is an explicit mobile-drawer close event.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSidebarOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!sidebarOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setSidebarOpen(false);
+    };
+
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', handleEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', handleEscape);
+    };
+  }, [sidebarOpen]);
+
   return (
     <main className="dashboard-app" dir="rtl">
       <svg
@@ -260,9 +311,7 @@ export default function DashboardShell({
           user={user}
           sidebarCollapsed={sidebarCollapsed}
           onMobileMenuOpen={() => setSidebarOpen(true)}
-          onSidebarToggle={() => {
-            setSidebarCollapsed((value) => !value);
-          }}
+          onSidebarToggle={toggleSidebarCollapsed}
           topbarPinned={topbarPinned}
           onTogglePin={toggleTopbarPin}
           searchItems={allItems}
@@ -273,13 +322,6 @@ export default function DashboardShell({
           {children}
         </div>
 
-        <div
-          className={`dashboard-quick-access ${
-            quickAccessOpen ? 'is-open' : ''
-          }`}
-        >
-          {/* محتوای quick access */}
-        </div>
       </section>
     </main>
   );
