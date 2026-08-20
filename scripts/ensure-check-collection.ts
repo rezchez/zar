@@ -2,16 +2,24 @@ import PocketBase from 'pocketbase';
 
 const pb = new PocketBase(process.env.POCKETBASE_URL ?? 'http://127.0.0.1:8090');
 
-const bankFields = [
-  { id: 'text_bank_name', name: 'bankName', type: 'text', required: true, min: 2, max: 120 },
-  { id: 'text_branch_name', name: 'branchName', type: 'text', required: false, max: 120 },
-  { id: 'text_account_number', name: 'accountNumber', type: 'text', required: true, max: 80 },
-  { id: 'number_balance', name: 'balance', type: 'number', required: true, min: 0 },
-  { id: 'number_current_balance', name: 'currentBalance', type: 'number', required: false, min: 0 },
-  { id: 'text_currency', name: 'currency', type: 'text', required: false, max: 16 },
-  { id: 'bool_is_active', name: 'isActive', type: 'bool', required: false },
-  { id: 'text_account_code_zero', name: 'accountCodeZero', type: 'text', required: true, max: 80 },
-  { id: 'text_owner', name: 'owner', type: 'text', required: false, max: 80 },
+const checkFields = [
+  { id: 'relation_bank_account', name: 'bankAccount', type: 'relation', collectionId: 'bank_accounts', maxSelect: 1, required: true },
+  { id: 'relation_customer', name: 'customer', type: 'relation', collectionId: 'customers', maxSelect: 1, required: true },
+  { id: 'text_sayad_id', name: 'sayadId', type: 'text', required: true, min: 16, max: 16 },
+  { id: 'number_amount', name: 'amount', type: 'number', required: true, min: 0 },
+  { id: 'text_currency', name: 'currency', type: 'text', required: true, max: 16 },
+  { id: 'text_description', name: 'description', type: 'text', required: true, max: 500 },
+  { id: 'date_due_date', name: 'dueDate', type: 'date', required: true },
+  { id: 'text_due_date_jalali', name: 'dueDateJalali', type: 'text', required: true, max: 20 },
+  {
+    id: 'select_status',
+    name: 'status',
+    type: 'select',
+    required: true,
+    maxSelect: 1,
+    values: ['issued', 'paid', 'cancelled', 'returned'],
+  },
+  { id: 'text_document', name: 'document', type: 'text', required: false, max: 80 },
   { id: 'relation_created_by', name: 'createdBy', type: 'relation', collectionId: '_pb_users_auth_', maxSelect: 1, required: false },
   { id: 'relation_updated_by', name: 'updatedBy', type: 'relation', collectionId: '_pb_users_auth_', maxSelect: 1, required: false },
   { id: 'autodate_created', name: 'created', type: 'autodate', onCreate: true, onUpdate: false },
@@ -30,15 +38,15 @@ async function main() {
   }
 
   const existing = await pb.collections.getFirstListItem(
-    pb.filter('name = {:name}', { name: 'bank_accounts' }),
+    pb.filter('name = {:name}', { name: 'checks' }),
   ).catch(() => null);
 
   const payload = {
-    name: 'bank_accounts',
+    name: 'checks',
     type: 'base',
-    fields: bankFields,
+    fields: checkFields,
     indexes: [
-      'CREATE UNIQUE INDEX idx_bank_accounts_account_number ON bank_accounts (accountNumber)',
+      'CREATE UNIQUE INDEX idx_checks_sayad_id ON checks (sayadId)',
     ],
     listRule: '@request.auth.id != ""',
     viewRule: '@request.auth.id != ""',
@@ -49,10 +57,10 @@ async function main() {
 
   if (existing) {
     await pb.collections.update(existing.id, payload);
-    console.log('bank_accounts collection updated');
+    console.log('checks collection updated');
   } else {
     await pb.collections.create(payload);
-    console.log('bank_accounts collection created');
+    console.log('checks collection created');
   }
 }
 

@@ -1,17 +1,14 @@
 import { NextResponse } from 'next/server';
 
+import { recordAuditEvent } from '@/lib/audit';
 import { getServerAuthContext } from '@/lib/auth';
 import { mapBankAccount } from '@/lib/bank';
 import { ensureBankAccountsCollection } from '@/lib/bank-collection';
+import { parseLocalizedAmount } from '@/lib/money';
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
 
 function text(value: unknown, max = 120) {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
-}
-
-function amount(value: unknown) {
-  const parsed = Number(String(value ?? '').replace(/,/g, ''));
-  return Number.isFinite(parsed) ? parsed : null;
 }
 
 async function writerFor(context: Awaited<ReturnType<typeof getServerAuthContext>>) {
@@ -23,16 +20,22 @@ async function writerFor(context: Awaited<ReturnType<typeof getServerAuthContext
   }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const context = await getServerAuthContext();
   if (!context) {
     return NextResponse.json({ message: 'ابتدا وارد حساب شوید.' }, { status: 401 });
   }
 
+  const url = new URL(request.url);
+  const activeOnly = url.searchParams.get('active') === 'true';
+
   try {
     const service = await getPocketBaseServiceClient().catch(() => null);
     if (service) await ensureBankAccountsCollection(service);
+
+    const filter = activeOnly ? context.pb.filter('isActive = true') : '';
     const records = await context.pb.collection('bank_accounts').getFullList({
+      filter,
       sort: 'bankName,accountNumber',
     });
     return NextResponse.json({ banks: records.map((record) => mapBankAccount(record)) });
@@ -53,14 +56,17 @@ export async function POST(request: Request) {
 
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
   const bankName = text(body?.bankName);
+  const branchName = text(body?.branchName, 120);
   const accountNumber = text(body?.accountNumber, 80);
-  const accountCodeZero = text(body?.accountCodeZero, 80);
+  const accountCodeZero = text(body?.accountCodeZero, 80) || '0';
   const currency = text(body?.currency, 16).toUpperCase() || 'IRR';
-  const balance = amount(body?.balance ?? 0);
+  const rawBalance = body?.currentBalance ?? body?.balance ?? 0;
+  const initialBalance = parseLocalizedAmount(String(rawBalance));
+  const isActive = typeof body?.isActive === 'boolean' ? body.isActive : true;
 
-  if (!bankName || !accountNumber || !accountCodeZero || balance === null || balance < 0) {
+  if (!bankName || !accountNumber || initialBalance < 0) {
     return NextResponse.json(
-      { message: 'نام بانک، شماره حساب، حساب کد صفر و موجودی معتبر الزامی است.' },
+      { message: 'نام بانک، شماره حساب و موجودی معتبر الزامی است.' },
       { status: 400 },
     );
   }
@@ -82,12 +88,28 @@ export async function POST(request: Request) {
 
     const record = await writer.collection('bank_accounts').create({
       bankName,
+      branchName,
       accountNumber,
-      balance,
-      accountCodeZero,
+      balance: initialBalance,
+      currentBalance: initialBalance,
       currency,
+      isActive,
+      accountCodeZero,
+      owner: context.user.id,
       createdBy: context.user.id,
       updatedBy: context.user.id,
+    });
+
+    await recordAuditEvent({
+      userId: context.user.id,
+      event: 'settings_updated',
+      request,
+      details: `حساب بانکی جدید ${bankName} (${branchName}) با شماره ${accountNumber} ایجاد شد.`,
+      entityType: 'bank_account',
+      entityId: record.id,
+      entityLabel: `${bankName} - ${accountNumber}`,
+      changes: { bankName, branchName, accountNumber, balance: initialBalance, currency },
+      authenticatedClient: context.pb,
     });
 
     return NextResponse.json({ bank: mapBankAccount(record) }, { status: 201 });
