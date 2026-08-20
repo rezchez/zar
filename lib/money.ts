@@ -1,5 +1,7 @@
 import { normalizeDigits } from './jalali';
 
+export type BaseCurrency = 'IRR' | 'IRT';
+
 export type CurrencyInfo = {
   code: string;
   faName: string;
@@ -25,6 +27,27 @@ export const SUPPORTED_CURRENCIES: Record<string, CurrencyInfo> = {
   INR: { code: 'INR', faName: 'روپیه هند', symbol: '₹', decimals: 2 },
 };
 
+/**
+ * Converts integer Rial to integer Toman (Toman = Rial / 10).
+ */
+export function convertRialToToman(rialAmount: number | bigint): number {
+  const num = typeof rialAmount === 'bigint' ? Number(rialAmount) : rialAmount;
+  if (!Number.isFinite(num)) return 0;
+  return Math.floor(num / 10);
+}
+
+/**
+ * Converts integer Toman to integer Rial (Rial = Toman * 10).
+ */
+export function convertTomanToRial(tomanAmount: number | bigint): number {
+  const num = typeof tomanAmount === 'bigint' ? Number(tomanAmount) : tomanAmount;
+  if (!Number.isFinite(num)) return 0;
+  return Math.round(num * 10);
+}
+
+/**
+ * Parses localized Persian or English currency input string to pure number.
+ */
 export function parseLocalizedAmount(value: string | number): number {
   if (typeof value === 'number') {
     return Number.isFinite(value) ? value : 0;
@@ -32,11 +55,21 @@ export function parseLocalizedAmount(value: string | number): number {
   if (!value) return 0;
 
   const normalized = normalizeDigits(String(value))
-    .replace(/[,\u066B\u066C\u00A0\s]/g, '') // remove commas, Persian/Arabic separators, non-breaking space
+    .replace(/[,\u066B\u066C\u00A0\s]/g, '') // remove commas, Persian separators, spaces
     .trim();
 
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+export const parseLocalizedMoney = parseLocalizedAmount;
+
+/**
+ * Gets localized label for currency code.
+ */
+export function getCurrencyLabel(code: string): string {
+  const key = (code || 'IRR').toUpperCase();
+  return SUPPORTED_CURRENCIES[key]?.symbol || key;
 }
 
 const ones = ['', 'یک', 'دو', 'سه', 'چهار', 'پنج', 'شش', 'هفت', 'هشت', 'نه'];
@@ -127,13 +160,46 @@ export function numberToPersianWords(value: number | bigint): string {
   return isNegative ? `منفی ${result}` : result;
 }
 
+/**
+ * Formats standard amount based on given or active base currency.
+ * Input amount is assumed to be stored in Base Rial integer units.
+ */
+export function formatMoney(
+  amountInRial: number | bigint,
+  baseCurrency: BaseCurrency = 'IRR',
+  fractionDigits?: number,
+): string {
+  const num = typeof amountInRial === 'bigint' ? Number(amountInRial) : amountInRial;
+  const isToman = baseCurrency === 'IRT';
+  const displayAmount = isToman ? Math.floor(num / 10) : num;
+  const symbol = isToman ? 'تومان' : 'ریال';
+  const decimals = fractionDigits ?? 0;
+
+  const formattedNumber = new Intl.NumberFormat('fa-IR', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  }).format(displayAmount);
+
+  return `${formattedNumber} ${symbol}`;
+}
+
 export function formatCurrencyAmount(
   amount: number | bigint,
   currencyCode = 'IRR',
   fractionDigits?: number,
 ): string {
   const num = typeof amount === 'bigint' ? Number(amount) : amount;
-  const currency = SUPPORTED_CURRENCIES[currencyCode.toUpperCase()] || SUPPORTED_CURRENCIES.IRR;
+  const code = currencyCode.toUpperCase();
+
+  if (code === 'IRT') {
+    return formatMoney(convertTomanToRial(num), 'IRT', fractionDigits);
+  }
+
+  if (code === 'IRR') {
+    return formatMoney(num, 'IRR', fractionDigits);
+  }
+
+  const currency = SUPPORTED_CURRENCIES[code] || SUPPORTED_CURRENCIES.IRR;
   const decimals = fractionDigits ?? currency.decimals;
 
   const formattedNumber = new Intl.NumberFormat('fa-IR', {
@@ -146,25 +212,25 @@ export function formatCurrencyAmount(
 
 export function getReadableCurrencyAmount(
   amount: number | bigint,
-  currencyCode = 'IRR',
+  currencyCode: string = 'IRR',
 ): string {
   const num = typeof amount === 'bigint' ? Number(amount) : amount;
   if (num === 0) return 'صفر';
 
-  const code = currencyCode.toUpperCase();
-  const currency = SUPPORTED_CURRENCIES[code] || SUPPORTED_CURRENCIES.IRR;
-
-  if (code === 'IRR') {
-    const toman = Math.floor(Math.abs(num) / 10);
-    const tomanWords = numberToPersianWords(toman);
-    return `معادل ${tomanWords} تومان`;
-  }
+  const code = (currencyCode || 'IRR').toUpperCase();
+  const absNum = Math.abs(num);
 
   if (code === 'IRT') {
-    const tomanWords = numberToPersianWords(Math.abs(num));
-    return `${tomanWords} تومان`;
+    const words = numberToPersianWords(absNum);
+    return `${words} تومان`;
   }
 
-  const words = numberToPersianWords(Math.abs(num));
-  return `${words} ${currency.faName}`;
+  if (code === 'IRR') {
+    const words = numberToPersianWords(absNum);
+    return `${words} ریال`;
+  }
+
+  const currency = SUPPORTED_CURRENCIES[code];
+  const words = numberToPersianWords(absNum);
+  return currency ? `${words} ${currency.faName}` : `${words} ${code}`;
 }

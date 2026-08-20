@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useMemo, useState } from 'react';
 
 import { currencyDisplay, type Customer } from '@/lib/customer';
+import { useAppSettings } from './SettingsProvider';
 
 type SortKey = 'customerCode' | 'name' | 'gender' | 'groupName' | 'city' | 'goldBalance' | 'rialBalance' | 'created';
 
@@ -14,15 +15,6 @@ const groupLabels: Record<string, string> = {
   buyer: 'خریدار',
   seller: 'فروشنده',
 };
-
-function formatNumber(value: number) {
-  return new Intl.NumberFormat('fa-IR', { maximumFractionDigits: 4 }).format(value);
-}
-
-function balanceLabel(value: number, unit: string) {
-  if (value === 0) return 'بدون مانده';
-  return `${formatNumber(Math.abs(value))} ${unit} ${value > 0 ? 'بدهی ما' : 'طلب ما'}`;
-}
 
 function balanceTone(value: number) {
   if (value < 0) return 'is-debit';
@@ -36,6 +28,7 @@ function summaryCurrencyLabel(key: string) {
 }
 
 export default function CustomerManagement({ initialCustomers, canDelete }: { initialCustomers: Customer[]; canDelete: boolean }) {
+  const { formatMoney, formatWeight, settings } = useAppSettings();
   const [customers, setCustomers] = useState(initialCustomers);
   const [query, setQuery] = useState('');
   const [group, setGroup] = useState('');
@@ -43,6 +36,8 @@ export default function CustomerManagement({ initialCustomers, canDelete }: { in
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+
+  const baseCurrencySymbol = settings.baseCurrency === 'IRT' ? 'تومان' : 'ریال';
 
   async function reload() {
     setLoading(true);
@@ -109,6 +104,13 @@ export default function CustomerManagement({ initialCustomers, canDelete }: { in
     }
   }
 
+  function balanceLabel(value: number, unit: string, isCurrency = false) {
+    if (value === 0) return 'بدون مانده';
+    const absVal = Math.abs(value);
+    const formatted = isCurrency ? formatMoney(absVal) : `${formatWeight(absVal)} ${unit}`;
+    return `${formatted} ${value > 0 ? 'بدهی ما' : 'طلب ما'}`;
+  }
+
   return (
     <div className="customer-management-page">
       <div className="dashboard-page-heading">
@@ -122,15 +124,15 @@ export default function CustomerManagement({ initialCustomers, canDelete }: { in
 
       {message ? <p className="account-message">{message}</p> : null}
       <section className="customer-balance-overview" aria-label="خلاصه مانده طرف‌حساب‌ها">
-        <BalanceSummaryCard label="طلا" value={totals.gold} unit="گرم" />
-        <BalanceSummaryCard label="نقره" value={totals.silver} unit="گرم" />
-        <BalanceSummaryCard label="پلاتین" value={totals.platinum} unit="گرم" />
-        <BalanceSummaryCard label="ریال" value={totals.rial} unit="ریال" />
+        <BalanceSummaryCard label="طلا" formattedValue={formatWeight(totals.gold)} value={totals.gold} unit="گرم" />
+        <BalanceSummaryCard label="نقره" formattedValue={formatWeight(totals.silver)} value={totals.silver} unit="گرم" />
+        <BalanceSummaryCard label="پلاتین" formattedValue={formatWeight(totals.platinum)} value={totals.platinum} unit="گرم" />
+        <BalanceSummaryCard label="ارز پایه" formattedValue={formatMoney(totals.rial)} value={totals.rial} unit={baseCurrencySymbol} />
         {Object.entries(totals.foreign).map(([currency, value]) => (
-          <BalanceSummaryCard key={`foreign-${currency}`} label={`ارز دوم: ${summaryCurrencyLabel(currency)}`} value={value} unit={summaryCurrencyLabel(currency)} />
+          <BalanceSummaryCard key={`foreign-${currency}`} label={`ارز دوم: ${summaryCurrencyLabel(currency)}`} formattedValue={value.toLocaleString('fa-IR')} value={value} unit={summaryCurrencyLabel(currency)} />
         ))}
         {Object.entries(totals.tertiary).map(([currency, value]) => (
-          <BalanceSummaryCard key={`tertiary-${currency}`} label={`ارز سوم: ${summaryCurrencyLabel(currency)}`} value={value} unit={summaryCurrencyLabel(currency)} />
+          <BalanceSummaryCard key={`tertiary-${currency}`} label={`ارز سوم: ${summaryCurrencyLabel(currency)}`} formattedValue={value.toLocaleString('fa-IR')} value={value} unit={summaryCurrencyLabel(currency)} />
         ))}
       </section>
       <section className="dashboard-panel users-table-panel">
@@ -146,7 +148,7 @@ export default function CustomerManagement({ initialCustomers, canDelete }: { in
         </div>
         <div className="users-table-wrap">
           <table className="users-table customers-table">
-            <thead><tr><th>کد</th><th>طرف‌حساب</th><th>جنسیت</th><th>گروه</th><th>شهر</th><th>طلا</th><th>نقره</th><th>پلاتین</th><th>ریال</th><th>ارز دوم</th><th>ارز سوم</th><th>عملیات</th></tr></thead>
+            <thead><tr><th>کد</th><th>طرف‌حساب</th><th>جنسیت</th><th>گروه</th><th>شهر</th><th>طلا</th><th>نقره</th><th>پلاتین</th><th>{baseCurrencySymbol}</th><th>ارز دوم</th><th>ارز سوم</th><th>عملیات</th></tr></thead>
             <tbody>
               {visibleCustomers.length ? visibleCustomers.map((customer) => (
                 <tr key={customer.id}>
@@ -155,12 +157,12 @@ export default function CustomerManagement({ initialCustomers, canDelete }: { in
                   <td>{customer.gender === 'male' ? 'آقا' : customer.gender === 'female' ? 'خانم' : '—'}</td>
                   <td>{groupLabels[customer.groupName] ?? customer.groupName ?? '—'}</td>
                   <td>{customer.city || '—'}</td>
-                  <td><BalanceCell value={customer.goldBalance} unit="گرم" /></td>
-                  <td><BalanceCell value={customer.silverBalance} unit="گرم" /></td>
-                  <td><BalanceCell value={customer.platinumBalance} unit="گرم" /></td>
-                  <td><BalanceCell value={customer.rialBalance} unit="ریال" /></td>
-                  <td><BalanceCell value={customer.foreignBalance} unit={currencyDisplay(customer.secondaryCurrency, customer.secondaryCurrencySymbol)} /></td>
-                  <td><BalanceCell value={customer.tertiaryBalance} unit={currencyDisplay(customer.tertiaryCurrency, customer.tertiaryCurrencySymbol)} /></td>
+                  <td><BalanceCell labelStr={balanceLabel(customer.goldBalance, 'گرم')} toneValue={customer.goldBalance} /></td>
+                  <td><BalanceCell labelStr={balanceLabel(customer.silverBalance, 'گرم')} toneValue={customer.silverBalance} /></td>
+                  <td><BalanceCell labelStr={balanceLabel(customer.platinumBalance, 'گرم')} toneValue={customer.platinumBalance} /></td>
+                  <td><BalanceCell labelStr={balanceLabel(customer.rialBalance, baseCurrencySymbol, true)} toneValue={customer.rialBalance} /></td>
+                  <td><BalanceCell labelStr={balanceLabel(customer.foreignBalance, currencyDisplay(customer.secondaryCurrency, customer.secondaryCurrencySymbol))} toneValue={customer.foreignBalance} /></td>
+                  <td><BalanceCell labelStr={balanceLabel(customer.tertiaryBalance, currencyDisplay(customer.tertiaryCurrency, customer.tertiaryCurrencySymbol))} toneValue={customer.tertiaryBalance} /></td>
                   <td><div className="user-actions"><Link className="user-events-button" href={`/dashboard/customers/${customer.id}`}>ویرایش</Link>{canDelete ? <button type="button" className="user-reset-button" title="حذف" onClick={() => void removeCustomer(customer)}><Trash2 size={15} /></button> : null}</div></td>
                 </tr>
               )) : <tr><td colSpan={12} className="users-table-empty">طرف‌حسابی پیدا نشد.</td></tr>}
@@ -172,19 +174,19 @@ export default function CustomerManagement({ initialCustomers, canDelete }: { in
   );
 }
 
-function BalanceCell({ value, unit }: { value: number; unit: string }) {
+function BalanceCell({ labelStr, toneValue }: { labelStr: string; toneValue: number }) {
   return (
-    <span className={`customer-balance-cell ${balanceTone(value)}`}>
-      {balanceLabel(value, unit)}
+    <span className={`customer-balance-cell ${balanceTone(toneValue)}`}>
+      {labelStr}
     </span>
   );
 }
 
-function BalanceSummaryCard({ label, value, unit }: { label: string; value: number; unit: string }) {
+function BalanceSummaryCard({ label, formattedValue, value, unit }: { label: string; formattedValue: string; value: number; unit: string }) {
   return (
     <article className={`customer-balance-summary ${balanceTone(value)}`}>
       <span>{label}</span>
-      <strong>{value === 0 ? '۰' : formatNumber(Math.abs(value))}</strong>
+      <strong>{value === 0 ? '۰' : formattedValue}</strong>
       <small>{value === 0 ? 'بدون مانده' : value > 0 ? `بدهی ما به طرف‌حساب · ${unit}` : `طلب ما از طرف‌حساب · ${unit}`}</small>
     </article>
   );

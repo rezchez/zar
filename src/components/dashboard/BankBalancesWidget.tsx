@@ -3,10 +3,12 @@
 import { Landmark, LoaderCircle, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
-import { formatRials, type BankAccount } from '@/lib/bank';
+import type { BankAccount } from '@/lib/bank';
 import BankLogo from '@/src/components/documents/BankLogo';
+import { useAppSettings } from '@/src/components/SettingsProvider';
 
 export default function BankBalancesWidget() {
+  const { formatMoney } = useAppSettings();
   const [banks, setBanks] = useState<BankAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -54,7 +56,9 @@ export default function BankBalancesWidget() {
               <strong className="block truncate text-sm">{bank.bankName}</strong>
               <small className="text-xs text-slate-500 dark:text-slate-400">{bank.accountNumber}</small>
             </div>
-            <strong className="text-sm text-emerald-700 dark:text-emerald-300">{formatRials(bank.balance)} ریال</strong>
+            <strong className="text-sm text-emerald-700 dark:text-emerald-300">
+              {formatMoney(bank.balance)}
+            </strong>
           </div>
         ))}
       </div>

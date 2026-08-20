@@ -2,11 +2,12 @@
 
 /**
  * KaratLedgerWidget — آخرین تراکنش‌ها بر اساس عیار و آزمایشگاه/انگ.
- * میان‌بر دفتر روزنامه طلاسازی؛ داده‌ها نمونه‌اند.
+ * میان‌بر دفتر روزنامه طلاسازی.
  */
 import { motion } from 'framer-motion';
 import { FlaskConical, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
 import Link from 'next/link';
+import { useAppSettings } from './SettingsProvider';
 
 type Entry = {
   id: string;
@@ -29,6 +30,8 @@ const ENTRIES: Entry[] = [
 const faNumber = (value: number) => value.toLocaleString('fa-IR');
 
 export default function KaratLedgerWidget() {
+  const { formatWeight } = useAppSettings();
+
   return (
     <section className="dashboard-panel karat-ledger" aria-label="تراکنش‌های اخیر بر اساس عیار">
       <div className="dashboard-panel-heading">
@@ -66,7 +69,7 @@ export default function KaratLedgerWidget() {
               </small>
             </div>
             <div className="karat-ledger-figures">
-              <strong>{faNumber(entry.weight)} گرم</strong>
+              <strong>{formatWeight(entry.weight)} گرم</strong>
               <small>{entry.time}</small>
             </div>
           </motion.li>

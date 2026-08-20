@@ -82,8 +82,9 @@ body {
   margin: 0;
   color: var(--foreground);
   background: var(--background);
-  font-family: "Vazirmatn", Tahoma, "Segoe UI", sans-serif;
-  font-weight: 400;
+  font-family: var(--app-font-body, "Vazirmatn", Tahoma, "Segoe UI", sans-serif);
+  font-size: var(--app-font-body-size, 1rem);
+  font-weight: var(--app-font-body-weight, 400);
   letter-spacing: -0.01em;
 }
 
@@ -99,13 +100,13 @@ h6,
 .login-heading h1,
 .login-heading .eyebrow,
 .eyebrow {
-  font-family: "DoranNoEn", "Vazirmatn", sans-serif;
+  font-family: var(--app-font-heading, "DoranNoEn", "Vazirmatn", sans-serif);
 }
 
 h1,
 .dashboard-page-heading h1,
 .login-heading h1 {
-  font-weight: 800;
+  font-weight: var(--app-font-heading-weight, 800);
 }
 
 h2,
@@ -115,7 +116,7 @@ h5,
 h6,
 .dashboard-panel h2,
 .account-panel-heading h2 {
-  font-weight: 700;
+  font-weight: var(--app-font-heading-weight, 700);
 }
 
 button,

@@ -8,6 +8,7 @@ import {
   type CustomerTransaction,
   sumPostedTransactions,
 } from '@/lib/transaction';
+import { useAppSettings } from './SettingsProvider';
 
 const transactionLabels: Record<string, string> = {
   opening_balance: 'مانده اول دوره',
@@ -21,17 +22,6 @@ function formatDate(value: string) {
   return new Intl.DateTimeFormat('fa-IR', {
     dateStyle: 'medium',
   }).format(new Date(value));
-}
-
-function formatNumber(value: number) {
-  return new Intl.NumberFormat('fa-IR', {
-    maximumFractionDigits: 6,
-  }).format(value);
-}
-
-function signedAmount(value: number, unit: string) {
-  if (value === 0) return '';
-  return `${value > 0 ? '+' : ''}${formatNumber(value)} ${unit}`;
 }
 
 function balanceStatus(value: number) {
@@ -61,9 +51,12 @@ export default function CustomerTransactionLedger({
   customerId: string;
   initialTransactions: CustomerTransaction[];
 }) {
+  const { formatMoney, formatWeight, settings } = useAppSettings();
   const [transactions, setTransactions] = useState(initialTransactions);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+
+  const baseCurrencySymbol = settings.baseCurrency === 'IRT' ? 'تومان' : 'ریال';
 
   async function refresh() {
     setLoading(true);
@@ -105,6 +98,34 @@ export default function CustomerTransactionLedger({
     'tertiaryCurrencySymbol',
   );
 
+  function signedAmount(value: number, unit: string, isCurrency = false) {
+    if (value === 0) return '';
+    const sign = value > 0 ? '+' : '';
+    const formatted = isCurrency ? formatMoney(value) : `${formatWeight(value)} ${unit}`;
+    return `${sign}${formatted}`;
+  }
+
+  function renderAmounts(transaction: CustomerTransaction) {
+    const rows = [
+      signedAmount(transaction.goldAmount, 'گرم طلا'),
+      signedAmount(transaction.silverAmount, 'گرم نقره'),
+      signedAmount(transaction.platinumAmount, 'گرم پلاتین'),
+      signedAmount(transaction.rialAmount, baseCurrencySymbol, true),
+      signedAmount(
+        transaction.foreignAmount,
+        currencyDisplay(transaction.foreignCurrency, transaction.foreignCurrencySymbol),
+      ),
+      signedAmount(
+        transaction.tertiaryAmount,
+        currencyDisplay(transaction.tertiaryCurrency, transaction.tertiaryCurrencySymbol),
+      ),
+    ].filter(Boolean);
+
+    return rows.length
+      ? rows.map((row) => <span key={row}>{row}</span>)
+      : <span>بدون مبلغ</span>;
+  }
+
   return (
     <section className="dashboard-panel customer-transactions-panel">
       <div className="account-panel-heading">
@@ -126,12 +147,13 @@ export default function CustomerTransactionLedger({
       {message ? <p className="form-error">{message}</p> : null}
 
       <div className="customer-transaction-balance-grid">
-        <BalanceItem label="طلا" value={balances.goldAmount} unit="گرم" />
-        <BalanceItem label="نقره" value={balances.silverAmount} unit="گرم" />
-        <BalanceItem label="پلاتین" value={balances.platinumAmount} unit="گرم" />
-        <BalanceItem label="ریال" value={balances.rialAmount} unit="ریال" />
+        <BalanceItem label="طلا" formattedValue={formatWeight(balances.goldAmount)} value={balances.goldAmount} unit="گرم" />
+        <BalanceItem label="نقره" formattedValue={formatWeight(balances.silverAmount)} value={balances.silverAmount} unit="گرم" />
+        <BalanceItem label="پلاتین" formattedValue={formatWeight(balances.platinumAmount)} value={balances.platinumAmount} unit="گرم" />
+        <BalanceItem label="ارز پایه" formattedValue={formatMoney(balances.rialAmount)} value={balances.rialAmount} unit={baseCurrencySymbol} />
         <BalanceItem
           label="ارز دوم"
+          formattedValue={balances.foreignAmount.toLocaleString('fa-IR')}
           value={balances.foreignAmount}
           unit={foreignCurrency
             ? currencyDisplay(foreignCurrency, foreignCurrencySymbol)
@@ -139,6 +161,7 @@ export default function CustomerTransactionLedger({
         />
         <BalanceItem
           label="ارز سوم"
+          formattedValue={balances.tertiaryAmount.toLocaleString('fa-IR')}
           value={balances.tertiaryAmount}
           unit={tertiaryCurrency
             ? currencyDisplay(tertiaryCurrency, tertiaryCurrencySymbol)
@@ -187,33 +210,14 @@ export default function CustomerTransactionLedger({
   );
 }
 
-function renderAmounts(transaction: CustomerTransaction) {
-  const rows = [
-    signedAmount(transaction.goldAmount, 'گرم طلا'),
-    signedAmount(transaction.silverAmount, 'گرم نقره'),
-    signedAmount(transaction.platinumAmount, 'گرم پلاتین'),
-    signedAmount(transaction.rialAmount, 'ریال'),
-    signedAmount(
-      transaction.foreignAmount,
-      currencyDisplay(transaction.foreignCurrency, transaction.foreignCurrencySymbol),
-    ),
-    signedAmount(
-      transaction.tertiaryAmount,
-      currencyDisplay(transaction.tertiaryCurrency, transaction.tertiaryCurrencySymbol),
-    ),
-  ].filter(Boolean);
-
-  return rows.length
-    ? rows.map((row) => <span key={row}>{row}</span>)
-    : <span>بدون مبلغ</span>;
-}
-
 function BalanceItem({
   label,
+  formattedValue,
   value,
   unit,
 }: {
   label: string;
+  formattedValue: string;
   value: number;
   unit: string;
 }) {
@@ -222,7 +226,7 @@ function BalanceItem({
       value < 0 ? 'is-negative' : value > 0 ? 'is-positive' : ''
     }`}>
       <span>{label}</span>
-      <strong>{formatNumber(value)}</strong>
+      <strong>{formattedValue}</strong>
       <small>{unit}</small>
       <em>{balanceStatus(value)}</em>
     </div>

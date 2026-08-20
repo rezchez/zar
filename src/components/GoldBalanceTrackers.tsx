@@ -2,61 +2,60 @@
 
 /**
  * GoldBalanceTrackers — شاخص‌های تراز وزنی و ریالی.
- * وزن کل طلای موجودی (گرم) و تراز ریالی صندوق/حساب‌ها با نمایه‌های بصری.
- * داده‌ها نمونه‌اند؛ به سرویس تراز واقعی متصل کنید.
+ * وزن کل طلای موجودی و تراز پایه صندوق/حساب‌ها بر اساس تنظیمات برنامه.
  */
 import { motion } from 'framer-motion';
 import { Scale, Banknote, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
-
-const faNumber = (value: number) => value.toLocaleString('fa-IR');
-
-const TRACKERS = [
-  {
-    id: 'weight',
-    icon: Scale,
-    title: 'موجودی وزنی طلا',
-    value: 12_847.65,
-    unit: 'گرم',
-    caption: 'معادل ۷۵۰ عیار',
-    percent: 68,
-    trend: { dir: 'up' as const, label: '۲۴۰ گرم این ماه' },
-  },
-  {
-    id: 'rial',
-    icon: Banknote,
-    title: 'تراز ریالی',
-    value: 4_582_300_000,
-    unit: 'ریال',
-    caption: 'صندوق + بانک',
-    percent: 54,
-    trend: { dir: 'up' as const, label: '۱۲٪ نسبت به ماه قبل' },
-  },
-  {
-    id: 'receivable',
-    icon: ArrowDownLeft,
-    title: 'طلب وزنی از مشتریان',
-    value: 3_210.4,
-    unit: 'گرم',
-    caption: 'سررسید ۳۰ روز آینده',
-    percent: 32,
-    trend: { dir: 'down' as const, label: 'کاهش ۵٪' },
-  },
-  {
-    id: 'payable',
-    icon: ArrowUpRight,
-    title: 'بدهی وزنی به بنکداران',
-    value: 1_985.2,
-    unit: 'گرم',
-    caption: 'معاملات شرطی باز',
-    percent: 21,
-    trend: { dir: 'down' as const, label: 'کاهش ۳٪' },
-  },
-];
+import { useAppSettings } from './SettingsProvider';
 
 export default function GoldBalanceTrackers() {
+  const { formatMoney, formatWeight, settings } = useAppSettings();
+
+  const isToman = settings.baseCurrency === 'IRT';
+  const currencyTitle = isToman ? 'تراز تومانی' : 'تراز ریالی';
+
+  const trackers = [
+    {
+      id: 'weight',
+      icon: Scale,
+      title: 'موجودی وزنی طلا',
+      value: formatWeight(12847.65),
+      caption: 'معادل ۷۵۰ عیار',
+      percent: 68,
+      trend: { dir: 'up' as const, label: `${formatWeight(240)} گرم این ماه` },
+    },
+    {
+      id: 'rial',
+      icon: Banknote,
+      title: currencyTitle,
+      value: formatMoney(4582300000), // 4,582,300,000 Rial base integer
+      caption: 'صندوق + بانک',
+      percent: 54,
+      trend: { dir: 'up' as const, label: '۱۲٪ نسبت به ماه قبل' },
+    },
+    {
+      id: 'receivable',
+      icon: ArrowDownLeft,
+      title: 'طلب وزنی از مشتریان',
+      value: formatWeight(3210.4),
+      caption: 'سررسید ۳۰ روز آینده',
+      percent: 32,
+      trend: { dir: 'down' as const, label: 'کاهش ۵٪' },
+    },
+    {
+      id: 'payable',
+      icon: ArrowUpRight,
+      title: 'بدهی وزنی به بنکداران',
+      value: formatWeight(1985.2),
+      caption: 'معاملات شرطی باز',
+      percent: 21,
+      trend: { dir: 'down' as const, label: 'کاهش ۳٪' },
+    },
+  ];
+
   return (
     <div className="gold-balance-grid">
-      {TRACKERS.map((tracker, index) => (
+      {trackers.map((tracker, index) => (
         <motion.article
           key={tracker.id}
           className="gold-balance-card"
@@ -71,8 +70,7 @@ export default function GoldBalanceTrackers() {
             <span>{tracker.title}</span>
           </div>
           <strong className="gold-balance-value">
-            {faNumber(tracker.value)}
-            <small>{tracker.unit}</small>
+            {tracker.value}
           </strong>
           <div className="gold-balance-bar" role="progressbar" aria-valuenow={tracker.percent} aria-valuemin={0} aria-valuemax={100}>
             <motion.span

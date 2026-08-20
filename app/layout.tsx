@@ -3,6 +3,7 @@ import Script from 'next/script'
 import './globals.css'
 import './document-form.css'
 import ThemeProvider from '@/src/components/ThemeProvider'
+import { SettingsProvider } from '@/src/components/SettingsProvider'
 
 export const metadata: Metadata = {
   title: 'Zarfolio',
@@ -61,7 +62,9 @@ export default function RootLayout({
         />
       </head>
       <body suppressHydrationWarning>
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider>
+          <SettingsProvider>{children}</SettingsProvider>
+        </ThemeProvider>
       </body>
     </html>
   )

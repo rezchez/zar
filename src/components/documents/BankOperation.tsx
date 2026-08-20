@@ -478,7 +478,7 @@ export default function BankOperation({
               />
               {parseLocalizedAmount(newBalance) > 0 ? (
                 <p className="text-xs text-emerald-700 dark:text-emerald-400 font-medium mt-1">
-                  {getReadableCurrencyAmount(parseLocalizedAmount(newBalance), newCurrency)}
+                  {getReadableCurrencyAmount(parseLocalizedAmount(newBalance), newCurrency as any)}
                 </p>
               ) : null}
             </div>
@@ -609,7 +609,7 @@ export default function BankOperation({
               />
               {numericAmount > 0 ? (
                 <p className="text-xs text-emerald-700 dark:text-emerald-400 font-medium mt-1">
-                  {getReadableCurrencyAmount(numericAmount, selectedSourceAccount?.currency || 'IRR')}
+                  {getReadableCurrencyAmount(numericAmount, (selectedSourceAccount?.currency || 'IRR') as any)}
                 </p>
               ) : null}
             </div>
