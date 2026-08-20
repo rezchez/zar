@@ -22,19 +22,32 @@ export async function GET() {
       sort: '-created',
     });
 
-    const items = receipts.map((receipt) => {
-      const notif = receipt.expand?.notification as Record<string, unknown> | undefined;
-      const senderObj = (notif?.expand as Record<string, unknown> | undefined)?.sender as Record<string, unknown> | undefined;
+    const now = new Date();
 
-      return {
-        id: receipt.id,
-        notificationId: notif?.id ? String(notif.id) : String(receipt.notification),
-        senderName: String(senderObj?.name || senderObj?.email || 'سیستم Zarfolio'),
-        recipientMode: String(notif?.recipientMode || 'private'),
-        readAt: receipt.readAt ? String(receipt.readAt) : null,
-        created: receipt.created ? String(receipt.created) : null,
-      };
-    });
+    const items = receipts
+      .filter((receipt) => {
+        const notif = receipt.expand?.notification as Record<string, unknown> | undefined;
+        if (notif?.scheduledAt) {
+          const schedTime = new Date(String(notif.scheduledAt));
+          if (!Number.isNaN(schedTime.getTime()) && schedTime > now) {
+            return false; // Filter out future scheduled notifications
+          }
+        }
+        return true;
+      })
+      .map((receipt) => {
+        const notif = receipt.expand?.notification as Record<string, unknown> | undefined;
+        const senderObj = (notif?.expand as Record<string, unknown> | undefined)?.sender as Record<string, unknown> | undefined;
+
+        return {
+          id: receipt.id,
+          notificationId: notif?.id ? String(notif.id) : String(receipt.notification),
+          senderName: String(senderObj?.name || senderObj?.email || 'سیستم Zarfolio'),
+          recipientMode: String(notif?.recipientMode || 'private'),
+          readAt: receipt.readAt ? String(receipt.readAt) : null,
+          created: receipt.created ? String(receipt.created) : null,
+        };
+      });
 
     const unreadCount = items.filter((item) => !item.readAt).length;
 
@@ -73,6 +86,7 @@ export async function POST(request: Request) {
   const content = String(body.body ?? '').trim();
   const recipientMode = String(body.recipientMode ?? 'private').toLowerCase();
   const recipientId = String(body.recipientId ?? '').trim();
+  const scheduledAt = body.scheduledAt ? String(body.scheduledAt).trim() : null;
 
   // Validations
   if (!title) {
@@ -111,6 +125,7 @@ export async function POST(request: Request) {
       iv: encrypted.iv,
       authTag: encrypted.authTag,
       keyVersion: encrypted.keyVersion,
+      scheduledAt,
     });
 
     // Create receipts

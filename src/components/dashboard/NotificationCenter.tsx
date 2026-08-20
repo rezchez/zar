@@ -11,8 +11,9 @@ import {
   Loader2,
   AlertCircle,
   ShieldCheck,
-  Eye,
+  Clock,
 } from 'lucide-react';
+import { jalaliDateToIso } from '@/lib/jalali';
 
 export type NotificationMetadata = {
   id: string;
@@ -57,6 +58,9 @@ export default function NotificationCenter({ userRole }: { userRole: 'user' | 'm
     body: '',
     recipientMode: 'private' as 'private' | 'broadcast',
     recipientId: '',
+    sendTiming: 'immediate' as 'immediate' | 'scheduled',
+    jalaliDate: '1405/01/01',
+    time: '12:00',
   });
   const [usersList, setUsersList] = useState<UserItem[]>([]);
   const [isSending, setIsSending] = useState(false);
@@ -162,6 +166,19 @@ export default function NotificationCenter({ userRole }: { userRole: 'user' | 'm
       return;
     }
 
+    let scheduledAtIso: string | null = null;
+    if (sendForm.sendTiming === 'scheduled') {
+      const isoDate = jalaliDateToIso(sendForm.jalaliDate);
+      if (!isoDate) {
+        setSendNotice({ type: 'error', text: 'تاریخ زمان‌بندی جلالی نامعتبر است.' });
+        return;
+      }
+      const [hours, minutes] = sendForm.time.split(':').map(Number);
+      const dt = new Date(isoDate);
+      dt.setUTCHours(hours || 12, minutes || 0, 0, 0);
+      scheduledAtIso = dt.toISOString();
+    }
+
     setIsSending(true);
     setSendNotice(null);
 
@@ -169,7 +186,13 @@ export default function NotificationCenter({ userRole }: { userRole: 'user' | 'm
       const res = await fetch('/api/notifications', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(sendForm),
+        body: JSON.stringify({
+          title: sendForm.title,
+          body: sendForm.body,
+          recipientMode: sendForm.recipientMode,
+          recipientId: sendForm.recipientId,
+          scheduledAt: scheduledAtIso,
+        }),
       });
 
       const data = await res.json();
@@ -180,8 +203,22 @@ export default function NotificationCenter({ userRole }: { userRole: 'user' | 'm
         return;
       }
 
-      setSendNotice({ type: 'success', text: `اعلان با موفقیت به ${data.recipientCount} کاربر ارسال شد.` });
-      setSendForm({ title: '', body: '', recipientMode: 'private', recipientId: '' });
+      setSendNotice({
+        type: 'success',
+        text: scheduledAtIso
+          ? 'اعلان زمان‌بندی‌شده با موفقیت ثبت شد.'
+          : `اعلان با موفقیت به ${data.recipientCount} کاربر ارسال شد.`,
+      });
+
+      setSendForm({
+        title: '',
+        body: '',
+        recipientMode: 'private',
+        recipientId: '',
+        sendTiming: 'immediate',
+        jalaliDate: '1405/01/01',
+        time: '12:00',
+      });
       setShowConfirmBroadcast(false);
       setTimeout(() => {
         setIsSendModalOpen(false);
@@ -316,10 +353,10 @@ export default function NotificationCenter({ userRole }: { userRole: 'user' | 'm
         </div>
       )}
 
-      {/* Notification Detail Modal */}
+      {/* Notification Detail Modal - Centered */}
       {(activeNotification || fetchingDetail) && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-sm" dir="rtl">
-          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/50 backdrop-blur-sm m-auto" dir="rtl">
+          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 shadow-2xl space-y-4 my-auto">
             {fetchingDetail ? (
               <div className="flex flex-col items-center justify-center p-8 gap-3 text-xs text-slate-500">
                 <Loader2 className="animate-spin text-amber-500" size={24} />
@@ -371,10 +408,10 @@ export default function NotificationCenter({ userRole }: { userRole: 'user' | 'm
         </div>
       )}
 
-      {/* Send Notification Modal (Admin/Manager) */}
+      {/* Send Notification Modal (Admin/Manager) - Centered */}
       {isSendModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-sm" dir="rtl">
-          <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-2xl space-y-5">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/50 backdrop-blur-sm m-auto" dir="rtl">
+          <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-2xl space-y-5 my-auto max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
               <h3 className="font-extrabold text-base text-slate-900 dark:text-slate-100 flex items-center gap-2">
                 <Send size={18} className="text-amber-500" />
@@ -449,6 +486,50 @@ export default function NotificationCenter({ userRole }: { userRole: 'user' | 'm
                   </select>
                 </label>
               )}
+
+              {/* Scheduled sending options */}
+              <div className="space-y-2 border-t border-b border-slate-100 dark:border-slate-800 py-3">
+                <label className="account-field">
+                  <span className="font-bold text-xs flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
+                    <Clock size={14} className="text-amber-500" />
+                    زمان‌بندی ارسال
+                  </span>
+                  <select
+                    value={sendForm.sendTiming}
+                    onChange={(e) =>
+                      setSendForm((prev) => ({
+                        ...prev,
+                        sendTiming: e.target.value as 'immediate' | 'scheduled',
+                      }))}
+                  >
+                    <option value="immediate">ارسال فوری (هم‌اکنون)</option>
+                    <option value="scheduled">ارسال زمان‌بندی‌شده (تاریخ/ساعت آینده)</option>
+                  </select>
+                </label>
+
+                {sendForm.sendTiming === 'scheduled' && (
+                  <div className="grid grid-cols-2 gap-3 pt-2">
+                    <label className="account-field">
+                      <span className="text-[11px] text-slate-500">تاریخ جلالی (مثال: ۱۴۰۵/۰۱/۰۱)</span>
+                      <input
+                        type="text"
+                        value={sendForm.jalaliDate}
+                        onChange={(e) => setSendForm((prev) => ({ ...prev, jalaliDate: e.target.value }))}
+                        placeholder="۱۴۰۵/۰۱/۰۱"
+                      />
+                    </label>
+
+                    <label className="account-field">
+                      <span className="text-[11px] text-slate-500">ساعت ارسال</span>
+                      <input
+                        type="time"
+                        value={sendForm.time}
+                        onChange={(e) => setSendForm((prev) => ({ ...prev, time: e.target.value }))}
+                      />
+                    </label>
+                  </div>
+                )}
+              </div>
 
               {sendForm.recipientMode === 'broadcast' && (
                 <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-700 dark:text-amber-400">

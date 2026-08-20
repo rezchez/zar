@@ -9,6 +9,7 @@ const notificationsFields = [
   { id: 'text_iv', name: 'iv', type: 'text', required: true, max: 100 },
   { id: 'text_auth_tag', name: 'authTag', type: 'text', required: true, max: 100 },
   { id: 'num_key_version', name: 'keyVersion', type: 'number', required: true, min: 1 },
+  { id: 'text_scheduled_at', name: 'scheduledAt', type: 'text', required: false, max: 40 },
   { id: 'autodate_created', name: 'created', type: 'autodate', onCreate: true, onUpdate: false },
   { id: 'autodate_updated', name: 'updated', type: 'autodate', onCreate: true, onUpdate: true },
 ];
