@@ -1,0 +1,66 @@
+# dependencies
+node_modules/
+/.pnp/
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# Next.js build output
+.next/
+.next-build/
+.next-build-documents/
+/out/
+
+# production
+/build/
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files
+.env*
+!.env.example
+
+# vercel
+.vercel/
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# pocketbase
+pb_data/
+pb_aux/
+
+# local logs
+*.log
+
+# editor / OS files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# local development data
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+
+# generated reports and exports
+*.csv
+*.xlsx
+*.pdf
