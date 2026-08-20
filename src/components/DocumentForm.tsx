@@ -13,11 +13,13 @@ import {
   PencilLine,
   Pin,
   PinOff,
+  RotateCcw,
   Search,
   Sparkles,
   Trash2,
   UserRound,
   Wallet,
+  X,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -34,6 +36,7 @@ import {
   jalaliToGregorian,
   normalizeDigits,
 } from '@/lib/jalali';
+import { useAppSettings } from '@/src/components/SettingsProvider';
 
 type RawOperationKind = 'molten' | 'misc' | 'conditional' | 'question' | 'unsettled';
 type CalculationMethod = 'weight' | 'money';
@@ -55,7 +58,6 @@ type DetailState = {
   metalPrice: string;
   totalAmount: string;
   labName: string;
-  pocketNumber: string;
   stampNumber: string;
   currencyUnit: string;
   currencyQuantity: string;
@@ -87,6 +89,11 @@ type MeltedInventoryItem = {
   purity: number;
   stampNumber: string;
   customerName: string;
+};
+
+type PendingDelete = {
+  line: DocumentLine;
+  index: number;
 };
 
 const jalaliMonthNames = [
@@ -208,7 +215,6 @@ function createLine(nature: DocumentNature = 'received'): DocumentLine {
       metalPrice: '',
       totalAmount: '',
       labName: '',
-      pocketNumber: '',
       stampNumber: '',
       currencyUnit: 'USD',
       currencyQuantity: '',
@@ -351,6 +357,9 @@ export default function DocumentForm({
   customers: Customer[];
   nextDocumentNumber?: number;
 }) {
+  const { settings } = useAppSettings();
+  const weightPrecision = Number(settings.weightDecimalPlaces) || 3;
+
   const initialDate = parseJalaliParts(formatJalaliDate());
   const [customerQuery, setCustomerQuery] = useState('');
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
@@ -372,6 +381,14 @@ export default function DocumentForm({
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [meltedInventory, setMeltedInventory] = useState<MeltedInventoryItem[]>([]);
+
+  // Selection notice modal / toast
+  const [noCustomerNotice, setNoCustomerNotice] = useState(false);
+
+  // Deletion modal & restoration toast state
+  const [deleteConfirmLine, setDeleteConfirmLine] = useState<DocumentLine | null>(null);
+  const [restorationState, setRestorationState] = useState<PendingDelete | null>(null);
+  const [restorationTimer, setRestorationTimer] = useState<number>(10);
 
   // Document lines pin state initialized safely
   const [isLinesPinned, setIsLinesPinned] = useState<boolean>(false);
@@ -402,20 +419,22 @@ export default function DocumentForm({
     });
   };
 
-  const [weightPrecision] = useState(() => {
-    if (typeof window === 'undefined') return 3;
-    try {
-      const raw = window.localStorage.getItem('zar-program-settings-preview');
-      const configured = raw
-        ? Number((JSON.parse(raw) as { decimalScale?: string }).decimalScale)
-        : 3;
-      return Number.isFinite(configured)
-        ? Math.min(8, Math.max(0, configured))
-        : 3;
-    } catch {
-      return 3;
-    }
-  });
+  // Restoration timer interval
+  useEffect(() => {
+    if (!restorationState) return;
+    const interval = setInterval(() => {
+      setRestorationTimer((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          setRestorationState(null);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [restorationState]);
+
   const datePickerRef = useRef<HTMLDivElement>(null);
 
   const selectedCustomer = customers.find(
@@ -424,7 +443,7 @@ export default function DocumentForm({
 
   const effectiveDocumentNumberDisplay = selectedCustomerId
     ? documentNumberDisplay
-    : 'ابتدا طرف‌حساب را انتخاب کنید';
+    : 'انتخاب نشده';
 
   const suggestions = useMemo(() => {
     const query = customerQuery.trim().toLocaleLowerCase();
@@ -582,15 +601,6 @@ export default function DocumentForm({
           ? goldSaleSubType(nature, current.details.rawKind)
           : documentSubType(nature, current.details.rawKind),
     }));
-    setCommittedLines((current) => current.map((line) => ({
-      ...line,
-      documentNature: nature,
-      documentSubType: line.documentTab === 'currency'
-        ? currencyDocumentSubType(nature)
-        : line.documentTab === 'gold-sale'
-          ? goldSaleSubType(nature, line.details.rawKind)
-          : documentSubType(nature, line.details.rawKind),
-    })));
   }
 
   function changeEntryTab(tab: string) {
@@ -640,7 +650,6 @@ export default function DocumentForm({
         rawKind: kind,
         purity: kind === 'conditional' ? '' : current.details.purity || '750',
         labName: kind === 'misc' ? '' : current.details.labName,
-        pocketNumber: kind === 'misc' ? '' : current.details.pocketNumber,
         stampNumber: kind === 'misc' ? '' : current.details.stampNumber,
       };
       return {
@@ -700,14 +709,20 @@ export default function DocumentForm({
     }
     setErrorMessage('');
 
+    // Snapshot current documentNature onto the committed line object
+    const lineToCommit: DocumentLine = {
+      ...draftLine,
+      documentNature,
+    };
+
     if (editingLineId) {
       setCommittedLines((current) => [
         ...current.filter((line) => line.id !== editingLineId),
-        draftLine,
+        lineToCommit,
       ]);
       setEditingLineId(null);
     } else {
-      setCommittedLines((current) => [...current, draftLine]);
+      setCommittedLines((current) => [...current, lineToCommit]);
     }
     setDraftLine(draftLine.documentTab === 'currency'
       ? createCurrencyLine(documentNature)
@@ -731,9 +746,33 @@ export default function DocumentForm({
     setErrorMessage('');
   }
 
-  function removeLine(lineId: string) {
-    setCommittedLines((current) => current.filter((line) => line.id !== lineId));
-    if (editingLineId === lineId) cancelEdit();
+  function requestRemoveLine(line: DocumentLine) {
+    setDeleteConfirmLine(line);
+  }
+
+  function confirmRemoveLine() {
+    if (!deleteConfirmLine) return;
+    const lineToRemove = deleteConfirmLine;
+    const index = committedLines.findIndex((line) => line.id === lineToRemove.id);
+
+    setCommittedLines((current) => current.filter((line) => line.id !== lineToRemove.id));
+    if (editingLineId === lineToRemove.id) cancelEdit();
+
+    setRestorationTimer(10);
+    setRestorationState({ line: lineToRemove, index: index >= 0 ? index : committedLines.length - 1 });
+    setDeleteConfirmLine(null);
+  }
+
+  function restoreLine() {
+    if (!restorationState) return;
+    const { line, index } = restorationState;
+    setCommittedLines((current) => {
+      const copy = [...current];
+      const targetIndex = Math.min(index, copy.length);
+      copy.splice(targetIndex, 0, line);
+      return copy;
+    });
+    setRestorationState(null);
   }
 
   function goToPreviousMonth() {
@@ -771,7 +810,9 @@ export default function DocumentForm({
 
     try {
       if (!selectedCustomerId) {
-        throw new Error('ابتدا طرف‌حساب را از فهرست نتایج انتخاب کنید.');
+        setNoCustomerNotice(true);
+        setTimeout(() => setNoCustomerNotice(false), 5000);
+        throw new Error('ابتدا طرف حساب را از فهرست انتخاب کنید');
       }
       if (documentNumberLoading) {
         throw new Error('لطفاً تا پایان استعلام شماره سند صبر کنید.');
@@ -779,7 +820,7 @@ export default function DocumentForm({
       if (!committedLines.length) {
         throw new Error(
           draftReady
-            ? 'اطلاعات ردیف وارد شده است؛ ابتدا «ثبت ردیف در سند» را بزنید.'
+            ? 'اطلاعات ردیف وارد شده است؛ ابتدا «ثبت ردیف» را بزنید.'
             : 'هنوز هیچ ردیفی به سند اضافه نشده است.',
         );
       }
@@ -883,100 +924,132 @@ export default function DocumentForm({
       {message ? <p className="account-message"><Check size={15} />{message}</p> : null}
       {errorMessage ? <p className="form-error">{errorMessage}</p> : null}
 
-      <section className="dashboard-panel document-account-panel">
-        <div className="document-account-heading">
-          <h2>طرف‌حساب و مانده جاری</h2>
-          {selectedCustomer ? (
-            <span className="customer-code-badge">
-              کد حساب {toPersianDigits(String(selectedCustomer.customerCode))}
-            </span>
-          ) : null}
-        </div>
+      {/* No customer notice toast */}
+      <AnimatePresence>
+        {noCustomerNotice ? (
+          <motion.div
+            initial={{ opacity: 0, y: -20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            className="fixed top-5 left-1/2 -translate-x-1/2 z-50 rounded-2xl border border-rose-300 bg-rose-500 px-5 py-3 text-white shadow-xl text-xs font-bold"
+          >
+            ابتدا طرف حساب را از فهرست انتخاب کنید
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
-        <div className="document-account-layout">
-          <AnimatePresence mode="wait" initial={false}>
-            {!selectedCustomer ? (
-              <motion.div
-                key="search-mode"
-                initial={{ opacity: 0, y: -6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 6 }}
-                transition={{ duration: 0.18, ease: 'easeOut' }}
-                className="w-full"
-              >
-                <label className="account-field document-account-search-field">
-                  <span>نام یا کد طرف‌حساب</span>
-                  <div className="gooey-search document-search-shell">
-                    <Search size={16} />
-                    <input
-                      value={customerQuery}
-                      onChange={(event) => {
-                        setCustomerQuery(event.target.value);
-                      }}
-                      placeholder="جست‌وجوی نام یا کد..."
-                      autoComplete="off"
-                    />
-                  </div>
-                  {suggestions.length ? (
-                    <div className="document-customer-suggestions">
-                      {suggestions.map((customer) => (
-                        <button
-                          type="button"
-                          key={customer.id}
-                          onClick={() => chooseCustomer(customer)}
-                        >
-                          <span className="document-suggestion-avatar">
-                            {customer.name.charAt(0)}
-                          </span>
-                          <span>
-                            <strong>{customer.name}</strong>
-                            <small>
-                              کد {toPersianDigits(String(customer.customerCode))}
-                              {customer.phone1 ? ` · ${toPersianDigits(customer.phone1)}` : ''}
-                            </small>
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-                </label>
-              </motion.div>
-            ) : (
-              <motion.div
-                key="selected-mode"
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                transition={{ duration: 0.18, ease: 'easeOut' }}
-                className="w-full flex items-center justify-between rounded-xl border border-teal-200 bg-teal-50/60 p-2.5 dark:border-teal-900/60 dark:bg-teal-950/30"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="document-suggestion-avatar"><UserRound size={16} /></span>
-                  <div>
-                    <strong className="block text-xs font-bold text-slate-800 dark:text-slate-100">{selectedCustomer.name}</strong>
-                    <small className="text-[10px] text-slate-500 dark:text-slate-400">
-                      کد حساب {toPersianDigits(String(selectedCustomer.customerCode))}
-                    </small>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={clearCustomer}
-                  className="rounded-lg border border-teal-300 bg-white px-3 py-1 text-xs font-bold text-teal-700 transition hover:bg-teal-50 dark:border-teal-700 dark:bg-slate-800 dark:text-teal-300 dark:hover:bg-slate-700"
+      {/* UNIFIED CONTAINER: Customer Selection + Document Meta */}
+      <section className="dashboard-panel document-account-panel p-4 space-y-4">
+        <div className="grid gap-4 lg:grid-cols-[1fr_auto]">
+          {/* Right side: Customer Selection Search / Selected Card */}
+          <div className="space-y-2">
+            <AnimatePresence mode="wait" initial={false}>
+              {!selectedCustomer ? (
+                <motion.div
+                  key="search-mode"
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 4 }}
+                  transition={{ duration: 0.15, ease: 'easeOut' }}
+                  className="w-full"
                 >
-                  تغییر
-                </button>
-              </motion.div>
-            )}
-          </AnimatePresence>
+                  <label className="account-field document-account-search-field max-w-none">
+                    <span className="text-xs font-bold text-slate-600 dark:text-slate-300">جست‌وجوی طرف‌حساب</span>
+                    <div className="gooey-search document-search-shell">
+                      <Search size={16} />
+                      <input
+                        value={customerQuery}
+                        onChange={(event) => {
+                          setCustomerQuery(event.target.value);
+                        }}
+                        placeholder="نام یا کد طرف‌حساب را وارد کنید..."
+                        autoComplete="off"
+                      />
+                    </div>
+                    {suggestions.length ? (
+                      <div className="document-customer-suggestions">
+                        {suggestions.map((customer) => (
+                          <button
+                            type="button"
+                            key={customer.id}
+                            onClick={() => chooseCustomer(customer)}
+                          >
+                            <span className="document-suggestion-avatar">
+                              {customer.name.charAt(0)}
+                            </span>
+                            <span>
+                              <strong>{customer.name}</strong>
+                              <small>
+                                کد {toPersianDigits(String(customer.customerCode))}
+                                {customer.phone1 ? ` · ${toPersianDigits(customer.phone1)}` : ''}
+                              </small>
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </label>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="selected-mode"
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  transition={{ duration: 0.15, ease: 'easeOut' }}
+                  className="w-full flex items-center justify-between rounded-xl border border-teal-200 bg-teal-50/60 p-2.5 dark:border-teal-900/60 dark:bg-teal-950/30"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="document-suggestion-avatar"><UserRound size={16} /></span>
+                    <div>
+                      <strong className="block text-xs font-bold text-slate-800 dark:text-slate-100">{selectedCustomer.name}</strong>
+                      <small className="text-[10px] text-slate-500 dark:text-slate-400">
+                        کد حساب {toPersianDigits(String(selectedCustomer.customerCode))}
+                      </small>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={clearCustomer}
+                    className="rounded-lg border border-teal-300 bg-white px-3 py-1 text-xs font-bold text-teal-700 transition hover:bg-teal-50 dark:border-teal-700 dark:bg-slate-800 dark:text-teal-300 dark:hover:bg-slate-700"
+                  >
+                    تغییر
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
-          {!selectedCustomer ? (
-            <div className="document-account-hint">
-              برای استعلام شماره سند و مانده، طرف حساب را انتخاب کنید
-            </div>
-          ) : null}
+            {selectedCustomer ? (
+              <div className="document-account-hint text-xs">
+                برای استعلام شماره سند و مانده، طرف حساب را انتخاب کنید
+              </div>
+            ) : null}
+          </div>
+
+          {/* Left side: Document Nature Switch */}
+          <div className="flex items-end">
+            <Field label="نوع سند">
+              <button
+                type="button"
+                className={`document-nature-switch ${documentNature}`}
+                onClick={() => changeNature(documentNature === 'received' ? 'paid' : 'received')}
+                role="switch"
+                aria-checked={documentNature === 'received'}
+              >
+                <span className="document-nature-switch-track">
+                  <motion.span
+                    className="document-nature-switch-thumb"
+                    animate={{ x: documentNature === 'received' ? 0 : -42 }}
+                    transition={{ type: 'spring', stiffness: 450, damping: 30 }}
+                  />
+                </span>
+                <strong>سند {documentNature === 'received' ? 'دریافتی' : 'پرداختی'}</strong>
+              </button>
+            </Field>
+          </div>
         </div>
 
+        {/* Customer Balance row */}
         <AnimatePresence mode="wait">
           {selectedCustomer ? (
             <CustomerBalanceLiquid
@@ -985,36 +1058,35 @@ export default function DocumentForm({
             />
           ) : null}
         </AnimatePresence>
-      </section>
 
-      <section className="dashboard-panel document-meta-panel">
-        <div className="document-header-grid">
-          <Field label="شماره سند خودکار (وابسته به طرف‌حساب)">
+        {/* Document Metadata Row */}
+        <div className="grid gap-3 sm:grid-cols-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+          <Field label="شماره سند خودکار">
             <div className="document-number-field">
               <input
                 value={documentNumberLoading ? 'در حال استعلام...' : toPersianDigits(effectiveDocumentNumberDisplay)}
                 readOnly
-                className="bg-slate-100 dark:bg-slate-800/80 font-bold"
+                className="bg-slate-100 dark:bg-slate-800/80 font-bold text-xs h-9"
                 aria-label="شماره سند خودکار"
               />
-              {documentNumberLoading ? <LoaderCircle size={16} className="spin" /> : <Check size={15} />}
+              {documentNumberLoading ? <LoaderCircle size={15} className="spin" /> : <Check size={14} />}
             </div>
           </Field>
 
           <Field label="تاریخ سند">
-            <div className="jalali-picker" ref={datePickerRef}>
+            <div className="jalali-picker relative z-50" ref={datePickerRef}>
               <button
                 type="button"
-                className={`jalali-picker-trigger ${dateOpen ? 'is-open' : ''}`}
+                className={`jalali-picker-trigger text-xs h-9 ${dateOpen ? 'is-open' : ''}`}
                 onClick={() => {
                   setCalendarView({ year: dateParts.year, month: dateParts.month });
                   setDateOpen((value) => !value);
                 }}
                 aria-expanded={dateOpen}
               >
-                <CalendarDays size={16} />
+                <CalendarDays size={15} />
                 <span>{documentDateJalali}</span>
-                <ChevronLeft size={14} />
+                <ChevronLeft size={13} />
               </button>
 
               <AnimatePresence>
@@ -1031,8 +1103,8 @@ export default function DocumentForm({
                 ) : null}
               </AnimatePresence>
 
-              <small className="document-date-distance">
-                <Clock3 size={13} />
+              <small className="document-date-distance text-[10px]">
+                <Clock3 size={12} />
                 {distanceLabel}
               </small>
             </div>
@@ -1040,6 +1112,7 @@ export default function DocumentForm({
 
           <Field label="جنس فلز">
             <select
+              className="text-xs h-9"
               value={draftLine.details.metalType}
               onChange={(event) => updateDraftDetail(
                 'metalType',
@@ -1051,29 +1124,11 @@ export default function DocumentForm({
               <option value="platinum">پلاتین</option>
             </select>
           </Field>
-
-          <Field label="نوع سند">
-            <button
-              type="button"
-              className={`document-nature-switch ${documentNature}`}
-              onClick={() => changeNature(documentNature === 'received' ? 'paid' : 'received')}
-              role="switch"
-              aria-checked={documentNature === 'received'}
-            >
-              <span className="document-nature-switch-track">
-                <motion.span
-                  className="document-nature-switch-thumb"
-                  animate={{ x: documentNature === 'received' ? 0 : -42 }}
-                  transition={{ type: 'spring', stiffness: 450, damping: 30 }}
-                />
-              </span>
-              <strong>سند {documentNature === 'received' ? 'دریافتی' : 'پرداختی'}</strong>
-            </button>
-          </Field>
         </div>
       </section>
 
-      <section className="dashboard-panel document-entry-panel document-draft-editor">
+      {/* ENTRY TABS EDITOR */}
+      <section className="dashboard-panel document-entry-panel document-draft-editor p-3.5 space-y-3">
         {editingLineId ? (
           <div className="document-draft-editor-head flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
             <span className="text-xs font-bold text-amber-700 dark:text-amber-400">اصلاح ردیف انتخاب‌شده</span>
@@ -1105,11 +1160,10 @@ export default function DocumentForm({
           activeTab={activeEntryTab}
           onActiveTabChange={changeEntryTab}
           firstTabContent={(
-            <div className="space-y-5">
+            <div className="space-y-4">
               <div className="document-operation-title">
                 <div>
-                  <p className="eyebrow">ورود و خروج فلزات</p>
-                  <h3>نوع {documentNature === 'received' ? 'ورود' : 'خروج'} را انتخاب کنید</h3>
+                  <h3 className="text-xs font-bold">نوع {documentNature === 'received' ? 'ورود' : 'خروج'} را انتخاب کنید</h3>
                 </div>
                 <span className={`document-nature-badge ${documentNature}`}>
                   {documentNature === 'received' ? 'دریافتی' : 'پرداختی'}
@@ -1209,31 +1263,33 @@ export default function DocumentForm({
                   </Field>
                 </div>
               </div>
+              {/* Sticky Floating Submit Row Button */}
               {draftReady ? (
-                <button type="button" className="document-commit-line-button" onClick={commitDraftLine}>
-                  <ListPlus size={18} /> {editingLineId ? 'ثبت اصلاح ردیف' : 'ثبت ردیف در سند'}
-                </button>
+                <div className="sticky bottom-3 z-30 flex justify-center pt-2">
+                  <button type="button" className="document-commit-line-button shadow-lg max-w-sm" onClick={commitDraftLine}>
+                    <ListPlus size={16} /> {editingLineId ? 'اصلاح ردیف' : 'ثبت ردیف'}
+                  </button>
+                </div>
               ) : null}
             </div>
           )}
           goldSaleTabContent={(
-            <div className="space-y-5">
+            <div className="space-y-4">
               <div className="document-operation-section">
-              <div className="document-operation-title">
-                <div>
-                  <p className="eyebrow">نوع عملیات</p>
-                  <h3>نوع {documentNature === 'received' ? 'خرید' : 'فروش'} را انتخاب کنید</h3>
+                <div className="document-operation-title">
+                  <div>
+                    <h3 className="text-xs font-bold">نوع {documentNature === 'received' ? 'خرید' : 'فروش'} را انتخاب کنید</h3>
+                  </div>
+                  <span className={`document-nature-badge ${documentNature}`}>
+                    {documentNature === 'received' ? 'خرید / بستانکار' : 'فروش / بدهکار'}
+                  </span>
                 </div>
-                <span className={`document-nature-badge ${documentNature}`}>
-                  {documentNature === 'received' ? 'خرید / بستانکار' : 'فروش / بدهکار'}
-                </span>
-              </div>
 
-              <DocumentOperationTypeSelector
-                nature={documentNature}
-                value={draftLine.details.rawKind}
-                onChange={changeRawKind}
-              />
+                <DocumentOperationTypeSelector
+                  nature={documentNature}
+                  value={draftLine.details.rawKind}
+                  onChange={changeRawKind}
+                />
               </div>
 
               <AnimatePresence mode="wait" initial={false}>
@@ -1245,226 +1301,209 @@ export default function DocumentForm({
                   exit={{ opacity: 0, y: -8, filter: 'blur(3px)' }}
                   transition={{ duration: 0.22, ease: 'easeOut' }}
                 >
-            <div className="document-dynamic-fields-heading">
-              <FlaskConical size={18} />
-              <div>
-                <strong>
-                  مشخصات {rawOperationLabel(documentNature, draftLine.details.rawKind)}
-                </strong>
-                <small>اطلاعات وزن، عیار و نحوه محاسبه را دقیق وارد کنید.</small>
-              </div>
-            </div>
+                  <div className="document-dynamic-fields-heading">
+                    <FlaskConical size={18} />
+                    <div>
+                      <strong>
+                        مشخصات {rawOperationLabel(documentNature, draftLine.details.rawKind)}
+                      </strong>
+                      <small>اطلاعات وزن، عیار و نحوه محاسبه را دقیق وارد کنید.</small>
+                    </div>
+                  </div>
 
-            <div className="document-special-grid raw-gold-fields">
-              {documentNature === 'paid' && draftLine.details.rawKind === 'molten' ? (
-                <Field label="انتخاب موجودی آبشده" wide>
-                  <select
-                    value={draftLine.details.inventorySourceId}
-                    onChange={(event) => {
-                      const source = meltedInventory.find((item) => item.id === event.target.value);
-                      setDraftLine((current) => ({
-                        ...current,
-                        details: {
-                          ...current.details,
-                          inventorySourceId: event.target.value,
-                          rawWeight: source ? String(source.remainingWeight) : current.details.rawWeight,
-                          purity: source ? String(source.purity || 750) : current.details.purity,
-                          stampNumber: source?.stampNumber ?? current.details.stampNumber,
-                        },
-                      }));
-                    }}
-                  >
-                    <option value="">انتخاب از موجودی فعال...</option>
-                    {meltedInventory.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.stampNumber || 'بدون انگ'} · {item.customerName} · {item.remainingWeight.toFixed(3)} گرم · عیار {item.purity}
-                      </option>
-                    ))}
-                  </select>
-                  {!meltedInventory.length ? (
-                    <small className="mt-1 block text-xs text-slate-500 dark:text-slate-400">
-                      موجودی آبشده فعالی برای خروج پیدا نشد.
-                    </small>
-                  ) : null}
-                </Field>
-              ) : null}
-              <div className="col-span-full flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 p-2 dark:border-slate-700 dark:bg-slate-900">
-                <span className="text-xs font-bold text-slate-600 dark:text-slate-300">نحوه محاسبه</span>
-                <div className="flex gap-2">
-                  {(['weight', 'money'] as CalculationMethod[]).map((method) => (
-                    <button
-                      type="button"
-                      key={method}
-                      className={`rounded-lg px-3 py-2 text-xs font-bold ${draftLine.details.calculationMethod === method ? 'bg-amber-500 text-white' : 'bg-white text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}
-                      onClick={() => updateMetalValue('calculationMethod', method)}
-                    >
-                      {method === 'weight' ? 'وزنی' : 'پولی'}
-                    </button>
-                  ))}
-                </div>
-              </div>
+                  <div className="document-special-grid raw-gold-fields">
+                    {documentNature === 'paid' && draftLine.details.rawKind === 'molten' ? (
+                      <Field label="انتخاب موجودی آبشده" wide>
+                        <select
+                          value={draftLine.details.inventorySourceId}
+                          onChange={(event) => {
+                            const source = meltedInventory.find((item) => item.id === event.target.value);
+                            setDraftLine((current) => ({
+                              ...current,
+                              details: {
+                                ...current.details,
+                                inventorySourceId: event.target.value,
+                                rawWeight: source ? String(source.remainingWeight) : current.details.rawWeight,
+                                purity: source ? String(source.purity || 750) : current.details.purity,
+                                stampNumber: source?.stampNumber ?? current.details.stampNumber,
+                              },
+                            }));
+                          }}
+                        >
+                          <option value="">انتخاب از موجودی فعال...</option>
+                          {meltedInventory.map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {item.stampNumber || 'بدون انگ'} · {item.customerName} · {item.remainingWeight.toFixed(3)} گرم · عیار {item.purity}
+                            </option>
+                          ))}
+                        </select>
+                      </Field>
+                    ) : null}
+                    <div className="col-span-full flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 p-2 dark:border-slate-700 dark:bg-slate-900">
+                      <span className="text-xs font-bold text-slate-600 dark:text-slate-300">نحوه محاسبه</span>
+                      <div className="flex gap-2">
+                        {(['weight', 'money'] as CalculationMethod[]).map((method) => (
+                          <button
+                            type="button"
+                            key={method}
+                            className={`rounded-lg px-3 py-1.5 text-xs font-bold ${draftLine.details.calculationMethod === method ? 'bg-amber-500 text-white' : 'bg-white text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}
+                            onClick={() => updateMetalValue('calculationMethod', method)}
+                          >
+                            {method === 'weight' ? 'وزنی' : 'پولی'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
 
-              {draftLine.details.calculationMethod === 'weight' ? <Field label="وزن ترازویی (گرم)">
-                <input
-                  type="number"
-                  min="0"
-                  step={10 ** -weightPrecision}
-                  inputMode="decimal"
-                  value={draftLine.details.rawWeight}
-                  onChange={(event) => updateMetalValue('rawWeight', event.target.value)}
-                  placeholder="۰٫۰۰۰"
-                  className="w-[8ch]"
-                />
-              </Field> : null}
+                    {draftLine.details.calculationMethod === 'weight' ? (
+                      <Field label="وزن ترازویی (گرم)">
+                        <input
+                          type="number"
+                          min="0"
+                          step={10 ** -weightPrecision}
+                          inputMode="decimal"
+                          value={draftLine.details.rawWeight}
+                          onChange={(event) => updateMetalValue('rawWeight', event.target.value)}
+                          onKeyDown={handleKeyDownEnter}
+                          placeholder="۰"
+                        />
+                      </Field>
+                    ) : null}
 
-              <Field label="عیار">
-                <input
-                  type="number"
-                  min="1"
-                  max="999"
-                  step="0.1"
-                  inputMode="decimal"
-                  value={draftLine.details.purity}
-                  onChange={(event) => {
-                    const norm = normalizeDigits(event.target.value);
-                    if (norm === '' || /^\d+(\.\d{0,1})?$/.test(norm)) {
-                      updateMetalValue('purity', norm);
-                    }
-                  }}
-                  onKeyDown={handleKeyDownEnter}
-                  placeholder="۷۵۰"
-                  className="w-[8ch]"
-                />
-              </Field>
+                    <Field label="عیار">
+                      <input
+                        type="number"
+                        min="1"
+                        max="999"
+                        step="0.1"
+                        inputMode="decimal"
+                        value={draftLine.details.purity}
+                        onChange={(event) => {
+                          const norm = normalizeDigits(event.target.value);
+                          if (norm === '' || /^\d+(\.\d{0,1})?$/.test(norm)) {
+                            updateMetalValue('purity', norm);
+                          }
+                        }}
+                        onKeyDown={handleKeyDownEnter}
+                        placeholder="۷۵۰"
+                      />
+                    </Field>
 
-              <Field label="تبدیل‌شده به ۷۵۰">
-                <input
-                  value={faNumber(
-                    draftLine.details.calculationMethod === 'money'
-                      ? convertedWeightFromTotal(draftLine.details.totalAmount, draftLine.details.metalPriceType, draftLine.details.metalPrice)
-                      : convertedTo750(draftLine.details.rawWeight, draftLine.details.purity),
-                    weightPrecision,
-                  )}
-                  readOnly
-                  aria-label="وزن تبدیل‌شده به عیار ۷۵۰"
-                  className="computed-field"
-                />
-              </Field>
+                    <Field label="تبدیل‌شده به ۷۵۰">
+                      <input
+                        value={faNumber(
+                          draftLine.details.calculationMethod === 'money'
+                            ? convertedWeightFromTotal(draftLine.details.totalAmount, draftLine.details.metalPriceType, draftLine.details.metalPrice)
+                            : convertedTo750(draftLine.details.rawWeight, draftLine.details.purity),
+                          weightPrecision,
+                        )}
+                        readOnly
+                        aria-label="وزن تبدیل‌شده به عیار ۷۵۰"
+                        className="computed-field"
+                      />
+                    </Field>
 
-              <Field label="نوع فی">
-                <select
-                  value={draftLine.details.metalPriceType}
-                  onChange={(event) => updateMetalValue('metalPriceType', event.target.value)}
-                >
-                  <option value="mesghal17">مثقال ۱۷ عیار</option>
-                  <option value="gram18">گرم ۱۸ عیار</option>
-                  <option value="ounceUsd">هر اونس (دلاری)</option>
-                </select>
-              </Field>
-              <Field label={metalPriceLabel(draftLine.details.metalPriceType)}>
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={draftLine.details.metalPrice}
-                  onChange={(event) => updateMetalValue('metalPrice', event.target.value)}
-                />
-              </Field>
-              <Field label="مبلغ کل">
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={draftLine.details.totalAmount}
-                  onChange={(event) => updateMetalValue('totalAmount', event.target.value)}
-                />
-              </Field>
+                    <Field label="نوع فی">
+                      <select
+                        value={draftLine.details.metalPriceType}
+                        onChange={(event) => updateMetalValue('metalPriceType', event.target.value)}
+                      >
+                        <option value="mesghal17">مثقال ۱۷ عیار</option>
+                        <option value="gram18">گرم ۱۸ عیار</option>
+                        <option value="ounceUsd">هر اونس (دلاری)</option>
+                      </select>
+                    </Field>
+                    <Field label={metalPriceLabel(draftLine.details.metalPriceType)}>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={draftLine.details.metalPrice}
+                        onChange={(event) => updateMetalValue('metalPrice', event.target.value)}
+                        onKeyDown={handleKeyDownEnter}
+                      />
+                    </Field>
+                    <Field label="مبلغ کل">
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={draftLine.details.totalAmount}
+                        onChange={(event) => updateMetalValue('totalAmount', event.target.value)}
+                        onKeyDown={handleKeyDownEnter}
+                      />
+                    </Field>
 
-              {draftLine.details.rawKind === 'molten' ? (
-                <>
-                  <Field label="نام آزمایشگاه ری‌گیری">
-                    <input
-                      value={draftLine.details.labName}
-                      onChange={(event) => updateDraftDetail('labName', event.target.value)}
-                      onKeyDown={handleKeyDownEnter}
-                      placeholder="نام آزمایشگاه"
-                    />
-                  </Field>
-                  <Field label="شماره پاکت / انگ">
-                    <input
-                      value={draftLine.details.stampNumber}
-                      onChange={(event) => updateDraftDetail('stampNumber', event.target.value)}
-                      onKeyDown={handleKeyDownEnter}
-                      placeholder="شماره پاکت یا انگ"
-                    />
-                  </Field>
-                </>
-              ) : null}
+                    {draftLine.details.rawKind === 'molten' ? (
+                      <>
+                        <Field label="نام آزمایشگاه ری‌گیری">
+                          <input
+                            value={draftLine.details.labName}
+                            onChange={(event) => updateDraftDetail('labName', event.target.value)}
+                            onKeyDown={handleKeyDownEnter}
+                            placeholder="نام آزمایشگاه"
+                          />
+                        </Field>
+                        <Field label="شماره پاکت / انگ">
+                          <input
+                            value={draftLine.details.stampNumber}
+                            onChange={(event) => updateDraftDetail('stampNumber', event.target.value)}
+                            onKeyDown={handleKeyDownEnter}
+                            placeholder="شماره پاکت یا انگ"
+                          />
+                        </Field>
+                      </>
+                    ) : null}
 
-              <Field label="توضیحات" wide>
-                <textarea
-                  value={draftLine.description}
-                  onChange={(event) => setDraftLine((current) => ({
-                    ...current,
-                    description: event.target.value,
-                  }))}
-                  onKeyDown={handleKeyDownEnter}
-                  placeholder="توضیحات تکمیلی این ردیف..."
-                />
-              </Field>
-            </div>
+                    <Field label="توضیحات" wide>
+                      <textarea
+                        value={draftLine.description}
+                        onChange={(event) => setDraftLine((current) => ({
+                          ...current,
+                          description: event.target.value,
+                        }))}
+                        onKeyDown={handleKeyDownEnter}
+                        placeholder="توضیحات تکمیلی این ردیف..."
+                      />
+                    </Field>
+                  </div>
 
-            <div className={`raw-metal-result ${documentNature}`}>
-              <Sparkles size={17} />
-              <div>
-                <strong>{rawOperationLabel(documentNature, draftLine.details.rawKind)}</strong>
-                <span>
-                  {draftLine.details.rawWeight || draftLine.details.totalAmount
-                    ? `${toPersianDigits(faNumber(draftLine.details.calculationMethod === 'money' ? actualWeightFromMoney(draftLine.details) : numberValue(draftLine.details.rawWeight), weightPrecision))} گرم`
-                    : 'وزن وارد نشده'}
-                  {draftLine.details.purity
-                    ? ` · عیار ${toPersianDigits(draftLine.details.purity)}`
-                    : ''}
-                </span>
-              </div>
-            </div>
+                  <div className={`raw-metal-result ${documentNature}`}>
+                    <Sparkles size={16} />
+                    <div>
+                      <strong>{rawOperationLabel(documentNature, draftLine.details.rawKind)}</strong>
+                      <span>
+                        {draftLine.details.rawWeight || draftLine.details.totalAmount
+                          ? `${toPersianDigits(faNumber(draftLine.details.calculationMethod === 'money' ? actualWeightFromMoney(draftLine.details) : numberValue(draftLine.details.rawWeight), weightPrecision))} گرم`
+                          : 'وزن وارد نشده'}
+                        {draftLine.details.purity
+                          ? ` · عیار ${toPersianDigits(draftLine.details.purity)}`
+                          : ''}
+                      </span>
+                    </div>
+                  </div>
                 </motion.div>
               </AnimatePresence>
 
-              <AnimatePresence mode="wait">
-                {draftReady ? (
-                  <motion.button
+              {draftReady ? (
+                <div className="sticky bottom-3 z-30 flex justify-center pt-2">
+                  <button
                     type="button"
-                    className="document-commit-line-button"
+                    className="document-commit-line-button shadow-lg max-w-sm"
                     onClick={commitDraftLine}
-                    initial={{ opacity: 0, y: 14, scale: 0.96 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 8, scale: 0.97 }}
-                    transition={{ type: 'spring', stiffness: 380, damping: 26 }}
-                    whileHover={{ y: -2 }}
-                    whileTap={{ scale: 0.98 }}
                   >
-                    <ListPlus size={18} />
-                    {editingLineId ? 'ثبت اصلاح ردیف' : 'ثبت ردیف در سند'}
-                  </motion.button>
-                ) : (
-                  <motion.p
-                    className="document-draft-hint"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                  >
-                    با وارد کردن وزن، دکمه «ثبت ردیف در سند» فعال می‌شود.
-                  </motion.p>
-                )}
-              </AnimatePresence>
+                    <ListPlus size={16} />
+                    {editingLineId ? 'اصلاح ردیف' : 'ثبت ردیف'}
+                  </button>
+                </div>
+              ) : null}
             </div>
           )}
           currencyTabContent={(
-            <div className="space-y-5">
+            <div className="space-y-4">
               <div className="document-operation-title">
                 <div>
-                  <p className="eyebrow">عملیات ارزی</p>
-                  <h3>{documentNature === 'received' ? 'خرید ارز' : 'فروش ارز'}</h3>
+                  <h3 className="text-xs font-bold">{documentNature === 'received' ? 'خرید ارز' : 'فروش ارز'}</h3>
                 </div>
                 <span className={`document-nature-badge ${documentNature}`}>
                   {documentNature === 'received' ? 'خرید ارز' : 'فروش ارز'}
@@ -1488,6 +1527,7 @@ export default function DocumentForm({
                     inputMode="decimal"
                     value={draftLine.details.currencyQuantity}
                     onChange={(event) => updateCurrencyValue('currencyQuantity', event.target.value)}
+                    onKeyDown={handleKeyDownEnter}
                     placeholder="۰"
                   />
                 </Field>
@@ -1499,6 +1539,7 @@ export default function DocumentForm({
                     inputMode="decimal"
                     value={draftLine.details.currencyUnitPrice}
                     onChange={(event) => updateCurrencyValue('currencyUnitPrice', event.target.value)}
+                    onKeyDown={handleKeyDownEnter}
                     placeholder="۰"
                   />
                 </Field>
@@ -1510,6 +1551,7 @@ export default function DocumentForm({
                     inputMode="decimal"
                     value={draftLine.details.currencyTotalAmount}
                     onChange={(event) => updateCurrencyValue('currencyTotalAmount', event.target.value)}
+                    onKeyDown={handleKeyDownEnter}
                     placeholder="۰"
                   />
                 </Field>
@@ -1537,58 +1579,37 @@ export default function DocumentForm({
                       ...current,
                       description: event.target.value,
                     }))}
+                    onKeyDown={handleKeyDownEnter}
                     placeholder="توضیحات معامله ارزی..."
                   />
                 </Field>
               </div>
 
-              <div className={`raw-metal-result ${documentNature}`}>
-                <Wallet size={17} />
-                <div>
-                  <strong>{documentNature === 'received' ? 'خرید ارز' : 'فروش ارز'}</strong>
-                  <span>
-                    {draftLine.details.currencyQuantity
-                      ? `${toPersianDigits(draftLine.details.currencyQuantity)} ${draftLine.details.currencyUnit}`
-                      : 'تعداد وارد نشده'}
-                    {draftLine.details.currencyTotalAmount
-                      ? ` · ${toPersianDigits(draftLine.details.currencyTotalAmount)} ریال`
-                      : ''}
-                    {draftLine.details.unsettledTrade ? ' · بدون تسویه' : ''}
-                  </span>
-                </div>
-              </div>
-
-              <AnimatePresence mode="wait">
-                {draftReady ? (
-                  <motion.button
+              {draftReady ? (
+                <div className="sticky bottom-3 z-30 flex justify-center pt-2">
+                  <button
                     type="button"
-                    className="document-commit-line-button"
+                    className="document-commit-line-button shadow-lg max-w-sm"
                     onClick={commitDraftLine}
-                    initial={{ opacity: 0, y: 14, scale: 0.96 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 8, scale: 0.97 }}
                   >
-                    <ListPlus size={18} />
-                    {editingLineId ? 'ثبت اصلاح ردیف' : 'ثبت ردیف ارزی در سند'}
-                  </motion.button>
-                ) : (
-                  <motion.p className="document-draft-hint" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                    با وارد کردن دو مقدار، مقدار سوم خودکار محاسبه می‌شود.
-                  </motion.p>
-                )}
-              </AnimatePresence>
+                    <ListPlus size={16} />
+                    {editingLineId ? 'اصلاح ردیف' : 'ثبت ردیف'}
+                  </button>
+                </div>
+              ) : null}
             </div>
           )}
           cashTabContent={(
-            <div className="grid gap-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+            <div className="grid gap-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-900/50">
               <div className="flex items-center gap-3">
-                <Wallet className="text-emerald-600" size={24} />
+                <Wallet className="text-emerald-600" size={20} />
                 <div>
-                  <p className="text-sm font-bold text-slate-700 dark:text-slate-200">تسویه معاملات بدون تسویه</p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">ارز و مقدار معامله باز را برای تسویه بعدی انتخاب کنید.</p>
+                  <p className="text-xs font-bold text-slate-700 dark:text-slate-200">تسویه معاملات بدون تسویه</p>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400">ارز و مقدار معامله باز را برای تسویه بعدی انتخاب کنید.</p>
                 </div>
               </div>
               <select
+                className="text-xs h-9"
                 value={draftLine.details.settlesTradeId}
                 onChange={(event) => {
                   const trade = committedLines.find((line) => line.id === event.target.value);
@@ -1610,20 +1631,6 @@ export default function DocumentForm({
                   </option>
                 ))}
               </select>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Field label="واحد ارز تسویه">
-                  <input value={draftLine.details.settlementCurrencyUnit} readOnly />
-                </Field>
-                <Field label="مقدار تسویه">
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={draftLine.details.settlementQuantity}
-                    onChange={(event) => updateDraftDetail('settlementQuantity', event.target.value)}
-                  />
-                </Field>
-              </div>
             </div>
           )}
         />
@@ -1633,17 +1640,15 @@ export default function DocumentForm({
       <section
         className={`dashboard-panel document-lines-panel transition-all ${
           isLinesPinned
-            ? 'is-pinned fixed bottom-0 left-0 right-0 z-40 lg:right-64 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-t-2 border-amber-500 shadow-2xl p-3.5 rounded-t-2xl rounded-b-none'
-            : ''
+            ? 'is-pinned fixed bottom-0 left-0 right-0 z-40 lg:right-64 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-t-2 border-amber-500 shadow-2xl p-3 rounded-t-2xl rounded-b-none'
+            : 'p-3'
         }`}
       >
-        <div className="document-lines-head flex items-center justify-between pb-1.5 border-b border-slate-100 dark:border-slate-800">
-          <div>
-            <h2 className="flex items-center gap-2 text-sm font-bold text-slate-800 dark:text-slate-100">
-              <ClipboardList size={17} />
-              <span>ردیف‌های سند ({faNumber(committedLines.length)})</span>
-            </h2>
-          </div>
+        <div className="document-lines-head flex items-center justify-between pb-1 border-b border-slate-100 dark:border-slate-800">
+          <h2 className="flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-slate-100">
+            <ClipboardList size={15} />
+            <span>ردیف‌های سند ({faNumber(committedLines.length)})</span>
+          </h2>
 
           {/* Pin / Unpin Icon Button */}
           <button
@@ -1657,16 +1662,16 @@ export default function DocumentForm({
             title={isLinesPinned ? 'غیرفعال‌سازی حالت چسبان' : 'فعال‌سازی حالت چسبان'}
             aria-label={isLinesPinned ? 'غیرفعال‌سازی حالت چسبان' : 'فعال‌سازی حالت چسبان'}
           >
-            {isLinesPinned ? <Pin size={15} className="fill-current" /> : <PinOff size={15} />}
+            {isLinesPinned ? <Pin size={14} className="fill-current" /> : <PinOff size={14} />}
           </button>
         </div>
 
         {!committedLines.length ? (
-          <div className="document-lines-empty">
+          <div className="document-lines-empty py-4">
             <p className="text-slate-500 dark:text-slate-400 text-xs font-semibold">هنوز ردیفی ثبت نشده است</p>
           </div>
         ) : (
-          <div className={`document-lines-table-wrapper ${isLinesPinned ? 'max-h-44 overflow-y-auto' : ''}`}>
+          <div className={`document-lines-table-wrapper ${isLinesPinned ? 'max-h-36 overflow-y-auto' : ''}`}>
             <table className="document-lines-table">
               <thead>
                 <tr>
@@ -1688,7 +1693,7 @@ export default function DocumentForm({
                       line={line}
                       index={index}
                       onEdit={() => editLine(line)}
-                      onRemove={() => removeLine(line.id)}
+                      onRemove={() => requestRemoveLine(line)}
                       weightPrecision={weightPrecision}
                     />
                   ))}
@@ -1698,9 +1703,10 @@ export default function DocumentForm({
           </div>
         )}
 
-        <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+        {/* BOTTOM SUBMIT & NET BALANCE SIDE-BY-SIDE */}
+        <div className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-2">
           {committedLines.length ? (
-            <div className="flex items-center justify-between gap-2 px-3 py-1.5 border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50/80 dark:bg-slate-900/80 text-xs font-bold shrink-0">
+            <div className="flex items-center gap-2 px-3 py-1.5 border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50/80 dark:bg-slate-900/80 text-xs font-bold shrink-0">
               <span className="text-slate-600 dark:text-slate-400">خالص اثر سند بر مانده طلا:</span>
               <strong className={totals >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
                 {faNumber(Math.abs(totals), weightPrecision)} گرم
@@ -1710,7 +1716,7 @@ export default function DocumentForm({
             </div>
           ) : <div className="hidden sm:block flex-1" />}
 
-          <div className="flex-1 min-w-[260px]">
+          <div className="w-full sm:w-auto min-w-[240px]">
             <DocumentSubmitActions
               onSubmit={async (status) => {
                 await save(status);
@@ -1719,6 +1725,105 @@ export default function DocumentForm({
           </div>
         </div>
       </section>
+
+      {/* DELETION CONFIRMATION MODAL */}
+      <AnimatePresence>
+        {deleteConfirmLine ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 10 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 10 }}
+              className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-4"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-3">
+                <span className="text-sm font-bold text-rose-600 dark:text-rose-400 flex items-center gap-2">
+                  <Trash2 size={16} /> تأیید حذف ردیف
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setDeleteConfirmLine(null)}
+                  className="text-slate-400 hover:text-slate-600"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+              <p className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                آیا از حذف این ردیف سند اطمینان دارید؟
+              </p>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setDeleteConfirmLine(null)}
+                  className="rounded-xl border border-slate-300 dark:border-slate-600 px-4 py-1.5 text-xs font-bold text-slate-600 dark:text-slate-300"
+                >
+                  لغو
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmRemoveLine}
+                  className="rounded-xl bg-rose-600 px-4 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-rose-500"
+                >
+                  حذف
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      {/* RESTORATION TOAST WITH CIRCULAR COUNTDOWN TIMER */}
+      <AnimatePresence>
+        {restorationState ? (
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 30 }}
+            className="fixed bottom-5 right-5 z-50 flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-900 px-4 py-3 text-white shadow-2xl dark:border-slate-700"
+          >
+            <div className="relative grid place-items-center w-7 h-7">
+              <svg className="w-7 h-7 -rotate-90">
+                <circle
+                  cx="14"
+                  cy="14"
+                  r="11"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  className="text-slate-700"
+                  fill="transparent"
+                />
+                <circle
+                  cx="14"
+                  cy="14"
+                  r="11"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  className="text-amber-400 transition-all duration-1000 ease-linear"
+                  fill="transparent"
+                  strokeDasharray={2 * Math.PI * 11}
+                  strokeDashoffset={2 * Math.PI * 11 * (1 - restorationTimer / 10)}
+                />
+              </svg>
+              <span className="absolute text-[10px] font-bold text-amber-400">
+                {toPersianDigits(String(restorationTimer))}
+              </span>
+            </div>
+            <span className="text-xs font-bold">ردیف سند حذف شد.</span>
+            <button
+              type="button"
+              onClick={restoreLine}
+              className="flex items-center gap-1 rounded-lg bg-amber-500 px-3 py-1 text-xs font-bold text-slate-950 transition hover:bg-amber-400"
+            >
+              <RotateCcw size={13} /> بازیابی
+            </button>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </div>
   );
 }
