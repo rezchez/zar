@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
 import { getServerAuthContext } from '@/lib/auth';
-import { defaultSettings, normalizeSettings, type AppSettings } from '@/lib/settings';
+import { defaultSettings, normalizeSettings } from '@/lib/settings';
 import { recordAuditEvent } from '@/lib/audit';
+import { ensureSettingsCollections } from '@/lib/settings-collection';
+import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
 
 function isAllowed(context: Awaited<ReturnType<typeof getServerAuthContext>>) {
   return context && (context.user.role === 'admin' || context.user.role === 'manager');
@@ -14,6 +16,7 @@ export async function GET() {
   }
 
   try {
+    await ensureSettingsCollections(await getPocketBaseServiceClient());
     const record = await context.pb.collection('app_settings').getFirstListItem('id != ""');
     return NextResponse.json({ settings: normalizeSettings(record as Record<string, unknown>) });
   } catch {
@@ -61,6 +64,7 @@ async function handleUpdate(request: Request) {
   }
 
   try {
+    await ensureSettingsCollections(await getPocketBaseServiceClient());
     const collection = context.pb.collection('app_settings');
     const existing = await collection.getFirstListItem('id != ""').catch(() => null);
 

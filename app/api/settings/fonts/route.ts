@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getServerAuthContext } from '@/lib/auth';
 import { recordAuditEvent } from '@/lib/audit';
+import { ensureSettingsCollections } from '@/lib/settings-collection';
+import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
 
 function isAllowed(context: Awaited<ReturnType<typeof getServerAuthContext>>) {
   return context && (context.user.role === 'admin' || context.user.role === 'manager');
@@ -27,6 +29,7 @@ export async function GET() {
   }
 
   try {
+    await ensureSettingsCollections(await getPocketBaseServiceClient());
     const records = await context.pb.collection('custom_fonts').getFullList({
       sort: '-created',
     });
@@ -77,6 +80,7 @@ export async function POST(request: Request) {
   }
 
   try {
+    await ensureSettingsCollections(await getPocketBaseServiceClient());
     const formData = await request.formData();
     const displayName = String(formData.get('displayName') ?? '').trim();
     const fontFamilyRaw = String(formData.get('fontFamily') ?? '').trim();
