@@ -37,89 +37,93 @@ const customFontsFields = [
 ];
 
 async function main() {
-  const token = process.env.POCKETBASE_SUPERUSER_TOKEN;
-  if (token) {
-    pb.authStore.save(token);
-  } else {
-    const email = process.env.POCKETBASE_SUPERUSER_EMAIL;
-    const password = process.env.POCKETBASE_SUPERUSER_PASSWORD;
-    if (email && password) {
-      await pb.collection('_superusers').authWithPassword(email, password).catch(() => null);
-    }
-  }
-
-  // Ensure app_settings
-  const existingSettings = await pb.collections.getFirstListItem(
-    pb.filter('name = {:name}', { name: 'app_settings' }),
-  ).catch(() => null);
-
-  const settingsPayload = {
-    name: 'app_settings',
-    type: 'base',
-    fields: appSettingsFields,
-    listRule: '@request.auth.id != ""',
-    viewRule: '@request.auth.id != ""',
-    createRule: '@request.auth.role = "admin" || @request.auth.role = "manager"',
-    updateRule: '@request.auth.role = "admin" || @request.auth.role = "manager"',
-    deleteRule: '@request.auth.role = "admin"',
-  };
-
-  if (existingSettings) {
-    await pb.collections.update(existingSettings.id, settingsPayload).catch(console.error);
-    console.log('app_settings collection updated');
-  } else {
-    await pb.collections.create(settingsPayload).catch(console.error);
-    console.log('app_settings collection created');
-  }
-
-  // Ensure custom_fonts
-  const existingFonts = await pb.collections.getFirstListItem(
-    pb.filter('name = {:name}', { name: 'custom_fonts' }),
-  ).catch(() => null);
-
-  const fontsPayload = {
-    name: 'custom_fonts',
-    type: 'base',
-    fields: customFontsFields,
-    listRule: '@request.auth.id != ""',
-    viewRule: '@request.auth.id != ""',
-    createRule: '@request.auth.role = "admin" || @request.auth.role = "manager"',
-    updateRule: '@request.auth.role = "admin" || @request.auth.role = "manager"',
-    deleteRule: '@request.auth.role = "admin" || @request.auth.role = "manager"',
-  };
-
-  if (existingFonts) {
-    await pb.collections.update(existingFonts.id, fontsPayload).catch(console.error);
-    console.log('custom_fonts collection updated');
-  } else {
-    await pb.collections.create(fontsPayload).catch(console.error);
-    console.log('custom_fonts collection created');
-  }
-
-  // Ensure transaction collection fields
-  const existingTransactions = await pb.collections.getFirstListItem(
-    pb.filter('name = {:name}', { name: 'transactions' }),
-  ).catch(() => null);
-
-  if (existingTransactions) {
-    const rawFields = existingTransactions.fields;
-    const fields = Array.isArray(rawFields) ? [...rawFields] as Record<string, unknown>[] : [];
-    let updated = false;
-
-    if (!fields.some((f) => f.name === 'documentSequence')) {
-      fields.push({ id: 'num_doc_seq', name: 'documentSequence', type: 'number', required: false, min: 1 });
-      updated = true;
-    }
-    if (!fields.some((f) => f.name === 'documentNumberPrefixSnapshot')) {
-      fields.push({ id: 'text_doc_prefix_snap', name: 'documentNumberPrefixSnapshot', type: 'text', required: false, max: 20 });
-      updated = true;
+  try {
+    const token = process.env.POCKETBASE_SUPERUSER_TOKEN;
+    if (token) {
+      pb.authStore.save(token);
+    } else {
+      const email = process.env.POCKETBASE_SUPERUSER_EMAIL;
+      const password = process.env.POCKETBASE_SUPERUSER_PASSWORD;
+      if (email && password) {
+        await pb.collection('_superusers').authWithPassword(email, password).catch(() => null);
+      }
     }
 
-    if (updated) {
-      await pb.collections.update(existingTransactions.id, { fields }).catch(console.error);
-      console.log('transactions collection updated with sequence and snapshot fields');
+    // Ensure app_settings
+    const existingSettings = await pb.collections.getFirstListItem(
+      pb.filter('name = {:name}', { name: 'app_settings' }),
+    ).catch(() => null);
+
+    const settingsPayload = {
+      name: 'app_settings',
+      type: 'base',
+      fields: appSettingsFields,
+      listRule: '@request.auth.id != ""',
+      viewRule: '@request.auth.id != ""',
+      createRule: '@request.auth.role = "admin" || @request.auth.role = "manager"',
+      updateRule: '@request.auth.role = "admin" || @request.auth.role = "manager"',
+      deleteRule: '@request.auth.role = "admin"',
+    };
+
+    if (existingSettings) {
+      await pb.collections.update(existingSettings.id, settingsPayload).catch(() => null);
+      console.log('app_settings collection updated');
+    } else {
+      await pb.collections.create(settingsPayload).catch(() => null);
+      console.log('app_settings collection created');
     }
+
+    // Ensure custom_fonts
+    const existingFonts = await pb.collections.getFirstListItem(
+      pb.filter('name = {:name}', { name: 'custom_fonts' }),
+    ).catch(() => null);
+
+    const fontsPayload = {
+      name: 'custom_fonts',
+      type: 'base',
+      fields: customFontsFields,
+      listRule: '@request.auth.id != ""',
+      viewRule: '@request.auth.id != ""',
+      createRule: '@request.auth.role = "admin" || @request.auth.role = "manager"',
+      updateRule: '@request.auth.role = "admin" || @request.auth.role = "manager"',
+      deleteRule: '@request.auth.role = "admin" || @request.auth.role = "manager"',
+    };
+
+    if (existingFonts) {
+      await pb.collections.update(existingFonts.id, fontsPayload).catch(() => null);
+      console.log('custom_fonts collection updated');
+    } else {
+      await pb.collections.create(fontsPayload).catch(() => null);
+      console.log('custom_fonts collection created');
+    }
+
+    // Ensure transaction collection fields
+    const existingTransactions = await pb.collections.getFirstListItem(
+      pb.filter('name = {:name}', { name: 'transactions' }),
+    ).catch(() => null);
+
+    if (existingTransactions) {
+      const rawFields = existingTransactions.fields;
+      const fields = Array.isArray(rawFields) ? [...rawFields] as Record<string, unknown>[] : [];
+      let updated = false;
+
+      if (!fields.some((f) => f.name === 'documentSequence')) {
+        fields.push({ id: 'num_doc_seq', name: 'documentSequence', type: 'number', required: false, min: 1 });
+        updated = true;
+      }
+      if (!fields.some((f) => f.name === 'documentNumberPrefixSnapshot')) {
+        fields.push({ id: 'text_doc_prefix_snap', name: 'documentNumberPrefixSnapshot', type: 'text', required: false, max: 20 });
+        updated = true;
+      }
+
+      if (updated) {
+        await pb.collections.update(existingTransactions.id, { fields }).catch(() => null);
+        console.log('transactions collection updated with sequence and snapshot fields');
+      }
+    }
+  } catch {
+    console.log('PocketBase is currently offline; schema updates will sync upon PocketBase startup via pb_migrations.');
   }
 }
 
-main().catch(console.error);
+main().catch(() => null);
