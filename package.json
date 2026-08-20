@@ -8,8 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "seed:customers": "bun scripts/seed-customers.ts",
-    "pocketbase:ensure-bank-collection": "bun scripts/ensure-bank-collection.ts",
-    "pocketbase:ensure-settings-collections": "bun scripts/ensure-settings-collections.ts"
+    "pocketbase:ensure-bank-collection": "bun scripts/ensure-bank-collection.ts"
   },
   "dependencies": {
     "framer-motion": "^13.1.0",

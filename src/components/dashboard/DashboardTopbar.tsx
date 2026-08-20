@@ -18,6 +18,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useTheme } from '@/src/components/ThemeProvider';
 import Breadcrumbs from '@/src/components/Breadcrumbs';
 import LogoutButton from '@/src/components/LogoutButton';
+import NotificationCenter from './NotificationCenter';
 import DashboardTopbarSearch, {
   type DashboardTopbarSearchItem,
 } from './DashboardTopbarSearch';
@@ -135,6 +136,8 @@ export default function DashboardTopbar({
               <PinOff size={16} />
             )}
           </button>
+
+          <NotificationCenter userRole={user.role} />
 
           <ThemeToggle />
 
