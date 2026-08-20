@@ -18,10 +18,13 @@ import {
   ChevronLeft,
   ChevronRight,
   FileText,
+  KeyRound,
+  RefreshCw,
 } from 'lucide-react';
 import { useAppSettings } from './SettingsProvider';
 import { jalaliDateToIso, parseJalaliDate, formatJalaliDate } from '@/lib/jalali';
 import { formatMoney } from '@/lib/money';
+import type { PriceApiSettings, PriceApiUnit } from '@/lib/price-api';
 
 const FONT_WEIGHT_LABELS: Record<number, string> = {
   100: '100 - نازک (Thin)',
@@ -69,7 +72,7 @@ export default function ProgramSettings() {
     reloadFonts,
   } = useAppSettings();
 
-  const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'custom_fonts'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'price_api' | 'custom_fonts'>('general');
 
   // Form State initialized directly from settings
   const [form, setForm] = useState(() => ({ ...settings }));
@@ -100,6 +103,10 @@ export default function ProgramSettings() {
   const [fontFile, setFontFile] = useState<File | null>(null);
   const [isUploadingFont, setIsUploadingFont] = useState(false);
   const [fontUploadMessage, setFontUploadMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [priceApi, setPriceApi] = useState<PriceApiSettings | null>(null);
+  const [isPriceApiSaving, setIsPriceApiSaving] = useState(false);
+  const [priceApiMessage, setPriceApiMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [isPriceApiSyncing, setIsPriceApiSyncing] = useState(false);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -109,6 +116,15 @@ export default function ProgramSettings() {
     }
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    fetch('/api/price-api', { cache: 'no-store' })
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => {
+        if (data?.settings) setPriceApi(data.settings as PriceApiSettings);
+      })
+      .catch(() => undefined);
   }, []);
 
   function updateFormField<K extends keyof typeof form>(key: K, value: typeof form[K]) {
@@ -145,6 +161,61 @@ export default function ProgramSettings() {
       setTimeout(() => setSaveSuccess(false), 3000);
     } else {
       setStatusMessage({ type: 'error', text: res.message || 'خطا در ثبت تنظیمات.' });
+    }
+  }
+
+  async function handleSavePriceApi() {
+    if (!priceApi) return;
+    setIsPriceApiSaving(true);
+    setPriceApiMessage(null);
+    try {
+      const res = await fetch('/api/price-api', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(priceApi),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setPriceApiMessage({ type: 'error', text: data.message || 'خطا در ذخیره تنظیمات API قیمت.' });
+        return;
+      }
+      setPriceApi(data.settings);
+      setPriceApiMessage({ type: 'success', text: 'تنظیمات API قیمت با موفقیت ذخیره شد.' });
+    } catch {
+      setPriceApiMessage({ type: 'error', text: 'خطا در برقراری ارتباط با سرور.' });
+    } finally {
+      setIsPriceApiSaving(false);
+    }
+  }
+
+  async function handleSyncPriceApi() {
+    setIsPriceApiSyncing(true);
+    setPriceApiMessage(null);
+    try {
+      const saveRes = await fetch('/api/price-api', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(priceApi),
+      });
+      if (!saveRes.ok) {
+        const data = await saveRes.json();
+        setPriceApiMessage({ type: 'error', text: data.message || 'ابتدا تنظیمات API را درست کنید.' });
+        return;
+      }
+      const syncRes = await fetch('/api/price-api/sync?force=1', { method: 'POST' });
+      const data = await syncRes.json();
+      if (!syncRes.ok) {
+        setPriceApiMessage({ type: 'error', text: data.message || 'دریافت قیمت‌ها ناموفق بود.' });
+        return;
+      }
+      const settingsRes = await fetch('/api/price-api', { cache: 'no-store' });
+      const settingsData = await settingsRes.json();
+      if (settingsData.settings) setPriceApi(settingsData.settings);
+      setPriceApiMessage({ type: 'success', text: `اتصال برقرار شد و ${toFaDigits(data.stored || 0)} قیمت ذخیره شد.` });
+    } catch {
+      setPriceApiMessage({ type: 'error', text: 'خطا در دریافت قیمت‌ها.' });
+    } finally {
+      setIsPriceApiSyncing(false);
     }
   }
 
@@ -281,6 +352,19 @@ export default function ProgramSettings() {
         >
           <Building2 size={16} />
           تنظیمات عمومی مجموعه
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('price_api')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-extrabold text-xs transition-all ${
+            activeTab === 'price_api'
+              ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30'
+              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
+        >
+          <KeyRound size={16} />
+          API قیمت
         </button>
 
         <button
@@ -786,7 +870,132 @@ export default function ProgramSettings() {
         </div>
       )}
 
-      {/* TAB 3: Custom Fonts Management */}
+      {/* TAB 3: Price API */}
+      {activeTab === 'price_api' && priceApi && (
+        <div className="space-y-6">
+          <section className="dashboard-panel p-6 space-y-6">
+            <div className="account-panel-heading border-b border-slate-100 dark:border-slate-800 pb-4">
+              <div>
+                <p className="eyebrow">دریافت خودکار بازار</p>
+                <h2 className="flex items-center gap-2">
+                  <KeyRound size={18} className="text-amber-600" />
+                  اتصال API قیمت
+                </h2>
+              </div>
+              <label className="flex items-center gap-2 text-xs font-bold cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={priceApi.enabled}
+                  onChange={(e) => setPriceApi((current) => current && ({ ...current, enabled: e.target.checked }))}
+                  className="accent-amber-500"
+                />
+                فعال‌سازی دریافت خودکار
+              </label>
+            </div>
+
+            {priceApiMessage && (
+              <div className={`p-3.5 rounded-xl text-xs border ${
+                priceApiMessage.type === 'success'
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
+                  : 'bg-rose-500/10 border-rose-500/30 text-rose-700 dark:text-rose-300'
+              }`}>
+                {priceApiMessage.text}
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <label className="account-field md:col-span-2">
+                <span className="font-bold text-xs text-slate-700 dark:text-slate-300">کلید API</span>
+                <div className="flex items-stretch gap-2">
+                  <input
+                    type="password"
+                    value={priceApi.apiKey}
+                    onChange={(e) => setPriceApi((current) => current && ({ ...current, apiKey: e.target.value }))}
+                    placeholder="کلید API سرویس را وارد کنید"
+                    autoComplete="off"
+                    className="min-w-0 flex-1"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSyncPriceApi}
+                    disabled={isPriceApiSyncing || isPriceApiSaving}
+                    className="customer-save-button whitespace-nowrap"
+                    title="ارسال درخواست فوری و دریافت قیمت‌ها"
+                  >
+                    {isPriceApiSyncing ? <Loader2 className="animate-spin" size={16} /> : <RefreshCw size={16} />}
+                    {isPriceApiSyncing ? 'در حال دریافت...' : 'دریافت فوری'}
+                  </button>
+                </div>
+                <small className="text-slate-500">این کلید به‌صورت خودکار در آدرس ثابت سرویس قرار می‌گیرد.</small>
+              </label>
+
+              <label className="account-field">
+                <span className="font-bold text-xs text-slate-700 dark:text-slate-300">بازه درخواست (دقیقه)</span>
+                <input
+                  type="number"
+                  min="1"
+                  max="1440"
+                  step="1"
+                  value={priceApi.intervalMinutes}
+                  onChange={(e) => setPriceApi((current) => current && ({ ...current, intervalMinutes: Number(e.target.value) }))}
+                  required
+                />
+                <small className="text-slate-500">هر ۱ تا ۱۴۴۰ دقیقه یک درخواست جدید به API ارسال می‌شود.</small>
+              </label>
+            </div>
+
+            <div className="border-t border-slate-100 dark:border-slate-800 pt-5 space-y-4">
+              <div>
+                <h3 className="font-bold text-sm text-slate-800 dark:text-slate-200">واحدهای فعال</h3>
+                <p className="text-xs text-slate-500 mt-1">پس از ذخیره و تست اتصال، واحدهای موجود از پاسخ API نمایش داده می‌شوند.</p>
+              </div>
+              {priceApi.availableUnits.length === 0 ? (
+                <p className="text-xs text-slate-500 py-4 text-center border border-dashed border-slate-300 dark:border-slate-700 rounded-xl">
+                  هنوز واحدی از API دریافت نشده است.
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {priceApi.availableUnits.map((unit: PriceApiUnit) => {
+                    const checked = priceApi.selectedSymbols.includes(unit.symbol);
+                    return (
+                      <label key={`${unit.category}-${unit.symbol}`} className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-amber-400 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => setPriceApi((current) => {
+                            if (!current) return current;
+                            const selectedSymbols = e.target.checked
+                              ? [...new Set([...current.selectedSymbols, unit.symbol])]
+                              : current.selectedSymbols.filter((symbol) => symbol !== unit.symbol);
+                            return { ...current, selectedSymbols };
+                          })}
+                          className="accent-amber-500"
+                        />
+                        <span className="text-xs">
+                          <strong className="block">{unit.name}</strong>
+                          <small className="text-slate-500">{unit.symbol} · {unit.category}</small>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-wrap justify-end gap-3">
+              <button type="button" onClick={handleSavePriceApi} disabled={isPriceApiSaving || isPriceApiSyncing} className="customer-save-button">
+                {isPriceApiSaving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
+                ذخیره تنظیمات API
+              </button>
+            </div>
+            {priceApi.lastSyncAt && (
+              <small className="block text-left text-slate-500">آخرین دریافت: {new Date(priceApi.lastSyncAt).toLocaleString('fa-IR')}</small>
+            )}
+          </section>
+        </div>
+      )}
+
+      {/* TAB 4: Custom Fonts Management */}
       {activeTab === 'custom_fonts' && (
         <div className="space-y-6">
           <section className="dashboard-panel p-6 space-y-6">
@@ -910,7 +1119,7 @@ export default function ProgramSettings() {
       )}
 
       {/* Save Button for Settings */}
-      {activeTab !== 'custom_fonts' && (
+      {activeTab !== 'custom_fonts' && activeTab !== 'price_api' && (
         <div className="flex justify-end pt-4">
           <button
             type="button"

@@ -17,6 +17,7 @@ import DashboardSidebar, {
   type NavItemData,
 } from '@/src/components/dashboard/DashboardSidebar';
 import DashboardTopbar from '@/src/components/dashboard/DashboardTopbar';
+import PriceApiSync from '@/src/components/PriceApiSync';
 
 export type DashboardUser = {
   id: string;
@@ -262,6 +263,7 @@ export default function DashboardShell({
 
   return (
     <main className="dashboard-app" dir="rtl">
+      <PriceApiSync />
       <svg
         className="gooey-defs"
         width="0"
