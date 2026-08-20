@@ -144,7 +144,7 @@ export async function POST(request: Request) {
     } else {
       // Broadcast mode: fetch all active users
       const allUsers = await pbService.collection('users').getFullList({
-        filter: 'blocked = false',
+        filter: "status = 'active'",
       });
       recipientIds = allUsers.map((u) => u.id);
     }
