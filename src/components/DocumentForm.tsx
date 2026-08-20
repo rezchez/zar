@@ -885,10 +885,7 @@ export default function DocumentForm({
 
       <section className="dashboard-panel document-account-panel">
         <div className="document-account-heading">
-          <div>
-            <p className="eyebrow">مشخصات حساب</p>
-            <h2>طرف‌حساب و مانده جاری</h2>
-          </div>
+          <h2>طرف‌حساب و مانده جاری</h2>
           {selectedCustomer ? (
             <span className="customer-code-badge">
               کد حساب {toPersianDigits(String(selectedCustomer.customerCode))}
@@ -897,66 +894,87 @@ export default function DocumentForm({
         </div>
 
         <div className="document-account-layout">
-          <label className="account-field document-account-search-field">
-            <span>نام یا کد طرف‌حساب</span>
-            <div className="gooey-search document-search-shell">
-              <Search size={16} />
-              <input
-                value={customerQuery}
-                onChange={(event) => {
-                  setCustomerQuery(event.target.value);
-                  if (selectedCustomerId) {
-                    setSelectedCustomerId('');
-                    setDocumentNumberDisplay('');
-                    setDocumentNumberLoading(false);
-                  }
-                }}
-                placeholder="جست‌وجوی نام یا کد..."
-                autoComplete="off"
-              />
-            </div>
-            {suggestions.length ? (
-              <div className="document-customer-suggestions">
-                {suggestions.map((customer) => (
-                  <button
-                    type="button"
-                    key={customer.id}
-                    onClick={() => chooseCustomer(customer)}
-                  >
-                    <span className="document-suggestion-avatar">
-                      {customer.name.charAt(0)}
-                    </span>
-                    <span>
-                      <strong>{customer.name}</strong>
-                      <small>
-                        کد {toPersianDigits(String(customer.customerCode))}
-                        {customer.phone1 ? ` · ${toPersianDigits(customer.phone1)}` : ''}
-                      </small>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </label>
+          <AnimatePresence mode="wait" initial={false}>
+            {!selectedCustomer ? (
+              <motion.div
+                key="search-mode"
+                initial={{ opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 6 }}
+                transition={{ duration: 0.18, ease: 'easeOut' }}
+                className="w-full"
+              >
+                <label className="account-field document-account-search-field">
+                  <span>نام یا کد طرف‌حساب</span>
+                  <div className="gooey-search document-search-shell">
+                    <Search size={16} />
+                    <input
+                      value={customerQuery}
+                      onChange={(event) => {
+                        setCustomerQuery(event.target.value);
+                      }}
+                      placeholder="جست‌وجوی نام یا کد..."
+                      autoComplete="off"
+                    />
+                  </div>
+                  {suggestions.length ? (
+                    <div className="document-customer-suggestions">
+                      {suggestions.map((customer) => (
+                        <button
+                          type="button"
+                          key={customer.id}
+                          onClick={() => chooseCustomer(customer)}
+                        >
+                          <span className="document-suggestion-avatar">
+                            {customer.name.charAt(0)}
+                          </span>
+                          <span>
+                            <strong>{customer.name}</strong>
+                            <small>
+                              کد {toPersianDigits(String(customer.customerCode))}
+                              {customer.phone1 ? ` · ${toPersianDigits(customer.phone1)}` : ''}
+                            </small>
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </label>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="selected-mode"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.18, ease: 'easeOut' }}
+                className="w-full flex items-center justify-between rounded-xl border border-teal-200 bg-teal-50/60 p-2.5 dark:border-teal-900/60 dark:bg-teal-950/30"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="document-suggestion-avatar"><UserRound size={16} /></span>
+                  <div>
+                    <strong className="block text-xs font-bold text-slate-800 dark:text-slate-100">{selectedCustomer.name}</strong>
+                    <small className="text-[10px] text-slate-500 dark:text-slate-400">
+                      کد حساب {toPersianDigits(String(selectedCustomer.customerCode))}
+                    </small>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={clearCustomer}
+                  className="rounded-lg border border-teal-300 bg-white px-3 py-1 text-xs font-bold text-teal-700 transition hover:bg-teal-50 dark:border-teal-700 dark:bg-slate-800 dark:text-teal-300 dark:hover:bg-slate-700"
+                >
+                  تغییر
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-          {selectedCustomer ? (
-            <motion.div
-              className="document-selected-customer"
-              initial={{ opacity: 0, scale: 0.96 }}
-              animate={{ opacity: 1, scale: 1 }}
-            >
-              <span className="document-suggestion-avatar"><UserRound size={16} /></span>
-              <div>
-                <strong>{selectedCustomer.name}</strong>
-                <small>طرف‌حساب انتخاب‌شده</small>
-              </div>
-              <button type="button" onClick={clearCustomer}>تغییر</button>
-            </motion.div>
-          ) : (
+          {!selectedCustomer ? (
             <div className="document-account-hint">
-              برای استعلام شماره سند و مانده، طرف‌حساب را انتخاب کنید.
+              برای استعلام شماره سند و مانده، طرف حساب را انتخاب کنید
             </div>
-          )}
+          ) : null}
         </div>
 
         <AnimatePresence mode="wait">
@@ -1056,21 +1074,14 @@ export default function DocumentForm({
       </section>
 
       <section className="dashboard-panel document-entry-panel document-draft-editor">
-        <div className="document-draft-editor-head">
-          <div>
-            <p className="eyebrow">{editingLineId ? 'ویرایش ردیف' : 'ماهیت سند'}</p>
-            <h2>
-              {editingLineId
-                ? 'اصلاح ردیف انتخاب‌شده'
-                : `ردیف ${faNumber(committedLines.length + 1)} سند`}
-            </h2>
-          </div>
-          {editingLineId ? (
+        {editingLineId ? (
+          <div className="document-draft-editor-head flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+            <span className="text-xs font-bold text-amber-700 dark:text-amber-400">اصلاح ردیف انتخاب‌شده</span>
             <button type="button" className="document-cancel-edit" onClick={cancelEdit}>
               انصراف از ویرایش
             </button>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
 
         <DocumentEntryTabs
           accountCodeZero="0"
