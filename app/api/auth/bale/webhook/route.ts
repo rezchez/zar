@@ -2,11 +2,12 @@ import { NextResponse } from 'next/server';
 
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
 import { normalizePhone, sendBaleContactRequest, sendBaleMessage } from '@/lib/bale';
+import { timingSafeEqual } from '@/lib/totp';
 
 export async function POST(request: Request) {
   const expected = process.env.BALE_WEBHOOK_SECRET;
-  const suppliedSecret = new URL(request.url).searchParams.get('secret');
-  if (!expected || suppliedSecret !== expected) {
+  const suppliedSecret = new URL(request.url).searchParams.get('secret') ?? '';
+  if (!expected || !suppliedSecret || !timingSafeEqual(expected, suppliedSecret)) {
     return NextResponse.json({ message: 'دسترسی غیرمجاز.' }, { status: 403 });
   }
 

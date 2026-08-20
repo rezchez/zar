@@ -1,4 +1,10 @@
-import { createCipheriv, createDecipheriv, createHmac, randomBytes } from 'node:crypto';
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHmac,
+  randomBytes,
+  timingSafeEqual as cryptoTimingSafeEqual,
+} from 'node:crypto';
 import QRCode from 'qrcode';
 
 const TOTP_STEP_SECONDS = 30;
@@ -94,13 +100,15 @@ function generateTotpCode(secret: string, counter: number) {
   return String(binary % 10 ** TOTP_DIGITS).padStart(TOTP_DIGITS, '0');
 }
 
-function timingSafeEqual(left: string, right: string) {
-  let difference = left.length ^ right.length;
-  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
-    difference |= (left.charCodeAt(index) || 0) ^ (right.charCodeAt(index) || 0);
+export function timingSafeEqual(left: string, right: string) {
+  const bufLeft = Buffer.from(left, 'utf8');
+  const bufRight = Buffer.from(right, 'utf8');
+
+  if (bufLeft.length !== bufRight.length) {
+    return false;
   }
 
-  return difference === 0;
+  return cryptoTimingSafeEqual(bufLeft, bufRight);
 }
 
 function base32Encode(value: Buffer) {
