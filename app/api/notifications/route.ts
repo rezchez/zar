@@ -15,9 +15,12 @@ export async function GET() {
   }
 
   try {
+    // Use the service client for the scoped read so notification delivery does
+    // not depend on the recipient collection rules or relation expansion.
+    const pbService = await getPocketBaseServiceClient();
     // Fetch receipts for current authenticated recipient
-    const receipts = await context.pb.collection('notification_receipts').getFullList({
-      filter: context.pb.filter('recipient = {:userId}', { userId: context.user.id }),
+    const receipts = await pbService.collection('notification_receipts').getFullList({
+      filter: pbService.filter('recipient = {:userId}', { userId: context.user.id }),
       expand: 'notification.sender',
       sort: '-created',
     });

@@ -15,10 +15,11 @@ export async function PATCH(
 
   try {
     // Find receipt where user is recipient
-    let receipt = await context.pb
+    const pbService = await getPocketBaseServiceClient();
+    let receipt = await pbService
       .collection('notification_receipts')
       .getFirstListItem(
-        context.pb.filter('id = {:id} && recipient = {:userId}', {
+        pbService.filter('id = {:id} && recipient = {:userId}', {
           id,
           userId: context.user.id,
         }),
@@ -27,10 +28,10 @@ export async function PATCH(
 
     if (!receipt) {
       // Check if ID is notification ID
-      receipt = await context.pb
+      receipt = await pbService
         .collection('notification_receipts')
         .getFirstListItem(
-          context.pb.filter('notification = {:notifId} && recipient = {:userId}', {
+          pbService.filter('notification = {:notifId} && recipient = {:userId}', {
             notifId: id,
             userId: context.user.id,
           }),
@@ -52,8 +53,6 @@ export async function PATCH(
     }
 
     const nowIso = new Date().toISOString();
-    const pbService = await getPocketBaseServiceClient();
-
     const updatedReceipt = await pbService.collection('notification_receipts').update(receipt.id, {
       readAt: nowIso,
     });

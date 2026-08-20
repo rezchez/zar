@@ -132,6 +132,35 @@ button:disabled {
   cursor: not-allowed;
 }
 
+/* Compact, high-contrast scrollbar for the message composer. */
+.notification-send-modal {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(245, 158, 11, 0.75) rgba(148, 163, 184, 0.16);
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.notification-send-modal::-webkit-scrollbar {
+  width: 8px;
+}
+
+.notification-send-modal::-webkit-scrollbar-track {
+  margin: 14px 0;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.notification-send-modal::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+  background-color: rgba(245, 158, 11, 0.72);
+}
+
+.notification-send-modal::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(217, 119, 6, 0.92);
+}
+
 .gooey-page,
 .dashboard-page {
   position: relative;

@@ -43,12 +43,20 @@ http://localhost:3000
 POCKETBASE_URL=http://127.0.0.1:8090
 PB_AUTH_COOKIE=pb_auth
 TOTP_ENCRYPTION_KEY=کلید هگزادسیمال ۶۴ کاراکتری
+NOTIFICATION_ENCRYPTION_KEY=کلید ۳۲ بایتی (۶۴ کاراکتر هگز یا Base64)
 POCKETBASE_SUPERUSER_EMAIL=ایمیل سوپریوزر PocketBase
 POCKETBASE_SUPERUSER_PASSWORD=رمز سوپریوزر PocketBase
 ```
 
 به‌جای ایمیل و رمز می‌توان از `POCKETBASE_SUPERUSER_TOKEN` استفاده کرد.
 پس از تغییر `.env.local`، Next.js را متوقف و دوباره اجرا کنید.
+
+برای ایجاد/به‌روزرسانی کالکشن‌های اختصاصی ارسال پیام (`notifications` و
+`notification_receipts`) پس از بالا آمدن PocketBase اجرا کنید:
+
+```powershell
+bun run pocketbase:ensure-notification-collections
+```
 
 ## نقش‌ها
 

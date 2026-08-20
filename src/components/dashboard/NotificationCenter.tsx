@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Bell,
   CheckCheck,
@@ -12,6 +12,8 @@ import {
   AlertCircle,
   ShieldCheck,
   Clock,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
 import { jalaliDateToIso } from '@/lib/jalali';
 
@@ -46,6 +48,9 @@ export default function NotificationCenter({ userRole }: { userRole: 'user' | 'm
   const [items, setItems] = useState<NotificationMetadata[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const previousNotificationIds = useRef<Set<string> | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
 
   // Selected Notification Modal
   const [activeNotification, setActiveNotification] = useState<NotificationDetail | null>(null);
@@ -69,6 +74,49 @@ export default function NotificationCenter({ userRole }: { userRole: 'user' | 'm
 
   const canSend = userRole === 'admin' || userRole === 'manager';
 
+  const playNotificationSound = useCallback(() => {
+    if (!soundEnabled || typeof window === 'undefined') return;
+
+    try {
+      const AudioContextClass = window.AudioContext
+        || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!AudioContextClass) return;
+
+      const audioContext = audioContextRef.current ?? new AudioContextClass();
+      audioContextRef.current = audioContext;
+      if (audioContext.state === 'suspended') void audioContext.resume();
+
+      const oscillator = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(880, audioContext.currentTime);
+      oscillator.frequency.exponentialRampToValueAtTime(660, audioContext.currentTime + 0.16);
+      gain.gain.setValueAtTime(0.0001, audioContext.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.08, audioContext.currentTime + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + 0.2);
+      oscillator.connect(gain);
+      gain.connect(audioContext.destination);
+      oscillator.start();
+      oscillator.stop(audioContext.currentTime + 0.21);
+    } catch {
+      // Audio is an enhancement; notification delivery must continue silently.
+    }
+  }, [soundEnabled]);
+
+  const unlockNotificationAudio = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const AudioContextClass = window.AudioContext
+        || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!AudioContextClass) return;
+      const audioContext = audioContextRef.current ?? new AudioContextClass();
+      audioContextRef.current = audioContext;
+      if (audioContext.state === 'suspended') void audioContext.resume();
+    } catch {
+      // Audio remains optional when the browser does not expose Web Audio.
+    }
+  }, []);
+
   const fetchNotifications = useCallback(async () => {
     setLoading(true);
     try {
@@ -76,8 +124,15 @@ export default function NotificationCenter({ userRole }: { userRole: 'user' | 'm
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data.items)) {
-          setItems(data.items);
-          setUnreadCount(data.unreadCount || 0);
+          const nextItems = data.items as NotificationMetadata[];
+          const nextIds = new Set(nextItems.map((item) => item.id));
+          const previousIds = previousNotificationIds.current;
+          const hasNewUnread = previousIds
+            && nextItems.some((item) => !previousIds.has(item.id) && !item.readAt);
+          previousNotificationIds.current = nextIds;
+          setItems(nextItems);
+          setUnreadCount(Number(data.unreadCount) || 0);
+          if (hasNewUnread) playNotificationSound();
         }
       }
     } catch {
@@ -85,13 +140,23 @@ export default function NotificationCenter({ userRole }: { userRole: 'user' | 'm
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [playNotificationSound]);
 
   useEffect(() => {
     fetchNotifications();
-    const interval = setInterval(fetchNotifications, 30000); // Polling every 30s
+    const interval = setInterval(fetchNotifications, 5000);
     return () => clearInterval(interval);
   }, [fetchNotifications]);
+
+  useEffect(() => {
+    const unlock = () => unlockNotificationAudio();
+    document.addEventListener('pointerdown', unlock, { passive: true });
+    document.addEventListener('keydown', unlock);
+    return () => {
+      document.removeEventListener('pointerdown', unlock);
+      document.removeEventListener('keydown', unlock);
+    };
+  }, [unlockNotificationAudio]);
 
   // Fetch Users List for Send Modal
   const fetchUsersList = useCallback(async () => {
@@ -242,7 +307,10 @@ export default function NotificationCenter({ userRole }: { userRole: 'user' | 'm
         type="button"
         onClick={() => {
           setIsOpen(!isOpen);
-          if (!isOpen) fetchNotifications();
+          if (!isOpen) {
+            unlockNotificationAudio();
+            fetchNotifications();
+          }
         }}
         className="relative p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
         aria-label="اعلانات"
@@ -284,6 +352,18 @@ export default function NotificationCenter({ userRole }: { userRole: 'user' | 'm
                   ارسال اعلان
                 </button>
               )}
+              <button
+                type="button"
+                onClick={() => {
+                  setSoundEnabled((enabled) => !enabled);
+                  if (!soundEnabled) playNotificationSound();
+                }}
+                className="text-slate-400 hover:text-amber-500 transition-colors"
+                aria-label={soundEnabled ? 'خاموش کردن صدای اعلان' : 'روشن کردن صدای اعلان'}
+                title={soundEnabled ? 'صدای اعلان روشن است' : 'صدای اعلان خاموش است'}
+              >
+                {soundEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
+              </button>
               <button
                 type="button"
                 onClick={() => setIsOpen(false)}
@@ -411,7 +491,7 @@ export default function NotificationCenter({ userRole }: { userRole: 'user' | 'm
       {/* Send Notification Modal (Admin/Manager) - Centered */}
       {isSendModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/50 backdrop-blur-sm m-auto" dir="rtl">
-          <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-2xl space-y-5 my-auto max-h-[90vh] overflow-y-auto">
+          <div className="notification-send-modal w-full max-w-lg rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-2xl space-y-5 my-auto max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
               <h3 className="font-extrabold text-base text-slate-900 dark:text-slate-100 flex items-center gap-2">
                 <Send size={18} className="text-amber-500" />

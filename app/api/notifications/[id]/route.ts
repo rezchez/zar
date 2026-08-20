@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getServerAuthContext } from '@/lib/auth';
 import { decryptNotificationPayload } from '@/lib/notification-crypto';
+import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
 
 export async function GET(
   request: Request,
@@ -14,11 +15,12 @@ export async function GET(
   const { id } = await params;
 
   try {
+    const pbService = await getPocketBaseServiceClient();
     // Check if ID is a receipt ID or notification ID
-    let receipt = await context.pb
+    let receipt = await pbService
       .collection('notification_receipts')
       .getFirstListItem(
-        context.pb.filter('id = {:id} && recipient = {:userId}', {
+        pbService.filter('id = {:id} && recipient = {:userId}', {
           id,
           userId: context.user.id,
         }),
@@ -32,10 +34,10 @@ export async function GET(
       notifRecord = receipt.expand?.notification as Record<string, unknown>;
     } else {
       // Check if user is the recipient by notification ID
-      receipt = await context.pb
+      receipt = await pbService
         .collection('notification_receipts')
         .getFirstListItem(
-          context.pb.filter('notification = {:notifId} && recipient = {:userId}', {
+          pbService.filter('notification = {:notifId} && recipient = {:userId}', {
             notifId: id,
             userId: context.user.id,
           }),
@@ -47,10 +49,10 @@ export async function GET(
         notifRecord = receipt.expand?.notification as Record<string, unknown>;
       } else {
         // Check if user is the original sender
-        notifRecord = await context.pb
+        notifRecord = await pbService
           .collection('notifications')
           .getFirstListItem(
-            context.pb.filter('id = {:id} && sender = {:userId}', {
+            pbService.filter('id = {:id} && sender = {:userId}', {
               id,
               userId: context.user.id,
             }),
