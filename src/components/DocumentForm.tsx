@@ -13,7 +13,6 @@ import {
   PencilLine,
   Pin,
   PinOff,
-  Scale,
   Search,
   Sparkles,
   Trash2,
@@ -1569,59 +1568,74 @@ export default function DocumentForm({
       <section
         className={`dashboard-panel document-lines-panel transition-all ${
           isLinesPinned
-            ? 'fixed bottom-0 left-0 right-0 z-40 lg:right-64 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-t-2 border-amber-500 shadow-2xl p-4 rounded-t-2xl rounded-b-none'
+            ? 'is-pinned fixed bottom-0 left-0 right-0 z-40 lg:right-64 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-t-2 border-amber-500 shadow-2xl p-3.5 rounded-t-2xl rounded-b-none'
             : ''
         }`}
       >
-        <div className="document-lines-head flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+        <div className="document-lines-head flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
           <div>
             <p className="eyebrow">ردیف‌های سند</p>
             <h2 className="flex items-center gap-2">
-              <ClipboardList size={18} />
-              {committedLines.length
-                ? `${faNumber(committedLines.length)} ردیف آماده ثبت`
-                : 'هنوز ردیفی ثبت نشده است'}
+              <ClipboardList size={17} />
+              <span>ردیف‌های سند ({faNumber(committedLines.length)})</span>
             </h2>
           </div>
 
-          {/* Pin / Unpin Button */}
+          {/* Pin / Unpin Icon Button */}
           <button
             type="button"
             onClick={toggleLinesPin}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+            className={`p-2 rounded-xl transition-all border ${
               isLinesPinned
-                ? 'bg-amber-500/15 border-amber-500/40 text-amber-700 dark:text-amber-400'
-                : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                ? 'bg-amber-500 border-amber-600 text-white shadow-sm ring-2 ring-amber-400/30 dark:bg-amber-600 dark:border-amber-500'
+                : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'
             }`}
-            title={isLinesPinned ? 'برداشتن حالت چسبان ردیف‌های سند' : 'چسباندن ردیف‌های سند'}
-            aria-label={isLinesPinned ? 'برداشتن حالت چسبان ردیف‌های سند' : 'چسباندن ردیف‌های سند'}
+            title={isLinesPinned ? 'غیرفعال‌سازی حالت چسبان' : 'فعال‌سازی حالت چسبان'}
+            aria-label={isLinesPinned ? 'غیرفعال‌سازی حالت چسبان' : 'فعال‌سازی حالت چسبان'}
           >
-            {isLinesPinned ? <Pin size={15} /> : <PinOff size={15} />}
-            <span>{isLinesPinned ? 'حالت چسبان (Pin)' : 'چسباندن (Pin)'}</span>
+            {isLinesPinned ? <Pin size={16} className="fill-current" /> : <PinOff size={16} />}
           </button>
         </div>
 
-        <div className={isLinesPinned && committedLines.length ? 'max-h-48 overflow-y-auto space-y-2 mt-3' : 'mt-3 space-y-2'}>
-          <AnimatePresence initial={false}>
-            {committedLines.map((line, index) => (
-              <CommittedLineRow
-                key={line.id}
-                line={line}
-                index={index}
-                onEdit={() => editLine(line)}
-                onRemove={() => removeLine(line.id)}
-              />
-            ))}
-          </AnimatePresence>
-        </div>
-
         {!committedLines.length ? (
-          <div className={`document-lines-empty ${isLinesPinned ? 'py-2 text-xs' : 'py-6'}`}>
-            <Scale size={isLinesPinned ? 20 : 26} strokeWidth={1.4} />
-            <p className="text-slate-500 text-xs">ردیف‌ها پیش از ثبت نهایی در این بخش نگه‌داری می‌شوند.</p>
+          <div className="document-lines-empty">
+            <p className="text-slate-500 dark:text-slate-400 text-xs font-semibold">هنوز ردیفی ثبت نشده است</p>
           </div>
         ) : (
-          <div className="document-totals-bar mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 text-xs flex items-center justify-between">
+          <div className={`document-lines-table-wrapper ${isLinesPinned ? 'max-h-44 overflow-y-auto' : ''}`}>
+            <table className="document-lines-table">
+              <thead>
+                <tr>
+                  <th style={{ width: '6%' }}>ردیف</th>
+                  <th style={{ width: '22%' }}>نوع سند</th>
+                  <th style={{ width: '12%' }}>نوع ارز</th>
+                  <th style={{ width: '14%' }}>بدهکار وزنی</th>
+                  <th style={{ width: '14%' }}>بستانکار وزنی</th>
+                  <th style={{ width: '14%' }}>بدهکار مالی</th>
+                  <th style={{ width: '14%' }}>بستانکار مالی</th>
+                  <th style={{ width: '4%' }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                <AnimatePresence initial={false}>
+                  {committedLines.map((line, index) => (
+                    <CommittedLineRow
+                      key={line.id}
+                      line={line}
+                      index={index}
+                      onEdit={() => editLine(line)}
+                      onRemove={() => removeLine(line.id)}
+                      weightPrecision={weightPrecision}
+                    />
+                  ))}
+                </AnimatePresence>
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {committedLines.length ? (
+          <div className="document-totals-bar mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-xs flex items-center justify-between">
             <span className="text-slate-600 dark:text-slate-400">خالص اثر سند بر مانده طلا:</span>
             <strong className={totals >= 0 ? 'is-positive text-emerald-600 dark:text-emerald-400' : 'is-negative text-rose-600 dark:text-rose-400'}>
               {faNumber(Math.abs(totals), 3)} گرم
@@ -1629,7 +1643,7 @@ export default function DocumentForm({
               {totals >= 0 ? 'بستانکار' : 'بدهکار'}
             </strong>
           </div>
-        )}
+        ) : null}
       </section>
 
       <div className="document-actions">
@@ -1830,120 +1844,123 @@ function CommittedLineRow({
   index,
   onEdit,
   onRemove,
+  weightPrecision = 3,
 }: {
   line: DocumentLine;
   index: number;
   onEdit: () => void;
   onRemove: () => void;
+  weightPrecision?: number;
 }) {
+  const isPaid = line.documentNature === 'paid';
+  const isReceived = line.documentNature === 'received';
+
+  let docType = '';
+  let currencyUnit = '';
+  let weight = 0;
+  let financialAmount = 0;
+
   if (line.documentTab === 'currency') {
-    const isPurchase = line.documentNature === 'received';
-    return (
-      <motion.article
-        layout
-        className={`document-line-row ${line.documentNature}`}
-        initial={{ opacity: 0, y: 16, scale: 0.98 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, x: -24, scale: 0.97 }}
-        transition={{ type: 'spring', stiffness: 320, damping: 28 }}
-      >
-        <span className="document-line-row-index">{faNumber(index + 1)}</span>
-        <div className="document-line-row-main">
-          <div className="document-line-row-title">
-            <strong>{isPurchase ? 'خرید ارز' : 'فروش ارز'}</strong>
-            <span className={`document-nature-badge ${line.documentNature}`}>
-              {line.details.unsettledTrade ? 'بدون تسویه' : isPurchase ? 'خرید' : 'فروش'}
-            </span>
-          </div>
-          <small>
-            {line.details.currencyUnit} · قیمت واحد {toPersianDigits(line.details.currencyUnitPrice || '۰')} ریال
-            {line.description ? ` — ${line.description}` : ''}
-          </small>
-        </div>
-        <div className="document-line-row-figures">
-          <span>
-            <strong>{faNumber(numberValue(line.details.currencyQuantity), 2)}</strong>
-            {' '}{line.details.currencyUnit}
-            <small className="block">
-              {faNumber(numberValue(line.details.currencyTotalAmount))} ریال
-            </small>
+    docType = line.details.unsettledTrade
+      ? (isReceived ? 'خرید ارز (بدون تسویه)' : 'فروش ارز (بدون تسویه)')
+      : (isReceived ? 'خرید ارز' : 'فروش ارز');
+    currencyUnit = line.details.currencyUnit || 'ریال';
+    weight = 0;
+    financialAmount = numberValue(line.details.currencyTotalAmount);
+  } else {
+    docType = rawOperationLabel(line.documentNature, line.details.rawKind);
+    currencyUnit = line.details.metalType === 'silver'
+      ? 'نقره'
+      : line.details.metalType === 'platinum'
+        ? 'پلاتین'
+        : 'طلا';
+    weight = line.details.calculationMethod === 'money'
+      ? actualWeightFromMoney(line.details)
+      : numberValue(line.details.rawWeight);
+    financialAmount = numberValue(line.details.totalAmount);
+  }
+
+  const bedehkarVazni = isPaid && weight > 0 ? faNumber(weight, weightPrecision) : null;
+  const bostankarVazni = isReceived && weight > 0 ? faNumber(weight, weightPrecision) : null;
+  const bedehkarMali = isPaid && financialAmount > 0 ? faNumber(financialAmount) : null;
+  const bostankarMali = isReceived && financialAmount > 0 ? faNumber(financialAmount) : null;
+
+  return (
+    <motion.tr
+      layout
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, x: -12 }}
+      transition={{ type: 'spring', stiffness: 350, damping: 28 }}
+      className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+    >
+      <td className="text-center font-bold text-slate-500 dark:text-slate-400">
+        {faNumber(index + 1)}
+      </td>
+      <td className="text-right">
+        <span className="font-semibold text-slate-800 dark:text-slate-200 block truncate">
+          {docType}
+        </span>
+        {line.description ? (
+          <span className="text-[10px] text-slate-400 dark:text-slate-500 block truncate">
+            {line.description}
           </span>
-        </div>
-        <div className="document-line-row-actions">
-          <button type="button" onClick={onEdit} aria-label="ویرایش ردیف" title="ویرایش ردیف">
-            <PencilLine size={15} />
+        ) : null}
+      </td>
+      <td className="text-center font-medium text-slate-600 dark:text-slate-300">
+        {currencyUnit}
+      </td>
+      <td className="text-center">
+        {bedehkarVazni ? (
+          <span className="text-rose-600 dark:text-rose-400 font-bold">{bedehkarVazni}</span>
+        ) : (
+          <span className="text-slate-300 dark:text-slate-600">-</span>
+        )}
+      </td>
+      <td className="text-center">
+        {bostankarVazni ? (
+          <span className="text-emerald-600 dark:text-emerald-400 font-bold">{bostankarVazni}</span>
+        ) : (
+          <span className="text-slate-300 dark:text-slate-600">-</span>
+        )}
+      </td>
+      <td className="text-center">
+        {bedehkarMali ? (
+          <span className="text-rose-600 dark:text-rose-400 font-bold">{bedehkarMali}</span>
+        ) : (
+          <span className="text-slate-300 dark:text-slate-600">-</span>
+        )}
+      </td>
+      <td className="text-center">
+        {bostankarMali ? (
+          <span className="text-emerald-600 dark:text-emerald-400 font-bold">{bostankarMali}</span>
+        ) : (
+          <span className="text-slate-300 dark:text-slate-600">-</span>
+        )}
+      </td>
+      <td className="text-center">
+        <div className="flex items-center justify-center gap-1">
+          <button
+            type="button"
+            onClick={onEdit}
+            aria-label="ویرایش ردیف"
+            title="ویرایش ردیف"
+            className="p-1 text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 transition-colors"
+          >
+            <PencilLine size={14} />
           </button>
           <button
             type="button"
-            className="is-danger"
             onClick={onRemove}
             aria-label="حذف ردیف"
             title="حذف ردیف"
+            className="p-1 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors"
           >
-            <Trash2 size={15} />
+            <Trash2 size={14} />
           </button>
         </div>
-      </motion.article>
-    );
-  }
-
-  const kind = line.details.rawKind;
-  const labInfo = [
-    line.details.purity && `عیار ${toPersianDigits(line.details.purity)}`,
-    line.details.labName,
-    line.details.pocketNumber && `پاکت ${toPersianDigits(line.details.pocketNumber)}`,
-    line.details.stampNumber && `انگ ${toPersianDigits(line.details.stampNumber)}`,
-  ].filter(Boolean).join(' · ');
-
-  return (
-    <motion.article
-      layout
-      className={`document-line-row ${line.documentNature}`}
-      initial={{ opacity: 0, y: 16, scale: 0.98 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, x: -24, scale: 0.97 }}
-      transition={{ type: 'spring', stiffness: 320, damping: 28 }}
-    >
-      <span className="document-line-row-index">{faNumber(index + 1)}</span>
-      <div className="document-line-row-main">
-        <div className="document-line-row-title">
-          <strong>{rawOperationLabel(line.documentNature, kind)}</strong>
-          <span className={`document-nature-badge ${line.documentNature}`}>
-            {line.documentNature === 'received' ? 'بستانکار' : 'بدهکار'}
-          </span>
-        </div>
-        <small>
-          {labInfo || 'طلای خام'}
-          {line.description ? ` — ${line.description}` : ''}
-        </small>
-      </div>
-      <div className="document-line-row-figures">
-        <span>
-          <strong>{faNumber(
-            line.details.calculationMethod === 'money'
-              ? actualWeightFromMoney(line.details)
-              : numberValue(line.details.rawWeight),
-            3,
-          )}</strong>
-          {' '}گرم طلا
-          <small className="block">{faNumber(numberValue(line.details.totalAmount))} مبلغ کل</small>
-        </span>
-      </div>
-      <div className="document-line-row-actions">
-        <button type="button" onClick={onEdit} aria-label="ویرایش ردیف" title="ویرایش ردیف">
-          <PencilLine size={15} />
-        </button>
-        <button
-          type="button"
-          className="is-danger"
-          onClick={onRemove}
-          aria-label="حذف ردیف"
-          title="حذف ردیف"
-        >
-          <Trash2 size={15} />
-        </button>
-      </div>
-    </motion.article>
+      </td>
+    </motion.tr>
   );
 }
 
