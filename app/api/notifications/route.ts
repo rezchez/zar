@@ -11,14 +11,15 @@ function isSenderAuthorized(context: Awaited<ReturnType<typeof getServerAuthCont
 export async function GET() {
   const context = await getServerAuthContext();
   if (!context) {
-    return NextResponse.json({ message: 'ابتدا وارد حساب کاربری خود شوید.' }, { status: 401 });
+    return NextResponse.json(
+      { message: 'ابتدا وارد حساب کاربری خود شوید.' },
+      { status: 401, headers: { 'Cache-Control': 'private, no-store' } },
+    );
   }
 
   try {
-    // Use the service client for the scoped read so notification delivery does
-    // not depend on the recipient collection rules or relation expansion.
     const pbService = await getPocketBaseServiceClient();
-    // Fetch receipts for current authenticated recipient
+    // Fetch receipts for current authenticated recipient ONLY
     const receipts = await pbService.collection('notification_receipts').getFullList({
       filter: pbService.filter('recipient = {:userId}', { userId: context.user.id }),
       expand: 'notification.sender',
@@ -30,7 +31,8 @@ export async function GET() {
     const items = receipts
       .filter((receipt) => {
         const notif = receipt.expand?.notification as Record<string, unknown> | undefined;
-        if (notif?.scheduledAt) {
+        if (!notif) return false; // Filter out orphan receipts
+        if (notif.scheduledAt) {
           const schedTime = new Date(String(notif.scheduledAt));
           if (!Number.isNaN(schedTime.getTime()) && schedTime > now) {
             return false; // Filter out future scheduled notifications
@@ -58,31 +60,43 @@ export async function GET() {
       { items, unreadCount },
       {
         headers: {
-          'Cache-Control': 'no-store, private',
+          'Cache-Control': 'private, no-store',
         },
       },
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : 'خطا در دریافت اعلانات.';
-    return NextResponse.json({ message }, { status: 500 });
+    return NextResponse.json(
+      { message },
+      { status: 500, headers: { 'Cache-Control': 'private, no-store' } },
+    );
   }
 }
 
 export async function POST(request: Request) {
   const context = await getServerAuthContext();
   if (!context) {
-    return NextResponse.json({ message: 'ابتدا وارد حساب کاربری خود شوید.' }, { status: 401 });
+    return NextResponse.json(
+      { message: 'ابتدا وارد حساب کاربری خود شوید.' },
+      { status: 401, headers: { 'Cache-Control': 'private, no-store' } },
+    );
   }
 
   if (!isSenderAuthorized(context)) {
-    return NextResponse.json({ message: 'شما دسترسی لازم برای ارسال اعلان را ندارید.' }, { status: 403 });
+    return NextResponse.json(
+      { message: 'شما دسترسی لازم برای ارسال اعلان را ندارید.' },
+      { status: 403, headers: { 'Cache-Control': 'private, no-store' } },
+    );
   }
 
   let body: Record<string, unknown> = {};
   try {
     body = (await request.json()) as Record<string, unknown>;
   } catch {
-    return NextResponse.json({ message: 'فرمت داده‌های ارسالی نامعتبر است.' }, { status: 400 });
+    return NextResponse.json(
+      { message: 'فرمت داده‌های ارسالی نامعتبر است.' },
+      { status: 400, headers: { 'Cache-Control': 'private, no-store' } },
+    );
   }
 
   const title = String(body.title ?? '').trim();
@@ -114,13 +128,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: 'برای پیام خصوصی، انتخاب کاربر دریافت‌کننده الزامی است.' }, { status: 400 });
   }
 
+  let notifRecordId: string | null = null;
+  const pbService = await getPocketBaseServiceClient();
+
   try {
     // Encrypt payload at application level with AES-256-GCM
     const encrypted = encryptNotificationPayload({ title, body: content });
 
-    const pbService = await getPocketBaseServiceClient();
-
-    // Save notification
+    // Save notification record
     const notifRecord = await pbService.collection('notifications').create({
       sender: context.user.id,
       recipientMode,
@@ -130,26 +145,39 @@ export async function POST(request: Request) {
       keyVersion: encrypted.keyVersion,
       scheduledAt,
     });
+    notifRecordId = notifRecord.id;
 
-    // Create receipts
+    // Resolve recipient user IDs
     let recipientIds: string[] = [];
 
     if (recipientMode === 'private') {
-      // Validate recipient exists
       const targetUser = await pbService.collection('users').getOne(recipientId).catch(() => null);
-      if (!targetUser) {
-        return NextResponse.json({ message: 'کاربر دریافت‌کننده یافت نشد یا غیرفعال است.' }, { status: 400 });
+      if (!targetUser || targetUser.status === 'blocked') {
+        // Rollback created notification
+        await pbService.collection('notifications').delete(notifRecord.id).catch(() => null);
+        return NextResponse.json(
+          { message: 'کاربر دریافت‌کننده یافت نشد یا غیرفعال/مسدود است.' },
+          { status: 400, headers: { 'Cache-Control': 'private, no-store' } },
+        );
       }
       recipientIds = [targetUser.id];
     } else {
-      // Broadcast mode: fetch all active users
+      // Broadcast mode: fetch all active non-blocked users
       const allUsers = await pbService.collection('users').getFullList({
-        filter: 'blocked = false',
+        filter: pbService.filter('status != {:blocked}', { blocked: 'blocked' }),
       });
       recipientIds = allUsers.map((u) => u.id);
     }
 
-    // Create receipt records
+    if (recipientIds.length === 0) {
+      await pbService.collection('notifications').delete(notifRecord.id).catch(() => null);
+      return NextResponse.json(
+        { message: 'هیچ کاربر فعالی برای دریافت اعلان یافت نشد.' },
+        { status: 400, headers: { 'Cache-Control': 'private, no-store' } },
+      );
+    }
+
+    // Create receipt records atomically
     const receiptPromises = recipientIds.map((rId) =>
       pbService.collection('notification_receipts').create({
         notification: notifRecord.id,
@@ -158,30 +186,44 @@ export async function POST(request: Request) {
       }),
     );
 
-    await Promise.all(receiptPromises);
+    const createdReceipts = await Promise.all(receiptPromises);
 
-    // Audit log (non-sensitive metadata)
+    // Audit log (non-sensitive metadata only)
     await recordAuditEvent({
       userId: context.user.id,
       event: 'settings_updated',
       request,
-      details: `ارسال اعلان (${recipientMode === 'broadcast' ? 'همگانی' : 'خصوصی'}) به ${recipientIds.length} کاربر`,
+      details: `ارسال اعلان (${recipientMode === 'broadcast' ? 'همگانی' : 'خصوصی'}) به ${createdReceipts.length} کاربر`,
       entityType: 'notifications',
       entityId: notifRecord.id,
       changes: {
         recipientMode,
-        recipientCount: recipientIds.length,
+        recipientCount: createdReceipts.length,
       },
       authenticatedClient: context.pb,
     });
 
-    return NextResponse.json({
-      success: true,
-      notificationId: notifRecord.id,
-      recipientCount: recipientIds.length,
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        notificationId: notifRecord.id,
+        recipientCount: createdReceipts.length,
+      },
+      {
+        headers: {
+          'Cache-Control': 'private, no-store',
+        },
+      },
+    );
   } catch (error) {
+    // If notification record was created, attempt cleanup to prevent orphan records
+    if (notifRecordId) {
+      await pbService.collection('notifications').delete(notifRecordId).catch(() => null);
+    }
     const message = error instanceof Error ? error.message : 'خطا در ثبت و ارسال اعلان.';
-    return NextResponse.json({ message }, { status: 500 });
+    return NextResponse.json(
+      { message },
+      { status: 500, headers: { 'Cache-Control': 'private, no-store' } },
+    );
   }
 }

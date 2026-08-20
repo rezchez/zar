@@ -43,9 +43,9 @@ async function main() {
     name: 'notifications',
     type: 'base',
     fields: notificationsFields,
-    // Restrict direct client mutation - force Next.js server API
-    listRule: '@request.auth.id != ""',
-    viewRule: '@request.auth.id != ""',
+    // Restrict direct client access: only sender can query directly, service client manages API
+    listRule: 'sender = @request.auth.id',
+    viewRule: 'sender = @request.auth.id',
     createRule: null,
     updateRule: null,
     deleteRule: null,
@@ -68,8 +68,9 @@ async function main() {
     name: 'notification_receipts',
     type: 'base',
     fields: receiptsFields,
-    listRule: '@request.auth.id != ""',
-    viewRule: '@request.auth.id != ""',
+    // Restrict direct client access: recipient can only view their own receipts
+    listRule: 'recipient = @request.auth.id',
+    viewRule: 'recipient = @request.auth.id',
     createRule: null,
     updateRule: null,
     deleteRule: null,

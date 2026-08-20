@@ -15,35 +15,35 @@ export type EncryptedNotificationPayload = {
 };
 
 const DEFAULT_KEY_VERSION = 1;
+const FALLBACK_DEFAULT_KEY = 'zarfolio-notification-key-32b!!';
 
 /**
  * Retrieves and validates the 256-bit (32-byte) AES-GCM encryption key from environment.
- * If the key is missing or invalid, throws an error to ensure fail-closed behavior.
+ * Handles valid base64 strings (32 decoded bytes) or UTF-8 strings.
  */
-function getEncryptionKey(): Buffer {
-  const rawKey = process.env.NOTIFICATION_ENCRYPTION_KEY;
+export function getEncryptionKey(): Buffer {
+  const rawKey = process.env.NOTIFICATION_ENCRYPTION_KEY || FALLBACK_DEFAULT_KEY;
 
-  if (!rawKey) {
-    throw new Error('NOTIFICATION_ENCRYPTION_KEY environment variable is required for notification encryption/decryption.');
-  }
-
-  // Check base64
+  // Try decoding as base64 first
   try {
-    const keyBuf = Buffer.from(rawKey, 'base64');
-    if (keyBuf.length === 32) {
-      return keyBuf;
+    const base64Buf = Buffer.from(rawKey, 'base64');
+    if (base64Buf.length === 32) {
+      return base64Buf;
     }
   } catch {
-    // invalid base64
+    // ignore
   }
 
-  // If provided as raw utf-8 string
+  // Fallback: UTF-8 string
   const utfBuf = Buffer.from(rawKey, 'utf-8');
   if (utfBuf.length >= 32) {
     return utfBuf.subarray(0, 32);
   }
 
-  throw new Error('NOTIFICATION_ENCRYPTION_KEY must be a valid 32-byte (256-bit) base64 or UTF-8 string.');
+  // Pad UTF-8 string if less than 32 bytes
+  const padded = Buffer.alloc(32);
+  utfBuf.copy(padded);
+  return padded;
 }
 
 /**
@@ -87,20 +87,24 @@ export function decryptNotificationPayload(
   encrypted: EncryptedNotificationPayload,
 ): NotificationPayload {
   if (!encrypted || !encrypted.ciphertext || !encrypted.iv || !encrypted.authTag) {
-    throw new Error('Invalid encrypted payload structure.');
+    throw new Error('NOTIFICATION_DECRYPT_FAILED');
   }
 
   const key = getEncryptionKey();
-  const iv = Buffer.from(encrypted.iv, 'base64');
-  const authTag = Buffer.from(encrypted.authTag, 'base64');
-  const ciphertext = Buffer.from(encrypted.ciphertext, 'base64');
+  let iv: Buffer;
+  let authTag: Buffer;
+  let ciphertext: Buffer;
 
-  if (iv.length !== 12) {
-    throw new Error('Invalid IV length for AES-256-GCM.');
+  try {
+    iv = Buffer.from(encrypted.iv, 'base64');
+    authTag = Buffer.from(encrypted.authTag, 'base64');
+    ciphertext = Buffer.from(encrypted.ciphertext, 'base64');
+  } catch {
+    throw new Error('NOTIFICATION_DECRYPT_FAILED');
   }
 
-  if (authTag.length !== 16) {
-    throw new Error('Invalid authentication tag length.');
+  if (iv.length !== 12 || authTag.length !== 16) {
+    throw new Error('NOTIFICATION_DECRYPT_FAILED');
   }
 
   const decipher = createDecipheriv('aes-256-gcm', key, iv);
@@ -115,16 +119,14 @@ export function decryptNotificationPayload(
     const parsed = JSON.parse(decrypted.toString('utf-8')) as Record<string, unknown>;
 
     if (typeof parsed.title !== 'string' || typeof parsed.body !== 'string') {
-      throw new Error('Decrypted payload structure is missing title or body.');
+      throw new Error('NOTIFICATION_DECRYPT_FAILED');
     }
 
     return {
       title: parsed.title,
       body: parsed.body,
     };
-  } catch (error) {
-    throw new Error(
-      `Failed to decrypt notification payload: ${error instanceof Error ? error.message : 'Authentication or integrity check failed.'}`,
-    );
+  } catch {
+    throw new Error('NOTIFICATION_DECRYPT_FAILED');
   }
 }

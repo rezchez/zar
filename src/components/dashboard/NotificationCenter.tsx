@@ -11,6 +11,7 @@ import {
   Loader2,
   AlertCircle,
   ShieldCheck,
+  ShieldAlert,
   Clock,
   Volume2,
   VolumeX,
@@ -35,6 +36,7 @@ export type NotificationDetail = {
   recipientMode: 'private' | 'broadcast';
   readAt: string | null;
   created: string;
+  decryptFailed?: boolean;
 };
 
 export type UserItem = {
@@ -48,6 +50,7 @@ export default function NotificationCenter({ userRole }: { userRole: 'user' | 'm
   const [items, setItems] = useState<NotificationMetadata[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const previousNotificationIds = useRef<Set<string> | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -55,6 +58,7 @@ export default function NotificationCenter({ userRole }: { userRole: 'user' | 'm
   // Selected Notification Modal
   const [activeNotification, setActiveNotification] = useState<NotificationDetail | null>(null);
   const [fetchingDetail, setFetchingDetail] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
 
   // Send Notification Form Modal (Admin / Manager)
   const [isSendModalOpen, setIsSendModalOpen] = useState(false);
@@ -99,7 +103,7 @@ export default function NotificationCenter({ userRole }: { userRole: 'user' | 'm
       oscillator.start();
       oscillator.stop(audioContext.currentTime + 0.21);
     } catch {
-      // Audio is an enhancement; notification delivery must continue silently.
+      // Audio is an enhancement; notification delivery continues
     }
   }, [soundEnabled]);
 
@@ -113,14 +117,21 @@ export default function NotificationCenter({ userRole }: { userRole: 'user' | 'm
       audioContextRef.current = audioContext;
       if (audioContext.state === 'suspended') void audioContext.resume();
     } catch {
-      // Audio remains optional when the browser does not expose Web Audio.
+      // Audio optional
     }
   }, []);
 
   const fetchNotifications = useCallback(async () => {
     setLoading(true);
+    setFetchError(null);
     try {
       const res = await fetch('/api/notifications', { cache: 'no-store' });
+      if (res.status === 401) {
+        // Clear state on logout/unauthorized
+        setItems([]);
+        setUnreadCount(0);
+        return;
+      }
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data.items)) {
@@ -134,18 +145,47 @@ export default function NotificationCenter({ userRole }: { userRole: 'user' | 'm
           setUnreadCount(Number(data.unreadCount) || 0);
           if (hasNewUnread) playNotificationSound();
         }
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        setFetchError(errData.message || 'خطا در دریافت لیست اعلانات');
       }
     } catch {
-      // Ignore network errors gracefully
+      setFetchError('خطا در برقراری ارتباط با سرور.');
     } finally {
       setLoading(false);
     }
   }, [playNotificationSound]);
 
   useEffect(() => {
-    fetchNotifications();
-    const interval = setInterval(fetchNotifications, 5000);
-    return () => clearInterval(interval);
+    let active = true;
+    const runFetch = async () => {
+      if (active) {
+        await fetchNotifications();
+      }
+    };
+    const timer = setTimeout(() => {
+      void runFetch();
+    }, 0);
+
+    const interval = setInterval(() => {
+      void runFetch();
+    }, 5000);
+
+    const handleFocus = () => void runFetch();
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') void runFetch();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+      clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, [fetchNotifications]);
 
   useEffect(() => {
@@ -180,32 +220,37 @@ export default function NotificationCenter({ userRole }: { userRole: 'user' | 'm
 
   useEffect(() => {
     if (isSendModalOpen) {
-      fetchUsersList();
+      const timer = setTimeout(() => {
+        void fetchUsersList();
+      }, 0);
+      return () => clearTimeout(timer);
     }
   }, [isSendModalOpen, fetchUsersList]);
 
   // Open notification detail & mark as read
   async function handleOpenDetail(item: NotificationMetadata) {
     setFetchingDetail(true);
+    setDetailError(null);
     try {
       const res = await fetch(`/api/notifications/${item.id}`, { cache: 'no-store' });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.notification) {
-          setActiveNotification(data.notification);
+      const data = await res.json().catch(() => ({}));
 
-          // Mark read
-          if (!item.readAt) {
-            await fetch(`/api/notifications/${item.id}/read`, { method: 'PATCH' });
-            setItems((prev) =>
-              prev.map((i) => (i.id === item.id ? { ...i, readAt: new Date().toISOString() } : i)),
-            );
-            setUnreadCount((prev) => Math.max(0, prev - 1));
-          }
+      if (res.ok && data.notification) {
+        setActiveNotification(data.notification);
+
+        // Mark read AFTER successfully receiving and rendering message detail / decrypt failure status
+        if (!item.readAt) {
+          await fetch(`/api/notifications/${item.id}/read`, { method: 'PATCH' });
+          setItems((prev) =>
+            prev.map((i) => (i.id === item.id ? { ...i, readAt: new Date().toISOString() } : i)),
+          );
+          setUnreadCount((prev) => Math.max(0, prev - 1));
         }
+      } else {
+        setDetailError(data.message || 'خطا در دریافت جزئیات پیام.');
       }
     } catch {
-      // Handle error
+      setDetailError('خطا در برقراری ارتباط با سرور جهت دریافت پیام.');
     } finally {
       setFetchingDetail(false);
     }
@@ -285,6 +330,7 @@ export default function NotificationCenter({ userRole }: { userRole: 'user' | 'm
         time: '12:00',
       });
       setShowConfirmBroadcast(false);
+      void fetchNotifications();
       setTimeout(() => {
         setIsSendModalOpen(false);
         setSendNotice(null);
@@ -309,7 +355,7 @@ export default function NotificationCenter({ userRole }: { userRole: 'user' | 'm
           setIsOpen(!isOpen);
           if (!isOpen) {
             unlockNotificationAudio();
-            fetchNotifications();
+            void fetchNotifications();
           }
         }}
         className="relative p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
@@ -376,6 +422,13 @@ export default function NotificationCenter({ userRole }: { userRole: 'user' | 'm
 
           {/* List */}
           <div className="max-h-80 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/60">
+            {fetchError && (
+              <div className="p-3 bg-rose-500/10 border-b border-rose-500/20 text-xs text-rose-600 dark:text-rose-400 flex items-center gap-2">
+                <AlertCircle size={14} />
+                <span>{fetchError}</span>
+              </div>
+            )}
+
             {loading ? (
               <div className="flex items-center justify-center p-6 text-slate-400 text-xs gap-2">
                 <Loader2 className="animate-spin" size={16} />
@@ -392,7 +445,7 @@ export default function NotificationCenter({ userRole }: { userRole: 'user' | 'm
                   type="button"
                   onClick={() => {
                     setIsOpen(false);
-                    handleOpenDetail(item);
+                    void handleOpenDetail(item);
                   }}
                   className={`w-full p-3 text-right flex items-start gap-3 transition-colors ${
                     !item.readAt
@@ -414,7 +467,7 @@ export default function NotificationCenter({ userRole }: { userRole: 'user' | 'm
                         {item.senderName}
                       </strong>
                       <small className="text-[10px] text-slate-400">
-                        {new Date(item.created).toLocaleDateString('fa-IR')}
+                        {item.created ? new Date(item.created).toLocaleDateString('fa-IR') : ''}
                       </small>
                     </div>
 
@@ -434,7 +487,7 @@ export default function NotificationCenter({ userRole }: { userRole: 'user' | 'm
       )}
 
       {/* Notification Detail Modal - Centered */}
-      {(activeNotification || fetchingDetail) && (
+      {(activeNotification || fetchingDetail || detailError) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/50 backdrop-blur-sm m-auto" dir="rtl">
           <div className="w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 shadow-2xl space-y-4 my-auto">
             {fetchingDetail ? (
@@ -442,12 +495,48 @@ export default function NotificationCenter({ userRole }: { userRole: 'user' | 'm
                 <Loader2 className="animate-spin text-amber-500" size={24} />
                 <span>در حال رمزگشایی امن پیام (AES-256-GCM)...</span>
               </div>
+            ) : detailError ? (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+                  <div className="flex items-center gap-2 text-xs font-bold text-rose-600 dark:text-rose-400">
+                    <AlertCircle size={16} />
+                    <span>خطا در دریافت پیام</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setDetailError(null)}
+                    className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+                <div className="p-3.5 rounded-xl bg-rose-500/10 text-xs text-rose-700 dark:text-rose-300">
+                  {detailError}
+                </div>
+                <div className="pt-2 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setDetailError(null)}
+                    className="px-4 py-2 rounded-xl bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-bold text-xs"
+                  >
+                    بستن
+                  </button>
+                </div>
+              </div>
             ) : activeNotification ? (
               <>
                 <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
                   <div className="flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-300">
-                    <ShieldCheck size={16} className="text-emerald-500" />
-                    <span>پیام رمزنگاری‌شده (GCM)</span>
+                    {activeNotification.decryptFailed ? (
+                      <ShieldAlert size={16} className="text-amber-500" />
+                    ) : (
+                      <ShieldCheck size={16} className="text-emerald-500" />
+                    )}
+                    <span>
+                      {activeNotification.decryptFailed
+                        ? 'خطای رمزگشایی پیام'
+                        : 'پیام رمزنگاری‌شده (GCM)'}
+                    </span>
                   </div>
                   <button
                     type="button"
@@ -463,13 +552,22 @@ export default function NotificationCenter({ userRole }: { userRole: 'user' | 'm
                     {activeNotification.title}
                   </h3>
 
-                  <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 text-xs text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap break-words">
-                    {activeNotification.body}
-                  </div>
+                  {activeNotification.decryptFailed ? (
+                    <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-700 dark:text-amber-300 space-y-1.5">
+                      <strong className="block font-bold">این پیام قابل بازیابی نیست.</strong>
+                      <p className="text-[11px] leading-relaxed">
+                        به دلیل عدم تطابق کلید رمزنگاری یا آسیب‌دیدگی داده‌ها، متن اصلی این پیام قابل بازیابی نمی‌باشد.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 text-xs text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap break-words">
+                      {activeNotification.body}
+                    </div>
+                  )}
 
                   <div className="flex items-center justify-between text-[11px] text-slate-400 pt-2 border-t border-slate-100 dark:border-slate-800">
                     <span>فرستنده: {activeNotification.senderName}</span>
-                    <span>{new Date(activeNotification.created).toLocaleString('fa-IR')}</span>
+                    <span>{activeNotification.created ? new Date(activeNotification.created).toLocaleString('fa-IR') : ''}</span>
                   </div>
                 </div>
 

@@ -9,14 +9,17 @@ export async function GET(
 ) {
   const context = await getServerAuthContext();
   if (!context) {
-    return NextResponse.json({ message: 'ابتدا وارد حساب کاربری خود شوید.' }, { status: 401 });
+    return NextResponse.json(
+      { message: 'ابتدا وارد حساب کاربری خود شوید.' },
+      { status: 401, headers: { 'Cache-Control': 'private, no-store' } },
+    );
   }
 
   const { id } = await params;
 
   try {
     const pbService = await getPocketBaseServiceClient();
-    // Check if ID is a receipt ID or notification ID
+    // Check if ID is a receipt ID or notification ID for current authenticated user
     let receipt = await pbService
       .collection('notification_receipts')
       .getFirstListItem(
@@ -65,41 +68,78 @@ export async function GET(
     if (!notifRecord) {
       return NextResponse.json(
         { message: 'اعلان مورد نظر یافت نشد یا دسترسی به آن مجاز نیست.' },
-        { status: 404 },
+        { status: 404, headers: { 'Cache-Control': 'private, no-store' } },
       );
     }
 
-    // Decrypt application-level payload
-    const decrypted = decryptNotificationPayload({
-      ciphertext: String(notifRecord.ciphertext || ''),
-      iv: String(notifRecord.iv || ''),
-      authTag: String(notifRecord.authTag || ''),
-      keyVersion: Number(notifRecord.keyVersion || 1),
-    });
-
     const senderObj = (notifRecord.expand as Record<string, unknown> | undefined)?.sender as Record<string, unknown> | undefined;
 
-    return NextResponse.json(
-      {
-        notification: {
-          id: String(notifRecord.id),
-          receiptId: receipt?.id ? String(receipt.id) : undefined,
-          title: decrypted.title,
-          body: decrypted.body,
-          senderName: String(senderObj?.name || senderObj?.email || 'سیستم Zarfolio'),
-          recipientMode: String(notifRecord.recipientMode || 'private'),
-          readAt: receipt?.readAt ? String(receipt.readAt) : null,
-          created: String(notifRecord.created || receipt?.created || ''),
+    // Decrypt application-level payload safely
+    try {
+      const decrypted = decryptNotificationPayload({
+        ciphertext: String(notifRecord.ciphertext || ''),
+        iv: String(notifRecord.iv || ''),
+        authTag: String(notifRecord.authTag || ''),
+        keyVersion: Number(notifRecord.keyVersion || 1),
+      });
+
+      return NextResponse.json(
+        {
+          notification: {
+            id: String(notifRecord.id),
+            receiptId: receipt?.id ? String(receipt.id) : undefined,
+            title: decrypted.title,
+            body: decrypted.body,
+            senderName: String(senderObj?.name || senderObj?.email || 'سیستم Zarfolio'),
+            recipientMode: String(notifRecord.recipientMode || 'private'),
+            readAt: receipt?.readAt ? String(receipt.readAt) : null,
+            created: String(notifRecord.created || receipt?.created || ''),
+            decryptFailed: false,
+          },
         },
-      },
-      {
-        headers: {
-          'Cache-Control': 'no-store, private',
+        {
+          headers: {
+            'Cache-Control': 'private, no-store',
+          },
         },
-      },
-    );
+      );
+    } catch {
+      // Log ONLY safe metadata (NO keys, ciphertext, iv, authTag, or plaintext)
+      console.error('[Notification Decrypt Error]', {
+        notificationId: String(notifRecord.id),
+        keyVersion: Number(notifRecord.keyVersion || 1),
+        errorCode: 'NOTIFICATION_DECRYPT_FAILED',
+      });
+
+      return NextResponse.json(
+        {
+          errorCode: 'NOTIFICATION_DECRYPT_FAILED',
+          message: 'این پیام قابل بازیابی نیست.',
+          notification: {
+            id: String(notifRecord.id),
+            receiptId: receipt?.id ? String(receipt.id) : undefined,
+            title: 'پیام غیرقابل بازیابی',
+            body: 'این پیام قابل بازیابی نیست.',
+            senderName: String(senderObj?.name || senderObj?.email || 'سیستم Zarfolio'),
+            recipientMode: String(notifRecord.recipientMode || 'private'),
+            readAt: receipt?.readAt ? String(receipt.readAt) : null,
+            created: String(notifRecord.created || receipt?.created || ''),
+            decryptFailed: true,
+          },
+        },
+        {
+          status: 200,
+          headers: {
+            'Cache-Control': 'private, no-store',
+          },
+        },
+      );
+    }
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'خطا در رمزگشایی و دریافت اعلان.';
-    return NextResponse.json({ message }, { status: 500 });
+    const message = error instanceof Error ? error.message : 'خطا در دریافت اعلان.';
+    return NextResponse.json(
+      { message },
+      { status: 500, headers: { 'Cache-Control': 'private, no-store' } },
+    );
   }
 }
