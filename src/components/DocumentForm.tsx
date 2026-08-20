@@ -278,10 +278,15 @@ function validateLine(line: DocumentLine) {
   ) {
     return 'برای خروج آبشده، یک موجودی فعال انتخاب کنید.';
   }
-  if (
-    (numberValue(line.details.purity) < 1 || numberValue(line.details.purity) > 999)
-  ) {
-    return 'عیار باید عددی بین ۱ تا ۹۹۹ باشد.';
+  if (line.details.rawKind !== 'conditional') {
+    const purityStr = normalizeDigits(line.details.purity).trim();
+    const purityNum = numberValue(purityStr);
+    if (purityNum < 1 || purityNum > 999) {
+      return 'عیار باید عددی بین ۱ تا ۹۹۹ باشد.';
+    }
+    if (purityStr.includes('.') && purityStr.split('.')[1].length > 1) {
+      return 'عیار حداکثر می‌تواند ۱ رقم اعشار داشته باشد.';
+    }
   }
   return '';
 }
@@ -511,6 +516,33 @@ export default function DocumentForm({
     window.addEventListener('zar:navigation-attempt', handleNavigationAttempt);
     return () => window.removeEventListener('zar:navigation-attempt', handleNavigationAttempt);
   }, [committedLines.length, draftReady]);
+
+  function handlePurityChange(val: string) {
+    const normalized = normalizeDigits(val);
+    if (normalized === '' || /^\d+(\.\d{0,1})?$/.test(normalized)) {
+      updateDraftDetail('purity', normalized);
+    }
+  }
+
+  function handleKeyDownEnter(
+    event: React.KeyboardEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>,
+  ) {
+    if (event.key === 'Enter' && event.currentTarget.tagName !== 'TEXTAREA') {
+      event.preventDefault();
+      const container = event.currentTarget.closest('.document-special-grid') || event.currentTarget.closest('.document-draft-editor');
+      if (container) {
+        const elements = Array.from(
+          container.querySelectorAll<HTMLElement>(
+            'input:not([readonly]):not([disabled]), select:not([disabled]), textarea:not([disabled]), button.document-commit-line-button',
+          ),
+        );
+        const currentIndex = elements.indexOf(event.currentTarget);
+        if (currentIndex >= 0 && currentIndex < elements.length - 1) {
+          elements[currentIndex + 1].focus();
+        }
+      }
+    }
+  }
 
   function updateDraftDetail<K extends keyof DetailState>(
     field: K,
@@ -1110,9 +1142,10 @@ export default function DocumentForm({
                     <input
                       type="number"
                       min="0"
-                      step="0.001"
+                      step={10 ** -weightPrecision}
                       value={draftLine.details.rawWeight}
                       onChange={(event) => updateDraftDetail('rawWeight', event.target.value)}
+                      onKeyDown={handleKeyDownEnter}
                     />
                   </Field>
                   {draftLine.details.rawKind !== 'conditional' ? (
@@ -1121,9 +1154,10 @@ export default function DocumentForm({
                         type="number"
                         min="1"
                         max="999"
-                        step="1"
+                        step="0.1"
                         value={draftLine.details.purity}
-                        onChange={(event) => updateDraftDetail('purity', event.target.value)}
+                        onChange={(event) => handlePurityChange(event.target.value)}
+                        onKeyDown={handleKeyDownEnter}
                       />
                     </Field>
                   ) : null}
@@ -1131,18 +1165,36 @@ export default function DocumentForm({
                     <input
                       readOnly
                       className="computed-field"
-                      value={faNumber(convertedTo750(draftLine.details.rawWeight, draftLine.details.purity), 3)}
+                      value={faNumber(convertedTo750(draftLine.details.rawWeight, draftLine.details.purity), weightPrecision)}
                     />
                   </Field>
                   {draftLine.details.rawKind !== 'misc' ? (
                     <>
-                      <Field label="نام آزمایشگاه ری‌گیری"><input value={draftLine.details.labName} onChange={(event) => updateDraftDetail('labName', event.target.value)} /></Field>
-                      <Field label="شماره پاکت"><input value={draftLine.details.pocketNumber} onChange={(event) => updateDraftDetail('pocketNumber', event.target.value)} /></Field>
-                      <Field label="شماره انگ"><input value={draftLine.details.stampNumber} onChange={(event) => updateDraftDetail('stampNumber', event.target.value)} /></Field>
+                      <Field label="نام آزمایشگاه ری‌گیری">
+                        <input
+                          value={draftLine.details.labName}
+                          onChange={(event) => updateDraftDetail('labName', event.target.value)}
+                          onKeyDown={handleKeyDownEnter}
+                          placeholder="نام آزمایشگاه"
+                        />
+                      </Field>
+                      <Field label="شماره پاکت / انگ">
+                        <input
+                          value={draftLine.details.stampNumber}
+                          onChange={(event) => updateDraftDetail('stampNumber', event.target.value)}
+                          onKeyDown={handleKeyDownEnter}
+                          placeholder="شماره پاکت یا انگ"
+                        />
+                      </Field>
                     </>
                   ) : null}
                   <Field label="توضیحات" wide>
-                    <textarea value={draftLine.description} onChange={(event) => setDraftLine((current) => ({ ...current, description: event.target.value }))} />
+                    <textarea
+                      value={draftLine.description}
+                      onChange={(event) => setDraftLine((current) => ({ ...current, description: event.target.value }))}
+                      onKeyDown={handleKeyDownEnter}
+                      placeholder="توضیحات تکمیلی..."
+                    />
                   </Field>
                 </div>
               </div>
@@ -1259,10 +1311,16 @@ export default function DocumentForm({
                   type="number"
                   min="1"
                   max="999"
-                  step="1"
-                  inputMode="numeric"
+                  step="0.1"
+                  inputMode="decimal"
                   value={draftLine.details.purity}
-                  onChange={(event) => updateMetalValue('purity', event.target.value)}
+                  onChange={(event) => {
+                    const norm = normalizeDigits(event.target.value);
+                    if (norm === '' || /^\d+(\.\d{0,1})?$/.test(norm)) {
+                      updateMetalValue('purity', norm);
+                    }
+                  }}
+                  onKeyDown={handleKeyDownEnter}
                   placeholder="۷۵۰"
                   className="w-[8ch]"
                 />
@@ -1317,21 +1375,16 @@ export default function DocumentForm({
                     <input
                       value={draftLine.details.labName}
                       onChange={(event) => updateDraftDetail('labName', event.target.value)}
+                      onKeyDown={handleKeyDownEnter}
                       placeholder="نام آزمایشگاه"
                     />
                   </Field>
-                  <Field label="شماره پاکت">
-                    <input
-                      value={draftLine.details.pocketNumber}
-                      onChange={(event) => updateDraftDetail('pocketNumber', event.target.value)}
-                      placeholder="شماره پاکت"
-                    />
-                  </Field>
-                  <Field label="شماره انگ">
+                  <Field label="شماره پاکت / انگ">
                     <input
                       value={draftLine.details.stampNumber}
                       onChange={(event) => updateDraftDetail('stampNumber', event.target.value)}
-                      placeholder="شماره انگ"
+                      onKeyDown={handleKeyDownEnter}
+                      placeholder="شماره پاکت یا انگ"
                     />
                   </Field>
                 </>
@@ -1344,6 +1397,7 @@ export default function DocumentForm({
                     ...current,
                     description: event.target.value,
                   }))}
+                  onKeyDown={handleKeyDownEnter}
                   placeholder="توضیحات تکمیلی این ردیف..."
                 />
               </Field>
@@ -1572,10 +1626,9 @@ export default function DocumentForm({
             : ''
         }`}
       >
-        <div className="document-lines-head flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+        <div className="document-lines-head flex items-center justify-between pb-1.5 border-b border-slate-100 dark:border-slate-800">
           <div>
-            <p className="eyebrow">ردیف‌های سند</p>
-            <h2 className="flex items-center gap-2">
+            <h2 className="flex items-center gap-2 text-sm font-bold text-slate-800 dark:text-slate-100">
               <ClipboardList size={17} />
               <span>ردیف‌های سند ({faNumber(committedLines.length)})</span>
             </h2>
@@ -1585,7 +1638,7 @@ export default function DocumentForm({
           <button
             type="button"
             onClick={toggleLinesPin}
-            className={`p-2 rounded-xl transition-all border ${
+            className={`p-1.5 rounded-lg transition-all border ${
               isLinesPinned
                 ? 'bg-amber-500 border-amber-600 text-white shadow-sm ring-2 ring-amber-400/30 dark:bg-amber-600 dark:border-amber-500'
                 : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'
@@ -1593,7 +1646,7 @@ export default function DocumentForm({
             title={isLinesPinned ? 'غیرفعال‌سازی حالت چسبان' : 'فعال‌سازی حالت چسبان'}
             aria-label={isLinesPinned ? 'غیرفعال‌سازی حالت چسبان' : 'فعال‌سازی حالت چسبان'}
           >
-            {isLinesPinned ? <Pin size={16} className="fill-current" /> : <PinOff size={16} />}
+            {isLinesPinned ? <Pin size={15} className="fill-current" /> : <PinOff size={15} />}
           </button>
         </div>
 
@@ -1634,25 +1687,27 @@ export default function DocumentForm({
           </div>
         )}
 
-        {committedLines.length ? (
-          <div className="document-totals-bar mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-xs flex items-center justify-between">
-            <span className="text-slate-600 dark:text-slate-400">خالص اثر سند بر مانده طلا:</span>
-            <strong className={totals >= 0 ? 'is-positive text-emerald-600 dark:text-emerald-400' : 'is-negative text-rose-600 dark:text-rose-400'}>
-              {faNumber(Math.abs(totals), 3)} گرم
-              {' · '}
-              {totals >= 0 ? 'بستانکار' : 'بدهکار'}
-            </strong>
-          </div>
-        ) : null}
-      </section>
+        <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+          {committedLines.length ? (
+            <div className="flex items-center justify-between gap-2 px-3 py-1.5 border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50/80 dark:bg-slate-900/80 text-xs font-bold shrink-0">
+              <span className="text-slate-600 dark:text-slate-400">خالص اثر سند بر مانده طلا:</span>
+              <strong className={totals >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
+                {faNumber(Math.abs(totals), weightPrecision)} گرم
+                {' · '}
+                {totals >= 0 ? 'بستانکار' : 'بدهکار'}
+              </strong>
+            </div>
+          ) : <div className="hidden sm:block flex-1" />}
 
-      <div className="document-actions">
-        <DocumentSubmitActions
-          onSubmit={async (status) => {
-            await save(status);
-          }}
-        />
-      </div>
+          <div className="flex-1 min-w-[260px]">
+            <DocumentSubmitActions
+              onSubmit={async (status) => {
+                await save(status);
+              }}
+            />
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

@@ -806,10 +806,40 @@
   grid-column: 1 / -1;
 }
 
-.raw-gold-fields textarea {
+.raw-gold-fields textarea,
+.account-field textarea {
   width: 100%;
-  min-height: 76px;
+  min-height: 70px;
+  border: 1px solid #cbd5e1;
+  border-radius: 11px;
+  background: #ffffff;
+  padding: 8px 12px;
+  color: #1e293b;
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1.6;
   resize: vertical;
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.raw-gold-fields textarea:focus,
+.account-field textarea:focus {
+  outline: none;
+  border-color: #d9b13b;
+  box-shadow: 0 0 0 3px rgba(217, 177, 59, 0.15);
+}
+
+[data-theme="dark"] .raw-gold-fields textarea,
+[data-theme="dark"] .account-field textarea {
+  border-color: #334155;
+  background: #1e293b;
+  color: #f8fafc;
+}
+
+[data-theme="dark"] .raw-gold-fields textarea:focus,
+[data-theme="dark"] .account-field textarea:focus {
+  border-color: #e7c35a;
+  box-shadow: 0 0 0 3px rgba(231, 195, 90, 0.2);
 }
 
 .raw-metal-result {
