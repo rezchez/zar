@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getServerAuthContext } from '@/lib/auth';
-import { defaultSettings, normalizeSettings, type AppSettings } from '@/lib/settings';
+import { defaultSettings, normalizeSettings } from '@/lib/settings';
 import { recordAuditEvent } from '@/lib/audit';
 
 function isAllowed(context: Awaited<ReturnType<typeof getServerAuthContext>>) {
@@ -60,6 +60,34 @@ async function handleUpdate(request: Request) {
     }
   }
 
+  if (body.goldBaseKarat !== undefined) {
+    const karat = Number(body.goldBaseKarat);
+    if (!Number.isFinite(karat) || karat <= 0 || karat > 1000) {
+      return NextResponse.json({ message: 'عیار مبنای طلا باید عددی بین ۱ تا ۱۰۰۰ باشد.' }, { status: 400 });
+    }
+  }
+
+  if (body.platinumBaseKarat !== undefined) {
+    const karat = Number(body.platinumBaseKarat);
+    if (!Number.isFinite(karat) || karat <= 0 || karat > 1000) {
+      return NextResponse.json({ message: 'عیار مبنای پلاتین باید عددی بین ۱ تا ۱۰۰۰ باشد.' }, { status: 400 });
+    }
+  }
+
+  if (body.silverBaseKarat !== undefined) {
+    const karat = Number(body.silverBaseKarat);
+    if (!Number.isFinite(karat) || karat <= 0 || karat > 1000) {
+      return NextResponse.json({ message: 'عیار مبنای نقره باید عددی بین ۱ تا ۱۰۰۰ باشد.' }, { status: 400 });
+    }
+  }
+
+  if (body.documentNumberPrefix !== undefined || body.docCodePrefix !== undefined) {
+    const rawPrefix = String(body.documentNumberPrefix ?? body.docCodePrefix).trim();
+    if (/[\r\n\t\0]/.test(rawPrefix) || rawPrefix.length > 20) {
+      return NextResponse.json({ message: 'متن شروع شماره فاکتور/سند معتبر نیست یا بیش از حد طولانی است.' }, { status: 400 });
+    }
+  }
+
   try {
     const collection = context.pb.collection('app_settings');
     const existing = await collection.getFirstListItem('id != ""').catch(() => null);
@@ -76,7 +104,11 @@ async function handleUpdate(request: Request) {
       fiscalYearStartDateJalali: nextNormalized.fiscalYearStartDateJalali,
       baseCurrency: nextNormalized.baseCurrency,
       weightDecimalPlaces: nextNormalized.weightDecimalPlaces,
-      docCodePrefix: nextNormalized.docCodePrefix,
+      goldBaseKarat: nextNormalized.goldBaseKarat,
+      platinumBaseKarat: nextNormalized.platinumBaseKarat,
+      silverBaseKarat: nextNormalized.silverBaseKarat,
+      documentNumberPrefix: nextNormalized.documentNumberPrefix,
+      docCodePrefix: nextNormalized.documentNumberPrefix,
 
       bodyFontFamily: nextNormalized.bodyFontFamily,
       bodyFontSize: nextNormalized.bodyFontSize,

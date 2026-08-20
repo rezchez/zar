@@ -143,9 +143,16 @@ export default function NotificationCenter({ userRole }: { userRole: 'user' | 'm
   }, [playNotificationSound]);
 
   useEffect(() => {
-    fetchNotifications();
-    const interval = setInterval(fetchNotifications, 5000);
-    return () => clearInterval(interval);
+    const timer = setTimeout(() => {
+      void fetchNotifications();
+    }, 0);
+    const interval = setInterval(() => {
+      void fetchNotifications();
+    }, 5000);
+    return () => {
+      clearTimeout(timer);
+      clearInterval(interval);
+    };
   }, [fetchNotifications]);
 
   useEffect(() => {
@@ -180,7 +187,10 @@ export default function NotificationCenter({ userRole }: { userRole: 'user' | 'm
 
   useEffect(() => {
     if (isSendModalOpen) {
-      fetchUsersList();
+      const timer = setTimeout(() => {
+        void fetchUsersList();
+      }, 0);
+      return () => clearTimeout(timer);
     }
   }, [isSendModalOpen, fetchUsersList]);
 

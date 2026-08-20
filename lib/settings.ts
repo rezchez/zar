@@ -5,6 +5,10 @@ export type AppSettings = {
   fiscalYearStartDateJalali: string;
   baseCurrency: 'IRR' | 'IRT';
   weightDecimalPlaces: 1 | 2 | 3;
+  goldBaseKarat: number;
+  platinumBaseKarat: number;
+  silverBaseKarat: number;
+  documentNumberPrefix: string;
   docCodePrefix: string;
 
   bodyFontFamily: string;
@@ -28,7 +32,11 @@ export const defaultSettings: AppSettings = {
   fiscalYearStartDateJalali: '',
   baseCurrency: 'IRR',
   weightDecimalPlaces: 3,
-  docCodePrefix: 'ZF',
+  goldBaseKarat: 750,
+  platinumBaseKarat: 800,
+  silverBaseKarat: 925,
+  documentNumberPrefix: 'سند-',
+  docCodePrefix: 'سند-',
 
   bodyFontFamily: 'Vazirmatn',
   bodyFontSize: 'md',
@@ -40,6 +48,10 @@ export const defaultSettings: AppSettings = {
 };
 
 export const defaultAppSettings = defaultSettings;
+
+function isValidKarat(value: number): boolean {
+  return Number.isFinite(value) && value > 0 && value <= 1000;
+}
 
 export function normalizeSettings(input: Record<string, unknown>): AppSettings {
   const baseCurr = String(
@@ -62,6 +74,21 @@ export function normalizeSettings(input: Record<string, unknown>): AppSettings {
 
   const fiscalStart = input.fiscalYearStartDate ?? input.fiscal_year_start ?? null;
 
+  const rawGoldKarat = Number(input.goldBaseKarat ?? input.gold_base_karat);
+  const goldBaseKarat = isValidKarat(rawGoldKarat) ? rawGoldKarat : defaultSettings.goldBaseKarat;
+
+  const rawPlatKarat = Number(input.platinumBaseKarat ?? input.platinum_base_karat);
+  const platinumBaseKarat = isValidKarat(rawPlatKarat) ? rawPlatKarat : defaultSettings.platinumBaseKarat;
+
+  const rawSilvKarat = Number(input.silverBaseKarat ?? input.silver_base_karat);
+  const silverBaseKarat = isValidKarat(rawSilvKarat) ? rawSilvKarat : defaultSettings.silverBaseKarat;
+
+  const docPrefixRaw = String(
+    input.documentNumberPrefix ?? input.docCodePrefix ?? input.doc_code_prefix ?? defaultSettings.documentNumberPrefix,
+  ).trim();
+
+  const documentNumberPrefix = docPrefixRaw.slice(0, 20) || defaultSettings.documentNumberPrefix;
+
   return {
     id: input.id ? String(input.id) : undefined,
     organizationName: orgName,
@@ -73,10 +100,11 @@ export function normalizeSettings(input: Record<string, unknown>): AppSettings {
       .slice(0, 30),
     baseCurrency,
     weightDecimalPlaces,
-    docCodePrefix:
-      String(input.docCodePrefix ?? input.doc_code_prefix ?? defaultSettings.docCodePrefix)
-        .trim()
-        .slice(0, 12) || 'ZF',
+    goldBaseKarat,
+    platinumBaseKarat,
+    silverBaseKarat,
+    documentNumberPrefix,
+    docCodePrefix: documentNumberPrefix,
 
     bodyFontFamily: String(input.bodyFontFamily ?? input.body_font_family ?? defaultSettings.bodyFontFamily).trim(),
     bodyFontSize: String(input.bodyFontSize ?? input.body_font_size ?? defaultSettings.bodyFontSize).trim(),

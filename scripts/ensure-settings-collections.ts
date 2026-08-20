@@ -8,7 +8,11 @@ const appSettingsFields = [
   { id: 'text_fiscal_start_jalali', name: 'fiscalYearStartDateJalali', type: 'text', required: false, max: 20 },
   { id: 'text_base_currency', name: 'baseCurrency', type: 'text', required: false, max: 12 },
   { id: 'num_weight_precision', name: 'weightDecimalPlaces', type: 'number', required: false, min: 1, max: 3 },
-  { id: 'text_doc_code_prefix', name: 'docCodePrefix', type: 'text', required: false, max: 12 },
+  { id: 'num_gold_base_karat', name: 'goldBaseKarat', type: 'number', required: false, min: 1, max: 1000 },
+  { id: 'num_plat_base_karat', name: 'platinumBaseKarat', type: 'number', required: false, min: 1, max: 1000 },
+  { id: 'num_silv_base_karat', name: 'silverBaseKarat', type: 'number', required: false, min: 1, max: 1000 },
+  { id: 'text_doc_num_prefix', name: 'documentNumberPrefix', type: 'text', required: false, max: 20 },
+  { id: 'text_doc_code_prefix', name: 'docCodePrefix', type: 'text', required: false, max: 20 },
   { id: 'text_body_font_family', name: 'bodyFontFamily', type: 'text', required: false, max: 60 },
   { id: 'text_heading_font_family', name: 'headingFontFamily', type: 'text', required: false, max: 60 },
   { id: 'text_body_font_size', name: 'bodyFontSize', type: 'text', required: false, max: 20 },
@@ -90,6 +94,31 @@ async function main() {
   } else {
     await pb.collections.create(fontsPayload).catch(console.error);
     console.log('custom_fonts collection created');
+  }
+
+  // Ensure transaction collection fields
+  const existingTransactions = await pb.collections.getFirstListItem(
+    pb.filter('name = {:name}', { name: 'transactions' }),
+  ).catch(() => null);
+
+  if (existingTransactions) {
+    const rawFields = existingTransactions.fields;
+    const fields = Array.isArray(rawFields) ? [...rawFields] as Record<string, unknown>[] : [];
+    let updated = false;
+
+    if (!fields.some((f) => f.name === 'documentSequence')) {
+      fields.push({ id: 'num_doc_seq', name: 'documentSequence', type: 'number', required: false, min: 1 });
+      updated = true;
+    }
+    if (!fields.some((f) => f.name === 'documentNumberPrefixSnapshot')) {
+      fields.push({ id: 'text_doc_prefix_snap', name: 'documentNumberPrefixSnapshot', type: 'text', required: false, max: 20 });
+      updated = true;
+    }
+
+    if (updated) {
+      await pb.collections.update(existingTransactions.id, { fields }).catch(console.error);
+      console.log('transactions collection updated with sequence and snapshot fields');
+    }
   }
 }
 

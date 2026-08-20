@@ -46,7 +46,6 @@ function getTodayJalali() {
 }
 
 export default function GlassJalaliCalendar({
-  selectedDate,
   onDateSelect,
   events = [],
   className = '',

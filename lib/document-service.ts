@@ -1,33 +1,70 @@
 import type PocketBase from 'pocketbase';
-import { normalizeDigits } from '@/lib/jalali';
+import { defaultSettings, normalizeSettings } from '@/lib/settings';
 
-export async function getNextDocumentSequence(pb: PocketBase, userId?: string) {
-  // Do not use Promise.all here: PocketBase autocancels concurrent requests
-  // made through the same client unless request keys are managed manually.
-  const records = await pb.collection('transactions').getFullList({
-    sort: '-created',
-  });
-  const userRecords = records.filter((record) => (
-    record.transactionType === 'document'
-    && (!userId || record.createdBy === userId)
-  ));
-  const maximum = userRecords.reduce((current, record) => {
-    const raw = String(record.documentNumber ?? '');
-    const suffix = raw.match(/(\d+)$/)?.[1] ?? raw;
-    const value = Number(suffix);
-    return Number.isInteger(value) && value > current ? value : current;
-  }, 0);
+export async function getActiveDocumentPrefix(pb: PocketBase): Promise<string> {
+  try {
+    const record = await pb.collection('app_settings').getFirstListItem('id != ""');
+    if (record) {
+      const norm = normalizeSettings(record as Record<string, unknown>);
+      return norm.documentNumberPrefix || defaultSettings.documentNumberPrefix;
+    }
+  } catch {
+    // ignore
+  }
+  return defaultSettings.documentNumberPrefix;
+}
 
-  return maximum + 1;
+export async function getNextDocumentSequenceForCustomer(
+  pb: PocketBase,
+  customerId: string,
+): Promise<number> {
+  if (!customerId) return 1;
+
+  try {
+    const records = await pb.collection('transactions').getFullList({
+      filter: pb.filter('customer = {:customerId} && is_deleted = false', { customerId }),
+      sort: '-created',
+    });
+
+    let maxSequence = 0;
+
+    for (const record of records) {
+      if (typeof record.documentSequence === 'number' && Number.isFinite(record.documentSequence) && record.documentSequence > 0) {
+        if (record.documentSequence > maxSequence) {
+          maxSequence = record.documentSequence;
+        }
+      } else {
+        const raw = String(record.documentNumber ?? '');
+        const match = raw.match(/(\d+)$/);
+        if (match) {
+          const val = Number(match[1]);
+          if (Number.isInteger(val) && val > maxSequence) {
+            maxSequence = val;
+          }
+        }
+      }
+    }
+
+    return maxSequence + 1;
+  } catch {
+    return 1;
+  }
 }
 
 export function buildDocumentNumber(
-  documentDateJalali: string,
-  customerCode: number,
+  prefix: string,
   sequence: number,
-) {
-  const dateDigits = normalizeDigits(documentDateJalali).replace(/\D/g, '');
-  return `ZF${dateDigits}${customerCode}${sequence}`;
+): string {
+  const p = (prefix || defaultSettings.documentNumberPrefix).trim();
+  return `${p}${sequence}`;
 }
 
-export const getNextDocumentNumber = getNextDocumentSequence;
+export async function getNextDocumentNumber(
+  pb: PocketBase,
+  customerId: string,
+): Promise<{ prefix: string; sequence: number; documentNumber: string }> {
+  const prefix = await getActiveDocumentPrefix(pb);
+  const sequence = await getNextDocumentSequenceForCustomer(pb, customerId);
+  const documentNumber = buildDocumentNumber(prefix, sequence);
+  return { prefix, sequence, documentNumber };
+}

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Settings2,
   Save,
@@ -15,9 +15,12 @@ import {
   AlertCircle,
   Eye,
   Loader2,
+  ChevronLeft,
+  ChevronRight,
+  FileText,
 } from 'lucide-react';
 import { useAppSettings } from './SettingsProvider';
-import { jalaliDateToIso, parseJalaliDate } from '@/lib/jalali';
+import { jalaliDateToIso, parseJalaliDate, formatJalaliDate } from '@/lib/jalali';
 import { formatMoney } from '@/lib/money';
 
 const FONT_WEIGHT_LABELS: Record<number, string> = {
@@ -51,6 +54,12 @@ const JALALI_MONTHS = [
   'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند',
 ];
 
+const WEEK_DAYS = ['ش', 'ی', 'د', 'س', 'چ', 'پ', 'ج'];
+
+function toFaDigits(str: string | number): string {
+  return String(str).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
+}
+
 export default function ProgramSettings() {
   const {
     settings,
@@ -62,16 +71,25 @@ export default function ProgramSettings() {
 
   const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'custom_fonts'>('general');
 
-  // Form State
-  const [form, setForm] = useState({ ...settings });
+  // Form State initialized directly from settings
+  const [form, setForm] = useState(() => ({ ...settings }));
+  const [prevSettings, setPrevSettings] = useState(settings);
+
+  // Sync state if settings prop object changes from server
+  if (settings !== prevSettings) {
+    setPrevSettings(settings);
+    setForm({ ...settings });
+  }
+
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Fiscal year Jalali date picker state
-  const [jalaliYear, setJalaliYear] = useState<number>(1405);
-  const [jalaliMonth, setJalaliMonth] = useState<number>(1);
-  const [jalaliDay, setJalaliDay] = useState<number>(1);
+  // Fiscal year Jalali date picker popover state
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
+  const [calendarViewYear, setCalendarViewYear] = useState(1405);
+  const [calendarViewMonth, setCalendarViewMonth] = useState(1);
+  const datePickerRef = useRef<HTMLDivElement>(null);
 
   // Upload custom font state
   const [fontForm, setFontForm] = useState({
@@ -84,16 +102,14 @@ export default function ProgramSettings() {
   const [fontUploadMessage, setFontUploadMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
-    setForm({ ...settings });
-    if (settings.fiscalYearStartDateJalali) {
-      const parsed = parseJalaliDate(settings.fiscalYearStartDateJalali);
-      if (parsed) {
-        setJalaliYear(parsed.year);
-        setJalaliMonth(parsed.month);
-        setJalaliDay(parsed.day);
+    function handleClickOutside(e: MouseEvent) {
+      if (datePickerRef.current && !datePickerRef.current.contains(e.target as Node)) {
+        setDatePickerOpen(false);
       }
     }
-  }, [settings]);
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   function updateFormField<K extends keyof typeof form>(key: K, value: typeof form[K]) {
     setSaveSuccess(false);
@@ -101,13 +117,9 @@ export default function ProgramSettings() {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
-  // Handle Jalali Fiscal Year Start Date selection
-  function handleJalaliDateChange(y: number, m: number, d: number) {
-    setJalaliYear(y);
-    setJalaliMonth(m);
-    setJalaliDay(d);
-
-    const jalaliStr = `${y}/${String(m).padStart(2, '0')}/${String(d).padStart(2, '0')}`;
+  // Handle Jalali Fiscal Year Start Date selection from Calendar
+  function handleSelectFiscalDate(year: number, month: number, day: number) {
+    const jalaliStr = `${year}/${String(month).padStart(2, '0')}/${String(day).padStart(2, '0')}`;
     const isoStr = jalaliDateToIso(jalaliStr);
 
     setForm((prev) => ({
@@ -115,6 +127,7 @@ export default function ProgramSettings() {
       fiscalYearStartDateJalali: jalaliStr,
       fiscalYearStartDate: isoStr,
     }));
+    setDatePickerOpen(false);
   }
 
   // Save Settings handler
@@ -226,6 +239,11 @@ export default function ProgramSettings() {
     return custom ? custom.availableWeights : [700];
   }, [form.headingFontFamily, customFonts]);
 
+  const parsedFiscalDate = useMemo(() => {
+    if (!form.fiscalYearStartDateJalali) return null;
+    return parseJalaliDate(form.fiscalYearStartDateJalali);
+  }, [form.fiscalYearStartDateJalali]);
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[300px] text-slate-500 gap-2">
@@ -242,7 +260,7 @@ export default function ProgramSettings() {
         <div>
           <p className="eyebrow">مدیریت سامانه</p>
           <h1>تنظیمات کلی برنامه</h1>
-          <p>تنظیمات واقعی و پایدار سامانه حسابداری طلا و فلزات گران‌بها.</p>
+          <p>تنظیمات اصلی و پایدار سامانه Zarfolio.</p>
         </div>
         <span className="dashboard-status-pill">
           <Settings2 size={15} />
@@ -312,10 +330,10 @@ export default function ProgramSettings() {
           <section className="dashboard-panel p-6 space-y-6">
             <div className="account-panel-heading border-b border-slate-100 dark:border-slate-800 pb-4">
               <div>
-                <p className="eyebrow">هویت کسب‌وکار</p>
+                <p className="eyebrow">هویت کسب‌وکار و سال مالی</p>
                 <h2 className="flex items-center gap-2">
                   <Building2 size={18} className="text-amber-600" />
-                  مشخصات عمومی و سال مالی
+                  مشخصات عمومی
                 </h2>
               </div>
             </div>
@@ -336,56 +354,152 @@ export default function ProgramSettings() {
                 />
               </label>
 
-              {/* Fiscal Year Start Date */}
-              <div className="account-field">
+              {/* Document Number Prefix */}
+              <label className="account-field">
+                <span className="font-bold text-xs flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
+                  <FileText size={14} />
+                  متن شروع شماره فاکتور / سند
+                </span>
+                <input
+                  type="text"
+                  value={form.documentNumberPrefix}
+                  onChange={(e) => updateFormField('documentNumberPrefix', e.target.value)}
+                  placeholder="مثال: سند-"
+                  maxLength={20}
+                />
+                <small className="text-slate-500">
+                  این پیشوند در انتهای شماره‌گذاری خودکار قبل از شماره ترتیبی قرار می‌گیرد (مثال: {form.documentNumberPrefix || 'سند-'}۱۳).
+                </small>
+              </label>
+
+              {/* Fiscal Year Start Date with Calendar Popover */}
+              <div className="account-field relative" ref={datePickerRef}>
                 <span className="font-bold text-xs flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
                   <Calendar size={14} />
                   تاریخ شروع سال مالی (جلالی)
                 </span>
 
-                <div className="grid grid-cols-3 gap-2">
-                  {/* Year */}
-                  <select
-                    value={jalaliYear}
-                    onChange={(e) => handleJalaliDateChange(Number(e.target.value), jalaliMonth, jalaliDay)}
-                    className="account-field select"
-                  >
-                    {[1402, 1403, 1404, 1405, 1406, 1407, 1408].map((y) => (
-                      <option key={y} value={y}>
-                        {y.toLocaleString('fa-IR')}
-                      </option>
-                    ))}
-                  </select>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (parsedFiscalDate) {
+                      setCalendarViewYear(parsedFiscalDate.year);
+                      setCalendarViewMonth(parsedFiscalDate.month);
+                    }
+                    setDatePickerOpen((prev) => !prev);
+                  }}
+                  className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-xs font-bold hover:border-amber-500 transition-colors"
+                >
+                  <span className="flex items-center gap-2">
+                    <Calendar size={15} className="text-amber-600" />
+                    {form.fiscalYearStartDateJalali
+                      ? toFaDigits(form.fiscalYearStartDateJalali)
+                      : 'انتخاب تاریخ جلالی...'}
+                  </span>
+                  <ChevronLeft size={16} className={`transition-transform ${datePickerOpen ? '-rotate-90' : ''}`} />
+                </button>
 
-                  {/* Month */}
-                  <select
-                    value={jalaliMonth}
-                    onChange={(e) => handleJalaliDateChange(jalaliYear, Number(e.target.value), jalaliDay)}
-                    className="account-field select"
-                  >
-                    {JALALI_MONTHS.map((mName, idx) => (
-                      <option key={mName} value={idx + 1}>
-                        {mName}
-                      </option>
-                    ))}
-                  </select>
+                {datePickerOpen && (
+                  <div className="absolute top-full right-0 mt-2 z-50 w-72 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl p-4 space-y-3">
+                    {/* Header */}
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800 text-xs font-bold">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (calendarViewMonth === 12) {
+                            setCalendarViewYear((y) => y + 1);
+                            setCalendarViewMonth(1);
+                          } else {
+                            setCalendarViewMonth((m) => m + 1);
+                          }
+                        }}
+                        className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg"
+                      >
+                        <ChevronRight size={16} />
+                      </button>
 
-                  {/* Day */}
-                  <select
-                    value={jalaliDay}
-                    onChange={(e) => handleJalaliDateChange(jalaliYear, jalaliMonth, Number(e.target.value))}
-                    className="account-field select"
-                  >
-                    {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
-                      <option key={d} value={d}>
-                        {d.toLocaleString('fa-IR')}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                      <div className="flex gap-2">
+                        <select
+                          value={calendarViewMonth}
+                          onChange={(e) => setCalendarViewMonth(Number(e.target.value))}
+                          className="bg-transparent font-bold text-amber-700 dark:text-amber-400 cursor-pointer"
+                        >
+                          {JALALI_MONTHS.map((m, idx) => (
+                            <option key={m} value={idx + 1}>{m}</option>
+                          ))}
+                        </select>
+                        <select
+                          value={calendarViewYear}
+                          onChange={(e) => setCalendarViewYear(Number(e.target.value))}
+                          className="bg-transparent font-bold text-amber-700 dark:text-amber-400 cursor-pointer"
+                        >
+                          {[1401, 1402, 1403, 1404, 1405, 1406, 1407, 1408, 1409, 1410].map((y) => (
+                            <option key={y} value={y}>{toFaDigits(y)}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (calendarViewMonth === 1) {
+                            setCalendarViewYear((y) => y - 1);
+                            setCalendarViewMonth(12);
+                          } else {
+                            setCalendarViewMonth((m) => m - 1);
+                          }
+                        }}
+                        className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg"
+                      >
+                        <ChevronLeft size={16} />
+                      </button>
+                    </div>
+
+                    {/* Days Header */}
+                    <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-slate-400">
+                      {WEEK_DAYS.map((d) => <span key={d}>{d}</span>)}
+                    </div>
+
+                    {/* Grid Days */}
+                    <div className="grid grid-cols-7 gap-1 text-center text-xs">
+                      {Array.from({ length: calendarViewMonth <= 6 ? 31 : calendarViewMonth <= 11 ? 30 : 29 }, (_, i) => i + 1).map((d) => {
+                        const isSelected = parsedFiscalDate?.year === calendarViewYear && parsedFiscalDate?.month === calendarViewMonth && parsedFiscalDate?.day === d;
+                        return (
+                          <button
+                            type="button"
+                            key={d}
+                            onClick={() => handleSelectFiscalDate(calendarViewYear, calendarViewMonth, d)}
+                            className={`p-1.5 rounded-lg font-bold transition-colors ${
+                              isSelected
+                                ? 'bg-amber-500 text-white'
+                                : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
+                            }`}
+                          >
+                            {toFaDigits(d)}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center text-[11px]">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const today = parseJalaliDate(formatJalaliDate());
+                          if (today) handleSelectFiscalDate(today.year, today.month, today.day);
+                        }}
+                        className="text-amber-600 font-bold hover:underline"
+                      >
+                        انتخاب امروز
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 <small className="text-slate-500">
-                  تاریخ انتخاب‌شده: {jalaliDay.toLocaleString('fa-IR')} {JALALI_MONTHS[jalaliMonth - 1]} {jalaliYear.toLocaleString('fa-IR')}
+                  {form.fiscalYearStartDateJalali
+                    ? `تاریخ جلالی ذخیره‌شده: ${toFaDigits(form.fiscalYearStartDateJalali)}`
+                    : 'تاریخی انتخاب نشده است.'}
                 </small>
               </div>
 
@@ -425,6 +539,72 @@ export default function ProgramSettings() {
                 <small className="text-slate-500">
                   دقت محاسبات و فرم‌های ثبت وزن بر اساس این تنظیم اعمال می‌شود.
                 </small>
+              </label>
+            </div>
+          </section>
+
+          {/* Section: Base Karats */}
+          <section className="dashboard-panel p-6 space-y-6">
+            <div className="account-panel-heading border-b border-slate-100 dark:border-slate-800 pb-4">
+              <div>
+                <p className="eyebrow">محاسبات طلا و فلزات</p>
+                <h2 className="flex items-center gap-2">
+                  <Scale size={18} className="text-amber-600" />
+                  عیار مبنای فلزات گران‌بها
+                </h2>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+              {/* Gold Base Karat */}
+              <label className="account-field">
+                <span className="font-bold text-xs flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
+                  عیار مبنای طلا
+                </span>
+                <input
+                  type="number"
+                  min="1"
+                  max="1000"
+                  value={form.goldBaseKarat}
+                  onChange={(e) => updateFormField('goldBaseKarat', Number(e.target.value))}
+                  placeholder="750"
+                  required
+                />
+                <small className="text-slate-500">مقدار پیش‌فرض: ۷۵۰ (۱۸ عیار)</small>
+              </label>
+
+              {/* Platinum Base Karat */}
+              <label className="account-field">
+                <span className="font-bold text-xs flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
+                  عیار مبنای پلاتین
+                </span>
+                <input
+                  type="number"
+                  min="1"
+                  max="1000"
+                  value={form.platinumBaseKarat}
+                  onChange={(e) => updateFormField('platinumBaseKarat', Number(e.target.value))}
+                  placeholder="800"
+                  required
+                />
+                <small className="text-slate-500">مقدار پیش‌فرض: ۸۰۰</small>
+              </label>
+
+              {/* Silver Base Karat */}
+              <label className="account-field">
+                <span className="font-bold text-xs flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
+                  عیار مبنای نقره
+                </span>
+                <input
+                  type="number"
+                  min="1"
+                  max="1000"
+                  value={form.silverBaseKarat}
+                  onChange={(e) => updateFormField('silverBaseKarat', Number(e.target.value))}
+                  placeholder="925"
+                  required
+                />
+                <small className="text-slate-500">مقدار پیش‌فرض: ۹۲۵ (استرلینگ)</small>
               </label>
             </div>
           </section>

@@ -5,13 +5,15 @@ import { recordAuditEvent } from '@/lib/audit';
 import { getServerAuthContext } from '@/lib/auth';
 import {
   serializeDocumentDetails,
+  mapDocument,
 } from '@/lib/document';
 import {
   buildDocumentNumber,
-  getNextDocumentSequence,
+  getActiveDocumentPrefix,
+  getNextDocumentNumber,
+  getNextDocumentSequenceForCustomer,
 } from '@/lib/document-service';
 import { jalaliDateToIso, normalizeDigits } from '@/lib/jalali';
-import { mapDocument } from '@/lib/document';
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
 
 const amountFields = [
@@ -109,8 +111,22 @@ export async function GET(request: Request) {
         inventory: [...inflows.values()].filter((item) => item.remainingWeight > 0.0000001),
       });
     }
+
+    const customerId = url.searchParams.get('customerId') ?? '';
+    if (customerId) {
+      const docInfo = await getNextDocumentNumber(context.pb, customerId);
+      return NextResponse.json({
+        nextDocumentSequence: docInfo.sequence,
+        documentNumberPrefix: docInfo.prefix,
+        documentNumber: docInfo.documentNumber,
+      });
+    }
+
+    const defaultPrefix = await getActiveDocumentPrefix(context.pb);
     return NextResponse.json({
-      nextDocumentSequence: await getNextDocumentSequence(context.pb, context.user.id),
+      nextDocumentSequence: 1,
+      documentNumberPrefix: defaultPrefix,
+      documentNumber: `${defaultPrefix}1`,
     });
   } catch {
     return NextResponse.json(
@@ -150,19 +166,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // The number is assigned on the server so two browser tabs cannot
-    // accidentally reuse a stale number shown in the form.
-    const documentSequence = await getNextDocumentSequence(context.pb, context.user.id);
-    const documentNumber = buildDocumentNumber(
-      documentDateJalali,
-      Number(customer.customerCode ?? 0),
-      documentSequence,
-    );
     const documentId = readString(body.documentId, 80) || randomUUID();
-    const requestedLines = Array.isArray(body.lines) ? body.lines : [body];
-    const lines = requestedLines.length
-      ? requestedLines
-      : [body];
     const existingDocument = await context.pb.collection('transactions').getFullList({
       filter: context.pb.filter(
         'documentId = {:documentId} && is_deleted = false',
@@ -170,15 +174,21 @@ export async function POST(request: Request) {
       ),
       sort: 'documentLineNumber',
     }).catch(() => []);
+
     if (existingDocument.length > 0) {
       return NextResponse.json({
         transactions: existingDocument.map(mapDocument),
         transaction: mapDocument(existingDocument[0]),
         documentId,
         documentNumber: String(existingDocument[0].documentNumber ?? ''),
+        documentSequence: Number(existingDocument[0].documentSequence ?? 1),
         alreadyExists: true,
       }, { status: 200 });
     }
+
+    const requestedLines = Array.isArray(body.lines) ? body.lines : [body];
+    const lines = requestedLines.length ? requestedLines : [body];
+
     const inventoryRecords = await context.pb.collection('transactions').getFullList({
       filter: 'documentSubType = "incoming-molten" || documentSubType = "outgoing-molten"',
       sort: 'created',
@@ -240,70 +250,91 @@ export async function POST(request: Request) {
       };
     });
 
-    const documentPayloads = preparedLines.map((prepared) => ({
-      customer: customer.id,
-      customerCode: Number(customer.customerCode ?? 0),
-      createdBy: context.user.id,
-      updatedBy: context.user.id,
-      transactionType: 'document',
-      status: requestedStatus,
-      isOpeningBalance: false,
-      sourceKey: `document:${documentId}:${prepared.lineNumber}`,
-      transactionDate,
-      documentId,
-      documentNumber,
-      description: readString(prepared.line.description ?? body.description, 2000),
-      documentNature: prepared.lineNature,
-      documentTab: readString(prepared.line.documentTab ?? body.documentTab, 40) || 'general',
-      documentSubType: readString(prepared.line.documentSubType ?? body.documentSubType, 80),
-      documentDateJalali,
-      settlementMethod: readString(prepared.line.settlementMethod ?? body.settlementMethod, 20) || 'mixed',
-      balanceSource: readString(prepared.line.balanceSource ?? body.balanceSource, 20) || 'current',
-      documentDetails: serializeDocumentDetails(prepared.documentDetails),
-      documentLineNumber: prepared.lineNumber,
-      ...prepared.lineAmounts,
-      foreignCurrency: String(customer.secondaryCurrency ?? ''),
-      foreignCurrencySymbol: String(customer.secondaryCurrencySymbol ?? ''),
-      tertiaryCurrency: String(customer.tertiaryCurrency ?? ''),
-      tertiaryCurrencySymbol: String(customer.tertiaryCurrencySymbol ?? ''),
-    }));
-
     let writer = context.pb;
     try {
       writer = await getPocketBaseServiceClient();
     } catch {
-      // The authenticated client remains a safe fallback when the service
-      // credentials are not available in a development environment.
+      // fallback
     }
 
-    const records = [];
-    try {
-      for (const payload of documentPayloads) {
-        records.push(await writer.collection('transactions').create(payload));
-      }
-    } catch (error) {
-      for (const record of records) {
-        try {
-          await writer.collection('transactions').delete(record.id);
-        } catch {
-          // Best-effort rollback keeps a failed multi-line document invisible.
+    // Assign per-customer document sequence & prefix with concurrency retry loop
+    const activePrefix = await getActiveDocumentPrefix(writer);
+    let attempts = 0;
+    let finalRecords: Record<string, unknown>[] = [];
+    let finalSequence = 1;
+    let finalDocumentNumber = '';
+
+    while (attempts < 5) {
+      attempts++;
+      finalSequence = await getNextDocumentSequenceForCustomer(writer, customer.id);
+      finalDocumentNumber = buildDocumentNumber(activePrefix, finalSequence);
+
+      const documentPayloads = preparedLines.map((prepared) => ({
+        customer: customer.id,
+        customerCode: Number(customer.customerCode ?? 0),
+        createdBy: context.user.id,
+        updatedBy: context.user.id,
+        transactionType: 'document',
+        status: requestedStatus,
+        isOpeningBalance: false,
+        sourceKey: `document:${documentId}:${prepared.lineNumber}`,
+        transactionDate,
+        documentId,
+        documentSequence: finalSequence,
+        documentNumberPrefixSnapshot: activePrefix,
+        documentNumber: finalDocumentNumber,
+        description: readString(prepared.line.description ?? body.description, 2000),
+        documentNature: prepared.lineNature,
+        documentTab: readString(prepared.line.documentTab ?? body.documentTab, 40) || 'general',
+        documentSubType: readString(prepared.line.documentSubType ?? body.documentSubType, 80),
+        documentDateJalali,
+        settlementMethod: readString(prepared.line.settlementMethod ?? body.settlementMethod, 20) || 'mixed',
+        balanceSource: readString(prepared.line.balanceSource ?? body.balanceSource, 20) || 'current',
+        documentDetails: serializeDocumentDetails(prepared.documentDetails),
+        documentLineNumber: prepared.lineNumber,
+        ...prepared.lineAmounts,
+        foreignCurrency: String(customer.secondaryCurrency ?? ''),
+        foreignCurrencySymbol: String(customer.secondaryCurrencySymbol ?? ''),
+        tertiaryCurrency: String(customer.tertiaryCurrency ?? ''),
+        tertiaryCurrencySymbol: String(customer.tertiaryCurrencySymbol ?? ''),
+      }));
+
+      const currentCreatedRecords = [];
+      try {
+        for (const payload of documentPayloads) {
+          currentCreatedRecords.push(await writer.collection('transactions').create(payload));
+        }
+        finalRecords = currentCreatedRecords as unknown as Record<string, unknown>[];
+        break; // Success! Break out of retry loop.
+      } catch (err) {
+        // Rollback created lines in this attempt
+        for (const record of currentCreatedRecords) {
+          try {
+            await writer.collection('transactions').delete(record.id);
+          } catch {
+            // ignore
+          }
+        }
+        if (attempts >= 5) {
+          throw err;
         }
       }
-      throw error;
     }
 
     await recordAuditEvent({
       userId: context.user.id,
       event: 'transaction_created',
       request,
-      details: `سند چندردیفی شماره ${documentNumber} برای طرف‌حساب ${customer.customerCode} ثبت شد.`,
+      details: `سند چندردیفی شماره ${finalDocumentNumber} برای طرف‌حساب ${customer.customerCode} ثبت شد.`,
       entityType: 'transaction',
       entityId: documentId,
-      entityLabel: `${customer.customerCode} - سند ${documentNumber}`,
+      entityLabel: `${customer.customerCode} - سند ${finalDocumentNumber}`,
       changes: {
-        lineCount: records.length,
+        lineCount: finalRecords.length,
         documentDateJalali,
-        documentNumber,
+        documentSequence: finalSequence,
+        documentNumberPrefixSnapshot: activePrefix,
+        documentNumber: finalDocumentNumber,
         lines: preparedLines.map((line) => ({
           lineNumber: line.lineNumber,
           documentNature: line.lineNature,
@@ -315,17 +346,20 @@ export async function POST(request: Request) {
     });
 
     return NextResponse.json({
-      transactions: records.map(mapDocument),
-      transaction: mapDocument(records[0]),
+      transactions: finalRecords.map((r) => mapDocument(r as never)),
+      transaction: mapDocument(finalRecords[0] as never),
       documentId,
-      documentNumber,
-      nextDocumentSequence: documentSequence + 1,
-      registeredAt: records[0].created,
+      documentSequence: finalSequence,
+      documentNumberPrefixSnapshot: activePrefix,
+      documentNumber: finalDocumentNumber,
+      nextDocumentSequence: finalSequence + 1,
+      registeredAt: finalRecords[0].created,
     }, { status: 201 });
   } catch (error) {
     console.error('document_create_failed', error);
+    const message = error instanceof Error ? error.message : 'ثبت سند انجام نشد. اطلاعات سند را بررسی و دوباره تلاش کنید.';
     return NextResponse.json(
-      { message: 'ثبت سند انجام نشد. اطلاعات سند را بررسی و دوباره تلاش کنید.' },
+      { message },
       { status: 400 },
     );
   }

@@ -24,6 +24,8 @@ export type CustomerTransaction = {
   isOpeningBalance: boolean;
   transactionDate: string;
   documentId: string;
+  documentSequence?: number;
+  documentNumberPrefixSnapshot?: string;
   documentNumber: string;
   description: string;
   goldAmount: number;
@@ -71,6 +73,8 @@ export function mapTransaction(record: RecordModel): CustomerTransaction {
     isOpeningBalance: record.isOpeningBalance === true,
     transactionDate: readText(record, 'transactionDate'),
     documentId: readText(record, 'documentId'),
+    documentSequence: readNumber(record, 'documentSequence') || undefined,
+    documentNumberPrefixSnapshot: readText(record, 'documentNumberPrefixSnapshot') || undefined,
     documentNumber: readText(record, 'documentNumber'),
     description: readText(record, 'description'),
     goldAmount: readNumber(record, 'goldAmount'),

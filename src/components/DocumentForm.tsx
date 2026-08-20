@@ -11,6 +11,8 @@ import {
   ListPlus,
   LoaderCircle,
   PencilLine,
+  Pin,
+  PinOff,
   Scale,
   Search,
   Sparkles,
@@ -341,15 +343,14 @@ function rawOperationLabel(nature: DocumentNature, kind: RawOperationKind) {
 
 export default function DocumentForm({
   customers,
-  nextDocumentNumber,
 }: {
   customers: Customer[];
-  nextDocumentNumber: number;
+  nextDocumentNumber?: number;
 }) {
   const initialDate = parseJalaliParts(formatJalaliDate());
   const [customerQuery, setCustomerQuery] = useState('');
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
-  const [documentNumber, setDocumentNumber] = useState(String(nextDocumentNumber));
+  const [documentNumberDisplay, setDocumentNumberDisplay] = useState('');
   const [documentNumberLoading, setDocumentNumberLoading] = useState(false);
   const [documentId, setDocumentId] = useState(() => crypto.randomUUID());
   const [dateParts, setDateParts] = useState<DateParts>(initialDate);
@@ -367,6 +368,36 @@ export default function DocumentForm({
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [meltedInventory, setMeltedInventory] = useState<MeltedInventoryItem[]>([]);
+
+  // Document lines pin state initialized safely
+  const [isLinesPinned, setIsLinesPinned] = useState<boolean>(false);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('zarfolio_document_lines_pinned');
+      if (stored === 'true') {
+        const timer = setTimeout(() => {
+          setIsLinesPinned(true);
+        }, 0);
+        return () => clearTimeout(timer);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const toggleLinesPin = () => {
+    setIsLinesPinned((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('zarfolio_document_lines_pinned', String(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  };
+
   const [weightPrecision] = useState(() => {
     if (typeof window === 'undefined') return 3;
     try {
@@ -387,6 +418,10 @@ export default function DocumentForm({
     (customer) => customer.id === selectedCustomerId,
   );
 
+  const effectiveDocumentNumberDisplay = selectedCustomerId
+    ? documentNumberDisplay
+    : 'ابتدا طرف‌حساب را انتخاب کنید';
+
   const suggestions = useMemo(() => {
     const query = customerQuery.trim().toLocaleLowerCase();
     if (!query || selectedCustomer) return [];
@@ -400,9 +435,6 @@ export default function DocumentForm({
   }, [customerQuery, customers, selectedCustomer]);
 
   const documentDateJalali = buildJalaliDate(dateParts);
-  const documentNumberPreview = selectedCustomer
-    ? `ZF${normalizeDigits(documentDateJalali).replace(/\D/g, '')}${selectedCustomer.customerCode}${documentNumber}`
-    : `ZF${normalizeDigits(documentDateJalali).replace(/\D/g, '')}—${documentNumber}`;
   const distanceLabel = dateDistanceLabel(dateParts);
   const draftReady = isLineReady(draftLine);
   const currencyUnits = useMemo(() => {
@@ -418,6 +450,7 @@ export default function DocumentForm({
     return [...new Set(units)];
   }, [selectedCustomer]);
 
+  // Per-customer document number querying
   useEffect(() => {
     if (!selectedCustomerId) {
       return;
@@ -430,13 +463,14 @@ export default function DocumentForm({
     })
       .then(async (response) => {
         const data = (await response.json()) as {
+          documentNumber?: string;
           nextDocumentSequence?: number;
           message?: string;
         };
-        if (!response.ok || typeof data.nextDocumentSequence !== 'number') {
+        if (!response.ok || !data.documentNumber) {
           throw new Error(data.message ?? 'شماره سند دریافت نشد.');
         }
-        setDocumentNumber(String(data.nextDocumentSequence));
+        setDocumentNumberDisplay(data.documentNumber);
       })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === 'AbortError') return;
@@ -447,7 +481,7 @@ export default function DocumentForm({
       });
 
     return () => controller.abort();
-  }, [nextDocumentNumber, selectedCustomerId]);
+  }, [selectedCustomerId]);
 
   useEffect(() => {
     if (documentNature !== 'paid' || draftLine.details.rawKind !== 'molten') return;
@@ -502,7 +536,7 @@ export default function DocumentForm({
   function clearCustomer() {
     setSelectedCustomerId('');
     setCustomerQuery('');
-    setDocumentNumber(String(nextDocumentNumber));
+    setDocumentNumberDisplay('');
     setDocumentNumberLoading(false);
   }
 
@@ -721,11 +755,10 @@ export default function DocumentForm({
 
       const response = await fetch('/api/documents', {
         method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            customerId: selectedCustomerId,
-            documentId,
-            documentNumber,
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          customerId: selectedCustomerId,
+          documentId,
           documentDateJalali,
           status,
           lines: committedLines.map((line) => ({
@@ -747,9 +780,6 @@ export default function DocumentForm({
             platinumAmount: (line.documentTab === 'raw-gold' || line.documentTab === 'gold-sale') && line.details.metalType === 'platinum'
               ? line.details.calculationMethod === 'money' ? actualWeightFromMoney(line.details) : numberValue(line.details.rawWeight)
               : 0,
-            // An unsettled deal intentionally has no cash-side amount. The
-            // currency quantity remains on the customer's ledger until it is
-            // settled from the cash drawer in a later document.
             rialAmount: line.documentTab === 'currency'
               ? (!line.details.unsettledTrade ? numberValue(line.details.currencyTotalAmount) : 0)
               : line.documentTab === 'gold-sale'
@@ -766,7 +796,6 @@ export default function DocumentForm({
         | {
           message?: string;
           documentNumber?: string;
-          nextDocumentSequence?: number;
         }
         | null;
 
@@ -774,12 +803,20 @@ export default function DocumentForm({
         throw new Error(data?.message ?? 'ثبت سند انجام نشد.');
       }
 
-      const registeredNumber = data?.documentNumber ?? documentNumber;
+      const registeredNumber = data?.documentNumber ?? documentNumberDisplay;
       setMessage(
         `سند شماره ${toPersianDigits(registeredNumber)} با ${faNumber(committedLines.length)} ردیف ثبت شد.`,
       );
-      const nextSequence = Number(data?.nextDocumentSequence ?? documentNumber);
-      setDocumentNumber(String(Number.isFinite(nextSequence) ? nextSequence : 1));
+
+      // Refresh next document number for this customer
+      if (selectedCustomerId) {
+        setDocumentNumberLoading(true);
+        fetch(`/api/documents?customerId=${encodeURIComponent(selectedCustomerId)}`, { cache: 'no-store' })
+          .then((res) => res.json())
+          .then((d) => { if (d.documentNumber) setDocumentNumberDisplay(d.documentNumber); })
+          .finally(() => setDocumentNumberLoading(false));
+      }
+
       setCommittedLines([]);
       setDocumentId(crypto.randomUUID());
       setDraftLine(activeEntryTab === 'currency'
@@ -811,7 +848,7 @@ export default function DocumentForm({
   );
 
   return (
-    <div className="document-form-page">
+    <div className={`document-form-page ${isLinesPinned ? 'pb-36' : ''}`}>
       {message ? <p className="account-message"><Check size={15} />{message}</p> : null}
       {errorMessage ? <p className="form-error">{errorMessage}</p> : null}
 
@@ -839,7 +876,7 @@ export default function DocumentForm({
                   setCustomerQuery(event.target.value);
                   if (selectedCustomerId) {
                     setSelectedCustomerId('');
-                    setDocumentNumber(String(nextDocumentNumber));
+                    setDocumentNumberDisplay('');
                     setDocumentNumberLoading(false);
                   }
                 }}
@@ -903,11 +940,12 @@ export default function DocumentForm({
 
       <section className="dashboard-panel document-meta-panel">
         <div className="document-header-grid">
-          <Field label="شماره سند خودکار">
+          <Field label="شماره سند خودکار (وابسته به طرف‌حساب)">
             <div className="document-number-field">
               <input
-                value={documentNumberLoading ? 'در حال استعلام...' : toPersianDigits(documentNumberPreview)}
+                value={documentNumberLoading ? 'در حال استعلام...' : toPersianDigits(effectiveDocumentNumberDisplay)}
                 readOnly
+                className="bg-slate-100 dark:bg-slate-800/80 font-bold"
                 aria-label="شماره سند خودکار"
               />
               {documentNumberLoading ? <LoaderCircle size={16} className="spin" /> : <Check size={15} />}
@@ -1527,40 +1565,65 @@ export default function DocumentForm({
         />
       </section>
 
-      <section className="dashboard-panel document-lines-panel">
-        <div className="document-lines-head">
+      {/* DOCUMENT LINES PANEL (with Pin / Unpin option) */}
+      <section
+        className={`dashboard-panel document-lines-panel transition-all ${
+          isLinesPinned
+            ? 'fixed bottom-0 left-0 right-0 z-40 lg:right-64 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-t-2 border-amber-500 shadow-2xl p-4 rounded-t-2xl rounded-b-none'
+            : ''
+        }`}
+      >
+        <div className="document-lines-head flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
           <div>
             <p className="eyebrow">ردیف‌های سند</p>
-            <h2>
+            <h2 className="flex items-center gap-2">
               <ClipboardList size={18} />
               {committedLines.length
                 ? `${faNumber(committedLines.length)} ردیف آماده ثبت`
                 : 'هنوز ردیفی ثبت نشده است'}
             </h2>
           </div>
+
+          {/* Pin / Unpin Button */}
+          <button
+            type="button"
+            onClick={toggleLinesPin}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+              isLinesPinned
+                ? 'bg-amber-500/15 border-amber-500/40 text-amber-700 dark:text-amber-400'
+                : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+            }`}
+            title={isLinesPinned ? 'برداشتن حالت چسبان ردیف‌های سند' : 'چسباندن ردیف‌های سند'}
+            aria-label={isLinesPinned ? 'برداشتن حالت چسبان ردیف‌های سند' : 'چسباندن ردیف‌های سند'}
+          >
+            {isLinesPinned ? <Pin size={15} /> : <PinOff size={15} />}
+            <span>{isLinesPinned ? 'حالت چسبان (Pin)' : 'چسباندن (Pin)'}</span>
+          </button>
         </div>
 
-        <AnimatePresence initial={false}>
-          {committedLines.map((line, index) => (
-            <CommittedLineRow
-              key={line.id}
-              line={line}
-              index={index}
-              onEdit={() => editLine(line)}
-              onRemove={() => removeLine(line.id)}
-            />
-          ))}
-        </AnimatePresence>
+        <div className={isLinesPinned && committedLines.length ? 'max-h-48 overflow-y-auto space-y-2 mt-3' : 'mt-3 space-y-2'}>
+          <AnimatePresence initial={false}>
+            {committedLines.map((line, index) => (
+              <CommittedLineRow
+                key={line.id}
+                line={line}
+                index={index}
+                onEdit={() => editLine(line)}
+                onRemove={() => removeLine(line.id)}
+              />
+            ))}
+          </AnimatePresence>
+        </div>
 
         {!committedLines.length ? (
-          <div className="document-lines-empty">
-            <Scale size={26} strokeWidth={1.4} />
-            <p>ردیف‌ها پیش از ثبت نهایی در این بخش نگه‌داری می‌شوند.</p>
+          <div className={`document-lines-empty ${isLinesPinned ? 'py-2 text-xs' : 'py-6'}`}>
+            <Scale size={isLinesPinned ? 20 : 26} strokeWidth={1.4} />
+            <p className="text-slate-500 text-xs">ردیف‌ها پیش از ثبت نهایی در این بخش نگه‌داری می‌شوند.</p>
           </div>
         ) : (
-          <div className="document-totals-bar">
-            <span>خالص اثر سند بر مانده طلا:</span>
-            <strong className={totals >= 0 ? 'is-positive' : 'is-negative'}>
+          <div className="document-totals-bar mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 text-xs flex items-center justify-between">
+            <span className="text-slate-600 dark:text-slate-400">خالص اثر سند بر مانده طلا:</span>
+            <strong className={totals >= 0 ? 'is-positive text-emerald-600 dark:text-emerald-400' : 'is-negative text-rose-600 dark:text-rose-400'}>
               {faNumber(Math.abs(totals), 3)} گرم
               {' · '}
               {totals >= 0 ? 'بستانکار' : 'بدهکار'}
