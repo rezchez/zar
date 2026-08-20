@@ -16,6 +16,7 @@ import {
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 
+import type { Customer } from '@/lib/customer';
 import BankOperation from '@/src/components/documents/BankOperation';
 import CashOperation from '@/src/components/documents/CashOperation';
 
@@ -25,7 +26,10 @@ type DocumentEntryTabsProps = {
   goldSaleTabLabel?: string;
   currencyTabContent?: ReactNode;
   cashTabContent?: ReactNode;
+  bankTabContent?: ReactNode;
   accountCodeZero?: string;
+  selectedCustomer?: Customer | null;
+  documentId?: string;
   activeTab?: string;
   onActiveTabChange?: (tab: string) => void;
   metalsTabLabel?: string;
@@ -58,7 +62,10 @@ export default function DocumentEntryTabs({
   goldSaleTabLabel,
   currencyTabContent,
   cashTabContent,
+  bankTabContent,
   accountCodeZero = '0',
+  selectedCustomer,
+  documentId,
   activeTab: controlledActiveTab,
   onActiveTabChange,
   metalsTabLabel = 'ورود و خروج فلزات',
@@ -94,7 +101,13 @@ export default function DocumentEntryTabs({
       id: 'bank',
       label: 'حساب بانکی',
       icon: Landmark,
-      content: <BankOperation accountCodeZero={accountCodeZero} />,
+      content: bankTabContent ?? (
+        <BankOperation
+          accountCodeZero={accountCodeZero}
+          selectedCustomer={selectedCustomer}
+          documentId={documentId}
+        />
+      ),
     },
     {
       id: 'income-expense',

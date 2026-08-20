@@ -351,7 +351,7 @@ export default function DocumentForm({
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [documentNumber, setDocumentNumber] = useState(String(nextDocumentNumber));
   const [documentNumberLoading, setDocumentNumberLoading] = useState(false);
-  const documentIdRef = useRef<string>(crypto.randomUUID());
+  const [documentId, setDocumentId] = useState(() => crypto.randomUUID());
   const [dateParts, setDateParts] = useState<DateParts>(initialDate);
   const [calendarView, setCalendarView] = useState({
     year: initialDate.year,
@@ -724,7 +724,7 @@ export default function DocumentForm({
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
             customerId: selectedCustomerId,
-            documentId: documentIdRef.current,
+            documentId,
             documentNumber,
           documentDateJalali,
           status,
@@ -781,7 +781,7 @@ export default function DocumentForm({
       const nextSequence = Number(data?.nextDocumentSequence ?? documentNumber);
       setDocumentNumber(String(Number.isFinite(nextSequence) ? nextSequence : 1));
       setCommittedLines([]);
-      documentIdRef.current = crypto.randomUUID();
+      setDocumentId(crypto.randomUUID());
       setDraftLine(activeEntryTab === 'currency'
         ? createCurrencyLine(documentNature)
         : { ...createLine(documentNature), documentTab: activeEntryTab === 'gold-sale' ? 'gold-sale' : 'raw-gold' });
@@ -1005,6 +1005,8 @@ export default function DocumentForm({
 
         <DocumentEntryTabs
           accountCodeZero="0"
+          selectedCustomer={selectedCustomer}
+          documentId={documentId}
           nature={documentNature}
           metalsTabLabel={`${documentNature === 'received' ? 'ورود' : 'خروج'} ${
             draftLine.details.metalType === 'silver'
