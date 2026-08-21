@@ -351,6 +351,55 @@ function rawOperationLabel(nature: DocumentNature, kind: RawOperationKind) {
   return `${prefix} آب‌شده`;
 }
 
+function generateLineSummary(line: DocumentLine, weightPrecision = 3): string {
+  if (line.documentTab === 'currency') {
+    const action = line.details.unsettledTrade
+      ? (line.documentNature === 'received' ? 'خرید ارز (بدون تسویه)' : 'فروش ارز (بدون تسویه)')
+      : (line.documentNature === 'received' ? 'خرید ارز' : 'فروش ارز');
+    const parts = [action];
+    if (line.details.currencyQuantity) {
+      parts.push(`${toPersianDigits(line.details.currencyQuantity)} ${line.details.currencyUnit || ''}`);
+    }
+    if (line.details.currencyTotalAmount) {
+      parts.push(`${toPersianDigits(faNumber(numberValue(line.details.currencyTotalAmount)))} ریال`);
+    }
+    if (line.description) {
+      parts.push(line.description);
+    }
+    return parts.join(' - ');
+  }
+
+  const opLabel = rawOperationLabel(line.documentNature, line.details.rawKind);
+  const metalName = line.details.metalType === 'silver' ? 'نقره' : line.details.metalType === 'platinum' ? 'پلاتین' : 'طلا';
+  const parts = [`${opLabel} ${metalName}`];
+
+  const w = line.details.calculationMethod === 'money'
+    ? actualWeightFromMoney(line.details)
+    : numberValue(line.details.rawWeight);
+
+  if (w > 0) {
+    parts.push(`${toPersianDigits(faNumber(w, weightPrecision))} گرم`);
+  }
+
+  if (line.details.purity) {
+    parts.push(`عیار ${toPersianDigits(line.details.purity)}`);
+  }
+
+  if (line.details.labName?.trim()) {
+    parts.push(line.details.labName.trim());
+  }
+
+  if (line.details.stampNumber?.trim()) {
+    parts.push(`پاکت/انگ ${line.details.stampNumber.trim()}`);
+  }
+
+  if (line.description?.trim()) {
+    parts.push(line.description.trim());
+  }
+
+  return parts.join(' - ');
+}
+
 export default function DocumentForm({
   customers,
 }: {
@@ -709,10 +758,14 @@ export default function DocumentForm({
     }
     setErrorMessage('');
 
-    // Snapshot current documentNature onto the committed line object
+    // Auto-generate summary string based on real snapshot info
+    const summary = generateLineSummary({ ...draftLine, documentNature }, weightPrecision);
+
+    // Snapshot current documentNature and generated summary onto the committed line object
     const lineToCommit: DocumentLine = {
       ...draftLine,
       documentNature,
+      description: summary,
     };
 
     if (editingLineId) {
@@ -907,16 +960,32 @@ export default function DocumentForm({
     }
   }
 
-  const totals = useMemo(
-    () => committedLines.reduce(
-      (sum, line) => sum + (
-        line.documentNature === 'received' ? 1 : -1
-      ) * (line.details.calculationMethod === 'money'
-        ? actualWeightFromMoney(line.details)
-        : numberValue(line.details.rawWeight)),
-      0,
+  const metalNetEffects = useMemo(() => {
+    const effects: Record<'gold' | 'silver' | 'platinum', number> = {
+      gold: 0,
+      silver: 0,
+      platinum: 0,
+    };
+
+    committedLines.forEach((line) => {
+      if (line.documentTab === 'raw-gold' || line.documentTab === 'gold-sale') {
+        const metal = line.details.metalType || 'gold';
+        const weight = line.details.calculationMethod === 'money'
+          ? actualWeightFromMoney(line.details)
+          : numberValue(line.details.rawWeight);
+        const direction = line.documentNature === 'received' ? 1 : -1;
+        effects[metal] += direction * weight;
+      }
+    });
+
+    return effects;
+  }, [committedLines]);
+
+  const activeMetals = useMemo(
+    () => (Object.keys(metalNetEffects) as Array<'gold' | 'silver' | 'platinum'>).filter(
+      (m) => metalNetEffects[m] !== 0,
     ),
-    [committedLines],
+    [metalNetEffects],
   );
 
   return (
@@ -940,8 +1009,9 @@ export default function DocumentForm({
 
       {/* UNIFIED CONTAINER: Customer Selection + Document Meta */}
       <section className="dashboard-panel document-account-panel p-4 space-y-4">
-        <div className="grid gap-4 lg:grid-cols-[1fr_auto]">
-          {/* Right side: Customer Selection Search / Selected Card */}
+        {/* Top Row: Customer Selection (Right) & Document Number (Immediately After) */}
+        <div className="grid gap-4 lg:grid-cols-[1fr_auto] items-end">
+          {/* Customer Selection Search / Selected Card */}
           <div className="space-y-2">
             <AnimatePresence mode="wait" initial={false}>
               {!selectedCustomer ? (
@@ -954,7 +1024,7 @@ export default function DocumentForm({
                   className="w-full"
                 >
                   <label className="account-field document-account-search-field max-w-none">
-                    <span className="text-xs font-bold text-slate-600 dark:text-slate-300">جست‌وجوی طرف‌حساب</span>
+                    <span className="text-xs font-bold text-slate-600 dark:text-slate-300">طرف‌حساب</span>
                     <div className="gooey-search document-search-shell">
                       <Search size={16} />
                       <input
@@ -997,54 +1067,41 @@ export default function DocumentForm({
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -4 }}
                   transition={{ duration: 0.15, ease: 'easeOut' }}
-                  className="w-full flex items-center justify-between rounded-xl border border-teal-200 bg-teal-50/60 p-2.5 dark:border-teal-900/60 dark:bg-teal-950/30"
+                  className="w-full sm:w-1/3 flex items-center justify-between rounded-xl border border-teal-200 bg-teal-50/60 p-2 dark:border-teal-900/60 dark:bg-teal-950/30 transition-all duration-300"
                 >
-                  <div className="flex items-center gap-3">
-                    <span className="document-suggestion-avatar"><UserRound size={16} /></span>
-                    <div>
-                      <strong className="block text-xs font-bold text-slate-800 dark:text-slate-100">{selectedCustomer.name}</strong>
-                      <small className="text-[10px] text-slate-500 dark:text-slate-400">
-                        کد حساب {toPersianDigits(String(selectedCustomer.customerCode))}
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span className="document-suggestion-avatar shrink-0"><UserRound size={15} /></span>
+                    <div className="min-w-0 truncate">
+                      <strong className="block text-xs font-bold text-slate-800 dark:text-slate-100 truncate">{selectedCustomer.name}</strong>
+                      <small className="text-[10px] text-slate-500 dark:text-slate-400 block truncate">
+                        کد {toPersianDigits(String(selectedCustomer.customerCode))}
                       </small>
                     </div>
                   </div>
                   <button
                     type="button"
                     onClick={clearCustomer}
-                    className="rounded-lg border border-teal-300 bg-white px-3 py-1 text-xs font-bold text-teal-700 transition hover:bg-teal-50 dark:border-teal-700 dark:bg-slate-800 dark:text-teal-300 dark:hover:bg-slate-700"
+                    className="rounded-lg border border-teal-300 bg-white px-2.5 py-1 text-[11px] font-bold text-teal-700 transition hover:bg-teal-50 dark:border-teal-700 dark:bg-slate-800 dark:text-teal-300 dark:hover:bg-slate-700 shrink-0"
                   >
                     تغییر
                   </button>
                 </motion.div>
               )}
             </AnimatePresence>
-
-            {selectedCustomer ? (
-              <div className="document-account-hint text-xs">
-                برای استعلام شماره سند و مانده، طرف حساب را انتخاب کنید
-              </div>
-            ) : null}
           </div>
 
-          {/* Left side: Document Nature Switch */}
-          <div className="flex items-end">
-            <Field label="نوع سند">
-              <button
-                type="button"
-                className={`document-nature-switch ${documentNature}`}
-                onClick={() => changeNature(documentNature === 'received' ? 'paid' : 'received')}
-                role="switch"
-                aria-checked={documentNature === 'received'}
-              >
-                <span className="document-nature-switch-track">
-                  <motion.span
-                    className="document-nature-switch-thumb"
-                    animate={{ x: documentNature === 'received' ? 0 : -42 }}
-                    transition={{ type: 'spring', stiffness: 450, damping: 30 }}
-                  />
-                </span>
-                <strong>سند {documentNature === 'received' ? 'دریافتی' : 'پرداختی'}</strong>
-              </button>
+          {/* Document Number - Immediately after Customer search */}
+          <div className="w-full lg:w-48">
+            <Field label="شماره سند">
+              <div className="document-number-field">
+                <input
+                  value={documentNumberLoading ? 'در حال استعلام...' : toPersianDigits(effectiveDocumentNumberDisplay)}
+                  readOnly
+                  className="bg-slate-100 dark:bg-slate-800/80 font-bold text-xs h-9"
+                  aria-label="شماره سند"
+                />
+                {documentNumberLoading ? <LoaderCircle size={15} className="spin" /> : <Check size={14} />}
+              </div>
             </Field>
           </div>
         </div>
@@ -1059,22 +1116,44 @@ export default function DocumentForm({
           ) : null}
         </AnimatePresence>
 
-        {/* Document Metadata Row */}
-        <div className="grid gap-3 sm:grid-cols-3 pt-2 border-t border-slate-100 dark:border-slate-800">
-          <Field label="شماره سند خودکار">
-            <div className="document-number-field">
-              <input
-                value={documentNumberLoading ? 'در حال استعلام...' : toPersianDigits(effectiveDocumentNumberDisplay)}
-                readOnly
-                className="bg-slate-100 dark:bg-slate-800/80 font-bold text-xs h-9"
-                aria-label="شماره سند خودکار"
-              />
-              {documentNumberLoading ? <LoaderCircle size={15} className="spin" /> : <Check size={14} />}
-            </div>
+        {/* Bottom Metadata Row: Document Nature (Switch) + Metal Type + Document Date */}
+        <div className="grid gap-3 sm:grid-cols-3 pt-2 border-t border-slate-100 dark:border-slate-800 items-end">
+          <Field label="نوع سند">
+            <button
+              type="button"
+              className={`document-nature-switch ${documentNature}`}
+              onClick={() => changeNature(documentNature === 'received' ? 'paid' : 'received')}
+              role="switch"
+              aria-checked={documentNature === 'received'}
+            >
+              <span className="document-nature-switch-track">
+                <motion.span
+                  className="document-nature-switch-thumb"
+                  animate={{ x: documentNature === 'received' ? 0 : -42 }}
+                  transition={{ type: 'spring', stiffness: 450, damping: 30 }}
+                />
+              </span>
+              <strong>سند {documentNature === 'received' ? 'دریافتی' : 'پرداختی'}</strong>
+            </button>
+          </Field>
+
+          <Field label="جنس فلز">
+            <select
+              className="text-xs h-9"
+              value={draftLine.details.metalType}
+              onChange={(event) => updateDraftDetail(
+                'metalType',
+                event.target.value as DetailState['metalType'],
+              )}
+            >
+              <option value="gold">طلای خام</option>
+              <option value="silver">نقره</option>
+              <option value="platinum">پلاتین</option>
+            </select>
           </Field>
 
           <Field label="تاریخ سند">
-            <div className="jalali-picker relative z-50" ref={datePickerRef}>
+            <div className="jalali-picker relative z-20" ref={datePickerRef}>
               <button
                 type="button"
                 className={`jalali-picker-trigger text-xs h-9 ${dateOpen ? 'is-open' : ''}`}
@@ -1109,29 +1188,16 @@ export default function DocumentForm({
               </small>
             </div>
           </Field>
-
-          <Field label="جنس فلز">
-            <select
-              className="text-xs h-9"
-              value={draftLine.details.metalType}
-              onChange={(event) => updateDraftDetail(
-                'metalType',
-                event.target.value as DetailState['metalType'],
-              )}
-            >
-              <option value="gold">طلای خام</option>
-              <option value="silver">نقره</option>
-              <option value="platinum">پلاتین</option>
-            </select>
-          </Field>
         </div>
       </section>
 
       {/* ENTRY TABS EDITOR */}
-      <section className="dashboard-panel document-entry-panel document-draft-editor p-3.5 space-y-3">
+      <section className={`dashboard-panel document-entry-panel document-draft-editor p-3.5 space-y-3 ${editingLineId ? 'ring-2 ring-amber-500/50 shadow-xl' : ''}`}>
         {editingLineId ? (
-          <div className="document-draft-editor-head flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
-            <span className="text-xs font-bold text-amber-700 dark:text-amber-400">اصلاح ردیف انتخاب‌شده</span>
+          <div className="document-draft-editor-head flex items-center justify-between pb-2 border-b border-amber-200 dark:border-amber-900/60 bg-amber-50/50 dark:bg-amber-950/20 -mx-3.5 -mt-3.5 p-3 rounded-t-xl">
+            <span className="text-xs font-black text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
+              <PencilLine size={15} /> در حال اصلاح ردیف انتخاب‌شده
+            </span>
             <button type="button" className="document-cancel-edit" onClick={cancelEdit}>
               انصراف از ویرایش
             </button>
@@ -1143,6 +1209,7 @@ export default function DocumentForm({
           selectedCustomer={selectedCustomer}
           documentId={documentId}
           nature={documentNature}
+          isEditing={Boolean(editingLineId)}
           metalsTabLabel={`${documentNature === 'received' ? 'ورود' : 'خروج'} ${
             draftLine.details.metalType === 'silver'
               ? 'نقره'
@@ -1265,9 +1332,9 @@ export default function DocumentForm({
               </div>
               {/* Sticky Floating Submit Row Button */}
               {draftReady ? (
-                <div className="sticky bottom-3 z-30 flex justify-center pt-2">
+                <div className={`sticky ${isLinesPinned ? 'bottom-32' : 'bottom-3'} z-30 flex justify-center pt-2 transition-all duration-300`}>
                   <button type="button" className="document-commit-line-button shadow-lg max-w-sm" onClick={commitDraftLine}>
-                    <ListPlus size={16} /> {editingLineId ? 'اصلاح ردیف' : 'ثبت ردیف'}
+                    <ListPlus size={16} /> {editingLineId ? 'ثبت اصلاح ردیف' : 'ثبت ردیف'}
                   </button>
                 </div>
               ) : null}
@@ -1486,14 +1553,14 @@ export default function DocumentForm({
               </AnimatePresence>
 
               {draftReady ? (
-                <div className="sticky bottom-3 z-30 flex justify-center pt-2">
+                <div className={`sticky ${isLinesPinned ? 'bottom-32' : 'bottom-3'} z-30 flex justify-center pt-2 transition-all duration-300`}>
                   <button
                     type="button"
                     className="document-commit-line-button shadow-lg max-w-sm"
                     onClick={commitDraftLine}
                   >
                     <ListPlus size={16} />
-                    {editingLineId ? 'اصلاح ردیف' : 'ثبت ردیف'}
+                    {editingLineId ? 'ثبت اصلاح ردیف' : 'ثبت ردیف'}
                   </button>
                 </div>
               ) : null}
@@ -1586,14 +1653,14 @@ export default function DocumentForm({
               </div>
 
               {draftReady ? (
-                <div className="sticky bottom-3 z-30 flex justify-center pt-2">
+                <div className={`sticky ${isLinesPinned ? 'bottom-32' : 'bottom-3'} z-30 flex justify-center pt-2 transition-all duration-300`}>
                   <button
                     type="button"
                     className="document-commit-line-button shadow-lg max-w-sm"
                     onClick={commitDraftLine}
                   >
                     <ListPlus size={16} />
-                    {editingLineId ? 'اصلاح ردیف' : 'ثبت ردیف'}
+                    {editingLineId ? 'ثبت اصلاح ردیف' : 'ثبت ردیف'}
                   </button>
                 </div>
               ) : null}
@@ -1675,14 +1742,17 @@ export default function DocumentForm({
             <table className="document-lines-table">
               <thead>
                 <tr>
-                  <th style={{ width: '6%' }}>ردیف</th>
-                  <th style={{ width: '22%' }}>نوع سند</th>
-                  <th style={{ width: '12%' }}>نوع ارز</th>
-                  <th style={{ width: '14%' }}>بدهکار وزنی</th>
-                  <th style={{ width: '14%' }}>بستانکار وزنی</th>
-                  <th style={{ width: '14%' }}>بدهکار مالی</th>
-                  <th style={{ width: '14%' }}>بستانکار مالی</th>
-                  <th style={{ width: '4%' }}></th>
+                  <th style={{ width: '5%' }}>ردیف</th>
+                  <th style={{ width: '14%' }}>نوع سند</th>
+                  <th style={{ width: '10%' }}>وزن</th>
+                  <th style={{ width: '8%' }}>عیار</th>
+                  <th style={{ width: '9%' }}>نوع ارز</th>
+                  <th style={{ width: '11%' }}>بدهکار وزنی</th>
+                  <th style={{ width: '11%' }}>بستانکار وزنی</th>
+                  <th style={{ width: '11%' }}>بدهکار مالی</th>
+                  <th style={{ width: '11%' }}>بستانکار مالی</th>
+                  <th style={{ width: '8%' }}>شرح سند</th>
+                  <th style={{ width: '2%' }}></th>
                 </tr>
               </thead>
               <tbody>
@@ -1706,13 +1776,42 @@ export default function DocumentForm({
         {/* BOTTOM SUBMIT & NET BALANCE SIDE-BY-SIDE */}
         <div className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-2">
           {committedLines.length ? (
-            <div className="flex items-center gap-2 px-3 py-1.5 border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50/80 dark:bg-slate-900/80 text-xs font-bold shrink-0">
-              <span className="text-slate-600 dark:text-slate-400">خالص اثر سند بر مانده طلا:</span>
-              <strong className={totals >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
-                {faNumber(Math.abs(totals), weightPrecision)} گرم
-                {' · '}
-                {totals >= 0 ? 'بستانکار' : 'بدهکار'}
-              </strong>
+            <div className="flex flex-wrap items-center gap-2 px-3 py-1.5 border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50/80 dark:bg-slate-900/80 text-xs font-bold shrink-0">
+              <span className="text-slate-600 dark:text-slate-400">
+                {activeMetals.length > 1 ? 'خالص اثر سند:' : 'خالص اثر سند بر مانده:'}
+              </span>
+              {activeMetals.length === 0 ? (
+                <span className="text-slate-500">بدون اثر وزنی</span>
+              ) : activeMetals.length === 1 ? (
+                (() => {
+                  const m = activeMetals[0];
+                  const label = m === 'silver' ? 'نقره' : m === 'platinum' ? 'پلاتین' : 'طلا';
+                  const val = metalNetEffects[m];
+                  return (
+                    <strong className={val >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
+                      {label}: {faNumber(Math.abs(val), weightPrecision)} گرم {val >= 0 ? 'بستانکار' : 'بدهکار'}
+                    </strong>
+                  );
+                })()
+              ) : (
+                <span className="flex flex-wrap gap-1.5 items-center text-slate-700 dark:text-slate-200">
+                  <span className="text-amber-600 dark:text-amber-400">چند فلزی (</span>
+                  {activeMetals.map((m, idx) => {
+                    const label = m === 'silver' ? 'نقره' : m === 'platinum' ? 'پلاتین' : 'طلا';
+                    const val = metalNetEffects[m];
+                    return (
+                      <span key={m} className="inline-flex items-center gap-1">
+                        <span>{label}:</span>
+                        <strong className={val >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
+                          {faNumber(Math.abs(val), weightPrecision)} گرم {val >= 0 ? 'بستانکار' : 'بدهکار'}
+                        </strong>
+                        {idx < activeMetals.length - 1 ? <span className="mx-0.5 text-slate-400">/</span> : null}
+                      </span>
+                    );
+                  })}
+                  <span className="text-amber-600 dark:text-amber-400">)</span>
+                </span>
+              )}
             </div>
           ) : <div className="hidden sm:block flex-1" />}
 
@@ -1960,23 +2059,24 @@ function CustomerBalanceLiquid({ customer }: { customer: Customer }) {
 
   return (
     <motion.div
-      className="document-liquid-balance"
+      className="document-liquid-balance p-3 sm:p-4 border-amber-200/80 bg-amber-50/40 dark:bg-amber-950/20"
       initial={{ opacity: 0, height: 0, y: -8 }}
       animate={{ opacity: 1, height: 'auto', y: 0 }}
       exit={{ opacity: 0, height: 0, y: -8 }}
       transition={{ type: 'spring', stiffness: 260, damping: 26 }}
     >
-      <div className="document-liquid-title">
-        <span className="document-liquid-orb"><Sparkles size={14} /></span>
+      <div className="document-liquid-title mb-2 sm:mb-0">
+        <span className="document-liquid-orb w-9 h-9"><Sparkles size={18} /></span>
         <div>
-          <strong>مانده جاری حساب‌ها</strong>
-          <small>مثبت: بستانکار · منفی: بدهکار</small>
+          <strong className="text-sm sm:text-base font-extrabold text-amber-900 dark:text-amber-200">
+            وضعیت طلب و بدهی {customer.name}
+          </strong>
         </div>
       </div>
-      <div className="document-liquid-items">
+      <div className="document-liquid-items gap-2.5">
         {visibleBalances.map((balance, index) => (
           <motion.div
-            className={`document-liquid-item ${
+            className={`document-liquid-item p-3 ${
               balance.value > 0 ? 'is-credit' : balance.value < 0 ? 'is-debit' : 'is-zero'
             }`}
             key={balance.id}
@@ -1990,17 +2090,17 @@ function CustomerBalanceLiquid({ customer }: { customer: Customer }) {
             }}
           >
             <span className="document-liquid-blob" />
-            <small>{balance.label}</small>
-            <strong>
+            <small className="text-xs font-extrabold text-slate-600 dark:text-slate-300 block mb-0.5">{balance.label}</small>
+            <strong className="text-base sm:text-lg font-black tracking-normal block my-0.5">
               {faNumber(Math.abs(balance.value), balance.digits)}
               {' '}
-              {balance.unit}
+              <span className="text-xs font-bold text-slate-500">{balance.unit}</span>
             </strong>
-            <em>
+            <em className="text-xs font-black block mt-0.5">
               {balance.value > 0
-                ? 'بستانکار'
+                ? 'بستانکار از ما'
                 : balance.value < 0
-                  ? 'بدهکار'
+                  ? 'بدهکار به ما'
                   : 'تسویه'}
             </em>
           </motion.div>
@@ -2029,6 +2129,7 @@ function CommittedLineRow({
   let docType = '';
   let currencyUnit = '';
   let weight = 0;
+  let purityDisplay = '-';
   let financialAmount = 0;
 
   if (line.documentTab === 'currency') {
@@ -2048,9 +2149,13 @@ function CommittedLineRow({
     weight = line.details.calculationMethod === 'money'
       ? actualWeightFromMoney(line.details)
       : numberValue(line.details.rawWeight);
+    if (line.details.purity) {
+      purityDisplay = toPersianDigits(line.details.purity);
+    }
     financialAmount = numberValue(line.details.totalAmount);
   }
 
+  const weightDisplay = weight > 0 ? faNumber(weight, weightPrecision) : '-';
   const bedehkarVazni = isPaid && weight > 0 ? faNumber(weight, weightPrecision) : null;
   const bostankarVazni = isReceived && weight > 0 ? faNumber(weight, weightPrecision) : null;
   const bedehkarMali = isPaid && financialAmount > 0 ? faNumber(financialAmount) : null;
@@ -2072,11 +2177,12 @@ function CommittedLineRow({
         <span className="font-semibold text-slate-800 dark:text-slate-200 block truncate">
           {docType}
         </span>
-        {line.description ? (
-          <span className="text-[10px] text-slate-400 dark:text-slate-500 block truncate">
-            {line.description}
-          </span>
-        ) : null}
+      </td>
+      <td className="text-center font-bold text-slate-700 dark:text-slate-200">
+        {weightDisplay}
+      </td>
+      <td className="text-center font-medium text-slate-600 dark:text-slate-300">
+        {purityDisplay}
       </td>
       <td className="text-center font-medium text-slate-600 dark:text-slate-300">
         {currencyUnit}
@@ -2108,6 +2214,11 @@ function CommittedLineRow({
         ) : (
           <span className="text-slate-300 dark:text-slate-600">-</span>
         )}
+      </td>
+      <td className="text-right">
+        <span className="text-xs text-slate-600 dark:text-slate-300 block truncate" title={line.description}>
+          {line.description || '-'}
+        </span>
       </td>
       <td className="text-center">
         <div className="flex items-center justify-center gap-1">

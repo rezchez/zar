@@ -70,7 +70,8 @@ export default function DocumentEntryTabs({
   onActiveTabChange,
   metalsTabLabel = 'ورود و خروج فلزات',
   nature = 'received',
-}: DocumentEntryTabsProps) {
+  isEditing = false,
+}: DocumentEntryTabsProps & { isEditing?: boolean }) {
   const [uncontrolledActiveTab, setUncontrolledActiveTab] = useState<string>('metals');
   const activeTab = controlledActiveTab ?? uncontrolledActiveTab;
 
@@ -129,7 +130,12 @@ export default function DocumentEntryTabs({
   return (
     <div className="grid gap-4 lg:grid-cols-[12rem_minmax(0,1fr)]">
       <div className="min-w-0 lg:col-start-2 lg:row-start-1">{selectedTab.content}</div>
-      <nav className="order-first flex gap-1.5 overflow-x-auto pb-1 lg:order-last lg:col-start-1 lg:row-start-1 lg:block lg:space-y-1.5 lg:overflow-visible" aria-label="تب‌های ثبت سند">
+      <nav
+        className={`order-first flex gap-1.5 overflow-x-auto pb-1 lg:order-last lg:col-start-1 lg:row-start-1 lg:block lg:space-y-1.5 lg:overflow-visible transition-all duration-300 ${
+          isEditing ? 'blur-[1.5px] opacity-40 pointer-events-none' : ''
+        }`}
+        aria-label="تب‌های ثبت سند"
+      >
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = tab.id === selectedTab.id;
@@ -139,6 +145,7 @@ export default function DocumentEntryTabs({
               key={tab.id}
               onClick={() => selectTab(tab.id)}
               aria-current={isActive ? 'page' : undefined}
+              disabled={isEditing && !isActive}
               className={`flex min-w-max items-center gap-2 rounded-lg px-2.5 py-2 text-right text-[11px] font-bold transition lg:w-full ${
                 isActive
                   ? nature === 'paid'
