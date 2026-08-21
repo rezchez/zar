@@ -65,7 +65,6 @@ type RawGoldTabProps = {
   commitDraftLine: () => void;
   changeRawKind: (kind: RawOperationKind) => void;
   updateDraftDetail: <K extends keyof DetailState>(field: K, value: DetailState[K]) => void;
-  handlePurityChange: (val: string) => void;
   handleKeyDownEnter: (event: React.KeyboardEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => void;
   draftReady: boolean;
   convertedTo750: (weight: string, purity: string) => number;
@@ -86,7 +85,6 @@ export default function RawGoldTab({
   commitDraftLine,
   changeRawKind,
   updateDraftDetail,
-  handlePurityChange,
   handleKeyDownEnter,
   draftReady,
   convertedTo750,
@@ -154,15 +152,16 @@ export default function RawGoldTab({
             />
           </Field>
           {draftLine.details.rawKind !== 'conditional' ? (
-            <Field label="عیار">
+            <Field label="عیار مبنا (تنظیمات کلی)">
               <input
                 type="number"
                 min="1"
-                max="999"
+                max="1000"
                 step="0.1"
                 value={draftLine.details.purity}
-                onChange={(event) => handlePurityChange(event.target.value)}
-                onKeyDown={handleKeyDownEnter}
+                readOnly
+                aria-label="عیار مبنا از تنظیمات کلی برنامه"
+                title="این عیار از تنظیمات کلی برنامه خوانده می‌شود."
               />
             </Field>
           ) : null}

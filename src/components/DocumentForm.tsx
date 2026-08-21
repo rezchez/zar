@@ -32,6 +32,7 @@ import {
   normalizeDigits,
 } from '@/lib/jalali';
 import { useAppSettings } from '@/src/components/SettingsProvider';
+import type { AppSettings } from '@/lib/settings';
 import RawGoldTab, {
   type DetailState,
   type DocumentLine,
@@ -195,6 +196,17 @@ function createLine(nature: DocumentNature = 'received', sourceTab = 'metals'): 
   };
 }
 
+type MetalType = DetailState['metalType'];
+
+function baseKaratForMetal(
+  metalType: MetalType,
+  settings: Pick<AppSettings, 'goldBaseKarat' | 'silverBaseKarat' | 'platinumBaseKarat'>,
+) {
+  if (metalType === 'silver') return settings.silverBaseKarat;
+  if (metalType === 'platinum') return settings.platinumBaseKarat;
+  return settings.goldBaseKarat;
+}
+
 function createCurrencyLine(nature: DocumentNature = 'received'): DocumentLine {
   const line = createLine(nature, 'currency');
   return {
@@ -253,8 +265,8 @@ function validateLine(line: DocumentLine) {
   if (line.details.rawKind !== 'conditional') {
     const purityStr = normalizeDigits(line.details.purity).trim();
     const purityNum = numberValue(purityStr);
-    if (purityNum < 1 || purityNum > 999) {
-      return 'عیار باید عددی بین ۱ تا ۹۹۹ باشد.';
+    if (purityNum < 1 || purityNum > 1000) {
+      return 'عیار باید عددی بین ۱ تا ۱۰۰۰ باشد.';
     }
     if (purityStr.includes('.') && purityStr.split('.')[1].length > 1) {
       return 'عیار حداکثر می‌تواند ۱ رقم اعشار داشته باشد.';
@@ -357,6 +369,21 @@ export default function DocumentForm({
 }) {
   const { settings } = useAppSettings();
   const weightPrecision = Number(settings.weightDecimalPlaces) || 3;
+  const { goldBaseKarat, silverBaseKarat, platinumBaseKarat } = settings;
+  const purityForMetal = (metalType: MetalType) => baseKaratForMetal(metalType, settings);
+
+  function createSettingsLine(nature: DocumentNature = 'received', sourceTab = 'metals') {
+    const line = sourceTab === 'currency'
+      ? createCurrencyLine(nature)
+      : createLine(nature, sourceTab);
+    return {
+      ...line,
+      details: {
+        ...line.details,
+        purity: String(purityForMetal(line.details.metalType)),
+      },
+    };
+  }
 
   const initialDate = parseJalaliParts(formatJalaliDate());
   const [customerQuery, setCustomerQuery] = useState('');
@@ -371,7 +398,7 @@ export default function DocumentForm({
   });
   const [dateOpen, setDateOpen] = useState(false);
   const [documentNature, setDocumentNature] = useState<DocumentNature>('received');
-  const [draftLine, setDraftLine] = useState<DocumentLine>(() => createLine('received', 'metals'));
+  const [draftLine, setDraftLine] = useState<DocumentLine>(() => createSettingsLine('received', 'metals'));
   const [committedLines, setCommittedLines] = useState<DocumentLine[]>([]);
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
   const [activeEntryTab, setActiveEntryTab] = useState('metals');
@@ -400,6 +427,32 @@ export default function DocumentForm({
 
   // Document lines pin state initialized safely
   const [isLinesPinned, setIsLinesPinned] = useState<boolean>(false);
+
+  // Keep a new draft synchronized with the global base purity settings.
+  // Committed/editing lines are left untouched so historical assay values remain intact.
+  useEffect(() => {
+    if (editingLineId || committedLines.length > 0) return;
+    const timer = window.setTimeout(() => {
+      setDraftLine((current) => {
+        if (current.details.rawKind === 'conditional') return current;
+        const nextPurity = String(baseKaratForMetal(current.details.metalType, {
+          goldBaseKarat,
+          silverBaseKarat,
+          platinumBaseKarat,
+        }));
+        return current.details.purity === nextPurity
+          ? current
+          : { ...current, details: { ...current.details, purity: nextPurity } };
+      });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [
+    goldBaseKarat,
+    silverBaseKarat,
+    platinumBaseKarat,
+    editingLineId,
+    committedLines.length,
+  ]);
 
   useEffect(() => {
     try {
@@ -564,13 +617,6 @@ export default function DocumentForm({
     return () => window.removeEventListener('zar:navigation-attempt', handleNavigationAttempt);
   }, [isFormDirty]);
 
-  function handlePurityChange(val: string) {
-    const normalized = normalizeDigits(val);
-    if (normalized === '' || /^\d+(\.\d{0,1})?$/.test(normalized)) {
-      updateDraftDetail('purity', normalized);
-    }
-  }
-
   function handleKeyDownEnter(
     event: React.KeyboardEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>,
   ) {
@@ -640,7 +686,7 @@ export default function DocumentForm({
       setDraftLine(createCurrencyLine(documentNature));
     } else {
       setDraftLine({
-        ...createLine(documentNature, tab),
+        ...createSettingsLine(documentNature, tab),
         documentTab: tab === 'gold-sale' ? 'gold-sale' : 'raw-gold',
       });
     }
@@ -680,7 +726,7 @@ export default function DocumentForm({
       const details: DetailState = {
         ...current.details,
         rawKind: kind,
-        purity: kind === 'conditional' ? '' : current.details.purity || '750',
+        purity: kind === 'conditional' ? '' : current.details.purity || String(purityForMetal(current.details.metalType)),
         labName: kind === 'misc' ? '' : current.details.labName,
         stampNumber: kind === 'misc' ? '' : current.details.stampNumber,
       };
@@ -814,7 +860,7 @@ export default function DocumentForm({
     }
     setDraftLine(draftLine.documentTab === 'currency'
       ? createCurrencyLine(documentNature)
-      : { ...createLine(documentNature, activeEntryTab), documentTab: draftLine.documentTab });
+      : { ...createSettingsLine(documentNature, activeEntryTab), documentTab: draftLine.documentTab });
   }
 
   function editLine(line: DocumentLine) {
@@ -827,7 +873,7 @@ export default function DocumentForm({
   }
 
   function cancelEdit() {
-    setDraftLine(createLine(documentNature, activeEntryTab));
+    setDraftLine(createSettingsLine(documentNature, activeEntryTab));
     setEditingLineId(null);
     setErrorMessage('');
   }
@@ -980,7 +1026,7 @@ export default function DocumentForm({
       setDocumentId(crypto.randomUUID());
       setDraftLine(activeEntryTab === 'currency'
         ? createCurrencyLine(documentNature)
-        : { ...createLine(documentNature, activeEntryTab), documentTab: activeEntryTab === 'gold-sale' ? 'gold-sale' : 'raw-gold' });
+        : { ...createSettingsLine(documentNature, activeEntryTab), documentTab: activeEntryTab === 'gold-sale' ? 'gold-sale' : 'raw-gold' });
       setEditingLineId(null);
 
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1201,10 +1247,17 @@ export default function DocumentForm({
             <select
               className="text-xs h-9"
               value={draftLine.details.metalType}
-              onChange={(event) => updateDraftDetail(
-                'metalType',
-                event.target.value as DetailState['metalType'],
-              )}
+              onChange={(event) => {
+                const metalType = event.target.value as MetalType;
+                setDraftLine((current) => ({
+                  ...current,
+                  details: {
+                    ...current.details,
+                    metalType,
+                    purity: String(purityForMetal(metalType)),
+                  },
+                }));
+              }}
             >
               <option value="gold">طلای خام</option>
               <option value="silver">نقره</option>
@@ -1298,7 +1351,6 @@ export default function DocumentForm({
               commitDraftLine={commitDraftLine}
               changeRawKind={changeRawKind}
               updateDraftDetail={updateDraftDetail}
-              handlePurityChange={handlePurityChange}
               handleKeyDownEnter={handleKeyDownEnter}
               draftReady={draftReady}
               convertedTo750={convertedTo750}
@@ -1328,7 +1380,6 @@ export default function DocumentForm({
               actualWeightFromMoney={actualWeightFromMoney}
               rawOperationLabel={rawOperationLabel}
               metalPriceLabel={metalPriceLabel}
-              normalizeDigits={normalizeDigits}
               toPersianDigits={toPersianDigits}
               faNumber={faNumber}
               numberValue={numberValue}

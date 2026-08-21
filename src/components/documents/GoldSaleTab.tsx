@@ -30,7 +30,6 @@ type GoldSaleTabProps = {
   actualWeightFromMoney: (details: Pick<DetailState, 'totalAmount' | 'purity' | 'metalPriceType' | 'metalPrice'>) => number;
   rawOperationLabel: (nature: 'received' | 'paid', kind: RawOperationKind) => string;
   metalPriceLabel: (type: DetailState['metalPriceType']) => string;
-  normalizeDigits: (str: string) => string;
   toPersianDigits: (str: string) => string;
   faNumber: (value: number, fractionDigits?: number) => string;
   numberValue: (value: string) => number;
@@ -58,7 +57,6 @@ export default function GoldSaleTab({
   actualWeightFromMoney,
   rawOperationLabel,
   metalPriceLabel,
-  normalizeDigits,
   toPersianDigits,
   faNumber,
   numberValue,
@@ -170,21 +168,17 @@ export default function GoldSaleTab({
               </Field>
             ) : null}
 
-            <Field label="عیار">
+            <Field label="عیار مبنا (تنظیمات کلی)">
               <input
                 type="number"
                 min="1"
-                max="999"
+                max="1000"
                 step="0.1"
                 inputMode="decimal"
                 value={draftLine.details.purity}
-                onChange={(event) => {
-                  const norm = normalizeDigits(event.target.value);
-                  if (norm === '' || /^\d+(\.\d{0,1})?$/.test(norm)) {
-                    updateMetalValue('purity', norm);
-                  }
-                }}
-                onKeyDown={handleKeyDownEnter}
+                readOnly
+                aria-label="عیار مبنا از تنظیمات کلی برنامه"
+                title="این عیار از تنظیمات کلی برنامه خوانده می‌شود."
                 placeholder="۷۵۰"
               />
             </Field>
