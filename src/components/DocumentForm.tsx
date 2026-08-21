@@ -351,6 +351,55 @@ function rawOperationLabel(nature: DocumentNature, kind: RawOperationKind) {
   return `${prefix} آب‌شده`;
 }
 
+function generateLineSummary(line: DocumentLine, weightPrecision = 3): string {
+  if (line.documentTab === 'currency') {
+    const action = line.details.unsettledTrade
+      ? (line.documentNature === 'received' ? 'خرید ارز (بدون تسویه)' : 'فروش ارز (بدون تسویه)')
+      : (line.documentNature === 'received' ? 'خرید ارز' : 'فروش ارز');
+    const parts = [action];
+    if (line.details.currencyQuantity) {
+      parts.push(`${toPersianDigits(line.details.currencyQuantity)} ${line.details.currencyUnit || ''}`);
+    }
+    if (line.details.currencyTotalAmount) {
+      parts.push(`${toPersianDigits(faNumber(numberValue(line.details.currencyTotalAmount)))} ریال`);
+    }
+    if (line.description) {
+      parts.push(line.description);
+    }
+    return parts.join(' - ');
+  }
+
+  const opLabel = rawOperationLabel(line.documentNature, line.details.rawKind);
+  const metalName = line.details.metalType === 'silver' ? 'نقره' : line.details.metalType === 'platinum' ? 'پلاتین' : 'طلا';
+  const parts = [`${opLabel} ${metalName}`];
+
+  const w = line.details.calculationMethod === 'money'
+    ? actualWeightFromMoney(line.details)
+    : numberValue(line.details.rawWeight);
+
+  if (w > 0) {
+    parts.push(`${toPersianDigits(faNumber(w, weightPrecision))} گرم`);
+  }
+
+  if (line.details.purity) {
+    parts.push(`عیار ${toPersianDigits(line.details.purity)}`);
+  }
+
+  if (line.details.labName?.trim()) {
+    parts.push(line.details.labName.trim());
+  }
+
+  if (line.details.stampNumber?.trim()) {
+    parts.push(`پاکت/انگ ${line.details.stampNumber.trim()}`);
+  }
+
+  if (line.description?.trim()) {
+    parts.push(line.description.trim());
+  }
+
+  return parts.join(' - ');
+}
+
 export default function DocumentForm({
   customers,
 }: {
@@ -709,10 +758,14 @@ export default function DocumentForm({
     }
     setErrorMessage('');
 
-    // Snapshot current documentNature onto the committed line object
+    // Auto-generate summary string based on real snapshot info
+    const summary = generateLineSummary({ ...draftLine, documentNature }, weightPrecision);
+
+    // Snapshot current documentNature and generated summary onto the committed line object
     const lineToCommit: DocumentLine = {
       ...draftLine,
       documentNature,
+      description: summary,
     };
 
     if (editingLineId) {
@@ -956,8 +1009,9 @@ export default function DocumentForm({
 
       {/* UNIFIED CONTAINER: Customer Selection + Document Meta */}
       <section className="dashboard-panel document-account-panel p-4 space-y-4">
-        <div className="grid gap-4 lg:grid-cols-[1fr_auto]">
-          {/* Right side: Customer Selection Search / Selected Card */}
+        {/* Top Row: Customer Selection (Right) & Document Number (Immediately After) */}
+        <div className="grid gap-4 lg:grid-cols-[1fr_auto] items-end">
+          {/* Customer Selection Search / Selected Card */}
           <div className="space-y-2">
             <AnimatePresence mode="wait" initial={false}>
               {!selectedCustomer ? (
@@ -1036,25 +1090,18 @@ export default function DocumentForm({
             </AnimatePresence>
           </div>
 
-          {/* Left side: Document Nature Switch */}
-          <div className="flex items-end">
-            <Field label="نوع سند">
-              <button
-                type="button"
-                className={`document-nature-switch ${documentNature}`}
-                onClick={() => changeNature(documentNature === 'received' ? 'paid' : 'received')}
-                role="switch"
-                aria-checked={documentNature === 'received'}
-              >
-                <span className="document-nature-switch-track">
-                  <motion.span
-                    className="document-nature-switch-thumb"
-                    animate={{ x: documentNature === 'received' ? 0 : -42 }}
-                    transition={{ type: 'spring', stiffness: 450, damping: 30 }}
-                  />
-                </span>
-                <strong>سند {documentNature === 'received' ? 'دریافتی' : 'پرداختی'}</strong>
-              </button>
+          {/* Document Number - Immediately after Customer search */}
+          <div className="w-full lg:w-48">
+            <Field label="شماره سند">
+              <div className="document-number-field">
+                <input
+                  value={documentNumberLoading ? 'در حال استعلام...' : toPersianDigits(effectiveDocumentNumberDisplay)}
+                  readOnly
+                  className="bg-slate-100 dark:bg-slate-800/80 font-bold text-xs h-9"
+                  aria-label="شماره سند"
+                />
+                {documentNumberLoading ? <LoaderCircle size={15} className="spin" /> : <Check size={14} />}
+              </div>
             </Field>
           </div>
         </div>
@@ -1069,18 +1116,25 @@ export default function DocumentForm({
           ) : null}
         </AnimatePresence>
 
-        {/* Document Metadata Row (Order: Customer (above) -> Document Number -> Metal Type -> Date) */}
-        <div className="grid gap-3 sm:grid-cols-3 pt-2 border-t border-slate-100 dark:border-slate-800">
-          <Field label="شماره سند">
-            <div className="document-number-field">
-              <input
-                value={documentNumberLoading ? 'در حال استعلام...' : toPersianDigits(effectiveDocumentNumberDisplay)}
-                readOnly
-                className="bg-slate-100 dark:bg-slate-800/80 font-bold text-xs h-9"
-                aria-label="شماره سند"
-              />
-              {documentNumberLoading ? <LoaderCircle size={15} className="spin" /> : <Check size={14} />}
-            </div>
+        {/* Bottom Metadata Row: Document Nature (Switch) + Metal Type + Document Date */}
+        <div className="grid gap-3 sm:grid-cols-3 pt-2 border-t border-slate-100 dark:border-slate-800 items-end">
+          <Field label="نوع سند">
+            <button
+              type="button"
+              className={`document-nature-switch ${documentNature}`}
+              onClick={() => changeNature(documentNature === 'received' ? 'paid' : 'received')}
+              role="switch"
+              aria-checked={documentNature === 'received'}
+            >
+              <span className="document-nature-switch-track">
+                <motion.span
+                  className="document-nature-switch-thumb"
+                  animate={{ x: documentNature === 'received' ? 0 : -42 }}
+                  transition={{ type: 'spring', stiffness: 450, damping: 30 }}
+                />
+              </span>
+              <strong>سند {documentNature === 'received' ? 'دریافتی' : 'پرداختی'}</strong>
+            </button>
           </Field>
 
           <Field label="جنس فلز">
@@ -1138,10 +1192,12 @@ export default function DocumentForm({
       </section>
 
       {/* ENTRY TABS EDITOR */}
-      <section className="dashboard-panel document-entry-panel document-draft-editor p-3.5 space-y-3">
+      <section className={`dashboard-panel document-entry-panel document-draft-editor p-3.5 space-y-3 ${editingLineId ? 'ring-2 ring-amber-500/50 shadow-xl' : ''}`}>
         {editingLineId ? (
-          <div className="document-draft-editor-head flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
-            <span className="text-xs font-bold text-amber-700 dark:text-amber-400">اصلاح ردیف انتخاب‌شده</span>
+          <div className="document-draft-editor-head flex items-center justify-between pb-2 border-b border-amber-200 dark:border-amber-900/60 bg-amber-50/50 dark:bg-amber-950/20 -mx-3.5 -mt-3.5 p-3 rounded-t-xl">
+            <span className="text-xs font-black text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
+              <PencilLine size={15} /> در حال اصلاح ردیف انتخاب‌شده
+            </span>
             <button type="button" className="document-cancel-edit" onClick={cancelEdit}>
               انصراف از ویرایش
             </button>
@@ -1153,6 +1209,7 @@ export default function DocumentForm({
           selectedCustomer={selectedCustomer}
           documentId={documentId}
           nature={documentNature}
+          isEditing={Boolean(editingLineId)}
           metalsTabLabel={`${documentNature === 'received' ? 'ورود' : 'خروج'} ${
             draftLine.details.metalType === 'silver'
               ? 'نقره'
@@ -1275,9 +1332,9 @@ export default function DocumentForm({
               </div>
               {/* Sticky Floating Submit Row Button */}
               {draftReady ? (
-                <div className="sticky bottom-3 z-30 flex justify-center pt-2">
+                <div className={`sticky ${isLinesPinned ? 'bottom-32' : 'bottom-3'} z-30 flex justify-center pt-2 transition-all duration-300`}>
                   <button type="button" className="document-commit-line-button shadow-lg max-w-sm" onClick={commitDraftLine}>
-                    <ListPlus size={16} /> {editingLineId ? 'اصلاح ردیف' : 'ثبت ردیف'}
+                    <ListPlus size={16} /> {editingLineId ? 'ثبت اصلاح ردیف' : 'ثبت ردیف'}
                   </button>
                 </div>
               ) : null}
@@ -1496,14 +1553,14 @@ export default function DocumentForm({
               </AnimatePresence>
 
               {draftReady ? (
-                <div className="sticky bottom-3 z-30 flex justify-center pt-2">
+                <div className={`sticky ${isLinesPinned ? 'bottom-32' : 'bottom-3'} z-30 flex justify-center pt-2 transition-all duration-300`}>
                   <button
                     type="button"
                     className="document-commit-line-button shadow-lg max-w-sm"
                     onClick={commitDraftLine}
                   >
                     <ListPlus size={16} />
-                    {editingLineId ? 'اصلاح ردیف' : 'ثبت ردیف'}
+                    {editingLineId ? 'ثبت اصلاح ردیف' : 'ثبت ردیف'}
                   </button>
                 </div>
               ) : null}
@@ -1596,14 +1653,14 @@ export default function DocumentForm({
               </div>
 
               {draftReady ? (
-                <div className="sticky bottom-3 z-30 flex justify-center pt-2">
+                <div className={`sticky ${isLinesPinned ? 'bottom-32' : 'bottom-3'} z-30 flex justify-center pt-2 transition-all duration-300`}>
                   <button
                     type="button"
                     className="document-commit-line-button shadow-lg max-w-sm"
                     onClick={commitDraftLine}
                   >
                     <ListPlus size={16} />
-                    {editingLineId ? 'اصلاح ردیف' : 'ثبت ردیف'}
+                    {editingLineId ? 'ثبت اصلاح ردیف' : 'ثبت ردیف'}
                   </button>
                 </div>
               ) : null}
@@ -1685,14 +1742,17 @@ export default function DocumentForm({
             <table className="document-lines-table">
               <thead>
                 <tr>
-                  <th style={{ width: '6%' }}>ردیف</th>
-                  <th style={{ width: '22%' }}>نوع سند</th>
-                  <th style={{ width: '12%' }}>نوع ارز</th>
-                  <th style={{ width: '14%' }}>بدهکار وزنی</th>
-                  <th style={{ width: '14%' }}>بستانکار وزنی</th>
-                  <th style={{ width: '14%' }}>بدهکار مالی</th>
-                  <th style={{ width: '14%' }}>بستانکار مالی</th>
-                  <th style={{ width: '4%' }}></th>
+                  <th style={{ width: '5%' }}>ردیف</th>
+                  <th style={{ width: '14%' }}>نوع سند</th>
+                  <th style={{ width: '10%' }}>وزن</th>
+                  <th style={{ width: '8%' }}>عیار</th>
+                  <th style={{ width: '9%' }}>نوع ارز</th>
+                  <th style={{ width: '11%' }}>بدهکار وزنی</th>
+                  <th style={{ width: '11%' }}>بستانکار وزنی</th>
+                  <th style={{ width: '11%' }}>بدهکار مالی</th>
+                  <th style={{ width: '11%' }}>بستانکار مالی</th>
+                  <th style={{ width: '8%' }}>شرح سند</th>
+                  <th style={{ width: '2%' }}></th>
                 </tr>
               </thead>
               <tbody>
@@ -1999,22 +2059,24 @@ function CustomerBalanceLiquid({ customer }: { customer: Customer }) {
 
   return (
     <motion.div
-      className="document-liquid-balance"
+      className="document-liquid-balance p-3 sm:p-4 border-amber-200/80 bg-amber-50/40 dark:bg-amber-950/20"
       initial={{ opacity: 0, height: 0, y: -8 }}
       animate={{ opacity: 1, height: 'auto', y: 0 }}
       exit={{ opacity: 0, height: 0, y: -8 }}
       transition={{ type: 'spring', stiffness: 260, damping: 26 }}
     >
-      <div className="document-liquid-title">
-        <span className="document-liquid-orb"><Sparkles size={14} /></span>
+      <div className="document-liquid-title mb-2 sm:mb-0">
+        <span className="document-liquid-orb w-9 h-9"><Sparkles size={18} /></span>
         <div>
-          <strong className="text-xs font-bold">وضعیت طلب و بدهی {customer.name}</strong>
+          <strong className="text-sm sm:text-base font-extrabold text-amber-900 dark:text-amber-200">
+            وضعیت طلب و بدهی {customer.name}
+          </strong>
         </div>
       </div>
-      <div className="document-liquid-items">
+      <div className="document-liquid-items gap-2.5">
         {visibleBalances.map((balance, index) => (
           <motion.div
-            className={`document-liquid-item ${
+            className={`document-liquid-item p-3 ${
               balance.value > 0 ? 'is-credit' : balance.value < 0 ? 'is-debit' : 'is-zero'
             }`}
             key={balance.id}
@@ -2028,13 +2090,13 @@ function CustomerBalanceLiquid({ customer }: { customer: Customer }) {
             }}
           >
             <span className="document-liquid-blob" />
-            <small className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">{balance.label}</small>
-            <strong className="text-xs font-extrabold tracking-tight">
+            <small className="text-xs font-extrabold text-slate-600 dark:text-slate-300 block mb-0.5">{balance.label}</small>
+            <strong className="text-base sm:text-lg font-black tracking-normal block my-0.5">
               {faNumber(Math.abs(balance.value), balance.digits)}
               {' '}
-              {balance.unit}
+              <span className="text-xs font-bold text-slate-500">{balance.unit}</span>
             </strong>
-            <em className="text-[10px] font-bold">
+            <em className="text-xs font-black block mt-0.5">
               {balance.value > 0
                 ? 'بستانکار از ما'
                 : balance.value < 0
@@ -2067,6 +2129,7 @@ function CommittedLineRow({
   let docType = '';
   let currencyUnit = '';
   let weight = 0;
+  let purityDisplay = '-';
   let financialAmount = 0;
 
   if (line.documentTab === 'currency') {
@@ -2086,9 +2149,13 @@ function CommittedLineRow({
     weight = line.details.calculationMethod === 'money'
       ? actualWeightFromMoney(line.details)
       : numberValue(line.details.rawWeight);
+    if (line.details.purity) {
+      purityDisplay = toPersianDigits(line.details.purity);
+    }
     financialAmount = numberValue(line.details.totalAmount);
   }
 
+  const weightDisplay = weight > 0 ? faNumber(weight, weightPrecision) : '-';
   const bedehkarVazni = isPaid && weight > 0 ? faNumber(weight, weightPrecision) : null;
   const bostankarVazni = isReceived && weight > 0 ? faNumber(weight, weightPrecision) : null;
   const bedehkarMali = isPaid && financialAmount > 0 ? faNumber(financialAmount) : null;
@@ -2110,11 +2177,12 @@ function CommittedLineRow({
         <span className="font-semibold text-slate-800 dark:text-slate-200 block truncate">
           {docType}
         </span>
-        {line.description ? (
-          <span className="text-[10px] text-slate-400 dark:text-slate-500 block truncate">
-            {line.description}
-          </span>
-        ) : null}
+      </td>
+      <td className="text-center font-bold text-slate-700 dark:text-slate-200">
+        {weightDisplay}
+      </td>
+      <td className="text-center font-medium text-slate-600 dark:text-slate-300">
+        {purityDisplay}
       </td>
       <td className="text-center font-medium text-slate-600 dark:text-slate-300">
         {currencyUnit}
@@ -2146,6 +2214,11 @@ function CommittedLineRow({
         ) : (
           <span className="text-slate-300 dark:text-slate-600">-</span>
         )}
+      </td>
+      <td className="text-right">
+        <span className="text-xs text-slate-600 dark:text-slate-300 block truncate" title={line.description}>
+          {line.description || '-'}
+        </span>
       </td>
       <td className="text-center">
         <div className="flex items-center justify-center gap-1">
