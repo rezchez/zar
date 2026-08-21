@@ -20,11 +20,13 @@ import {
   FileText,
   KeyRound,
   RefreshCw,
+  Palette,
 } from 'lucide-react';
 import { useAppSettings } from './SettingsProvider';
 import { jalaliDateToIso, parseJalaliDate, formatJalaliDate } from '@/lib/jalali';
 import { formatMoney } from '@/lib/money';
 import type { PriceApiSettings, PriceApiUnit } from '@/lib/price-api';
+import InvoicePrintDesigner from '@/src/components/InvoicePrintDesigner';
 
 const FONT_WEIGHT_LABELS: Record<number, string> = {
   100: '100 - نازک (Thin)',
@@ -72,7 +74,7 @@ export default function ProgramSettings() {
     reloadFonts,
   } = useAppSettings();
 
-  const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'price_api' | 'custom_fonts' | 'print_customization'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'price_api' | 'custom_fonts' | 'print_customization'>('print_customization');
 
   // Form State initialized directly from settings
   const [form, setForm] = useState(() => ({ ...settings }));
@@ -325,7 +327,7 @@ export default function ProgramSettings() {
   }
 
   return (
-    <div className="program-settings-page max-w-5xl mx-auto space-y-6" dir="rtl">
+    <div className="program-settings-page max-w-6xl mx-auto space-y-6" dir="rtl">
       {/* Heading */}
       <div className="dashboard-page-heading">
         <div>
@@ -340,11 +342,11 @@ export default function ProgramSettings() {
       </div>
 
       {/* Tabs Bar */}
-      <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-3">
+      <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-3 overflow-x-auto">
         <button
           type="button"
           onClick={() => setActiveTab('general')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-extrabold text-xs transition-all ${
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-extrabold text-xs whitespace-nowrap transition-all ${
             activeTab === 'general'
               ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30'
               : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -356,8 +358,21 @@ export default function ProgramSettings() {
 
         <button
           type="button"
+          onClick={() => setActiveTab('print_customization')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-extrabold text-xs whitespace-nowrap transition-all ${
+            activeTab === 'print_customization'
+              ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30'
+              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
+        >
+          <Palette size={16} />
+          شخصی‌سازی چاپ فاکتور
+        </button>
+
+        <button
+          type="button"
           onClick={() => setActiveTab('price_api')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-extrabold text-xs transition-all ${
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-extrabold text-xs whitespace-nowrap transition-all ${
             activeTab === 'price_api'
               ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30'
               : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -370,7 +385,7 @@ export default function ProgramSettings() {
         <button
           type="button"
           onClick={() => setActiveTab('appearance')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-extrabold text-xs transition-all ${
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-extrabold text-xs whitespace-nowrap transition-all ${
             activeTab === 'appearance'
               ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30'
               : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -382,21 +397,8 @@ export default function ProgramSettings() {
 
         <button
           type="button"
-          onClick={() => setActiveTab('print_customization')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-extrabold text-xs transition-all ${
-            activeTab === 'print_customization'
-              ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30'
-              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-          }`}
-        >
-          <FileText size={16} />
-          شخصی‌سازی چاپ فاکتور
-        </button>
-
-        <button
-          type="button"
           onClick={() => setActiveTab('custom_fonts')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-extrabold text-xs transition-all ${
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-extrabold text-xs whitespace-nowrap transition-all ${
             activeTab === 'custom_fonts'
               ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30'
               : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -708,7 +710,207 @@ export default function ProgramSettings() {
         </div>
       )}
 
-      {/* TAB 2: Appearance & Typography Settings */}
+      {/* TAB 2: Print Customization Interactive Designer */}
+      {activeTab === 'print_customization' && (
+        <div className="space-y-6">
+          {/* Store Info Fields */}
+          <section className="dashboard-panel p-6 space-y-4">
+            <div className="account-panel-heading border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div>
+                <p className="eyebrow">اطلاعات فروشگاه در چاپ</p>
+                <h2 className="flex items-center gap-2 text-sm font-black">
+                  <Building2 size={16} className="text-amber-600" />
+                  اطلاعات ثابت سربرگ و پانویس فاکتور
+                </h2>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+              <label className="account-field">
+                <span className="font-bold text-slate-700 dark:text-slate-300">نام فروشگاه / گالری</span>
+                <input
+                  type="text"
+                  value={form.printStoreName}
+                  onChange={(e) => updateFormField('printStoreName', e.target.value)}
+                  placeholder="مثال: گالری طلا و جواهر زر"
+                />
+              </label>
+
+              <label className="account-field">
+                <span className="font-bold text-slate-700 dark:text-slate-300">شماره تماس پشتیبانی</span>
+                <input
+                  type="text"
+                  value={form.printPhone}
+                  onChange={(e) => updateFormField('printPhone', e.target.value)}
+                  placeholder="۰۲۱-۱۲۳۴۵۶۷۸"
+                />
+              </label>
+
+              <label className="account-field">
+                <span className="font-bold text-slate-700 dark:text-slate-300">آدرس فروشگاه</span>
+                <input
+                  type="text"
+                  value={form.printAddress}
+                  onChange={(e) => updateFormField('printAddress', e.target.value)}
+                  placeholder="آدرس جهت درج در فاکتور"
+                />
+              </label>
+
+              <label className="account-field md:col-span-3">
+                <span className="font-bold text-slate-700 dark:text-slate-300">متن پانویس فاکتور</span>
+                <input
+                  type="text"
+                  value={form.printFooterText}
+                  onChange={(e) => updateFormField('printFooterText', e.target.value)}
+                  placeholder="متن توضیحات پایانی..."
+                />
+              </label>
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={handleSaveSettings}
+                disabled={isSaving}
+                className="customer-save-button text-xs py-2 px-3"
+              >
+                {isSaving ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />}
+                <span>{isSaving ? 'در حال ذخیره...' : 'ذخیره اطلاعات سربرگ'}</span>
+              </button>
+            </div>
+          </section>
+
+          {/* Interactive Print Designer System Component */}
+          <InvoicePrintDesigner />
+        </div>
+      )}
+
+      {/* TAB 3: Price API */}
+      {activeTab === 'price_api' && priceApi && (
+        <div className="space-y-6">
+          <section className="dashboard-panel p-6 space-y-6">
+            <div className="account-panel-heading border-b border-slate-100 dark:border-slate-800 pb-4">
+              <div>
+                <p className="eyebrow">دریافت خودکار بازار</p>
+                <h2 className="flex items-center gap-2">
+                  <KeyRound size={18} className="text-amber-600" />
+                  اتصال API قیمت
+                </h2>
+              </div>
+              <label className="flex items-center gap-2 text-xs font-bold cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={priceApi.enabled}
+                  onChange={(e) => setPriceApi((current) => current && ({ ...current, enabled: e.target.checked }))}
+                  className="accent-amber-500"
+                />
+                فعال‌سازی دریافت خودکار
+              </label>
+            </div>
+
+            {priceApiMessage && (
+              <div className={`p-3.5 rounded-xl text-xs border ${
+                priceApiMessage.type === 'success'
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
+                  : 'bg-rose-500/10 border-rose-500/30 text-rose-700 dark:text-rose-300'
+              }`}>
+                {priceApiMessage.text}
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <label className="account-field md:col-span-2">
+                <span className="font-bold text-xs text-slate-700 dark:text-slate-300">کلید API</span>
+                <div className="flex items-stretch gap-2">
+                  <input
+                    type="password"
+                    value={priceApi.apiKey}
+                    onChange={(e) => setPriceApi((current) => current && ({ ...current, apiKey: e.target.value }))}
+                    placeholder="کلید API سرویس را وارد کنید"
+                    autoComplete="off"
+                    className="min-w-0 flex-1"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSyncPriceApi}
+                    disabled={isPriceApiSyncing || isPriceApiSaving}
+                    className="customer-save-button whitespace-nowrap"
+                    title="ارسال درخواست فوری و دریافت قیمت‌ها"
+                  >
+                    {isPriceApiSyncing ? <Loader2 className="animate-spin" size={16} /> : <RefreshCw size={16} />}
+                    {isPriceApiSyncing ? 'در حال دریافت...' : 'دریافت فوری'}
+                  </button>
+                </div>
+                <small className="text-slate-500">این کلید به‌صورت خودکار در آدرس ثابت سرویس قرار می‌گیرد.</small>
+              </label>
+
+              <label className="account-field">
+                <span className="font-bold text-xs text-slate-700 dark:text-slate-300">بازه درخواست (دقیقه)</span>
+                <input
+                  type="number"
+                  min="1"
+                  max="1440"
+                  step="1"
+                  value={priceApi.intervalMinutes}
+                  onChange={(e) => setPriceApi((current) => current && ({ ...current, intervalMinutes: Number(e.target.value) }))}
+                  required
+                />
+                <small className="text-slate-500">هر ۱ تا ۱۴۴۰ دقیقه یک درخواست جدید به API ارسال می‌شود.</small>
+              </label>
+            </div>
+
+            <div className="border-t border-slate-100 dark:border-slate-800 pt-5 space-y-4">
+              <div>
+                <h3 className="font-bold text-sm text-slate-800 dark:text-slate-200">واحدهای فعال</h3>
+                <p className="text-xs text-slate-500 mt-1">پس از ذخیره و تست اتصال، واحدهای موجود از پاسخ API نمایش داده می‌شوند.</p>
+              </div>
+              {priceApi.availableUnits.length === 0 ? (
+                <p className="text-xs text-slate-500 py-4 text-center border border-dashed border-slate-300 dark:border-slate-700 rounded-xl">
+                  هنوز واحدی از API دریافت نشده است.
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {priceApi.availableUnits.map((unit: PriceApiUnit) => {
+                    const checked = priceApi.selectedSymbols.includes(unit.symbol);
+                    return (
+                      <label key={`${unit.category}-${unit.symbol}`} className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-amber-400 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => setPriceApi((current) => {
+                            if (!current) return current;
+                            const selectedSymbols = e.target.checked
+                              ? [...new Set([...current.selectedSymbols, unit.symbol])]
+                              : current.selectedSymbols.filter((symbol) => symbol !== unit.symbol);
+                            return { ...current, selectedSymbols };
+                          })}
+                          className="accent-amber-500"
+                        />
+                        <span className="text-xs">
+                          <strong className="block">{unit.name}</strong>
+                          <small className="text-slate-500">{unit.symbol} · {unit.category}</small>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-wrap justify-end gap-3">
+              <button type="button" onClick={handleSavePriceApi} disabled={isPriceApiSaving || isPriceApiSyncing} className="customer-save-button">
+                {isPriceApiSaving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
+                ذخیره تنظیمات API
+              </button>
+            </div>
+            {priceApi.lastSyncAt && (
+              <small className="block text-left text-slate-500">آخرین دریافت: {new Date(priceApi.lastSyncAt).toLocaleString('fa-IR')}</small>
+            )}
+          </section>
+        </div>
+      )}
+
+      {/* TAB 4: Appearance & Typography Settings */}
       {activeTab === 'appearance' && (
         <div className="space-y-6">
           <section className="dashboard-panel p-6 space-y-6">
@@ -883,225 +1085,7 @@ export default function ProgramSettings() {
         </div>
       )}
 
-      {/* TAB 3: Price API */}
-      {activeTab === 'price_api' && priceApi && (
-        <div className="space-y-6">
-          <section className="dashboard-panel p-6 space-y-6">
-            <div className="account-panel-heading border-b border-slate-100 dark:border-slate-800 pb-4">
-              <div>
-                <p className="eyebrow">دریافت خودکار بازار</p>
-                <h2 className="flex items-center gap-2">
-                  <KeyRound size={18} className="text-amber-600" />
-                  اتصال API قیمت
-                </h2>
-              </div>
-              <label className="flex items-center gap-2 text-xs font-bold cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={priceApi.enabled}
-                  onChange={(e) => setPriceApi((current) => current && ({ ...current, enabled: e.target.checked }))}
-                  className="accent-amber-500"
-                />
-                فعال‌سازی دریافت خودکار
-              </label>
-            </div>
-
-            {priceApiMessage && (
-              <div className={`p-3.5 rounded-xl text-xs border ${
-                priceApiMessage.type === 'success'
-                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
-                  : 'bg-rose-500/10 border-rose-500/30 text-rose-700 dark:text-rose-300'
-              }`}>
-                {priceApiMessage.text}
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <label className="account-field md:col-span-2">
-                <span className="font-bold text-xs text-slate-700 dark:text-slate-300">کلید API</span>
-                <div className="flex items-stretch gap-2">
-                  <input
-                    type="password"
-                    value={priceApi.apiKey}
-                    onChange={(e) => setPriceApi((current) => current && ({ ...current, apiKey: e.target.value }))}
-                    placeholder="کلید API سرویس را وارد کنید"
-                    autoComplete="off"
-                    className="min-w-0 flex-1"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleSyncPriceApi}
-                    disabled={isPriceApiSyncing || isPriceApiSaving}
-                    className="customer-save-button whitespace-nowrap"
-                    title="ارسال درخواست فوری و دریافت قیمت‌ها"
-                  >
-                    {isPriceApiSyncing ? <Loader2 className="animate-spin" size={16} /> : <RefreshCw size={16} />}
-                    {isPriceApiSyncing ? 'در حال دریافت...' : 'دریافت فوری'}
-                  </button>
-                </div>
-                <small className="text-slate-500">این کلید به‌صورت خودکار در آدرس ثابت سرویس قرار می‌گیرد.</small>
-              </label>
-
-              <label className="account-field">
-                <span className="font-bold text-xs text-slate-700 dark:text-slate-300">بازه درخواست (دقیقه)</span>
-                <input
-                  type="number"
-                  min="1"
-                  max="1440"
-                  step="1"
-                  value={priceApi.intervalMinutes}
-                  onChange={(e) => setPriceApi((current) => current && ({ ...current, intervalMinutes: Number(e.target.value) }))}
-                  required
-                />
-                <small className="text-slate-500">هر ۱ تا ۱۴۴۰ دقیقه یک درخواست جدید به API ارسال می‌شود.</small>
-              </label>
-            </div>
-
-            <div className="border-t border-slate-100 dark:border-slate-800 pt-5 space-y-4">
-              <div>
-                <h3 className="font-bold text-sm text-slate-800 dark:text-slate-200">واحدهای فعال</h3>
-                <p className="text-xs text-slate-500 mt-1">پس از ذخیره و تست اتصال، واحدهای موجود از پاسخ API نمایش داده می‌شوند.</p>
-              </div>
-              {priceApi.availableUnits.length === 0 ? (
-                <p className="text-xs text-slate-500 py-4 text-center border border-dashed border-slate-300 dark:border-slate-700 rounded-xl">
-                  هنوز واحدی از API دریافت نشده است.
-                </p>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {priceApi.availableUnits.map((unit: PriceApiUnit) => {
-                    const checked = priceApi.selectedSymbols.includes(unit.symbol);
-                    return (
-                      <label key={`${unit.category}-${unit.symbol}`} className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-amber-400 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(e) => setPriceApi((current) => {
-                            if (!current) return current;
-                            const selectedSymbols = e.target.checked
-                              ? [...new Set([...current.selectedSymbols, unit.symbol])]
-                              : current.selectedSymbols.filter((symbol) => symbol !== unit.symbol);
-                            return { ...current, selectedSymbols };
-                          })}
-                          className="accent-amber-500"
-                        />
-                        <span className="text-xs">
-                          <strong className="block">{unit.name}</strong>
-                          <small className="text-slate-500">{unit.symbol} · {unit.category}</small>
-                        </span>
-                      </label>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            <div className="flex flex-wrap justify-end gap-3">
-              <button type="button" onClick={handleSavePriceApi} disabled={isPriceApiSaving || isPriceApiSyncing} className="customer-save-button">
-                {isPriceApiSaving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
-                ذخیره تنظیمات API
-              </button>
-            </div>
-            {priceApi.lastSyncAt && (
-              <small className="block text-left text-slate-500">آخرین دریافت: {new Date(priceApi.lastSyncAt).toLocaleString('fa-IR')}</small>
-            )}
-          </section>
-        </div>
-      )}
-
-      {/* TAB 5: Print Customization */}
-      {activeTab === 'print_customization' && (
-        <div className="space-y-6">
-          <section className="dashboard-panel p-6 space-y-6">
-            <div className="account-panel-heading border-b border-slate-100 dark:border-slate-800 pb-4">
-              <div>
-                <p className="eyebrow">قالب و سربرگ چاپ</p>
-                <h2 className="flex items-center gap-2">
-                  <FileText size={18} className="text-amber-600" />
-                  شخصی‌سازی چاپ فاکتور
-                </h2>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <label className="account-field">
-                <span className="font-bold text-xs text-slate-700 dark:text-slate-300">نام فروشگاه / گالری</span>
-                <input
-                  type="text"
-                  value={form.printStoreName}
-                  onChange={(e) => updateFormField('printStoreName', e.target.value)}
-                  placeholder="مثال: گالری طلا و جواهر زر"
-                />
-              </label>
-
-              <label className="account-field">
-                <span className="font-bold text-xs text-slate-700 dark:text-slate-300">شماره تماس پشتیبانی / فاکتور</span>
-                <input
-                  type="text"
-                  value={form.printPhone}
-                  onChange={(e) => updateFormField('printPhone', e.target.value)}
-                  placeholder="۰۲۱-۱۲۳۴۵۶۷۸"
-                />
-              </label>
-
-              <label className="account-field md:col-span-2">
-                <span className="font-bold text-xs text-slate-700 dark:text-slate-300">آدرس دقیق فروشگاه</span>
-                <input
-                  type="text"
-                  value={form.printAddress}
-                  onChange={(e) => updateFormField('printAddress', e.target.value)}
-                  placeholder="آدرس دقیق برای درج در سربرگ فاکتور"
-                />
-              </label>
-
-              <label className="account-field md:col-span-2">
-                <span className="font-bold text-xs text-slate-700 dark:text-slate-300">متن پانویس / شرایط فاکتور</span>
-                <textarea
-                  value={form.printFooterText}
-                  onChange={(e) => updateFormField('printFooterText', e.target.value)}
-                  rows={3}
-                  placeholder="متن توضیحات پایانی..."
-                />
-              </label>
-
-              <label className="account-field">
-                <span className="font-bold text-xs text-slate-700 dark:text-slate-300">قالب چاپ فعال</span>
-                <select
-                  value={form.printActiveTemplate}
-                  onChange={(e) => updateFormField('printActiveTemplate', e.target.value as any)}
-                >
-                  <option value="standard">قالب استاندارد طلافروشی</option>
-                  <option value="classic">قالب کلاسیک</option>
-                  <option value="modern">قالب مدرن</option>
-                </select>
-              </label>
-
-              <div className="flex items-center gap-6 pt-6">
-                <label className="flex items-center gap-2 text-xs font-bold cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={form.printShowStamp}
-                    onChange={(e) => updateFormField('printShowStamp', e.target.checked)}
-                    className="accent-amber-500"
-                  />
-                  نمایش جایگاه مهر
-                </label>
-
-                <label className="flex items-center gap-2 text-xs font-bold cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={form.printShowSignature}
-                    onChange={(e) => updateFormField('printShowSignature', e.target.checked)}
-                    className="accent-amber-500"
-                  />
-                  نمایش جایگاه امضا
-                </label>
-              </div>
-            </div>
-          </section>
-        </div>
-      )}
-
-      {/* TAB 4: Custom Fonts Management */}
+      {/* TAB 5: Custom Fonts Management */}
       {activeTab === 'custom_fonts' && (
         <div className="space-y-6">
           <section className="dashboard-panel p-6 space-y-6">
@@ -1225,7 +1209,7 @@ export default function ProgramSettings() {
       )}
 
       {/* Save Button for Settings */}
-      {activeTab !== 'custom_fonts' && activeTab !== 'price_api' && (
+      {activeTab === 'general' && (
         <div className="flex justify-end pt-4">
           <button
             type="button"
