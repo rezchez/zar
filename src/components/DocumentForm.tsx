@@ -907,16 +907,32 @@ export default function DocumentForm({
     }
   }
 
-  const totals = useMemo(
-    () => committedLines.reduce(
-      (sum, line) => sum + (
-        line.documentNature === 'received' ? 1 : -1
-      ) * (line.details.calculationMethod === 'money'
-        ? actualWeightFromMoney(line.details)
-        : numberValue(line.details.rawWeight)),
-      0,
+  const metalNetEffects = useMemo(() => {
+    const effects: Record<'gold' | 'silver' | 'platinum', number> = {
+      gold: 0,
+      silver: 0,
+      platinum: 0,
+    };
+
+    committedLines.forEach((line) => {
+      if (line.documentTab === 'raw-gold' || line.documentTab === 'gold-sale') {
+        const metal = line.details.metalType || 'gold';
+        const weight = line.details.calculationMethod === 'money'
+          ? actualWeightFromMoney(line.details)
+          : numberValue(line.details.rawWeight);
+        const direction = line.documentNature === 'received' ? 1 : -1;
+        effects[metal] += direction * weight;
+      }
+    });
+
+    return effects;
+  }, [committedLines]);
+
+  const activeMetals = useMemo(
+    () => (Object.keys(metalNetEffects) as Array<'gold' | 'silver' | 'platinum'>).filter(
+      (m) => metalNetEffects[m] !== 0,
     ),
-    [committedLines],
+    [metalNetEffects],
   );
 
   return (
@@ -1700,13 +1716,42 @@ export default function DocumentForm({
         {/* BOTTOM SUBMIT & NET BALANCE SIDE-BY-SIDE */}
         <div className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-2">
           {committedLines.length ? (
-            <div className="flex items-center gap-2 px-3 py-1.5 border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50/80 dark:bg-slate-900/80 text-xs font-bold shrink-0">
-              <span className="text-slate-600 dark:text-slate-400">خالص اثر سند بر مانده طلا:</span>
-              <strong className={totals >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
-                {faNumber(Math.abs(totals), weightPrecision)} گرم
-                {' · '}
-                {totals >= 0 ? 'بستانکار' : 'بدهکار'}
-              </strong>
+            <div className="flex flex-wrap items-center gap-2 px-3 py-1.5 border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50/80 dark:bg-slate-900/80 text-xs font-bold shrink-0">
+              <span className="text-slate-600 dark:text-slate-400">
+                {activeMetals.length > 1 ? 'خالص اثر سند:' : 'خالص اثر سند بر مانده:'}
+              </span>
+              {activeMetals.length === 0 ? (
+                <span className="text-slate-500">بدون اثر وزنی</span>
+              ) : activeMetals.length === 1 ? (
+                (() => {
+                  const m = activeMetals[0];
+                  const label = m === 'silver' ? 'نقره' : m === 'platinum' ? 'پلاتین' : 'طلا';
+                  const val = metalNetEffects[m];
+                  return (
+                    <strong className={val >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
+                      {label}: {faNumber(Math.abs(val), weightPrecision)} گرم {val >= 0 ? 'بستانکار' : 'بدهکار'}
+                    </strong>
+                  );
+                })()
+              ) : (
+                <span className="flex flex-wrap gap-1.5 items-center text-slate-700 dark:text-slate-200">
+                  <span className="text-amber-600 dark:text-amber-400">چند فلزی (</span>
+                  {activeMetals.map((m, idx) => {
+                    const label = m === 'silver' ? 'نقره' : m === 'platinum' ? 'پلاتین' : 'طلا';
+                    const val = metalNetEffects[m];
+                    return (
+                      <span key={m} className="inline-flex items-center gap-1">
+                        <span>{label}:</span>
+                        <strong className={val >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
+                          {faNumber(Math.abs(val), weightPrecision)} گرم {val >= 0 ? 'بستانکار' : 'بدهکار'}
+                        </strong>
+                        {idx < activeMetals.length - 1 ? <span className="mx-0.5 text-slate-400">/</span> : null}
+                      </span>
+                    );
+                  })}
+                  <span className="text-amber-600 dark:text-amber-400">)</span>
+                </span>
+              )}
             </div>
           ) : <div className="hidden sm:block flex-1" />}
 
