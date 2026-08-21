@@ -127,9 +127,9 @@ export default function DocumentEntryTabs({
   const selectedTab = tabs.find((tab) => tab.id === activeTab) ?? tabs[0];
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[14rem_minmax(0,1fr)]">
+    <div className="grid gap-4 lg:grid-cols-[12rem_minmax(0,1fr)]">
       <div className="min-w-0 lg:col-start-2 lg:row-start-1">{selectedTab.content}</div>
-      <nav className="order-first flex gap-2 overflow-x-auto pb-1 lg:order-last lg:col-start-1 lg:row-start-1 lg:block lg:space-y-2 lg:overflow-visible" aria-label="تب‌های ثبت سند">
+      <nav className="order-first flex gap-1.5 overflow-x-auto pb-1 lg:order-last lg:col-start-1 lg:row-start-1 lg:block lg:space-y-1.5 lg:overflow-visible" aria-label="تب‌های ثبت سند">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = tab.id === selectedTab.id;
@@ -139,17 +139,17 @@ export default function DocumentEntryTabs({
               key={tab.id}
               onClick={() => selectTab(tab.id)}
               aria-current={isActive ? 'page' : undefined}
-              className={`flex min-w-max items-center gap-2 rounded-xl px-3 py-3 text-right text-xs font-bold transition lg:w-full ${
+              className={`flex min-w-max items-center gap-2 rounded-lg px-2.5 py-2 text-right text-[11px] font-bold transition lg:w-full ${
                 isActive
                   ? nature === 'paid'
-                    ? 'bg-rose-600 text-white shadow-md shadow-rose-600/20'
-                    : 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20'
+                    ? 'bg-rose-600 text-white shadow-sm shadow-rose-600/20'
+                    : 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/20'
                   : nature === 'paid'
                     ? 'bg-slate-100 text-slate-600 hover:bg-rose-50 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-rose-950/40'
                     : 'bg-slate-100 text-slate-600 hover:bg-emerald-50 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-emerald-950/40'
               }`}
             >
-              <Icon size={16} />
+              <Icon size={14} />
               <span>{tab.label}</span>
             </button>
           );

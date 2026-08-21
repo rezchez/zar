@@ -164,18 +164,42 @@ export function RawMetalOperationTypeSelector({
     { id: 'question', title: nature === 'received' ? 'ورود سواله' : 'خروج سواله', icon: FlaskConical },
   ];
   return (
-    <div className="grid gap-3 sm:grid-cols-2" role="radiogroup" aria-label="نوع ورود و خروج فلز">
-      {options.map((option) => (
-        <OperationOption
-          key={option.id}
-          active={value === option.id}
-          nature={nature}
-          title={option.title}
-          description=""
-          icon={option.icon}
-          onClick={() => onChange(option.id)}
-        />
-      ))}
+    <div className="grid gap-2 grid-cols-2 lg:grid-cols-4" role="radiogroup" aria-label="نوع ورود و خروج فلز">
+      {options.map((option) => {
+        const Icon = option.icon;
+        const active = value === option.id;
+        const accent = nature === 'paid' ? {
+          active: 'border-rose-500 bg-rose-500/10 text-rose-700 dark:text-rose-300 shadow-sm',
+          hover: 'hover:border-rose-300 hover:bg-rose-50 dark:hover:border-rose-700 dark:hover:bg-rose-950/30',
+          icon: 'bg-rose-500 text-white',
+        } : {
+          active: 'border-emerald-500 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 shadow-sm',
+          hover: 'hover:border-emerald-300 hover:bg-emerald-50 dark:hover:border-emerald-700 dark:hover:bg-emerald-950/30',
+          icon: 'bg-emerald-500 text-white',
+        };
+
+        return (
+          <button
+            type="button"
+            key={option.id}
+            role="radio"
+            aria-checked={active}
+            onClick={() => onChange(option.id)}
+            className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-right transition ${
+              active
+                ? accent.active
+                : `border-slate-200 bg-white/70 text-slate-600 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300 ${accent.hover}`
+            }`}
+          >
+            <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg text-xs ${
+              active ? accent.icon : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300'
+            }`}>
+              <Icon size={15} />
+            </span>
+            <strong className="block text-xs font-bold truncate">{option.title}</strong>
+          </button>
+        );
+      })}
     </div>
   );
 }
