@@ -168,7 +168,7 @@ export default function GoldSaleTab({
               </Field>
             ) : null}
 
-            <Field label="عیار مبنا (تنظیمات کلی)">
+            <Field label="عیار">
               <input
                 type="number"
                 min="1"
@@ -176,9 +176,10 @@ export default function GoldSaleTab({
                 step="0.1"
                 inputMode="decimal"
                 value={draftLine.details.purity}
-                readOnly
-                aria-label="عیار مبنا از تنظیمات کلی برنامه"
-                title="این عیار از تنظیمات کلی برنامه خوانده می‌شود."
+                onChange={(event) => updateMetalValue('purity', event.target.value)}
+                onKeyDown={handleKeyDownEnter}
+                aria-label="عیار ردیف سند"
+                title="عیار اول از تنظیمات برنامه خوانده می‌شود و قابل ویرایش است."
                 placeholder="۷۵۰"
               />
             </Field>

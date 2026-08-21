@@ -2,18 +2,19 @@ import { NextResponse } from 'next/server';
 
 import { recordAuditEvent } from '@/lib/audit';
 import { getServerAuthContext } from '@/lib/auth';
+import {
+  canModifyTargetUser,
+  hasPermission,
+  type UserRole,
+} from '@/lib/authorization';
 
 const allowedRoles = new Set(['user', 'manager', 'admin']);
 const allowedStatuses = new Set(['active', 'blocked']);
 
-function isManagerOrAdmin(role: string) {
-  return role === 'manager' || role === 'admin';
-}
-
 export async function GET() {
   const context = await getServerAuthContext();
 
-  if (!context || !isManagerOrAdmin(context.user.role)) {
+  if (!context || (!hasPermission(context.user, 'user.view') && !hasPermission(context.user, 'user.manage'))) {
     return NextResponse.json({ message: 'دسترسی غیرمجاز.' }, { status: 403 });
   }
 
@@ -40,6 +41,7 @@ export async function GET() {
         created: user.created,
         lastLoginAt: user.lastLoginAt ?? null,
         lastLogoutAt: user.lastLogoutAt ?? null,
+        customPermissions: user.customPermissions ?? { grants: [], denies: [] },
       })),
     });
   } catch {
@@ -53,7 +55,7 @@ export async function GET() {
 export async function PATCH(request: Request) {
   const context = await getServerAuthContext();
 
-  if (!context || !isManagerOrAdmin(context.user.role)) {
+  if (!context || (!hasPermission(context.user, 'user.edit') && !hasPermission(context.user, 'user.manage'))) {
     return NextResponse.json({ message: 'دسترسی غیرمجاز.' }, { status: 403 });
   }
 
@@ -113,10 +115,6 @@ export async function PATCH(request: Request) {
     }
   }
 
-  if (status === 'blocked' && !blockedUntil) {
-    // null means permanent block.
-  }
-
   if (status === 'active' && blockedUntil) {
     return NextResponse.json(
       { message: 'کاربر فعال نباید زمان مسدودی داشته باشد.' },
@@ -131,28 +129,40 @@ export async function PATCH(request: Request) {
     );
   }
 
-  if (context.user.role === 'manager' && role === 'admin') {
-    return NextResponse.json(
-      { message: 'Manager اجازه ارتقای کاربر به Admin را ندارد.' },
-      { status: 403 },
-    );
-  }
-
   let targetUser;
   try {
     targetUser = await context.pb.collection('users').getOne(id);
-
-    if (context.user.role === 'manager' && targetUser.role === 'admin') {
-      return NextResponse.json(
-        { message: 'Manager اجازه مدیریت حساب Admin را ندارد.' },
-        { status: 403 },
-      );
-    }
   } catch {
     return NextResponse.json(
       { message: 'کاربر موردنظر پیدا نشد.' },
       { status: 404 },
     );
+  }
+
+  const targetRole = (targetUser.role === 'admin' || targetUser.role === 'manager'
+    ? targetUser.role
+    : 'user') as UserRole;
+
+  // Anti-privilege escalation check
+  const modifyCheck = canModifyTargetUser(context.user, { id: targetUser.id, role: targetRole });
+  if (!modifyCheck.allowed) {
+    return NextResponse.json({ message: modifyCheck.reason }, { status: 403 });
+  }
+
+  // Role change check
+  if (targetRole !== role) {
+    if (!hasPermission(context.user, 'user.role.change')) {
+      return NextResponse.json(
+        { message: 'شما مجوز تغییر نقش کاربر (user.role.change) را ندارید.' },
+        { status: 403 },
+      );
+    }
+    if (context.user.role === 'manager' && role === 'admin') {
+      return NextResponse.json(
+        { message: 'Manager اجازه ارتقای کاربر به Admin را ندارد.' },
+        { status: 403 },
+      );
+    }
   }
 
   try {
@@ -293,6 +303,7 @@ export async function PATCH(request: Request) {
         created: user.created,
         lastLoginAt: user.lastLoginAt ?? null,
         lastLogoutAt: user.lastLogoutAt ?? null,
+        customPermissions: user.customPermissions ?? { grants: [], denies: [] },
       },
     });
   } catch {

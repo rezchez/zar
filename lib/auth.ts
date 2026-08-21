@@ -35,6 +35,10 @@ export type AuthenticatedUser = {
   authenticatorSetupAt?: string;
   avatar?: string;
   avatarUrl?: string;
+  customPermissions?: {
+    grants: string[];
+    denies: string[];
+  };
 };
 
 function readCookie(value: string | undefined): PocketBaseCookie | null {
@@ -118,6 +122,17 @@ function mapAuthenticatedUser(
   pb: ReturnType<typeof createPocketBaseClient>,
   record: NonNullable<AuthRecord>,
 ): AuthenticatedUser {
+  const customPermissions = record.customPermissions && typeof record.customPermissions === 'object'
+    ? {
+        grants: Array.isArray((record.customPermissions as { grants?: unknown }).grants)
+          ? ((record.customPermissions as { grants: unknown[] }).grants).map(String)
+          : [],
+        denies: Array.isArray((record.customPermissions as { denies?: unknown }).denies)
+          ? ((record.customPermissions as { denies: unknown[] }).denies).map(String)
+          : [],
+      }
+    : { grants: [], denies: [] };
+
   const user: AuthenticatedUser = {
       id: String(record.id ?? ''),
       role: record.role === 'admin' || record.role === 'manager' ? record.role : 'user',
@@ -155,6 +170,7 @@ function mapAuthenticatedUser(
       avatarUrl: typeof record.avatar === 'string'
         ? pb.files.getURL(record, record.avatar)
         : undefined,
+      customPermissions,
     };
   return user;
 }

@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server';
+
 import { getServerAuthContext } from '@/lib/auth';
+import { hasPermission } from '@/lib/authorization';
 
 async function contextOrError() {
   const context = await getServerAuthContext();
   if (!context) return { response: NextResponse.json({ message: 'ابتدا وارد حساب شوید.' }, { status: 401 }) };
-  if (context.user.role !== 'admin' && context.user.role !== 'manager') {
+  if (!hasPermission(context.user, 'user.view') && !hasPermission(context.user, 'report.financial') && !hasPermission(context.user, 'settings.view')) {
     return { response: NextResponse.json({ message: 'دسترسی مجاز نیست.' }, { status: 403 }) };
   }
   return { context };

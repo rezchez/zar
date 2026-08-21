@@ -15,6 +15,11 @@ export type AuditEvent =
   | 'authenticator_enabled'
   | 'authenticator_disabled'
   | 'role_changed'
+  | 'permission_granted'
+  | 'permission_revoked'
+  | 'permission_denied'
+  | 'permission_deny_removed'
+  | 'permission_failed_attempt'
   | 'user_blocked'
   | 'user_unblocked'
   | 'national_code_permission_granted'
@@ -26,7 +31,10 @@ export type AuditEvent =
   | 'transaction_deleted'
   | 'transaction_created'
   | 'transaction_updated'
-  | 'settings_updated';
+  | 'settings_updated'
+  | 'print_template_created'
+  | 'print_template_updated'
+  | 'print_template_deleted';
 
 export function getRequestMetadata(request: Request) {
   const forwarded = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim();

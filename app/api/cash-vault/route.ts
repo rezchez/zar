@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
+
 import { getServerAuthContext } from '@/lib/auth';
+import { hasPermission } from '@/lib/authorization';
 
 function amount(value: unknown) {
   const parsed = Number(String(value ?? '').replace(/,/g, ''));
@@ -9,6 +11,11 @@ function amount(value: unknown) {
 export async function GET() {
   const context = await getServerAuthContext();
   if (!context) return NextResponse.json({ message: 'ابتدا وارد حساب شوید.' }, { status: 401 });
+
+  if (!hasPermission(context.user, 'cash.view') && !hasPermission(context.user, 'cash.manage')) {
+    return NextResponse.json({ message: 'دسترسی غیرمجاز به اطلاعات صندوق.' }, { status: 403 });
+  }
+
   const vaults = await context.pb.collection('cash_funds').getFullList({ sort: 'currency_name' }).catch(async () =>
     context.pb.collection('cash_vaults').getFullList({ sort: 'currency' }).catch(() => []),
   );
@@ -18,6 +25,11 @@ export async function GET() {
 export async function POST(request: Request) {
   const context = await getServerAuthContext();
   if (!context) return NextResponse.json({ message: 'ابتدا وارد حساب شوید.' }, { status: 401 });
+
+  if (!hasPermission(context.user, 'cash.create') && !hasPermission(context.user, 'cash.manage')) {
+    return NextResponse.json({ message: 'دسترسی غیرمجاز به ایجاد تراکنش صندوق.' }, { status: 403 });
+  }
+
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const currency = String(body.currency ?? '').trim().slice(0, 12).toUpperCase();
   const value = amount(body.amount);

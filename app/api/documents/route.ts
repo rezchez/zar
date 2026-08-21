@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 
 import { recordAuditEvent } from '@/lib/audit';
 import { getServerAuthContext } from '@/lib/auth';
+import { hasPermission } from '@/lib/authorization';
 import {
   serializeDocumentDetails,
   mapDocument,
@@ -69,6 +70,10 @@ export async function GET(request: Request) {
   const context = await getServerAuthContext();
   if (!context) {
     return NextResponse.json({ message: 'ابتدا وارد حساب شوید.' }, { status: 401 });
+  }
+
+  if (!hasPermission(context.user, 'document.view') && !hasPermission(context.user, 'document.manage')) {
+    return NextResponse.json({ message: 'دسترسی غیرمجاز به اسناد.' }, { status: 403 });
   }
 
   try {
@@ -140,6 +145,10 @@ export async function POST(request: Request) {
   const context = await getServerAuthContext();
   if (!context) {
     return NextResponse.json({ message: 'ابتدا وارد حساب شوید.' }, { status: 401 });
+  }
+
+  if (!hasPermission(context.user, 'document.create') && !hasPermission(context.user, 'document.manage')) {
+    return NextResponse.json({ message: 'دسترسی غیرمجاز به ثبت سند جدید.' }, { status: 403 });
   }
 
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
@@ -257,7 +266,6 @@ export async function POST(request: Request) {
       // fallback
     }
 
-    // Assign per-customer document sequence & prefix with concurrency retry loop
     const activePrefix = await getActiveDocumentPrefix(writer);
     let attempts = 0;
     let finalRecords: Record<string, unknown>[] = [];
@@ -305,9 +313,8 @@ export async function POST(request: Request) {
           currentCreatedRecords.push(await writer.collection('transactions').create(payload));
         }
         finalRecords = currentCreatedRecords as unknown as Record<string, unknown>[];
-        break; // Success! Break out of retry loop.
+        break;
       } catch (err) {
-        // Rollback created lines in this attempt
         for (const record of currentCreatedRecords) {
           try {
             await writer.collection('transactions').delete(record.id);
@@ -356,7 +363,6 @@ export async function POST(request: Request) {
       registeredAt: finalRecords[0].created,
     }, { status: 201 });
   } catch (error) {
-    console.error('document_create_failed', error);
     const message = error instanceof Error ? error.message : 'ثبت سند انجام نشد. اطلاعات سند را بررسی و دوباره تلاش کنید.';
     return NextResponse.json(
       { message },

@@ -8,6 +8,7 @@ import {
   type CustomerBalanceValues,
 } from '@/lib/customer';
 import { getServerAuthContext } from '@/lib/auth';
+import { hasPermission } from '@/lib/authorization';
 import { recordAuditEvent } from '@/lib/audit';
 import { buildCustomerChanges } from '@/lib/customer-audit';
 import {
@@ -82,6 +83,10 @@ export async function GET() {
     return NextResponse.json({ message: 'ابتدا وارد حساب شوید.' }, { status: 401 });
   }
 
+  if (!hasPermission(context.user, 'customer.view') && !hasPermission(context.user, 'customer.manage')) {
+    return NextResponse.json({ message: 'دسترسی غیرمجاز به اطلاعات مشتریان.' }, { status: 403 });
+  }
+
   try {
     return NextResponse.json({
       customers: await getCustomersWithBalances(context.pb),
@@ -95,6 +100,10 @@ export async function POST(request: Request) {
   const context = await getServerAuthContext();
   if (!context) {
     return NextResponse.json({ message: 'ابتدا وارد حساب شوید.' }, { status: 401 });
+  }
+
+  if (!hasPermission(context.user, 'customer.create') && !hasPermission(context.user, 'customer.manage')) {
+    return NextResponse.json({ message: 'دسترسی غیرمجاز به ثبت مشتری جدید.' }, { status: 403 });
   }
 
   const formData = await request.formData();
