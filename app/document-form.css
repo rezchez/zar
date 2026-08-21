@@ -408,7 +408,7 @@
   padding: 0 12px;
   color: #4b586d;
   font-family: inherit;
-  font-size: 11px;
+  font-size: 15px;
   font-weight: 800;
   text-align: right;
   transition: border-color 180ms ease, box-shadow 180ms ease;
@@ -534,7 +534,7 @@
   background: transparent;
   color: #546176;
   font-family: inherit;
-  font-size: 10px;
+  font-size: 15px;
   font-weight: 700;
 }
 
