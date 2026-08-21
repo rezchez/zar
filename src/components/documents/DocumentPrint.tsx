@@ -10,7 +10,7 @@ import {
   type InvoicePrintElement,
   DEFAULT_SYSTEM_TEMPLATES,
   getPageDimensions,
-  AVAILABLE_TABLE_COLUMNS,
+  DEFAULT_TABLE_COLUMNS,
 } from '@/lib/print-templates';
 
 type DocumentPrintProps = {
@@ -107,6 +107,10 @@ export default function DocumentPrint({
             borderWidth: activeTemplate.page.borderEnabled ? `${activeTemplate.page.borderWidthMm}mm` : '0',
             borderColor: activeTemplate.page.borderColor || '#cbd5e1',
             borderStyle: activeTemplate.page.borderEnabled ? 'solid' : 'none',
+            paddingTop: `${activeTemplate.page.marginTopMm || 0}mm`,
+            paddingRight: `${activeTemplate.page.marginRightMm || 0}mm`,
+            paddingBottom: `${activeTemplate.page.marginBottomMm || 0}mm`,
+            paddingLeft: `${activeTemplate.page.marginLeftMm || 0}mm`,
           }}
           className="relative box-border text-slate-900 overflow-hidden"
         >
@@ -136,7 +140,7 @@ export default function DocumentPrint({
                 }}
                 className="box-border overflow-hidden"
               >
-                {renderRealPrintElementContent(el, settings, customer, documentNumber, documentDateJalali, lines, isFinalized)}
+                {renderRealPrintElementContent(el, settings, customer, documentNumber, documentDateJalali, lines, isFinalized, activeTemplate)}
               </div>
             );
           })}
@@ -154,6 +158,7 @@ function renderRealPrintElementContent(
   documentDateJalali: string,
   lines: DocumentLine[],
   isFinalized: boolean,
+  template: InvoicePrintTemplate,
 ) {
   switch (el.type) {
     case 'shop_name':
@@ -192,25 +197,19 @@ function renderRealPrintElementContent(
       );
 
     case 'items_table': {
-      const cols = el.content?.tableColumns || [
-        'index',
-        'operation_type',
-        'metal_type',
-        'weight',
-        'purity',
-        'converted_weight',
-        'lab_name',
-        'stamp_number',
-        'description',
-      ];
+      const configuredCols = template.table?.columns.filter((c) => c.visible) || DEFAULT_TABLE_COLUMNS;
 
       return (
         <table className="w-full h-full text-[85%] border-collapse border border-slate-400">
           <thead>
             <tr className="bg-slate-100 border-b border-slate-400 font-bold">
-              {cols.map((colId) => (
-                <th key={colId} className="p-1 border border-slate-400">
-                  {AVAILABLE_TABLE_COLUMNS.find((c) => c.id === colId)?.label || colId}
+              {configuredCols.map((col) => (
+                <th
+                  key={col.id}
+                  style={{ width: col.widthMm ? `${col.widthMm}mm` : 'auto' }}
+                  className="p-1 border border-slate-400"
+                >
+                  {col.label}
                 </th>
               ))}
             </tr>
@@ -223,22 +222,22 @@ function renderRealPrintElementContent(
 
               return (
                 <tr key={line.id} className="border-b border-slate-300">
-                  {cols.map((colId) => {
+                  {configuredCols.map((col) => {
                     let cellVal: React.ReactNode = '-';
-                    if (colId === 'index') cellVal = idx + 1;
-                    if (colId === 'operation_type') cellVal = line.documentTypeLabel || line.documentSubType;
-                    if (colId === 'metal_type') {
+                    if (col.id === 'index') cellVal = idx + 1;
+                    if (col.id === 'operation_type') cellVal = line.documentTypeLabel || line.documentSubType;
+                    if (col.id === 'metal_type') {
                       cellVal = line.details.metalType === 'silver' ? 'نقره' : line.details.metalType === 'platinum' ? 'پلاتین' : 'طلا';
                     }
-                    if (colId === 'weight') cellVal = rawWeight ? rawWeight.toFixed(3) : '-';
-                    if (colId === 'purity') cellVal = purity || '-';
-                    if (colId === 'converted_weight') cellVal = c750 ? c750.toFixed(3) : '-';
-                    if (colId === 'lab_name') cellVal = line.details.labName || '-';
-                    if (colId === 'stamp_number') cellVal = line.details.stampNumber || '-';
-                    if (colId === 'description') cellVal = line.description || '-';
+                    if (col.id === 'weight') cellVal = rawWeight ? rawWeight.toFixed(3) : '-';
+                    if (col.id === 'purity') cellVal = purity || '-';
+                    if (col.id === 'converted_weight') cellVal = c750 ? c750.toFixed(3) : '-';
+                    if (col.id === 'lab_name') cellVal = line.details.labName || '-';
+                    if (col.id === 'stamp_number') cellVal = line.details.stampNumber || '-';
+                    if (col.id === 'description') cellVal = line.description || '-';
 
                     return (
-                      <td key={colId} className="p-1 border border-slate-300 text-center">
+                      <td key={col.id} className="p-1 border border-slate-300 text-center">
                         {cellVal}
                       </td>
                     );
@@ -252,17 +251,26 @@ function renderRealPrintElementContent(
     }
 
     case 'totals_summary': {
-      const totalWeight = lines.reduce((acc, line) => acc + (Number(line.details.rawWeight) || 0), 0);
-      const total750 = lines.reduce((acc, line) => {
-        const raw = Number(line.details.rawWeight) || 0;
-        const purity = Number(line.details.purity) || 0;
-        return acc + (line.converted750 || (raw * purity) / 750);
+      // Distinct Multi-metal accumulation logic: Gold, Silver, Platinum strictly kept separate
+      const goldLines = lines.filter((l) => (l.details.metalType || 'gold') === 'gold');
+      const silverLines = lines.filter((l) => l.details.metalType === 'silver');
+      const platinumLines = lines.filter((l) => l.details.metalType === 'platinum');
+
+      const totalGoldWeight = goldLines.reduce((acc, l) => acc + (Number(l.details.rawWeight) || 0), 0);
+      const totalGold750 = goldLines.reduce((acc, l) => {
+        const raw = Number(l.details.rawWeight) || 0;
+        const purity = Number(l.details.purity) || 0;
+        return acc + (l.converted750 || (raw * purity) / 750);
       }, 0);
 
+      const totalSilverWeight = silverLines.reduce((acc, l) => acc + (Number(l.details.rawWeight) || 0), 0);
+      const totalPlatinumWeight = platinumLines.reduce((acc, l) => acc + (Number(l.details.rawWeight) || 0), 0);
+
       return (
-        <div className="flex items-center justify-around h-full font-bold text-[90%] px-3 bg-slate-100 border border-slate-300 rounded">
-          <span>جمع وزن فلز: {totalWeight.toFixed(3)} گرم</span>
-          <span>جمع وزن معادل ۷۵۰: {total750.toFixed(3)} گرم</span>
+        <div className="flex flex-wrap items-center justify-around h-full font-bold text-[85%] px-3 bg-slate-100 border border-slate-300 rounded">
+          {totalGoldWeight > 0 && <span>جمع طلا (۷۵۰): {totalGold750.toFixed(3)} گرم</span>}
+          {totalSilverWeight > 0 && <span>جمع نقره: {totalSilverWeight.toFixed(3)} گرم</span>}
+          {totalPlatinumWeight > 0 && <span>جمع پلاتین: {totalPlatinumWeight.toFixed(3)} گرم</span>}
           <span>تعداد ردیف: {lines.length}</span>
         </div>
       );
@@ -272,10 +280,10 @@ function renderRealPrintElementContent(
       return <div className="truncate text-[85%] text-center">{settings.printFooterText}</div>;
 
     case 'seller_signature':
-      return <div className="border-t border-dashed border-slate-400 pt-2 text-center font-bold">{el.content?.text || 'امضای خریدار / مشتری'}</div>;
+      return <div className="border-t border-dashed border-slate-400 pt-2 text-center font-bold">{template.footer?.sellerSignatureTitle || 'امضای فروشنده'}</div>;
 
     case 'stamp':
-      return <div className="border-t border-dashed border-slate-400 pt-2 text-center font-bold">{el.content?.text || 'مهر و امضای فروشگاه'}</div>;
+      return <div className="border-t border-dashed border-slate-400 pt-2 text-center font-bold">{template.footer?.customerSignatureTitle || 'مهر و امضای فروشگاه'}</div>;
 
     case 'print_datetime':
       return <div className="text-[75%] text-slate-600">تاریخ چاپ: {new Date().toLocaleDateString('fa-IR')}</div>;

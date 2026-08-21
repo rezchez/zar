@@ -11,6 +11,7 @@ import {
   ZoomIn,
   ZoomOut,
   Maximize2,
+  Minimize2,
   RotateCcw,
   Grid,
   Move,
@@ -23,13 +24,12 @@ import {
   Layers,
   ChevronDown,
   ChevronUp,
-  ChevronLeft,
-  ChevronRight,
-  Info,
   Type,
   Layout,
   Palette,
-  FileText,
+  ArrowUp,
+  ArrowDown,
+  Settings,
 } from 'lucide-react';
 import {
   type InvoicePrintTemplate,
@@ -39,18 +39,21 @@ import {
   type PageOrientation,
   type UnitType,
   ELEMENT_LABELS,
-  AVAILABLE_TABLE_COLUMNS,
   DEFAULT_SYSTEM_TEMPLATES,
   getPageDimensions,
   convertToMm,
   convertFromMm,
   createStandardElements,
+  DEFAULT_TABLE_COLUMNS,
+  type InvoiceTableColumnConfig,
 } from '@/lib/print-templates';
 import { useAppSettings } from '@/src/components/SettingsProvider';
 
 type Props = {
   onUnsavedChange?: (hasUnsaved: boolean) => void;
 };
+
+type ResizeHandleType = 'nw' | 'ne' | 'se' | 'sw' | 'e' | 'w' | 'n' | 's';
 
 export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
   const { settings } = useAppSettings();
@@ -68,6 +71,9 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
   const [isSaving, setIsSaving] = useState(false);
   const [statusMsg, setStatusMsg] = useState<{ type: 'success' | 'error' | 'warning'; text: string } | null>(null);
 
+  // Fullscreen Mode State
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
   // Active Element Selection
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
 
@@ -80,6 +86,18 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
   // Canvas Drag state for Elements
   const [draggingElementId, setDraggingElementId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState<{ xMm: number; yMm: number }>({ xMm: 0, yMm: 0 });
+
+  // Element Resizing State
+  const [resizingElementId, setResizingElementId] = useState<string | null>(null);
+  const [activeHandle, setActiveHandle] = useState<ResizeHandleType | null>(null);
+  const [resizeStart, setResizeStart] = useState<{
+    clientX: number;
+    clientY: number;
+    initialWidthMm: number;
+    initialHeightMm: number;
+    initialXMm: number;
+    initialYMm: number;
+  }>({ clientX: 0, clientY: 0, initialWidthMm: 0, initialHeightMm: 0, initialXMm: 0, initialYMm: 0 });
 
   // Dialogs
   const [confirmDeleteDialogOpen, setConfirmDeleteDialogOpen] = useState(false);
@@ -215,7 +233,6 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
       const saved: InvoicePrintTemplate = data.template;
       setStatusMsg({ type: 'success', text: 'تغییرات قالب با موفقیت ذخیره شد.' });
 
-      // Refresh list
       await fetchTemplates();
       setSelectedTemplateId(saved.id);
       setActiveTemplate(JSON.parse(JSON.stringify(saved)));
@@ -232,8 +249,6 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
   const handleSetActive = async () => {
     if (!activeTemplate) return;
     updateActiveTemplate((prev) => ({ ...prev, isActive: true }));
-
-    // Send save
     setTimeout(async () => {
       await handleSave();
     }, 100);
@@ -251,6 +266,8 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
       page: JSON.parse(JSON.stringify(activeTemplate.page)),
       design: JSON.parse(JSON.stringify(activeTemplate.design)),
       elements: JSON.parse(JSON.stringify(activeTemplate.elements)),
+      table: activeTemplate.table ? JSON.parse(JSON.stringify(activeTemplate.table)) : undefined,
+      footer: activeTemplate.footer ? JSON.parse(JSON.stringify(activeTemplate.footer)) : undefined,
     };
 
     setIsLoading(true);
@@ -390,27 +407,82 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
     );
   }, [activeTemplate]);
 
-  // Canvas Interactions: Mouse Drag and Pan
-  const handleCanvasMouseDown = (e: React.MouseEvent) => {
-    if (e.button === 0 && e.altKey) {
-      // Pan mode using Alt + Mouse Left
-      setIsPanning(true);
-      setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
-    }
+  // Handle Resize Start on Element Handle
+  const handleResizeMouseDown = (e: React.MouseEvent, el: InvoicePrintElement, handle: ResizeHandleType) => {
+    e.stopPropagation();
+    e.preventDefault();
+
+    setSelectedElementId(el.id);
+    setResizingElementId(el.id);
+    setActiveHandle(handle);
+
+    setResizeStart({
+      clientX: e.clientX,
+      clientY: e.clientY,
+      initialWidthMm: el.size.widthMm,
+      initialHeightMm: el.size.heightMm,
+      initialXMm: el.position.xMm,
+      initialYMm: el.position.yMm,
+    });
   };
 
+  // Canvas Interactions: Drag, Pan & Resize Mouse Move Handler
   const handleCanvasMouseMove = (e: React.MouseEvent) => {
     if (isPanning) {
       setPan({ x: e.clientX - panStart.x, y: e.clientY - panStart.y });
+    } else if (resizingElementId && activeTemplate && activeHandle) {
+      // 1mm = ~3.7795px at 96 DPI, scaled by Zoom.
+      const pxPerMm = 3.7795 * zoom;
+      const dxPx = e.clientX - resizeStart.clientX;
+      const dyPx = e.clientY - resizeStart.clientY;
+
+      const dxMm = dxPx / pxPerMm;
+      const dyMm = dyPx / pxPerMm;
+
+      let newWidthMm = resizeStart.initialWidthMm;
+      let newHeightMm = resizeStart.initialHeightMm;
+      let newXMm = resizeStart.initialXMm;
+      let newYMm = resizeStart.initialYMm;
+
+      // Handle calculations for RTL (where `right` is xMm)
+      if (activeHandle.includes('e')) {
+        // Dragging east handle (right edge in LTR) reduces right-margin in RTL
+        newWidthMm = Math.max(10, resizeStart.initialWidthMm + dxMm);
+      }
+      if (activeHandle.includes('w')) {
+        // Dragging west handle (left edge in LTR) increases right-margin in RTL
+        newWidthMm = Math.max(10, resizeStart.initialWidthMm - dxMm);
+        newXMm = Math.max(0, resizeStart.initialXMm + dxMm);
+      }
+      if (activeHandle.includes('s')) {
+        newHeightMm = Math.max(5, resizeStart.initialHeightMm + dyMm);
+      }
+      if (activeHandle.includes('n')) {
+        newHeightMm = Math.max(5, resizeStart.initialHeightMm - dyMm);
+        newYMm = Math.max(0, resizeStart.initialYMm + dyMm);
+      }
+
+      // Constrain within page boundaries
+      newWidthMm = Math.min(newWidthMm, pageDimensions.widthMm - newXMm);
+      newHeightMm = Math.min(newHeightMm, pageDimensions.heightMm - newYMm);
+
+      updateActiveTemplate((prev) => ({
+        ...prev,
+        elements: prev.elements.map((el) =>
+          el.id === resizingElementId
+            ? {
+                ...el,
+                position: { xMm: Number(newXMm.toFixed(1)), yMm: Number(newYMm.toFixed(1)) },
+                size: { widthMm: Number(newWidthMm.toFixed(1)), heightMm: Number(newHeightMm.toFixed(1)) },
+              }
+            : el,
+        ),
+      }));
     } else if (draggingElementId && activeTemplate) {
       const canvasRect = canvasContainerRef.current?.getBoundingClientRect();
       if (!canvasRect) return;
 
-      // 1mm = ~3.7795px at 96 DPI, scaled by Zoom.
       const pxPerMm = 3.7795 * zoom;
-
-      // Since elements are positioned with CSS `right`, moving the mouse right (increasing clientX)
-      // reduces `right` distance in mm (moves element right).
       const deltaXPx = dragOffset.xMm - e.clientX;
       const deltaYPx = e.clientY - dragOffset.yMm;
 
@@ -424,7 +496,6 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
         newYMm = Math.round(newYMm / step) * step;
       }
 
-      // Constrain within page boundaries
       const targetElement = activeTemplate.elements.find((el) => el.id === draggingElementId);
       if (targetElement) {
         const maxXMm = pageDimensions.widthMm - targetElement.size.widthMm;
@@ -446,6 +517,15 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
   const handleCanvasMouseUp = () => {
     setIsPanning(false);
     setDraggingElementId(null);
+    setResizingElementId(null);
+    setActiveHandle(null);
+  };
+
+  const handleCanvasMouseDown = (e: React.MouseEvent) => {
+    if (e.button === 0 && e.altKey) {
+      setIsPanning(true);
+      setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+    }
   };
 
   const handleElementMouseDown = (e: React.MouseEvent, el: InvoicePrintElement) => {
@@ -460,7 +540,6 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
     const elementYOffsetPx = el.position.yMm * pxPerMm;
 
     setDraggingElementId(el.id);
-    // Offset for RTL right-based positioning: e.clientX + elementXOffsetPx
     setDragOffset({
       xMm: e.clientX + elementXOffsetPx,
       yMm: e.clientY - elementYOffsetPx,
@@ -496,7 +575,6 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
 
     const visibleElements = activeTemplate.elements.filter((el) => el.visible);
 
-    // 1. Out of bounds check
     for (const el of visibleElements) {
       if (
         el.position.xMm + el.size.widthMm > pageDimensions.widthMm ||
@@ -505,25 +583,6 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
         el.position.yMm < 0
       ) {
         warnings.push(`المان «${ELEMENT_LABELS[el.type] || el.id}» از محدوده صفحه چاپ بیرون زده است.`);
-      }
-    }
-
-    // 2. Overlap check for sensitive elements (e.g., table vs title)
-    for (let i = 0; i < visibleElements.length; i++) {
-      for (let j = i + 1; j < visibleElements.length; j++) {
-        const a = visibleElements[i];
-        const b = visibleElements[j];
-
-        const intersect = !(
-          a.position.xMm + a.size.widthMm <= b.position.xMm ||
-          b.position.xMm + b.size.widthMm <= a.position.xMm ||
-          a.position.yMm + a.size.heightMm <= b.position.yMm ||
-          b.position.yMm + b.size.heightMm <= a.position.yMm
-        );
-
-        if (intersect && (a.type === 'items_table' || b.type === 'items_table')) {
-          warnings.push(`هم‌پوشانی ناخواسته بین «${ELEMENT_LABELS[a.type]}» و «${ELEMENT_LABELS[b.type]}» وجود دارد.`);
-        }
       }
     }
 
@@ -539,10 +598,17 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
     );
   }
 
+  const activeColumns = activeTemplate.table?.columns || DEFAULT_TABLE_COLUMNS;
+
   return (
-    <div className="invoice-print-designer-container space-y-4 text-xs select-none" dir="rtl">
+    <div
+      className={`invoice-print-designer-container space-y-4 text-xs select-none transition-all ${
+        isFullscreen ? 'fixed inset-0 z-50 bg-slate-950 p-6 overflow-auto' : ''
+      }`}
+      dir="rtl"
+    >
       {/* Top Banner Bar */}
-      <div className="dashboard-panel p-4 flex flex-wrap items-center justify-between gap-3 bg-slate-900 text-white rounded-2xl">
+      <div className="dashboard-panel p-4 flex flex-wrap items-center justify-between gap-3 bg-slate-900 text-white rounded-2xl shadow-xl">
         <div className="flex items-center gap-3">
           <div className="p-2.5 bg-amber-500/20 text-amber-400 rounded-xl border border-amber-500/30">
             <Sparkles size={18} />
@@ -575,7 +641,7 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
               )}
             </div>
             <p className="text-[11px] text-slate-400 mt-0.5">
-              اندازه: {activeTemplate.page.size} ({pageDimensions.widthMm} × {pageDimensions.heightMm} میلی‌متر) · جهت:{' '}
+              اندازه: {activeTemplate.page.size} ({pageDimensions.widthMm} × {pageDimensions.heightMm} mm) · جهت:{' '}
               {activeTemplate.page.orientation === 'portrait' ? 'عمودی' : 'افقی'}
             </p>
           </div>
@@ -583,6 +649,17 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
 
         {/* Action Controls */}
         <div className="flex items-center gap-2">
+          {/* Fullscreen Toggle */}
+          <button
+            type="button"
+            onClick={() => setIsFullscreen((prev) => !prev)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-400 font-bold transition-all border border-amber-500/20"
+            title={isFullscreen ? 'خروج از حالت تمام‌صفحه' : 'ویرایش تمام‌صفحه'}
+          >
+            {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+            <span>{isFullscreen ? 'خروج از تمام‌صفحه' : 'ویرایش تمام‌صفحه'}</span>
+          </button>
+
           <button
             type="button"
             onClick={handleDuplicate}
@@ -590,7 +667,7 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
             title="کپی از قالب"
           >
             <Copy size={14} />
-            <span className="hidden sm:inline">کپی / Duplicate</span>
+            <span className="hidden sm:inline">کپی</span>
           </button>
 
           {!activeTemplate.isSystemDefault && (
@@ -676,7 +753,7 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
             </div>
 
             {/* Template Selector List */}
-            <div className="space-y-1.5 max-h-[220px] overflow-y-auto pr-1">
+            <div className="space-y-1.5 max-h-[180px] overflow-y-auto pr-1">
               {templates.map((tpl) => {
                 const isSelected = tpl.id === activeTemplate.id;
                 return (
@@ -734,7 +811,7 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
               </span>
             </div>
 
-            <div className="space-y-1 max-h-[350px] overflow-y-auto pr-1">
+            <div className="space-y-1 max-h-[300px] overflow-y-auto pr-1">
               {activeTemplate.elements.map((el) => {
                 const isSelected = el.id === selectedElementId;
                 return (
@@ -857,7 +934,7 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
             onMouseDown={handleCanvasMouseDown}
             onMouseMove={handleCanvasMouseMove}
             onMouseUp={handleCanvasMouseUp}
-            className="dashboard-panel relative overflow-hidden bg-slate-200 dark:bg-slate-950 p-6 min-h-[580px] flex justify-center items-start cursor-grab active:cursor-grabbing border border-slate-300 dark:border-slate-800 shadow-inner rounded-2xl"
+            className="dashboard-panel relative overflow-hidden bg-slate-200 dark:bg-slate-950 p-6 min-h-[620px] flex justify-center items-start cursor-grab active:cursor-grabbing border border-slate-300 dark:border-slate-800 shadow-inner rounded-2xl"
           >
             {/* Scaled Page Container */}
             <div
@@ -868,9 +945,13 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
                 borderWidth: activeTemplate.page.borderEnabled ? `${activeTemplate.page.borderWidthMm}mm` : '0',
                 borderColor: activeTemplate.page.borderColor || '#cbd5e1',
                 borderStyle: activeTemplate.page.borderEnabled ? 'solid' : 'none',
+                paddingTop: `${activeTemplate.page.marginTopMm || 0}mm`,
+                paddingRight: `${activeTemplate.page.marginRightMm || 0}mm`,
+                paddingBottom: `${activeTemplate.page.marginBottomMm || 0}mm`,
+                paddingLeft: `${activeTemplate.page.marginLeftMm || 0}mm`,
                 transform: `scale(${zoom}) translate(${pan.x}px, ${pan.y}px)`,
                 transformOrigin: 'top center',
-                transition: draggingElementId ? 'none' : 'transform 0.05s ease-out',
+                transition: draggingElementId || resizingElementId ? 'none' : 'transform 0.05s ease-out',
                 boxShadow: '0 10px 30px rgba(0,0,0,0.15)',
               }}
               className="relative select-none text-slate-900 overflow-hidden shrink-0 transition-shadow"
@@ -914,22 +995,49 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
                       zIndex: el.zIndex || 10,
                       cursor: 'move',
                     }}
-                    className={`p-1 box-border transition-shadow ${
+                    className={`p-1 box-border transition-shadow relative ${
                       isSelected
                         ? 'ring-2 ring-amber-500 ring-offset-1 bg-amber-500/10 rounded-sm z-30'
                         : 'hover:ring-1 hover:ring-amber-400/60'
                     }`}
                   >
-                    {/* Render Mock / Real Sample Data for Preview */}
-                    {renderElementPreviewContent(el, settings)}
+                    {/* Render Content */}
+                    {renderElementPreviewContent(el, settings, activeTemplate)}
 
-                    {/* Selected Active Element Border Handles */}
+                    {/* Selected Active Element Border & RESIZE HANDLES */}
                     {isSelected && (
                       <div className="absolute inset-0 pointer-events-none border border-amber-500">
-                        <div className="absolute -top-1 -right-1 w-2 h-2 bg-amber-500 rounded-full" />
-                        <div className="absolute -top-1 -left-1 w-2 h-2 bg-amber-500 rounded-full" />
-                        <div className="absolute -bottom-1 -right-1 w-2 h-2 bg-amber-500 rounded-full" />
-                        <div className="absolute -bottom-1 -left-1 w-2 h-2 bg-amber-500 rounded-full" />
+                        {/* Interactive Resize Handles */}
+                        <div
+                          onMouseDown={(e) => handleResizeMouseDown(e, el, 'nw')}
+                          className="pointer-events-auto absolute -top-1.5 -right-1.5 w-3 h-3 bg-amber-500 border border-white rounded-full cursor-nwse-resize hover:scale-125 transition-transform"
+                          title="Resize"
+                        />
+                        <div
+                          onMouseDown={(e) => handleResizeMouseDown(e, el, 'ne')}
+                          className="pointer-events-auto absolute -top-1.5 -left-1.5 w-3 h-3 bg-amber-500 border border-white rounded-full cursor-nesw-resize hover:scale-125 transition-transform"
+                          title="Resize"
+                        />
+                        <div
+                          onMouseDown={(e) => handleResizeMouseDown(e, el, 'se')}
+                          className="pointer-events-auto absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-amber-500 border border-white rounded-full cursor-nwse-resize hover:scale-125 transition-transform"
+                          title="Resize"
+                        />
+                        <div
+                          onMouseDown={(e) => handleResizeMouseDown(e, el, 'sw')}
+                          className="pointer-events-auto absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-amber-500 border border-white rounded-full cursor-nesw-resize hover:scale-125 transition-transform"
+                          title="Resize"
+                        />
+                        <div
+                          onMouseDown={(e) => handleResizeMouseDown(e, el, 'e')}
+                          className="pointer-events-auto absolute top-1/2 -left-1.5 -translate-y-1/2 w-2.5 h-3 bg-amber-500 border border-white rounded-sm cursor-ew-resize hover:scale-125 transition-transform"
+                          title="Resize Width"
+                        />
+                        <div
+                          onMouseDown={(e) => handleResizeMouseDown(e, el, 's')}
+                          className="pointer-events-auto absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-2.5 bg-amber-500 border border-white rounded-sm cursor-ns-resize hover:scale-125 transition-transform"
+                          title="Resize Height"
+                        />
                       </div>
                     )}
                   </div>
@@ -939,13 +1047,13 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
           </div>
         </div>
 
-        {/* COLUMN 3: Right Selected Element & Page Properties Panel (3 Cols) */}
+        {/* COLUMN 3: Right Selected Element, Margins & Table Inspector (3 Cols) */}
         <div className="lg:col-span-3 space-y-4">
-          {/* Page & Paper Settings Box */}
+          {/* Page, Margins & Paper Settings Box */}
           <div className="dashboard-panel p-4 space-y-3">
             <h3 className="font-extrabold text-xs text-slate-800 dark:text-slate-200 pb-2 border-b border-slate-100 dark:border-slate-800 flex items-center gap-1.5">
               <Layout size={15} className="text-amber-600" />
-              تنظیمات کاغذ و صفحه
+              تنظیمات کاغذ و حاشیه‌ها
             </h3>
 
             <div className="space-y-3">
@@ -970,46 +1078,75 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
                 >
                   <option value="A4">A4 (۲۱۰ × ۲۹۷ mm)</option>
                   <option value="A5">A5 (۱۴۸ × ۲۱۰ mm)</option>
-                  <option value="receipt-80">رسید حرارتی ۸۰ میلی‌متری</option>
-                  <option value="receipt-58">رسید حرارتی ۵۸ میلی‌متری</option>
+                  <option value="A6">A6 (۱۰۵ × ۱۴۸ mm)</option>
+                  <option value="receipt-80">رسید حرارتی ۸۰ mm</option>
+                  <option value="receipt-58">رسید حرارتی ۵۸ mm</option>
                   <option value="custom">اندازه سفارشی</option>
                 </select>
               </label>
 
-              {/* Custom Dimensions if Custom */}
-              {activeTemplate.page.size === 'custom' && (
+              {/* Margins Top, Right, Bottom, Left */}
+              <div className="space-y-1">
+                <span className="font-bold text-[10px] text-slate-700 dark:text-slate-300">حاشیه‌های صفحه (mm)</span>
                 <div className="grid grid-cols-2 gap-2">
                   <label className="account-field">
-                    <span className="text-[10px]">عرض (mm)</span>
+                    <span className="text-[9px]">بالا</span>
                     <input
                       type="number"
-                      value={activeTemplate.page.widthMm}
+                      value={activeTemplate.page.marginTopMm || 0}
                       onChange={(e) => {
                         const val = Number(e.target.value);
                         updateActiveTemplate((prev) => ({
                           ...prev,
-                          page: { ...prev.page, widthMm: val },
+                          page: { ...prev.page, marginTopMm: val },
                         }));
                       }}
                     />
                   </label>
-
                   <label className="account-field">
-                    <span className="text-[10px]">ارتفاع (mm)</span>
+                    <span className="text-[9px]">پایین</span>
                     <input
                       type="number"
-                      value={activeTemplate.page.heightMm}
+                      value={activeTemplate.page.marginBottomMm || 0}
                       onChange={(e) => {
                         const val = Number(e.target.value);
                         updateActiveTemplate((prev) => ({
                           ...prev,
-                          page: { ...prev.page, heightMm: val },
+                          page: { ...prev.page, marginBottomMm: val },
+                        }));
+                      }}
+                    />
+                  </label>
+                  <label className="account-field">
+                    <span className="text-[9px]">راست</span>
+                    <input
+                      type="number"
+                      value={activeTemplate.page.marginRightMm || 0}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        updateActiveTemplate((prev) => ({
+                          ...prev,
+                          page: { ...prev.page, marginRightMm: val },
+                        }));
+                      }}
+                    />
+                  </label>
+                  <label className="account-field">
+                    <span className="text-[9px]">چپ</span>
+                    <input
+                      type="number"
+                      value={activeTemplate.page.marginLeftMm || 0}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        updateActiveTemplate((prev) => ({
+                          ...prev,
+                          page: { ...prev.page, marginLeftMm: val },
                         }));
                       }}
                     />
                   </label>
                 </div>
-              )}
+              </div>
 
               {/* Orientation Selector */}
               <label className="account-field">
@@ -1035,24 +1172,6 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
                 </select>
               </label>
 
-              {/* Grid Size Control */}
-              <label className="account-field">
-                <span className="font-bold text-[11px] text-slate-700 dark:text-slate-300">اندازه شبکه (Grid mm)</span>
-                <input
-                  type="number"
-                  min="1"
-                  max="20"
-                  value={activeTemplate.design.gridSizeMm}
-                  onChange={(e) => {
-                    const val = Number(e.target.value);
-                    updateActiveTemplate((prev) => ({
-                      ...prev,
-                      design: { ...prev.design, gridSizeMm: val },
-                    }));
-                  }}
-                />
-              </label>
-
               {/* Border Toggle */}
               <div className="flex items-center justify-between pt-1">
                 <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">کادر دور صفحه</span>
@@ -1071,6 +1190,116 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
               </div>
             </div>
           </div>
+
+          {/* Table Column & Layout Inspector */}
+          {selectedElement?.type === 'items_table' && (
+            <div className="dashboard-panel p-4 space-y-3">
+              <h3 className="font-extrabold text-xs text-slate-800 dark:text-slate-200 pb-2 border-b border-slate-100 dark:border-slate-800 flex items-center gap-1.5">
+                <Settings size={15} className="text-amber-600" />
+                ویرایش پیشرفته ستون‌های جدول
+              </h3>
+
+              <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
+                {activeColumns.map((col, idx) => (
+                  <div key={col.id} className="p-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="flex items-center gap-1.5 font-bold text-[10px]">
+                        <input
+                          type="checkbox"
+                          checked={col.visible}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            const nextCols = activeColumns.map((c) => (c.id === col.id ? { ...c, visible: checked } : c));
+                            updateActiveTemplate((prev) => ({
+                              ...prev,
+                              table: { ...prev.table, columns: nextCols },
+                            }));
+                          }}
+                          className="accent-amber-500"
+                        />
+                        <span>{col.label}</span>
+                      </label>
+
+                      {/* Move Column Up / Down */}
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          disabled={idx === 0}
+                          onClick={() => {
+                            if (idx === 0) return;
+                            const next = [...activeColumns];
+                            const temp = next[idx - 1];
+                            next[idx - 1] = next[idx];
+                            next[idx] = temp;
+                            updateActiveTemplate((prev) => ({
+                              ...prev,
+                              table: { ...prev.table, columns: next },
+                            }));
+                          }}
+                          className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded disabled:opacity-30"
+                          title="انتقال به بالا"
+                        >
+                          <ArrowUp size={12} />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={idx === activeColumns.length - 1}
+                          onClick={() => {
+                            if (idx === activeColumns.length - 1) return;
+                            const next = [...activeColumns];
+                            const temp = next[idx + 1];
+                            next[idx + 1] = next[idx];
+                            next[idx] = temp;
+                            updateActiveTemplate((prev) => ({
+                              ...prev,
+                              table: { ...prev.table, columns: next },
+                            }));
+                          }}
+                          className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded disabled:opacity-30"
+                          title="انتقال به پایین"
+                        >
+                          <ArrowDown size={12} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {col.visible && (
+                      <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-slate-200 dark:border-slate-800">
+                        <input
+                          type="text"
+                          value={col.label}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            const nextCols = activeColumns.map((c) => (c.id === col.id ? { ...c, label: val } : c));
+                            updateActiveTemplate((prev) => ({
+                              ...prev,
+                              table: { ...prev.table, columns: nextCols },
+                            }));
+                          }}
+                          placeholder="عنوان ستون"
+                          className="px-1.5 py-1 text-[10px] rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800"
+                        />
+                        <input
+                          type="number"
+                          value={col.widthMm || 20}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            const nextCols = activeColumns.map((c) => (c.id === col.id ? { ...c, widthMm: val } : c));
+                            updateActiveTemplate((prev) => ({
+                              ...prev,
+                              table: { ...prev.table, columns: nextCols },
+                            }));
+                          }}
+                          placeholder="عرض mm"
+                          className="px-1.5 py-1 text-[10px] rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800"
+                        />
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Selected Element Property Inspector */}
           <div className="dashboard-panel p-4 space-y-3">
@@ -1097,7 +1326,7 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
 
             {!selectedElement ? (
               <p className="text-[11px] text-slate-500 py-6 text-center">
-                برای تنظیم موقعیت، فونت و ظاهر، یک المان را روی پیش‌نمایش یا از لیست انتخابی کلیک کنید.
+                برای تنظیم موقعیت، فونت و ابعاد، یک المان را روی پیش‌نمایش یا از لیست انتخاب کنید.
               </p>
             ) : (
               <div className="space-y-3">
@@ -1349,45 +1578,6 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
                       />
                     </label>
                   </div>
-
-                  {/* Table Column Customization if Items Table */}
-                  {selectedElement.type === 'items_table' && (
-                    <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-                      <span className="font-bold text-[11px]">ستون‌های جدول ردیف‌ها</span>
-                      <div className="space-y-1 max-h-[140px] overflow-y-auto pr-1">
-                        {AVAILABLE_TABLE_COLUMNS.map((col) => {
-                          const selectedCols = selectedElement.content?.tableColumns || [];
-                          const checked = selectedCols.includes(col.id);
-
-                          return (
-                            <label key={col.id} className="flex items-center gap-2 cursor-pointer text-[10px]">
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={(e) => {
-                                  const isChecked = e.target.checked;
-                                  const nextCols = isChecked
-                                    ? [...selectedCols, col.id]
-                                    : selectedCols.filter((c) => c !== col.id);
-
-                                  updateActiveTemplate((prev) => ({
-                                    ...prev,
-                                    elements: prev.elements.map((el) =>
-                                      el.id === selectedElement.id
-                                        ? { ...el, content: { ...el.content, tableColumns: nextCols } }
-                                        : el,
-                                    ),
-                                  }));
-                                }}
-                                className="accent-amber-500"
-                              />
-                              <span>{col.label}</span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
                 </div>
               </div>
             )}
@@ -1559,53 +1749,53 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
 }
 
 // Render Sample Preview Content Inside Canvas
-function renderElementPreviewContent(el: InvoicePrintElement, settings: any) {
+function renderElementPreviewContent(el: InvoicePrintElement, settings: any, template: InvoicePrintTemplate) {
   switch (el.type) {
     case 'shop_name':
       return <div className="font-bold truncate">{settings.printStoreName || settings.organizationName}</div>;
     case 'invoice_title':
       return <div className="font-bold truncate">{el.content?.text || 'فاکتور فروش طلا'}</div>;
     case 'temporary_invoice_badge':
-      return <div className="font-extrabold flex items-center justify-center h-full">فاکتور موقت</div>;
+      return <div className="font-extrabold flex items-center justify-center h-full text-red-600 bg-red-50 border border-red-200 rounded">فاکتور موقت</div>;
     case 'shop_address':
       return <div className="truncate text-[80%]">{settings.printAddress}</div>;
     case 'shop_phone':
       return <div className="truncate text-[80%]">تلفن: {settings.printPhone}</div>;
     case 'invoice_number':
-      return <div className="truncate">شماره فاکتور: {settings.documentNumberPrefix || 'سند-'}۱۲۳۴</div>;
+      return <div className="truncate font-bold">شماره فاکتور: {settings.documentNumberPrefix || 'سند-'}۱۲۳۴</div>;
     case 'invoice_date':
       return <div className="truncate">تاریخ: ۱۴۰۳/۱۲/۰۵</div>;
     case 'customer_name':
       return <div className="truncate px-1 font-bold">طرف‌حساب: آقای علی محمدی (کد: C-102)</div>;
     case 'items_table': {
-      const cols = el.content?.tableColumns || ['index', 'metal_type', 'weight', 'purity', 'converted_weight'];
+      const cols = template.table?.columns.filter((c) => c.visible) || DEFAULT_TABLE_COLUMNS;
       return (
         <div className="w-full h-full border border-slate-400 text-[80%] overflow-hidden">
           <table className="w-full text-center border-collapse">
             <thead>
               <tr className="bg-slate-100 border-b border-slate-400 font-bold">
-                {cols.map((c) => (
-                  <th key={c} className="p-1 border-x border-slate-300">
-                    {AVAILABLE_TABLE_COLUMNS.find((col) => col.id === c)?.label || c}
+                {cols.map((col) => (
+                  <th key={col.id} className="p-1 border-x border-slate-300">
+                    {col.label}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
               <tr className="border-b border-slate-200">
-                {cols.map((c) => (
-                  <td key={c} className="p-1 border-x border-slate-200">
-                    {c === 'index'
+                {cols.map((col) => (
+                  <td key={col.id} className="p-1 border-x border-slate-200">
+                    {col.id === 'index'
                       ? '۱'
-                      : c === 'operation_type'
+                      : col.id === 'operation_type'
                       ? 'فروش'
-                      : c === 'metal_type'
+                      : col.id === 'metal_type'
                       ? 'طلا'
-                      : c === 'weight'
+                      : col.id === 'weight'
                       ? '۱۲٫۴۵۰'
-                      : c === 'purity'
+                      : col.id === 'purity'
                       ? '۷۵۰'
-                      : c === 'converted_weight'
+                      : col.id === 'converted_weight'
                       ? '۱۲٫۴۵۰'
                       : '-'}
                   </td>
@@ -1618,16 +1808,16 @@ function renderElementPreviewContent(el: InvoicePrintElement, settings: any) {
     }
     case 'totals_summary':
       return (
-        <div className="w-full h-full flex items-center justify-around font-bold text-[85%] px-2">
-          <span>جمع وزن: ۱۲٫۴۵۰ گرم</span>
-          <span>جمع معادل ۷۵۰: ۱۲٫۴۵۰ گرم</span>
-          <span>مانده: بدهکار</span>
+        <div className="w-full h-full flex flex-wrap items-center justify-around font-bold text-[85%] px-2 bg-slate-100 border border-slate-300 rounded">
+          <span>طلا: ۱۲٫۴۵۰ گرم (۷۵۰)</span>
+          <span>نقره: ۵۰٫۰۰۰ گرم</span>
+          <span>مانده: بستانکار</span>
         </div>
       );
     case 'footer_text':
       return <div className="truncate text-[80%] leading-snug">{settings.printFooterText}</div>;
     case 'seller_signature':
-      return <div className="border-t border-dashed border-slate-400 pt-1 text-center font-bold text-[85%]">{el.content?.text || 'امضای خریدار'}</div>;
+      return <div className="border-t border-dashed border-slate-400 pt-1 text-center font-bold text-[85%]">{el.content?.text || 'امضای فروشنده'}</div>;
     case 'stamp':
       return <div className="border-t border-dashed border-slate-400 pt-1 text-center font-bold text-[85%]">{el.content?.text || 'مهر و امضای فروشگاه'}</div>;
     case 'print_datetime':

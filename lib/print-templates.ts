@@ -1,4 +1,4 @@
-export type PageSizeOption = 'A4' | 'A5' | 'receipt-80' | 'receipt-58' | 'custom';
+export type PageSizeOption = 'A4' | 'A5' | 'A6' | 'receipt-80' | 'receipt-58' | 'custom';
 export type PageOrientation = 'portrait' | 'landscape';
 export type UnitType = 'mm' | 'cm' | 'px' | 'pt';
 
@@ -32,7 +32,37 @@ export interface InvoicePrintElementStyle {
   borderColor?: string;
   borderWidthMm?: number;
   borderRadiusMm?: number;
+  paddingMm?: number;
   lineHeight?: number;
+}
+
+export interface InvoiceTableColumnConfig {
+  id: string;
+  label: string;
+  visible: boolean;
+  widthMm?: number;
+  textAlign?: 'right' | 'center' | 'left';
+}
+
+export interface InvoiceTableConfiguration {
+  columns: InvoiceTableColumnConfig[];
+  headerBackgroundColor?: string;
+  headerTextColor?: string;
+  bodyTextColor?: string;
+  borderColor?: string;
+  borderWidthMm?: number;
+  showIndexColumn?: boolean;
+  fontSizePt?: number;
+  rowHeightMm?: number;
+}
+
+export interface InvoiceFooterConfiguration {
+  footerText?: string;
+  showSellerSignature?: boolean;
+  showCustomerSignature?: boolean;
+  showStamp?: boolean;
+  sellerSignatureTitle?: string;
+  customerSignatureTitle?: string;
 }
 
 export interface InvoicePrintElementContent {
@@ -87,6 +117,8 @@ export interface InvoicePrintTemplate {
   page: InvoicePrintTemplatePage;
   design: InvoicePrintTemplateDesign;
   elements: InvoicePrintElement[];
+  table?: InvoiceTableConfiguration;
+  footer?: InvoiceFooterConfiguration;
   created?: string;
   updated?: string;
 }
@@ -112,19 +144,22 @@ export const ELEMENT_LABELS: Record<ElementType, string> = {
   print_datetime: 'تاریخ و زمان چاپ',
 };
 
-export const AVAILABLE_TABLE_COLUMNS: { id: string; label: string }[] = [
-  { id: 'index', label: 'ردیف' },
-  { id: 'operation_type', label: 'نوع عملیات' },
-  { id: 'metal_type', label: 'جنس فلز' },
-  { id: 'weight', label: 'وزن (گرم)' },
-  { id: 'purity', label: 'عیار' },
-  { id: 'converted_weight', label: 'وزن معادل' },
-  { id: 'debtor', label: 'بدهکار' },
-  { id: 'creditor', label: 'بستانکار' },
-  { id: 'lab_name', label: 'نام آزمایشگاه / ری‌گیری' },
-  { id: 'stamp_number', label: 'شماره پاکت / انگ' },
-  { id: 'description', label: 'توضیحات' },
+export const DEFAULT_TABLE_COLUMNS: InvoiceTableColumnConfig[] = [
+  { id: 'index', label: 'ردیف', visible: true, widthMm: 12, textAlign: 'center' },
+  { id: 'operation_type', label: 'نوع عملیات', visible: true, widthMm: 22, textAlign: 'center' },
+  { id: 'metal_type', label: 'جنس فلز', visible: true, widthMm: 18, textAlign: 'center' },
+  { id: 'weight', label: 'وزن (گرم)', visible: true, widthMm: 22, textAlign: 'center' },
+  { id: 'purity', label: 'عیار', visible: true, widthMm: 16, textAlign: 'center' },
+  { id: 'converted_weight', label: 'وزن معادل ۷۵۰', visible: true, widthMm: 25, textAlign: 'center' },
+  { id: 'lab_name', label: 'نام آزمایشگاه / ری‌گیری', visible: true, widthMm: 25, textAlign: 'center' },
+  { id: 'stamp_number', label: 'شماره پاکت / انگ', visible: true, widthMm: 22, textAlign: 'center' },
+  { id: 'description', label: 'توضیحات', visible: true, widthMm: 28, textAlign: 'right' },
 ];
+
+export const AVAILABLE_TABLE_COLUMNS: { id: string; label: string }[] = DEFAULT_TABLE_COLUMNS.map((c) => ({
+  id: c.id,
+  label: c.label,
+}));
 
 export const PAGE_SIZE_DIMENSIONS: Record<
   Exclude<PageSizeOption, 'custom'>,
@@ -137,6 +172,10 @@ export const PAGE_SIZE_DIMENSIONS: Record<
   A5: {
     portrait: { widthMm: 148, heightMm: 210 },
     landscape: { widthMm: 210, heightMm: 148 },
+  },
+  A6: {
+    portrait: { widthMm: 105, heightMm: 148 },
+    landscape: { widthMm: 148, heightMm: 105 },
   },
   'receipt-80': {
     portrait: { widthMm: 80, heightMm: 200 },
@@ -192,7 +231,7 @@ export function convertFromMm(valueMm: number, unit: UnitType): number {
 }
 
 export function createStandardElements(pageWidthMm = 210): InvoicePrintElement[] {
-  const contentWidth = pageWidthMm - 20; // 10mm margins on each side
+  const contentWidth = pageWidthMm - 20;
 
   return [
     {
@@ -462,6 +501,23 @@ export const DEFAULT_SYSTEM_TEMPLATES: InvoicePrintTemplate[] = [
       gridEnabled: true,
       gridSizeMm: 5,
     },
+    table: {
+      columns: JSON.parse(JSON.stringify(DEFAULT_TABLE_COLUMNS)),
+      headerBackgroundColor: '#f1f5f9',
+      headerTextColor: '#0f172a',
+      bodyTextColor: '#1e293b',
+      borderColor: '#cbd5e1',
+      borderWidthMm: 0.4,
+      showIndexColumn: true,
+      fontSizePt: 9,
+    },
+    footer: {
+      showSellerSignature: true,
+      showCustomerSignature: true,
+      showStamp: true,
+      sellerSignatureTitle: 'امضای فروشنده',
+      customerSignatureTitle: 'امضای خریدار / تحویل‌گیرنده',
+    },
     elements: createStandardElements(210),
   },
   {
@@ -488,6 +544,16 @@ export const DEFAULT_SYSTEM_TEMPLATES: InvoicePrintTemplate[] = [
       gridEnabled: true,
       gridSizeMm: 5,
     },
+    table: {
+      columns: JSON.parse(JSON.stringify(DEFAULT_TABLE_COLUMNS)),
+      headerBackgroundColor: '#f8fafc',
+      headerTextColor: '#0f172a',
+      bodyTextColor: '#1e293b',
+      borderColor: '#e2e8f0',
+      borderWidthMm: 0.3,
+      showIndexColumn: true,
+      fontSizePt: 8,
+    },
     elements: createStandardElements(210).map((el) => {
       if (el.type === 'items_table') {
         return { ...el, position: { ...el.position, yMm: 42 }, size: { ...el.size, heightMm: 55 } };
@@ -503,165 +569,5 @@ export const DEFAULT_SYSTEM_TEMPLATES: InvoicePrintTemplate[] = [
       }
       return el;
     }),
-  },
-  {
-    id: 'tpl_molten_gold',
-    name: 'فاکتور طلای آب‌شده',
-    isActive: false,
-    isSystemDefault: true,
-    page: {
-      size: 'A4',
-      orientation: 'portrait',
-      widthMm: 210,
-      heightMm: 297,
-      marginTopMm: 10,
-      marginRightMm: 10,
-      marginBottomMm: 10,
-      marginLeftMm: 10,
-      backgroundColor: '#ffffff',
-      borderEnabled: true,
-      borderColor: '#d97706',
-      borderWidthMm: 0.8,
-    },
-    design: {
-      zoom: 1,
-      gridEnabled: true,
-      gridSizeMm: 5,
-    },
-    elements: createStandardElements(210).map((el) => {
-      if (el.type === 'invoice_title') {
-        return { ...el, content: { text: 'فاکتور رسید و تحویل طلای آب‌شده' } };
-      }
-      if (el.type === 'items_table') {
-        return {
-          ...el,
-          content: {
-            tableColumns: [
-              'index',
-              'operation_type',
-              'weight',
-              'purity',
-              'converted_weight',
-              'lab_name',
-              'stamp_number',
-              'description',
-            ],
-          },
-        };
-      }
-      return el;
-    }),
-  },
-  {
-    id: 'tpl_customer_receipt',
-    name: 'فاکتور رسید مشتری',
-    isActive: false,
-    isSystemDefault: true,
-    page: {
-      size: 'receipt-80',
-      orientation: 'portrait',
-      widthMm: 80,
-      heightMm: 200,
-      marginTopMm: 4,
-      marginRightMm: 4,
-      marginBottomMm: 4,
-      marginLeftMm: 4,
-      backgroundColor: '#ffffff',
-      borderEnabled: false,
-      borderColor: '#000000',
-      borderWidthMm: 0,
-    },
-    design: {
-      zoom: 1,
-      gridEnabled: true,
-      gridSizeMm: 2,
-    },
-    elements: [
-      {
-        id: 'shop_name',
-        type: 'shop_name',
-        visible: true,
-        position: { xMm: 4, yMm: 5 },
-        size: { widthMm: 72, heightMm: 8 },
-        style: { fontFamily: 'DoranNoEn', fontSizePt: 12, fontWeight: 'bold', textAlign: 'center', color: '#0f172a' },
-        zIndex: 10,
-      },
-      {
-        id: 'invoice_title',
-        type: 'invoice_title',
-        visible: true,
-        position: { xMm: 4, yMm: 14 },
-        size: { widthMm: 72, heightMm: 6 },
-        style: { fontFamily: 'Vazirmatn', fontSizePt: 10, fontWeight: 'bold', textAlign: 'center', color: '#b45309' },
-        content: { text: 'رسید تراکنش' },
-        zIndex: 10,
-      },
-      {
-        id: 'invoice_number',
-        type: 'invoice_number',
-        visible: true,
-        position: { xMm: 4, yMm: 22 },
-        size: { widthMm: 72, heightMm: 5 },
-        style: { fontFamily: 'Vazirmatn', fontSizePt: 8, fontWeight: 'bold', textAlign: 'right', color: '#1e293b' },
-        zIndex: 10,
-      },
-      {
-        id: 'invoice_date',
-        type: 'invoice_date',
-        visible: true,
-        position: { xMm: 4, yMm: 28 },
-        size: { widthMm: 72, heightMm: 5 },
-        style: { fontFamily: 'Vazirmatn', fontSizePt: 8, fontWeight: 'normal', textAlign: 'right', color: '#334155' },
-        zIndex: 10,
-      },
-      {
-        id: 'customer_name',
-        type: 'customer_name',
-        visible: true,
-        position: { xMm: 4, yMm: 34 },
-        size: { widthMm: 72, heightMm: 6 },
-        style: { fontFamily: 'Vazirmatn', fontSizePt: 8.5, fontWeight: 'bold', textAlign: 'right', color: '#0f172a' },
-        zIndex: 10,
-      },
-      {
-        id: 'items_table',
-        type: 'items_table',
-        visible: true,
-        position: { xMm: 4, yMm: 42 },
-        size: { widthMm: 72, heightMm: 100 },
-        style: { fontFamily: 'Vazirmatn', fontSizePt: 7.5, fontWeight: 'normal', color: '#0f172a' },
-        content: {
-          tableColumns: ['index', 'metal_type', 'weight', 'purity', 'converted_weight'],
-        },
-        zIndex: 10,
-      },
-      {
-        id: 'totals_summary',
-        type: 'totals_summary',
-        visible: true,
-        position: { xMm: 4, yMm: 145 },
-        size: { widthMm: 72, heightMm: 20 },
-        style: { fontFamily: 'Vazirmatn', fontSizePt: 8, fontWeight: 'bold', color: '#0f172a', backgroundColor: '#f8fafc' },
-        zIndex: 10,
-      },
-      {
-        id: 'footer_text',
-        type: 'footer_text',
-        visible: true,
-        position: { xMm: 4, yMm: 168 },
-        size: { widthMm: 72, heightMm: 12 },
-        style: { fontFamily: 'Vazirmatn', fontSizePt: 7, fontWeight: 'normal', textAlign: 'center', color: '#64748b' },
-        zIndex: 10,
-      },
-      {
-        id: 'print_datetime',
-        type: 'print_datetime',
-        visible: true,
-        position: { xMm: 4, yMm: 182 },
-        size: { widthMm: 72, heightMm: 5 },
-        style: { fontFamily: 'Vazirmatn', fontSizePt: 6.5, fontWeight: 'normal', textAlign: 'center', color: '#94a3b8' },
-        zIndex: 10,
-      },
-    ],
   },
 ];
