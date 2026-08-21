@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { NextResponse } from 'next/server';
 
 import { getServerAuthContext } from '@/lib/auth';
+import { hasPermission } from '@/lib/authorization';
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
 import { mapTransaction } from '@/lib/transaction';
 
@@ -17,6 +18,16 @@ function positive(value: unknown) {
 export async function POST(request: Request) {
   const context = await getServerAuthContext();
   if (!context) return NextResponse.json({ message: 'ابتدا وارد حساب شوید.' }, { status: 401 });
+
+  if (
+    !hasPermission(context.user, 'transaction.create') &&
+    !hasPermission(context.user, 'document.create') &&
+    !hasPermission(context.user, 'cash.create') &&
+    !hasPermission(context.user, 'bank.create')
+  ) {
+    return NextResponse.json({ message: 'دسترسی غیرمجاز به ثبت تسویه.' }, { status: 403 });
+  }
+
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
 
   if (body.action === 'hawala') {

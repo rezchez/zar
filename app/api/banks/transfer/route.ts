@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { NextResponse } from 'next/server';
 
 import { getServerAuthContext } from '@/lib/auth';
+import { hasPermission } from '@/lib/authorization';
 import { ensureBankAccountsCollection } from '@/lib/bank-collection';
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
 
@@ -20,6 +21,10 @@ export async function POST(request: Request) {
   const context = await getServerAuthContext();
   if (!context) {
     return NextResponse.json({ message: 'ابتدا وارد حساب شوید.' }, { status: 401 });
+  }
+
+  if (!hasPermission(context.user, 'bank.create') && !hasPermission(context.user, 'bank.manage')) {
+    return NextResponse.json({ message: 'دسترسی غیرمجاز به انتقال مالی بین حساب‌ها.' }, { status: 403 });
   }
 
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;

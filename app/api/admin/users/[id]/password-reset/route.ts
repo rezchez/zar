@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { recordAuditEvent } from '@/lib/audit';
 import { getServerAuthContext } from '@/lib/auth';
+import { canModifyTargetUser, hasPermission, type UserRole } from '@/lib/authorization';
 
 export async function POST(
   _request: Request,
@@ -9,10 +10,7 @@ export async function POST(
 ) {
   const context = await getServerAuthContext();
 
-  if (
-    !context
-    || (context.user.role !== 'admin' && context.user.role !== 'manager')
-  ) {
+  if (!context || (!hasPermission(context.user, 'user.edit') && !hasPermission(context.user, 'user.manage'))) {
     return NextResponse.json({ message: 'دسترسی غیرمجاز.' }, { status: 403 });
   }
 
@@ -20,10 +18,12 @@ export async function POST(
 
   try {
     const user = await context.pb.collection('users').getOne(id);
+    const targetRole = (user.role === 'admin' || user.role === 'manager' ? user.role : 'user') as UserRole;
 
-    if (context.user.role === 'manager' && user.role === 'admin') {
+    const modifyCheck = canModifyTargetUser(context.user, { id: user.id, role: targetRole });
+    if (!modifyCheck.allowed) {
       return NextResponse.json(
-        { message: 'Manager اجازه مدیریت حساب Admin را ندارد.' },
+        { message: modifyCheck.reason },
         { status: 403 },
       );
     }

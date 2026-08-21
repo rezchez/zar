@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { recordAuditEvent } from '@/lib/audit';
 import { getServerAuthContext } from '@/lib/auth';
+import { hasPermission } from '@/lib/authorization';
 
 export async function DELETE(
   request: Request,
@@ -9,8 +10,8 @@ export async function DELETE(
 ) {
   const context = await getServerAuthContext();
   if (!context) return NextResponse.json({ message: 'ابتدا وارد حساب شوید.' }, { status: 401 });
-  if (context.user.role !== 'admin' && context.user.role !== 'manager') {
-    return NextResponse.json({ message: 'حذف سند فقط برای مدیر مجاز است.' }, { status: 403 });
+  if (!hasPermission(context.user, 'document.delete') && !hasPermission(context.user, 'document.manage')) {
+    return NextResponse.json({ message: 'دسترسی غیرمجاز به ابطال یا حذف سند.' }, { status: 403 });
   }
 
   try {
