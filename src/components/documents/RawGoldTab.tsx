@@ -37,6 +37,8 @@ export type DocumentLine = {
   documentTab: 'raw-gold' | 'gold-sale' | 'currency' | 'cash';
   sourceTab?: string;
   documentSubType: string;
+  documentTypeLabel?: string;
+  converted750?: number;
   settlementMethod: 'weight' | 'cash' | 'unsettled';
   balanceSource: 'current';
   description: string;

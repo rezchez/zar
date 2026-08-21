@@ -305,6 +305,38 @@ function dateDistanceLabel(dateParts: DateParts) {
   return `${faNumber(difference)} روز بعد`;
 }
 
+function getLineDocumentTypeLabel(
+  nature: DocumentNature,
+  tab: string,
+  rawKind: RawOperationKind,
+  unsettledTrade?: boolean,
+): string {
+  if (tab === 'currency') {
+    if (unsettledTrade) {
+      return nature === 'received' ? 'خرید ارز (بدون تسویه)' : 'فروش ارز (بدون تسویه)';
+    }
+    return nature === 'received' ? 'خرید ارز' : 'فروش ارز';
+  }
+
+  if (tab === 'cash') {
+    return nature === 'received' ? 'دریافت نقد' : 'پرداخت نقد';
+  }
+
+  if (tab === 'gold-sale') {
+    if (rawKind === 'unsettled') return nature === 'received' ? 'خرید بدون تسویه' : 'فروش بدون تسویه';
+    if (rawKind === 'misc') return nature === 'received' ? 'خرید متفرقه' : 'فروش متفرقه';
+    return nature === 'received' ? 'خرید آب‌شده' : 'فروش آب‌شده';
+  }
+
+  // metals / raw-gold tab (ورود/خروج فلزات)
+  if (rawKind === 'molten') return nature === 'received' ? 'ورود آبشده' : 'خروج آبشده';
+  if (rawKind === 'misc') return nature === 'received' ? 'ورود متفرقه' : 'خروج متفرقه';
+  if (rawKind === 'conditional') return nature === 'received' ? 'ورود شرطی' : 'خروج شرطی';
+  if (rawKind === 'question') return nature === 'received' ? 'ورود سواله' : 'خروج سواله';
+
+  return nature === 'received' ? 'ورود آبشده' : 'خروج آبشده';
+}
+
 function rawOperationLabel(nature: DocumentNature, kind: RawOperationKind) {
   if (kind === 'conditional') return nature === 'received' ? 'ورود شرطی' : 'خروج شرطی';
   if (kind === 'question') return nature === 'received' ? 'ورود سواله' : 'خروج سواله';
@@ -312,55 +344,6 @@ function rawOperationLabel(nature: DocumentNature, kind: RawOperationKind) {
   if (kind === 'misc') return `${prefix} متفرقه`;
   if (kind === 'unsettled') return `${prefix} بدون تسویه`;
   return `${prefix} آب‌شده`;
-}
-
-function generateLineSummary(line: DocumentLine, weightPrecision = 3): string {
-  if (line.documentTab === 'currency') {
-    const action = line.details.unsettledTrade
-      ? (line.documentNature === 'received' ? 'خرید ارز (بدون تسویه)' : 'فروش ارز (بدون تسویه)')
-      : (line.documentNature === 'received' ? 'خرید ارز' : 'فروش ارز');
-    const parts = [action];
-    if (line.details.currencyQuantity) {
-      parts.push(`${toPersianDigits(line.details.currencyQuantity)} ${line.details.currencyUnit || ''}`);
-    }
-    if (line.details.currencyTotalAmount) {
-      parts.push(`${toPersianDigits(faNumber(numberValue(line.details.currencyTotalAmount)))} ریال`);
-    }
-    if (line.description) {
-      parts.push(line.description);
-    }
-    return parts.join(' - ');
-  }
-
-  const opLabel = rawOperationLabel(line.documentNature, line.details.rawKind);
-  const metalName = line.details.metalType === 'silver' ? 'نقره' : line.details.metalType === 'platinum' ? 'پلاتین' : 'طلا';
-  const parts = [`${opLabel} ${metalName}`];
-
-  const w = line.details.calculationMethod === 'money'
-    ? actualWeightFromMoney(line.details)
-    : numberValue(line.details.rawWeight);
-
-  if (w > 0) {
-    parts.push(`${toPersianDigits(faNumber(w, weightPrecision))} گرم`);
-  }
-
-  if (line.details.purity) {
-    parts.push(`عیار ${toPersianDigits(line.details.purity)}`);
-  }
-
-  if (line.details.labName?.trim()) {
-    parts.push(line.details.labName.trim());
-  }
-
-  if (line.details.stampNumber?.trim()) {
-    parts.push(`پاکت/انگ ${line.details.stampNumber.trim()}`);
-  }
-
-  if (line.description?.trim()) {
-    parts.push(line.description.trim());
-  }
-
-  return parts.join(' - ');
 }
 
 export default function DocumentForm({
@@ -725,22 +708,34 @@ export default function DocumentForm({
     }
     setErrorMessage('');
 
-    // Auto-generate summary string based on real snapshot info
-    const summary = generateLineSummary({ ...draftLine, documentNature }, weightPrecision);
+    const lineSourceTab = draftLine.sourceTab || (draftLine.documentTab === 'currency' ? 'currency' : draftLine.documentTab === 'gold-sale' ? 'gold-sale' : 'metals');
+    const docTypeLabel = getLineDocumentTypeLabel(
+      documentNature,
+      lineSourceTab,
+      draftLine.details.rawKind,
+      draftLine.details.unsettledTrade,
+    );
 
-    // Snapshot current documentNature and generated summary onto the committed line object
+    const rawWeight = draftLine.details.calculationMethod === 'money'
+      ? actualWeightFromMoney(draftLine.details)
+      : numberValue(draftLine.details.rawWeight);
+    const c750 = convertedTo750(String(rawWeight), draftLine.details.purity);
+
+    // Snapshot current documentNature, documentTypeLabel, converted750, and user description
     const lineToCommit: DocumentLine = {
       ...draftLine,
       documentNature,
-      description: summary,
-      sourceTab: draftLine.sourceTab || (draftLine.documentTab === 'currency' ? 'currency' : draftLine.documentTab === 'gold-sale' ? 'gold-sale' : 'metals'),
+      sourceTab: lineSourceTab,
+      documentTypeLabel: docTypeLabel,
+      converted750: c750,
+      description: draftLine.description ? draftLine.description.trim() : '',
+      details: { ...draftLine.details },
     };
 
     if (editingLineId) {
-      setCommittedLines((current) => [
-        ...current.filter((line) => line.id !== editingLineId),
-        lineToCommit,
-      ]);
+      setCommittedLines((current) =>
+        current.map((line) => (line.id === editingLineId ? lineToCommit : line)),
+      );
       setEditingLineId(null);
     } else {
       setCommittedLines((current) => [...current, lineToCommit]);
@@ -954,6 +949,26 @@ export default function DocumentForm({
     ),
     [metalNetEffects],
   );
+
+  const hasAssayOrStamp = useMemo(() => {
+    return committedLines.some(
+      (line) =>
+        (line.documentTab === 'raw-gold' || line.documentTab === 'gold-sale' || line.sourceTab === 'metals' || line.sourceTab === 'gold-sale') &&
+        (line.details?.rawKind === 'molten' || line.details?.rawKind === 'conditional'),
+    );
+  }, [committedLines]);
+
+  const hasFinancialAmounts = useMemo(() => {
+    return committedLines.some(
+      (line) =>
+        line.documentTab === 'currency' ||
+        line.documentTab === 'cash' ||
+        line.sourceTab === 'currency' ||
+        line.sourceTab === 'cash' ||
+        numberValue(line.details?.totalAmount) > 0 ||
+        numberValue(line.details?.currencyTotalAmount) > 0,
+    );
+  }, [committedLines]);
 
   // Identify editing line source tab for smart blur
   const editingLine = editingLineId ? committedLines.find((line) => line.id === editingLineId) || (draftLine.id === editingLineId ? draftLine : null) : null;
@@ -1269,8 +1284,23 @@ export default function DocumentForm({
         />
       </section>
 
-      {/* DOCUMENT LINES PANEL (with Pin / Unpin option) */}
-      <section
+      {/* DOCUMENT LINES PANEL (with Pin / Unpin option & Folder Collapse on Edit when Pinned) */}
+      <motion.section
+        layout
+        initial={false}
+        animate={{
+          height: isLinesPinned && editingLineId ? 0 : 'auto',
+          opacity: isLinesPinned && editingLineId ? 0 : 1,
+          y: isLinesPinned && editingLineId ? 20 : 0,
+        }}
+        transition={{
+          duration: 0.35,
+          ease: [0.16, 1, 0.3, 1],
+        }}
+        style={{
+          overflow: 'hidden',
+          pointerEvents: isLinesPinned && editingLineId ? 'none' : 'auto',
+        }}
         className={`dashboard-panel document-lines-panel transition-all ${
           isLinesPinned
             ? 'is-pinned fixed bottom-0 left-0 right-0 z-40 lg:right-64 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-t-2 border-amber-500 shadow-2xl p-3 rounded-t-2xl rounded-b-none'
@@ -1308,17 +1338,19 @@ export default function DocumentForm({
             <table className="document-lines-table">
               <thead>
                 <tr>
-                  <th style={{ width: '5%' }}>ردیف</th>
-                  <th style={{ width: '14%' }}>نوع سند</th>
-                  <th style={{ width: '10%' }}>وزن</th>
-                  <th style={{ width: '8%' }}>عیار</th>
-                  <th style={{ width: '9%' }}>نوع ارز</th>
-                  <th style={{ width: '11%' }}>بدهکار وزنی</th>
-                  <th style={{ width: '11%' }}>بستانکار وزنی</th>
-                  <th style={{ width: '11%' }}>بدهکار مالی</th>
-                  <th style={{ width: '11%' }}>بستانکار مالی</th>
-                  <th style={{ width: '8%' }}>شرح سند</th>
-                  <th style={{ width: '2%' }}></th>
+                  <th style={{ width: '3%' }}>#</th>
+                  <th>نوع سند</th>
+                  <th>جنس فلز</th>
+                  <th>وزن</th>
+                  <th>عیار</th>
+                  <th>بدهکار وزنی</th>
+                  <th>بستانکار وزنی</th>
+                  {hasFinancialAmounts ? <th>بدهکار مالی</th> : null}
+                  {hasFinancialAmounts ? <th>بستانکار مالی</th> : null}
+                  {hasAssayOrStamp ? <th>نام آزمایشگاه / ری‌گیری</th> : null}
+                  {hasAssayOrStamp ? <th>شماره پاکت / انگ</th> : null}
+                  <th>شرح سند</th>
+                  <th style={{ width: '52px' }}>عملیات</th>
                 </tr>
               </thead>
               <tbody>
@@ -1331,6 +1363,8 @@ export default function DocumentForm({
                       onEdit={() => editLine(line)}
                       onRemove={() => requestRemoveLine(line)}
                       weightPrecision={weightPrecision}
+                      hasAssayOrStamp={hasAssayOrStamp}
+                      hasFinancialAmounts={hasFinancialAmounts}
                     />
                   ))}
                 </AnimatePresence>
@@ -1389,7 +1423,7 @@ export default function DocumentForm({
             />
           </div>
         </div>
-      </section>
+      </motion.section>
 
       {/* DELETION CONFIRMATION MODAL */}
       <AnimatePresence>
@@ -1682,48 +1716,52 @@ function CommittedLineRow({
   onEdit,
   onRemove,
   weightPrecision = 3,
+  hasAssayOrStamp = false,
+  hasFinancialAmounts = false,
 }: {
   line: DocumentLine;
   index: number;
   onEdit: () => void;
   onRemove: () => void;
   weightPrecision?: number;
+  hasAssayOrStamp?: boolean;
+  hasFinancialAmounts?: boolean;
 }) {
   const isPaid = line.documentNature === 'paid';
   const isReceived = line.documentNature === 'received';
 
-  let docType = '';
-  let currencyUnit = '';
-  let weight = 0;
-  let purityDisplay = '-';
-  let financialAmount = 0;
+  const docType = line.documentTypeLabel
+    || getLineDocumentTypeLabel(
+      line.documentNature,
+      line.sourceTab || line.documentTab,
+      line.details.rawKind,
+      line.details.unsettledTrade,
+    );
 
-  if (line.documentTab === 'currency') {
-    docType = line.details.unsettledTrade
-      ? (isReceived ? 'خرید ارز (بدون تسویه)' : 'فروش ارز (بدون تسویه)')
-      : (isReceived ? 'خرید ارز' : 'فروش ارز');
-    currencyUnit = line.details.currencyUnit || 'ریال';
-    weight = 0;
-    financialAmount = numberValue(line.details.currencyTotalAmount);
-  } else {
-    docType = rawOperationLabel(line.documentNature, line.details.rawKind);
-    currencyUnit = line.details.metalType === 'silver'
-      ? 'نقره'
-      : line.details.metalType === 'platinum'
-        ? 'پلاتین'
-        : 'طلا';
-    weight = line.details.calculationMethod === 'money'
-      ? actualWeightFromMoney(line.details)
-      : numberValue(line.details.rawWeight);
-    if (line.details.purity) {
-      purityDisplay = toPersianDigits(line.details.purity);
-    }
-    financialAmount = numberValue(line.details.totalAmount);
-  }
+  const metalLabel = line.documentTab === 'currency'
+    ? (line.details.currencyUnit || 'ارز')
+    : (line.details.metalType === 'silver' ? 'نقره' : line.details.metalType === 'platinum' ? 'پلاتین' : 'طلا');
 
-  const weightDisplay = weight > 0 ? faNumber(weight, weightPrecision) : '-';
-  const bedehkarVazni = isPaid && weight > 0 ? faNumber(weight, weightPrecision) : null;
-  const bostankarVazni = isReceived && weight > 0 ? faNumber(weight, weightPrecision) : null;
+  const rawWeight = line.details.calculationMethod === 'money'
+    ? actualWeightFromMoney(line.details)
+    : numberValue(line.details.rawWeight);
+
+  const purityVal = numberValue(line.details.purity);
+
+  // Formula: weight * purity / 750
+  const c750 = line.converted750
+    ?? (rawWeight > 0 && purityVal > 0 ? (rawWeight * purityVal) / 750 : 0);
+
+  const weightDisplay = rawWeight > 0 ? faNumber(rawWeight, weightPrecision) : '-';
+  const purityDisplay = purityVal > 0 ? toPersianDigits(line.details.purity) : '-';
+
+  const bedehkarVazni = isPaid && c750 > 0 ? faNumber(c750, weightPrecision) : null;
+  const bostankarVazni = isReceived && c750 > 0 ? faNumber(c750, weightPrecision) : null;
+
+  const financialAmount = line.documentTab === 'currency'
+    ? numberValue(line.details.currencyTotalAmount)
+    : numberValue(line.details.totalAmount);
+
   const bedehkarMali = isPaid && financialAmount > 0 ? faNumber(financialAmount) : null;
   const bostankarMali = isReceived && financialAmount > 0 ? faNumber(financialAmount) : null;
 
@@ -1740,18 +1778,18 @@ function CommittedLineRow({
         {faNumber(index + 1)}
       </td>
       <td className="text-right">
-        <span className="font-semibold text-slate-800 dark:text-slate-200 block truncate">
+        <span className="font-semibold text-slate-800 dark:text-slate-200 block truncate" title={docType}>
           {docType}
         </span>
+      </td>
+      <td className="text-center font-medium text-slate-700 dark:text-slate-200">
+        {metalLabel}
       </td>
       <td className="text-center font-bold text-slate-700 dark:text-slate-200">
         {weightDisplay}
       </td>
       <td className="text-center font-medium text-slate-600 dark:text-slate-300">
         {purityDisplay}
-      </td>
-      <td className="text-center font-medium text-slate-600 dark:text-slate-300">
-        {currencyUnit}
       </td>
       <td className="text-center">
         {bedehkarVazni ? (
@@ -1767,33 +1805,51 @@ function CommittedLineRow({
           <span className="text-slate-300 dark:text-slate-600">-</span>
         )}
       </td>
-      <td className="text-center">
-        {bedehkarMali ? (
-          <span className="text-rose-600 dark:text-rose-400 font-bold">{bedehkarMali}</span>
-        ) : (
-          <span className="text-slate-300 dark:text-slate-600">-</span>
-        )}
-      </td>
-      <td className="text-center">
-        {bostankarMali ? (
-          <span className="text-emerald-600 dark:text-emerald-400 font-bold">{bostankarMali}</span>
-        ) : (
-          <span className="text-slate-300 dark:text-slate-600">-</span>
-        )}
-      </td>
+      {hasFinancialAmounts ? (
+        <td className="text-center">
+          {bedehkarMali ? (
+            <span className="text-rose-600 dark:text-rose-400 font-bold">{bedehkarMali}</span>
+          ) : (
+            <span className="text-slate-300 dark:text-slate-600">-</span>
+          )}
+        </td>
+      ) : null}
+      {hasFinancialAmounts ? (
+        <td className="text-center">
+          {bostankarMali ? (
+            <span className="text-emerald-600 dark:text-emerald-400 font-bold">{bostankarMali}</span>
+          ) : (
+            <span className="text-slate-300 dark:text-slate-600">-</span>
+          )}
+        </td>
+      ) : null}
+      {hasAssayOrStamp ? (
+        <td className="text-center text-slate-700 dark:text-slate-300">
+          <span className="block truncate max-w-[120px] mx-auto" title={line.details.labName || ''}>
+            {line.details.labName?.trim() || '-'}
+          </span>
+        </td>
+      ) : null}
+      {hasAssayOrStamp ? (
+        <td className="text-center text-slate-700 dark:text-slate-300">
+          <span className="block truncate max-w-[110px] mx-auto" title={line.details.stampNumber || ''}>
+            {line.details.stampNumber?.trim() || '-'}
+          </span>
+        </td>
+      ) : null}
       <td className="text-right">
-        <span className="text-xs text-slate-600 dark:text-slate-300 block truncate" title={line.description}>
+        <span className="text-xs text-slate-600 dark:text-slate-300 block truncate max-w-[160px]" title={line.description}>
           {line.description || '-'}
         </span>
       </td>
-      <td className="text-center">
-        <div className="flex items-center justify-center gap-1">
+      <td className="text-center action-cell">
+        <div className="flex items-center justify-center gap-1 shrink-0">
           <button
             type="button"
             onClick={onEdit}
             aria-label="ویرایش ردیف"
             title="ویرایش ردیف"
-            className="p-1 text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 transition-colors"
+            className="p-1 text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 transition-colors shrink-0"
           >
             <PencilLine size={14} />
           </button>
@@ -1802,7 +1858,7 @@ function CommittedLineRow({
             onClick={onRemove}
             aria-label="حذف ردیف"
             title="حذف ردیف"
-            className="p-1 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors"
+            className="p-1 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors shrink-0"
           >
             <Trash2 size={14} />
           </button>

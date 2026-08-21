@@ -941,22 +941,25 @@
 
 .document-lines-table-wrapper {
   width: 100%;
+  max-width: 100%;
   overflow-x: hidden;
   margin-top: 10px;
 }
 
 .document-lines-table {
   width: 100%;
-  table-layout: fixed;
+  max-width: 100%;
+  table-layout: auto;
   border-collapse: collapse;
   font-size: 11px;
   direction: rtl;
 }
 
 .document-lines-table th {
-  padding: 8px 6px;
+  padding: 8px 4px;
   background-color: #f8fafc;
   color: #64748b;
+  font-size: 10px;
   font-weight: 700;
   text-align: center;
   border-bottom: 1px solid #e2e8f0;
@@ -968,9 +971,40 @@
 }
 
 .document-lines-table td {
-  padding: 8px 6px;
+  padding: 6px 3px;
   border-bottom: 1px solid #f1f5f9;
   vertical-align: middle;
+  font-size: 11px;
+}
+
+.document-lines-table td.action-cell,
+.document-lines-table th:last-child {
+  width: 52px;
+  min-width: 52px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  .document-lines-table th {
+    padding: 6px 2px;
+    font-size: 9px;
+  }
+  .document-lines-table td {
+    padding: 5px 2px;
+    font-size: 10px;
+  }
+}
+
+@media (max-width: 480px) {
+  .document-lines-table th {
+    padding: 4px 1px;
+    font-size: 8px;
+  }
+  .document-lines-table td {
+    padding: 4px 1px;
+    font-size: 9px;
+  }
 }
 
 [data-theme="dark"] .document-lines-table th {
