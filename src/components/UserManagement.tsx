@@ -10,12 +10,15 @@ import {
   RefreshCw,
   Save,
   Search,
+  Shield,
   ShieldAlert,
   UserRoundCheck,
   UserRoundX,
   X,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+
+import UserPermissionModal from '@/src/components/UserPermissionModal';
 
 type Role = 'user' | 'manager' | 'admin';
 type Status = 'active' | 'blocked';
@@ -35,6 +38,10 @@ export type ManagedUser = {
   created: string;
   lastLoginAt: string | null;
   lastLogoutAt: string | null;
+  customPermissions?: {
+    grants: string[];
+    denies: string[];
+  };
 };
 
 type AuthEvent = {
@@ -62,9 +69,12 @@ const eventLabels: Record<string, string> = {
   authenticator_enabled: 'فعال‌سازی رمزساز',
   authenticator_disabled: 'غیرفعال‌سازی رمزساز',
   role_changed: 'تغییر نقش',
+  permission_granted: 'تغییر دسترسی اختصاصی',
+  permission_failed_attempt: 'تلاش غیرمجاز تغییر دسترسی',
   user_blocked: 'مسدودسازی',
   user_unblocked: 'رفع مسدودی',
   national_code_permission_granted: 'مجوز ویرایش کد ملی',
+  phone_permission_granted: 'مجوز ویرایش تلفن همراه',
   password_reset_requested: 'درخواست بازنشانی رمز',
   customer_created: 'افزودن طرف‌حساب',
   customer_updated: 'ویرایش طرف‌حساب',
@@ -128,6 +138,7 @@ export default function UserManagement({
     user: ManagedUser;
     role: Role;
   } | null>(null);
+  const [permissionTarget, setPermissionTarget] = useState<ManagedUser | null>(null);
   const [nameDrafts, setNameDrafts] = useState<Record<string, string>>({});
 
   async function loadUsers() {
@@ -190,7 +201,7 @@ export default function UserManagement({
       }
 
       setUsers((current) =>
-        current.map((user) => (user.id === id ? data.user as ManagedUser : user)),
+        current.map((user) => (user.id === id ? (data.user as ManagedUser) : user)),
       );
       setSuccessMessage('تغییرات کاربر ذخیره شد.');
       return true;
@@ -349,8 +360,8 @@ export default function UserManagement({
       <div className="dashboard-page-heading">
         <div>
           <p className="eyebrow">دسترسی و امنیت</p>
-          <h1>مدیریت کاربران</h1>
-          <p>نقش، وضعیت، جست‌وجو و تاریخچه کاربران را مدیریت کنید.</p>
+          <h1>مدیریت کاربران و دسترسی‌ها</h1>
+          <p>نقش، وضعیت، دسترسی‌های اختصاصی، جست‌وجو و تاریخچه کاربران را مدیریت کنید.</p>
         </div>
         <button
           type="button"
@@ -367,8 +378,8 @@ export default function UserManagement({
         <ShieldAlert size={18} />
         <span>
           {currentUserRole === 'manager'
-            ? 'Manager می‌تواند کاربران عادی و Managerها را مدیریت کند؛ ارتقا به Admin فقط برای Admin مجاز است.'
-            : 'Admin دسترسی کامل به مدیریت نقش‌ها، مسدودسازی و تاریخچه ورود کاربران دارد.'}
+            ? 'Manager می‌تواند کاربران عادی و دسترسی‌های آن‌ها را مدیریت کند؛ ارتقا به Admin فقط برای Admin مجاز است.'
+            : 'Admin دسترسی کامل به مدیریت نقش‌ها، دسترسی‌های اختصاصی (Grant/Deny)، مسدودسازی و تاریخچه ورود کاربران دارد.'}
         </span>
       </div>
 
@@ -434,6 +445,7 @@ export default function UserManagement({
                       setNameDrafts((current) => ({ ...current, [user.id]: value }))}
                     onNameSave={() => void saveName(user)}
                     onRoleChange={(role) => setRoleChange({ user, role })}
+                    onManagePermissions={() => setPermissionTarget(user)}
                     onBlock={() => {
                       setBlockTarget(user);
                       setBlockDuration('60');
@@ -478,6 +490,15 @@ export default function UserManagement({
           </table>
         </div>
       </section>
+
+      {permissionTarget ? (
+        <UserPermissionModal
+          targetUser={permissionTarget}
+          currentUserRole={currentUserRole}
+          onClose={() => setPermissionTarget(null)}
+          onPermissionsUpdated={() => void loadUsers()}
+        />
+      ) : null}
 
       {blockTarget ? (
         <div className="confirm-backdrop">
@@ -581,6 +602,7 @@ function UserRow({
   onNameChange,
   onNameSave,
   onRoleChange,
+  onManagePermissions,
   onBlock,
   onUnblock,
   onResetPassword,
@@ -599,6 +621,7 @@ function UserRow({
   onNameChange: (value: string) => void;
   onNameSave: () => void;
   onRoleChange: (role: Role) => void;
+  onManagePermissions: () => void;
   onBlock: () => void;
   onUnblock: () => void;
   onResetPassword: () => void;
@@ -622,7 +645,7 @@ function UserRow({
               <div className="managed-user-name-edit">
                 <input
                   value={nameValue}
-                    onChange={(event) => onNameChange(event.target.value)}
+                  onChange={(event) => onNameChange(event.target.value)}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter') {
                       event.preventDefault();
@@ -692,6 +715,16 @@ function UserRow({
         <td className="user-date-cell">{formatDate(user.lastLogoutAt)}</td>
         <td>
           <div className="user-actions">
+            <button
+              type="button"
+              className="user-events-button perm-btn"
+              onClick={onManagePermissions}
+              disabled={cannotEdit}
+              title="مدیریت دسترسی‌های اختصاصی کاربر"
+            >
+              <Shield size={15} />
+              دسترسی‌ها
+            </button>
             <button
               type="button"
               className="user-events-button"

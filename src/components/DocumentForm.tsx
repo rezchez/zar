@@ -60,6 +60,12 @@ type PendingDelete = {
   index: number;
 };
 
+type PendingHawala = {
+  line: DocumentLine;
+  targetCustomer: Customer;
+  countdown: number;
+};
+
 const jalaliMonthNames = [
   'فروردین',
   'اردیبهشت',
@@ -265,8 +271,11 @@ function validateLine(line: DocumentLine) {
   if (line.details.rawKind !== 'conditional') {
     const purityStr = normalizeDigits(line.details.purity).trim();
     const purityNum = numberValue(purityStr);
+    if (!purityStr || purityNum <= 0) {
+      return 'وارد کردن عیار برای این ردیف الزامی است.';
+    }
     if (purityNum < 1 || purityNum > 1000) {
-      return 'عیار باید عددی بین ۱ تا ۱۰۰۰ باشد.';
+      return 'عیار باید عددی معتبر و بین ۱ تا ۱۰۰۰ باشد.';
     }
     if (purityStr.includes('.') && purityStr.split('.')[1].length > 1) {
       return 'عیار حداکثر می‌تواند ۱ رقم اعشار داشته باشد.';
@@ -422,8 +431,9 @@ export default function DocumentForm({
   const [restorationState, setRestorationState] = useState<PendingDelete | null>(null);
   const [restorationTimer, setRestorationTimer] = useState<number>(10);
 
-  // Hawala modal state
+  // Hawala modal & floating pending hawala toast state
   const [hawalaLine, setHawalaLine] = useState<DocumentLine | null>(null);
+  const [pendingHawala, setPendingHawala] = useState<PendingHawala | null>(null);
 
   // Document lines pin state initialized safely
   const [isLinesPinned, setIsLinesPinned] = useState<boolean>(false);
@@ -495,6 +505,55 @@ export default function DocumentForm({
     }, 1000);
     return () => clearInterval(interval);
   }, [restorationState]);
+
+  // Pending Hawala countdown interval and settlement execution
+  useEffect(() => {
+    if (!pendingHawala) return;
+    const interval = setInterval(() => {
+      setPendingHawala((prev) => {
+        if (!prev) return null;
+        if (prev.countdown <= 1) {
+          clearInterval(interval);
+          void finalizePendingHawala(prev);
+          return null;
+        }
+        return { ...prev, countdown: prev.countdown - 1 };
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [pendingHawala]);
+
+  async function finalizePendingHawala(hawalaData: PendingHawala) {
+    const { line, targetCustomer } = hawalaData;
+    try {
+      const res = await fetch('/api/settlements', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action: 'hawala',
+          sourceCustomerId: selectedCustomerId,
+          targetCustomerId: targetCustomer.id,
+          lineId: line.id,
+          lineSnapshot: line,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.message || 'خطا در ثبت حواله');
+      }
+
+      setCommittedLines((current) => current.filter((l) => l.id !== line.id));
+      setMessage(`حواله ردیف سند به طرف‌حساب «${targetCustomer.name}» با موفقیت ثبت شد.`);
+    } catch (err: unknown) {
+      setErrorMessage(err instanceof Error ? err.message : 'خطای ثبت حواله');
+    }
+  }
+
+  function cancelPendingHawala() {
+    setPendingHawala(null);
+    setMessage('حواله لغو شد و هیچ تغییری در سند و طرف‌حساب ایجاد نگردید.');
+  }
 
   const datePickerRef = useRef<HTMLDivElement>(null);
 
@@ -1578,10 +1637,14 @@ export default function DocumentForm({
         allCustomers={customers}
         weightPrecision={weightPrecision}
         onClose={() => setHawalaLine(null)}
-        onSuccess={(_targetId) => {
+        onConfirmHawala={(targetCustomer) => {
           if (hawalaLine) {
-            setCommittedLines((current) => current.filter((l) => l.id !== hawalaLine.id));
-            setMessage('ردیف با موفقیت به طرف‌حساب مقصد حواله داده شد و از سند جاری منتقل گردید.');
+            setPendingHawala({
+              line: hawalaLine,
+              targetCustomer,
+              countdown: 10,
+            });
+            setHawalaLine(null);
           }
         }}
       />
@@ -1739,6 +1802,64 @@ export default function DocumentForm({
               className="flex items-center gap-1 rounded-lg bg-amber-500 px-3 py-1 text-xs font-bold text-slate-950 transition hover:bg-amber-400"
             >
               <RotateCcw size={13} /> بازیابی
+            </button>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      {/* FLOATING BOTTOM-RIGHT PENDING HAWALA COUNTDOWN TOAST */}
+      <AnimatePresence>
+        {pendingHawala ? (
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 30 }}
+            className="fixed bottom-5 right-5 z-50 flex items-center gap-3 rounded-2xl border border-amber-500/50 bg-slate-900 px-4 py-3 text-white shadow-2xl dark:border-amber-500/80"
+          >
+            <div className="relative grid place-items-center w-8 h-8">
+              <svg className="w-8 h-8 -rotate-90">
+                <circle
+                  cx="16"
+                  cy="16"
+                  r="13"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  className="text-slate-800"
+                  fill="transparent"
+                />
+                <circle
+                  cx="16"
+                  cy="16"
+                  r="13"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  className="text-amber-400 transition-all duration-1000 ease-linear"
+                  fill="transparent"
+                  strokeDasharray={2 * Math.PI * 13}
+                  strokeDashoffset={2 * Math.PI * 13 * (1 - pendingHawala.countdown / 10)}
+                />
+              </svg>
+              <span className="absolute text-[11px] font-extrabold text-amber-400">
+                {toPersianDigits(String(pendingHawala.countdown))}
+              </span>
+            </div>
+
+            <div className="text-right space-y-0.5">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-amber-400">
+                <ArrowLeftRight size={14} />
+                <span>حواله به «{pendingHawala.targetCustomer.name}»</span>
+              </div>
+              <small className="text-[10px] text-slate-400 block">
+                تا {toPersianDigits(String(pendingHawala.countdown))} ثانیه دیگر نهایی می‌شود
+              </small>
+            </div>
+
+            <button
+              type="button"
+              onClick={cancelPendingHawala}
+              className="mr-2 flex items-center gap-1 rounded-xl bg-rose-600 hover:bg-rose-500 px-3 py-1.5 text-xs font-bold text-white transition shadow-md"
+            >
+              <X size={14} /> لغو حواله
             </button>
           </motion.div>
         ) : null}

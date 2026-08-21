@@ -8,6 +8,7 @@ import {
   type CustomerBalanceValues,
 } from '@/lib/customer';
 import { getServerAuthContext } from '@/lib/auth';
+import { hasPermission } from '@/lib/authorization';
 import { recordAuditEvent } from '@/lib/audit';
 import { buildCustomerChanges } from '@/lib/customer-audit';
 import { getCustomerWithBalances } from '@/lib/customer-service';
@@ -66,6 +67,10 @@ export async function PATCH(
   const context = await getServerAuthContext();
   if (!context) return NextResponse.json({ message: 'ابتدا وارد حساب شوید.' }, { status: 401 });
 
+  if (!hasPermission(context.user, 'customer.edit') && !hasPermission(context.user, 'customer.manage')) {
+    return NextResponse.json({ message: 'دسترسی غیرمجاز به ویرایش طرف‌حساب.' }, { status: 403 });
+  }
+
   const { id } = await params;
   const formData = await request.formData();
   const name = String(formData.get('name') ?? '').trim();
@@ -120,8 +125,6 @@ export async function PATCH(
       );
       await syncCustomerCodeInTransactions(context.pb, id, customerCode);
     } catch {
-      // Keep the relation and the account-code snapshot consistent even if
-      // a later transaction update fails.
       try {
         await context.pb.collection('customers').update(id, {
           customerCode: before.customerCode,
@@ -134,7 +137,7 @@ export async function PATCH(
         );
         await syncCustomerCodeInTransactions(context.pb, id, before.customerCode);
       } catch {
-        // The original error is still returned below.
+        // Fallback
       }
       return NextResponse.json(
         {
@@ -178,8 +181,9 @@ export async function DELETE(
 ) {
   const context = await getServerAuthContext();
   if (!context) return NextResponse.json({ message: 'ابتدا وارد حساب شوید.' }, { status: 401 });
-  if (context.user.role !== 'admin' && context.user.role !== 'manager') {
-    return NextResponse.json({ message: 'حذف طرف‌حساب فقط برای مدیر مجاز است.' }, { status: 403 });
+
+  if (!hasPermission(context.user, 'customer.delete') && !hasPermission(context.user, 'customer.manage')) {
+    return NextResponse.json({ message: 'حذف طرف‌حساب نیاز به مجوز مربوطه دارد.' }, { status: 403 });
   }
 
   try {

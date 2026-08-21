@@ -1,16 +1,18 @@
 import { NextResponse } from 'next/server';
-import { getServerAuthContext } from '@/lib/auth';
-import { defaultSettings, normalizeSettings } from '@/lib/settings';
-import { recordAuditEvent } from '@/lib/audit';
 
-function isAllowed(context: Awaited<ReturnType<typeof getServerAuthContext>>) {
-  return context && (context.user.role === 'admin' || context.user.role === 'manager');
-}
+import { recordAuditEvent } from '@/lib/audit';
+import { getServerAuthContext } from '@/lib/auth';
+import { hasPermission } from '@/lib/authorization';
+import { defaultSettings, normalizeSettings } from '@/lib/settings';
 
 export async function GET() {
   const context = await getServerAuthContext();
   if (!context) {
     return NextResponse.json({ message: 'دسترسی مجاز نیست.' }, { status: 401 });
+  }
+
+  if (!hasPermission(context.user, 'settings.view') && !hasPermission(context.user, 'settings.manage')) {
+    return NextResponse.json({ message: 'دسترسی غیرمجاز به تنظیمات.' }, { status: 403 });
   }
 
   try {
@@ -27,7 +29,7 @@ async function handleUpdate(request: Request) {
     return NextResponse.json({ message: 'ابتدا وارد حساب کاربری خود شوید.' }, { status: 401 });
   }
 
-  if (!isAllowed(context)) {
+  if (!hasPermission(context.user, 'settings.edit') && !hasPermission(context.user, 'settings.manage')) {
     return NextResponse.json({ message: 'شما دسترسی لازم برای تغییر تنظیمات برنامه را ندارید.' }, { status: 403 });
   }
 

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { recordAuditEvent } from '@/lib/audit';
 import { getServerAuthContext } from '@/lib/auth';
+import { hasPermission } from '@/lib/authorization';
 import { mapBankAccount } from '@/lib/bank';
 import { ensureBankAccountsCollection } from '@/lib/bank-collection';
 import { parseLocalizedAmount } from '@/lib/money';
@@ -24,6 +25,10 @@ export async function GET(request: Request) {
   const context = await getServerAuthContext();
   if (!context) {
     return NextResponse.json({ message: 'ابتدا وارد حساب شوید.' }, { status: 401 });
+  }
+
+  if (!hasPermission(context.user, 'bank.view') && !hasPermission(context.user, 'bank.manage')) {
+    return NextResponse.json({ message: 'دسترسی غیرمجاز به حساب‌های بانکی.' }, { status: 403 });
   }
 
   const url = new URL(request.url);
@@ -52,6 +57,10 @@ export async function POST(request: Request) {
   const context = await getServerAuthContext();
   if (!context) {
     return NextResponse.json({ message: 'ابتدا وارد حساب شوید.' }, { status: 401 });
+  }
+
+  if (!hasPermission(context.user, 'bank.create') && !hasPermission(context.user, 'bank.manage')) {
+    return NextResponse.json({ message: 'دسترسی غیرمجاز به ایجاد حساب بانکی جدید.' }, { status: 403 });
   }
 
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;

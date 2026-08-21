@@ -149,22 +149,23 @@ export default function RawGoldTab({
               value={draftLine.details.rawWeight}
               onChange={(event) => updateDraftDetail('rawWeight', event.target.value)}
               onKeyDown={handleKeyDownEnter}
+              placeholder="۰"
             />
           </Field>
-          {draftLine.details.rawKind !== 'conditional' ? (
-            <Field label="عیار مبنا (تنظیمات کلی)">
-              <input
-                type="number"
-                min="1"
-                max="1000"
-                step="0.1"
-                value={draftLine.details.purity}
-                readOnly
-                aria-label="عیار مبنا از تنظیمات کلی برنامه"
-                title="این عیار از تنظیمات کلی برنامه خوانده می‌شود."
-              />
-            </Field>
-          ) : null}
+          <Field label="عیار">
+            <input
+              type="number"
+              min="1"
+              max="1000"
+              step="0.1"
+              value={draftLine.details.purity}
+              onChange={(event) => updateDraftDetail('purity', event.target.value)}
+              onKeyDown={handleKeyDownEnter}
+              aria-label="عیار ردیف سند"
+              placeholder="۷۵۰"
+              title="عیار اول از تنظیمات برنامه خوانده می‌شود و قابل ویرایش است."
+            />
+          </Field>
           <Field label="تبدیل‌شده به ۷۵۰">
             <input
               readOnly
