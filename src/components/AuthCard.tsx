@@ -227,7 +227,7 @@ export default function AuthCard({ initialMode = 'login' }: AuthCardProps) {
           handleSwitchMode('login');
         }, 1200);
       } catch {
-        setErrorMessage('ارتباط با سرور برقرار نشد.');
+        setErrorMessage('ارتباط با سرور برقرار نشد. مطمئن شوید PocketBase در حال اجراست.');
       } finally {
         setLoading(false);
       }
@@ -288,7 +288,7 @@ export default function AuthCard({ initialMode = 'login' }: AuthCardProps) {
         router.replace('/dashboard');
         router.refresh();
       } catch {
-        setErrorMessage('ارتباط با سرور برقرار نشد');
+        setErrorMessage('ارتباط با سرور برقرار نشد. مطمئن شوید PocketBase در حال اجراست.');
       } finally {
         setLoading(false);
       }
@@ -365,7 +365,7 @@ export default function AuthCard({ initialMode = 'login' }: AuthCardProps) {
       router.replace('/dashboard');
       router.refresh();
     } catch {
-      setErrorMessage('ارتباط با سرور برقرار نشد.');
+      setErrorMessage('ارتباط با سرور برقرار نشد. مطمئن شوید PocketBase در حال اجراست.');
     } finally {
       setLoading(false);
     }
@@ -409,9 +409,9 @@ export default function AuthCard({ initialMode = 'login' }: AuthCardProps) {
         >
           {/* Logo / Brand Header */}
           <div className="flex flex-col items-center text-center mb-5 sm:mb-6">
-            <div className="relative mb-1.2">
-              <div className="w-8 h-8 sm:w-8 sm:h-8 rounded-2xl bg-gradient-to-br from-neutral-900 via-purple-950 to-neutral-950 border border-white/20 flex items-center justify-center text-white shadow-lg">
-                <span className="font-bold text-l tracking-wider bg-gradient-to-br from-white via-purple-200 to-cyan-200 bg-clip-text text-transparent">
+            <div className="relative mb-3">
+              <div className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-br from-neutral-900 via-purple-950 to-neutral-950 border border-white/20 flex items-center justify-center text-white shadow-lg">
+                <span className="font-extrabold text-2xl tracking-wider bg-gradient-to-br from-white via-purple-200 to-cyan-200 bg-clip-text text-transparent">
                   Z
                 </span>
               </div>
@@ -422,12 +422,12 @@ export default function AuthCard({ initialMode = 'login' }: AuthCardProps) {
               ZARFOLIO
             </span>
 
-            <h1 className="text-xl sm:text-xl font-bold text-white tracking-tight">
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
               {mode === 'login' ? 'ورود به حساب' : 'ساخت حساب جدید'}
             </h1>
             <p className="text-xs sm:text-sm text-neutral-400 mt-1 max-w-[280px] leading-relaxed">
               {mode === 'login'
-                ? ''
+                ? 'به حساب کاربری خود وارد شوید'
                 : 'حساب کاربری جدید ایجاد کنید'}
             </p>
           </div>
@@ -551,7 +551,7 @@ export default function AuthCard({ initialMode = 'login' }: AuthCardProps) {
                         name="password"
                         type={showPassword ? 'text' : 'password'}
                         autoComplete="current-password"
-                        placeholder=""
+                        placeholder="••••••••"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         required
@@ -583,7 +583,7 @@ export default function AuthCard({ initialMode = 'login' }: AuthCardProps) {
                           name="password"
                           type={showPassword ? 'text' : 'password'}
                           autoComplete="new-password"
-                          placeholder=""
+                          placeholder="••••••••"
                           value={password}
                           onChange={(e) => setPassword(e.target.value)}
                           required
@@ -611,7 +611,7 @@ export default function AuthCard({ initialMode = 'login' }: AuthCardProps) {
                           name="passwordConfirm"
                           type={showPasswordConfirm ? 'text' : 'password'}
                           autoComplete="new-password"
-                          placeholder=""
+                          placeholder="••••••••"
                           value={passwordConfirm}
                           onChange={(e) => setPasswordConfirm(e.target.value)}
                           required

@@ -7,8 +7,6 @@ import {
   ChevronRight,
   ClipboardList,
   Clock3,
-  FlaskConical,
-  ListPlus,
   LoaderCircle,
   PencilLine,
   Pin,
@@ -18,7 +16,6 @@ import {
   Sparkles,
   Trash2,
   UserRound,
-  Wallet,
   X,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -27,9 +24,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { currencyDisplay, type Customer } from '@/lib/customer';
 import DocumentSubmitActions from '@/components/documents/document-submit-actions';
 import DocumentEntryTabs from '@/src/components/documents/DocumentEntryTabs';
-import DocumentOperationTypeSelector, {
-  RawMetalOperationTypeSelector,
-} from '@/src/components/documents/DocumentOperationTypeSelector';
 import type { DocumentNature } from '@/lib/document';
 import {
   formatJalaliDate,
@@ -37,8 +31,17 @@ import {
   normalizeDigits,
 } from '@/lib/jalali';
 import { useAppSettings } from '@/src/components/SettingsProvider';
+import RawGoldTab, {
+  type DetailState,
+  type DocumentLine,
+  type MeltedInventoryItem,
+  type RawOperationKind,
+} from '@/src/components/documents/RawGoldTab';
+import GoldSaleTab from '@/src/components/documents/GoldSaleTab';
+import CurrencyTab from '@/src/components/documents/CurrencyTab';
+import CashTab from '@/src/components/documents/CashTab';
+import Field from '@/src/components/documents/Field';
 
-type RawOperationKind = 'molten' | 'misc' | 'conditional' | 'question' | 'unsettled';
 type CalculationMethod = 'weight' | 'money';
 type MetalPriceType = 'mesghal17' | 'gram18' | 'ounceUsd';
 
@@ -46,49 +49,6 @@ type DateParts = {
   year: number;
   month: number;
   day: number;
-};
-
-type DetailState = {
-  metalType: 'gold' | 'silver' | 'platinum';
-  rawKind: RawOperationKind;
-  rawWeight: string;
-  purity: string;
-  calculationMethod: CalculationMethod;
-  metalPriceType: MetalPriceType;
-  metalPrice: string;
-  totalAmount: string;
-  labName: string;
-  stampNumber: string;
-  currencyUnit: string;
-  currencyQuantity: string;
-  currencyUnitPrice: string;
-  currencyTotalAmount: string;
-  unsettledTrade: boolean;
-  currencyTradeId: string;
-  settlementCurrencyUnit: string;
-  settlementQuantity: string;
-  settlesTradeId: string;
-  inventorySourceId: string;
-};
-
-type DocumentLine = {
-  id: string;
-  documentNature: DocumentNature;
-  documentTab: 'raw-gold' | 'gold-sale' | 'currency' | 'cash';
-  documentSubType: string;
-  settlementMethod: 'weight' | 'cash' | 'unsettled';
-  balanceSource: 'current';
-  description: string;
-  details: DetailState;
-};
-
-type MeltedInventoryItem = {
-  id: string;
-  weight: number;
-  remainingWeight: number;
-  purity: number;
-  stampNumber: string;
-  customerName: string;
 };
 
 type PendingDelete = {
@@ -196,11 +156,13 @@ function currencyDocumentSubType(nature: DocumentNature) {
   return nature === 'received' ? 'currency-purchase' : 'currency-sale';
 }
 
-function createLine(nature: DocumentNature = 'received'): DocumentLine {
+function createLine(nature: DocumentNature = 'received', sourceTab = 'metals'): DocumentLine {
+  const docTab = sourceTab === 'currency' ? 'currency' : sourceTab === 'gold-sale' ? 'gold-sale' : 'raw-gold';
   return {
     id: crypto.randomUUID(),
     documentNature: nature,
-    documentTab: 'raw-gold',
+    documentTab: docTab,
+    sourceTab,
     documentSubType: documentSubType(nature, 'molten'),
     settlementMethod: 'weight',
     balanceSource: 'current',
@@ -231,10 +193,11 @@ function createLine(nature: DocumentNature = 'received'): DocumentLine {
 }
 
 function createCurrencyLine(nature: DocumentNature = 'received'): DocumentLine {
-  const line = createLine(nature);
+  const line = createLine(nature, 'currency');
   return {
     ...line,
     documentTab: 'currency',
+    sourceTab: 'currency',
     documentSubType: currencyDocumentSubType(nature),
     settlementMethod: 'cash',
     details: {
@@ -422,7 +385,7 @@ export default function DocumentForm({
   });
   const [dateOpen, setDateOpen] = useState(false);
   const [documentNature, setDocumentNature] = useState<DocumentNature>('received');
-  const [draftLine, setDraftLine] = useState<DocumentLine>(() => createLine('received'));
+  const [draftLine, setDraftLine] = useState<DocumentLine>(() => createLine('received', 'metals'));
   const [committedLines, setCommittedLines] = useState<DocumentLine[]>([]);
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
   const [activeEntryTab, setActiveEntryTab] = useState('metals');
@@ -654,13 +617,17 @@ export default function DocumentForm({
 
   function changeEntryTab(tab: string) {
     setActiveEntryTab(tab);
-    if (editingLineId || (tab !== 'metals' && tab !== 'gold-sale' && tab !== 'currency')) return;
+    if (editingLineId) return;
 
-    const nextTab = tab === 'currency' ? 'currency' : tab === 'gold-sale' ? 'gold-sale' : 'raw-gold';
-    if (draftLine.documentTab === nextTab) return;
-    setDraftLine(nextTab === 'currency'
-      ? createCurrencyLine(documentNature)
-      : { ...createLine(documentNature), documentTab: nextTab });
+    if (draftLine.sourceTab === tab) return;
+    if (tab === 'currency') {
+      setDraftLine(createCurrencyLine(documentNature));
+    } else {
+      setDraftLine({
+        ...createLine(documentNature, tab),
+        documentTab: tab === 'gold-sale' ? 'gold-sale' : 'raw-gold',
+      });
+    }
   }
 
   function updateCurrencyValue(
@@ -766,6 +733,7 @@ export default function DocumentForm({
       ...draftLine,
       documentNature,
       description: summary,
+      sourceTab: draftLine.sourceTab || (draftLine.documentTab === 'currency' ? 'currency' : draftLine.documentTab === 'gold-sale' ? 'gold-sale' : 'metals'),
     };
 
     if (editingLineId) {
@@ -779,23 +747,21 @@ export default function DocumentForm({
     }
     setDraftLine(draftLine.documentTab === 'currency'
       ? createCurrencyLine(documentNature)
-      : { ...createLine(documentNature), documentTab: draftLine.documentTab });
+      : { ...createLine(documentNature, activeEntryTab), documentTab: draftLine.documentTab });
   }
 
   function editLine(line: DocumentLine) {
+    const lineSourceTab = line.sourceTab || (line.documentTab === 'currency' ? 'currency' : line.documentTab === 'gold-sale' ? 'gold-sale' : 'metals');
     setDraftLine(line);
     setEditingLineId(line.id);
-    setActiveEntryTab(line.documentTab === 'currency'
-      ? 'currency'
-      : line.documentTab === 'gold-sale' ? 'gold-sale' : 'metals');
+    setActiveEntryTab(lineSourceTab);
     setErrorMessage('');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   function cancelEdit() {
-    setDraftLine(createLine(documentNature));
+    setDraftLine(createLine(documentNature, activeEntryTab));
     setEditingLineId(null);
-    setActiveEntryTab('metals');
     setErrorMessage('');
   }
 
@@ -889,6 +855,7 @@ export default function DocumentForm({
           lines: committedLines.map((line) => ({
             documentNature: line.documentNature,
             documentTab: line.documentTab,
+            sourceTab: line.sourceTab,
             documentSubType: line.documentSubType,
             settlementMethod: line.settlementMethod,
             balanceSource: line.balanceSource,
@@ -946,7 +913,7 @@ export default function DocumentForm({
       setDocumentId(crypto.randomUUID());
       setDraftLine(activeEntryTab === 'currency'
         ? createCurrencyLine(documentNature)
-        : { ...createLine(documentNature), documentTab: activeEntryTab === 'gold-sale' ? 'gold-sale' : 'raw-gold' });
+        : { ...createLine(documentNature, activeEntryTab), documentTab: activeEntryTab === 'gold-sale' ? 'gold-sale' : 'raw-gold' });
       setEditingLineId(null);
 
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -987,6 +954,12 @@ export default function DocumentForm({
     ),
     [metalNetEffects],
   );
+
+  // Identify editing line source tab for smart blur
+  const editingLine = editingLineId ? committedLines.find((line) => line.id === editingLineId) || (draftLine.id === editingLineId ? draftLine : null) : null;
+  const editingSourceTab = editingLine
+    ? (editingLine.sourceTab || (editingLine.documentTab === 'currency' ? 'currency' : editingLine.documentTab === 'gold-sale' ? 'gold-sale' : 'metals'))
+    : null;
 
   return (
     <div className={`document-form-page ${isLinesPinned ? 'pb-36' : ''}`}>
@@ -1209,7 +1182,7 @@ export default function DocumentForm({
           selectedCustomer={selectedCustomer}
           documentId={documentId}
           nature={documentNature}
-          isEditing={Boolean(editingLineId)}
+          editingSourceTab={editingSourceTab}
           metalsTabLabel={`${documentNature === 'received' ? 'ورود' : 'خروج'} ${
             draftLine.details.metalType === 'silver'
               ? 'نقره'
@@ -1227,478 +1200,71 @@ export default function DocumentForm({
           activeTab={activeEntryTab}
           onActiveTabChange={changeEntryTab}
           firstTabContent={(
-            <div className="space-y-4">
-              <div className="document-operation-title">
-                <div>
-                  <h3 className="text-xs font-bold">نوع {documentNature === 'received' ? 'ورود' : 'خروج'} را انتخاب کنید</h3>
-                </div>
-                <span className={`document-nature-badge ${documentNature}`}>
-                  {documentNature === 'received' ? 'دریافتی' : 'پرداختی'}
-                </span>
-              </div>
-              <RawMetalOperationTypeSelector
-                nature={documentNature}
-                value={draftLine.details.rawKind}
-                onChange={changeRawKind}
-              />
-              <div className="document-dynamic-fields">
-                <div className="document-special-grid raw-gold-fields">
-                  {documentNature === 'paid' && draftLine.details.rawKind === 'molten' ? (
-                    <Field label="انتخاب موجودی آبشده" wide>
-                      <select
-                        value={draftLine.details.inventorySourceId}
-                        onChange={(event) => {
-                          const source = meltedInventory.find((item) => item.id === event.target.value);
-                          setDraftLine((current) => ({
-                            ...current,
-                            details: {
-                              ...current.details,
-                              inventorySourceId: event.target.value,
-                              rawWeight: source ? String(source.remainingWeight) : current.details.rawWeight,
-                              purity: source ? String(source.purity || 750) : current.details.purity,
-                              stampNumber: source?.stampNumber ?? current.details.stampNumber,
-                            },
-                          }));
-                        }}
-                      >
-                        <option value="">انتخاب از موجودی فعال...</option>
-                        {meltedInventory.map((item) => (
-                          <option key={item.id} value={item.id}>
-                            {item.stampNumber || 'بدون انگ'} · {item.customerName} · {item.remainingWeight.toFixed(3)} گرم · عیار {item.purity}
-                          </option>
-                        ))}
-                      </select>
-                    </Field>
-                  ) : null}
-                  <Field label="وزن (گرم)">
-                    <input
-                      type="number"
-                      min="0"
-                      step={10 ** -weightPrecision}
-                      value={draftLine.details.rawWeight}
-                      onChange={(event) => updateDraftDetail('rawWeight', event.target.value)}
-                      onKeyDown={handleKeyDownEnter}
-                    />
-                  </Field>
-                  {draftLine.details.rawKind !== 'conditional' ? (
-                    <Field label="عیار">
-                      <input
-                        type="number"
-                        min="1"
-                        max="999"
-                        step="0.1"
-                        value={draftLine.details.purity}
-                        onChange={(event) => handlePurityChange(event.target.value)}
-                        onKeyDown={handleKeyDownEnter}
-                      />
-                    </Field>
-                  ) : null}
-                  <Field label="تبدیل‌شده به ۷۵۰">
-                    <input
-                      readOnly
-                      className="computed-field"
-                      value={faNumber(convertedTo750(draftLine.details.rawWeight, draftLine.details.purity), weightPrecision)}
-                    />
-                  </Field>
-                  {draftLine.details.rawKind !== 'misc' ? (
-                    <>
-                      <Field label="نام آزمایشگاه ری‌گیری">
-                        <input
-                          value={draftLine.details.labName}
-                          onChange={(event) => updateDraftDetail('labName', event.target.value)}
-                          onKeyDown={handleKeyDownEnter}
-                          placeholder="نام آزمایشگاه"
-                        />
-                      </Field>
-                      <Field label="شماره پاکت / انگ">
-                        <input
-                          value={draftLine.details.stampNumber}
-                          onChange={(event) => updateDraftDetail('stampNumber', event.target.value)}
-                          onKeyDown={handleKeyDownEnter}
-                          placeholder="شماره پاکت یا انگ"
-                        />
-                      </Field>
-                    </>
-                  ) : null}
-                  <Field label="توضیحات" wide>
-                    <textarea
-                      value={draftLine.description}
-                      onChange={(event) => setDraftLine((current) => ({ ...current, description: event.target.value }))}
-                      onKeyDown={handleKeyDownEnter}
-                      placeholder="توضیحات تکمیلی..."
-                    />
-                  </Field>
-                </div>
-              </div>
-              {/* Sticky Floating Submit Row Button */}
-              {draftReady ? (
-                <div className={`sticky ${isLinesPinned ? 'bottom-32' : 'bottom-3'} z-30 flex justify-center pt-2 transition-all duration-300`}>
-                  <button type="button" className="document-commit-line-button shadow-lg max-w-sm" onClick={commitDraftLine}>
-                    <ListPlus size={16} /> {editingLineId ? 'ثبت اصلاح ردیف' : 'ثبت ردیف'}
-                  </button>
-                </div>
-              ) : null}
-            </div>
+            <RawGoldTab
+              nature={documentNature}
+              draftLine={draftLine}
+              setDraftLine={setDraftLine}
+              weightPrecision={weightPrecision}
+              meltedInventory={meltedInventory}
+              editingLineId={editingLineId}
+              isLinesPinned={isLinesPinned}
+              commitDraftLine={commitDraftLine}
+              changeRawKind={changeRawKind}
+              updateDraftDetail={updateDraftDetail}
+              handlePurityChange={handlePurityChange}
+              handleKeyDownEnter={handleKeyDownEnter}
+              draftReady={draftReady}
+              convertedTo750={convertedTo750}
+              faNumber={faNumber}
+            />
           )}
           goldSaleTabContent={(
-            <div className="space-y-4">
-              <div className="document-operation-section">
-                <div className="document-operation-title">
-                  <div>
-                    <h3 className="text-xs font-bold">نوع {documentNature === 'received' ? 'خرید' : 'فروش'} را انتخاب کنید</h3>
-                  </div>
-                  <span className={`document-nature-badge ${documentNature}`}>
-                    {documentNature === 'received' ? 'خرید / بستانکار' : 'فروش / بدهکار'}
-                  </span>
-                </div>
-
-                <DocumentOperationTypeSelector
-                  nature={documentNature}
-                  value={draftLine.details.rawKind}
-                  onChange={changeRawKind}
-                />
-              </div>
-
-              <AnimatePresence mode="wait" initial={false}>
-                <motion.div
-                  key={`${documentNature}-${draftLine.details.rawKind}`}
-                  className="document-dynamic-fields"
-                  initial={{ opacity: 0, y: 12, filter: 'blur(4px)' }}
-                  animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-                  exit={{ opacity: 0, y: -8, filter: 'blur(3px)' }}
-                  transition={{ duration: 0.22, ease: 'easeOut' }}
-                >
-                  <div className="document-dynamic-fields-heading">
-                    <FlaskConical size={18} />
-                    <div>
-                      <strong>
-                        مشخصات {rawOperationLabel(documentNature, draftLine.details.rawKind)}
-                      </strong>
-                      <small>اطلاعات وزن، عیار و نحوه محاسبه را دقیق وارد کنید.</small>
-                    </div>
-                  </div>
-
-                  <div className="document-special-grid raw-gold-fields">
-                    {documentNature === 'paid' && draftLine.details.rawKind === 'molten' ? (
-                      <Field label="انتخاب موجودی آبشده" wide>
-                        <select
-                          value={draftLine.details.inventorySourceId}
-                          onChange={(event) => {
-                            const source = meltedInventory.find((item) => item.id === event.target.value);
-                            setDraftLine((current) => ({
-                              ...current,
-                              details: {
-                                ...current.details,
-                                inventorySourceId: event.target.value,
-                                rawWeight: source ? String(source.remainingWeight) : current.details.rawWeight,
-                                purity: source ? String(source.purity || 750) : current.details.purity,
-                                stampNumber: source?.stampNumber ?? current.details.stampNumber,
-                              },
-                            }));
-                          }}
-                        >
-                          <option value="">انتخاب از موجودی فعال...</option>
-                          {meltedInventory.map((item) => (
-                            <option key={item.id} value={item.id}>
-                              {item.stampNumber || 'بدون انگ'} · {item.customerName} · {item.remainingWeight.toFixed(3)} گرم · عیار {item.purity}
-                            </option>
-                          ))}
-                        </select>
-                      </Field>
-                    ) : null}
-                    <div className="col-span-full flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 p-2 dark:border-slate-700 dark:bg-slate-900">
-                      <span className="text-xs font-bold text-slate-600 dark:text-slate-300">نحوه محاسبه</span>
-                      <div className="flex gap-2">
-                        {(['weight', 'money'] as CalculationMethod[]).map((method) => (
-                          <button
-                            type="button"
-                            key={method}
-                            className={`rounded-lg px-3 py-1.5 text-xs font-bold ${draftLine.details.calculationMethod === method ? 'bg-amber-500 text-white' : 'bg-white text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}
-                            onClick={() => updateMetalValue('calculationMethod', method)}
-                          >
-                            {method === 'weight' ? 'وزنی' : 'پولی'}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {draftLine.details.calculationMethod === 'weight' ? (
-                      <Field label="وزن ترازویی (گرم)">
-                        <input
-                          type="number"
-                          min="0"
-                          step={10 ** -weightPrecision}
-                          inputMode="decimal"
-                          value={draftLine.details.rawWeight}
-                          onChange={(event) => updateMetalValue('rawWeight', event.target.value)}
-                          onKeyDown={handleKeyDownEnter}
-                          placeholder="۰"
-                        />
-                      </Field>
-                    ) : null}
-
-                    <Field label="عیار">
-                      <input
-                        type="number"
-                        min="1"
-                        max="999"
-                        step="0.1"
-                        inputMode="decimal"
-                        value={draftLine.details.purity}
-                        onChange={(event) => {
-                          const norm = normalizeDigits(event.target.value);
-                          if (norm === '' || /^\d+(\.\d{0,1})?$/.test(norm)) {
-                            updateMetalValue('purity', norm);
-                          }
-                        }}
-                        onKeyDown={handleKeyDownEnter}
-                        placeholder="۷۵۰"
-                      />
-                    </Field>
-
-                    <Field label="تبدیل‌شده به ۷۵۰">
-                      <input
-                        value={faNumber(
-                          draftLine.details.calculationMethod === 'money'
-                            ? convertedWeightFromTotal(draftLine.details.totalAmount, draftLine.details.metalPriceType, draftLine.details.metalPrice)
-                            : convertedTo750(draftLine.details.rawWeight, draftLine.details.purity),
-                          weightPrecision,
-                        )}
-                        readOnly
-                        aria-label="وزن تبدیل‌شده به عیار ۷۵۰"
-                        className="computed-field"
-                      />
-                    </Field>
-
-                    <Field label="نوع فی">
-                      <select
-                        value={draftLine.details.metalPriceType}
-                        onChange={(event) => updateMetalValue('metalPriceType', event.target.value)}
-                      >
-                        <option value="mesghal17">مثقال ۱۷ عیار</option>
-                        <option value="gram18">گرم ۱۸ عیار</option>
-                        <option value="ounceUsd">هر اونس (دلاری)</option>
-                      </select>
-                    </Field>
-                    <Field label={metalPriceLabel(draftLine.details.metalPriceType)}>
-                      <input
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={draftLine.details.metalPrice}
-                        onChange={(event) => updateMetalValue('metalPrice', event.target.value)}
-                        onKeyDown={handleKeyDownEnter}
-                      />
-                    </Field>
-                    <Field label="مبلغ کل">
-                      <input
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={draftLine.details.totalAmount}
-                        onChange={(event) => updateMetalValue('totalAmount', event.target.value)}
-                        onKeyDown={handleKeyDownEnter}
-                      />
-                    </Field>
-
-                    {draftLine.details.rawKind === 'molten' ? (
-                      <>
-                        <Field label="نام آزمایشگاه ری‌گیری">
-                          <input
-                            value={draftLine.details.labName}
-                            onChange={(event) => updateDraftDetail('labName', event.target.value)}
-                            onKeyDown={handleKeyDownEnter}
-                            placeholder="نام آزمایشگاه"
-                          />
-                        </Field>
-                        <Field label="شماره پاکت / انگ">
-                          <input
-                            value={draftLine.details.stampNumber}
-                            onChange={(event) => updateDraftDetail('stampNumber', event.target.value)}
-                            onKeyDown={handleKeyDownEnter}
-                            placeholder="شماره پاکت یا انگ"
-                          />
-                        </Field>
-                      </>
-                    ) : null}
-
-                    <Field label="توضیحات" wide>
-                      <textarea
-                        value={draftLine.description}
-                        onChange={(event) => setDraftLine((current) => ({
-                          ...current,
-                          description: event.target.value,
-                        }))}
-                        onKeyDown={handleKeyDownEnter}
-                        placeholder="توضیحات تکمیلی این ردیف..."
-                      />
-                    </Field>
-                  </div>
-
-                  <div className={`raw-metal-result ${documentNature}`}>
-                    <Sparkles size={16} />
-                    <div>
-                      <strong>{rawOperationLabel(documentNature, draftLine.details.rawKind)}</strong>
-                      <span>
-                        {draftLine.details.rawWeight || draftLine.details.totalAmount
-                          ? `${toPersianDigits(faNumber(draftLine.details.calculationMethod === 'money' ? actualWeightFromMoney(draftLine.details) : numberValue(draftLine.details.rawWeight), weightPrecision))} گرم`
-                          : 'وزن وارد نشده'}
-                        {draftLine.details.purity
-                          ? ` · عیار ${toPersianDigits(draftLine.details.purity)}`
-                          : ''}
-                      </span>
-                    </div>
-                  </div>
-                </motion.div>
-              </AnimatePresence>
-
-              {draftReady ? (
-                <div className={`sticky ${isLinesPinned ? 'bottom-32' : 'bottom-3'} z-30 flex justify-center pt-2 transition-all duration-300`}>
-                  <button
-                    type="button"
-                    className="document-commit-line-button shadow-lg max-w-sm"
-                    onClick={commitDraftLine}
-                  >
-                    <ListPlus size={16} />
-                    {editingLineId ? 'ثبت اصلاح ردیف' : 'ثبت ردیف'}
-                  </button>
-                </div>
-              ) : null}
-            </div>
+            <GoldSaleTab
+              nature={documentNature}
+              draftLine={draftLine}
+              setDraftLine={setDraftLine}
+              weightPrecision={weightPrecision}
+              meltedInventory={meltedInventory}
+              editingLineId={editingLineId}
+              isLinesPinned={isLinesPinned}
+              commitDraftLine={commitDraftLine}
+              changeRawKind={changeRawKind}
+              updateMetalValue={updateMetalValue}
+              updateDraftDetail={updateDraftDetail}
+              handleKeyDownEnter={handleKeyDownEnter}
+              draftReady={draftReady}
+              convertedTo750={convertedTo750}
+              convertedWeightFromTotal={convertedWeightFromTotal}
+              actualWeightFromMoney={actualWeightFromMoney}
+              rawOperationLabel={rawOperationLabel}
+              metalPriceLabel={metalPriceLabel}
+              normalizeDigits={normalizeDigits}
+              toPersianDigits={toPersianDigits}
+              faNumber={faNumber}
+              numberValue={numberValue}
+            />
           )}
           currencyTabContent={(
-            <div className="space-y-4">
-              <div className="document-operation-title">
-                <div>
-                  <h3 className="text-xs font-bold">{documentNature === 'received' ? 'خرید ارز' : 'فروش ارز'}</h3>
-                </div>
-                <span className={`document-nature-badge ${documentNature}`}>
-                  {documentNature === 'received' ? 'خرید ارز' : 'فروش ارز'}
-                </span>
-              </div>
-
-              <div className="document-special-grid raw-gold-fields">
-                <Field label="واحد ارز">
-                  <select
-                    value={draftLine.details.currencyUnit}
-                    onChange={(event) => updateDraftDetail('currencyUnit', event.target.value)}
-                  >
-                    {currencyUnits.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
-                  </select>
-                </Field>
-                <Field label="تعداد">
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    inputMode="decimal"
-                    value={draftLine.details.currencyQuantity}
-                    onChange={(event) => updateCurrencyValue('currencyQuantity', event.target.value)}
-                    onKeyDown={handleKeyDownEnter}
-                    placeholder="۰"
-                  />
-                </Field>
-                <Field label="قیمت هر واحد (ریال)">
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    inputMode="decimal"
-                    value={draftLine.details.currencyUnitPrice}
-                    onChange={(event) => updateCurrencyValue('currencyUnitPrice', event.target.value)}
-                    onKeyDown={handleKeyDownEnter}
-                    placeholder="۰"
-                  />
-                </Field>
-                <Field label="مبلغ کل (ریال)">
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    inputMode="decimal"
-                    value={draftLine.details.currencyTotalAmount}
-                    onChange={(event) => updateCurrencyValue('currencyTotalAmount', event.target.value)}
-                    onKeyDown={handleKeyDownEnter}
-                    placeholder="۰"
-                  />
-                </Field>
-                <label className="flex min-h-12 items-center gap-3 rounded-xl border border-amber-300/70 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900 dark:border-amber-700/60 dark:bg-amber-950/30 dark:text-amber-200">
-                  <input
-                    type="checkbox"
-                    checked={draftLine.details.unsettledTrade}
-                    onChange={(event) => setDraftLine((current) => ({
-                      ...current,
-                      settlementMethod: event.target.checked ? 'unsettled' : 'cash',
-                      details: { ...current.details, unsettledTrade: event.target.checked },
-                    }))}
-                  />
-                  <span>
-                    بدون تسویه
-                    <small className="mt-1 block text-xs font-normal opacity-80">
-                      مبلغ نقدی اکنون ثبت نمی‌شود و بدهی/بستانکاری ارز در حساب طرف‌حساب می‌ماند.
-                    </small>
-                  </span>
-                </label>
-                <Field label="توضیحات" wide>
-                  <textarea
-                    value={draftLine.description}
-                    onChange={(event) => setDraftLine((current) => ({
-                      ...current,
-                      description: event.target.value,
-                    }))}
-                    onKeyDown={handleKeyDownEnter}
-                    placeholder="توضیحات معامله ارزی..."
-                  />
-                </Field>
-              </div>
-
-              {draftReady ? (
-                <div className={`sticky ${isLinesPinned ? 'bottom-32' : 'bottom-3'} z-30 flex justify-center pt-2 transition-all duration-300`}>
-                  <button
-                    type="button"
-                    className="document-commit-line-button shadow-lg max-w-sm"
-                    onClick={commitDraftLine}
-                  >
-                    <ListPlus size={16} />
-                    {editingLineId ? 'ثبت اصلاح ردیف' : 'ثبت ردیف'}
-                  </button>
-                </div>
-              ) : null}
-            </div>
+            <CurrencyTab
+              nature={documentNature}
+              draftLine={draftLine}
+              setDraftLine={setDraftLine}
+              currencyUnits={currencyUnits}
+              editingLineId={editingLineId}
+              isLinesPinned={isLinesPinned}
+              commitDraftLine={commitDraftLine}
+              updateDraftDetail={updateDraftDetail}
+              updateCurrencyValue={updateCurrencyValue}
+              handleKeyDownEnter={handleKeyDownEnter}
+              draftReady={draftReady}
+            />
           )}
           cashTabContent={(
-            <div className="grid gap-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-900/50">
-              <div className="flex items-center gap-3">
-                <Wallet className="text-emerald-600" size={20} />
-                <div>
-                  <p className="text-xs font-bold text-slate-700 dark:text-slate-200">تسویه معاملات بدون تسویه</p>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400">ارز و مقدار معامله باز را برای تسویه بعدی انتخاب کنید.</p>
-                </div>
-              </div>
-              <select
-                className="text-xs h-9"
-                value={draftLine.details.settlesTradeId}
-                onChange={(event) => {
-                  const trade = committedLines.find((line) => line.id === event.target.value);
-                  setDraftLine((current) => ({
-                    ...current,
-                    details: {
-                      ...current.details,
-                      settlesTradeId: event.target.value,
-                      settlementCurrencyUnit: trade?.details.currencyUnit ?? current.details.settlementCurrencyUnit,
-                      settlementQuantity: trade?.details.currencyQuantity ?? current.details.settlementQuantity,
-                    },
-                  }));
-                }}
-              >
-                <option value="">انتخاب معامله باز...</option>
-                {committedLines.filter((line) => line.documentTab === 'currency' && line.details.unsettledTrade).map((line) => (
-                  <option key={line.id} value={line.id}>
-                    {line.details.currencyQuantity || '۰'} {line.details.currencyUnit} · {line.details.currencyTotalAmount || '۰'} ریال
-                  </option>
-                ))}
-              </select>
-            </div>
+            <CashTab
+              draftLine={draftLine}
+              setDraftLine={setDraftLine}
+              committedLines={committedLines}
+            />
           )}
         />
       </section>
@@ -2243,22 +1809,5 @@ function CommittedLineRow({
         </div>
       </td>
     </motion.tr>
-  );
-}
-
-function Field({
-  label,
-  wide,
-  children,
-}: {
-  label: string;
-  wide?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className={`account-field ${wide ? 'document-field-wide' : ''}`}>
-      <span>{label}</span>
-      {children}
-    </label>
   );
 }

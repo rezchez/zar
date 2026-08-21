@@ -14,11 +14,10 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { useState } from 'react';
 
 import type { Customer } from '@/lib/customer';
 import BankOperation from '@/src/components/documents/BankOperation';
-import CashOperation from '@/src/components/documents/CashOperation';
+import PlaceholderTab from '@/src/components/documents/PlaceholderTab';
 
 type DocumentEntryTabsProps = {
   firstTabContent: ReactNode;
@@ -34,6 +33,7 @@ type DocumentEntryTabsProps = {
   onActiveTabChange?: (tab: string) => void;
   metalsTabLabel?: string;
   nature?: 'received' | 'paid';
+  editingSourceTab?: string | null;
 };
 
 type TabDefinition = {
@@ -42,19 +42,6 @@ type TabDefinition = {
   icon: LucideIcon;
   content: ReactNode;
 };
-
-function PlaceholderTab({ label }: { label: string }) {
-  return (
-    <div className="flex min-h-48 items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 p-6 text-center dark:border-slate-700 dark:bg-slate-900/50">
-      <div>
-        <p className="text-sm font-bold text-slate-700 dark:text-slate-200">{label}</p>
-        <p className="mt-2 text-xs leading-6 text-slate-500 dark:text-slate-400">
-          این بخش در نسخه بعدی تکمیل می‌شود.
-        </p>
-      </div>
-    </div>
-  );
-}
 
 export default function DocumentEntryTabs({
   firstTabContent,
@@ -70,13 +57,13 @@ export default function DocumentEntryTabs({
   onActiveTabChange,
   metalsTabLabel = 'ورود و خروج فلزات',
   nature = 'received',
-  isEditing = false,
-}: DocumentEntryTabsProps & { isEditing?: boolean }) {
-  const [uncontrolledActiveTab, setUncontrolledActiveTab] = useState<string>('metals');
-  const activeTab = controlledActiveTab ?? uncontrolledActiveTab;
+  editingSourceTab = null,
+}: DocumentEntryTabsProps) {
+  const isEditingMode = Boolean(editingSourceTab);
+  const activeTab = isEditingMode ? editingSourceTab! : controlledActiveTab ?? 'metals';
 
   function selectTab(tab: string) {
-    if (controlledActiveTab === undefined) setUncontrolledActiveTab(tab);
+    if (isEditingMode) return;
     onActiveTabChange?.(tab);
   }
 
@@ -96,7 +83,7 @@ export default function DocumentEntryTabs({
       id: 'cash',
       label: 'وجه نقد',
       icon: Wallet,
-      content: cashTabContent ?? <CashOperation />,
+      content: cashTabContent ?? <PlaceholderTab label="وجه نقد" />,
     },
     {
       id: 'bank',
@@ -129,24 +116,28 @@ export default function DocumentEntryTabs({
 
   return (
     <div className="grid gap-4 lg:grid-cols-[12rem_minmax(0,1fr)]">
-      <div className="min-w-0 lg:col-start-2 lg:row-start-1">{selectedTab.content}</div>
+      <div className="min-w-0 lg:col-start-2 lg:row-start-1">
+        {selectedTab.content}
+      </div>
       <nav
-        className={`order-first flex gap-1.5 overflow-x-auto pb-1 lg:order-last lg:col-start-1 lg:row-start-1 lg:block lg:space-y-1.5 lg:overflow-visible transition-all duration-300 ${
-          isEditing ? 'blur-[1.5px] opacity-40 pointer-events-none' : ''
-        }`}
+        className="order-first flex gap-1.5 overflow-x-auto pb-1 lg:order-last lg:col-start-1 lg:row-start-1 lg:block lg:space-y-1.5 lg:overflow-visible"
         aria-label="تب‌های ثبت سند"
       >
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = tab.id === selectedTab.id;
+          const isBlurred = isEditingMode && tab.id !== editingSourceTab;
+
           return (
             <button
               type="button"
               key={tab.id}
               onClick={() => selectTab(tab.id)}
               aria-current={isActive ? 'page' : undefined}
-              disabled={isEditing && !isActive}
-              className={`flex min-w-max items-center gap-2 rounded-lg px-2.5 py-2 text-right text-[11px] font-bold transition lg:w-full ${
+              disabled={isEditingMode && !isActive}
+              className={`flex min-w-max items-center gap-2 rounded-lg px-2.5 py-2 text-right text-[11px] font-bold transition-all duration-300 lg:w-full ${
+                isBlurred ? 'filter blur-[1.5px] opacity-35 pointer-events-none' : 'filter blur-0 opacity-100'
+              } ${
                 isActive
                   ? nature === 'paid'
                     ? 'bg-rose-600 text-white shadow-sm shadow-rose-600/20'
