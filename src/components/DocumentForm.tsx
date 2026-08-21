@@ -954,7 +954,7 @@ export default function DocumentForm({
                   className="w-full"
                 >
                   <label className="account-field document-account-search-field max-w-none">
-                    <span className="text-xs font-bold text-slate-600 dark:text-slate-300">جست‌وجوی طرف‌حساب</span>
+                    <span className="text-xs font-bold text-slate-600 dark:text-slate-300">طرف‌حساب</span>
                     <div className="gooey-search document-search-shell">
                       <Search size={16} />
                       <input
@@ -997,33 +997,27 @@ export default function DocumentForm({
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -4 }}
                   transition={{ duration: 0.15, ease: 'easeOut' }}
-                  className="w-full flex items-center justify-between rounded-xl border border-teal-200 bg-teal-50/60 p-2.5 dark:border-teal-900/60 dark:bg-teal-950/30"
+                  className="w-full sm:w-1/3 flex items-center justify-between rounded-xl border border-teal-200 bg-teal-50/60 p-2 dark:border-teal-900/60 dark:bg-teal-950/30 transition-all duration-300"
                 >
-                  <div className="flex items-center gap-3">
-                    <span className="document-suggestion-avatar"><UserRound size={16} /></span>
-                    <div>
-                      <strong className="block text-xs font-bold text-slate-800 dark:text-slate-100">{selectedCustomer.name}</strong>
-                      <small className="text-[10px] text-slate-500 dark:text-slate-400">
-                        کد حساب {toPersianDigits(String(selectedCustomer.customerCode))}
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span className="document-suggestion-avatar shrink-0"><UserRound size={15} /></span>
+                    <div className="min-w-0 truncate">
+                      <strong className="block text-xs font-bold text-slate-800 dark:text-slate-100 truncate">{selectedCustomer.name}</strong>
+                      <small className="text-[10px] text-slate-500 dark:text-slate-400 block truncate">
+                        کد {toPersianDigits(String(selectedCustomer.customerCode))}
                       </small>
                     </div>
                   </div>
                   <button
                     type="button"
                     onClick={clearCustomer}
-                    className="rounded-lg border border-teal-300 bg-white px-3 py-1 text-xs font-bold text-teal-700 transition hover:bg-teal-50 dark:border-teal-700 dark:bg-slate-800 dark:text-teal-300 dark:hover:bg-slate-700"
+                    className="rounded-lg border border-teal-300 bg-white px-2.5 py-1 text-[11px] font-bold text-teal-700 transition hover:bg-teal-50 dark:border-teal-700 dark:bg-slate-800 dark:text-teal-300 dark:hover:bg-slate-700 shrink-0"
                   >
                     تغییر
                   </button>
                 </motion.div>
               )}
             </AnimatePresence>
-
-            {selectedCustomer ? (
-              <div className="document-account-hint text-xs">
-                برای استعلام شماره سند و مانده، طرف حساب را انتخاب کنید
-              </div>
-            ) : null}
           </div>
 
           {/* Left side: Document Nature Switch */}
@@ -1059,22 +1053,37 @@ export default function DocumentForm({
           ) : null}
         </AnimatePresence>
 
-        {/* Document Metadata Row */}
+        {/* Document Metadata Row (Order: Customer (above) -> Document Number -> Metal Type -> Date) */}
         <div className="grid gap-3 sm:grid-cols-3 pt-2 border-t border-slate-100 dark:border-slate-800">
-          <Field label="شماره سند خودکار">
+          <Field label="شماره سند">
             <div className="document-number-field">
               <input
                 value={documentNumberLoading ? 'در حال استعلام...' : toPersianDigits(effectiveDocumentNumberDisplay)}
                 readOnly
                 className="bg-slate-100 dark:bg-slate-800/80 font-bold text-xs h-9"
-                aria-label="شماره سند خودکار"
+                aria-label="شماره سند"
               />
               {documentNumberLoading ? <LoaderCircle size={15} className="spin" /> : <Check size={14} />}
             </div>
           </Field>
 
+          <Field label="جنس فلز">
+            <select
+              className="text-xs h-9"
+              value={draftLine.details.metalType}
+              onChange={(event) => updateDraftDetail(
+                'metalType',
+                event.target.value as DetailState['metalType'],
+              )}
+            >
+              <option value="gold">طلای خام</option>
+              <option value="silver">نقره</option>
+              <option value="platinum">پلاتین</option>
+            </select>
+          </Field>
+
           <Field label="تاریخ سند">
-            <div className="jalali-picker relative z-50" ref={datePickerRef}>
+            <div className="jalali-picker relative z-20" ref={datePickerRef}>
               <button
                 type="button"
                 className={`jalali-picker-trigger text-xs h-9 ${dateOpen ? 'is-open' : ''}`}
@@ -1108,21 +1117,6 @@ export default function DocumentForm({
                 {distanceLabel}
               </small>
             </div>
-          </Field>
-
-          <Field label="جنس فلز">
-            <select
-              className="text-xs h-9"
-              value={draftLine.details.metalType}
-              onChange={(event) => updateDraftDetail(
-                'metalType',
-                event.target.value as DetailState['metalType'],
-              )}
-            >
-              <option value="gold">طلای خام</option>
-              <option value="silver">نقره</option>
-              <option value="platinum">پلاتین</option>
-            </select>
           </Field>
         </div>
       </section>
@@ -1969,8 +1963,7 @@ function CustomerBalanceLiquid({ customer }: { customer: Customer }) {
       <div className="document-liquid-title">
         <span className="document-liquid-orb"><Sparkles size={14} /></span>
         <div>
-          <strong>مانده جاری حساب‌ها</strong>
-          <small>مثبت: بستانکار · منفی: بدهکار</small>
+          <strong className="text-xs font-bold">وضعیت طلب و بدهی {customer.name}</strong>
         </div>
       </div>
       <div className="document-liquid-items">
@@ -1990,17 +1983,17 @@ function CustomerBalanceLiquid({ customer }: { customer: Customer }) {
             }}
           >
             <span className="document-liquid-blob" />
-            <small>{balance.label}</small>
-            <strong>
+            <small className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">{balance.label}</small>
+            <strong className="text-xs font-extrabold tracking-tight">
               {faNumber(Math.abs(balance.value), balance.digits)}
               {' '}
               {balance.unit}
             </strong>
-            <em>
+            <em className="text-[10px] font-bold">
               {balance.value > 0
-                ? 'بستانکار'
+                ? 'بستانکار از ما'
                 : balance.value < 0
-                  ? 'بدهکار'
+                  ? 'بدهکار به ما'
                   : 'تسویه'}
             </em>
           </motion.div>
