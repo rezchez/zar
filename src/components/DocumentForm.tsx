@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  ArrowLeftRight,
   CalendarDays,
   Check,
   ChevronLeft,
@@ -41,6 +42,8 @@ import GoldSaleTab from '@/src/components/documents/GoldSaleTab';
 import CurrencyTab from '@/src/components/documents/CurrencyTab';
 import CashTab from '@/src/components/documents/CashTab';
 import Field from '@/src/components/documents/Field';
+import HawalaModal from '@/src/components/documents/HawalaModal';
+import DocumentPrint from '@/src/components/documents/DocumentPrint';
 
 type CalculationMethod = 'weight' | 'money';
 type MetalPriceType = 'mesghal17' | 'gram18' | 'ounceUsd';
@@ -375,7 +378,14 @@ export default function DocumentForm({
   const [, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [lineValidationErrors, setLineValidationErrors] = useState<{ labName?: string; stampNumber?: string }>({});
+  const labInputRef = useRef<HTMLInputElement>(null);
+  const stampInputRef = useRef<HTMLInputElement>(null);
   const [meltedInventory, setMeltedInventory] = useState<MeltedInventoryItem[]>([]);
+
+  // Exit Navigation Guard Modal State
+  const [showExitModal, setShowExitModal] = useState(false);
+  const [pendingNavigationUrl, setPendingNavigationUrl] = useState<string | null>(null);
 
   // Selection notice modal / toast
   const [noCustomerNotice, setNoCustomerNotice] = useState(false);
@@ -384,6 +394,9 @@ export default function DocumentForm({
   const [deleteConfirmLine, setDeleteConfirmLine] = useState<DocumentLine | null>(null);
   const [restorationState, setRestorationState] = useState<PendingDelete | null>(null);
   const [restorationTimer, setRestorationTimer] = useState<number>(10);
+
+  // Hawala modal state
+  const [hawalaLine, setHawalaLine] = useState<DocumentLine | null>(null);
 
   // Document lines pin state initialized safely
   const [isLinesPinned, setIsLinesPinned] = useState<boolean>(false);
@@ -523,13 +536,33 @@ export default function DocumentForm({
     return () => document.removeEventListener('mousedown', closeOnOutsideClick);
   }, []);
 
+  const isFormDirty = Boolean(selectedCustomerId && (committedLines.length > 0 || draftReady));
+
+  // Handle browser close/refresh beforeunload
+  useEffect(() => {
+    function handleBeforeUnload(event: BeforeUnloadEvent) {
+      if (isFormDirty) {
+        event.preventDefault();
+        event.returnValue = 'شما در حال ثبت سند می‌باشید و اگر صفحه را ترک کنید، اطلاعاتی که وارد کرده‌اید ذخیره نخواهد شد. آیا از انجام این کار مطمئن هستید؟';
+      }
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isFormDirty]);
+
+  // Handle internal navigation intercept
   useEffect(() => {
     function handleNavigationAttempt(event: Event) {
-      if (committedLines.length || draftReady) event.preventDefault();
+      const customEvent = event as CustomEvent<{ url?: string }>;
+      if (isFormDirty) {
+        event.preventDefault();
+        setPendingNavigationUrl(customEvent.detail?.url || '/');
+        setShowExitModal(true);
+      }
     }
     window.addEventListener('zar:navigation-attempt', handleNavigationAttempt);
     return () => window.removeEventListener('zar:navigation-attempt', handleNavigationAttempt);
-  }, [committedLines.length, draftReady]);
+  }, [isFormDirty]);
 
   function handlePurityChange(val: string) {
     const normalized = normalizeDigits(val);
@@ -700,12 +733,51 @@ export default function DocumentForm({
     });
   }
 
+  function validateGoldAssayFields(line: DocumentLine): { valid: boolean; errorMsg?: string; errors: { labName?: string; stampNumber?: string }; firstFocusField?: 'lab' | 'stamp' } {
+    const isGold = line.details.metalType === 'gold';
+    const isMoltenOrConditional = line.details.rawKind === 'molten' || line.details.rawKind === 'conditional';
+    const rawWeight = line.details.calculationMethod === 'money'
+      ? actualWeightFromMoney(line.details)
+      : numberValue(line.details.rawWeight);
+
+    if (isGold && isMoltenOrConditional && rawWeight > 0) {
+      const isConditional = line.details.rawKind === 'conditional';
+      const kindLabel = isConditional ? 'طلای شرطی' : 'طلای آب‌شده';
+      const labName = line.details.labName?.trim();
+      const stampNumber = line.details.stampNumber?.trim();
+
+      if (!labName) {
+        const msg = `برای ثبت ${kindLabel}، وارد کردن نام آزمایشگاه یا ری‌گیری الزامی است.`;
+        return { valid: false, errorMsg: msg, errors: { labName: msg }, firstFocusField: 'lab' };
+      }
+      if (!stampNumber) {
+        const msg = `برای ثبت ${kindLabel}، وارد کردن شماره پاکت یا انگ الزامی است.`;
+        return { valid: false, errorMsg: msg, errors: { stampNumber: msg }, firstFocusField: 'stamp' };
+      }
+    }
+    return { valid: true, errors: {} };
+  }
+
   function commitDraftLine() {
     const validationMessage = validateLine(draftLine);
     if (validationMessage) {
       setErrorMessage(validationMessage);
       return;
     }
+
+    const assayCheck = validateGoldAssayFields(draftLine);
+    if (!assayCheck.valid) {
+      setLineValidationErrors(assayCheck.errors);
+      setErrorMessage(assayCheck.errorMsg || '');
+      if (assayCheck.firstFocusField === 'lab') {
+        labInputRef.current?.focus();
+      } else if (assayCheck.firstFocusField === 'stamp') {
+        stampInputRef.current?.focus();
+      }
+      return;
+    }
+
+    setLineValidationErrors({});
     setErrorMessage('');
 
     const lineSourceTab = draftLine.sourceTab || (draftLine.documentTab === 'currency' ? 'currency' : draftLine.documentTab === 'gold-sale' ? 'gold-sale' : 'metals');
@@ -1231,6 +1303,9 @@ export default function DocumentForm({
               draftReady={draftReady}
               convertedTo750={convertedTo750}
               faNumber={faNumber}
+              errors={lineValidationErrors}
+              labInputRef={labInputRef}
+              stampInputRef={stampInputRef}
             />
           )}
           goldSaleTabContent={(
@@ -1257,6 +1332,9 @@ export default function DocumentForm({
               toPersianDigits={toPersianDigits}
               faNumber={faNumber}
               numberValue={numberValue}
+              errors={lineValidationErrors}
+              labInputRef={labInputRef}
+              stampInputRef={stampInputRef}
             />
           )}
           currencyTabContent={(
@@ -1362,9 +1440,18 @@ export default function DocumentForm({
                       index={index}
                       onEdit={() => editLine(line)}
                       onRemove={() => requestRemoveLine(line)}
+                      onHawala={() => {
+                        if (!selectedCustomer) {
+                          setNoCustomerNotice(true);
+                          setTimeout(() => setNoCustomerNotice(false), 4000);
+                          return;
+                        }
+                        setHawalaLine(line);
+                      }}
                       weightPrecision={weightPrecision}
                       hasAssayOrStamp={hasAssayOrStamp}
                       hasFinancialAmounts={hasFinancialAmounts}
+                      hasValidCustomer={Boolean(selectedCustomer)}
                     />
                   ))}
                 </AnimatePresence>
@@ -1415,7 +1502,15 @@ export default function DocumentForm({
             </div>
           ) : <div className="hidden sm:block flex-1" />}
 
-          <div className="w-full sm:w-auto min-w-[240px]">
+          <div className="w-full sm:w-auto flex items-center gap-2 min-w-[240px]">
+            {committedLines.length > 0 && (
+              <DocumentPrint
+                customer={selectedCustomer || null}
+                documentNumber={effectiveDocumentNumberDisplay}
+                documentDateJalali={documentDateJalali}
+                lines={committedLines}
+              />
+            )}
             <DocumentSubmitActions
               onSubmit={async (status) => {
                 await save(status);
@@ -1424,6 +1519,80 @@ export default function DocumentForm({
           </div>
         </div>
       </motion.section>
+
+      {/* HAWALA TRANSFER MODAL */}
+      <HawalaModal
+        line={hawalaLine}
+        sourceCustomer={selectedCustomer || null}
+        allCustomers={customers}
+        weightPrecision={weightPrecision}
+        onClose={() => setHawalaLine(null)}
+        onSuccess={(_targetId) => {
+          if (hawalaLine) {
+            setCommittedLines((current) => current.filter((l) => l.id !== hawalaLine.id));
+            setMessage('ردیف با موفقیت به طرف‌حساب مقصد حواله داده شد و از سند جاری منتقل گردید.');
+          }
+        }}
+      />
+
+      {/* UNSAVED CHANGES EXIT GUARD MODAL */}
+      <AnimatePresence>
+        {showExitModal ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 text-right"
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 10 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 10 }}
+              className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+                <span className="text-sm font-bold text-amber-600 dark:text-amber-400">
+                  هشدار خروج از ثبت سند
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowExitModal(false)}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <p className="text-xs font-semibold leading-relaxed text-slate-700 dark:text-slate-300">
+                شما در حال ثبت سند می‌باشید و اگر صفحه را ترک کنید، اطلاعاتی که وارد کرده‌اید ذخیره نخواهد شد. آیا از انجام این کار مطمئن هستید؟
+              </p>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowExitModal(false)}
+                  className="rounded-xl border border-slate-300 dark:border-slate-700 px-4 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                >
+                  ماندن در صفحه
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowExitModal(false);
+                    setCommittedLines([]);
+                    if (pendingNavigationUrl) {
+                      window.location.href = pendingNavigationUrl;
+                    }
+                  }}
+                  className="rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white shadow-md hover:bg-rose-500"
+                >
+                  ترک صفحه و حذف اطلاعات
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
       {/* DELETION CONFIRMATION MODAL */}
       <AnimatePresence>
@@ -1715,17 +1884,21 @@ function CommittedLineRow({
   index,
   onEdit,
   onRemove,
+  onHawala,
   weightPrecision = 3,
   hasAssayOrStamp = false,
   hasFinancialAmounts = false,
+  hasValidCustomer = false,
 }: {
   line: DocumentLine;
   index: number;
   onEdit: () => void;
   onRemove: () => void;
+  onHawala: () => void;
   weightPrecision?: number;
   hasAssayOrStamp?: boolean;
   hasFinancialAmounts?: boolean;
+  hasValidCustomer?: boolean;
 }) {
   const isPaid = line.documentNature === 'paid';
   const isReceived = line.documentNature === 'received';
@@ -1844,6 +2017,16 @@ function CommittedLineRow({
       </td>
       <td className="text-center action-cell">
         <div className="flex items-center justify-center gap-1 shrink-0">
+          <button
+            type="button"
+            onClick={onHawala}
+            disabled={!hasValidCustomer}
+            aria-label="حواله ردیف سند"
+            title={hasValidCustomer ? 'حواله ردیف سند به طرف‌حساب دیگر' : 'برای حواله ابتدا طرف‌حساب را انتخاب کنید'}
+            className="p-1 text-slate-400 hover:text-teal-600 dark:hover:text-teal-400 disabled:opacity-40 disabled:hover:text-slate-400 transition-colors shrink-0"
+          >
+            <ArrowLeftRight size={14} />
+          </button>
           <button
             type="button"
             onClick={onEdit}

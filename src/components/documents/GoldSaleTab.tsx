@@ -34,6 +34,9 @@ type GoldSaleTabProps = {
   toPersianDigits: (str: string) => string;
   faNumber: (value: number, fractionDigits?: number) => string;
   numberValue: (value: string) => number;
+  errors?: { labName?: string; stampNumber?: string };
+  labInputRef?: React.RefObject<HTMLInputElement | null>;
+  stampInputRef?: React.RefObject<HTMLInputElement | null>;
 };
 
 export default function GoldSaleTab({
@@ -59,7 +62,17 @@ export default function GoldSaleTab({
   toPersianDigits,
   faNumber,
   numberValue,
+  errors = {},
+  labInputRef,
+  stampInputRef,
 }: GoldSaleTabProps) {
+  const isGold = draftLine.details.metalType === 'gold';
+  const isMoltenOrConditional = draftLine.details.rawKind === 'molten' || draftLine.details.rawKind === 'conditional';
+  const calculatedWeight = draftLine.details.calculationMethod === 'money'
+    ? actualWeightFromMoney(draftLine.details)
+    : numberValue(draftLine.details.rawWeight);
+  const isRequired = isGold && isMoltenOrConditional && calculatedWeight > 0;
+
   return (
     <div className="space-y-4">
       <div className="document-operation-section">
@@ -221,18 +234,20 @@ export default function GoldSaleTab({
               />
             </Field>
 
-            {draftLine.details.rawKind === 'molten' ? (
+            {(draftLine.details.rawKind === 'molten' || draftLine.details.rawKind === 'conditional') ? (
               <>
-                <Field label="نام آزمایشگاه ری‌گیری">
+                <Field label="نام آزمایشگاه ری‌گیری" required={isRequired} error={errors.labName}>
                   <input
+                    ref={labInputRef}
                     value={draftLine.details.labName}
                     onChange={(event) => updateDraftDetail('labName', event.target.value)}
                     onKeyDown={handleKeyDownEnter}
                     placeholder="نام آزمایشگاه"
                   />
                 </Field>
-                <Field label="شماره پاکت / انگ">
+                <Field label="شماره پاکت / انگ" required={isRequired} error={errors.stampNumber}>
                   <input
+                    ref={stampInputRef}
                     value={draftLine.details.stampNumber}
                     onChange={(event) => updateDraftDetail('stampNumber', event.target.value)}
                     onKeyDown={handleKeyDownEnter}

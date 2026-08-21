@@ -72,7 +72,7 @@ export default function ProgramSettings() {
     reloadFonts,
   } = useAppSettings();
 
-  const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'price_api' | 'custom_fonts'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'price_api' | 'custom_fonts' | 'print_customization'>('general');
 
   // Form State initialized directly from settings
   const [form, setForm] = useState(() => ({ ...settings }));
@@ -378,6 +378,19 @@ export default function ProgramSettings() {
         >
           <Type size={16} />
           تنظیمات ظاهری و تایپوگرافی
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('print_customization')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-extrabold text-xs transition-all ${
+            activeTab === 'print_customization'
+              ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30'
+              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
+        >
+          <FileText size={16} />
+          شخصی‌سازی چاپ فاکتور
         </button>
 
         <button
@@ -991,6 +1004,99 @@ export default function ProgramSettings() {
             {priceApi.lastSyncAt && (
               <small className="block text-left text-slate-500">آخرین دریافت: {new Date(priceApi.lastSyncAt).toLocaleString('fa-IR')}</small>
             )}
+          </section>
+        </div>
+      )}
+
+      {/* TAB 5: Print Customization */}
+      {activeTab === 'print_customization' && (
+        <div className="space-y-6">
+          <section className="dashboard-panel p-6 space-y-6">
+            <div className="account-panel-heading border-b border-slate-100 dark:border-slate-800 pb-4">
+              <div>
+                <p className="eyebrow">قالب و سربرگ چاپ</p>
+                <h2 className="flex items-center gap-2">
+                  <FileText size={18} className="text-amber-600" />
+                  شخصی‌سازی چاپ فاکتور
+                </h2>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <label className="account-field">
+                <span className="font-bold text-xs text-slate-700 dark:text-slate-300">نام فروشگاه / گالری</span>
+                <input
+                  type="text"
+                  value={form.printStoreName}
+                  onChange={(e) => updateFormField('printStoreName', e.target.value)}
+                  placeholder="مثال: گالری طلا و جواهر زر"
+                />
+              </label>
+
+              <label className="account-field">
+                <span className="font-bold text-xs text-slate-700 dark:text-slate-300">شماره تماس پشتیبانی / فاکتور</span>
+                <input
+                  type="text"
+                  value={form.printPhone}
+                  onChange={(e) => updateFormField('printPhone', e.target.value)}
+                  placeholder="۰۲۱-۱۲۳۴۵۶۷۸"
+                />
+              </label>
+
+              <label className="account-field md:col-span-2">
+                <span className="font-bold text-xs text-slate-700 dark:text-slate-300">آدرس دقیق فروشگاه</span>
+                <input
+                  type="text"
+                  value={form.printAddress}
+                  onChange={(e) => updateFormField('printAddress', e.target.value)}
+                  placeholder="آدرس دقیق برای درج در سربرگ فاکتور"
+                />
+              </label>
+
+              <label className="account-field md:col-span-2">
+                <span className="font-bold text-xs text-slate-700 dark:text-slate-300">متن پانویس / شرایط فاکتور</span>
+                <textarea
+                  value={form.printFooterText}
+                  onChange={(e) => updateFormField('printFooterText', e.target.value)}
+                  rows={3}
+                  placeholder="متن توضیحات پایانی..."
+                />
+              </label>
+
+              <label className="account-field">
+                <span className="font-bold text-xs text-slate-700 dark:text-slate-300">قالب چاپ فعال</span>
+                <select
+                  value={form.printActiveTemplate}
+                  onChange={(e) => updateFormField('printActiveTemplate', e.target.value as any)}
+                >
+                  <option value="standard">قالب استاندارد طلافروشی</option>
+                  <option value="classic">قالب کلاسیک</option>
+                  <option value="modern">قالب مدرن</option>
+                </select>
+              </label>
+
+              <div className="flex items-center gap-6 pt-6">
+                <label className="flex items-center gap-2 text-xs font-bold cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.printShowStamp}
+                    onChange={(e) => updateFormField('printShowStamp', e.target.checked)}
+                    className="accent-amber-500"
+                  />
+                  نمایش جایگاه مهر
+                </label>
+
+                <label className="flex items-center gap-2 text-xs font-bold cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.printShowSignature}
+                    onChange={(e) => updateFormField('printShowSignature', e.target.checked)}
+                    className="accent-amber-500"
+                  />
+                  نمایش جایگاه امضا
+                </label>
+              </div>
+            </div>
           </section>
         </div>
       )}

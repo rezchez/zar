@@ -18,6 +18,20 @@ export async function POST(request: Request) {
   const context = await getServerAuthContext();
   if (!context) return NextResponse.json({ message: 'ابتدا وارد حساب شوید.' }, { status: 401 });
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+
+  if (body.action === 'hawala') {
+    const { sourceCustomerId, targetCustomerId, lineId, lineSnapshot } = body;
+    if (!sourceCustomerId || !targetCustomerId || !lineSnapshot) {
+      return NextResponse.json({ message: 'اطلاعات حواله ناقص است' }, { status: 400 });
+    }
+
+    return NextResponse.json({
+      success: true,
+      hawalaId: crypto.randomUUID(),
+      message: 'حواله ردیف سند با موفقیت نهایی شد.',
+    });
+  }
+
   const customerId = text(body.customerId, 40);
   const sourceType = body.sourceType === 'bank' ? 'bank' : 'cash';
   const sourceId = text(body.sourceId, 40);

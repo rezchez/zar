@@ -19,6 +19,16 @@ export type AppSettings = {
   headingFontSize: string;
   headingFontWeight: number;
 
+  // Print customization settings
+  printStoreName: string;
+  printLogoUrl: string;
+  printAddress: string;
+  printPhone: string;
+  printFooterText: string;
+  printShowStamp: boolean;
+  printShowSignature: boolean;
+  printActiveTemplate: 'standard' | 'classic' | 'modern';
+
   // Legacy compatibility fields
   company_name?: string;
   fiscal_year_start?: string;
@@ -45,6 +55,15 @@ export const defaultSettings: AppSettings = {
   headingFontFamily: 'DoranNoEn',
   headingFontSize: 'md',
   headingFontWeight: 700,
+
+  printStoreName: 'گالری طلا و جواهر زر',
+  printLogoUrl: '',
+  printAddress: 'تهران، بازار بزرگ، راسته‌ی صرافان، پلاک ۱۲',
+  printPhone: '۰۲۱-۱۲۳۴۵۶۷۸',
+  printFooterText: 'از خرید شما متشکریم. اجناس فروخته شده پس از کسر کارمزد طبق ضوابط اتحادیه قابل استرداد می‌باشند.',
+  printShowStamp: true,
+  printShowSignature: true,
+  printActiveTemplate: 'standard',
 };
 
 export const defaultAppSettings = defaultSettings;
@@ -115,6 +134,15 @@ export function normalizeSettings(input: Record<string, unknown>): AppSettings {
     ).trim(),
     headingFontSize: String(input.headingFontSize ?? input.heading_font_size ?? defaultSettings.headingFontSize).trim(),
     headingFontWeight: Number(input.headingFontWeight ?? input.heading_font_weight) || defaultSettings.headingFontWeight,
+
+    printStoreName: String(input.printStoreName ?? defaultSettings.printStoreName).trim(),
+    printLogoUrl: String(input.printLogoUrl ?? defaultSettings.printLogoUrl).trim(),
+    printAddress: String(input.printAddress ?? defaultSettings.printAddress).trim(),
+    printPhone: String(input.printPhone ?? defaultSettings.printPhone).trim(),
+    printFooterText: String(input.printFooterText ?? defaultSettings.printFooterText).trim(),
+    printShowStamp: typeof input.printShowStamp === 'boolean' ? input.printShowStamp : defaultSettings.printShowStamp,
+    printShowSignature: typeof input.printShowSignature === 'boolean' ? input.printShowSignature : defaultSettings.printShowSignature,
+    printActiveTemplate: (input.printActiveTemplate as AppSettings['printActiveTemplate']) || defaultSettings.printActiveTemplate,
 
     // Legacy fallback mapping
     company_name: orgName,

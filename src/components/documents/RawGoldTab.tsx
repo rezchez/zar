@@ -70,6 +70,9 @@ type RawGoldTabProps = {
   draftReady: boolean;
   convertedTo750: (weight: string, purity: string) => number;
   faNumber: (value: number, fractionDigits?: number) => string;
+  errors?: { labName?: string; stampNumber?: string };
+  labInputRef?: React.RefObject<HTMLInputElement | null>;
+  stampInputRef?: React.RefObject<HTMLInputElement | null>;
 };
 
 export default function RawGoldTab({
@@ -88,7 +91,14 @@ export default function RawGoldTab({
   draftReady,
   convertedTo750,
   faNumber,
+  errors = {},
+  labInputRef,
+  stampInputRef,
 }: RawGoldTabProps) {
+  const isGold = draftLine.details.metalType === 'gold';
+  const isMoltenOrConditional = draftLine.details.rawKind === 'molten' || draftLine.details.rawKind === 'conditional';
+  const hasValidWeight = Boolean(Number(draftLine.details.rawWeight) > 0);
+  const isRequired = isGold && isMoltenOrConditional && hasValidWeight;
   return (
     <div className="space-y-4">
       <div className="document-operation-title">
@@ -165,16 +175,18 @@ export default function RawGoldTab({
           </Field>
           {draftLine.details.rawKind !== 'misc' ? (
             <>
-              <Field label="نام آزمایشگاه ری‌گیری">
+              <Field label="نام آزمایشگاه ری‌گیری" required={isRequired} error={errors.labName}>
                 <input
+                  ref={labInputRef}
                   value={draftLine.details.labName}
                   onChange={(event) => updateDraftDetail('labName', event.target.value)}
                   onKeyDown={handleKeyDownEnter}
                   placeholder="نام آزمایشگاه"
                 />
               </Field>
-              <Field label="شماره پاکت / انگ">
+              <Field label="شماره پاکت / انگ" required={isRequired} error={errors.stampNumber}>
                 <input
+                  ref={stampInputRef}
                   value={draftLine.details.stampNumber}
                   onChange={(event) => updateDraftDetail('stampNumber', event.target.value)}
                   onKeyDown={handleKeyDownEnter}
