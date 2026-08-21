@@ -1,3 +1,5 @@
+import { NextResponse } from 'next/server';
+
 import {
   isValidPermissionKey,
   type PermissionKey,
@@ -79,8 +81,6 @@ export function requirePermission(
  * Creates a standard JSON 403 Forbidden Response for API endpoints.
  */
 export function createForbiddenResponse(message?: string) {
-  // Dynamic import or require to ensure unit tests without next/server bundle pass cleanly
-  const { NextResponse } = require('next/server');
   return NextResponse.json(
     { message: message || 'دسترسی غیرمجاز. شما مجوز لازم برای انجام این عملیات را ندارید.' },
     { status: 403 },

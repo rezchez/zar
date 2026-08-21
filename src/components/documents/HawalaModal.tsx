@@ -1,10 +1,10 @@
 'use client';
 
 import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowLeftRight, Check, LoaderCircle, RotateCcw, Search, ShieldAlert, X } from 'lucide-react';
+import { ArrowLeftRight, Search, ShieldAlert, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
-import { currencyDisplay, type Customer } from '@/lib/customer';
+import { type Customer } from '@/lib/customer';
 import type { DocumentLine } from '@/src/components/documents/RawGoldTab';
 
 type HawalaModalProps = {
@@ -13,7 +13,7 @@ type HawalaModalProps = {
   allCustomers: Customer[];
   weightPrecision: number;
   onClose: () => void;
-  onSuccess: (targetCustomerId: string, transferRecord: Record<string, unknown>) => void;
+  onConfirmHawala: (targetCustomer: Customer) => void;
 };
 
 export default function HawalaModal({
@@ -22,14 +22,20 @@ export default function HawalaModal({
   allCustomers,
   weightPrecision,
   onClose,
-  onSuccess,
+  onConfirmHawala,
 }: HawalaModalProps) {
   const [targetQuery, setTargetQuery] = useState('');
   const [selectedTargetId, setSelectedTargetId] = useState('');
-  const [stage, setStage] = useState<'select' | 'confirm' | 'pending' | 'completed' | 'cancelled'>('select');
-  const [countdown, setCountdown] = useState(10);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
+  const [stage, setStage] = useState<'select' | 'confirm'>('select');
+
+  // Reset internal state when line or modal opens/closes
+  useEffect(() => {
+    if (line) {
+      setTargetQuery('');
+      setSelectedTargetId('');
+      setStage('select');
+    }
+  }, [line]);
 
   const targetCustomer = useMemo(
     () => allCustomers.find((c) => c.id === selectedTargetId) || null,
@@ -83,64 +89,11 @@ export default function HawalaModal({
     };
   }, [targetCustomer, effectDetails]);
 
-  // 10-second countdown logic
-  useEffect(() => {
-    if (stage !== 'pending') return;
-    const interval = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          finalizeHawala();
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [stage]);
-
   if (!line || !sourceCustomer) return null;
 
-  async function finalizeHawala() {
-    setIsSubmitting(true);
-    setErrorMessage('');
-    try {
-      const res = await fetch('/api/settlements', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          action: 'hawala',
-          sourceCustomerId: sourceCustomer?.id,
-          targetCustomerId: selectedTargetId,
-          lineId: line?.id,
-          lineSnapshot: line,
-        }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        throw new Error(data?.message || 'خطا در نهایی‌سازی حواله');
-      }
-
-      const result = await res.json();
-      setStage('completed');
-      setTimeout(() => {
-        onSuccess(selectedTargetId, result);
-        onClose();
-      }, 1500);
-    } catch (err: unknown) {
-      setErrorMessage(err instanceof Error ? err.message : 'خطای ثبت حواله');
-      setStage('select');
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
-
-  function handleCancelPending() {
-    setStage('cancelled');
-    setTimeout(() => {
-      onClose();
-    }, 1200);
+  function handleStartHawala() {
+    if (!targetCustomer) return;
+    onConfirmHawala(targetCustomer);
   }
 
   return (
@@ -166,12 +119,6 @@ export default function HawalaModal({
               <X size={18} />
             </button>
           </div>
-
-          {errorMessage && (
-            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-600 text-xs font-bold">
-              {errorMessage}
-            </div>
-          )}
 
           {/* Line Summary */}
           <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700/60 text-xs space-y-1.5">
@@ -318,7 +265,7 @@ export default function HawalaModal({
                   <span>تأیید انتقال حواله</span>
                 </div>
                 <p>
-                  این ردیف از طرف‌حساب <strong>«{sourceCustomer.name}»</strong> به طرف‌حساب <strong>«{targetCustomer.name}»</strong> حواله خواهد شد. پس از پایان مهلت لغو، اثر مالی آن نهایی می‌شود.
+                  این ردیف از طرف‌حساب <strong>«{sourceCustomer.name}»</strong> به طرف‌حساب <strong>«{targetCustomer.name}»</strong> حواله خواهد شد. پس از تأیید، مهلت ۱۰ ثانیه‌ای لغو در پایین صفحه فعال خواهد شد.
                 </p>
               </div>
 
@@ -332,70 +279,12 @@ export default function HawalaModal({
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    setStage('pending');
-                    setCountdown(10);
-                  }}
+                  onClick={handleStartHawala}
                   className="px-5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-xs font-bold text-slate-950 shadow-md transition-all"
                 >
-                  تأیید حواله
+                  تأیید و شروع حواله
                 </button>
               </div>
-            </div>
-          )}
-
-          {stage === 'pending' && (
-            <div className="space-y-4 py-4 text-center">
-              <div className="relative inline-grid place-items-center w-16 h-16 mx-auto">
-                <svg className="w-16 h-16 -rotate-90">
-                  <circle cx="32" cy="32" r="26" stroke="currentColor" strokeWidth="4" className="text-slate-200 dark:text-slate-700" fill="transparent" />
-                  <circle
-                    cx="32"
-                    cy="32"
-                    r="26"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                    className="text-amber-500 transition-all duration-1000 ease-linear"
-                    fill="transparent"
-                    strokeDasharray={2 * Math.PI * 26}
-                    strokeDashoffset={2 * Math.PI * 26 * (1 - countdown / 10)}
-                  />
-                </svg>
-                <span className="absolute text-lg font-black text-amber-500">{countdown}</span>
-              </div>
-
-              <p className="text-xs font-bold text-slate-700 dark:text-slate-200">
-                حواله تا {countdown} ثانیه دیگر نهایی می‌شود.
-              </p>
-
-              {isSubmitting ? (
-                <div className="flex items-center justify-center gap-2 text-xs font-bold text-amber-600">
-                  <LoaderCircle size={16} className="animate-spin" />
-                  در حال ثبت نهایی حواله...
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleCancelPending}
-                  className="px-6 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-xs font-bold text-white shadow-lg transition-all"
-                >
-                  لغو حواله
-                </button>
-              )}
-            </div>
-          )}
-
-          {stage === 'cancelled' && (
-            <div className="p-4 bg-slate-100 dark:bg-slate-800 rounded-xl text-center text-xs font-bold text-slate-700 dark:text-slate-200 space-y-2">
-              <RotateCcw size={20} className="mx-auto text-amber-500" />
-              <p>حواله لغو شد و هیچ تغییری در مانده طرف‌حساب‌ها ایجاد نشد.</p>
-            </div>
-          )}
-
-          {stage === 'completed' && (
-            <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 rounded-xl text-center text-xs font-bold text-emerald-700 dark:text-emerald-300 space-y-2">
-              <Check size={20} className="mx-auto text-emerald-500" />
-              <p>حواله ردیف سند با موفقیت نهایی شد.</p>
             </div>
           )}
         </motion.div>

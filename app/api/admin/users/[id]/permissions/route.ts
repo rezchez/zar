@@ -8,7 +8,6 @@ import {
   getPermissionSources,
   hasPermission,
   isValidPermissionKey,
-  type PermissionKey,
   type UserRole,
 } from '@/lib/authorization';
 
@@ -57,9 +56,11 @@ export async function GET(
       customPermissions: targetCustomPermissions,
     };
 
-    const targetCheck = canModifyTargetUser(context.user, targetUser);
-    if (!targetCheck.allowed) {
-      return NextResponse.json({ message: targetCheck.reason }, { status: 403 });
+    if (context.user.id !== targetUser.id) {
+      const targetCheck = canModifyTargetUser(context.user, targetUser);
+      if (!targetCheck.allowed) {
+        return NextResponse.json({ message: targetCheck.reason }, { status: 403 });
+      }
     }
 
     const permissionSources = getPermissionSources(targetUser);
