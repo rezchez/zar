@@ -6,7 +6,16 @@ import type React from 'react';
 
 import DocumentOperationTypeSelector from '@/src/components/documents/DocumentOperationTypeSelector';
 import Field from '@/src/components/documents/Field';
+import MoneyInputField from '@/src/components/documents/MoneyInputField';
+import SlidingToggle from '@/src/components/documents/SlidingToggle';
+import { useAppSettings } from '@/src/components/SettingsProvider';
 import type { DetailState, DocumentLine, MeltedInventoryItem, RawOperationKind } from '@/src/components/documents/RawGoldTab';
+import {
+  convertPricesFromGram18,
+  convertPricesFromMesghal17,
+  convertPricesFromOunceUsd,
+  parseNumericValue,
+} from '@/src/lib/trade-utils';
 
 type GoldSaleTabProps = {
   nature: 'received' | 'paid';
@@ -29,7 +38,7 @@ type GoldSaleTabProps = {
   convertedWeightFromTotal: (total: string, type: DetailState['metalPriceType'], price: string) => number;
   actualWeightFromMoney: (details: Pick<DetailState, 'totalAmount' | 'purity' | 'metalPriceType' | 'metalPrice'>) => number;
   rawOperationLabel: (nature: 'received' | 'paid', kind: RawOperationKind) => string;
-  metalPriceLabel: (type: DetailState['metalPriceType']) => string;
+  metalPriceLabel?: (type: DetailState['metalPriceType']) => string;
   toPersianDigits: (str: string) => string;
   faNumber: (value: number, fractionDigits?: number) => string;
   numberValue: (value: string) => number;
@@ -56,7 +65,6 @@ export default function GoldSaleTab({
   convertedWeightFromTotal,
   actualWeightFromMoney,
   rawOperationLabel,
-  metalPriceLabel,
   toPersianDigits,
   faNumber,
   numberValue,
@@ -64,15 +72,41 @@ export default function GoldSaleTab({
   labInputRef,
   stampInputRef,
 }: GoldSaleTabProps) {
+  const { settings } = useAppSettings();
+  const baseCurrency = settings.baseCurrency || 'IRR';
+
   const isGold = draftLine.details.metalType === 'gold';
   const isMoltenOrConditional = draftLine.details.rawKind === 'molten' || draftLine.details.rawKind === 'conditional';
-  const calculatedWeight = draftLine.details.calculationMethod === 'money'
+  const isMisc = draftLine.details.rawKind === 'misc';
+
+  const isWeightMode = draftLine.details.calculationMethod === 'weight';
+  const calculatedWeight = !isWeightMode
     ? actualWeightFromMoney(draftLine.details)
     : numberValue(draftLine.details.rawWeight);
-  const isRequired = isGold && isMoltenOrConditional && calculatedWeight > 0;
+
+  const isAssayRequired = isGold && isMoltenOrConditional && calculatedWeight > 0;
+  const isPriceRequired = isWeightMode ? parseNumericValue(draftLine.details.rawWeight) > 0 : true;
+
+  const currentPriceType = draftLine.details.metalPriceType || 'gram18';
+  const numericPrice = parseNumericValue(draftLine.details.metalPrice);
+
+  const priceTriple = currentPriceType === 'gram18'
+    ? convertPricesFromGram18(numericPrice)
+    : currentPriceType === 'mesghal17'
+      ? convertPricesFromMesghal17(numericPrice)
+      : convertPricesFromOunceUsd(numericPrice);
+
+  const handlePriceTypeChange = (newType: DetailState['metalPriceType']) => {
+    updateMetalValue('metalPriceType', newType);
+  };
+
+  const handlePriceValueChange = (valStr: string) => {
+    updateMetalValue('metalPrice', valStr);
+  };
 
   return (
     <div className="space-y-4">
+      {/* Operation Kind Selector Header */}
       <div className="document-operation-section">
         <div className="document-operation-title">
           <div>
@@ -92,7 +126,7 @@ export default function GoldSaleTab({
 
       <AnimatePresence mode="wait" initial={false}>
         <motion.div
-          key={`${nature}-${draftLine.details.rawKind}`}
+          key={`${nature}-${draftLine.details.rawKind}-${draftLine.details.calculationMethod}`}
           className="document-dynamic-fields"
           initial={{ opacity: 0, y: 12, filter: 'blur(4px)' }}
           animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
@@ -110,6 +144,7 @@ export default function GoldSaleTab({
           </div>
 
           <div className="document-special-grid raw-gold-fields">
+            {/* Inventory Source Selector for Outgoing Molten Gold */}
             {nature === 'paid' && draftLine.details.rawKind === 'molten' ? (
               <Field label="انتخاب موجودی آبشده" wide>
                 <select
@@ -137,101 +172,192 @@ export default function GoldSaleTab({
                 </select>
               </Field>
             ) : null}
-            <div className="col-span-full flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 p-2 dark:border-slate-700 dark:bg-slate-900">
-              <span className="text-xs font-bold text-slate-600 dark:text-slate-300">نحوه محاسبه</span>
-              <div className="flex gap-2">
-                {(['weight', 'money'] as const).map((method) => (
-                  <button
-                    type="button"
-                    key={method}
-                    className={`rounded-lg px-3 py-1.5 text-xs font-bold ${draftLine.details.calculationMethod === method ? 'bg-amber-500 text-white' : 'bg-white text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}
-                    onClick={() => updateMetalValue('calculationMethod', method)}
-                  >
-                    {method === 'weight' ? 'وزنی' : 'پولی'}
-                  </button>
-                ))}
-              </div>
+
+            {/* Sliding Toggle for Calculation Method */}
+            <div className="col-span-full flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2.5 dark:border-slate-800 dark:bg-slate-900/60">
+              <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                نحوه محاسبه:
+              </span>
+              <SlidingToggle
+                value={draftLine.details.calculationMethod}
+                onChange={(method) => updateMetalValue('calculationMethod', method)}
+              />
             </div>
 
-            {draftLine.details.calculationMethod === 'weight' ? (
-              <Field label="وزن ترازویی (گرم)">
-                <input
-                  type="number"
-                  min="0"
-                  step={10 ** -weightPrecision}
-                  inputMode="decimal"
-                  value={draftLine.details.rawWeight}
-                  onChange={(event) => updateMetalValue('rawWeight', event.target.value)}
+            {/* DYNAMIC LAYOUT BASED ON CALCULATION METHOD */}
+            {isWeightMode ? (
+              /* WEIGHT CALCULATION MODE LAYOUT */
+              <>
+                <Field label="وزن ترازویی (گرم)" required>
+                  <input
+                    type="number"
+                    min="0"
+                    step={10 ** -weightPrecision}
+                    inputMode="decimal"
+                    value={draftLine.details.rawWeight}
+                    onChange={(event) => updateMetalValue('rawWeight', event.target.value)}
+                    onKeyDown={handleKeyDownEnter}
+                    placeholder="۰"
+                  />
+                </Field>
+
+                <Field label="عیار" required>
+                  <input
+                    type="number"
+                    min="1"
+                    max="1000"
+                    step="0.1"
+                    inputMode="decimal"
+                    value={draftLine.details.purity}
+                    onChange={(event) => updateMetalValue('purity', event.target.value)}
+                    onKeyDown={handleKeyDownEnter}
+                    aria-label="عیار ردیف سند"
+                    title="عیار اول از تنظیمات برنامه خوانده می‌شود و قابل ویرایش است."
+                    placeholder="۷۵۰"
+                  />
+                </Field>
+
+                <Field label="تبدیل‌شده به ۷۵۰">
+                  <input
+                    value={faNumber(
+                      convertedTo750(draftLine.details.rawWeight, draftLine.details.purity),
+                      weightPrecision,
+                    )}
+                    readOnly
+                    aria-label="وزن تبدیل‌شده به عیار ۷۵۰"
+                    className="computed-field font-bold"
+                  />
+                </Field>
+
+                <Field label="نوع فی">
+                  <select
+                    value={currentPriceType}
+                    onChange={(event) => handlePriceTypeChange(event.target.value as DetailState['metalPriceType'])}
+                  >
+                    <option value="gram18">گرم ۱۸ عیار</option>
+                    <option value="mesghal17">مثقال ۱۷ عیار</option>
+                    <option value="ounceUsd">هر اونس (دلاری)</option>
+                  </select>
+                </Field>
+
+                <MoneyInputField
+                  label={
+                    currentPriceType === 'mesghal17'
+                      ? 'قیمت هر مثقال ۱۷ عیار'
+                      : currentPriceType === 'gram18'
+                        ? 'قیمت هر گرم ۱۸ عیار'
+                        : 'قیمت هر اونس'
+                  }
+                  value={draftLine.details.metalPrice}
+                  onChange={handlePriceValueChange}
+                  baseCurrency={baseCurrency}
+                  required={isPriceRequired}
                   onKeyDown={handleKeyDownEnter}
-                  placeholder="۰"
                 />
-              </Field>
+
+                <MoneyInputField
+                  label="مبلغ کل (محاسباتی)"
+                  value={draftLine.details.totalAmount}
+                  readOnly
+                  baseCurrency={baseCurrency}
+                />
+              </>
+            ) : (
+              /* MONEY CALCULATION MODE LAYOUT (Total Amount first, Karat second) */
+              <>
+                <MoneyInputField
+                  label="مبلغ کل"
+                  value={draftLine.details.totalAmount}
+                  onChange={(val) => updateMetalValue('totalAmount', val)}
+                  baseCurrency={baseCurrency}
+                  required
+                  onKeyDown={handleKeyDownEnter}
+                />
+
+                <Field label="عیار" required>
+                  <input
+                    type="number"
+                    min="1"
+                    max="1000"
+                    step="0.1"
+                    inputMode="decimal"
+                    value={draftLine.details.purity}
+                    onChange={(event) => updateMetalValue('purity', event.target.value)}
+                    onKeyDown={handleKeyDownEnter}
+                    aria-label="عیار ردیف سند"
+                    placeholder="۷۵۰"
+                  />
+                </Field>
+
+                <Field label="وزن محاسبه‌شده (گرم)">
+                  <input
+                    value={faNumber(actualWeightFromMoney(draftLine.details), weightPrecision)}
+                    readOnly
+                    aria-label="وزن محاسبه‌شده از روی مبلغ"
+                    className="computed-field font-bold"
+                  />
+                </Field>
+
+                <Field label="تبدیل‌شده به ۷۵۰">
+                  <input
+                    value={faNumber(
+                      convertedWeightFromTotal(
+                        draftLine.details.totalAmount,
+                        draftLine.details.metalPriceType,
+                        draftLine.details.metalPrice,
+                      ),
+                      weightPrecision,
+                    )}
+                    readOnly
+                    aria-label="وزن تبدیل‌شده به ۷۵۰"
+                    className="computed-field font-bold"
+                  />
+                </Field>
+
+                <Field label="نوع فی">
+                  <select
+                    value={currentPriceType}
+                    onChange={(event) => handlePriceTypeChange(event.target.value as DetailState['metalPriceType'])}
+                  >
+                    <option value="gram18">گرم ۱۸ عیار</option>
+                    <option value="mesghal17">مثقال ۱۷ عیار</option>
+                    <option value="ounceUsd">هر اونس (دلاری)</option>
+                  </select>
+                </Field>
+
+                <MoneyInputField
+                  label={
+                    currentPriceType === 'mesghal17'
+                      ? 'قیمت هر مثقال ۱۷ عیار'
+                      : currentPriceType === 'gram18'
+                        ? 'قیمت هر گرم ۱۸ عیار'
+                        : 'قیمت هر اونس'
+                  }
+                  value={draftLine.details.metalPrice}
+                  onChange={handlePriceValueChange}
+                  baseCurrency={baseCurrency}
+                  required
+                  onKeyDown={handleKeyDownEnter}
+                />
+              </>
+            )}
+
+            {/* Equivalent Prices Summary Badge for Gram / Mesghal / Ounce */}
+            {numericPrice > 0 ? (
+              <div className="col-span-full flex flex-wrap items-center gap-3 rounded-xl border border-slate-200/80 bg-slate-50/80 dark:border-slate-800 dark:bg-slate-900/40 p-2.5 text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                <span className="text-amber-600 dark:text-amber-400">معادل قیمت در سایر واحدها:</span>
+                <span>گرم ۱۸: {faNumber(priceTriple.gram18)} {baseCurrency === 'IRT' ? 'تومان' : 'ریال'}</span>
+                <span>·</span>
+                <span>مثقال ۱۷: {faNumber(priceTriple.mesghal17)} {baseCurrency === 'IRT' ? 'تومان' : 'ریال'}</span>
+                <span>·</span>
+                <span>اونس: {faNumber(priceTriple.ounceUsd)} {baseCurrency === 'IRT' ? 'تومان' : 'ریال'}</span>
+              </div>
             ) : null}
 
-            <Field label="عیار">
-              <input
-                type="number"
-                min="1"
-                max="1000"
-                step="0.1"
-                inputMode="decimal"
-                value={draftLine.details.purity}
-                onChange={(event) => updateMetalValue('purity', event.target.value)}
-                onKeyDown={handleKeyDownEnter}
-                aria-label="عیار ردیف سند"
-                title="عیار اول از تنظیمات برنامه خوانده می‌شود و قابل ویرایش است."
-                placeholder="۷۵۰"
-              />
-            </Field>
-
-            <Field label="تبدیل‌شده به ۷۵۰">
-              <input
-                value={faNumber(
-                  draftLine.details.calculationMethod === 'money'
-                    ? convertedWeightFromTotal(draftLine.details.totalAmount, draftLine.details.metalPriceType, draftLine.details.metalPrice)
-                    : convertedTo750(draftLine.details.rawWeight, draftLine.details.purity),
-                  weightPrecision,
-                )}
-                readOnly
-                aria-label="وزن تبدیل‌شده به عیار ۷۵۰"
-                className="computed-field"
-              />
-            </Field>
-
-            <Field label="نوع فی">
-              <select
-                value={draftLine.details.metalPriceType}
-                onChange={(event) => updateMetalValue('metalPriceType', event.target.value as DetailState['metalPriceType'])}
-              >
-                <option value="mesghal17">مثقال ۱۷ عیار</option>
-                <option value="gram18">گرم ۱۸ عیار</option>
-                <option value="ounceUsd">هر اونس (دلاری)</option>
-              </select>
-            </Field>
-            <Field label={metalPriceLabel(draftLine.details.metalPriceType)}>
-              <input
-                type="number"
-                min="0"
-                step="1"
-                value={draftLine.details.metalPrice}
-                onChange={(event) => updateMetalValue('metalPrice', event.target.value)}
-                onKeyDown={handleKeyDownEnter}
-              />
-            </Field>
-            <Field label="مبلغ کل">
-              <input
-                type="number"
-                min="0"
-                step="1"
-                value={draftLine.details.totalAmount}
-                onChange={(event) => updateMetalValue('totalAmount', event.target.value)}
-                onKeyDown={handleKeyDownEnter}
-              />
-            </Field>
-
-            {(draftLine.details.rawKind === 'molten' || draftLine.details.rawKind === 'conditional') ? (
+            {/* Assay Lab Name and Stamp Number for Molten & Conditional Gold */}
+            {!isMisc && isMoltenOrConditional ? (
               <>
-                <Field label="نام آزمایشگاه ری‌گیری" required={isRequired} error={errors.labName}>
+                <Field label="نام آزمایشگاه ری‌گیری" required={isAssayRequired} error={errors.labName}>
                   <input
                     ref={labInputRef}
                     value={draftLine.details.labName}
@@ -240,7 +366,7 @@ export default function GoldSaleTab({
                     placeholder="نام آزمایشگاه"
                   />
                 </Field>
-                <Field label="شماره پاکت / انگ" required={isRequired} error={errors.stampNumber}>
+                <Field label="شماره پاکت / انگ" required={isAssayRequired} error={errors.stampNumber}>
                   <input
                     ref={stampInputRef}
                     value={draftLine.details.stampNumber}
@@ -252,6 +378,7 @@ export default function GoldSaleTab({
               </>
             ) : null}
 
+            {/* Line Description */}
             <Field label="توضیحات" wide>
               <textarea
                 value={draftLine.description}
@@ -265,16 +392,20 @@ export default function GoldSaleTab({
             </Field>
           </div>
 
+          {/* Dynamic summary badge */}
           <div className={`raw-metal-result ${nature}`}>
             <Sparkles size={16} />
             <div>
               <strong>{rawOperationLabel(nature, draftLine.details.rawKind)}</strong>
               <span>
                 {draftLine.details.rawWeight || draftLine.details.totalAmount
-                  ? `${toPersianDigits(faNumber(draftLine.details.calculationMethod === 'money' ? actualWeightFromMoney(draftLine.details) : numberValue(draftLine.details.rawWeight), weightPrecision))} گرم`
+                  ? `${toPersianDigits(faNumber(isWeightMode ? numberValue(draftLine.details.rawWeight) : actualWeightFromMoney(draftLine.details), weightPrecision))} گرم`
                   : 'وزن وارد نشده'}
                 {draftLine.details.purity
                   ? ` · عیار ${toPersianDigits(draftLine.details.purity)}`
+                  : ''}
+                {numberValue(draftLine.details.totalAmount) > 0
+                  ? ` · مبلغ کل: ${toPersianDigits(faNumber(numberValue(draftLine.details.totalAmount)))} ${baseCurrency === 'IRT' ? 'تومان' : 'ریال'}`
                   : ''}
               </span>
             </div>
@@ -282,6 +413,7 @@ export default function GoldSaleTab({
         </motion.div>
       </AnimatePresence>
 
+      {/* Sticky Commit Button */}
       {draftReady ? (
         <div className={`sticky ${isLinesPinned ? 'bottom-32' : 'bottom-3'} z-30 flex justify-center pt-2 transition-all duration-300`}>
           <button
@@ -297,3 +429,6 @@ export default function GoldSaleTab({
     </div>
   );
 }
+
+// Alias export for PurchaseTab component
+export { GoldSaleTab as PurchaseTab };

@@ -1364,7 +1364,36 @@ export default function DocumentForm({
       </section>
 
       {/* ENTRY TABS EDITOR */}
-      <section className={`dashboard-panel document-entry-panel document-draft-editor p-3.5 space-y-3 ${editingLineId ? 'ring-2 ring-amber-500/50 shadow-xl' : ''}`}>
+      <section className={`dashboard-panel document-entry-panel document-draft-editor relative overflow-hidden p-3.5 space-y-3 ${editingLineId ? 'ring-2 ring-amber-500/50 shadow-xl' : ''}`}>
+        <AnimatePresence>
+          {!selectedCustomerId ? (
+            <motion.div
+              key="customer-lock-overlay"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.25, ease: 'easeInOut' }}
+              className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-slate-900/30 backdrop-blur-md p-6 text-center select-none"
+            >
+              <motion.div
+                initial={{ scale: 0.9, y: 10 }}
+                animate={{ scale: 1, y: 0 }}
+                exit={{ scale: 0.9, y: 10 }}
+                transition={{ duration: 0.2, ease: 'easeOut' }}
+                className="flex flex-col items-center gap-3.5 rounded-2xl bg-white/95 dark:bg-slate-900/95 p-6 shadow-2xl border border-slate-200/80 dark:border-slate-800 max-w-sm"
+              >
+                <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shadow-inner">
+                  <UserRound size={26} />
+                </div>
+                <p className="text-xs sm:text-sm font-extrabold text-slate-800 dark:text-slate-100 leading-relaxed">
+                  برای ثبت سند میبایست ابتدا طرف حساب را انتخاب کنید
+                </p>
+              </motion.div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+
+        <div className={!selectedCustomerId ? 'filter blur-[5px] pointer-events-none select-none transition-all duration-300' : 'transition-all duration-300'}>
         {editingLineId ? (
           <div className="document-draft-editor-head flex items-center justify-between pb-2 border-b border-amber-200 dark:border-amber-900/60 bg-amber-50/50 dark:bg-amber-950/20 -mx-3.5 -mt-3.5 p-3 rounded-t-xl">
             <span className="text-xs font-black text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
@@ -1438,7 +1467,6 @@ export default function DocumentForm({
               convertedWeightFromTotal={convertedWeightFromTotal}
               actualWeightFromMoney={actualWeightFromMoney}
               rawOperationLabel={rawOperationLabel}
-              metalPriceLabel={metalPriceLabel}
               toPersianDigits={toPersianDigits}
               faNumber={faNumber}
               numberValue={numberValue}
@@ -1470,6 +1498,7 @@ export default function DocumentForm({
             />
           )}
         />
+        </div>
       </section>
 
       {/* DOCUMENT LINES PANEL (with Pin / Unpin option & Folder Collapse on Edit when Pinned) */}
