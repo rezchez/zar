@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { recordAuditEvent } from '@/lib/audit';
 import { getServerAuthContext } from '@/lib/auth';
+import { hasPermission } from '@/lib/authorization';
 import { mapCheckRecord } from '@/lib/check';
 import { ensureChecksCollection } from '@/lib/check-collection';
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
@@ -26,6 +27,10 @@ export async function GET(
   const context = await getServerAuthContext();
   if (!context) {
     return NextResponse.json({ message: 'ابتدا وارد حساب شوید.' }, { status: 401 });
+  }
+
+  if (!hasPermission(context.user, 'bank.view') && !hasPermission(context.user, 'bank.manage')) {
+    return NextResponse.json({ message: 'دسترسی غیرمجاز به اطلاعات چک.' }, { status: 403 });
   }
 
   const { id } = await params;
@@ -54,6 +59,10 @@ export async function PATCH(
   const context = await getServerAuthContext();
   if (!context) {
     return NextResponse.json({ message: 'ابتدا وارد حساب شوید.' }, { status: 401 });
+  }
+
+  if (!hasPermission(context.user, 'bank.edit') && !hasPermission(context.user, 'bank.manage')) {
+    return NextResponse.json({ message: 'دسترسی غیرمجاز به تغییر وضعیت چک.' }, { status: 403 });
   }
 
   const { id } = await params;

@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 
 import { recordAuditEvent } from '@/lib/audit';
 import { getServerAuthContext } from '@/lib/auth';
+import { hasPermission } from '@/lib/authorization';
 import { ensureChecksCollection } from '@/lib/check-collection';
 import { mapCheckRecord } from '@/lib/check';
 import { jalaliDateToIso, normalizeDigits } from '@/lib/jalali';
@@ -26,6 +27,10 @@ export async function GET(request: Request) {
   const context = await getServerAuthContext();
   if (!context) {
     return NextResponse.json({ message: 'ابتدا وارد حساب شوید.' }, { status: 401 });
+  }
+
+  if (!hasPermission(context.user, 'bank.view') && !hasPermission(context.user, 'bank.manage')) {
+    return NextResponse.json({ message: 'دسترسی غیرمجاز به فهرست چک‌ها.' }, { status: 403 });
   }
 
   const url = new URL(request.url);
@@ -70,6 +75,10 @@ export async function POST(request: Request) {
   const context = await getServerAuthContext();
   if (!context) {
     return NextResponse.json({ message: 'ابتدا وارد حساب شوید.' }, { status: 401 });
+  }
+
+  if (!hasPermission(context.user, 'bank.create') && !hasPermission(context.user, 'bank.manage') && !hasPermission(context.user, 'transaction.create')) {
+    return NextResponse.json({ message: 'دسترسی غیرمجاز به صدور چک.' }, { status: 403 });
   }
 
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;

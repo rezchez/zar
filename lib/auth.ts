@@ -74,9 +74,13 @@ export async function getServerAuthContext() {
       );
       const sessionUser = session.expand?.user ?? await service.collection('users').getOne(String(session.user));
       if (sessionUser?.id) {
+        const mappedUser = mapAuthenticatedUser(service, sessionUser);
+        if (isUserBlocked(sessionUser)) {
+          return null;
+        }
         return {
           pb: service,
-          user: mapAuthenticatedUser(service, sessionUser),
+          user: mappedUser,
           record: sessionUser,
           phoneSession: true,
         };
@@ -110,12 +114,28 @@ export async function getServerAuthContext() {
       return null;
     }
 
+    if (isUserBlocked(refreshedRecord.record)) {
+      return null;
+    }
+
     const user = mapAuthenticatedUser(pb, refreshedRecord.record);
 
     return { pb, user, record: refreshedRecord.record, phoneSession: false };
   } catch {
     return null;
   }
+}
+
+function isUserBlocked(record: NonNullable<AuthRecord>): boolean {
+  if (record.status !== 'blocked') {
+    return false;
+  }
+  const blockedUntil = typeof record.blockedUntil === 'string' ? record.blockedUntil : '';
+  if (!blockedUntil) {
+    return true; // Permanent block
+  }
+  const blockedUntilTime = new Date(blockedUntil).getTime();
+  return !Number.isNaN(blockedUntilTime) && blockedUntilTime > Date.now();
 }
 
 function mapAuthenticatedUser(

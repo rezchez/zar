@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { recordAuditEvent } from '@/lib/audit';
 import { getServerAuthContext } from '@/lib/auth';
+import { hasPermission } from '@/lib/authorization';
 import { mapBankAccount } from '@/lib/bank';
 import { ensureBankAccountsCollection } from '@/lib/bank-collection';
 import { parseLocalizedAmount } from '@/lib/money';
@@ -27,6 +28,10 @@ export async function PATCH(
   const context = await getServerAuthContext();
   if (!context) {
     return NextResponse.json({ message: 'ابتدا وارد حساب شوید.' }, { status: 401 });
+  }
+
+  if (!hasPermission(context.user, 'bank.edit') && !hasPermission(context.user, 'bank.manage')) {
+    return NextResponse.json({ message: 'دسترسی غیرمجاز به ویرایش حساب بانکی.' }, { status: 403 });
   }
 
   const { id } = await params;
@@ -92,6 +97,10 @@ export async function DELETE(
   const context = await getServerAuthContext();
   if (!context) {
     return NextResponse.json({ message: 'ابتدا وارد حساب شوید.' }, { status: 401 });
+  }
+
+  if (!hasPermission(context.user, 'bank.delete') && !hasPermission(context.user, 'bank.manage')) {
+    return NextResponse.json({ message: 'دسترسی غیرمجاز به حذف حساب بانکی.' }, { status: 403 });
   }
 
   const { id } = await params;

@@ -29,9 +29,20 @@ export async function GET() {
 export async function PATCH(request: Request) {
   const result = await contextOrError();
   if (result.response) return result.response;
+  const user = result.context!.user;
   const body = (await request.json().catch(() => ({}))) as { type?: string; id?: string };
   if (!body.id || (body.type !== 'contact' && body.type !== 'document')) {
     return NextResponse.json({ message: 'نوع و شناسه بازیابی معتبر نیست.' }, { status: 400 });
+  }
+
+  if (body.type === 'contact') {
+    if (!hasPermission(user, 'customer.delete') && !hasPermission(user, 'customer.manage')) {
+      return NextResponse.json({ message: 'دسترسی غیرمجاز به بازیابی مخاطب.' }, { status: 403 });
+    }
+  } else if (body.type === 'document') {
+    if (!hasPermission(user, 'document.delete') && !hasPermission(user, 'document.manage')) {
+      return NextResponse.json({ message: 'دسترسی غیرمجاز به بازیابی سند.' }, { status: 403 });
+    }
   }
   const collection = body.type === 'contact' ? 'customers' : 'transactions';
   try {
