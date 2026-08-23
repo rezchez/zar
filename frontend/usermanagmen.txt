@@ -1,0 +1,113 @@
+{
+  "system": "Zarfolio User Management & RBAC Permissions System",
+  "version": "1.0.0",
+  "description": "Database collection schema updates, migration details, API endpoints, and permission matrices for Zarfolio RBAC + User Overrides.",
+  "database_updates": {
+    "collections": [
+      {
+        "name": "users",
+        "action": "update_schema",
+        "fields_added": [
+          {
+            "name": "customPermissions",
+            "type": "json",
+            "required": false,
+            "description": "Stores user-specific permission overrides object: { grants: string[], denies: string[] }"
+          }
+        ]
+      }
+    ],
+    "migration_file": "pb_migrations/20260822000000_add_user_custom_permissions.js"
+  },
+  "effective_permissions_formula": "Effective Permissions = Role Default Permissions + Explicit Grants - Explicit Denies",
+  "roles_and_defaults": {
+    "admin": {
+      "level": 3,
+      "description": "Full system access and permission management.",
+      "permissions": "ALL"
+    },
+    "manager": {
+      "level": 2,
+      "description": "Operational manager.",
+      "permissions": [
+        "user.view",
+        "user.create",
+        "user.edit",
+        "user.permission.view",
+        "user.permission.grant",
+        "user.permission.revoke",
+        "customer.view",
+        "customer.create",
+        "customer.edit",
+        "customer.delete",
+        "customer.manage",
+        "transaction.view",
+        "transaction.create",
+        "transaction.edit",
+        "transaction.manage",
+        "document.view",
+        "document.create",
+        "document.edit",
+        "document.manage",
+        "cash.view",
+        "cash.create",
+        "cash.edit",
+        "cash.manage",
+        "bank.view",
+        "bank.create",
+        "bank.edit",
+        "bank.manage",
+        "report.view",
+        "report.financial",
+        "report.customer",
+        "report.transaction",
+        "settings.view"
+      ]
+    },
+    "user": {
+      "level": 1,
+      "description": "Standard user.",
+      "permissions": [
+        "customer.view",
+        "transaction.view",
+        "document.view",
+        "cash.view",
+        "bank.view",
+        "report.view"
+      ]
+    }
+  },
+  "permission_categories": [
+    "users",
+    "customers",
+    "transactions",
+    "documents",
+    "cash",
+    "banks",
+    "reports",
+    "settings"
+  ],
+  "api_endpoints": [
+    {
+      "path": "/api/admin/users/[id]/permissions",
+      "methods": ["GET", "PATCH"],
+      "required_permissions": {
+        "GET": "user.permission.view",
+        "PATCH": "user.permission.grant or user.permission.revoke"
+      },
+      "anti_privilege_escalation": [
+        "Self-permission modification is blocked on server side (403).",
+        "Managers cannot grant permissions they do not possess.",
+        "Managers cannot modify Admin permissions or grant user.role.change."
+      ]
+    }
+  ],
+  "audit_events": [
+    "role_changed",
+    "permission_granted",
+    "permission_revoked",
+    "permission_denied",
+    "permission_deny_removed",
+    "permission_failed_attempt"
+  ]
+}
