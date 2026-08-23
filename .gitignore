@@ -1,4 +1,71 @@
-backend/pb_data
+# ==========================================
+# 1. PocketBase Backend & Database
+# ==========================================
 backend/pocketbase
 backend/*.exe
+backend/pb_data/
+backend/pb_aux/
+backend/pb_migrations/
+pb_data/
+pb_aux/
+
+# Local SQLite & DB Files
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+backend/*.sqlite
+backend/*.sqlite3
+backend/*.db
+backend/*.db-journal
+
+# ==========================================
+# 2. Dependencies & Build Artifacts (Global)
+# ==========================================
+node_modules/
+frontend/node_modules/
+.next/
+frontend/.next/
+out/
+frontend/out/
+build/
+frontend/build/
+dist/
+
+# ==========================================
+# 3. Environment Variables & Secrets
+# ==========================================
+.env
+.env*.local
+backend/.env
+backend/.env*.local
+frontend/.env*.local
+!.env.example
+!frontend/.env.example
+*.pem
+
+# ==========================================
+# 4. Logs & Debug
+# ==========================================
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ==========================================
+# 5. IDE & OS Metadata
+# ==========================================
 .DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ==========================================
+# 6. Generated Reports & Exports
+# ==========================================
+*.csv
+*.xlsx
+*.pdf
