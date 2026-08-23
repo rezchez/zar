@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useRef } from 'react';
-import { AnimatePresence, motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
+import { useRef } from 'react';
+import { AnimatePresence, motion, } from 'framer-motion';
 import { ArrowLeft, Check, Eye, EyeOff, LockKeyhole, Mail, Phone, ShieldCheck, Sparkles, UserRound } from 'lucide-react';
 
 import { GoogleIcon } from './Icons';
@@ -376,7 +376,7 @@ export function MobileAuthView({ logic }: { logic: AuthLogicReturn }) {
                     <button
                       type="button"
                       onClick={handleForgotPassword}
-                      className="text-purple-400 hover:text-purple-300 transition-colors hover:underline p-2 -mr-2 min-h-[44px] flex items-center"
+                      className="text-purple-400 hover:text-purple-300 transition-colors hover:underline p-2 min-h-[48px] flex items-center rounded-lg hover:bg-white/5"
                     >
                       رمز عبور را فراموش کرده‌اید؟
                     </button>
@@ -515,29 +515,29 @@ export function MobileAuthView({ logic }: { logic: AuthLogicReturn }) {
           </motion.button>
 
           {/* Footer Navigation Link */}
-          <div className="mt-5 sm:mt-6 text-center text-xs text-neutral-400">
+          <div className="mt-5 sm:mt-6 text-center text-xs text-neutral-400 flex flex-col items-center gap-2">
             {mode === 'login' ? (
-              <p>
+              <div className="flex items-center justify-center gap-2">
                 حساب کاربری ندارید؟{' '}
                 <button
                   type="button"
                   onClick={() => handleSwitchMode('signup')}
-                  className="text-purple-300 font-semibold hover:text-purple-200 transition-colors hover:underline inline-flex items-center justify-center gap-1 min-h-[44px] px-2 py-2 -my-2"
+                  className="text-purple-300 font-semibold hover:text-purple-200 transition-colors hover:underline inline-flex items-center justify-center gap-1 min-h-[48px] px-3 py-2 rounded-lg transition-colors"
                 >
                   ثبت‌نام کنید
                 </button>
-              </p>
+              </div>
             ) : (
-              <p>
+              <div className="flex items-center justify-center gap-2">
                 قبلاً حساب ساخته‌اید؟{' '}
                 <button
                   type="button"
                   onClick={() => handleSwitchMode('login')}
-                  className="text-purple-300 font-semibold hover:text-purple-200 transition-colors hover:underline inline-flex items-center justify-center gap-1 min-h-[44px] px-2 py-2 -my-2"
+                  className="text-purple-300 font-semibold hover:text-purple-200 transition-colors hover:underline inline-flex items-center justify-center gap-1 min-h-[48px] px-3 py-2 rounded-lg transition-colors"
                 >
                   وارد شوید
                 </button>
-              </p>
+              </div>
             )}
           </div>
         </div>
