@@ -116,7 +116,7 @@ export default function AuthCard({ initialMode = 'login' }: AuthCardProps) {
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
-      if (typeof window !== 'undefined' && window.innerWidth < 768) return;
+      if (typeof window !== 'undefined' && window.innerWidth < 768) { x.set(0); y.set(0); return; }
       if (!cardRef.current) return;
 
       const rect = cardRef.current.getBoundingClientRect();
@@ -374,7 +374,7 @@ export default function AuthCard({ initialMode = 'login' }: AuthCardProps) {
   return (
     <div
       dir="rtl"
-      className="relative min-h-dvh w-full flex items-center justify-center px-4 py-6 sm:py-8 bg-black overflow-x-hidden overflow-y-auto selection:bg-purple-500 selection:text-white"
+      className="relative min-h-[100dvh] pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] w-full flex flex-col items-center justify-start sm:justify-center px-4 py-8 sm:py-12 bg-black overflow-y-auto  selection:bg-purple-500 selection:text-white"
     >
       {/* Background Noise Texture */}
       <div
@@ -400,7 +400,7 @@ export default function AuthCard({ initialMode = 'login' }: AuthCardProps) {
           rotateY,
           transformStyle: 'preserve-3d',
         }}
-        className="relative z-10 w-full max-w-md my-auto perspective-1000"
+        className="relative z-10 w-full max-w-md mx-auto md:my-auto md:perspective-1000 mt-8 mb-8 sm:mt-auto sm:mb-auto"
       >
         {/* Clean Static Glass Card with Sharp Text */}
         <div
@@ -555,12 +555,12 @@ export default function AuthCard({ initialMode = 'login' }: AuthCardProps) {
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         required
-                        className="w-full h-11 pr-10 pl-11 rounded-xl bg-neutral-900/70 border border-white/10 text-white placeholder:text-neutral-500 text-xs sm:text-sm focus:outline-none focus:border-purple-500/60 focus:ring-2 focus:ring-purple-500/20 transition-all"
+                        className="w-full h-11 pr-10 pl-11 rounded-xl bg-neutral-900/70 border border-white/10 text-white placeholder:text-neutral-500 text-xs sm:text-sm focus:outline-none focus:border-purple-500/60 focus:ring-2 focus:ring-purple-500/20 transition-all dir-ltr text-right"
                       />
                       <button
                         type="button"
                         onClick={() => setShowPassword((v) => !v)}
-                        className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-white transition-colors p-1"
+                        className="absolute left-1 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-white transition-colors p-3 min-w-[44px] min-h-[44px] flex items-center justify-center"
                         aria-label={showPassword ? 'مخفی کردن رمز عبور' : 'نمایش رمز عبور'}
                       >
                         {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -587,12 +587,12 @@ export default function AuthCard({ initialMode = 'login' }: AuthCardProps) {
                           value={password}
                           onChange={(e) => setPassword(e.target.value)}
                           required
-                          className="w-full h-11 pr-10 pl-11 rounded-xl bg-neutral-900/70 border border-white/10 text-white placeholder:text-neutral-500 text-xs sm:text-sm focus:outline-none focus:border-purple-500/60 focus:ring-2 focus:ring-purple-500/20 transition-all"
+                          className="w-full h-11 pr-10 pl-11 rounded-xl bg-neutral-900/70 border border-white/10 text-white placeholder:text-neutral-500 text-xs sm:text-sm focus:outline-none focus:border-purple-500/60 focus:ring-2 focus:ring-purple-500/20 transition-all dir-ltr text-right"
                         />
                         <button
                           type="button"
                           onClick={() => setShowPassword((v) => !v)}
-                          className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-white transition-colors p-1"
+                          className="absolute left-1 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-white transition-colors p-3 min-w-[44px] min-h-[44px] flex items-center justify-center"
                           aria-label={showPassword ? 'مخفی کردن رمز عبور' : 'نمایش رمز عبور'}
                         >
                           {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -615,12 +615,12 @@ export default function AuthCard({ initialMode = 'login' }: AuthCardProps) {
                           value={passwordConfirm}
                           onChange={(e) => setPasswordConfirm(e.target.value)}
                           required
-                          className="w-full h-11 pr-10 pl-11 rounded-xl bg-neutral-900/70 border border-white/10 text-white placeholder:text-neutral-500 text-xs sm:text-sm focus:outline-none focus:border-purple-500/60 focus:ring-2 focus:ring-purple-500/20 transition-all"
+                          className="w-full h-11 pr-10 pl-11 rounded-xl bg-neutral-900/70 border border-white/10 text-white placeholder:text-neutral-500 text-xs sm:text-sm focus:outline-none focus:border-purple-500/60 focus:ring-2 focus:ring-purple-500/20 transition-all dir-ltr text-right"
                         />
                         <button
                           type="button"
                           onClick={() => setShowPasswordConfirm((v) => !v)}
-                          className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-white transition-colors p-1"
+                          className="absolute left-1 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-white transition-colors p-3 min-w-[44px] min-h-[44px] flex items-center justify-center"
                           aria-label={showPasswordConfirm ? 'مخفی کردن تکرار رمز عبور' : 'نمایش تکرار رمز عبور'}
                         >
                           {showPasswordConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -638,7 +638,7 @@ export default function AuthCard({ initialMode = 'login' }: AuthCardProps) {
                         <button
                           type="button"
                           onClick={() => setMfaAuthMethod('email')}
-                          className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                          className={`flex-1 py-2 min-h-[44px] text-xs font-medium rounded-lg transition-all ${
                             mfaAuthMethod === 'email'
                               ? 'bg-purple-600 text-white shadow-md'
                               : 'text-neutral-400 hover:text-white'
@@ -651,7 +651,7 @@ export default function AuthCard({ initialMode = 'login' }: AuthCardProps) {
                         <button
                           type="button"
                           onClick={() => setMfaAuthMethod('totp')}
-                          className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                          className={`flex-1 py-2 min-h-[44px] text-xs font-medium rounded-lg transition-all ${
                             mfaAuthMethod === 'totp'
                               ? 'bg-purple-600 text-white shadow-md'
                               : 'text-neutral-400 hover:text-white'
@@ -687,7 +687,7 @@ export default function AuthCard({ initialMode = 'login' }: AuthCardProps) {
                 {/* Mode Options: Remember Me & Login Method Switcher */}
                 {mode === 'login' && !mfaChallenge && (
                   <div className="flex items-center justify-between pt-1 text-xs text-neutral-400">
-                    <label className="flex items-center gap-2 cursor-pointer select-none group">
+                    <label className="flex items-center gap-2 cursor-pointer select-none group min-h-[44px] py-1">
                       <div className="relative">
                         <input
                           type="checkbox"
@@ -711,7 +711,7 @@ export default function AuthCard({ initialMode = 'login' }: AuthCardProps) {
                     <button
                       type="button"
                       onClick={handleForgotPassword}
-                      className="text-purple-400 hover:text-purple-300 transition-colors hover:underline"
+                      className="text-purple-400 hover:text-purple-300 transition-colors hover:underline p-2 -mr-2 min-h-[44px] flex items-center"
                     >
                       رمز عبور را فراموش کرده‌اید؟
                     </button>
@@ -730,7 +730,7 @@ export default function AuthCard({ initialMode = 'login' }: AuthCardProps) {
                     setPhoneChallenge(null);
                     setErrorMessage('');
                   }}
-                  className={`text-[11px] px-3 py-1 rounded-full transition-all ${
+                  className={`text-[11px] px-4 py-2 min-h-[44px] flex items-center justify-center rounded-full transition-all ${
                     loginMethod === 'email'
                       ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
                       : 'text-neutral-500 hover:text-neutral-300'
@@ -745,7 +745,7 @@ export default function AuthCard({ initialMode = 'login' }: AuthCardProps) {
                     setLoginMethod('phone');
                     setErrorMessage('');
                   }}
-                  className={`text-[11px] px-3 py-1 rounded-full transition-all ${
+                  className={`text-[11px] px-4 py-2 min-h-[44px] flex items-center justify-center rounded-full transition-all ${
                     loginMethod === 'phone'
                       ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
                       : 'text-neutral-500 hover:text-neutral-300'
@@ -820,7 +820,7 @@ export default function AuthCard({ initialMode = 'login' }: AuthCardProps) {
                 setTotpCode('');
                 setErrorMessage('');
               }}
-              className="w-full mt-2 text-xs text-neutral-400 hover:text-white transition-colors text-center py-1"
+              className="w-full mt-2 text-xs text-neutral-400 hover:text-white transition-colors text-center py-3 min-h-[44px]"
             >
               انصراف و بازگشت به ورود با رمز
             </button>
@@ -857,7 +857,7 @@ export default function AuthCard({ initialMode = 'login' }: AuthCardProps) {
                 <button
                   type="button"
                   onClick={() => handleSwitchMode('signup')}
-                  className="text-purple-300 font-semibold hover:text-purple-200 transition-colors hover:underline inline-flex items-center gap-1"
+                  className="text-purple-300 font-semibold hover:text-purple-200 transition-colors hover:underline inline-flex items-center justify-center gap-1 min-h-[44px] px-2 py-2 -my-2"
                 >
                   ثبت‌نام کنید
                 </button>
@@ -868,7 +868,7 @@ export default function AuthCard({ initialMode = 'login' }: AuthCardProps) {
                 <button
                   type="button"
                   onClick={() => handleSwitchMode('login')}
-                  className="text-purple-300 font-semibold hover:text-purple-200 transition-colors hover:underline inline-flex items-center gap-1"
+                  className="text-purple-300 font-semibold hover:text-purple-200 transition-colors hover:underline inline-flex items-center justify-center gap-1 min-h-[44px] px-2 py-2 -my-2"
                 >
                   وارد شوید
                 </button>
