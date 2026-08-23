@@ -4,6 +4,7 @@ import './globals.css'
 import './document-form.css'
 import ThemeProvider from '@/src/components/ThemeProvider'
 import { SettingsProvider } from '@/src/components/SettingsProvider'
+import PwaInstallPrompt from '@/src/components/PwaInstallPrompt'
 
 export const metadata: Metadata = {
   title: 'Zarfolio',
@@ -81,7 +82,10 @@ export default function RootLayout({
       </head>
       <body suppressHydrationWarning>
         <ThemeProvider>
-          <SettingsProvider>{children}</SettingsProvider>
+          <SettingsProvider>
+            {children}
+            <PwaInstallPrompt />
+          </SettingsProvider>
         </ThemeProvider>
       </body>
     </html>
