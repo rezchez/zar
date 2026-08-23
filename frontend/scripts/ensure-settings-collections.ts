@@ -24,6 +24,17 @@ const appSettingsFields = [
   { id: 'autodate_updated', name: 'updated', type: 'autodate', onCreate: true, onUpdate: true },
 ];
 
+const printTemplatesFields = [
+  { id: 'text_name', name: 'name', type: 'text', required: true, min: 1, max: 120 },
+  { id: 'bool_is_active', name: 'isActive', type: 'bool', required: false },
+  { id: 'bool_is_system_default', name: 'isSystemDefault', type: 'bool', required: false },
+  { id: 'json_page', name: 'page', type: 'json', required: true },
+  { id: 'json_design', name: 'design', type: 'json', required: true },
+  { id: 'json_elements', name: 'elements', type: 'json', required: false },
+  { id: 'autodate_created', name: 'created', type: 'autodate', onCreate: true, onUpdate: false },
+  { id: 'autodate_updated', name: 'updated', type: 'autodate', onCreate: true, onUpdate: true },
+];
+
 const customFontsFields = [
   { id: 'text_display_name', name: 'displayName', type: 'text', required: true, min: 1, max: 100 },
   { id: 'text_font_family', name: 'fontFamily', type: 'text', required: true, min: 1, max: 100 },
@@ -95,6 +106,30 @@ async function main() {
     } else {
       await pb.collections.create(fontsPayload).catch(() => null);
       console.log('custom_fonts collection created');
+    }
+
+    // Ensure print_templates
+    const existingTemplates = await pb.collections.getFirstListItem(
+      pb.filter('name = {:name}', { name: 'print_templates' }),
+    ).catch(() => null);
+
+    const templatesPayload = {
+      name: 'print_templates',
+      type: 'base',
+      fields: printTemplatesFields,
+      listRule: '@request.auth.id != ""',
+      viewRule: '@request.auth.id != ""',
+      createRule: '@request.auth.role = "admin" || @request.auth.role = "manager"',
+      updateRule: '@request.auth.role = "admin" || @request.auth.role = "manager"',
+      deleteRule: '@request.auth.role = "admin"',
+    };
+
+    if (existingTemplates) {
+      await pb.collections.update(existingTemplates.id, templatesPayload).catch(() => null);
+      console.log('print_templates collection updated');
+    } else {
+      await pb.collections.create(templatesPayload).catch(() => null);
+      console.log('print_templates collection created');
     }
 
     // Ensure transaction collection fields

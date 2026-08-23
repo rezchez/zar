@@ -120,6 +120,21 @@ async function handleUpdate(request: Request) {
       headingFontSize: nextNormalized.headingFontSize,
       headingFontWeight: nextNormalized.headingFontWeight,
 
+      printStoreName: nextNormalized.printStoreName,
+      printLogoUrl: nextNormalized.printLogoUrl,
+      printAddress: nextNormalized.printAddress,
+      printPhone: nextNormalized.printPhone,
+      printFooterText: nextNormalized.printFooterText,
+      printShowStamp: nextNormalized.printShowStamp,
+      printShowSignature: nextNormalized.printShowSignature,
+      printActiveTemplate: nextNormalized.printActiveTemplate,
+
+      pwaAppName: nextNormalized.pwaAppName,
+      pwaShortName: nextNormalized.pwaShortName,
+      pwaThemeColor: nextNormalized.pwaThemeColor,
+      pwaBackgroundColor: nextNormalized.pwaBackgroundColor,
+      pwaDisplayMode: nextNormalized.pwaDisplayMode,
+
       // Legacy fallback fields
       company_name: nextNormalized.organizationName,
       fiscal_year_start: nextNormalized.fiscalYearStartDate ?? '',
