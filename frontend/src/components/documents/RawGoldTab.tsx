@@ -29,6 +29,8 @@ export type DetailState = {
   settlementQuantity: string;
   settlesTradeId: string;
   inventorySourceId: string;
+  linkedLineId?: string;
+  isForeignCash?: boolean;
   claimFinancial?: string;
   claimWeight?: string;
   claimPurpose?: string;

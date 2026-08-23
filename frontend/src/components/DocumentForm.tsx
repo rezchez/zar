@@ -956,13 +956,74 @@ export default function DocumentForm({
       details: { ...draftLine.details },
     };
 
+    let supplementaryCashLine: DocumentLine | null = null;
+    if (draftLine.documentTab === 'currency' && !draftLine.details.unsettledTrade) {
+       const isReceived = documentNature === 'received';
+       supplementaryCashLine = {
+         id: draftLine.id ? draftLine.id + '-cash' : crypto.randomUUID(),
+         documentNature: isReceived ? 'received' : 'paid',
+         documentTab: 'cash',
+         sourceTab: 'cash',
+         documentSubType: 'cash-operation',
+         documentTypeLabel: isReceived ? 'دریافت اسکناس ارز' : 'پرداخت اسکناس ارز',
+         description: `تسویه نقدی معامله ${draftLine.details.currencyUnit}`,
+         converted750: 0,
+         settlementMethod: 'cash',
+         balanceSource: 'current',
+         details: {
+           ...createCurrencyLine(documentNature).details,
+           totalAmount: draftLine.details.currencyQuantity,
+           currencyUnit: draftLine.details.currencyUnit,
+           isForeignCash: true,
+         }
+       };
+    }
+
     if (editingLineId) {
-      setCommittedLines((current) =>
-        current.map((line) => (line.id === editingLineId ? lineToCommit : line)),
-      );
+      setCommittedLines((current) => {
+        const existingMainIndex = current.findIndex(l => l.id === editingLineId);
+        if (existingMainIndex === -1) return current;
+
+        const existingMain = current[existingMainIndex];
+        const linkedCashId = existingMain.details.linkedLineId;
+
+        let newLines = [...current];
+        newLines[existingMainIndex] = { ...lineToCommit, id: existingMain.id };
+
+        if (supplementaryCashLine) {
+           supplementaryCashLine.id = linkedCashId || (existingMain.id + '-cash');
+           supplementaryCashLine.details.linkedLineId = existingMain.id;
+           newLines[existingMainIndex].details.linkedLineId = supplementaryCashLine.id;
+
+           if (linkedCashId) {
+             const cashIndex = newLines.findIndex(l => l.id === linkedCashId);
+             if (cashIndex > -1) newLines[cashIndex] = supplementaryCashLine;
+             else newLines.push(supplementaryCashLine);
+           } else {
+             newLines.push(supplementaryCashLine);
+           }
+        } else if (linkedCashId) {
+           newLines = newLines.filter(l => l.id !== linkedCashId);
+           delete newLines[existingMainIndex].details.linkedLineId;
+        }
+
+        return newLines;
+      });
       setEditingLineId(null);
     } else {
-      setCommittedLines((current) => [...current, lineToCommit]);
+      setCommittedLines((current) => {
+        const newMainId = lineToCommit.id || crypto.randomUUID();
+        lineToCommit.id = newMainId;
+        const newLines = [...current, lineToCommit];
+
+        if (supplementaryCashLine) {
+           supplementaryCashLine.id = newMainId + '-cash';
+           supplementaryCashLine.details.linkedLineId = newMainId;
+           lineToCommit.details.linkedLineId = supplementaryCashLine.id;
+           newLines.push(supplementaryCashLine);
+        }
+        return newLines;
+      });
     }
     setDraftLine(draftLine.documentTab === 'currency'
       ? createCurrencyLine(documentNature)
@@ -1092,13 +1153,17 @@ export default function DocumentForm({
               ? line.details.calculationMethod === 'money' ? actualWeightFromMoney(line.details) : numberValue(line.details.rawWeight)
               : 0,
             rialAmount: line.documentTab === 'currency'
-              ? (!line.details.unsettledTrade ? numberValue(line.details.currencyTotalAmount) : 0)
-              : line.documentTab === 'gold-sale'
+              ? numberValue(line.details.currencyTotalAmount)
+              : line.documentTab === 'cash' && !line.details.isForeignCash
                 ? numberValue(line.details.totalAmount)
-                : 0,
+                : line.documentTab === 'gold-sale'
+                  ? numberValue(line.details.totalAmount)
+                  : 0,
             foreignAmount: line.documentTab === 'currency'
               ? numberValue(line.details.currencyQuantity)
-              : 0,
+              : line.documentTab === 'cash' && line.details.isForeignCash
+                ? numberValue(line.details.totalAmount)
+                : 0,
             tertiaryAmount: 0,
           })),
         }),
