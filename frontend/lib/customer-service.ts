@@ -77,11 +77,12 @@ export async function getCustomersWithBalances(pb: PocketBase) {
     transactionsByCustomer.set(transaction.customerId, current);
   }
 
-  return records.map((record) =>
-    mapCustomerWithTransactions(
+  return records.map((record) => {
+    record.privateDescription = '';
+    return mapCustomerWithTransactions(
       pb,
       record,
       transactionsByCustomer.get(record.id) ?? [],
-    ),
-  );
+    );
+  });
 }

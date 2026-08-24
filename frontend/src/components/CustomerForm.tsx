@@ -8,7 +8,10 @@ import {
   Plus,
   Save,
   Trash2,
+  Eye,
+  EyeOff
 } from 'lucide-react';
+import GlassJalaliCalendar from './GlassJalaliCalendar';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
@@ -140,6 +143,46 @@ export default function CustomerForm({
   const [errorMessage, setErrorMessage] = useState('');
   const [isDirty, setIsDirty] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const [groups, setGroups] = useState<{ id: string; name: string }[]>([]);
+  const [provinces, setProvinces] = useState<{ id: string; name: string }[]>([]);
+  const [cities, setCities] = useState<{ id: string; name: string; province: string }[]>([]);
+  const [availableCodes, setAvailableCodes] = useState<number[]>([]);
+
+  const [showConfidential, setShowConfidential] = useState(false);
+  const [confidentialNote, setConfidentialNote] = useState('');
+  const [showGroupModal, setShowGroupModal] = useState(false);
+  const [newGroupName, setNewGroupName] = useState('');
+  const [isCreatingGroup, setIsCreatingGroup] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/customer-groups').then(r => r.json()).then(data => {
+       if (Array.isArray(data)) setGroups(data);
+    });
+    fetch('/api/locations').then(r => r.json()).then(data => {
+       if (data.provinces) setProvinces(data.provinces);
+       if (data.cities) setCities(data.cities);
+    });
+    if (customerCodeMode === 'manual') {
+      fetch('/api/customers/available-codes').then(r => r.json()).then(data => {
+         if (data.codes) {
+           let codes = data.codes as number[];
+           if (customer && !codes.includes(customer.customerCode)) {
+             codes = [customer.customerCode, ...codes].sort((a, b) => a - b);
+           }
+           setAvailableCodes(codes);
+         }
+      });
+    }
+  }, [customerCodeMode, customer]);
+
+  useEffect(() => {
+    if (customer && showConfidential && !confidentialNote) {
+       fetch(`/api/customers/${customer.id}/private-notes`).then(r => r.json()).then(data => {
+         if (data.privateDescription) setConfidentialNote(data.privateDescription);
+       });
+    }
+  }, [showConfidential, customer, confidentialNote]);
 
   function setValue(field: string, value: string | number | boolean) {
     setIsDirty(true);
@@ -473,11 +516,26 @@ export default function CustomerForm({
                     <input value={String(state[field])} onChange={(e) => setValue(field, e.target.value)} />
                   </Field>
                 ))}
-                <DateField label="تاریخ افتتاح حساب" value={String(state.accountOpenedAt)} onChange={(v) => setValue('accountOpenedAt', v)} />
-                <DateField label="تاریخ تولد" value={String(state.birthDate)} onChange={(v) => setValue('birthDate', v)} />
-                <DateField label="تاریخ تولد همسر" value={String(state.spouseBirthDate)} onChange={(v) => setValue('spouseBirthDate', v)} />
+                <JalaliDateField label="تاریخ تولد" value={String(state.birthDate)} onChange={(v) => setValue('birthDate', v)} />
+                <JalaliDateField label="تاریخ تولد همسر" value={String(state.spouseBirthDate)} onChange={(v) => setValue('spouseBirthDate', v)} />
                 <Field label="توضیحات بیشتر" wide><textarea value={String(state.detailedDescription)} onChange={(e) => setValue('detailedDescription', e.target.value)} /></Field>
-                <Field label="توضیحات محرمانه" wide><textarea value={String(state.privateDescription)} onChange={(e) => setValue('privateDescription', e.target.value)} /></Field>
+                {customer ? (
+                  <div className="account-field customer-field-wide">
+                     <div style={{display:'flex', alignItems:'center', justifyContent:'space-between'}}>
+                        <span>توضیحات محرمانه</span>
+                        <button type="button" onClick={() => setShowConfidential(!showConfidential)} title="مشاهده یادداشت محرمانه" style={{background:'none',border:'none',cursor:'pointer'}}>
+                          {showConfidential ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </button>
+                     </div>
+                     {showConfidential ? (
+                       <textarea value={confidentialNote} readOnly style={{backgroundColor:'#f9fafb'}} placeholder="در حال بارگذاری..." />
+                     ) : (
+                       <div style={{padding:'0.5rem', color:'#6b7280', fontSize:'0.85rem', fontStyle:'italic'}}>برای مشاهده توضیحات محرمانه کلیک کنید.</div>
+                     )}
+                  </div>
+                ) : (
+                  <Field label="توضیحات محرمانه" wide><textarea value={String(state.privateDescription)} onChange={(e) => setValue('privateDescription', e.target.value)} /></Field>
+                )}
               </div>
             </div>
           </>
@@ -613,6 +671,46 @@ export default function CustomerForm({
         {loading ? <LoaderCircle size={17} className="spin" /> : <Save size={17} />}
         {loading ? 'در حال ذخیره...' : customer ? 'ذخیره تغییرات طرف‌حساب' : 'ذخیره طرف‌حساب'}
       </button>
+
+      {showGroupModal ? (
+        <div className="modal-overlay" onClick={() => setShowGroupModal(false)} style={{position:'fixed',inset:0,backgroundColor:'rgba(0,0,0,0.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000}}>
+           <div className="modal-content" onClick={e => e.stopPropagation()} style={{background:'#fff',padding:'2rem',borderRadius:'0.5rem',width:'90%',maxWidth:'400px'}}>
+              <h3 style={{marginBottom:'1rem',fontSize:'1.2rem',fontWeight:'bold'}}>ایجاد گروه جدید</h3>
+              <div className="account-field">
+                 <span>نام گروه</span>
+                 <input type="text" value={newGroupName} onChange={e => setNewGroupName(e.target.value)} placeholder="مثلاً: مشتریان ویژه" autoFocus />
+              </div>
+              <div style={{display:'flex',gap:'0.5rem',marginTop:'1.5rem',justifyContent:'flex-end'}}>
+                 <button type="button" onClick={() => setShowGroupModal(false)} style={{padding:'0.5rem 1rem',borderRadius:'0.25rem',border:'1px solid #ccc',background:'transparent',cursor:'pointer'}}>انصراف</button>
+                 <button type="button" disabled={isCreatingGroup || newGroupName.trim().length < 2} onClick={async () => {
+                    setIsCreatingGroup(true);
+                    try {
+                      const res = await fetch('/api/customer-groups', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name: newGroupName })
+                      });
+                      if (res.ok) {
+                        const newGroup = await res.json();
+                        setGroups(prev => [...prev, newGroup]);
+                        setValue('group', newGroup.id);
+                        setShowGroupModal(false);
+                        setNewGroupName('');
+                      } else {
+                        alert('ایجاد گروه ناموفق بود.');
+                      }
+                    } catch (e) {
+                      alert('خطا در ارتباط با سرور.');
+                    } finally {
+                      setIsCreatingGroup(false);
+                    }
+                 }} style={{padding:'0.5rem 1rem',borderRadius:'0.25rem',background:'#000',color:'#fff',cursor:'pointer'}}>
+                    {isCreatingGroup ? 'در حال ایجاد...' : 'ایجاد گروه'}
+                 </button>
+              </div>
+           </div>
+        </div>
+      ) : null}
     </form>
   );
 }
@@ -621,8 +719,42 @@ function Field({ label, required, wide, children }: { label: string; required?: 
   return <label className={`account-field ${wide ? 'customer-field-wide' : ''}`}><span>{label}{required ? ' *' : ''}</span>{children}</label>;
 }
 
-function DateField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
-  return <Field label={label}><input type="date" value={value} onChange={(e) => onChange(e.target.value)} /></Field>;
+function JalaliDateField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  const [showPicker, setShowPicker] = useState(false);
+
+  let displayValue = '';
+  if (value) {
+     try {
+       displayValue = new Intl.DateTimeFormat('fa-IR-u-ca-persian', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(value));
+     } catch {
+       displayValue = value;
+     }
+  }
+
+  return (
+    <div className="account-field" style={{position: 'relative'}}>
+       <span>{label}</span>
+       <input
+         type="text"
+         readOnly
+         value={displayValue}
+         placeholder="انتخاب تاریخ"
+         onClick={() => setShowPicker(!showPicker)}
+         style={{cursor: 'pointer'}}
+       />
+       {showPicker ? (
+         <>
+           <div style={{position: 'fixed', inset: 0, zIndex: 40}} onClick={() => setShowPicker(false)}></div>
+           <div style={{position: 'absolute', top: '100%', left: 0, zIndex: 50, background: '#fff', border: '1px solid #e5e7eb', borderRadius: '0.5rem', marginTop: '0.25rem', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'}}>
+              <GlassJalaliCalendar
+                 selectedDate={value ? new Date(value) : undefined}
+                 onDateSelect={(d) => { onChange(d.toISOString()); setShowPicker(false); }}
+              />
+           </div>
+         </>
+       ) : null}
+    </div>
+  );
 }
 
 function SelectField({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: Array<[string, string]> }) {

@@ -150,11 +150,9 @@ export async function PATCH(
       );
     }
 
+    const finalRecord = await context.pb.collection('customers').getOne(id);
     customer = (
-      await getCustomerWithBalances(
-        context.pb,
-        await context.pb.collection('customers').getOne(id),
-      )
+      await getCustomerWithBalances(context.pb, finalRecord)
     ).customer;
 
     await recordAuditEvent({
@@ -168,6 +166,9 @@ export async function PATCH(
       changes: buildCustomerChanges(before, customer),
       authenticatedClient: context.pb,
     });
+
+    // Strip private notes for standard returned object in edit to ensure it doesn't leak unintentionally over API
+    customer.privateDescription = '';
 
     return NextResponse.json({ customer });
   } catch {
