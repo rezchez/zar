@@ -105,3 +105,24 @@ export function formatJalaliDate(date = new Date()) {
     day: '2-digit',
   }).format(date).replace(/\u200e/g, '');
 }
+
+export function dateToJalaliString(date: Date): string {
+  if (!date || Number.isNaN(date.getTime())) return '';
+  const parts = new Intl.DateTimeFormat('fa-IR-u-ca-persian-nu-latn', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const y = parts.find((p) => p.type === 'year')?.value;
+  const m = parts.find((p) => p.type === 'month')?.value;
+  const d = parts.find((p) => p.type === 'day')?.value;
+  if (!y || !m || !d) return '';
+  return `${y}/${m.padStart(2, '0')}/${d.padStart(2, '0')}`;
+}
+
+export function isoToJalaliString(isoString: string): string {
+  if (!isoString) return '';
+  const clean = String(isoString).slice(0, 10);
+  const date = new Date(`${clean}T12:00:00.000Z`);
+  return dateToJalaliString(date);
+}

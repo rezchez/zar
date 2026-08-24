@@ -33,7 +33,7 @@ function openingBalancePayload(
     isOpeningBalance: true,
     sourceKey: openingBalanceSourceKey(customer.id),
     transactionDate: validTransactionDate(
-      customer.accountOpenedAt || customer.created,
+      customer.created,
     ),
     documentNumber: customer.startDocumentNumber,
     description: 'مانده اول دوره',

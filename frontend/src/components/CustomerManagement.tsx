@@ -1,6 +1,6 @@
 'use client';
 
-import { Download, Plus, RefreshCw, Search, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { Download, Eye, Plus, RefreshCw, Search, SlidersHorizontal, Trash2, X } from 'lucide-react';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 
@@ -41,6 +41,48 @@ export default function CustomerManagement({ initialCustomers, canDelete }: { in
   const baseCurrencySymbol = settings.baseCurrency === 'IRT' ? 'تومان' : 'ریال';
 
   const [pdfModalOpen, setPdfModalOpen] = useState(false);
+  const [privateNoteModal, setPrivateNoteModal] = useState<{ isOpen: boolean; title: string; note: string; loading: boolean }>({
+    isOpen: false,
+    title: '',
+    note: '',
+    loading: false,
+  });
+
+  async function openPrivateNote(customer: Customer) {
+    setPrivateNoteModal({
+      isOpen: true,
+      title: customer.name,
+      note: '',
+      loading: true,
+    });
+
+    try {
+      const res = await fetch(`/api/customers/${customer.id}/private-note`);
+      const data = await res.json();
+      if (res.ok && data.privateDescription) {
+        setPrivateNoteModal({
+          isOpen: true,
+          title: customer.name,
+          note: data.privateDescription,
+          loading: false,
+        });
+      } else {
+        setPrivateNoteModal({
+          isOpen: true,
+          title: customer.name,
+          note: customer.privateDescription || 'توضیحات محرمانه ثبت نشده است.',
+          loading: false,
+        });
+      }
+    } catch {
+      setPrivateNoteModal({
+        isOpen: true,
+        title: customer.name,
+        note: customer.privateDescription || 'خطا در دریافت اطلاعات.',
+        loading: false,
+      });
+    }
+  }
 
   async function reload() {
     setLoading(true);
@@ -156,7 +198,27 @@ export default function CustomerManagement({ initialCustomers, canDelete }: { in
               {visibleCustomers.length ? visibleCustomers.map((customer) => (
                 <tr key={customer.id}>
                   <td><strong>{customer.customerCode}</strong></td>
-                  <td><div className="managed-user-cell"><span className="managed-user-avatar">{customer.name.charAt(0)}</span><div><strong>{customer.name}</strong><small>{customer.phone1 || customer.email || 'بدون اطلاعات تماس'}</small></div></div></td>
+                  <td>
+                    <div className="managed-user-cell">
+                      <span className="managed-user-avatar">{customer.name.charAt(0)}</span>
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <strong>{customer.name}</strong>
+                          {(customer.hasPrivateDescription || Boolean(customer.privateDescription)) ? (
+                            <button
+                              type="button"
+                              onClick={() => void openPrivateNote(customer)}
+                              className="text-amber-500 hover:text-amber-600 transition-colors p-0.5 rounded focus:outline-none"
+                              title="مشاهده توضیحات محرمانه"
+                            >
+                              <Eye size={15} />
+                            </button>
+                          ) : null}
+                        </div>
+                        <small>{customer.phone1 || customer.email || 'بدون اطلاعات تماس'}</small>
+                      </div>
+                    </div>
+                  </td>
                   <td>{customer.gender === 'male' ? 'آقا' : customer.gender === 'female' ? 'خانم' : '—'}</td>
                   <td>{groupLabels[customer.groupName] ?? customer.groupName ?? '—'}</td>
                   <td>{customer.city || '—'}</td>
@@ -179,6 +241,40 @@ export default function CustomerManagement({ initialCustomers, canDelete }: { in
         onClose={() => setPdfModalOpen(false)}
         visibleCustomers={visibleCustomers}
       />
+
+      {privateNoteModal.isOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl relative" dir="rtl">
+            <button
+              type="button"
+              onClick={() => setPrivateNoteModal((prev) => ({ ...prev, isOpen: false }))}
+              className="absolute top-4 left-4 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+            >
+              <X size={18} />
+            </button>
+            <div className="flex items-center gap-2 mb-4 text-amber-600 dark:text-amber-400 font-extrabold text-base">
+              <Eye size={20} />
+              <span>توضیحات محرمانه: {privateNoteModal.title}</span>
+            </div>
+            {privateNoteModal.loading ? (
+              <p className="text-sm text-slate-500 py-4">در حال دریافت توضیحات...</p>
+            ) : (
+              <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 rounded-xl p-4 text-sm text-slate-800 dark:text-slate-200 whitespace-pre-wrap leading-relaxed">
+                {privateNoteModal.note}
+              </div>
+            )}
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setPrivateNoteModal((prev) => ({ ...prev, isOpen: false }))}
+                className="px-4 py-2 text-xs font-bold rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+              >
+                بستن
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

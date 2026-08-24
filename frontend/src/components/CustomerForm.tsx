@@ -8,6 +8,7 @@ import {
   Plus,
   Save,
   Trash2,
+  X,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
@@ -22,6 +23,12 @@ import {
   emptyCustomerBalances,
   type Customer,
 } from '@/lib/customer';
+import {
+  findProvinceByCity,
+  getCitiesByProvince,
+  getProvinces,
+} from '@/lib/iran-cities';
+import JalaliDatePicker from './JalaliDatePicker';
 
 type FormState = Record<string, string | number | boolean>;
 
@@ -30,11 +37,12 @@ const textLabels: Record<string, string> = {
   gender: 'جنسیت',
   groupName: 'گروه',
   category: 'رسته',
+  province: 'استان',
   city: 'شهر',
   metalType: 'جنس فلز',
   primaryCurrency: 'نوع ارز اول',
   secondaryCurrency: 'نوع ارز دوم',
-  phone1: 'شماره تلفن ۱',
+  phone1: 'شماره تماس (پیامک، بله، تلگرام، ایتا و ...)',
   phone2: 'شماره تلفن ۲',
   phone3: 'شماره تلفن ۳',
   telegramId: 'شناسه تلگرام',
@@ -45,12 +53,9 @@ const textLabels: Record<string, string> = {
   fatherName: 'نام پدر',
   email: 'ایمیل',
   spouseName: 'نام همسر',
-  spouseNationalId: 'کد ملی همسر',
-  spouseJob: 'شغل همسر',
   spouseMobile: 'موبایل همسر',
   economicNumber: 'شماره اقتصادی',
   registrationNumber: 'شماره ثبت',
-  rfid: 'RFID',
   introductionMethod: 'نحوه آشنایی',
   detailedDescription: 'توضیحات بیشتر',
   privateDescription: 'توضیحات محرمانه',
@@ -74,12 +79,22 @@ const numberLabels: Record<string, string> = {
 
 function initialState(customer?: Customer): FormState {
   const openingBalances = customer?.openingBalances ?? emptyCustomerBalances();
+
+  const initialCity = customer?.city ?? '';
+  let initialProvince = customer?.province ?? '';
+
+  if (!initialProvince && initialCity) {
+    const foundProv = findProvinceByCity(initialCity);
+    if (foundProv) initialProvince = foundProv;
+  }
+
   const state: FormState = {
     name: customer?.name ?? '',
     gender: customer?.gender ?? '',
     groupName: customer?.groupName ?? '',
     category: customer?.category ?? '',
-    city: customer?.city ?? '',
+    province: initialProvince,
+    city: initialCity,
     metalType: customer?.metalType ?? 'gold',
     primaryCurrency: customer?.primaryCurrency ?? 'rial',
     secondaryCurrency: customer?.secondaryCurrency ?? '',
@@ -91,13 +106,23 @@ function initialState(customer?: Customer): FormState {
     customerCode: customer?.customerCode ?? '',
   };
 
-  for (const field of customerTextFields) state[field] = customer?.[field] ?? '';
-  for (const field of customerNumberFields) state[field] = customer?.[field] ?? 0;
+  for (const field of customerTextFields) {
+    if (state[field] === undefined) {
+      const val = customer?.[field as keyof Customer];
+      state[field] = typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean' ? val : '';
+    }
+  }
+  for (const field of customerNumberFields) {
+    const val = customer?.[field as keyof Customer];
+    state[field] = typeof val === 'number' ? val : 0;
+  }
   for (const field of customerBalanceFields) {
     state[field] = openingBalances[field];
   }
   for (const field of customerDateFields) {
-    state[field] = customer?.[field] ? String(customer[field]).slice(0, 10) : '';
+    state[field] = customer?.[field as keyof Customer]
+      ? String(customer[field as keyof Customer]).slice(0, 10)
+      : '';
   }
   return state;
 }
@@ -134,16 +159,110 @@ export default function CustomerForm({
   const [enabledOptionalBalances, setEnabledOptionalBalances] = useState<string[]>(
     () => initialOptionalBalances(customer),
   );
-  const [customerCodeMode, setCustomerCodeMode] = useState<'auto' | 'manual'>('auto');
+
+  // Account Code Auto/Manual logic
+  const [isAutoCode, setIsAutoCode] = useState<boolean>(!customer);
+  const [availableCodes, setAvailableCodes] = useState<number[]>([]);
+  const [autoCodeValue, setAutoCodeValue] = useState<number>(nextCustomerCode ?? 1);
+
+  // Customer Groups
+  const [groups, setGroups] = useState<Array<{ id: string; name: string; isSystem?: boolean }>>([]);
+  const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
+  const [newGroupName, setNewGroupName] = useState('');
+  const [createGroupLoading, setCreateGroupLoading] = useState(false);
+  const [createGroupError, setCreateGroupError] = useState('');
+
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [isDirty, setIsDirty] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    // Load customer groups
+    fetch('/api/customer-groups')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.groups && Array.isArray(data.groups)) {
+          setGroups(data.groups);
+        }
+      })
+      .catch(() => null);
+
+    // Load available account codes
+    const currentParam = customer?.customerCode ? `?currentCode=${customer.customerCode}` : '';
+    fetch(`/api/customers/account-codes${currentParam}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.availableCodes && Array.isArray(data.availableCodes)) {
+          setAvailableCodes(data.availableCodes);
+        }
+        if (data.nextAutoCode) {
+          setAutoCodeValue(data.nextAutoCode);
+          if (!customer && isAutoCode) {
+            setState((curr) => ({ ...curr, customerCode: data.nextAutoCode }));
+          }
+        }
+      })
+      .catch(() => null);
+  }, [customer]);
+
   function setValue(field: string, value: string | number | boolean) {
     setIsDirty(true);
-    setState((current) => ({ ...current, [field]: value }));
+    setState((current) => {
+      const next = { ...current, [field]: value };
+      if (field === 'province') {
+        // Reset city if it doesn't belong to the new province
+        const validCities = getCitiesByProvince(String(value));
+        if (!validCities.includes(String(current.city))) {
+          next.city = '';
+        }
+      }
+      return next;
+    });
+  }
+
+  function handleAutoCodeToggle(auto: boolean) {
+    setIsAutoCode(auto);
+    setIsDirty(true);
+    if (auto) {
+      setValue('customerCodeMode', 'auto');
+      setValue('customerCode', autoCodeValue);
+    } else {
+      setValue('customerCodeMode', 'manual');
+      if (availableCodes.length > 0) {
+        setValue('customerCode', availableCodes[0]);
+      }
+    }
+  }
+
+  async function handleCreateGroup(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newGroupName.trim()) return;
+    setCreateGroupLoading(true);
+    setCreateGroupError('');
+
+    try {
+      const res = await fetch('/api/customer-groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newGroupName.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.group) {
+        setCreateGroupError(data.message || 'ثبت گروه انجام نشد.');
+        return;
+      }
+
+      setGroups((prev) => [...prev, data.group]);
+      setValue('groupName', data.group.name);
+      setNewGroupName('');
+      setIsGroupModalOpen(false);
+    } catch {
+      setCreateGroupError('ارتباط با سرور برقرار نشد.');
+    } finally {
+      setCreateGroupLoading(false);
+    }
   }
 
   function toggleOptionalBalance(field: string) {
@@ -275,10 +394,8 @@ export default function CustomerForm({
     if (customer) {
       formData.append('customerCode', String(state.customerCode ?? customer.customerCode));
     } else {
-      formData.append('customerCodeMode', customerCodeMode);
-      if (customerCodeMode === 'manual') {
-        formData.append('customerCode', String(state.customerCode ?? ''));
-      }
+      formData.append('customerCodeMode', isAutoCode ? 'auto' : 'manual');
+      formData.append('customerCode', String(state.customerCode ?? ''));
     }
     formData.append('removeAvatar', String(removeAvatar));
     if (avatarFile) formData.append('avatar', avatarFile);
@@ -342,6 +459,10 @@ export default function CustomerForm({
     String(state.tertiaryCurrencySymbol ?? ''),
   );
 
+  const provinces = getProvinces();
+  const selectedProvince = String(state.province ?? '');
+  const cities = selectedProvince ? getCitiesByProvince(selectedProvince) : [];
+
   return (
     <form className="customer-form-page" onSubmit={save}>
       <div className="dashboard-page-heading">
@@ -363,6 +484,8 @@ export default function CustomerForm({
             <Field label="نام / عنوان طرف‌حساب" required>
               <input value={String(state.name)} onChange={(e) => setValue('name', e.target.value)} required />
             </Field>
+
+            {/* Account Code Selection */}
             {customer ? (
               <Field label="کد حساب">
                 <input
@@ -374,63 +497,111 @@ export default function CustomerForm({
                 />
               </Field>
             ) : (
-              <div className="customer-code-mode-field">
-                <div className="customer-code-mode-header"><span>کد حساب</span></div>
-                <div className="customer-code-mode-buttons" role="group" aria-label="روش تعیین کد حساب">
-                  <button
-                    type="button"
-                    className={customerCodeMode === 'auto' ? 'is-active' : ''}
-                    onClick={() => setCustomerCodeMode('auto')}
-                  >
-                    کد بعدی خودکار
-                  </button>
-                  <button
-                    type="button"
-                    className={customerCodeMode === 'manual' ? 'is-active' : ''}
-                    onClick={() => setCustomerCodeMode('manual')}
-                  >
-                    ورود دستی
-                  </button>
+              <div className="customer-code-mode-field flex flex-col gap-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300">کد حساب</span>
+                  <label className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-600 dark:text-amber-400 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isAutoCode}
+                      onChange={(e) => handleAutoCodeToggle(e.target.checked)}
+                      className="rounded border-slate-300 text-amber-500 focus:ring-amber-500"
+                    />
+                    کد حساب اتوماتیک
+                  </label>
                 </div>
-                {customerCodeMode === 'manual' ? (
+
+                {isAutoCode ? (
                   <input
                     type="number"
-                    min="1"
-                    step="1"
-                    value={String(state.customerCode ?? '')}
-                    onChange={(event) => setValue('customerCode', event.target.value)}
-                    placeholder="مثلاً ۱۰۱"
-                    required
-                  />
-                ) : (
-                  <input
-                    type="number"
-                    value={nextCustomerCode ?? Number(state.customerCode ?? 0)}
+                    value={autoCodeValue}
                     readOnly
+                    className="opacity-80 bg-slate-100 dark:bg-slate-800/80 cursor-not-allowed"
                     aria-label="کد حساب خودکار"
                   />
+                ) : (
+                  <select
+                    value={String(state.customerCode ?? '')}
+                    onChange={(e) => setValue('customerCode', e.target.value)}
+                    required
+                  >
+                    <option value="">انتخاب کد آزاد...</option>
+                    {availableCodes.map((code) => (
+                      <option key={code} value={code}>
+                        کد آزاد: {code}
+                      </option>
+                    ))}
+                  </select>
                 )}
               </div>
             )}
-            <Field label="تلفن تماس">
+
+            <Field label={textLabels.phone1}>
               <input
                 value={String(state.phone1 ?? '')}
                 onChange={(event) => setValue('phone1', event.target.value)}
                 inputMode="tel"
-                placeholder="مثلاً ۰۹۱۲۱۲۳۴۵۶۷۸"
+                placeholder="۰۹۱۲۱۲۳۴۵۶۷"
               />
             </Field>
+
             <SelectField
               label="جنسیت"
               value={String(state.gender ?? '')}
               onChange={(value) => setValue('gender', value)}
               options={[['', 'انتخاب نشده'], ['male', 'آقا'], ['female', 'خانم']]}
             />
-            <SelectField label="گروه" value={String(state.groupName)} onChange={(v) => setValue('groupName', v)} options={[
-              ['', 'بدون گروه'], ['customer', 'مشتری'], ['supplier', 'تأمین‌کننده'], ['buyer', 'خریدار'], ['seller', 'فروشنده'],
-            ]} />
+
+            {/* Group Selection with + button */}
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-bold text-slate-700 dark:text-slate-300">گروه</span>
+              <div className="flex items-center gap-1.5">
+                <select
+                  className="w-full px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+                  value={String(state.groupName ?? '')}
+                  onChange={(e) => setValue('groupName', e.target.value)}
+                >
+                  <option value="">بدون گروه</option>
+                  {groups.map((g) => (
+                    <option key={g.id || g.name} value={g.name}>
+                      {g.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setIsGroupModalOpen(true)}
+                  className="p-2.5 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 border border-amber-500/20 transition-colors shrink-0"
+                  title="افزودن گروه جدید"
+                >
+                  <Plus size={16} />
+                </button>
+              </div>
+            </div>
+
             <Field label="رسته"><input value={String(state.category)} onChange={(e) => setValue('category', e.target.value)} /></Field>
-            <Field label="شهر"><input value={String(state.city)} onChange={(e) => setValue('city', e.target.value)} /></Field>
+
+            {/* Province & City Dropdowns */}
+            <SelectField
+              label="استان"
+              value={selectedProvince}
+              onChange={(value) => setValue('province', value)}
+              options={[
+                ['', 'انتخاب استان...'],
+                ...provinces.map((p) => [p, p] as [string, string]),
+              ]}
+            />
+
+            <SelectField
+              label="شهر"
+              value={String(state.city ?? '')}
+              onChange={(value) => setValue('city', value)}
+              options={[
+                ['', selectedProvince ? 'انتخاب شهر...' : 'ابتدا استان را انتخاب کنید'],
+                ...cities.map((c) => [c, c] as [string, string]),
+              ]}
+            />
+
             <SelectField label="جنس فلز" value={String(state.metalType)} onChange={(v) => setValue('metalType', v)} options={[
               ['gold', 'طلا'], ['silver', 'نقره'], ['platinum', 'پلاتین'],
             ]} />
@@ -468,14 +639,24 @@ export default function CustomerForm({
             <div className="customer-form-section">
               <div className="account-panel-heading"><h2>اطلاعات همسر و مشخصات تکمیلی</h2></div>
               <div className="customer-form-grid">
-                {['spouseName', 'spouseNationalId', 'spouseJob', 'spouseMobile', 'economicNumber', 'registrationNumber', 'rfid', 'introductionMethod'].map((field) => (
+                {['spouseName', 'spouseMobile', 'economicNumber', 'registrationNumber', 'introductionMethod'].map((field) => (
                   <Field key={field} label={textLabels[field]}>
                     <input value={String(state[field])} onChange={(e) => setValue(field, e.target.value)} />
                   </Field>
                 ))}
-                <DateField label="تاریخ افتتاح حساب" value={String(state.accountOpenedAt)} onChange={(v) => setValue('accountOpenedAt', v)} />
-                <DateField label="تاریخ تولد" value={String(state.birthDate)} onChange={(v) => setValue('birthDate', v)} />
-                <DateField label="تاریخ تولد همسر" value={String(state.spouseBirthDate)} onChange={(v) => setValue('spouseBirthDate', v)} />
+
+                <JalaliDatePicker
+                  label="تاریخ تولد"
+                  value={String(state.birthDate ?? '')}
+                  onChange={(v) => setValue('birthDate', v)}
+                />
+
+                <JalaliDatePicker
+                  label="تاریخ تولد همسر"
+                  value={String(state.spouseBirthDate ?? '')}
+                  onChange={(v) => setValue('spouseBirthDate', v)}
+                />
+
                 <Field label="توضیحات بیشتر" wide><textarea value={String(state.detailedDescription)} onChange={(e) => setValue('detailedDescription', e.target.value)} /></Field>
                 <Field label="توضیحات محرمانه" wide><textarea value={String(state.privateDescription)} onChange={(e) => setValue('privateDescription', e.target.value)} /></Field>
               </div>
@@ -613,16 +794,67 @@ export default function CustomerForm({
         {loading ? <LoaderCircle size={17} className="spin" /> : <Save size={17} />}
         {loading ? 'در حال ذخیره...' : customer ? 'ذخیره تغییرات طرف‌حساب' : 'ذخیره طرف‌حساب'}
       </button>
+
+      {/* Modal for Creating New Group */}
+      {isGroupModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-sm w-full p-6 shadow-2xl relative" dir="rtl">
+            <button
+              type="button"
+              onClick={() => setIsGroupModalOpen(false)}
+              className="absolute top-4 left-4 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+            >
+              <X size={18} />
+            </button>
+            <h3 className="font-extrabold text-base text-slate-900 dark:text-slate-100 mb-4">
+              ایجاد گروه طرف‌حساب جدید
+            </h3>
+
+            {createGroupError ? (
+              <p className="text-xs text-rose-600 font-bold mb-3">{createGroupError}</p>
+            ) : null}
+
+            <div className="flex flex-col gap-3">
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                نام گروه
+                <input
+                  type="text"
+                  value={newGroupName}
+                  onChange={(e) => setNewGroupName(e.target.value)}
+                  placeholder="مثلاً همکار خاص..."
+                  className="mt-1 w-full px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+                  autoFocus
+                />
+              </label>
+
+              <div className="flex items-center justify-end gap-2 mt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsGroupModalOpen(false)}
+                  className="px-4 py-2 text-xs font-bold rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 transition-colors"
+                >
+                  انصراف
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCreateGroup}
+                  disabled={createGroupLoading || !newGroupName.trim()}
+                  className="px-4 py-2 text-xs font-bold rounded-xl bg-amber-500 text-slate-950 hover:bg-amber-400 disabled:opacity-50 transition-colors flex items-center gap-1.5"
+                >
+                  {createGroupLoading ? <LoaderCircle size={14} className="spin" /> : null}
+                  ایجاد گروه
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </form>
   );
 }
 
 function Field({ label, required, wide, children }: { label: string; required?: boolean; wide?: boolean; children: React.ReactNode }) {
   return <label className={`account-field ${wide ? 'customer-field-wide' : ''}`}><span>{label}{required ? ' *' : ''}</span>{children}</label>;
-}
-
-function DateField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
-  return <Field label={label}><input type="date" value={value} onChange={(e) => onChange(e.target.value)} /></Field>;
 }
 
 function SelectField({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: Array<[string, string]> }) {

@@ -10,6 +10,7 @@ import {
 import { getServerAuthContext } from '@/lib/auth';
 import { hasPermission } from '@/lib/authorization';
 import { recordAuditEvent } from '@/lib/audit';
+import { getNextAutoCustomerCode } from '@/lib/account-code';
 import { buildCustomerChanges } from '@/lib/customer-audit';
 import {
   getCustomerWithBalances,
@@ -57,12 +58,14 @@ function buildPayload(formData: FormData, ownerId: string, customerCode: number)
 }
 
 async function nextCustomerCode(context: NonNullable<Awaited<ReturnType<typeof getServerAuthContext>>>) {
-    const records = await context.pb.collection('customers').getList(1, 1, {
-      sort: '-customerCode',
-      fields: 'customerCode',
-      filter: 'is_deleted = false',
+  const records = await context.pb.collection('customers').getFullList({
+    fields: 'customerCode',
+    filter: 'is_deleted = false',
   });
-  return Number(records.items[0]?.customerCode ?? 0) + 1;
+  const usedCodes = records
+    .map((r) => Number(r.customerCode))
+    .filter((c) => Number.isInteger(c) && c > 0);
+  return getNextAutoCustomerCode(usedCodes);
 }
 
 function readCustomerCode(formData: FormData) {
@@ -88,8 +91,15 @@ export async function GET() {
   }
 
   try {
+    const rawCustomers = await getCustomersWithBalances(context.pb);
+    const sanitized = rawCustomers.map((c) => ({
+      ...c,
+      hasPrivateDescription: Boolean(c.privateDescription && c.privateDescription.trim().length > 0),
+      privateDescription: '', // Stripped from general list payload for security
+    }));
+
     return NextResponse.json({
-      customers: await getCustomersWithBalances(context.pb),
+      customers: sanitized,
     });
   } catch {
     return NextResponse.json({ message: 'دریافت طرف‌حساب‌ها انجام نشد.' }, { status: 500 });

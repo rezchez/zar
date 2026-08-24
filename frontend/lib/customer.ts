@@ -6,6 +6,7 @@ export const customerTextFields = [
   'gender',
   'groupName',
   'category',
+  'province',
   'city',
   'metalType',
   'primaryCurrency',
@@ -24,12 +25,9 @@ export const customerTextFields = [
   'fatherName',
   'email',
   'spouseName',
-  'spouseNationalId',
-  'spouseJob',
   'spouseMobile',
   'economicNumber',
   'registrationNumber',
-  'rfid',
   'introductionMethod',
   'detailedDescription',
   'privateDescription',
@@ -79,7 +77,6 @@ export function emptyCustomerBalances(): CustomerBalanceValues {
 }
 
 export const customerDateFields = [
-  'accountOpenedAt',
   'birthDate',
   'spouseBirthDate',
 ] as const;
@@ -91,6 +88,7 @@ export type Customer = {
   name: string;
   groupName: string;
   category: string;
+  province: string;
   city: string;
   metalType: string;
   primaryCurrency: string;
@@ -110,13 +108,9 @@ export type Customer = {
   fatherName: string;
   email: string;
   spouseName: string;
-  spouseNationalId: string;
-  spouseJob: string;
   spouseMobile: string;
   economicNumber: string;
   registrationNumber: string;
-  rfid: string;
-  accountOpenedAt: string;
   birthDate: string;
   spouseBirthDate: string;
   goldBalance: number;
@@ -135,6 +129,7 @@ export type Customer = {
   introductionMethod: string;
   detailedDescription: string;
   privateDescription: string;
+  hasPrivateDescription?: boolean;
   startDocumentNumber: string;
   avatarUrl?: string;
   openingBalances: CustomerBalanceValues;
@@ -185,6 +180,7 @@ export function mapCustomer(
     ...currentBalances,
     openingBalances,
     showBalanceByUnit: record.showBalanceByUnit === true,
+    hasPrivateDescription: Boolean(record.privateDescription && String(record.privateDescription).trim().length > 0),
     avatarUrl: record.avatar ? pb.files.getURL(record, record.avatar) : undefined,
     created: record.created,
     updated: record.updated,

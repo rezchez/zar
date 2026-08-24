@@ -1,11 +1,9 @@
-import { describe, expect, test, beforeEach } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { POST as handleLogin } from '../app/api/auth/login/route';
-import { POST as handleBaleVerify } from '../app/api/auth/bale/verify/route';
 import { POST as handleBaleRequest } from '../app/api/auth/bale/request/route';
-import { POST as handleResetPassword } from '../app/api/admin/users/[id]/password-reset/route';
 
 // Simple mock for IP extraction inside tests
-const makeReq = (path: string, ip: string, body?: any) => new Request(`http://localhost${path}`, {
+const makeReq = (path: string, ip: string, body?: Record<string, unknown>) => new Request(`http://localhost${path}`, {
   method: 'POST',
   headers: new Headers({ 'x-forwarded-for': ip, 'content-type': 'application/json' }),
   body: body ? JSON.stringify(body) : undefined,
