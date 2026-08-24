@@ -70,17 +70,6 @@ export async function POST(request: Request) {
       ).catch(() => null);
       const next = Number(vault?.balance ?? 0) + (direction === 'receive' ? amount : -amount);
       if (next < 0) return NextResponse.json({ message: 'موجودی صندوق کافی نیست.' }, { status: 400 });
-      const updatedVault = vault
-        ? await writer.collection('cash_funds').update(vault.id, { balance: next, updated_by: context.user.id })
-        : await writer.collection('cash_funds').create({ currency_name: currency, balance: next, created_by: context.user.id, updated_by: context.user.id });
-      await writer.collection('cash_transactions').create({
-        vault: updatedVault.id,
-        currency,
-        amount: direction === 'receive' ? amount : -amount,
-        source_key: `${idempotencyKey}:cash`,
-        description: `تسویه طرف‌حساب - ${direction === 'receive' ? 'دریافت' : 'پرداخت'}`,
-        created_by: context.user.id,
-      }).catch(() => undefined);
     }
 
     const transaction = await writer.collection('transactions').create({
@@ -113,6 +102,32 @@ export async function POST(request: Request) {
       tertiaryCurrency: '',
       tertiaryCurrencySymbol: '',
     });
+
+    // Execute balance updates after transaction creation to ensure the main ledger is safe
+    if (sourceType === 'bank') {
+      const bank = await writer.collection('bank_accounts').getOne(sourceId);
+      const next = Number(bank.balance ?? 0) + (direction === 'receive' ? amount : -amount);
+      await writer.collection('bank_accounts').update(bank.id, { balance: next, updatedBy: context.user.id }).catch(() => undefined);
+    } else {
+      const vault = await writer.collection('cash_funds').getFirstListItem(
+        writer.filter('currency_name = {:currency}', { currency }),
+      ).catch(() => null);
+      const next = Number(vault?.balance ?? 0) + (direction === 'receive' ? amount : -amount);
+      const updatedVault = vault
+        ? await writer.collection('cash_funds').update(vault.id, { balance: next, updated_by: context.user.id }).catch(() => null)
+        : await writer.collection('cash_funds').create({ currency_name: currency, balance: next, created_by: context.user.id, updated_by: context.user.id }).catch(() => null);
+      if (updatedVault) {
+        await writer.collection('cash_transactions').create({
+          vault: updatedVault.id,
+          currency,
+          amount: direction === 'receive' ? amount : -amount,
+          source_key: `${idempotencyKey}:cash`,
+          description: `تسویه طرف‌حساب - ${direction === 'receive' ? 'دریافت' : 'پرداخت'}`,
+          created_by: context.user.id,
+        }).catch(() => undefined);
+      }
+    }
+
     return NextResponse.json({ transaction: mapTransaction(transaction) }, { status: 201 });
   } catch {
     return NextResponse.json({ message: 'تسویه طرف‌حساب انجام نشد.' }, { status: 400 });

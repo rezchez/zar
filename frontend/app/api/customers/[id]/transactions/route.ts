@@ -35,6 +35,8 @@ function validDate(value: string) {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
+import { hasPermission } from '@/lib/authorization';
+
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -42,6 +44,10 @@ export async function GET(
   const context = await getServerAuthContext();
   if (!context) {
     return NextResponse.json({ message: 'ابتدا وارد حساب شوید.' }, { status: 401 });
+  }
+
+  if (!hasPermission(context.user, 'transaction.view') && !hasPermission(context.user, 'customer.view')) {
+    return NextResponse.json({ message: 'دسترسی غیرمجاز.' }, { status: 403 });
   }
 
   const { id } = await params;
@@ -73,6 +79,10 @@ export async function POST(
   const context = await getServerAuthContext();
   if (!context) {
     return NextResponse.json({ message: 'ابتدا وارد حساب شوید.' }, { status: 401 });
+  }
+
+  if (!hasPermission(context.user, 'transaction.create') && !hasPermission(context.user, 'transaction.manage')) {
+    return NextResponse.json({ message: 'دسترسی غیرمجاز برای ایجاد تراکنش.' }, { status: 403 });
   }
 
   const { id } = await params;

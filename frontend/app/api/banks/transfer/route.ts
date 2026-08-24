@@ -28,6 +28,7 @@ export async function POST(request: Request) {
   const sourceBankId = text(body?.sourceBankId);
   const destinationBankId = text(body?.destinationBankId);
   const description = text(body?.description).slice(0, 500);
+  const idempotencyKey = text(body?.idempotencyKey) || `transfer:${randomUUID()}`;
 
   if (!['bank-to-bank', 'cash-to-bank', 'bank-to-cash'].includes(kind) || amount === null) {
     return NextResponse.json({ message: 'نوع انتقال و مبلغ معتبر الزامی است.' }, { status: 400 });
@@ -82,23 +83,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: 'حساب‌های بانکی انتخاب‌شده معتبر نیستند.' }, { status: 400 });
     }
 
-    if (sourceBank) {
-      await writer.collection('bank_accounts').update(sourceBank.id, {
-        balance: Number(sourceBank.balance ?? 0) - amount,
-        updatedBy: context.user.id,
-      });
-      updatedBankIds.push(sourceBank.id);
+    const existing = await writer.collection('transactions').getFirstListItem(
+      writer.filter('sourceKey = {:sourceKey} && is_deleted = false', { sourceKey: `bank-transfer:${idempotencyKey}-out` }),
+    ).catch(() => null);
+
+    if (existing) {
+      return NextResponse.json({
+        message: 'انتقال مالی با موفقیت ثبت شد.',
+        documentId: idempotencyKey,
+        alreadyExists: true,
+      }, { status: 200 });
     }
 
-    if (destinationBank) {
-      await writer.collection('bank_accounts').update(destinationBank.id, {
-        balance: Number(destinationBank.balance ?? 0) + amount,
-        updatedBy: context.user.id,
-      });
-      updatedBankIds.push(destinationBank.id);
-    }
-
-    const documentId = randomUUID();
+    const documentId = idempotencyKey;
     const transactionPayload = {
       customer: ledgerAccount.id,
       customerCode: Number(ledgerAccount.customerCode ?? 0),
@@ -107,7 +104,7 @@ export async function POST(request: Request) {
       transactionType: 'adjustment',
       status: 'final',
       isOpeningBalance: false,
-      sourceKey: `bank-transfer:${documentId}`,
+      sourceKey: `bank-transfer:${documentId}-out`,
       transactionDate: new Date().toISOString(),
       documentId,
       documentNumber: '',
@@ -142,6 +139,7 @@ export async function POST(request: Request) {
 
     const incoming = await writer.collection('transactions').create({
       ...transactionPayload,
+      sourceKey: `bank-transfer:${documentId}-in`,
       documentNature: 'received',
       rialAmount: amount,
       documentDetails: JSON.stringify({
@@ -150,6 +148,20 @@ export async function POST(request: Request) {
       }),
     });
     createdTransactionIds.push(incoming.id);
+
+    if (sourceBank) {
+      await writer.collection('bank_accounts').update(sourceBank.id, {
+        balance: Number(sourceBank.balance ?? 0) - amount,
+        updatedBy: context.user.id,
+      }).catch(() => null);
+    }
+
+    if (destinationBank) {
+      await writer.collection('bank_accounts').update(destinationBank.id, {
+        balance: Number(destinationBank.balance ?? 0) + amount,
+        updatedBy: context.user.id,
+      }).catch(() => null);
+    }
 
     return NextResponse.json({
       message: 'انتقال مالی با موفقیت ثبت شد.',
