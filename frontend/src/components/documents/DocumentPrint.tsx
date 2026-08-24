@@ -152,6 +152,7 @@ export default function DocumentPrint({
 
 function renderRealPrintElementContent(
   el: InvoicePrintElement,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   settings: any,
   customer: Customer | null,
   documentNumber: string,

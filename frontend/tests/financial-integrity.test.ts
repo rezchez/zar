@@ -22,11 +22,6 @@ describe('Financial Integrity Tests', () => {
       idempotencyKey: 'transfer-123'
     };
 
-    const req = new Request('http://localhost/api/banks/transfer', {
-      method: 'POST',
-      body: JSON.stringify(payload)
-    });
-
     // In actual implementation it will fail to hit pocketbase in test env cleanly unless we mock completely,
     // but the test proves we can parse and reject based on missing keys if needed.
     // Here we just test validation logic initially.

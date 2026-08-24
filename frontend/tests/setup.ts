@@ -8,6 +8,10 @@ export type MockAuthUser = {
   email: string;
   role: 'user' | 'manager' | 'admin';
   status: 'active' | 'blocked';
+  customPermissions?: {
+    grants: string[];
+    denies: string[];
+  };
 } | null;
 
 let currentMockUser: MockAuthUser = null;

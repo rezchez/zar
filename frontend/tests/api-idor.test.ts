@@ -20,7 +20,7 @@ describe('IDOR API Endpoint Tests', () => {
         grants: [],
         denies: ['transaction.view', 'customer.view'],
       }
-    } as any);
+    });
 
     const req = new Request('http://localhost/api/customers/123/transactions');
     const res = await getCustomerTransactions(req, { params: Promise.resolve({ id: '123' }) });
