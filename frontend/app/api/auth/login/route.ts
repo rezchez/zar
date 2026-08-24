@@ -8,6 +8,7 @@ import { recordAuditEvent } from '@/lib/audit';
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
 import { decryptTotpSecret, verifyTotpCode } from '@/lib/totp';
 import { isSecureRequest } from '@/lib/request';
+import { rateLimit, getClientIp } from '@/lib/rate-limit';
 
 type LoginBody = {
   email?: unknown;
@@ -20,6 +21,15 @@ type LoginBody = {
 };
 
 export async function POST(request: Request) {
+  const ip = getClientIp(request);
+  const rateLimitResult = rateLimit(`login_${ip}`, 10, 60_000); // 10 attempts per minute per IP
+  if (!rateLimitResult.success) {
+    return NextResponse.json(
+      { message: 'تعداد درخواست‌ها بیش از حد مجاز است. لطفاً کمی بعد تلاش کنید.' },
+      { status: 429, headers: { 'Retry-After': String(rateLimitResult.retryAfter) } },
+    );
+  }
+
   let body: LoginBody;
   const contentType = request.headers.get('content-type')?.toLowerCase() ?? '';
   const isNativeFormSubmit = contentType.includes('application/x-www-form-urlencoded')
@@ -71,13 +81,31 @@ export async function POST(request: Request) {
   }
 
   const pb = createPocketBaseClient();
-  let accountSecurity: {
-    id: string;
-    authenticatorEnabled: boolean;
-    twoFactorEnabled: boolean;
-  } | null = null;
 
   try {
+    // 1. Authenticate FIRST to prevent user enumeration via timing or block status
+    let authRecord;
+    try {
+      authRecord = await pb.collection('users').authWithPassword(email, password);
+    } catch (error) {
+      // If authWithPassword fails, we check if it's an MFA requirement natively triggered by PocketBase OTP
+      const response = error as { response?: { mfaId?: string } };
+      if (!response.response?.mfaId && !mfaId) {
+        // Standard failed login (bad password or no account)
+        return NextResponse.json(
+          { message: 'ایمیل یا رمز عبور اشتباه است.' },
+          { status: 401 },
+        );
+      }
+      // Re-throw or ignore to handle MFA challenge below
+    }
+
+    let accountSecurity: {
+      id: string;
+      authenticatorEnabled: boolean;
+      twoFactorEnabled: boolean;
+    } | null = null;
+
     try {
       const service = await getPocketBaseServiceClient();
       const account = await service.collection('users').getFirstListItem(
@@ -90,6 +118,9 @@ export async function POST(request: Request) {
         blockedUntil && new Date(blockedUntil).getTime() > Date.now(),
       );
 
+      // Only check block status AFTER password matches (or if we need MFA info)
+      // Actually, if we require MFA, we still shouldn't leak block status until fully authenticated,
+      // but blocking them before MFA is acceptable if they proved password knowledge.
       if (account.status === 'blocked' && (isTemporaryBlock || !blockedUntil)) {
         await recordAuditEvent({
           userId: account.id,
@@ -118,7 +149,7 @@ export async function POST(request: Request) {
         twoFactorEnabled: account.twoFactorEnabled === true,
       };
     } catch {
-      // Continue with PocketBase authentication when the service account is unavailable.
+      // Continue if service account fails
     }
 
     if (mfaId && authMethod === 'totp') {
@@ -148,79 +179,57 @@ export async function POST(request: Request) {
     } else if (mfaId && authMethod === 'email') {
       await pb.collection('users').authWithOTP(otpId, otpCode, { mfaId });
     } else {
-      try {
-        await pb.collection('users').authWithPassword(email, password);
+      // First factor succeeded (handled above), check custom authenticator requirement
+      if (accountSecurity?.authenticatorEnabled) {
+        pb.authStore.clear();
+        return NextResponse.json(
+          {
+            mfaRequired: true,
+            mfaId: 'custom-authenticator',
+            authenticatorAvailable: true,
+            emailOtpAvailable: false,
+            message: 'کد رمزساز خود را وارد کنید.',
+          },
+          { status: 401 },
+        );
+      }
 
-        if (accountSecurity?.authenticatorEnabled) {
-          // نشست مرحله اول هرگز به مرورگر ارسال نمی‌شود.
-          pb.authStore.clear();
+      // Check native OTP requirement (if authWithPassword was skipped and threw a challenge)
+      if (!pb.authStore.isValid && !authRecord) {
+        // Trigger a new login attempt to capture the native MFA challenge
+        try {
+          await pb.collection('users').authWithPassword(email, password);
+        } catch (error) {
+          const response = error as { response?: { mfaId?: string } };
+          const challengeId = response.response?.mfaId;
+
+          if (!challengeId) {
+             throw error;
+          }
+
+          let authenticatorAvailable = accountSecurity?.authenticatorEnabled ?? false;
+          let emailOtpAvailable = accountSecurity?.twoFactorEnabled ?? false;
+
+          let nativeOtpId = '';
+          if (emailOtpAvailable || !authenticatorAvailable) {
+            const otp = await pb.collection('users').requestOTP(email);
+            nativeOtpId = otp.otpId;
+          }
+
           return NextResponse.json(
             {
               mfaRequired: true,
-              mfaId: 'custom-authenticator',
-              authenticatorAvailable: true,
-              emailOtpAvailable: false,
-              message: 'کد رمزساز خود را وارد کنید.',
+              mfaId: challengeId,
+              otpId: nativeOtpId || undefined,
+              authenticatorAvailable,
+              emailOtpAvailable: Boolean(nativeOtpId),
+              message: authenticatorAvailable && !nativeOtpId
+                ? 'کد رمزساز خود را وارد کنید.'
+                : 'کد تایید به ایمیل شما ارسال شد.',
             },
             { status: 401 },
           );
         }
-      } catch (error) {
-        const response = error as {
-          response?: { mfaId?: string };
-        };
-        const challengeId = response.response?.mfaId;
-
-        if (!challengeId) {
-          try {
-            const service = await getPocketBaseServiceClient();
-            const account = await service.collection('users').getFirstListItem(
-              service.filter('email = {:email}', { email }),
-            );
-            await recordAuditEvent({
-              userId: account.id,
-              event: 'login_failed',
-              request,
-              details: 'ایمیل یا رمز عبور نادرست',
-            });
-          } catch {
-            // Do not reveal whether the identity exists.
-          }
-          throw error;
-        }
-
-        let authenticatorAvailable = false;
-        let emailOtpAvailable = false;
-        try {
-          const service = await getPocketBaseServiceClient();
-          const user = await service.collection('users').getFirstListItem(
-            service.filter('email = {:email}', { email }),
-          );
-          authenticatorAvailable = user.authenticatorEnabled === true;
-          emailOtpAvailable = user.twoFactorEnabled === true;
-        } catch {
-          // Keep the challenge generic if the service account is unavailable.
-        }
-
-        let otpId = '';
-        if (emailOtpAvailable || !authenticatorAvailable) {
-          const otp = await pb.collection('users').requestOTP(email);
-          otpId = otp.otpId;
-        }
-
-        return NextResponse.json(
-          {
-            mfaRequired: true,
-            mfaId: challengeId,
-            otpId: otpId || undefined,
-            authenticatorAvailable,
-            emailOtpAvailable: Boolean(otpId),
-            message: authenticatorAvailable && !otpId
-              ? 'کد رمزساز خود را وارد کنید.'
-              : 'کد تایید به ایمیل شما ارسال شد.',
-          },
-          { status: 401 },
-        );
       }
     }
 

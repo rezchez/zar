@@ -179,3 +179,6 @@ Zarfolio can be deployed in a standard Next.js environment:
    bun run start
    ```
 5. Note: Make sure to proxy the PocketBase instance effectively so that the server-side requests originate efficiently to it securely.
+
+## Authentication Security Hardening
+Zarfolio applies strict anti-enumeration techniques natively in its login architecture, paired with an in-memory rate-limiter on authentication boundaries to prevent brute-forcing.

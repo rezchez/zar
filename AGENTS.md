@@ -18,3 +18,7 @@ cd frontend
 bun test tests/
 bun run build
 ```
+
+### Authentication Boundaries
+- When working on authentication routes (`/api/auth/*`), **always** ensure the route is wrapped with `rateLimit` protection to prevent brute force or abuse.
+- Do **not** leak `blockedUntil` or specific status messages before verifying a user's password correctly to prevent user enumeration attacks.

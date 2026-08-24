@@ -5,8 +5,18 @@ import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
 import { createPhoneSessionToken, hashPhoneSessionToken, PHONE_SESSION_DAYS } from '@/lib/phone-session';
 import { recordAuditEvent, getRequestMetadata } from '@/lib/audit';
 import { isSecureRequest } from '@/lib/request';
+import { rateLimit, getClientIp } from '@/lib/rate-limit';
 
 export async function POST(request: Request) {
+  const ip = getClientIp(request);
+  const rateLimitResult = rateLimit(`bale_ver_${ip}`, 10, 60_000); // 10 attempts per minute per IP
+  if (!rateLimitResult.success) {
+    return NextResponse.json(
+      { message: 'تعداد درخواست‌ها بیش از حد مجاز است. لطفاً کمی بعد تلاش کنید.' },
+      { status: 429, headers: { 'Retry-After': String(rateLimitResult.retryAfter) } },
+    );
+  }
+
   const body = await request.json().catch(() => null) as {
     phone?: unknown;
     challengeId?: unknown;

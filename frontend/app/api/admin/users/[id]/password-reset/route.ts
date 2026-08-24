@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { recordAuditEvent } from '@/lib/audit';
 import { getServerAuthContext } from '@/lib/auth';
+import { rateLimit, getClientIp } from '@/lib/rate-limit';
 
 export async function POST(
   _request: Request,
@@ -14,6 +15,15 @@ export async function POST(
     || (context.user.role !== 'admin' && context.user.role !== 'manager')
   ) {
     return NextResponse.json({ message: 'دسترسی غیرمجاز.' }, { status: 403 });
+  }
+
+  const ip = getClientIp(_request);
+  const rateLimitResult = rateLimit(`pw_reset_${ip}`, 3, 60_000); // 3 attempts per minute per IP for admins triggering resets
+  if (!rateLimitResult.success) {
+    return NextResponse.json(
+      { message: 'تعداد درخواست‌ها بیش از حد مجاز است. لطفاً کمی بعد تلاش کنید.' },
+      { status: 429, headers: { 'Retry-After': String(rateLimitResult.retryAfter) } },
+    );
   }
 
   const { id } = await params;

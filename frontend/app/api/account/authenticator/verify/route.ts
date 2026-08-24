@@ -4,8 +4,18 @@ import { recordAuditEvent } from '@/lib/audit';
 import { getServerAuthContext } from '@/lib/auth';
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
 import { decryptTotpSecret, verifyTotpCode } from '@/lib/totp';
+import { rateLimit, getClientIp } from '@/lib/rate-limit';
 
 export async function POST(request: Request) {
+  const ip = getClientIp(request);
+  const rateLimitResult = rateLimit(`totp_ver_${ip}`, 10, 60_000);
+  if (!rateLimitResult.success) {
+    return NextResponse.json(
+      { message: 'تعداد درخواست‌ها بیش از حد مجاز است. لطفاً کمی بعد تلاش کنید.' },
+      { status: 429, headers: { 'Retry-After': String(rateLimitResult.retryAfter) } },
+    );
+  }
+
   const context = await getServerAuthContext();
   if (!context) {
     return NextResponse.json({ message: 'ابتدا وارد حساب شوید.' }, { status: 401 });

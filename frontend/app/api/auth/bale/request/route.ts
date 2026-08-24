@@ -3,8 +3,18 @@ import { NextResponse } from 'next/server';
 import { generateBaleCode, hashBaleValue, isIranianMobile, normalizePhone, sendBaleMessage } from '@/lib/bale';
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
 import { getRequestMetadata } from '@/lib/audit';
+import { rateLimit, getClientIp } from '@/lib/rate-limit';
 
 export async function POST(request: Request) {
+  const ip = getClientIp(request);
+  const rateLimitResult = rateLimit(`bale_req_${ip}`, 5, 60_000); // 5 requests per minute per IP
+  if (!rateLimitResult.success) {
+    return NextResponse.json(
+      { message: 'تعداد درخواست‌ها بیش از حد مجاز است. لطفاً کمی بعد تلاش کنید.' },
+      { status: 429, headers: { 'Retry-After': String(rateLimitResult.retryAfter) } },
+    );
+  }
+
   const body = await request.json().catch(() => null) as { phone?: unknown } | null;
   const phone = normalizePhone(typeof body?.phone === 'string' ? body.phone : '');
   if (!isIranianMobile(phone)) {
