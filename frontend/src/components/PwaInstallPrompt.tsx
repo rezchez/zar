@@ -22,12 +22,14 @@ export default function PwaInstallPrompt() {
 
   useEffect(() => {
     // Check if running in standalone mode (already installed)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const checkStandalone = window.matchMedia('(display-mode: standalone)').matches
       || ('standalone' in navigator && (navigator as any).standalone === true);
 
-    setIsStandalone(checkStandalone);
-
-    if (checkStandalone) return;
+    if (checkStandalone) {
+      setIsStandalone(true);
+      return;
+    }
 
     // Detect iOS since it does not support beforeinstallprompt
     const isIosDevice =

@@ -19,7 +19,9 @@ export async function GET() {
   }
 
   try {
-    const users = await context.pb.collection('users').getFullList({
+    // Note: Since user accounts grow slowly, a getFullList is acceptable in many small setups,
+    // but enforcing a limit ensures memory safety at scale. We use getList with a high limit.
+    const users = await context.pb.collection('users').getList(1, 1000, {
       sort: '-created',
       ...(context.user.role === 'manager'
         ? { filter: context.pb.filter("role != 'admin'") }
@@ -27,7 +29,7 @@ export async function GET() {
     });
 
     return NextResponse.json({
-      users: users.map((user) => ({
+      users: users.items.map((user) => ({
         id: user.id,
         name: String(user.name ?? ''),
         email: String(user.email ?? user.username ?? ''),

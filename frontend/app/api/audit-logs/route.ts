@@ -17,12 +17,12 @@ export async function GET() {
   if (result.response) return result.response;
   const pb = result.context!.pb;
   const [contacts, documents] = await Promise.all([
-    pb.collection('customers').getFullList({ filter: 'is_deleted = true', sort: '-deleted_at' }).catch(() => []),
-    pb.collection('transactions').getFullList({ filter: 'is_deleted = true', sort: '-deleted_at' }).catch(() => []),
+    pb.collection('customers').getList(1, 1000, { filter: 'is_deleted = true', sort: '-deleted_at' }).catch(() => ({ items: [] })),
+    pb.collection('transactions').getList(1, 1000, { filter: 'is_deleted = true', sort: '-deleted_at' }).catch(() => ({ items: [] })),
   ]);
   return NextResponse.json({
-    contacts: contacts.map((item) => ({ id: item.id, name: item.name ?? item.customerCode ?? item.id, deleted_at: item.deleted_at ?? item.updated })),
-    documents: documents.map((item) => ({ id: item.id, documentNumber: item.documentNumber ?? item.id, description: item.description ?? '', deleted_at: item.deleted_at ?? item.updated })),
+    contacts: contacts.items.map((item) => ({ id: item.id, name: item.name ?? item.customerCode ?? item.id, deleted_at: item.deleted_at ?? item.updated })),
+    documents: documents.items.map((item) => ({ id: item.id, documentNumber: item.documentNumber ?? item.id, description: item.description ?? '', deleted_at: item.deleted_at ?? item.updated })),
   });
 }
 

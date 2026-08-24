@@ -99,7 +99,8 @@ export default function UserPermissionModal({
   }, [targetUser.id]);
 
   useEffect(() => {
-    void fetchPermissions();
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    fetchPermissions();
   }, [fetchPermissions]);
 
   function handleSetGrant(key: string) {

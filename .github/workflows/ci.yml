@@ -1,0 +1,33 @@
+name: Zarfolio CI
+
+on:
+  push:
+    branches: [ "main", "develop" ]
+  pull_request:
+    branches: [ "main", "develop" ]
+
+jobs:
+  build_and_test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Setup Bun
+      uses: oven-sh/setup-bun@v1
+      with:
+        bun-version: 1.3.14
+
+    - name: Install Dependencies
+      run: cd frontend && bun install --frozen-lockfile
+
+    - name: Run Linter
+      run: cd frontend && bun run lint
+
+    - name: Run Tests
+      run: cd frontend && bun test tests/
+
+    - name: Production Build
+      run: cd frontend && bun run build

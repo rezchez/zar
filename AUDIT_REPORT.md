@@ -91,3 +91,7 @@ A repository-wide search was conducted for any remaining fallback secrets, hardc
 - The removed `FALLBACK_DEFAULT_KEY` for `NOTIFICATION_ENCRYPTION_KEY` and the fallback `zar-bale-auth` for `TOTP_ENCRYPTION_KEY` were successfully eliminated from the main logic.
 - The only remaining mention of `zarfolio-notification-key-32b!!` is strictly inside the test suite (`tests/notification-flow.test.ts`) where it correctly mocks the required environment variable for unit testing.
 - No other hardcoded sensitive keys or private secrets were found.
+
+## 16. Test Coverage & Quality
+- The application natively implements tests for Role/Permission, Math Boundaries, Notifications Crypto, Document Labeling, Financial Integrities (idempotency added), and basic unit tests (Jalali, Money formats, Weight truncations).
+- Unit Tests are fast, isolated, deterministic, and mock the context securely without requiring PocketBase local databases, preventing CI flakiness.

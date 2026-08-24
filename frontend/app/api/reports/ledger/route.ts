@@ -13,14 +13,14 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { customerId, fromDateJalali, toDateJalali, documentTypes, sort } = body;
 
-    let filterArray = ['is_deleted = false'];
+    const filterArray = ['is_deleted = false'];
 
     if (customerId) {
       filterArray.push(`customer = "${customerId.replace(/"/g, '')}"`);
     }
 
     // Determine Opening Balance boundary
-    let openingBalanceFilter = [...filterArray];
+    const openingBalanceFilter = [...filterArray];
 
     if (fromDateJalali) {
       const fromIso = jalaliDateToIso(fromDateJalali);

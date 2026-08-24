@@ -63,7 +63,6 @@ export async function POST(request: Request) {
       }
       const next = Number(bank.balance ?? 0) + (direction === 'receive' ? amount : -amount);
       if (next < 0) return NextResponse.json({ message: 'موجودی حساب بانکی کافی نیست.' }, { status: 400 });
-      await writer.collection('bank_accounts').update(bank.id, { balance: next, updatedBy: context.user.id });
     } else {
       const vault = await writer.collection('cash_funds').getFirstListItem(
         writer.filter('currency_name = {:currency}', { currency }),
