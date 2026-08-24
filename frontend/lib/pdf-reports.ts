@@ -120,10 +120,24 @@ export function createLedgerPdf(
   return pdfBuffer(pdf);
 }
 
-export function createCustomersPdf(customers: Customer[]) {
+export interface CustomerPdfOptions {
+  title?: string;
+  showBalances?: boolean;
+  showContact?: boolean;
+  showGroupAndCity?: boolean;
+}
+
+export function createCustomersPdf(customers: Customer[], options: CustomerPdfOptions = {}) {
+  const {
+    title = 'گزارش طرف‌حساب‌ها',
+    showBalances = true,
+    showContact = false,
+    showGroupAndCity = true,
+  } = options;
+
   const pdf = createPdfDocument({ size: 'A4', margin: 36 });
   pdf.font('DoranNoEn').fontSize(18).fillColor('#17202a')
-    .text('گزارش طرف‌حساب‌ها', { align: 'center' });
+    .text(title, { align: 'center' });
   pdf.moveDown();
   pdf.font('Vazirmatn').fontSize(9);
 
@@ -133,13 +147,25 @@ export function createCustomersPdf(customers: Customer[]) {
     customers.forEach((customer, index) => {
       pdf.font('DoranNoEnRegular').fontSize(10)
         .text(`${index + 1}. ${customer.customerCode} - ${customer.name}`);
-      pdf.font('Vazirmatn').fontSize(8).text(
-        `گروه: ${customer.groupName || '-'} | شهر: ${customer.city || '-'} | `
-          + `طلا: ${customer.goldBalance} گرم | نقره: ${customer.silverBalance} گرم | `
-          + `پلاتین: ${customer.platinumBalance} گرم | ریال: ${customer.rialBalance} | `
-          + `ارز دوم (${currencyDisplay(customer.secondaryCurrency, customer.secondaryCurrencySymbol)}): ${customer.foreignBalance} | `
-          + `ارز سوم (${currencyDisplay(customer.tertiaryCurrency, customer.tertiaryCurrencySymbol)}): ${customer.tertiaryBalance}`,
-      );
+
+      const parts = [];
+
+      if (showGroupAndCity) {
+        parts.push(`گروه: ${customer.groupName || '-'} | شهر: ${customer.city || '-'}`);
+      }
+
+      if (showContact) {
+        parts.push(`تلفن: ${customer.phone1 || '-'}`);
+      }
+
+      if (showBalances) {
+        parts.push(`طلا: ${customer.goldBalance} گرم | نقره: ${customer.silverBalance} گرم | پلاتین: ${customer.platinumBalance} گرم | ریال: ${customer.rialBalance} | ارز دوم (${currencyDisplay(customer.secondaryCurrency, customer.secondaryCurrencySymbol)}): ${customer.foreignBalance} | ارز سوم (${currencyDisplay(customer.tertiaryCurrency, customer.tertiaryCurrencySymbol)}): ${customer.tertiaryBalance}`);
+      }
+
+      if (parts.length > 0) {
+        pdf.font('Vazirmatn').fontSize(8).text(parts.join(' | '));
+      }
+
       pdf.moveDown(0.5);
     });
   }

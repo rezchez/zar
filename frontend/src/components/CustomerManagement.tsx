@@ -6,6 +6,7 @@ import { useMemo, useState } from 'react';
 
 import { currencyDisplay, type Customer } from '@/lib/customer';
 import { useAppSettings } from './SettingsProvider';
+import CustomerPdfExportModal from './CustomerPdfExportModal';
 
 type SortKey = 'customerCode' | 'name' | 'gender' | 'groupName' | 'city' | 'goldBalance' | 'rialBalance' | 'created';
 
@@ -38,6 +39,8 @@ export default function CustomerManagement({ initialCustomers, canDelete }: { in
   const [message, setMessage] = useState('');
 
   const baseCurrencySymbol = settings.baseCurrency === 'IRT' ? 'تومان' : 'ریال';
+
+  const [pdfModalOpen, setPdfModalOpen] = useState(false);
 
   async function reload() {
     setLoading(true);
@@ -142,7 +145,7 @@ export default function CustomerManagement({ initialCustomers, canDelete }: { in
           <label className="users-sort"><span>مرتب‌سازی</span><select value={sortKey} onChange={(e) => changeSort(e.target.value as SortKey)}><option value="customerCode">کد</option><option value="name">نام</option><option value="gender">جنسیت</option><option value="groupName">گروه</option><option value="city">شهر</option><option value="goldBalance">مانده طلا</option><option value="rialBalance">مانده ریالی</option><option value="created">تاریخ ثبت</option></select><span>{sortDirection === 'asc' ? 'صعودی' : 'نزولی'}</span></label>
           <div className="customer-export-actions">
             <Link className="dashboard-secondary-button" href="/api/customers/export?format=xlsx"><Download size={15} /> Excel</Link>
-            <Link className="dashboard-secondary-button" href="/api/customers/export?format=pdf"><Download size={15} /> PDF</Link>
+            <button type="button" className="dashboard-secondary-button" onClick={() => setPdfModalOpen(true)}><Download size={15} /> PDF</button>
             <button type="button" className="dashboard-secondary-button" onClick={() => void reload()} disabled={loading}><RefreshCw size={15} /> تازه‌سازی</button>
           </div>
         </div>
@@ -170,6 +173,12 @@ export default function CustomerManagement({ initialCustomers, canDelete }: { in
           </table>
         </div>
       </section>
+
+      <CustomerPdfExportModal
+        isOpen={pdfModalOpen}
+        onClose={() => setPdfModalOpen(false)}
+        visibleCustomers={visibleCustomers}
+      />
     </div>
   );
 }

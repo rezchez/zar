@@ -13,6 +13,56 @@ function dateLabel(value: string) {
   return new Intl.DateTimeFormat('fa-IR', { dateStyle: 'short' }).format(new Date(value));
 }
 
+export async function POST(request: Request) {
+  const context = await getServerAuthContext();
+  if (!context) {
+    return NextResponse.json({ message: 'ابتدا وارد حساب شوید.' }, { status: 401 });
+  }
+
+  try {
+    const body = await request.json();
+    const { format, options, customerIds } = body as {
+      format?: string;
+      options?: {
+        title?: string;
+        showBalances?: boolean;
+        showContact?: boolean;
+        showGroupAndCity?: boolean;
+      };
+      customerIds?: string[];
+    };
+
+    if (format !== 'pdf') {
+      return NextResponse.json({ message: 'فرمت خروجی معتبر نیست.' }, { status: 400 });
+    }
+
+    let customers = (await getCustomersWithBalances(context.pb))
+      .sort((left, right) => left.customerCode - right.customerCode);
+
+    if (customerIds && customerIds.length > 0) {
+      customers = customers.filter(c => customerIds.includes(c.id));
+    }
+
+    const reportBuffer = await createCustomersPdf(customers, options);
+    return new NextResponse(new Uint8Array(reportBuffer), {
+      headers: {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': 'attachment; filename="customers.pdf"',
+        'Content-Length': String(reportBuffer.byteLength),
+        'Cache-Control': 'no-store',
+      },
+    });
+  } catch {
+    return new NextResponse('ساخت گزارش PDF انجام نشد.', {
+      status: 500,
+      headers: {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Cache-Control': 'no-store',
+      },
+    });
+  }
+}
+
 export async function GET(request: Request) {
   const context = await getServerAuthContext();
   if (!context) {
