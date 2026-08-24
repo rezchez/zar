@@ -30,12 +30,7 @@ export default function HawalaModal({
 
   // Reset internal state when line or modal opens/closes
   useEffect(() => {
-    if (line?.id) {
-      setTargetQuery('');
-      setSelectedTargetId('');
-      setStage('select');
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Avoid state changes in effect to prevent cascading renders
   }, [line?.id]);
 
   const targetCustomer = useMemo(

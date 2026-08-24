@@ -27,7 +27,7 @@ export default function PwaInstallPrompt() {
       || ('standalone' in navigator && (navigator as any).standalone === true);
 
     if (checkStandalone) {
-      setIsStandalone(true);
+      // setIsStandalone(true);
       return;
     }
 
@@ -37,10 +37,10 @@ export default function PwaInstallPrompt() {
       (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
     if (isIosDevice) {
-      setIsIOS(true);
+      // setIsIOS(true);
       const dismissedTime = localStorage.getItem(PWA_DISMISSED_KEY);
       if (!dismissedTime || Date.now() - parseInt(dismissedTime, 10) > 7 * 24 * 60 * 60 * 1000) {
-        setShowPrompt(true); // Show iOS instruction prompt if not dismissed recently (e.g. 7 days)
+        // setShowPrompt(true); // Show iOS instruction prompt if not dismissed recently (e.g. 7 days)
       }
       return;
     }

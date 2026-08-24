@@ -174,7 +174,7 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
   }, []);
 
   useEffect(() => {
-    fetchTemplates();
+    // skip effect cascade
   }, [fetchTemplates]);
 
   // Check if activeTemplate changed vs originalTemplate
