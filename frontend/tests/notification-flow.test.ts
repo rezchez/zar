@@ -10,6 +10,10 @@ import { GET as getNotificationDetail } from '../app/api/notifications/[id]/rout
 import { PATCH as markNotificationRead } from '../app/api/notifications/[id]/read/route';
 
 describe('Notification AES-256-GCM Crypto Tests', () => {
+  beforeEach(() => {
+    process.env.NOTIFICATION_ENCRYPTION_KEY = 'zarfolio-notification-key-32b!!';
+  });
+
   test('encrypts and decrypts notification payload accurately', () => {
     const payload = {
       title: 'اطلاعیه مهم سیستم',

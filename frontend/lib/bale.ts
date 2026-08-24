@@ -23,8 +23,13 @@ export function generateBaleCode() {
 }
 
 export function hashBaleValue(value: string) {
+  const secretKey = process.env.TOTP_ENCRYPTION_KEY;
+  if (!secretKey) {
+    throw new Error('TOTP_ENCRYPTION_KEY is not configured.');
+  }
+
   return createHash('sha256')
-    .update(`${value}:${process.env.TOTP_ENCRYPTION_KEY ?? 'zar-bale-auth'}`)
+    .update(`${value}:${secretKey}`)
     .digest('hex');
 }
 

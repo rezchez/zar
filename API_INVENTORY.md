@@ -1,0 +1,24 @@
+# API Inventory
+
+- **Auth**
+  - POST `/api/auth/login` (Public)
+  - POST `/api/auth/register` (Public)
+  - DELETE `/api/auth/logout` (Authenticated)
+  - POST `/api/auth/bale/request` (Public)
+  - POST `/api/auth/bale/verify` (Public)
+  - POST `/api/auth/bale/webhook` (Protected via Secret)
+- **Account**
+  - PATCH `/api/account/profile` (Authenticated)
+  - POST `/api/account/authenticator/setup` (Authenticated)
+  - POST `/api/account/authenticator/verify` (Authenticated)
+  - POST `/api/account/authenticator/disable` (Authenticated)
+- **Admin**
+  - GET/PATCH `/api/admin/users` (RBAC: user.view/user.edit)
+  - GET/PATCH `/api/admin/users/[id]/permissions` (RBAC: user.permission.view/grant)
+- **Financial/Docs**
+  - GET/POST `/api/documents` (RBAC: document.view/create)
+  - POST `/api/settlements` (RBAC: cash.create)
+  - POST `/api/reports/ledger` (RBAC: report.customer)
+- **Settings**
+  - GET/PUT `/api/price-api` (RBAC: admin/manager)
+  - GET/POST `/api/settings/print-templates` (RBAC: admin/manager)

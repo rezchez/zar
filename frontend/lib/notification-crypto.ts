@@ -15,14 +15,16 @@ export type EncryptedNotificationPayload = {
 };
 
 const DEFAULT_KEY_VERSION = 1;
-const FALLBACK_DEFAULT_KEY = 'zarfolio-notification-key-32b!!';
 
 /**
  * Retrieves and validates the 256-bit (32-byte) AES-GCM encryption key from environment.
  * Handles valid base64 strings (32 decoded bytes) or UTF-8 strings.
  */
 export function getEncryptionKey(): Buffer {
-  const rawKey = process.env.NOTIFICATION_ENCRYPTION_KEY || FALLBACK_DEFAULT_KEY;
+  const rawKey = process.env.NOTIFICATION_ENCRYPTION_KEY;
+  if (!rawKey) {
+    throw new Error('NOTIFICATION_ENCRYPTION_KEY is not configured.');
+  }
 
   // Try decoding as base64 first
   try {
