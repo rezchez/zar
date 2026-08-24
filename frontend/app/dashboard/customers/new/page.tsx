@@ -11,19 +11,30 @@ export default async function NewCustomerPage() {
   if (!context) redirect('/');
 
   let nextCustomerCode = 1;
+  let availableCodes: number[] = [];
   try {
-    const records = await context.pb.collection('customers').getList(1, 1, {
-      sort: '-customerCode',
+    const records = await context.pb.collection('customers').getFullList({
+      sort: 'customerCode',
       fields: 'customerCode',
+      filter: 'is_deleted = false',
     });
-    nextCustomerCode = Number(records.items[0]?.customerCode ?? 0) + 1;
+
+    const existingCodes = new Set(records.map((r) => Number(r.customerCode)));
+    const maxCode = records.length > 0 ? Math.max(...Array.from(existingCodes)) : 0;
+
+    for (let i = 1; i < maxCode; i++) {
+      if (!existingCodes.has(i)) {
+        availableCodes.push(i);
+      }
+    }
+    nextCustomerCode = maxCode + 1;
   } catch {
     nextCustomerCode = 1;
   }
 
   return (
     <DashboardShell user={context.user}>
-      <CustomerForm nextCustomerCode={nextCustomerCode} />
+      <CustomerForm nextCustomerCode={nextCustomerCode} availableCodes={availableCodes} />
     </DashboardShell>
   );
 }

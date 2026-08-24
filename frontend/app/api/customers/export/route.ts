@@ -93,7 +93,6 @@ export async function GET(request: Request) {
         'مانده ریالی': customer.rialBalance,
         [`مانده ارز دوم (${currencyDisplay(customer.secondaryCurrency, customer.secondaryCurrencySymbol)})`]: customer.foreignBalance,
         [`مانده ارز سوم (${currencyDisplay(customer.tertiaryCurrency, customer.tertiaryCurrencySymbol)})`]: customer.tertiaryBalance,
-        'تاریخ افتتاح': dateLabel(customer.accountOpenedAt),
       }));
       const workbook = XLSX.utils.book_new();
       const worksheet = XLSX.utils.json_to_sheet(rows);

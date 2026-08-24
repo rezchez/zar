@@ -1,4 +1,5 @@
 'use client';
+import CustomerGroupModal from "./CustomerGroupModal";
 
 import {
   Check,
@@ -120,9 +121,11 @@ function initialOptionalBalances(customer?: Customer) {
 export default function CustomerForm({
   customer,
   nextCustomerCode,
+  availableCodes = [],
 }: {
   customer?: Customer;
   nextCustomerCode?: number;
+  availableCodes?: number[];
 }) {
   const router = useRouter();
   const [state, setState] = useState<FormState>(() => initialState(customer));
@@ -140,6 +143,19 @@ export default function CustomerForm({
   const [errorMessage, setErrorMessage] = useState('');
   const [isDirty, setIsDirty] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const [groups, setGroups] = useState<{ id: string; identifier: string; name: string; is_system: boolean }[]>([]);
+  const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
+  const [groupToEdit, setGroupToEdit] = useState<{ id: string; identifier: string; name: string; is_system: boolean } | null>(null);
+
+  useEffect(() => {
+    fetch('/api/customer-groups')
+      .then(res => res.json())
+      .then(data => {
+        if (data.groups) setGroups(data.groups);
+      })
+      .catch(console.error);
+  }, []);
 
   function setValue(field: string, value: string | number | boolean) {
     setIsDirty(true);
@@ -343,6 +359,7 @@ export default function CustomerForm({
   );
 
   return (
+    <>
     <form className="customer-form-page" onSubmit={save}>
       <div className="dashboard-page-heading">
         <div>
@@ -426,9 +443,53 @@ export default function CustomerForm({
               onChange={(value) => setValue('gender', value)}
               options={[['', 'انتخاب نشده'], ['male', 'آقا'], ['female', 'خانم']]}
             />
-            <SelectField label="گروه" value={String(state.groupName)} onChange={(v) => setValue('groupName', v)} options={[
-              ['', 'بدون گروه'], ['customer', 'مشتری'], ['supplier', 'تأمین‌کننده'], ['buyer', 'خریدار'], ['seller', 'فروشنده'],
-            ]} />
+            <div className="account-field customer-group-field">
+              <span>گروه</span>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <select
+                  value={String(state.groupName)}
+                  onChange={(e) => setValue('groupName', e.target.value)}
+                  style={{ flex: 1 }}
+                >
+                  <option value="">بدون گروه</option>
+                  {groups.map(g => (
+                    <option key={g.identifier} value={g.identifier}>{g.name}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="dashboard-secondary-button"
+                  style={{ padding: '0 8px', height: '36px' }}
+                  onClick={() => {
+                    setGroupToEdit(null);
+                    setIsGroupModalOpen(true);
+                  }}
+                  title="افزودن گروه جدید"
+                >
+                  <Plus size={16} />
+                </button>
+                {state.groupName && (() => {
+                  const selected = groups.find(g => g.identifier === String(state.groupName));
+                  if (selected && !selected.is_system) {
+                    return (
+                      <button
+                        type="button"
+                        className="dashboard-secondary-button"
+                        style={{ padding: '0 8px', height: '36px' }}
+                        onClick={() => {
+                          setGroupToEdit(selected);
+                          setIsGroupModalOpen(true);
+                        }}
+                        title="ویرایش گروه"
+                      >
+                        ویرایش
+                      </button>
+                    );
+                  }
+                  return null;
+                })()}
+              </div>
+            </div>
             <Field label="رسته"><input value={String(state.category)} onChange={(e) => setValue('category', e.target.value)} /></Field>
             <Field label="شهر"><input value={String(state.city)} onChange={(e) => setValue('city', e.target.value)} /></Field>
             <SelectField label="جنس فلز" value={String(state.metalType)} onChange={(v) => setValue('metalType', v)} options={[
@@ -468,12 +529,11 @@ export default function CustomerForm({
             <div className="customer-form-section">
               <div className="account-panel-heading"><h2>اطلاعات همسر و مشخصات تکمیلی</h2></div>
               <div className="customer-form-grid">
-                {['spouseName', 'spouseNationalId', 'spouseJob', 'spouseMobile', 'economicNumber', 'registrationNumber', 'rfid', 'introductionMethod'].map((field) => (
+                {['spouseName', 'spouseMobile', 'economicNumber', 'registrationNumber', 'introductionMethod'].map((field) => (
                   <Field key={field} label={textLabels[field]}>
                     <input value={String(state[field])} onChange={(e) => setValue(field, e.target.value)} />
                   </Field>
                 ))}
-                <DateField label="تاریخ افتتاح حساب" value={String(state.accountOpenedAt)} onChange={(v) => setValue('accountOpenedAt', v)} />
                 <DateField label="تاریخ تولد" value={String(state.birthDate)} onChange={(v) => setValue('birthDate', v)} />
                 <DateField label="تاریخ تولد همسر" value={String(state.spouseBirthDate)} onChange={(v) => setValue('spouseBirthDate', v)} />
                 <Field label="توضیحات بیشتر" wide><textarea value={String(state.detailedDescription)} onChange={(e) => setValue('detailedDescription', e.target.value)} /></Field>
@@ -614,6 +674,21 @@ export default function CustomerForm({
         {loading ? 'در حال ذخیره...' : customer ? 'ذخیره تغییرات طرف‌حساب' : 'ذخیره طرف‌حساب'}
       </button>
     </form>
+
+    <CustomerGroupModal
+      isOpen={isGroupModalOpen}
+      onClose={() => setIsGroupModalOpen(false)}
+      groupToEdit={groupToEdit}
+      onSave={(savedGroup) => {
+        setGroups(current => {
+          const exists = current.find(g => g.id === savedGroup.id);
+          if (exists) return current.map(g => g.id === savedGroup.id ? savedGroup : g);
+          return [...current, savedGroup];
+        });
+        setValue('groupName', savedGroup.identifier);
+      }}
+    />
+    </>
   );
 }
 

@@ -2,20 +2,14 @@
 
 import { Download, Plus, RefreshCw, Search, SlidersHorizontal, Trash2 } from 'lucide-react';
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 
 import { currencyDisplay, type Customer } from '@/lib/customer';
+import type { CustomerGroup } from '@/lib/customer-groups';
 import { useAppSettings } from './SettingsProvider';
 import CustomerPdfExportModal from './CustomerPdfExportModal';
 
 type SortKey = 'customerCode' | 'name' | 'gender' | 'groupName' | 'city' | 'goldBalance' | 'rialBalance' | 'created';
-
-const groupLabels: Record<string, string> = {
-  customer: 'مشتری',
-  supplier: 'تأمین‌کننده',
-  buyer: 'خریدار',
-  seller: 'فروشنده',
-};
 
 function balanceTone(value: number) {
   if (value < 0) return 'is-debit';
@@ -37,6 +31,24 @@ export default function CustomerManagement({ initialCustomers, canDelete }: { in
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+  const [groups, setGroups] = useState<CustomerGroup[]>([]);
+
+  useEffect(() => {
+    fetch('/api/customer-groups')
+      .then(res => res.json())
+      .then(data => {
+        if (data.groups) setGroups(data.groups);
+      })
+      .catch(console.error);
+  }, []);
+
+  const groupLabels: Record<string, string> = useMemo(() => {
+    const labels: Record<string, string> = {};
+    for (const g of groups) {
+      labels[g.identifier] = g.name;
+    }
+    return labels;
+  }, [groups]);
 
   const baseCurrencySymbol = settings.baseCurrency === 'IRT' ? 'تومان' : 'ریال';
 
