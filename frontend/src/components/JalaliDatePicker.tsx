@@ -4,15 +4,14 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Calendar as CalendarIcon, X } from 'lucide-react';
 import GlassJalaliCalendar from './GlassJalaliCalendar';
 import {
-  dateToJalaliString,
-  isoToJalaliString,
-  jalaliDateToIso,
   parseJalaliDate,
+  toIsoDateString,
+  toJalaliDisplayString,
 } from '@/lib/jalali';
 
 export interface JalaliDatePickerProps {
   label?: string;
-  value?: string; // ISO string YYYY-MM-DD or Jalali string
+  value?: string; // ISO string YYYY-MM-DD or Jalali string YYYY/MM/DD
   onChange: (isoValue: string) => void;
   placeholder?: string;
   className?: string;
@@ -27,26 +26,18 @@ export default function JalaliDatePicker({
 }: JalaliDatePickerProps) {
   const [isOpen, setIsOpen] = useState(false);
 
-  // Maintain display value as Jalali string (YYYY/MM/DD)
-  const [displayValue, setDisplayValue] = useState(() => {
-    if (!value) return '';
-    if (value.includes('/')) return value;
-    return isoToJalaliString(value);
-  });
+  // Derive initial display text from value
+  const initialText = toJalaliDisplayString(value);
+  const [inputText, setInputText] = useState(initialText);
+  const [prevValue, setPrevValue] = useState(value);
+
+  // Synchronize state during render if value prop changes externally (standard React pattern without set-state-in-effect warning)
+  if (value !== prevValue) {
+    setPrevValue(value);
+    setInputText(toJalaliDisplayString(value));
+  }
 
   const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!value) {
-      setDisplayValue('');
-      return;
-    }
-    if (value.includes('/')) {
-      setDisplayValue(value);
-    } else {
-      setDisplayValue(isoToJalaliString(value));
-    }
-  }, [value]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -59,36 +50,33 @@ export default function JalaliDatePicker({
   }, []);
 
   function handleDateSelect(_date: Date, jalaliStr: string, isoStr: string) {
-    setDisplayValue(jalaliStr);
-    if (isoStr) {
-      onChange(isoStr);
-    } else {
-      const fallbackIso = jalaliDateToIso(jalaliStr);
-      onChange(fallbackIso ? fallbackIso.slice(0, 10) : '');
-    }
+    setInputText(jalaliStr);
+    onChange(isoStr || '');
     setIsOpen(false);
   }
 
   function handleInputChange(event: React.ChangeEvent<HTMLInputElement>) {
     const text = event.target.value;
-    setDisplayValue(text);
+    setInputText(text);
+
     if (!text.trim()) {
       onChange('');
       return;
     }
+
     const parsed = parseJalaliDate(text);
     if (parsed) {
       const jalaliStr = `${parsed.year}/${String(parsed.month).padStart(2, '0')}/${String(parsed.day).padStart(2, '0')}`;
-      const isoStr = jalaliDateToIso(jalaliStr);
+      const isoStr = toIsoDateString(jalaliStr);
       if (isoStr) {
-        onChange(isoStr.slice(0, 10));
+        onChange(isoStr);
       }
     }
   }
 
   function handleClear(e: React.MouseEvent) {
     e.stopPropagation();
-    setDisplayValue('');
+    setInputText('');
     onChange('');
   }
 
@@ -103,7 +91,7 @@ export default function JalaliDatePicker({
       <div className="relative flex items-center">
         <input
           type="text"
-          value={displayValue}
+          value={inputText}
           onChange={handleInputChange}
           onFocus={() => setIsOpen(true)}
           placeholder={placeholder}
@@ -112,7 +100,7 @@ export default function JalaliDatePicker({
         />
 
         <div className="absolute left-2 flex items-center gap-1 text-slate-400">
-          {displayValue ? (
+          {inputText ? (
             <button
               type="button"
               onClick={handleClear}
@@ -136,6 +124,7 @@ export default function JalaliDatePicker({
       {isOpen ? (
         <div className="absolute top-full right-0 mt-2 z-50 w-80 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-1">
           <GlassJalaliCalendar
+            selectedDate={value}
             onDateSelect={handleDateSelect}
             className="border-none shadow-none w-full bg-transparent"
           />

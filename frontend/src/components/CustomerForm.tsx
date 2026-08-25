@@ -8,6 +8,8 @@ import {
   Plus,
   Save,
   Trash2,
+  User,
+  UserCheck,
   X,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -36,7 +38,6 @@ const textLabels: Record<string, string> = {
   name: 'نام / عنوان طرف‌حساب',
   gender: 'جنسیت',
   groupName: 'گروه',
-  category: 'رسته',
   province: 'استان',
   city: 'شهر',
   metalType: 'جنس فلز',
@@ -92,7 +93,6 @@ function initialState(customer?: Customer): FormState {
     name: customer?.name ?? '',
     gender: customer?.gender ?? '',
     groupName: customer?.groupName ?? '',
-    category: customer?.category ?? '',
     province: initialProvince,
     city: initialCity,
     metalType: customer?.metalType ?? 'gold',
@@ -140,6 +140,33 @@ function initialOptionalBalances(customer?: Customer) {
     }
     return Number(opening[field as keyof typeof opening]) !== 0;
   });
+}
+
+function GenderAvatarPlaceholder({ gender }: { gender: string }) {
+  if (gender === 'female') {
+    return (
+      <div className="w-full h-full flex flex-col items-center justify-center bg-pink-500/10 text-pink-600 dark:text-pink-400 font-bold">
+        <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 12v3m-2-1.5h4" />
+        </svg>
+      </div>
+    );
+  }
+  if (gender === 'male') {
+    return (
+      <div className="w-full h-full flex flex-col items-center justify-center bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold">
+        <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+        </svg>
+      </div>
+    );
+  }
+  return (
+    <div className="w-full h-full flex items-center justify-center bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 font-bold">
+      <User size={36} />
+    </div>
+  );
 }
 
 export default function CustomerForm({
@@ -453,12 +480,68 @@ export default function CustomerForm({
 
   return (
     <form className="customer-form-page" onSubmit={save}>
-      <div className="dashboard-page-heading">
-        <div>
-          <p className="eyebrow">طرف‌حساب و مشتری</p>
-          <h1>{customer ? 'ویرایش طرف‌حساب' : 'افزودن طرف‌حساب'}</h1>
-          <p>اطلاعات هویتی، ارتباطی و مانده اولیه را با دقت ثبت کنید.</p>
+      {/* Top Header with Title & Optional Avatar Upload (2.1 & 2.2) */}
+      <div className="dashboard-page-heading flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <div className="relative group shrink-0">
+            <div className="w-16 h-16 rounded-2xl overflow-hidden border-2 border-slate-200 dark:border-slate-800 shadow-sm relative bg-white dark:bg-slate-900 transition-all group-hover:border-amber-500">
+              {avatarPreview ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={avatarPreview} alt="تصویر طرف حساب" className="w-full h-full object-cover" />
+              ) : (
+                <GenderAvatarPlaceholder gender={String(state.gender ?? '')} />
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              className="absolute -bottom-1 -right-1 p-1.5 rounded-xl bg-amber-500 text-slate-950 shadow-md hover:bg-amber-400 transition-colors"
+              title="انتخاب تصویر"
+            >
+              <ImagePlus size={14} />
+            </button>
+
+            {avatarPreview ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setAvatarPreview('');
+                  setAvatarFile(null);
+                  setRemoveAvatar(true);
+                  setIsDirty(true);
+                }}
+                className="absolute -top-1 -left-1 p-1 rounded-full bg-rose-500 text-white shadow hover:bg-rose-600 transition-colors"
+                title="حذف تصویر"
+              >
+                <X size={12} />
+              </button>
+            ) : null}
+
+            <input
+              ref={fileRef}
+              hidden
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              onChange={chooseAvatar}
+            />
+          </div>
+
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-extrabold text-slate-900 dark:text-slate-100">
+                {customer ? 'ویرایش طرف‌حساب' : 'افزودن طرف‌حساب'}
+              </h1>
+              <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                این فیلد اجباری نیست
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              اطلاعات هویتی، ارتباطی و مانده اولیه را با دقت ثبت کنید.
+            </p>
+          </div>
         </div>
+
         {customer ? <span className="customer-code-badge">کد فعلی {customer.customerCode}</span> : null}
       </div>
 
@@ -466,6 +549,7 @@ export default function CustomerForm({
       {errorMessage ? <p className="form-error">{errorMessage}</p> : null}
 
       <section className="dashboard-panel customer-form-panel">
+        {/* 1. اطلاعات اصلی */}
         <div className="customer-form-section">
           <div className="account-panel-heading"><h2>اطلاعات اصلی</h2></div>
           <div className="customer-form-grid">
@@ -540,18 +624,24 @@ export default function CustomerForm({
               options={[['', 'انتخاب نشده'], ['male', 'آقا'], ['female', 'خانم']]}
             />
 
-            {/* Group Selection with + button */}
+            {/* Section 3: Group Selection with Theme & Typography Fix */}
             <div className="flex flex-col gap-1">
               <span className="text-xs font-bold text-slate-700 dark:text-slate-300">گروه</span>
               <div className="flex items-center gap-1.5">
                 <select
-                  className="w-full px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+                  className="w-full px-3 py-2 text-sm font-medium rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-amber-500/50 transition-colors"
                   value={String(state.groupName ?? '')}
                   onChange={(e) => setValue('groupName', e.target.value)}
                 >
-                  <option value="">بدون گروه</option>
+                  <option value="" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200">
+                    بدون گروه
+                  </option>
                   {groups.map((g) => (
-                    <option key={g.id || g.name} value={g.name}>
+                    <option
+                      key={g.id || g.name}
+                      value={g.name}
+                      className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200"
+                    >
                       {g.name}
                     </option>
                   ))}
@@ -566,8 +656,6 @@ export default function CustomerForm({
                 </button>
               </div>
             </div>
-
-            <Field label="رسته"><input value={String(state.category)} onChange={(e) => setValue('category', e.target.value)} /></Field>
 
             {/* Province & City Dropdowns */}
             <SelectField
@@ -599,59 +687,7 @@ export default function CustomerForm({
           </div>
         </div>
 
-        <button
-          type="button"
-          className="customer-details-toggle"
-          onClick={() => setShowAdditional((current) => !current)}
-          aria-expanded={showAdditional}
-        >
-          <span>اطلاعات تکمیلی</span>
-          <ChevronDown size={16} className={showAdditional ? 'is-rotated' : ''} />
-        </button>
-
-        {showAdditional ? (
-          <>
-            <div className="customer-form-section">
-              <div className="account-panel-heading"><h2>اطلاعات تماس و نشانی</h2></div>
-              <div className="customer-form-grid">
-                {['phone2', 'phone3', 'telegramId', 'email', 'postalCode', 'nationalId', 'fatherName'].map((field) => (
-                  <Field key={field} label={textLabels[field]}>
-                    <input value={String(state[field])} onChange={(e) => setValue(field, e.target.value)} />
-                  </Field>
-                ))}
-                <Field label="آدرس" wide><textarea value={String(state.address1)} onChange={(e) => setValue('address1', e.target.value)} /></Field>
-                <Field label="آدرس دوم" wide><textarea value={String(state.address2)} onChange={(e) => setValue('address2', e.target.value)} /></Field>
-              </div>
-            </div>
-
-            <div className="customer-form-section">
-              <div className="account-panel-heading"><h2>اطلاعات همسر و مشخصات تکمیلی</h2></div>
-              <div className="customer-form-grid">
-                {['spouseName', 'spouseMobile', 'economicNumber', 'registrationNumber', 'introductionMethod'].map((field) => (
-                  <Field key={field} label={textLabels[field]}>
-                    <input value={String(state[field])} onChange={(e) => setValue(field, e.target.value)} />
-                  </Field>
-                ))}
-
-                <JalaliDatePicker
-                  label="تاریخ تولد"
-                  value={String(state.birthDate ?? '')}
-                  onChange={(v) => setValue('birthDate', v)}
-                />
-
-                <JalaliDatePicker
-                  label="تاریخ تولد همسر"
-                  value={String(state.spouseBirthDate ?? '')}
-                  onChange={(v) => setValue('spouseBirthDate', v)}
-                />
-
-                <Field label="توضیحات بیشتر" wide><textarea value={String(state.detailedDescription)} onChange={(e) => setValue('detailedDescription', e.target.value)} /></Field>
-                <Field label="توضیحات محرمانه" wide><textarea value={String(state.privateDescription)} onChange={(e) => setValue('privateDescription', e.target.value)} /></Field>
-              </div>
-            </div>
-          </>
-        ) : null}
-
+        {/* 2. مانده‌های حساب */}
         <div className="customer-form-section">
           <div className="account-panel-heading"><h2>مانده‌های حساب</h2></div>
           <button
@@ -742,40 +778,79 @@ export default function CustomerForm({
               />
             ))}
           </div>
+
           <label className="customer-check-field">
             <input type="checkbox" checked={state.showBalanceByUnit === true} onChange={(e) => setValue('showBalanceByUnit', e.target.checked)} />
             نمایش مانده به تفکیک واحد
           </label>
         </div>
 
-        {showAdditional ? <div className="customer-form-section">
-          <div className="account-panel-heading"><h2>شرایط و تصویر</h2></div>
-          <div className="customer-form-grid">
-            {customerNumberFields.map((field) => (
-              <Field key={field} label={numberLabels[field]}>
-                <input type="number" step="any" value={String(state[field])} onChange={(e) => setValue(field, e.target.value)} />
-              </Field>
-            ))}
-            <Field label="شماره سند آغازین"><input value={String(state.startDocumentNumber)} onChange={(e) => setValue('startDocumentNumber', e.target.value)} /></Field>
-          </div>
-          <div className="customer-avatar-editor">
-            <div className="customer-avatar-preview">
-              {avatarPreview ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={avatarPreview} alt="" />
-              ) : (
-                <span>{String(state.name || 'ط').charAt(0)}</span>
-              )}
+        {/* Section 5: "اطلاعات تکمیلی" Toggle & Section Placed Below "نمایش مانده به تفکیک" */}
+        <button
+          type="button"
+          className="customer-details-toggle mt-4"
+          onClick={() => setShowAdditional((current) => !current)}
+          aria-expanded={showAdditional}
+        >
+          <span>اطلاعات تکمیلی</span>
+          <ChevronDown size={16} className={showAdditional ? 'is-rotated' : ''} />
+        </button>
+
+        {showAdditional ? (
+          <>
+            <div className="customer-form-section">
+              <div className="account-panel-heading"><h2>اطلاعات تماس و نشانی</h2></div>
+              <div className="customer-form-grid">
+                {['phone2', 'phone3', 'telegramId', 'email', 'postalCode', 'nationalId', 'fatherName'].map((field) => (
+                  <Field key={field} label={textLabels[field]}>
+                    <input value={String(state[field])} onChange={(e) => setValue(field, e.target.value)} />
+                  </Field>
+                ))}
+                <Field label="آدرس" wide><textarea value={String(state.address1)} onChange={(e) => setValue('address1', e.target.value)} /></Field>
+                <Field label="آدرس دوم" wide><textarea value={String(state.address2)} onChange={(e) => setValue('address2', e.target.value)} /></Field>
+              </div>
             </div>
-            <button type="button" className="dashboard-secondary-button" onClick={() => fileRef.current?.click()}>
-              <ImagePlus size={15} /> انتخاب تصویر
-            </button>
-            <button type="button" className="account-danger-button" disabled={!avatarPreview} onClick={() => { setAvatarPreview(''); setAvatarFile(null); setRemoveAvatar(true); setIsDirty(true); }}>
-              <Trash2 size={15} /> حذف تصویر
-            </button>
-            <input ref={fileRef} hidden type="file" accept="image/png,image/jpeg,image/webp" onChange={chooseAvatar} />
-          </div>
-        </div> : null}
+
+            <div className="customer-form-section">
+              <div className="account-panel-heading"><h2>اطلاعات همسر و مشخصات تکمیلی</h2></div>
+              <div className="customer-form-grid">
+                {['spouseName', 'spouseMobile', 'economicNumber', 'registrationNumber', 'introductionMethod'].map((field) => (
+                  <Field key={field} label={textLabels[field]}>
+                    <input value={String(state[field])} onChange={(e) => setValue(field, e.target.value)} />
+                  </Field>
+                ))}
+
+                {/* Section 6: Date Pickers */}
+                <JalaliDatePicker
+                  label="تاریخ تولد"
+                  value={String(state.birthDate ?? '')}
+                  onChange={(v) => setValue('birthDate', v)}
+                />
+
+                <JalaliDatePicker
+                  label="تاریخ تولد همسر"
+                  value={String(state.spouseBirthDate ?? '')}
+                  onChange={(v) => setValue('spouseBirthDate', v)}
+                />
+
+                <Field label="توضیحات بیشتر" wide><textarea value={String(state.detailedDescription)} onChange={(e) => setValue('detailedDescription', e.target.value)} /></Field>
+                <Field label="توضیحات محرمانه" wide><textarea value={String(state.privateDescription)} onChange={(e) => setValue('privateDescription', e.target.value)} /></Field>
+              </div>
+            </div>
+
+            <div className="customer-form-section">
+              <div className="account-panel-heading"><h2>شرایط و تنظیمات تکمیلی</h2></div>
+              <div className="customer-form-grid">
+                {customerNumberFields.map((field) => (
+                  <Field key={field} label={numberLabels[field]}>
+                    <input type="number" step="any" value={String(state[field])} onChange={(e) => setValue(field, e.target.value)} />
+                  </Field>
+                ))}
+                <Field label="شماره سند آغازین"><input value={String(state.startDocumentNumber)} onChange={(e) => setValue('startDocumentNumber', e.target.value)} /></Field>
+              </div>
+            </div>
+          </>
+        ) : null}
       </section>
 
       <button className="customer-save-button" disabled={loading} type="submit">

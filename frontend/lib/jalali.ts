@@ -125,8 +125,9 @@ export function gregorianToJalali(gy: number, gm: number, gd: number) {
 
 export function dateToJalaliString(date: Date): string {
   if (!date || Number.isNaN(date.getTime())) return '';
-  return gregorianToJalali(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate())
-    ? `${gregorianToJalali(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate()).year}/${String(gregorianToJalali(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate()).month).padStart(2, '0')}/${String(gregorianToJalali(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate()).day).padStart(2, '0')}`
+  const j = gregorianToJalali(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate());
+  return j
+    ? `${j.year}/${String(j.month).padStart(2, '0')}/${String(j.day).padStart(2, '0')}`
     : '';
 }
 
@@ -137,4 +138,50 @@ export function isoToJalaliString(isoString: string): string {
   if (parts.length !== 3 || parts.some((p) => Number.isNaN(p))) return '';
   const jalali = gregorianToJalali(parts[0], parts[1], parts[2]);
   return `${jalali.year}/${String(jalali.month).padStart(2, '0')}/${String(jalali.day).padStart(2, '0')}`;
+}
+
+export function valueToJalaliParts(value?: string | Date | null): { year: number; month: number; day: number } | null {
+  if (!value) return null;
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return null;
+    const jStr = dateToJalaliString(value);
+    return parseJalaliDate(jStr);
+  }
+  const str = String(value).trim();
+  if (!str) return null;
+
+  if (str.includes('/')) {
+    return parseJalaliDate(str);
+  }
+
+  const clean = str.slice(0, 10);
+  const parts = clean.split('-').map(Number);
+  if (parts.length === 3 && parts.every((p) => Number.isInteger(p))) {
+    if (parts[0] > 1600) {
+      // Gregorian ISO (e.g., 1990-05-15)
+      const jalaliStr = isoToJalaliString(clean);
+      return parseJalaliDate(jalaliStr);
+    }
+    if (parts[0] >= 1200 && parts[0] <= 1600) {
+      // Jalali with dash (e.g., 1369-02-25)
+      return parseJalaliDate(str.replace(/-/g, '/'));
+    }
+  }
+
+  return null;
+}
+
+export function toJalaliDisplayString(value?: string | Date | null): string {
+  const parts = valueToJalaliParts(value);
+  if (!parts) return typeof value === 'string' && value.includes('/') ? value : '';
+  return `${parts.year}/${String(parts.month).padStart(2, '0')}/${String(parts.day).padStart(2, '0')}`;
+}
+
+export function toIsoDateString(value?: string | Date | null): string {
+  if (!value) return '';
+  const parts = valueToJalaliParts(value);
+  if (!parts) return '';
+  const jalaliStr = `${parts.year}/${String(parts.month).padStart(2, '0')}/${String(parts.day).padStart(2, '0')}`;
+  const iso = jalaliDateToIso(jalaliStr);
+  return iso ? iso.slice(0, 10) : '';
 }

@@ -38,7 +38,7 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const page = Math.max(1, Number(url.searchParams.get('page') || 1));
-  const perPage = Math.min(200, Math.max(20, Number(url.searchParams.get('perPage') || 100)));
+  const perPage = Math.min(200, Math.max(1, Number(url.searchParams.get('perPage') || 25)));
   const event = url.searchParams.get('event')?.trim() ?? '';
 
   try {
@@ -52,6 +52,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       totalItems: result.totalItems,
+      totalPages: result.totalPages,
       page: result.page,
       perPage: result.perPage,
       events: result.items.map((item) => {

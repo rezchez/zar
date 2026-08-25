@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Sparkles } from 'lucide-react';
-import { jalaliToGregorian } from '@/lib/jalali';
+import { jalaliToGregorian, valueToJalaliParts } from '@/lib/jalali';
 
 const MONTH_NAMES = [
   'فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور',
@@ -20,7 +20,7 @@ export type CalendarEvent = {
 };
 
 export type GlassJalaliCalendarProps = {
-  selectedDate?: Date;
+  selectedDate?: Date | string;
   onDateSelect?: (date: Date, jalaliString: string, isoString: string) => void;
   events?: CalendarEvent[];
   className?: string;
@@ -67,14 +67,37 @@ function formatDigits(value: number | string, useGrouping = false) {
 }
 
 export default function GlassJalaliCalendar({
+  selectedDate,
   onDateSelect,
   events = [],
   className = '',
 }: GlassJalaliCalendarProps) {
   const today = useMemo(() => getTodayJalali(), []);
-  const [view, setView] = useState({ year: today.year, month: today.month });
-  const [internalSelectedDay, setInternalSelectedDay] = useState<number | null>(today.day);
+
+  const parsedSelected = useMemo(() => {
+    return valueToJalaliParts(selectedDate);
+  }, [selectedDate]);
+
+  const [view, setView] = useState(() => {
+    if (parsedSelected) {
+      return { year: parsedSelected.year, month: parsedSelected.month };
+    }
+    return { year: today.year, month: today.month };
+  });
+
+  const [internalSelectedDay, setInternalSelectedDay] = useState<number | null>(() => {
+    return parsedSelected ? parsedSelected.day : null;
+  });
+
   const [isYearPickerOpen, setIsYearPickerOpen] = useState(false);
+
+  // Synchronize view and selection when selectedDate prop changes externally
+  useEffect(() => {
+    if (parsedSelected) {
+      setView({ year: parsedSelected.year, month: parsedSelected.month });
+      setInternalSelectedDay(parsedSelected.day);
+    }
+  }, [parsedSelected]);
 
   // Calculate calendar grid
   const cells = useMemo(() => {
@@ -130,12 +153,13 @@ export default function GlassJalaliCalendar({
   }
 
   const yearOptions = useMemo(() => {
-    const start = today.year - 5;
-    const end = today.year + 5;
+    const currentViewYear = view.year;
+    const start = currentViewYear - 40;
+    const end = currentViewYear + 10;
     const years: number[] = [];
     for (let y = start; y <= end; y += 1) years.push(y);
-    return years;
-  }, [today.year]);
+    return years.reverse(); // Newest years on top
+  }, [view.year]);
 
   const selectedHolidayTitle = useMemo(() => {
     if (!internalSelectedDay) return null;
@@ -144,7 +168,7 @@ export default function GlassJalaliCalendar({
 
   return (
     <div
-      className={`glass-calendar-container relative w-full max-w-[380px] mx-auto rounded-2xl p-4 sm:p-5 text-slate-900 dark:text-slate-100 backdrop-blur-xl bg-white/90 dark:bg-slate-900/90 border border-slate-200/90 dark:border-slate-800/90 shadow-xl transition-all ${className}`}
+      className={`glass-calendar-container relative w-full max-w-[380px] mx-auto rounded-2xl p-4 sm:p-5 text-slate-900 dark:text-slate-100 backdrop-blur-xl bg-white/95 dark:bg-slate-900/95 border border-slate-200 dark:border-slate-800 shadow-xl transition-all ${className}`}
       dir="rtl"
     >
       {/* Header Bar */}
@@ -247,7 +271,7 @@ export default function GlassJalaliCalendar({
             const isToday =
               view.year === today.year && view.month === today.month && cell.day === today.day;
             const isSelected =
-              cell.day === internalSelectedDay;
+              cell.day === internalSelectedDay && view.year === (parsedSelected?.year ?? view.year) && view.month === (parsedSelected?.month ?? view.month);
             const isFriday = index % 7 === 6;
             const isHoliday = Boolean(cell.holidayTitle);
 
@@ -260,10 +284,10 @@ export default function GlassJalaliCalendar({
                 onClick={() => handleDayClick(cell.day!)}
                 title={cell.holidayTitle ? `تعطیل رسمی: ${cell.holidayTitle}` : undefined}
                 className={`relative h-9 rounded-xl flex items-center justify-center text-xs font-bold transition-all ${
-                  isToday
+                  isSelected
                     ? 'bg-amber-500 text-slate-950 font-black shadow-md shadow-amber-500/20 ring-2 ring-amber-400'
-                    : isSelected
-                      ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-950 font-black shadow'
+                    : isToday
+                      ? 'bg-slate-200 dark:bg-slate-800 text-amber-600 dark:text-amber-400 font-extrabold ring-1 ring-amber-500/40'
                       : isFriday || isHoliday
                         ? 'text-rose-600 dark:text-rose-400 font-black hover:bg-rose-50 dark:hover:bg-rose-950/40 bg-rose-50/50 dark:bg-rose-950/20'
                         : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 font-bold'
@@ -272,7 +296,7 @@ export default function GlassJalaliCalendar({
                 <span>{formatDigits(cell.day)}</span>
 
                 {/* Holiday Indicator Dot */}
-                {isHoliday && !isToday && (
+                {isHoliday && !isSelected && (
                   <span className="absolute top-1 left-1 w-1.5 h-1.5 rounded-full bg-rose-500" />
                 )}
 

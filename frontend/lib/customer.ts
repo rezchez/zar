@@ -5,7 +5,6 @@ export const customerTextFields = [
   'name',
   'gender',
   'groupName',
-  'category',
   'province',
   'city',
   'metalType',
@@ -87,7 +86,7 @@ export type Customer = {
   openingBalanceTransaction: string;
   name: string;
   groupName: string;
-  category: string;
+  category?: string;
   province: string;
   city: string;
   metalType: string;
@@ -151,6 +150,8 @@ export function mapCustomer(
     (result as Record<string, unknown>)[field] =
       typeof record[field] === 'string' ? record[field] : '';
   }
+  result.category = typeof record.category === 'string' ? record.category : '';
+
   for (const field of customerDateFields) {
     (result as Record<string, unknown>)[field] =
       typeof record[field] === 'string' ? record[field] : '';
