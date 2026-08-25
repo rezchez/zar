@@ -106,23 +106,35 @@ export function formatJalaliDate(date = new Date()) {
   }).format(date).replace(/\u200e/g, '');
 }
 
+export function gregorianToJalali(gy: number, gm: number, gd: number) {
+  const g_d_m = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+  let jy = (gy <= 1600) ? 0 : 979;
+  gy -= (gy <= 1600) ? 621 : 1600;
+  const gy2 = (gm > 2) ? (gy + 1) : gy;
+  let days = (365 * gy) + (Math.floor((gy2 + 3) / 4)) - (Math.floor((gy2 + 99) / 100)) + (Math.floor((gy2 + 399) / 400)) - 80 + gd + g_d_m[gm - 1];
+  jy += 33 * (Math.floor(days / 12053));
+  days %= 12053;
+  jy += 4 * (Math.floor(days / 1461));
+  days %= 1461;
+  jy += Math.floor((days - 1) / 365);
+  if (days > 0) days = (days - 1) % 365;
+  const jm = (days < 186) ? 1 + Math.floor(days / 31) : 7 + Math.floor((days - 186) / 30);
+  const jd = 1 + ((days < 186) ? (days % 31) : ((days - 186) % 30));
+  return { year: jy, month: jm, day: jd };
+}
+
 export function dateToJalaliString(date: Date): string {
   if (!date || Number.isNaN(date.getTime())) return '';
-  const parts = new Intl.DateTimeFormat('fa-IR-u-ca-persian-nu-latn', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(date);
-  const y = parts.find((p) => p.type === 'year')?.value;
-  const m = parts.find((p) => p.type === 'month')?.value;
-  const d = parts.find((p) => p.type === 'day')?.value;
-  if (!y || !m || !d) return '';
-  return `${y}/${m.padStart(2, '0')}/${d.padStart(2, '0')}`;
+  return gregorianToJalali(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate())
+    ? `${gregorianToJalali(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate()).year}/${String(gregorianToJalali(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate()).month).padStart(2, '0')}/${String(gregorianToJalali(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate()).day).padStart(2, '0')}`
+    : '';
 }
 
 export function isoToJalaliString(isoString: string): string {
   if (!isoString) return '';
   const clean = String(isoString).slice(0, 10);
-  const date = new Date(`${clean}T12:00:00.000Z`);
-  return dateToJalaliString(date);
+  const parts = clean.split('-').map(Number);
+  if (parts.length !== 3 || parts.some((p) => Number.isNaN(p))) return '';
+  const jalali = gregorianToJalali(parts[0], parts[1], parts[2]);
+  return `${jalali.year}/${String(jalali.month).padStart(2, '0')}/${String(jalali.day).padStart(2, '0')}`;
 }

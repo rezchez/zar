@@ -152,7 +152,7 @@ describe('Jalali Date Conversions', () => {
   });
 
   test('converts Date object to formatted Jalali string', () => {
-    const date = new Date('2024-03-20T12:00:00Z');
+    const date = new Date('2024-03-21T12:00:00Z');
     const jalaliStr = dateToJalaliString(date);
     expect(jalaliStr).toBe('1403/01/01');
   });

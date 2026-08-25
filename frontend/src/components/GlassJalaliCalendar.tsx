@@ -21,7 +21,7 @@ export type CalendarEvent = {
 
 export type GlassJalaliCalendarProps = {
   selectedDate?: Date;
-  onDateSelect?: (date: Date) => void;
+  onDateSelect?: (date: Date, jalaliString: string, isoString: string) => void;
   events?: CalendarEvent[];
   className?: string;
 };
@@ -121,9 +121,11 @@ export default function GlassJalaliCalendar({
 
   function handleDayClick(day: number) {
     setInternalSelectedDay(day);
-    const greg = jalaliToGregorian(`${view.year}/${view.month}/${day}`);
-    if (greg && onDateSelect) {
-      onDateSelect(new Date(greg.year, greg.month - 1, greg.day));
+    const jalaliStr = `${view.year}/${String(view.month).padStart(2, '0')}/${String(day).padStart(2, '0')}`;
+    const greg = jalaliToGregorian(jalaliStr);
+    const isoStr = greg ? `${greg.year}-${String(greg.month).padStart(2, '0')}-${String(greg.day).padStart(2, '0')}` : '';
+    if (onDateSelect) {
+      onDateSelect(new Date(greg?.year ?? view.year, (greg?.month ?? view.month) - 1, greg?.day ?? day), jalaliStr, isoStr);
     }
   }
 

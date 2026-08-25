@@ -58,14 +58,13 @@ export default function JalaliDatePicker({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  function handleDateSelect(date: Date) {
-    const jalaliStr = dateToJalaliString(date);
+  function handleDateSelect(_date: Date, jalaliStr: string, isoStr: string) {
     setDisplayValue(jalaliStr);
-    const isoStr = jalaliDateToIso(jalaliStr);
     if (isoStr) {
-      onChange(isoStr.slice(0, 10));
+      onChange(isoStr);
     } else {
-      onChange('');
+      const fallbackIso = jalaliDateToIso(jalaliStr);
+      onChange(fallbackIso ? fallbackIso.slice(0, 10) : '');
     }
     setIsOpen(false);
   }

@@ -338,25 +338,13 @@ export default function CustomerForm({
       }
     }
 
-    window.history.pushState({ zarCustomerFormGuard: true }, '', window.location.href);
-
-    function handlePopState() {
-      if (window.confirm('اطلاعاتی وارد کرده‌اید. آیا مطمئن هستید می‌خواهید از این صفحه خارج شوید؟')) {
-        return;
-      }
-
-      window.history.pushState({ zarCustomerFormGuard: true }, '', window.location.href);
-    }
-
     window.addEventListener('beforeunload', handleBeforeUnload);
     window.addEventListener('zar:navigation-attempt', handleNavigationAttempt);
-    window.addEventListener('popstate', handlePopState);
     document.addEventListener('click', handleAnchorClick, true);
 
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
       window.removeEventListener('zar:navigation-attempt', handleNavigationAttempt);
-      window.removeEventListener('popstate', handlePopState);
       document.removeEventListener('click', handleAnchorClick, true);
     };
   }, [isDirty]);
