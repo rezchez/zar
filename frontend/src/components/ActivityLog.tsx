@@ -1,6 +1,18 @@
 'use client';
 
-import { ChevronDown, ChevronUp, RefreshCw, ScrollText, Search } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  ChevronUp,
+  Layers,
+  RefreshCw,
+  ScrollText,
+  Search,
+  Trash2,
+} from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
 type Activity = {
@@ -24,13 +36,18 @@ const eventOptions = [
   ['customer_updated', 'ویرایش طرف‌حساب'],
   ['customer_deleted', 'حذف طرف‌حساب'],
   ['transaction_created', 'ثبت تراکنش'],
+  ['transaction_updated', 'ویرایش تراکنش'],
+  ['transaction_deleted', 'حذف سند'],
   ['login', 'ورود موفق'],
   ['logout', 'خروج'],
   ['login_failed', 'تلاش ناموفق ورود'],
   ['role_changed', 'تغییر نقش'],
   ['user_blocked', 'مسدودسازی کاربر'],
+  ['user_unblocked', 'رفع مسدودی'],
   ['settings_updated', 'تغییر تنظیمات'],
 ];
+
+const PER_PAGE_OPTIONS = [25, 50, 75, 100, 500];
 
 function formatDate(value: string) {
   const date = new Date(value);
@@ -45,51 +62,125 @@ function actorLabel(actor: Activity['actor']) {
   return actor.name || actor.email || 'کاربر ناشناس';
 }
 
+function getPageNumbers(currentPage: number, totalPages: number): (number | '...')[] {
+  if (totalPages <= 7) {
+    return Array.from({ length: totalPages }, (_, i) => i + 1);
+  }
+  const pages: (number | '...')[] = [1];
+  const start = Math.max(2, currentPage - 1);
+  const end = Math.min(totalPages - 1, currentPage + 1);
+
+  if (start > 2) {
+    pages.push('...');
+  }
+  for (let i = start; i <= end; i++) {
+    pages.push(i);
+  }
+  if (end < totalPages - 1) {
+    pages.push('...');
+  }
+  pages.push(totalPages);
+  return pages;
+}
+
 export default function ActivityLog() {
   const [events, setEvents] = useState<Activity[]>([]);
   const [eventFilter, setEventFilter] = useState('');
   const [query, setQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(25);
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [expandedId, setExpandedId] = useState('');
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
+  const [cleaning, setCleaning] = useState(false);
+  const [confirmCleanup, setConfirmCleanup] = useState(false);
+
+  // Debounce search query
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedQuery(query.trim());
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  // Reset page to 1 on filter or search or perPage change
+  useEffect(() => {
+    setPage(1);
+  }, [eventFilter, debouncedQuery, perPage]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setMessage('');
     try {
-      const search = eventFilter
-        ? `?event=${encodeURIComponent(eventFilter)}`
-        : '';
-      const response = await fetch(`/api/admin/activity-log${search}`, {
+      const params = new URLSearchParams({
+        page: String(page),
+        perPage: String(perPage),
+      });
+      if (eventFilter) params.set('event', eventFilter);
+      if (debouncedQuery) params.set('q', debouncedQuery);
+
+      const response = await fetch(`/api/admin/activity-log?${params.toString()}`, {
         cache: 'no-store',
       });
-      const data = (await response.json().catch(() => null)) as
-        | { events?: Activity[]; message?: string }
-        | null;
+      const data = (await response.json().catch(() => null)) as {
+        events?: Activity[];
+        totalItems?: number;
+        totalPages?: number;
+        page?: number;
+        perPage?: number;
+        message?: string;
+      } | null;
+
       if (!response.ok) {
         setMessage(data?.message ?? 'دریافت لاگ انجام نشد.');
         return;
       }
+
       setEvents(data?.events ?? []);
+      setTotalItems(data?.totalItems ?? 0);
+      setTotalPages(data?.totalPages ?? 1);
     } catch {
       setMessage('ارتباط با سرور برقرار نشد.');
     } finally {
       setLoading(false);
     }
-  }, [eventFilter]);
+  }, [page, perPage, eventFilter, debouncedQuery]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void load();
-    }, 0);
-    return () => window.clearTimeout(timer);
+    void load();
   }, [load]);
 
-  const visibleEvents = events.filter((event) =>
-    `${event.eventLabel} ${event.entityLabel} ${actorLabel(event.actor)} ${event.details}`
-      .toLocaleLowerCase()
-      .includes(query.trim().toLocaleLowerCase()),
-  );
+  const handleCleanup = async () => {
+    setCleaning(true);
+    setMessage('');
+    setSuccessMessage('');
+    try {
+      const response = await fetch('/api/admin/activity-log/cleanup', {
+        method: 'POST',
+      });
+      const data = (await response.json().catch(() => null)) as {
+        message?: string;
+        deletedCount?: number;
+      } | null;
+
+      if (!response.ok) {
+        setMessage(data?.message ?? 'خطا در اجرای پاک‌سازی لاگ‌ها.');
+        return;
+      }
+
+      setSuccessMessage(data?.message ?? 'پاک‌سازی لاگ‌های منقضی با موفقیت انجام شد.');
+      setConfirmCleanup(false);
+      void load();
+    } catch {
+      setMessage('ارتباط با سرور برای پاک‌سازی برقرار نشد.');
+    } finally {
+      setCleaning(false);
+    }
+  };
 
   return (
     <div className="activity-log-page">
@@ -99,18 +190,59 @@ export default function ActivityLog() {
           <h1>لاگ فعالیت برنامه</h1>
           <p>فعالیت‌های مهم کاربران و تغییرات اطلاعاتی با ساعت دقیق ثبت می‌شوند.</p>
         </div>
-        <button
-          type="button"
-          className="dashboard-secondary-button"
-          onClick={() => void load()}
-          disabled={loading}
-        >
-          <RefreshCw size={15} className={loading ? 'spin' : ''} />
-          به‌روزرسانی
-        </button>
+        <div className="heading-actions-group">
+          <button
+            type="button"
+            className="dashboard-secondary-button danger-light-btn"
+            onClick={() => setConfirmCleanup(true)}
+            disabled={loading || cleaning}
+          >
+            <Trash2 size={15} />
+            پاک‌سازی لاگ‌های قدیمی
+          </button>
+          <button
+            type="button"
+            className="dashboard-secondary-button"
+            onClick={() => void load()}
+            disabled={loading}
+          >
+            <RefreshCw size={15} className={loading ? 'spin' : ''} />
+            به‌روزرسانی
+          </button>
+        </div>
       </div>
 
       {message ? <p className="form-error">{message}</p> : null}
+      {successMessage ? <p className="form-success">{successMessage}</p> : null}
+
+      {confirmCleanup ? (
+        <div className="activity-cleanup-banner">
+          <div>
+            <strong>تایید پاک‌سازی لاگ‌های قدیمی</strong>
+            <p>
+              لاگ‌های منقضی‌شده طبق قوانین نگهداری (امنیتی و مالی 1 سال، ورود/خروج 6 ماه، تنظیمات 90 روز، سایر 30 روز) حذف خواهند شد.
+            </p>
+          </div>
+          <div className="cleanup-banner-actions">
+            <button
+              type="button"
+              className="dashboard-primary-button danger-btn"
+              onClick={() => void handleCleanup()}
+              disabled={cleaning}
+            >
+              {cleaning ? 'در حال پاک‌سازی...' : 'تایید و پاک‌سازی'}
+            </button>
+            <button
+              type="button"
+              className="dashboard-secondary-button"
+              onClick={() => setConfirmCleanup(false)}
+              disabled={cleaning}
+            >
+              انصراف
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <section className="dashboard-panel users-table-panel">
         <div className="users-toolbar activity-log-toolbar">
@@ -122,19 +254,47 @@ export default function ActivityLog() {
               placeholder="جست‌وجو در فعالیت، کاربر یا طرف‌حساب..."
             />
           </label>
-          <label className="users-sort">
-            <ScrollText size={15} />
-            <span>نوع فعالیت</span>
-            <select
-              value={eventFilter}
-              onChange={(event) => setEventFilter(event.target.value)}
-            >
-              {eventOptions.map(([value, label]) => (
-                <option key={value} value={value}>{label}</option>
-              ))}
-            </select>
-          </label>
+
+          <div className="activity-toolbar-selectors">
+            <label className="users-sort">
+              <ScrollText size={15} />
+              <span>نوع فعالیت</span>
+              <select
+                value={eventFilter}
+                onChange={(event) => setEventFilter(event.target.value)}
+              >
+                {eventOptions.map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+            </label>
+
+            <label className="users-sort per-page-selector">
+              <Layers size={15} />
+              <span>تعداد در صفحه</span>
+              <select
+                value={perPage}
+                onChange={(event) => setPerPage(Number(event.target.value))}
+              >
+                {PER_PAGE_OPTIONS.map((option) => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </select>
+            </label>
+          </div>
         </div>
+
+        {/* TOP PAGINATION CONTROLS */}
+        <ActivityPaginationControls
+          page={page}
+          totalPages={totalPages}
+          totalItems={totalItems}
+          perPage={perPage}
+          eventsCount={events.length}
+          loading={loading}
+          onPageChange={setPage}
+          position="top"
+        />
 
         <div className="users-table-wrap">
           <table className="users-table activity-log-table">
@@ -151,7 +311,7 @@ export default function ActivityLog() {
             <tbody>
               {loading ? (
                 <tr><td colSpan={6} className="users-table-empty">در حال دریافت لاگ‌ها...</td></tr>
-              ) : visibleEvents.length ? visibleEvents.map((event) => (
+              ) : events.length ? events.map((event) => (
                 <ActivityRow
                   key={event.id}
                   event={event}
@@ -164,7 +324,114 @@ export default function ActivityLog() {
             </tbody>
           </table>
         </div>
+
+        {/* BOTTOM PAGINATION CONTROLS */}
+        <ActivityPaginationControls
+          page={page}
+          totalPages={totalPages}
+          totalItems={totalItems}
+          perPage={perPage}
+          eventsCount={events.length}
+          loading={loading}
+          onPageChange={setPage}
+          position="bottom"
+        />
       </section>
+    </div>
+  );
+}
+
+function ActivityPaginationControls({
+  page,
+  totalPages,
+  totalItems,
+  perPage,
+  eventsCount,
+  loading,
+  onPageChange,
+  position,
+}: {
+  page: number;
+  totalPages: number;
+  totalItems: number;
+  perPage: number;
+  eventsCount: number;
+  loading: boolean;
+  onPageChange: (newPage: number) => void;
+  position: 'top' | 'bottom';
+}) {
+  const startItem = totalItems === 0 ? 0 : (page - 1) * perPage + 1;
+  const endItem = Math.min(page * perPage, totalItems);
+  const pageNumbers = getPageNumbers(page, totalPages);
+
+  return (
+    <div className={`activity-pagination-bar ${position}`}>
+      <div className="activity-pagination-info">
+        <span>
+          نمایش <strong>{startItem}</strong> تا <strong>{endItem}</strong> از <strong>{totalItems}</strong> فعالیت
+        </span>
+        <span className="activity-pagination-page-badge">
+          صفحه {page} از {totalPages}
+        </span>
+      </div>
+
+      <div className="activity-pagination-buttons">
+        <button
+          type="button"
+          className="pagination-btn"
+          onClick={() => onPageChange(1)}
+          disabled={loading || page <= 1}
+          title="صفحه نخست"
+        >
+          <ChevronsRight size={16} />
+        </button>
+        <button
+          type="button"
+          className="pagination-btn"
+          onClick={() => onPageChange(page - 1)}
+          disabled={loading || page <= 1}
+          title="صفحه قبلی"
+        >
+          <ChevronRight size={16} />
+        </button>
+
+        <div className="pagination-numbers">
+          {pageNumbers.map((p, idx) => (
+            p === '...' ? (
+              <span key={`ellipsis-${idx}`} className="pagination-ellipsis">...</span>
+            ) : (
+              <button
+                key={`page-${p}`}
+                type="button"
+                className={`pagination-num-btn ${p === page ? 'active' : ''}`}
+                onClick={() => onPageChange(p)}
+                disabled={loading}
+              >
+                {p}
+              </button>
+            )
+          ))}
+        </div>
+
+        <button
+          type="button"
+          className="pagination-btn"
+          onClick={() => onPageChange(page + 1)}
+          disabled={loading || page >= totalPages}
+          title="صفحه بعدی"
+        >
+          <ChevronLeft size={16} />
+        </button>
+        <button
+          type="button"
+          className="pagination-btn"
+          onClick={() => onPageChange(totalPages)}
+          disabled={loading || page >= totalPages}
+          title="صفحه پایانی"
+        >
+          <ChevronsLeft size={16} />
+        </button>
+      </div>
     </div>
   );
 }

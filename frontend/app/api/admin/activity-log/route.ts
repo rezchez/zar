@@ -13,6 +13,11 @@ const eventLabels: Record<string, string> = {
   authenticator_enabled: 'فعال‌سازی رمزساز',
   authenticator_disabled: 'غیرفعال‌سازی رمزساز',
   role_changed: 'تغییر نقش',
+  permission_granted: 'اعطای مجوز ویژه',
+  permission_revoked: 'لغو مجوز ویژه',
+  permission_denied: 'رد مجوز',
+  permission_deny_removed: 'حذف عدم دسترسی',
+  permission_failed_attempt: 'تلاش ناموفق دسترسی',
   user_blocked: 'مسدودسازی کاربر',
   user_unblocked: 'رفع مسدودی',
   national_code_permission_granted: 'مجوز ویرایش کد ملی',
@@ -25,7 +30,13 @@ const eventLabels: Record<string, string> = {
   transaction_created: 'ثبت تراکنش',
   transaction_updated: 'ویرایش تراکنش',
   settings_updated: 'تغییر تنظیمات',
+  print_template_created: 'ایجاد قالب چاپ',
+  print_template_updated: 'ویرایش قالب چاپ',
+  print_template_deleted: 'حذف قالب چاپ',
+  activity_log_cleaned: 'پاک‌سازی لاگ‌های قدیمی',
 };
+
+const ALLOWED_PER_PAGE = [25, 50, 75, 100, 500];
 
 export async function GET(request: Request) {
   const context = await getServerAuthContext();
@@ -38,20 +49,42 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const page = Math.max(1, Number(url.searchParams.get('page') || 1));
-  const perPage = Math.min(200, Math.max(20, Number(url.searchParams.get('perPage') || 100)));
+
+  const rawPerPage = Number(url.searchParams.get('perPage') || 25);
+  const perPage = ALLOWED_PER_PAGE.includes(rawPerPage) ? rawPerPage : 25;
+
   const event = url.searchParams.get('event')?.trim() ?? '';
+  const q = (url.searchParams.get('q') || url.searchParams.get('query') || '').trim();
 
   try {
+    const filterConditions: string[] = [];
+    const filterParams: Record<string, string> = {};
+
+    if (event) {
+      filterConditions.push('event = {:event}');
+      filterParams.event = event;
+    }
+
+    if (q) {
+      filterConditions.push('(details ~ {:q} || entityLabel ~ {:q} || user.name ~ {:q} || user.email ~ {:q})');
+      filterParams.q = q;
+    }
+
+    const filter = filterConditions.length > 0
+      ? context.pb.filter(filterConditions.join(' && '), filterParams)
+      : '';
+
     const result = await context.pb.collection('auth_events').getList(page, perPage, {
       sort: '-created',
-      filter: event
-        ? context.pb.filter('event = {:event}', { event })
-        : '',
+      filter,
       expand: 'user',
     });
 
+    const totalPages = Math.max(1, Math.ceil(result.totalItems / result.perPage));
+
     return NextResponse.json({
       totalItems: result.totalItems,
+      totalPages,
       page: result.page,
       perPage: result.perPage,
       events: result.items.map((item) => {
