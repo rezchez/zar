@@ -26,6 +26,7 @@ export default function JalaliDatePicker({
   className = '',
 }: JalaliDatePickerProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const isInputFocused = useRef(false);
 
   // Maintain display value as Jalali string (YYYY/MM/DD)
   const [displayValue, setDisplayValue] = useState(() => {
@@ -37,6 +38,7 @@ export default function JalaliDatePicker({
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (isInputFocused.current) return;
     if (!value) {
       setDisplayValue('');
       return;
@@ -86,6 +88,19 @@ export default function JalaliDatePicker({
     }
   }
 
+  function handleInputBlur() {
+    isInputFocused.current = false;
+    if (!displayValue.trim()) {
+      onChange('');
+      return;
+    }
+    const parsed = parseJalaliDate(displayValue);
+    if (!parsed && value) {
+      // Revert invalid text to valid formatted value
+      setDisplayValue(value.includes('/') ? value : isoToJalaliString(value));
+    }
+  }
+
   function handleClear(e: React.MouseEvent) {
     e.stopPropagation();
     setDisplayValue('');
@@ -105,7 +120,11 @@ export default function JalaliDatePicker({
           type="text"
           value={displayValue}
           onChange={handleInputChange}
-          onFocus={() => setIsOpen(true)}
+          onFocus={() => {
+            isInputFocused.current = true;
+            setIsOpen(true);
+          }}
+          onBlur={handleInputBlur}
           placeholder={placeholder}
           className="w-full px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/50 transition-all pl-9"
           dir="ltr"
@@ -134,8 +153,9 @@ export default function JalaliDatePicker({
       </div>
 
       {isOpen ? (
-        <div className="absolute top-full right-0 mt-2 z-50 w-80 shadow-2xl rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-1">
+        <div className="absolute top-full right-0 mt-2 z-50 w-80 max-w-[calc(100vw-32px)] shadow-2xl rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-1">
           <GlassJalaliCalendar
+            value={value || displayValue}
             onDateSelect={handleDateSelect}
             className="border-none shadow-none w-full bg-transparent"
           />

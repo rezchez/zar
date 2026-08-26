@@ -541,11 +541,9 @@ export default function CustomerForm({
             />
 
             {/* Group Selection with + button */}
-            <div className="flex flex-col gap-1">
-              <span className="text-xs font-bold text-slate-700 dark:text-slate-300">گروه</span>
-              <div className="flex items-center gap-1.5">
+            <Field label="گروه">
+              <div className="flex items-center gap-1.5 w-full">
                 <select
-                  className="w-full px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
                   value={String(state.groupName ?? '')}
                   onChange={(e) => setValue('groupName', e.target.value)}
                 >
@@ -559,13 +557,13 @@ export default function CustomerForm({
                 <button
                   type="button"
                   onClick={() => setIsGroupModalOpen(true)}
-                  className="p-2.5 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 border border-amber-500/20 transition-colors shrink-0"
+                  className="p-2.5 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 border border-amber-500/20 transition-colors shrink-0"
                   title="افزودن گروه جدید"
                 >
                   <Plus size={16} />
                 </button>
               </div>
-            </div>
+            </Field>
 
             <Field label="رسته"><input value={String(state.category)} onChange={(e) => setValue('category', e.target.value)} /></Field>
 

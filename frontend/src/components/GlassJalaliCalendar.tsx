@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Sparkles } from 'lucide-react';
-import { jalaliToGregorian } from '@/lib/jalali';
+import { dateToJalaliString, isoToJalaliString, jalaliToGregorian, parseJalaliDate } from '@/lib/jalali';
 
 const MONTH_NAMES = [
   'فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور',
@@ -20,11 +20,28 @@ export type CalendarEvent = {
 };
 
 export type GlassJalaliCalendarProps = {
-  selectedDate?: Date;
+  selectedDate?: Date | string;
+  value?: string;
   onDateSelect?: (date: Date, jalaliString: string, isoString: string) => void;
   events?: CalendarEvent[];
   className?: string;
 };
+
+function parseValueToJalali(val?: Date | string) {
+  if (!val) return null;
+  if (val instanceof Date) {
+    const str = dateToJalaliString(val);
+    return parseJalaliDate(str);
+  }
+  if (typeof val === 'string' && val.trim()) {
+    if (val.includes('/')) {
+      return parseJalaliDate(val);
+    }
+    const jalaliStr = isoToJalaliString(val);
+    return parseJalaliDate(jalaliStr);
+  }
+  return null;
+}
 
 function monthLength(year: number, month: number) {
   if (month <= 6) return 31;
@@ -67,14 +84,38 @@ function formatDigits(value: number | string, useGrouping = false) {
 }
 
 export default function GlassJalaliCalendar({
+  selectedDate,
+  value,
   onDateSelect,
   events = [],
   className = '',
 }: GlassJalaliCalendarProps) {
   const today = useMemo(() => getTodayJalali(), []);
-  const [view, setView] = useState({ year: today.year, month: today.month });
-  const [internalSelectedDay, setInternalSelectedDay] = useState<number | null>(today.day);
+  const initialJalali = useMemo(() => parseValueToJalali(selectedDate || value), [selectedDate, value]);
+
+  const [view, setView] = useState({
+    year: initialJalali?.year ?? today.year,
+    month: initialJalali?.month ?? today.month,
+  });
+  const [internalSelectedDay, setInternalSelectedDay] = useState<number | null>(
+    initialJalali?.day ?? (selectedDate || value ? null : today.day),
+  );
   const [isYearPickerOpen, setIsYearPickerOpen] = useState(false);
+  const activeYearRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const parsed = parseValueToJalali(selectedDate || value);
+    if (parsed) {
+      setView({ year: parsed.year, month: parsed.month });
+      setInternalSelectedDay(parsed.day);
+    }
+  }, [selectedDate, value]);
+
+  useEffect(() => {
+    if (isYearPickerOpen && activeYearRef.current) {
+      activeYearRef.current.scrollIntoView({ block: 'center', behavior: 'instant' });
+    }
+  }, [isYearPickerOpen]);
 
   // Calculate calendar grid
   const cells = useMemo(() => {
@@ -130,8 +171,8 @@ export default function GlassJalaliCalendar({
   }
 
   const yearOptions = useMemo(() => {
-    const start = today.year - 5;
-    const end = today.year + 5;
+    const start = 1300;
+    const end = today.year + 10;
     const years: number[] = [];
     for (let y = start; y <= end; y += 1) years.push(y);
     return years;
@@ -170,6 +211,7 @@ export default function GlassJalaliCalendar({
                 {yearOptions.map((y) => (
                   <button
                     key={y}
+                    ref={y === view.year ? activeYearRef : undefined}
                     type="button"
                     onClick={() => {
                       setView((curr) => ({ ...curr, year: y }));

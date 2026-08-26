@@ -2687,6 +2687,15 @@ button:disabled {
   color: #dbe4f0;
 }
 
+[data-theme="dark"] .account-field > span {
+  color: #cbd5e1;
+}
+
+[data-theme="dark"] .account-field select option {
+  background-color: #172236;
+  color: #e5e7eb;
+}
+
 [data-theme="dark"] .security-card,
 [data-theme="dark"] .account-security-note,
 [data-theme="dark"] .account-message {
@@ -2829,7 +2838,7 @@ button:disabled {
 .customer-form-panel {
   display: grid;
   gap: 26px;
-  overflow: hidden;
+  overflow: visible;
   background:
     radial-gradient(circle at 92% 0%, rgba(15, 156, 169, 0.07), transparent 28%),
     white;
@@ -2995,6 +3004,18 @@ button:disabled {
   border-color: #344258;
   background: #172236;
   color: #dbe4f0;
+}
+
+[data-theme="dark"] .balance-direction-buttons button.is-active.debit {
+  border-color: #7f323f;
+  background: #3a222c;
+  color: #f87171;
+}
+
+[data-theme="dark"] .balance-direction-buttons button.is-active.credit {
+  border-color: #1f6b5f;
+  background: #173a36;
+  color: #34d399;
 }
 
 [data-theme="dark"] .customer-details-toggle {
