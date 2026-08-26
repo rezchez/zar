@@ -13,7 +13,7 @@ import {
   Search,
   Trash2,
 } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 type Activity = {
   id: string;
@@ -45,6 +45,24 @@ const eventOptions = [
   ['user_blocked', 'مسدودسازی کاربر'],
   ['user_unblocked', 'رفع مسدودی'],
   ['settings_updated', 'تغییر تنظیمات'],
+  ['email_change_requested', 'درخواست تغییر ایمیل'],
+  ['name_changed', 'تغییر نام'],
+  ['two_factor_enabled', 'فعال‌سازی تایید دومرحله‌ای'],
+  ['two_factor_disabled', 'غیرفعال‌سازی تایید دومرحله‌ای'],
+  ['authenticator_enabled', 'فعال‌سازی رمزساز'],
+  ['authenticator_disabled', 'غیرفعال‌سازی رمزساز'],
+  ['permission_granted', 'اعطای مجوز ویژه'],
+  ['permission_revoked', 'لغو مجوز ویژه'],
+  ['permission_denied', 'رد مجوز'],
+  ['permission_deny_removed', 'حذف عدم دسترسی'],
+  ['permission_failed_attempt', 'تلاش ناموفق دسترسی'],
+  ['national_code_permission_granted', 'مجوز ویرایش کد ملی'],
+  ['phone_permission_granted', 'مجوز ویرایش تلفن همراه'],
+  ['password_reset_requested', 'درخواست بازنشانی رمز'],
+  ['print_template_created', 'ایجاد قالب چاپ'],
+  ['print_template_updated', 'ویرایش قالب چاپ'],
+  ['print_template_deleted', 'حذف قالب چاپ'],
+  ['activity_log_cleaned', 'پاک‌سازی لاگ‌های قدیمی'],
 ];
 
 const PER_PAGE_OPTIONS = [25, 50, 75, 100, 500];
@@ -98,6 +116,8 @@ export default function ActivityLog() {
   const [successMessage, setSuccessMessage] = useState('');
   const [cleaning, setCleaning] = useState(false);
   const [confirmCleanup, setConfirmCleanup] = useState(false);
+  const requestSequence = useRef(0);
+  const activeRequest = useRef<AbortController | null>(null);
 
   // Debounce search query
   useEffect(() => {
@@ -113,6 +133,10 @@ export default function ActivityLog() {
   }, [eventFilter, debouncedQuery, perPage]);
 
   const load = useCallback(async () => {
+    const sequence = ++requestSequence.current;
+    activeRequest.current?.abort();
+    const controller = new AbortController();
+    activeRequest.current = controller;
     setLoading(true);
     setMessage('');
     try {
@@ -125,6 +149,7 @@ export default function ActivityLog() {
 
       const response = await fetch(`/api/admin/activity-log?${params.toString()}`, {
         cache: 'no-store',
+        signal: controller.signal,
       });
       const data = (await response.json().catch(() => null)) as {
         events?: Activity[];
@@ -135,6 +160,7 @@ export default function ActivityLog() {
         message?: string;
       } | null;
 
+      if (sequence !== requestSequence.current) return;
       if (!response.ok) {
         setMessage(data?.message ?? 'دریافت لاگ انجام نشد.');
         return;
@@ -143,10 +169,15 @@ export default function ActivityLog() {
       setEvents(data?.events ?? []);
       setTotalItems(data?.totalItems ?? 0);
       setTotalPages(data?.totalPages ?? 1);
-    } catch {
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      if (sequence !== requestSequence.current) return;
       setMessage('ارتباط با سرور برقرار نشد.');
     } finally {
-      setLoading(false);
+      if (sequence === requestSequence.current) {
+        activeRequest.current = null;
+        setLoading(false);
+      }
     }
   }, [page, perPage, eventFilter, debouncedQuery]);
 

@@ -10,57 +10,6 @@ export const metadata: Metadata = {
   description: 'Zarfolio workspace',
 }
 
-const themeBootstrap = `
-(() => {
-  try {
-    const stored = localStorage.getItem('zarfolio-theme');
-    const mode = (stored === 'light' || stored === 'dark' || stored === 'system')
-      ? stored
-      : 'system';
-
-    const theme = mode === 'system'
-      ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-      : mode;
-
-    document.documentElement.dataset.theme = theme;
-    document.documentElement.dataset.themeMode = mode;
-    document.documentElement.style.colorScheme = theme;
-
-    if (theme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  } catch {
-    const theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-    document.documentElement.dataset.theme = theme;
-    document.documentElement.dataset.themeMode = 'system';
-    document.documentElement.style.colorScheme = theme;
-
-    if (theme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }
-})()
-`
-
-const swRegisterScript = `
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', function() {
-    navigator.serviceWorker.register('/sw.js').then(
-      function(registration) {
-        console.log('Service Worker registration successful with scope: ', registration.scope);
-      },
-      function(err) {
-        console.log('Service Worker registration failed: ', err);
-      }
-    );
-  });
-}
-`
-
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -72,14 +21,6 @@ export default function RootLayout({
         <meta name="color-scheme" content="dark light" />
         <meta name="theme-color" content="#1e293b" />
         <link rel="apple-touch-icon" href="/favicon.ico" />
-        <script
-          id="zarfolio-theme-bootstrap"
-          dangerouslySetInnerHTML={{ __html: themeBootstrap }}
-        />
-        <script
-          id="register-sw"
-          dangerouslySetInnerHTML={{ __html: swRegisterScript }}
-        />
       </head>
       <body suppressHydrationWarning>
         <ThemeProvider>

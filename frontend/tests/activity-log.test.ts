@@ -23,6 +23,7 @@ describe('Activity Log Retention Policies & Helper Tests', () => {
 
     // Settings events -> 90 days
     expect(getRetentionDaysForEvent('settings_updated')).toBe(90);
+    expect(getRetentionDaysForEvent('activity_log_cleaned')).toBe(90);
 
     // Default / Unknown events -> 30 days
     expect(getRetentionDaysForEvent('unknown_random_event')).toBe(30);

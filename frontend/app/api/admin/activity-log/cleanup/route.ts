@@ -73,8 +73,24 @@ export async function POST(request: Request) {
 
     let continueDefaultBatch = true;
     while (continueDefaultBatch) {
+      const excludedEventFilters: string[] = [];
+      const excludedEventParams: Record<string, string> = {};
+      let excludedIndex = 0;
+      for (const event of processedEvents) {
+        const key = `excludedEvent${excludedIndex++}`;
+        excludedEventFilters.push(`event != {:${key}}`);
+        excludedEventParams[key] = event;
+      }
+
+      const defaultFilter = [
+        'created < {:cutoff}',
+        ...excludedEventFilters,
+      ].join(' && ');
       const expiredDefaultBatch = await context.pb.collection('auth_events').getList(1, 100, {
-        filter: context.pb.filter('created < {:cutoff}', { cutoff: defaultCutoffStr }),
+        filter: context.pb.filter(defaultFilter, {
+          cutoff: defaultCutoffStr,
+          ...excludedEventParams,
+        }),
         fields: 'id,event',
       });
 
@@ -85,16 +101,12 @@ export async function POST(request: Request) {
 
       let deletedInThisBatch = 0;
       for (const item of expiredDefaultBatch.items) {
-        const itemEvent = String(item.event ?? '');
-        // Delete only if event is not in explicitly processed events (which have longer retentions)
-        if (!processedEvents.has(itemEvent)) {
-          try {
-            await context.pb.collection('auth_events').delete(item.id);
-            deletedCount += 1;
-            deletedInThisBatch += 1;
-          } catch {
-            // Ignore single error
-          }
+        try {
+          await context.pb.collection('auth_events').delete(item.id);
+          deletedCount += 1;
+          deletedInThisBatch += 1;
+        } catch {
+          // Ignore single error
         }
       }
 
@@ -107,7 +119,7 @@ export async function POST(request: Request) {
     // Record audit event for log cleanup action
     await recordAuditEvent({
       userId: context.user.id,
-      event: 'settings_updated',
+      event: 'activity_log_cleaned',
       request,
       details: `پاک‌سازی ${deletedCount} لاگ منقضی‌شده بر اساس قوانین نگهداری`,
       entityType: 'auth_events',

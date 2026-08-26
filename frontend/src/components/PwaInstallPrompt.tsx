@@ -21,6 +21,10 @@ export default function PwaInstallPrompt() {
   const [isStandalone, setIsStandalone] = useState(false);
 
   useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      void navigator.serviceWorker.register('/sw.js').catch(() => undefined);
+    }
+
     // Check if running in standalone mode (already installed)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const checkStandalone = window.matchMedia('(display-mode: standalone)').matches

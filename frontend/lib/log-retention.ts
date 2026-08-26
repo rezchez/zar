@@ -59,6 +59,7 @@ export const LOG_RETENTION_POLICIES: Record<LogCategory, RetentionPolicy> = {
       'print_template_created',
       'print_template_updated',
       'print_template_deleted',
+      'activity_log_cleaned',
       'email_change_requested',
       'name_changed',
     ],

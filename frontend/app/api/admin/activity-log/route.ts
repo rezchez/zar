@@ -48,7 +48,8 @@ export async function GET(request: Request) {
   }
 
   const url = new URL(request.url);
-  const page = Math.max(1, Number(url.searchParams.get('page') || 1));
+  const rawPage = Number(url.searchParams.get('page') || 1);
+  const page = Number.isFinite(rawPage) ? Math.max(1, Math.floor(rawPage)) : 1;
 
   const rawPerPage = Number(url.searchParams.get('perPage') || 25);
   const perPage = ALLOWED_PER_PAGE.includes(rawPerPage) ? rawPerPage : 25;

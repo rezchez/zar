@@ -34,7 +34,8 @@ export type AuditEvent =
   | 'settings_updated'
   | 'print_template_created'
   | 'print_template_updated'
-  | 'print_template_deleted';
+  | 'print_template_deleted'
+  | 'activity_log_cleaned';
 
 export function getRequestMetadata(request: Request) {
   const forwarded = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
