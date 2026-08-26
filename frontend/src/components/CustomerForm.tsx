@@ -28,7 +28,7 @@ import {
   getCitiesByProvince,
   getProvinces,
 } from '@/lib/iran-cities';
-import JalaliDatePicker from './JalaliDatePicker';
+import FormDatePicker from './FormDatePicker';
 
 type FormState = Record<string, string | number | boolean>;
 
@@ -633,13 +633,13 @@ export default function CustomerForm({
                   </Field>
                 ))}
 
-                <JalaliDatePicker
+                <FormDatePicker
                   label="تاریخ تولد"
                   value={String(state.birthDate ?? '')}
                   onChange={(v) => setValue('birthDate', v)}
                 />
 
-                <JalaliDatePicker
+                <FormDatePicker
                   label="تاریخ تولد همسر"
                   value={String(state.spouseBirthDate ?? '')}
                   onChange={(v) => setValue('spouseBirthDate', v)}
