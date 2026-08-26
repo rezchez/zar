@@ -1,5 +1,4 @@
 import type { Metadata } from 'next'
-import Script from 'next/script'
 import './globals.css'
 import './document-form.css'
 import ThemeProvider from '@/src/components/ThemeProvider'
@@ -47,6 +46,21 @@ const themeBootstrap = `
 })()
 `
 
+const swRegisterScript = `
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function() {
+    navigator.serviceWorker.register('/sw.js').then(
+      function(registration) {
+        console.log('Service Worker registration successful with scope: ', registration.scope);
+      },
+      function(err) {
+        console.log('Service Worker registration failed: ', err);
+      }
+    );
+  });
+}
+`
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -58,27 +72,14 @@ export default function RootLayout({
         <meta name="color-scheme" content="dark light" />
         <meta name="theme-color" content="#1e293b" />
         <link rel="apple-touch-icon" href="/favicon.ico" />
-        <Script
+        <script
           id="zarfolio-theme-bootstrap"
-          strategy="beforeInteractive"
           dangerouslySetInnerHTML={{ __html: themeBootstrap }}
         />
-        <Script id="register-sw" strategy="afterInteractive">
-          {`
-            if ('serviceWorker' in navigator) {
-              window.addEventListener('load', function() {
-                navigator.serviceWorker.register('/sw.js').then(
-                  function(registration) {
-                    console.log('Service Worker registration successful with scope: ', registration.scope);
-                  },
-                  function(err) {
-                    console.log('Service Worker registration failed: ', err);
-                  }
-                );
-              });
-            }
-          `}
-        </Script>
+        <script
+          id="register-sw"
+          dangerouslySetInnerHTML={{ __html: swRegisterScript }}
+        />
       </head>
       <body suppressHydrationWarning>
         <ThemeProvider>
