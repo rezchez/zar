@@ -20,6 +20,7 @@ export async function GET() {
         name: r.name,
         slug: r.slug,
         isSystem: Boolean(r.isSystem),
+        englishName: r.english_name || '',
         createdBy: r.createdBy,
         created: r.created,
         updated: r.updated,
@@ -38,6 +39,7 @@ export async function GET() {
         id: `sys_${sys.slug}`,
         name: sys.name,
         slug: sys.slug,
+        englishName: sys.englishName,
         isSystem: true,
       });
     }
@@ -57,6 +59,7 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const name = String(body?.name ?? '').trim();
+    const englishName = String(body?.englishName ?? '').trim();
 
     if (!name || name.length < 2 || name.length > 120) {
       return NextResponse.json({ message: 'نام گروه باید بین ۲ تا ۱۲۰ کاراکتر باشد.' }, { status: 400 });
@@ -84,6 +87,7 @@ export async function POST(request: Request) {
     const newGroup = await context.pb.collection('customer_groups').create({
       name,
       slug,
+      english_name: englishName,
       isSystem: false,
       createdBy: context.user.id,
     });
@@ -93,6 +97,7 @@ export async function POST(request: Request) {
         id: newGroup.id,
         name: newGroup.name,
         slug: newGroup.slug,
+        englishName: newGroup.english_name || '',
         isSystem: false,
         createdBy: newGroup.createdBy,
         created: newGroup.created,

@@ -30,7 +30,6 @@ import {
   getCitiesByProvince,
   getProvinces,
 } from '@/lib/iran-cities';
-import JalaliDatePicker from './JalaliDatePicker';
 
 type FormState = Record<string, string | number | boolean>;
 
@@ -53,9 +52,7 @@ const textLabels: Record<string, string> = {
   email: 'ایمیل',
   spouseMobile: 'موبایل همسر',
   introductionMethod: 'نحوه آشنایی',
-  detailedDescription: 'توضیحات بیشتر',
   privateDescription: 'توضیحات محرمانه',
-  startDocumentNumber: 'شماره سند آغازین',
 };
 
 const numberLabels: Record<string, string> = {
@@ -66,7 +63,6 @@ const numberLabels: Record<string, string> = {
   foreignBalance: 'مانده ارز دوم',
   tertiaryBalance: 'مانده ارز سوم',
   discountLevel: 'میزان تخفیف',
-  satisfactionLevel: 'میزان رضایت',
   creditCeiling: 'سقف بدهکاری / اعتبار',
   goldReturnDays: 'مدت زمان برگشت طلا (روز)',
 };
@@ -159,9 +155,10 @@ export default function CustomerForm({
   const [autoCodeValue, setAutoCodeValue] = useState<number>(nextCustomerCode ?? 1);
 
   // Customer Groups
-  const [groups, setGroups] = useState<Array<{ id: string; name: string; isSystem?: boolean }>>([]);
+  const [groups, setGroups] = useState<Array<{ id: string; name: string; isSystem?: boolean; englishName?: string }>>([]);
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
+  const [newGroupEnglishName, setNewGroupEnglishName] = useState('');
   const [createGroupLoading, setCreateGroupLoading] = useState(false);
   const [createGroupError, setCreateGroupError] = useState('');
 
@@ -239,7 +236,7 @@ export default function CustomerForm({
       const res = await fetch('/api/customer-groups', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newGroupName.trim() }),
+        body: JSON.stringify({ name: newGroupName, englishName: newGroupEnglishName }),
       });
       const data = await res.json();
       if (!res.ok || !data.group) {
@@ -250,6 +247,7 @@ export default function CustomerForm({
       setGroups((prev) => [...prev, data.group]);
       setValue('groupName', data.group.name);
       setNewGroupName('');
+      setNewGroupEnglishName('');
       setIsGroupModalOpen(false);
     } catch {
       setCreateGroupError('ارتباط با سرور برقرار نشد.');
@@ -559,7 +557,7 @@ export default function CustomerForm({
                   <option value="">بدون گروه</option>
                   {groups.map((g) => (
                     <option key={g.id || g.name} value={g.name}>
-                      {g.name}
+                      {g.name}{g.englishName ? ` (${g.englishName})` : ''}
                     </option>
                   ))}
                 </select>
@@ -662,7 +660,47 @@ export default function CustomerForm({
                   </Field>
                 ))}
 
-                <Field label="توضیحات بیشتر" wide><textarea value={String(state.detailedDescription)} onChange={(e) => setValue('detailedDescription', e.target.value)} /></Field>
+                <Field label="تاریخ تولد (سال/ماه/روز)">
+                  <div className="flex gap-2" dir="ltr">
+                    <input
+                      type="text"
+                      className="w-1/3 text-center"
+                      placeholder="روز"
+                      maxLength={2}
+                      value={state.birthDate && typeof state.birthDate === 'string' && state.birthDate !== 'undefined' ? String(state.birthDate).split('/')[2] || '' : ''}
+                      onChange={(e) => {
+                        const parts = (state.birthDate && typeof state.birthDate === 'string' && state.birthDate !== 'undefined' ? String(state.birthDate) : '//').split('/');
+                        parts[2] = e.target.value.replace(/\D/g, '').slice(0, 2);
+                        setValue('birthDate', parts.join('/'));
+                      }}
+                    />
+                    <input
+                      type="text"
+                      className="w-1/3 text-center"
+                      placeholder="ماه"
+                      maxLength={2}
+                      value={state.birthDate && typeof state.birthDate === 'string' && state.birthDate !== 'undefined' ? String(state.birthDate).split('/')[1] || '' : ''}
+                      onChange={(e) => {
+                        const parts = (state.birthDate && typeof state.birthDate === 'string' && state.birthDate !== 'undefined' ? String(state.birthDate) : '//').split('/');
+                        parts[1] = e.target.value.replace(/\D/g, '').slice(0, 2);
+                        setValue('birthDate', parts.join('/'));
+                      }}
+                    />
+                    <input
+                      type="text"
+                      className="w-1/3 text-center"
+                      placeholder="سال"
+                      maxLength={4}
+                      value={state.birthDate && typeof state.birthDate === 'string' && state.birthDate !== 'undefined' ? String(state.birthDate).split('/')[0] || '' : ''}
+                      onChange={(e) => {
+                        const parts = (state.birthDate && typeof state.birthDate === 'string' && state.birthDate !== 'undefined' ? String(state.birthDate) : '//').split('/');
+                        parts[0] = e.target.value.replace(/\D/g, '').slice(0, 4);
+                        setValue('birthDate', parts.join('/'));
+                      }}
+                    />
+                  </div>
+                </Field>
+
                 <Field label="توضیحات محرمانه" wide><textarea value={String(state.privateDescription)} onChange={(e) => setValue('privateDescription', e.target.value)} /></Field>
               </div>
             </div>
@@ -773,7 +811,6 @@ export default function CustomerForm({
                 <input type="number" step="any" value={String(state[field])} onChange={(e) => setValue(field, e.target.value)} />
               </Field>
             ))}
-            <Field label="شماره سند آغازین"><input value={String(state.startDocumentNumber)} onChange={(e) => setValue('startDocumentNumber', e.target.value)} /></Field>
           </div>
         </div> : null}
       </section>
@@ -815,6 +852,18 @@ export default function CustomerForm({
                 />
               </label>
 
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                نام انگلیسی (اختیاری)
+                <input
+                  type="text"
+                  value={newGroupEnglishName}
+                  onChange={(e) => setNewGroupEnglishName(e.target.value)}
+                  placeholder="e.g. Special Partner..."
+                  className="mt-1 w-full px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+                  dir="ltr"
+                />
+              </label>
+
               <div className="flex items-center justify-end gap-2 mt-2">
                 <button
                   type="button"
@@ -846,7 +895,7 @@ function Field({ label, required, wide, children }: { label: string; required?: 
 }
 
 function SelectField({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: Array<[string, string]> }) {
-  return <Field label={label}><select value={value} onChange={(e) => onChange(e.target.value)}>{options.map(([option, title]) => <option key={option} value={option}>{title}</option>)}</select></Field>;
+  return <Field label={label}><select className="w-full px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-amber-500/50" value={value} onChange={(e) => onChange(e.target.value)}>{options.map(([option, title]) => <option key={option} value={option}>{title}</option>)}</select></Field>;
 }
 
 function BalanceField({

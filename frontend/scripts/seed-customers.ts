@@ -268,9 +268,7 @@ async function main() {
       secondaryCurrency: 'usd',
       secondaryCurrencySymbol: '$',
       phone1: `0912${String(1000000 + index).slice(-7)}`,
-      startDocumentNumber: '1',
       showBalanceByUnit: true,
-      detailedDescription: 'داده آزمایشی برای سنجش عملکرد فهرست طرف‌حساب‌ها',
       privateDescription: seedMarker,
       createdBy: owner.id,
     });

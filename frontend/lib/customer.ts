@@ -23,14 +23,11 @@ export const customerTextFields = [
   'email',
   'spouseMobile',
   'introductionMethod',
-  'detailedDescription',
   'privateDescription',
-  'startDocumentNumber',
 ] as const;
 
 export const customerProfileNumberFields = [
   'discountLevel',
-  'satisfactionLevel',
   'creditCeiling',
   'goldReturnDays',
 ] as const;
@@ -68,7 +65,7 @@ export function emptyCustomerBalances(): CustomerBalanceValues {
   };
 }
 
-export const customerDateFields = [] as const;
+export const customerDateFields = ['birthDate'] as const;
 
 export type Customer = {
   id: string;
@@ -101,15 +98,13 @@ export type Customer = {
   foreignBalance: number;
   tertiaryBalance: number;
   discountLevel: number;
-  satisfactionLevel: number;
   creditCeiling: number;
   goldReturnDays: number;
   showBalanceByUnit: boolean;
   introductionMethod: string;
-  detailedDescription: string;
   privateDescription: string;
+  birthDate: string;
   hasPrivateDescription?: boolean;
-  startDocumentNumber: string;
   avatarUrl?: string;
   openingBalances: CustomerBalanceValues;
   created: string;
