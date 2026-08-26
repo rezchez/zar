@@ -16,16 +16,12 @@ export const customerTextFields = [
   'phone1',
   'phone2',
   'phone3',
-  'telegramId',
   'address1',
-  'address2',
   'postalCode',
   'nationalId',
   'fatherName',
   'email',
-  'spouseName',
   'spouseMobile',
-  'economicNumber',
   'introductionMethod',
   'detailedDescription',
   'privateDescription',
@@ -33,12 +29,10 @@ export const customerTextFields = [
 ] as const;
 
 export const customerProfileNumberFields = [
-  'collectionLevel',
   'discountLevel',
   'satisfactionLevel',
   'creditCeiling',
   'goldReturnDays',
-  'contactCount',
 ] as const;
 
 // These values are stored only in transactions. The names remain aligned
@@ -94,28 +88,22 @@ export type Customer = {
   phone1: string;
   phone2: string;
   phone3: string;
-  telegramId: string;
   address1: string;
-  address2: string;
   postalCode: string;
   nationalId: string;
   fatherName: string;
   email: string;
-  spouseName: string;
   spouseMobile: string;
-  economicNumber: string;
   goldBalance: number;
   silverBalance: number;
   platinumBalance: number;
   rialBalance: number;
   foreignBalance: number;
   tertiaryBalance: number;
-  collectionLevel: number;
   discountLevel: number;
   satisfactionLevel: number;
   creditCeiling: number;
   goldReturnDays: number;
-  contactCount: number;
   showBalanceByUnit: boolean;
   introductionMethod: string;
   detailedDescription: string;

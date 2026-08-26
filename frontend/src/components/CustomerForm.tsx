@@ -46,16 +46,12 @@ const textLabels: Record<string, string> = {
   phone1: 'شماره تماس (پیامک، بله، تلگرام، ایتا و ...)',
   phone2: 'شماره تلفن ۲',
   phone3: 'شماره تلفن ۳',
-  telegramId: 'شناسه تلگرام',
   address1: 'آدرس',
-  address2: 'آدرس دوم',
   postalCode: 'کد پستی',
   nationalId: 'شماره شناسایی / کد ملی',
   fatherName: 'نام پدر',
   email: 'ایمیل',
-  spouseName: 'نام همسر',
   spouseMobile: 'موبایل همسر',
-  economicNumber: 'شماره اقتصادی',
   introductionMethod: 'نحوه آشنایی',
   detailedDescription: 'توضیحات بیشتر',
   privateDescription: 'توضیحات محرمانه',
@@ -69,12 +65,10 @@ const numberLabels: Record<string, string> = {
   rialBalance: 'مانده ریالی',
   foreignBalance: 'مانده ارز دوم',
   tertiaryBalance: 'مانده ارز سوم',
-  collectionLevel: 'میزان تحصیلات',
   discountLevel: 'میزان تخفیف',
   satisfactionLevel: 'میزان رضایت',
   creditCeiling: 'سقف بدهکاری / اعتبار',
   goldReturnDays: 'مدت زمان برگشت طلا (روز)',
-  contactCount: 'تعداد تماس',
 };
 
 function initialState(customer?: Customer): FormState {
@@ -650,20 +644,19 @@ export default function CustomerForm({
             <div className="customer-form-section">
               <div className="account-panel-heading"><h2>اطلاعات تماس و نشانی</h2></div>
               <div className="customer-form-grid">
-                {['phone2', 'phone3', 'telegramId', 'email', 'postalCode', 'nationalId', 'fatherName'].map((field) => (
+                {['phone2', 'phone3', 'email', 'postalCode', 'nationalId', 'fatherName'].map((field) => (
                   <Field key={field} label={textLabels[field]}>
                     <input value={String(state[field])} onChange={(e) => setValue(field, e.target.value)} />
                   </Field>
                 ))}
                 <Field label="آدرس" wide><textarea value={String(state.address1)} onChange={(e) => setValue('address1', e.target.value)} /></Field>
-                <Field label="آدرس دوم" wide><textarea value={String(state.address2)} onChange={(e) => setValue('address2', e.target.value)} /></Field>
               </div>
             </div>
 
             <div className="customer-form-section">
               <div className="account-panel-heading"><h2>اطلاعات همسر و مشخصات تکمیلی</h2></div>
               <div className="customer-form-grid">
-                {['spouseName', 'spouseMobile', 'economicNumber', 'introductionMethod'].map((field) => (
+                {['spouseMobile', 'introductionMethod'].map((field) => (
                   <Field key={field} label={textLabels[field]}>
                     <input value={String(state[field])} onChange={(e) => setValue(field, e.target.value)} />
                   </Field>
