@@ -25,7 +25,12 @@ const eventLabels: Record<string, string> = {
   transaction_created: 'ثبت تراکنش',
   transaction_updated: 'ویرایش تراکنش',
   settings_updated: 'تغییر تنظیمات',
+  print_template_created: 'ایجاد قالب چاپ',
+  print_template_updated: 'ویرایش قالب چاپ',
+  print_template_deleted: 'حذف قالب چاپ',
 };
+
+const ALLOWED_PER_PAGE_VALUES = [25, 50, 75, 100, 500];
 
 export async function GET(request: Request) {
   const context = await getServerAuthContext();
@@ -38,20 +43,43 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const page = Math.max(1, Number(url.searchParams.get('page') || 1));
-  const perPage = Math.min(200, Math.max(20, Number(url.searchParams.get('perPage') || 100)));
+
+  let perPage = Number(url.searchParams.get('perPage') || 25);
+  if (!ALLOWED_PER_PAGE_VALUES.includes(perPage)) {
+    perPage = 25;
+  }
+
   const event = url.searchParams.get('event')?.trim() ?? '';
+  const search = url.searchParams.get('q')?.trim() ?? '';
 
   try {
+    const filterConditions: string[] = [];
+    const filterParams: Record<string, unknown> = {};
+
+    if (event) {
+      filterConditions.push('event = {:event}');
+      filterParams.event = event;
+    }
+
+    if (search) {
+      // Escape special PocketBase filter characters if needed or use multi-field ~ search
+      filterConditions.push('(details ~ {:search} || entityLabel ~ {:search} || ipAddress ~ {:search} || operatingSystem ~ {:search} || user.name ~ {:search} || user.email ~ {:search})');
+      filterParams.search = search;
+    }
+
+    const filterString = filterConditions.length > 0
+      ? context.pb.filter(filterConditions.join(' && '), filterParams)
+      : '';
+
     const result = await context.pb.collection('auth_events').getList(page, perPage, {
       sort: '-created',
-      filter: event
-        ? context.pb.filter('event = {:event}', { event })
-        : '',
+      filter: filterString,
       expand: 'user',
     });
 
     return NextResponse.json({
       totalItems: result.totalItems,
+      totalPages: result.totalPages,
       page: result.page,
       perPage: result.perPage,
       events: result.items.map((item) => {
