@@ -21,7 +21,6 @@ const labels: Record<string, string> = {
   name: 'نام / عنوان',
   gender: 'جنسیت',
   groupName: 'گروه',
-  category: 'رسته',
   province: 'استان',
   city: 'شهر',
   metalType: 'جنس فلز',

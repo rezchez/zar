@@ -5,7 +5,6 @@ export const customerTextFields = [
   'name',
   'gender',
   'groupName',
-  'category',
   'province',
   'city',
   'metalType',
@@ -87,7 +86,6 @@ export type Customer = {
   openingBalanceTransaction: string;
   name: string;
   groupName: string;
-  category: string;
   province: string;
   city: string;
   metalType: string;

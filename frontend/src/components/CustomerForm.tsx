@@ -8,6 +8,8 @@ import {
   Plus,
   Save,
   Trash2,
+  User,
+  UserRound,
   X,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -36,7 +38,6 @@ const textLabels: Record<string, string> = {
   name: 'نام / عنوان طرف‌حساب',
   gender: 'جنسیت',
   groupName: 'گروه',
-  category: 'رسته',
   province: 'استان',
   city: 'شهر',
   metalType: 'جنس فلز',
@@ -92,7 +93,6 @@ function initialState(customer?: Customer): FormState {
     name: customer?.name ?? '',
     gender: customer?.gender ?? '',
     groupName: customer?.groupName ?? '',
-    category: customer?.category ?? '',
     province: initialProvince,
     city: initialCity,
     metalType: customer?.metalType ?? 'gold',
@@ -567,8 +567,6 @@ export default function CustomerForm({
               </div>
             </div>
 
-            <Field label="رسته"><input value={String(state.category)} onChange={(e) => setValue('category', e.target.value)} /></Field>
-
             {/* Province & City Dropdowns */}
             <SelectField
               label="استان"
@@ -596,6 +594,31 @@ export default function CustomerForm({
             <SelectField label="نوع ارز اول" value={String(state.primaryCurrency)} onChange={(v) => setValue('primaryCurrency', v)} options={[
               ['rial', 'ریال'], ['usd', 'دلار'], ['eur', 'یورو'], ['aed', 'درهم'], ['other', 'سایر'],
             ]} />
+          </div>
+
+          {/* Photo Editor Section in Main Info */}
+          <div className="customer-avatar-editor mt-4 pt-4 border-t border-slate-100 dark:border-slate-800/60">
+            <div className="customer-avatar-preview">
+              {avatarPreview ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={avatarPreview} alt="" />
+              ) : state.gender === 'male' ? (
+                <User size={36} className="text-blue-500" />
+              ) : state.gender === 'female' ? (
+                <UserRound size={36} className="text-pink-500" />
+              ) : (
+                <span>{String(state.name || 'ط').charAt(0)}</span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <button type="button" className="dashboard-secondary-button" onClick={() => fileRef.current?.click()}>
+                <ImagePlus size={15} /> انتخاب تصویر
+              </button>
+              <button type="button" className="account-danger-button" disabled={!avatarPreview} onClick={() => { setAvatarPreview(''); setAvatarFile(null); setRemoveAvatar(true); setIsDirty(true); }}>
+                <Trash2 size={15} /> حذف تصویر
+              </button>
+            </div>
+            <input ref={fileRef} hidden type="file" accept="image/png,image/jpeg,image/webp" onChange={chooseAvatar} />
           </div>
         </div>
 
@@ -749,7 +772,7 @@ export default function CustomerForm({
         </div>
 
         {showAdditional ? <div className="customer-form-section">
-          <div className="account-panel-heading"><h2>شرایط و تصویر</h2></div>
+          <div className="account-panel-heading"><h2>شرایط و تنظیمات</h2></div>
           <div className="customer-form-grid">
             {customerNumberFields.map((field) => (
               <Field key={field} label={numberLabels[field]}>
@@ -757,23 +780,6 @@ export default function CustomerForm({
               </Field>
             ))}
             <Field label="شماره سند آغازین"><input value={String(state.startDocumentNumber)} onChange={(e) => setValue('startDocumentNumber', e.target.value)} /></Field>
-          </div>
-          <div className="customer-avatar-editor">
-            <div className="customer-avatar-preview">
-              {avatarPreview ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={avatarPreview} alt="" />
-              ) : (
-                <span>{String(state.name || 'ط').charAt(0)}</span>
-              )}
-            </div>
-            <button type="button" className="dashboard-secondary-button" onClick={() => fileRef.current?.click()}>
-              <ImagePlus size={15} /> انتخاب تصویر
-            </button>
-            <button type="button" className="account-danger-button" disabled={!avatarPreview} onClick={() => { setAvatarPreview(''); setAvatarFile(null); setRemoveAvatar(true); setIsDirty(true); }}>
-              <Trash2 size={15} /> حذف تصویر
-            </button>
-            <input ref={fileRef} hidden type="file" accept="image/png,image/jpeg,image/webp" onChange={chooseAvatar} />
           </div>
         </div> : null}
       </section>

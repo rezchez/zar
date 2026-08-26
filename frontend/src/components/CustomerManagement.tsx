@@ -109,7 +109,7 @@ export default function CustomerManagement({ initialCustomers, canDelete }: { in
     return customers
       .filter((customer) =>
         (!group || customer.groupName === group)
-        && `${customer.customerCode} ${customer.name} ${customer.email} ${customer.phone1} ${customer.city} ${customer.category}`
+        && `${customer.customerCode} ${customer.name} ${customer.email} ${customer.phone1} ${customer.city}`
           .toLocaleLowerCase()
           .includes(normalized))
       .sort((left, right) => {

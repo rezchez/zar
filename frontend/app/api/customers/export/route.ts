@@ -83,7 +83,6 @@ export async function GET(request: Request) {
         'کد حساب': customer.customerCode,
         'نام': customer.name,
         'گروه': customer.groupName,
-        'رسته': customer.category,
         'استان': customer.province,
         'شهر': customer.city,
         'جنسیت': customer.gender === 'male' ? 'آقا' : customer.gender === 'female' ? 'خانم' : '',
@@ -98,7 +97,7 @@ export async function GET(request: Request) {
       const workbook = XLSX.utils.book_new();
       const worksheet = XLSX.utils.json_to_sheet(rows);
       worksheet['!cols'] = [
-        { wch: 12 }, { wch: 28 }, { wch: 16 }, { wch: 16 }, { wch: 16 },
+        { wch: 12 }, { wch: 28 }, { wch: 16 }, { wch: 16 },
         { wch: 18 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 18 },
         { wch: 18 }, { wch: 22 }, { wch: 22 }, { wch: 16 },
       ];
