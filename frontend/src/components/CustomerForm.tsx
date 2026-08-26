@@ -56,7 +56,6 @@ const textLabels: Record<string, string> = {
   spouseName: 'نام همسر',
   spouseMobile: 'موبایل همسر',
   economicNumber: 'شماره اقتصادی',
-  registrationNumber: 'شماره ثبت',
   introductionMethod: 'نحوه آشنایی',
   detailedDescription: 'توضیحات بیشتر',
   privateDescription: 'توضیحات محرمانه',
@@ -423,10 +422,24 @@ export default function CustomerForm({
   function chooseAvatar(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
+    if (avatarPreview && avatarPreview.startsWith('blob:')) {
+      URL.revokeObjectURL(avatarPreview);
+    }
     setAvatarFile(file);
     setRemoveAvatar(false);
     setIsDirty(true);
     setAvatarPreview(URL.createObjectURL(file));
+  }
+
+  function handleRemoveAvatar() {
+    if (avatarPreview && avatarPreview.startsWith('blob:')) {
+      URL.revokeObjectURL(avatarPreview);
+    }
+    setAvatarPreview('');
+    setAvatarFile(null);
+    setRemoveAvatar(true);
+    setIsDirty(true);
+    if (fileRef.current) fileRef.current.value = '';
   }
 
   function setBalanceDirection(field: string, direction: 'debit' | 'credit') {
@@ -614,7 +627,7 @@ export default function CustomerForm({
               <button type="button" className="dashboard-secondary-button" onClick={() => fileRef.current?.click()}>
                 <ImagePlus size={15} /> انتخاب تصویر
               </button>
-              <button type="button" className="account-danger-button" disabled={!avatarPreview} onClick={() => { setAvatarPreview(''); setAvatarFile(null); setRemoveAvatar(true); setIsDirty(true); }}>
+              <button type="button" className="account-danger-button" disabled={!avatarPreview} onClick={handleRemoveAvatar}>
                 <Trash2 size={15} /> حذف تصویر
               </button>
             </div>
@@ -650,23 +663,11 @@ export default function CustomerForm({
             <div className="customer-form-section">
               <div className="account-panel-heading"><h2>اطلاعات همسر و مشخصات تکمیلی</h2></div>
               <div className="customer-form-grid">
-                {['spouseName', 'spouseMobile', 'economicNumber', 'registrationNumber', 'introductionMethod'].map((field) => (
+                {['spouseName', 'spouseMobile', 'economicNumber', 'introductionMethod'].map((field) => (
                   <Field key={field} label={textLabels[field]}>
                     <input value={String(state[field])} onChange={(e) => setValue(field, e.target.value)} />
                   </Field>
                 ))}
-
-                <JalaliDatePicker
-                  label="تاریخ تولد"
-                  value={String(state.birthDate ?? '')}
-                  onChange={(v) => setValue('birthDate', v)}
-                />
-
-                <JalaliDatePicker
-                  label="تاریخ تولد همسر"
-                  value={String(state.spouseBirthDate ?? '')}
-                  onChange={(v) => setValue('spouseBirthDate', v)}
-                />
 
                 <Field label="توضیحات بیشتر" wide><textarea value={String(state.detailedDescription)} onChange={(e) => setValue('detailedDescription', e.target.value)} /></Field>
                 <Field label="توضیحات محرمانه" wide><textarea value={String(state.privateDescription)} onChange={(e) => setValue('privateDescription', e.target.value)} /></Field>

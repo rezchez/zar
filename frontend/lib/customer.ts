@@ -26,7 +26,6 @@ export const customerTextFields = [
   'spouseName',
   'spouseMobile',
   'economicNumber',
-  'registrationNumber',
   'introductionMethod',
   'detailedDescription',
   'privateDescription',
@@ -75,10 +74,7 @@ export function emptyCustomerBalances(): CustomerBalanceValues {
   };
 }
 
-export const customerDateFields = [
-  'birthDate',
-  'spouseBirthDate',
-] as const;
+export const customerDateFields = [] as const;
 
 export type Customer = {
   id: string;
@@ -108,9 +104,6 @@ export type Customer = {
   spouseName: string;
   spouseMobile: string;
   economicNumber: string;
-  registrationNumber: string;
-  birthDate: string;
-  spouseBirthDate: string;
   goldBalance: number;
   silverBalance: number;
   platinumBalance: number;
