@@ -35,7 +35,6 @@ function openingBalancePayload(
     transactionDate: validTransactionDate(
       customer.created,
     ),
-    documentNumber: customer.startDocumentNumber,
     description: 'مانده اول دوره',
     goldAmount: balances.goldBalance,
     silverAmount: balances.silverBalance,

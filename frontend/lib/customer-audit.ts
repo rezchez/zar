@@ -38,14 +38,12 @@ const labels: Record<string, string> = {
   fatherName: 'نام پدر',
   email: 'ایمیل',
   spouseMobile: 'موبایل همسر',
+  birthDate: 'تاریخ تولد (شمسی)',
   discountLevel: 'میزان تخفیف',
-  satisfactionLevel: 'میزان رضایت',
   creditCeiling: 'سقف اعتبار',
   goldReturnDays: 'روزهای برگشت طلا',
   introductionMethod: 'نحوه آشنایی',
-  detailedDescription: 'توضیحات بیشتر',
   privateDescription: 'توضیحات محرمانه',
-  startDocumentNumber: 'شماره سند آغازین',
 };
 
 const auditedFields = [

@@ -29,6 +29,7 @@ export async function PATCH(
 
     const body = await request.json();
     const newName = String(body?.name ?? '').trim();
+    const englishName = String(body?.englishName ?? body?.english_name ?? '').trim();
 
     if (!newName || newName.length < 2 || newName.length > 120) {
       return NextResponse.json({ message: 'نام جدید گروه معتبر نیست.' }, { status: 400 });
@@ -52,12 +53,14 @@ export async function PATCH(
 
     const updated = await context.pb.collection('customer_groups').update(id, {
       name: newName,
+      english_name: englishName,
     });
 
     return NextResponse.json({
       group: {
         id: updated.id,
         name: updated.name,
+        englishName: updated.english_name ?? englishName,
         slug: updated.slug,
         isSystem: Boolean(updated.isSystem),
       },

@@ -18,6 +18,7 @@ export async function GET() {
       records = pbGroups.map((r) => ({
         id: r.id,
         name: r.name,
+        englishName: typeof r.english_name === 'string' ? r.english_name : '',
         slug: r.slug,
         isSystem: Boolean(r.isSystem),
         createdBy: r.createdBy,
@@ -37,6 +38,7 @@ export async function GET() {
       records.unshift({
         id: `sys_${sys.slug}`,
         name: sys.name,
+        englishName: sys.englishName,
         slug: sys.slug,
         isSystem: true,
       });
@@ -57,6 +59,7 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const name = String(body?.name ?? '').trim();
+    const englishName = String(body?.englishName ?? body?.english_name ?? '').trim();
 
     if (!name || name.length < 2 || name.length > 120) {
       return NextResponse.json({ message: 'نام گروه باید بین ۲ تا ۱۲۰ کاراکتر باشد.' }, { status: 400 });
@@ -83,6 +86,7 @@ export async function POST(request: Request) {
     const slug = generateGroupSlug(name);
     const newGroup = await context.pb.collection('customer_groups').create({
       name,
+      english_name: englishName,
       slug,
       isSystem: false,
       createdBy: context.user.id,
@@ -92,6 +96,7 @@ export async function POST(request: Request) {
       group: {
         id: newGroup.id,
         name: newGroup.name,
+        englishName: newGroup.english_name ?? englishName,
         slug: newGroup.slug,
         isSystem: false,
         createdBy: newGroup.createdBy,

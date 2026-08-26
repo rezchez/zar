@@ -1,6 +1,7 @@
 export interface CustomerGroup {
   id: string;
   name: string;
+  englishName?: string;
   slug: string;
   isSystem: boolean;
   createdBy?: string;
@@ -8,19 +9,19 @@ export interface CustomerGroup {
   updated?: string;
 }
 
-export const SYSTEM_GROUPS: Array<{ name: string; slug: string }> = [
-  { name: 'مشتری', slug: 'customer' },
-  { name: 'بنکدار', slug: 'wholesaler' },
-  { name: 'سنگ فروش', slug: 'stone_seller' },
-  { name: 'آبکار', slug: 'gold_plater' },
-  { name: 'مخراج کار', slug: 'stone_setter' },
-  { name: 'کیفی', slug: 'kifi' },
-  { name: 'همکار', slug: 'partner' },
-  { name: 'آبشده فروش', slug: 'bullion_dealer' },
-  { name: 'صراف', slug: 'currency_exchange' },
-  { name: 'جواهر ساز', slug: 'jeweler' },
-  { name: 'تراشکار', slug: 'lapidary' },
-  { name: 'تعمیرکار', slug: 'repairer' },
+export const SYSTEM_GROUPS: Array<{ name: string; englishName: string; slug: string }> = [
+  { name: 'مشتری', englishName: 'Customer', slug: 'customer' },
+  { name: 'بنکدار', englishName: 'Wholesaler', slug: 'wholesaler' },
+  { name: 'سنگ فروش', englishName: 'Stone Seller', slug: 'stone_seller' },
+  { name: 'آبکار', englishName: 'Gold Plater', slug: 'gold_plater' },
+  { name: 'مخراج کار', englishName: 'Stone Setter', slug: 'stone_setter' },
+  { name: 'کیفی', englishName: 'Kifi', slug: 'kifi' },
+  { name: 'همکار', englishName: 'Partner', slug: 'partner' },
+  { name: 'آبشده فروش', englishName: 'Bullion Dealer', slug: 'bullion_dealer' },
+  { name: 'صراف', englishName: 'Currency Exchange', slug: 'currency_exchange' },
+  { name: 'جواهر ساز', englishName: 'Jeweler', slug: 'jeweler' },
+  { name: 'تراشکار', englishName: 'Lapidary', slug: 'lapidary' },
+  { name: 'تعمیرکار', englishName: 'Repairer', slug: 'repairer' },
 ];
 
 export function isSystemGroup(slugOrName: string): boolean {

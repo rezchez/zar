@@ -30,7 +30,6 @@ import {
   getCitiesByProvince,
   getProvinces,
 } from '@/lib/iran-cities';
-import JalaliDatePicker from './JalaliDatePicker';
 
 type FormState = Record<string, string | number | boolean>;
 
@@ -53,9 +52,7 @@ const textLabels: Record<string, string> = {
   email: 'ایمیل',
   spouseMobile: 'موبایل همسر',
   introductionMethod: 'نحوه آشنایی',
-  detailedDescription: 'توضیحات بیشتر',
   privateDescription: 'توضیحات محرمانه',
-  startDocumentNumber: 'شماره سند آغازین',
 };
 
 const numberLabels: Record<string, string> = {
@@ -66,10 +63,34 @@ const numberLabels: Record<string, string> = {
   foreignBalance: 'مانده ارز دوم',
   tertiaryBalance: 'مانده ارز سوم',
   discountLevel: 'میزان تخفیف',
-  satisfactionLevel: 'میزان رضایت',
   creditCeiling: 'سقف بدهکاری / اعتبار',
   goldReturnDays: 'مدت زمان برگشت طلا (روز)',
 };
+
+function parseJalaliParts(rawDate: string): { year: string; month: string; day: string } {
+  if (!rawDate) return { year: '', month: '', day: '' };
+  const clean = rawDate.trim().replace(/-/g, '/');
+  const parts = clean.split('/');
+  if (parts.length === 3) {
+    return {
+      year: parts[0] || '',
+      month: parts[1] || '',
+      day: parts[2] || '',
+    };
+  }
+  return { year: '', month: '', day: '' };
+}
+
+function formatJalaliParts(year: string, month: string, day: string): string {
+  const y = year.trim();
+  let m = month.trim();
+  let d = day.trim();
+  if (!y && !m && !d) return '';
+  if (m.length === 1) m = `0${m}`;
+  if (d.length === 1) d = `0${d}`;
+  if (y && m && d) return `${y}/${m}/${d}`;
+  return [y, m, d].filter(Boolean).join('/');
+}
 
 function initialState(customer?: Customer): FormState {
   const openingBalances = customer?.openingBalances ?? emptyCustomerBalances();
@@ -81,6 +102,8 @@ function initialState(customer?: Customer): FormState {
     const foundProv = findProvinceByCity(initialCity);
     if (foundProv) initialProvince = foundProv;
   }
+
+  const jalaliParts = parseJalaliParts(customer?.birthDate ?? '');
 
   const state: FormState = {
     name: customer?.name ?? '',
@@ -97,6 +120,9 @@ function initialState(customer?: Customer): FormState {
     showBalanceByUnit: customer?.showBalanceByUnit ?? true,
     customerCodeMode: 'auto',
     customerCode: customer?.customerCode ?? '',
+    birthYear: jalaliParts.year,
+    birthMonth: jalaliParts.month,
+    birthDay: jalaliParts.day,
   };
 
   for (const field of customerTextFields) {
@@ -113,9 +139,11 @@ function initialState(customer?: Customer): FormState {
     state[field] = openingBalances[field];
   }
   for (const field of customerDateFields) {
-    state[field] = customer?.[field as keyof Customer]
-      ? String(customer[field as keyof Customer]).slice(0, 10)
-      : '';
+    if (field !== 'birthDate') {
+      state[field] = customer?.[field as keyof Customer]
+        ? String(customer[field as keyof Customer]).slice(0, 10)
+        : '';
+    }
   }
   return state;
 }
@@ -159,9 +187,10 @@ export default function CustomerForm({
   const [autoCodeValue, setAutoCodeValue] = useState<number>(nextCustomerCode ?? 1);
 
   // Customer Groups
-  const [groups, setGroups] = useState<Array<{ id: string; name: string; isSystem?: boolean }>>([]);
+  const [groups, setGroups] = useState<Array<{ id: string; name: string; englishName?: string; isSystem?: boolean }>>([]);
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
+  const [newGroupEnglishName, setNewGroupEnglishName] = useState('');
   const [createGroupLoading, setCreateGroupLoading] = useState(false);
   const [createGroupError, setCreateGroupError] = useState('');
 
@@ -239,7 +268,10 @@ export default function CustomerForm({
       const res = await fetch('/api/customer-groups', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newGroupName.trim() }),
+        body: JSON.stringify({
+          name: newGroupName.trim(),
+          englishName: newGroupEnglishName.trim(),
+        }),
       });
       const data = await res.json();
       if (!res.ok || !data.group) {
@@ -250,6 +282,7 @@ export default function CustomerForm({
       setGroups((prev) => [...prev, data.group]);
       setValue('groupName', data.group.name);
       setNewGroupName('');
+      setNewGroupEnglishName('');
       setIsGroupModalOpen(false);
     } catch {
       setCreateGroupError('ارتباط با سرور برقرار نشد.');
@@ -349,7 +382,17 @@ export default function CustomerForm({
     setErrorMessage('');
 
     const formData = new FormData();
+    const formattedBirthDate = formatJalaliParts(
+      String(state.birthYear ?? ''),
+      String(state.birthMonth ?? ''),
+      String(state.birthDay ?? ''),
+    );
+
     for (const field of customerTextFields) {
+      if (field === 'birthDate') {
+        formData.append('birthDate', formattedBirthDate);
+        continue;
+      }
       const optionalCurrencyIsDisabled =
         (field === 'secondaryCurrency' || field === 'secondaryCurrencySymbol')
         && !enabledOptionalBalances.includes('foreignBalance');
@@ -369,6 +412,7 @@ export default function CustomerForm({
       formData.append(field, isEnabled ? String(state[field] ?? 0) : '0');
     }
     for (const field of customerDateFields) {
+      if (field === 'birthDate') continue;
       if (state[field]) formData.append(field, String(state[field]));
     }
     formData.append('showBalanceByUnit', String(state.showBalanceByUnit === true));
@@ -548,20 +592,22 @@ export default function CustomerForm({
             />
 
             {/* Group Selection with + button */}
-            <div className="flex flex-col gap-1">
-              <span className="text-xs font-bold text-slate-700 dark:text-slate-300">گروه</span>
-              <div className="flex items-center gap-1.5">
+            <Field label="گروه">
+              <div className="flex items-center gap-1.5 w-full">
                 <select
-                  className="w-full px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
                   value={String(state.groupName ?? '')}
                   onChange={(e) => setValue('groupName', e.target.value)}
+                  className="w-full"
                 >
                   <option value="">بدون گروه</option>
-                  {groups.map((g) => (
-                    <option key={g.id || g.name} value={g.name}>
-                      {g.name}
-                    </option>
-                  ))}
+                  {groups.map((g) => {
+                    const label = g.englishName ? `${g.name} (${g.englishName})` : g.name;
+                    return (
+                      <option key={g.id || g.name} value={g.name}>
+                        {label}
+                      </option>
+                    );
+                  })}
                 </select>
                 <button
                   type="button"
@@ -572,7 +618,7 @@ export default function CustomerForm({
                   <Plus size={16} />
                 </button>
               </div>
-            </div>
+            </Field>
 
             {/* Province & City Dropdowns */}
             <SelectField
@@ -662,7 +708,36 @@ export default function CustomerForm({
                   </Field>
                 ))}
 
-                <Field label="توضیحات بیشتر" wide><textarea value={String(state.detailedDescription)} onChange={(e) => setValue('detailedDescription', e.target.value)} /></Field>
+                {/* Birth Date Input UI with 3 separate inputs (Year, Month, Day) */}
+                <Field label="تاریخ تولد (شمسی)" wide>
+                  <div className="grid grid-cols-3 gap-2 w-full">
+                    <input
+                      type="number"
+                      placeholder="سال (مثلا ۱۳۷۰)"
+                      value={String(state.birthYear ?? '')}
+                      onChange={(e) => setValue('birthYear', e.target.value)}
+                      min="1300"
+                      max="1450"
+                    />
+                    <input
+                      type="number"
+                      placeholder="ماه (۱ تا ۱۲)"
+                      value={String(state.birthMonth ?? '')}
+                      onChange={(e) => setValue('birthMonth', e.target.value)}
+                      min="1"
+                      max="12"
+                    />
+                    <input
+                      type="number"
+                      placeholder="روز (۱ تا ۳۱)"
+                      value={String(state.birthDay ?? '')}
+                      onChange={(e) => setValue('birthDay', e.target.value)}
+                      min="1"
+                      max="31"
+                    />
+                  </div>
+                </Field>
+
                 <Field label="توضیحات محرمانه" wide><textarea value={String(state.privateDescription)} onChange={(e) => setValue('privateDescription', e.target.value)} /></Field>
               </div>
             </div>
@@ -773,7 +848,6 @@ export default function CustomerForm({
                 <input type="number" step="any" value={String(state[field])} onChange={(e) => setValue(field, e.target.value)} />
               </Field>
             ))}
-            <Field label="شماره سند آغازین"><input value={String(state.startDocumentNumber)} onChange={(e) => setValue('startDocumentNumber', e.target.value)} /></Field>
           </div>
         </div> : null}
       </section>
@@ -804,7 +878,7 @@ export default function CustomerForm({
 
             <div className="flex flex-col gap-3">
               <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                نام گروه
+                نام گروه (فارسی)
                 <input
                   type="text"
                   value={newGroupName}
@@ -812,6 +886,18 @@ export default function CustomerForm({
                   placeholder="مثلاً همکار خاص..."
                   className="mt-1 w-full px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
                   autoFocus
+                />
+              </label>
+
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                نام انگلیسی (English Name)
+                <input
+                  type="text"
+                  value={newGroupEnglishName}
+                  onChange={(e) => setNewGroupEnglishName(e.target.value)}
+                  placeholder="e.g., Special Partner..."
+                  className="mt-1 w-full px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+                  dir="ltr"
                 />
               </label>
 
