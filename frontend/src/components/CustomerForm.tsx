@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  ArrowRight,
   Check,
   ChevronDown,
   ImagePlus,
@@ -12,6 +13,7 @@ import {
   UserRound,
   X,
 } from 'lucide-react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
@@ -80,6 +82,7 @@ function initialState(customer?: Customer): FormState {
 
   const state: FormState = {
     name: customer?.name ?? '',
+    englishName: customer?.englishName ?? '',
     gender: customer?.gender ?? '',
     groupName: customer?.groupName ?? '',
     province: initialProvince,
@@ -162,6 +165,7 @@ export default function CustomerForm({
   const [createGroupLoading, setCreateGroupLoading] = useState(false);
   const [createGroupError, setCreateGroupError] = useState('');
 
+  const [englishNameError, setEnglishNameError] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
@@ -199,10 +203,17 @@ export default function CustomerForm({
 
   function setValue(field: string, value: string | number | boolean) {
     setIsDirty(true);
+    if (field === 'englishName') {
+      const strVal = String(value);
+      if (strVal && !/^[a-zA-Z\s]*$/.test(strVal)) {
+        setEnglishNameError('فقط حروف انگلیسی و فاصله مجاز است.');
+        return;
+      }
+      setEnglishNameError('');
+    }
     setState((current) => {
       const next = { ...current, [field]: value };
       if (field === 'province') {
-        // Reset city if it doesn't belong to the new province
         const validCities = getCitiesByProvince(String(value));
         if (!validCities.includes(String(current.city))) {
           next.city = '';
@@ -346,8 +357,19 @@ export default function CustomerForm({
     setMessage('');
     setErrorMessage('');
 
+    if (state.englishName && !/^[a-zA-Z\s]*$/.test(String(state.englishName))) {
+      setErrorMessage('نام انگلیسی وارد شده معتبر نیست (فقط حروف انگلیسی).');
+      setLoading(false);
+      return;
+    }
+
     const formData = new FormData();
     for (const field of customerTextFields) {
+      if (field === 'englishName') {
+        formData.append('englishName', String(state.englishName ?? ''));
+        formData.append('english_name', String(state.englishName ?? ''));
+        continue;
+      }
       const optionalCurrencyIsDisabled =
         (field === 'secondaryCurrency' || field === 'secondaryCurrencySymbol')
         && !enabledOptionalBalances.includes('foreignBalance');
@@ -394,8 +416,8 @@ export default function CustomerForm({
 
       setMessage(
         customer
-          ? 'اطلاعات طرف‌حساب ذخیره شد.'
-          : `طرف‌حساب با کد ${data.customer.customerCode} ثبت شد.`,
+          ? 'طرف‌حساب با موفقیت ذخیره شد.'
+          : `طرف‌حساب با کد ${data.customer.customerCode} با موفقیت ذخیره شد.`,
       );
       setIsDirty(false);
       if (!customer) {
@@ -457,7 +479,17 @@ export default function CustomerForm({
   const cities = selectedProvince ? getCitiesByProvince(selectedProvince) : [];
 
   return (
-    <form className="customer-form-page" onSubmit={save}>
+    <form className="customer-form-page pb-28 relative" onSubmit={save}>
+      <div className="flex items-center justify-between mb-4">
+        <Link
+          href="/dashboard/customers"
+          className="inline-flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-amber-600 dark:hover:text-amber-400 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-3.5 py-2 rounded-xl transition-colors shadow-sm"
+        >
+          <ArrowRight size={16} />
+          بازگشت به فهرست طرف‌حساب‌ها
+        </Link>
+      </div>
+
       <div className="dashboard-page-heading">
         <div>
           <p className="eyebrow">طرف‌حساب و مشتری</p>
@@ -476,6 +508,17 @@ export default function CustomerForm({
           <div className="customer-form-grid">
             <Field label="نام / عنوان طرف‌حساب" required>
               <input value={String(state.name)} onChange={(e) => setValue('name', e.target.value)} required />
+            </Field>
+
+            <Field label="نام و نام خانوادگی انگلیسی">
+              <input
+                value={String(state.englishName ?? '')}
+                onChange={(e) => setValue('englishName', e.target.value)}
+                placeholder="e.g. John Doe"
+                dir="ltr"
+                className="font-mono text-left"
+              />
+              {englishNameError ? <small className="text-rose-500 font-bold block mt-1">{englishNameError}</small> : null}
             </Field>
 
             {/* Account Code Selection */}
@@ -660,42 +703,53 @@ export default function CustomerForm({
                   </Field>
                 ))}
 
-                <Field label="تاریخ تولد (سال/ماه/روز)">
-                  <div className="flex gap-2" dir="ltr">
+                <Field label="تاریخ تولد (روز / ماه / سال)">
+                  <div className="flex gap-2" dir="rtl">
                     <input
                       type="text"
-                      className="w-1/3 text-center"
+                      className="w-1/3 text-center font-bold"
                       placeholder="روز"
                       maxLength={2}
                       value={state.birthDate && typeof state.birthDate === 'string' && state.birthDate !== 'undefined' ? String(state.birthDate).split('/')[2] || '' : ''}
                       onChange={(e) => {
-                        const parts = (state.birthDate && typeof state.birthDate === 'string' && state.birthDate !== 'undefined' ? String(state.birthDate) : '//').split('/');
-                        parts[2] = e.target.value.replace(/\D/g, '').slice(0, 2);
-                        setValue('birthDate', parts.join('/'));
+                        const raw = state.birthDate && typeof state.birthDate === 'string' && state.birthDate !== 'undefined' ? String(state.birthDate) : '//';
+                        const parts = raw.split('/');
+                        const y = parts[0] || '';
+                        const m = parts[1] || '';
+                        const d = e.target.value.replace(/\D/g, '').slice(0, 2);
+                        setValue('birthDate', `${y}/${m}/${d}`);
                       }}
                     />
+                    <span className="self-center font-bold text-slate-400">/</span>
                     <input
                       type="text"
-                      className="w-1/3 text-center"
+                      className="w-1/3 text-center font-bold"
                       placeholder="ماه"
                       maxLength={2}
                       value={state.birthDate && typeof state.birthDate === 'string' && state.birthDate !== 'undefined' ? String(state.birthDate).split('/')[1] || '' : ''}
                       onChange={(e) => {
-                        const parts = (state.birthDate && typeof state.birthDate === 'string' && state.birthDate !== 'undefined' ? String(state.birthDate) : '//').split('/');
-                        parts[1] = e.target.value.replace(/\D/g, '').slice(0, 2);
-                        setValue('birthDate', parts.join('/'));
+                        const raw = state.birthDate && typeof state.birthDate === 'string' && state.birthDate !== 'undefined' ? String(state.birthDate) : '//';
+                        const parts = raw.split('/');
+                        const y = parts[0] || '';
+                        const m = e.target.value.replace(/\D/g, '').slice(0, 2);
+                        const d = parts[2] || '';
+                        setValue('birthDate', `${y}/${m}/${d}`);
                       }}
                     />
+                    <span className="self-center font-bold text-slate-400">/</span>
                     <input
                       type="text"
-                      className="w-1/3 text-center"
+                      className="w-1/3 text-center font-bold"
                       placeholder="سال"
                       maxLength={4}
                       value={state.birthDate && typeof state.birthDate === 'string' && state.birthDate !== 'undefined' ? String(state.birthDate).split('/')[0] || '' : ''}
                       onChange={(e) => {
-                        const parts = (state.birthDate && typeof state.birthDate === 'string' && state.birthDate !== 'undefined' ? String(state.birthDate) : '//').split('/');
-                        parts[0] = e.target.value.replace(/\D/g, '').slice(0, 4);
-                        setValue('birthDate', parts.join('/'));
+                        const raw = state.birthDate && typeof state.birthDate === 'string' && state.birthDate !== 'undefined' ? String(state.birthDate) : '//';
+                        const parts = raw.split('/');
+                        const y = e.target.value.replace(/\D/g, '').slice(0, 4);
+                        const m = parts[1] || '';
+                        const d = parts[2] || '';
+                        setValue('birthDate', `${y}/${m}/${d}`);
                       }}
                     />
                   </div>
@@ -815,10 +869,25 @@ export default function CustomerForm({
         </div> : null}
       </section>
 
-      <button className="customer-save-button" disabled={loading} type="submit">
-        {loading ? <LoaderCircle size={17} className="spin" /> : <Save size={17} />}
-        {loading ? 'در حال ذخیره...' : customer ? 'ذخیره تغییرات طرف‌حساب' : 'ذخیره طرف‌حساب'}
-      </button>
+      {/* Sticky Save Bar */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 p-4 shadow-2xl flex items-center justify-between gap-4">
+        <div className="flex items-center gap-2">
+          <Link
+            href="/dashboard/customers"
+            className="px-4 py-2 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+          >
+            انصراف
+          </Link>
+        </div>
+        <button
+          className="customer-save-button text-xs py-2.5 px-6 shadow-lg shadow-amber-500/20"
+          disabled={loading || Boolean(englishNameError)}
+          type="submit"
+        >
+          {loading ? <LoaderCircle size={17} className="spin" /> : <Save size={17} />}
+          {loading ? 'در حال ذخیره...' : customer ? 'ذخیره تغییرات طرف‌حساب' : 'ذخیره طرف‌حساب'}
+        </button>
+      </div>
 
       {/* Modal for Creating New Group */}
       {isGroupModalOpen ? (

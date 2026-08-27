@@ -25,6 +25,22 @@ import {
 } from 'lucide-react';
 import { useAppSettings } from './SettingsProvider';
 import { jalaliDateToIso, parseJalaliDate, formatJalaliDate } from '@/lib/jalali';
+import type { PdfManagerRecipient } from '@/lib/settings';
+
+const CUSTOMER_COLUMN_OPTIONS: Array<[string, string]> = [
+  ['customerCode', 'کد حساب'],
+  ['name', 'نام / عنوان'],
+  ['englishName', 'نام انگلیسی'],
+  ['groupName', 'گروه'],
+  ['city', 'شهر'],
+  ['phone1', 'تلفن تماس'],
+  ['goldBalance', 'طلا (گرم)'],
+  ['silverBalance', 'نقره (گرم)'],
+  ['platinumBalance', 'پلاتین (گرم)'],
+  ['rialBalance', 'مانده ریالی/تومانی'],
+  ['foreignBalance', 'ارز دوم'],
+  ['tertiaryBalance', 'ارز سوم'],
+];
 import { formatMoney } from '@/lib/money';
 import type { PriceApiSettings, PriceApiUnit } from '@/lib/price-api';
 import InvoicePrintDesigner from '@/src/components/InvoicePrintDesigner';
@@ -790,6 +806,169 @@ export default function ProgramSettings() {
               >
                 {isSaving ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />}
                 <span>{isSaving ? 'در حال ذخیره...' : 'ذخیره اطلاعات سربرگ'}</span>
+              </button>
+            </div>
+          </section>
+
+          {/* Customer Print Columns Settings */}
+          <section className="dashboard-panel p-6 space-y-4">
+            <div className="account-panel-heading border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div>
+                <p className="eyebrow">تنظیمات ستون‌های خروجی</p>
+                <h2 className="flex items-center gap-2 text-sm font-black">
+                  <FileText size={16} className="text-amber-600" />
+                  ستون‌های قابل چاپ در گزارش طرف‌حساب‌ها
+                </h2>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-500">
+              ستون‌هایی را که می‌خواهید در خروجی‌های PDF و چاپ لیست طرف‌حساب‌ها نمایش داده شوند انتخاب کنید:
+            </p>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 text-xs pt-2">
+              {CUSTOMER_COLUMN_OPTIONS.map(([colKey, colLabel]) => {
+                const checked = (form.customerPrintColumns || []).includes(colKey);
+                return (
+                  <label key={colKey} className="flex items-center gap-2.5 p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 hover:border-amber-400 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(e) => {
+                        const currentCols = form.customerPrintColumns || [];
+                        const nextCols = e.target.checked
+                          ? [...new Set([...currentCols, colKey])]
+                          : currentCols.filter((k) => k !== colKey);
+                        updateFormField('customerPrintColumns', nextCols);
+                      }}
+                      className="accent-amber-500 rounded"
+                    />
+                    <span className="font-bold text-slate-700 dark:text-slate-300">{colLabel}</span>
+                  </label>
+                );
+              })}
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={handleSaveSettings}
+                disabled={isSaving}
+                className="customer-save-button text-xs py-2 px-3"
+              >
+                {isSaving ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />}
+                <span>{isSaving ? 'در حال ذخیره...' : 'ذخیره ستون‌های چاپ'}</span>
+              </button>
+            </div>
+          </section>
+
+          {/* PDF Recipients / Managers Management */}
+          <section className="dashboard-panel p-6 space-y-4">
+            <div className="account-panel-heading border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div>
+                <p className="eyebrow">دریافت‌کنندگان خروجی PDF</p>
+                <h2 className="flex items-center gap-2 text-sm font-black">
+                  <Building2 size={16} className="text-amber-600" />
+                  مدیریت مدیران و شناسه ارسال پیام‌رسان‌ها
+                </h2>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-500">
+              اطلاعات مدیرانی که فایل‌های PDF گزارش‌ها برای آنها ارسال می‌شود را مدیریت کنید:
+            </p>
+
+            <div className="space-y-3">
+              {(form.pdfManagers || []).map((mgr, idx) => (
+                <div key={mgr.id || idx} className="grid grid-cols-1 sm:grid-cols-5 gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 text-xs items-center">
+                  <input
+                    type="text"
+                    placeholder="نام مدیر"
+                    value={mgr.name}
+                    onChange={(e) => {
+                      const updated = [...(form.pdfManagers || [])];
+                      updated[idx] = { ...updated[idx], name: e.target.value };
+                      updateFormField('pdfManagers', updated);
+                    }}
+                    className="form-input px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                  />
+                  <input
+                    type="text"
+                    placeholder="نقش"
+                    value={mgr.role}
+                    onChange={(e) => {
+                      const updated = [...(form.pdfManagers || [])];
+                      updated[idx] = { ...updated[idx], role: e.target.value };
+                      updateFormField('pdfManagers', updated);
+                    }}
+                    className="form-input px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Telegram ID"
+                    value={mgr.telegramId}
+                    onChange={(e) => {
+                      const updated = [...(form.pdfManagers || [])];
+                      updated[idx] = { ...updated[idx], telegramId: e.target.value };
+                      updateFormField('pdfManagers', updated);
+                    }}
+                    className="form-input px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+                    dir="ltr"
+                  />
+                  <input
+                    type="text"
+                    placeholder="موبایل/ID بله"
+                    value={mgr.balePhone || mgr.baleUserId}
+                    onChange={(e) => {
+                      const updated = [...(form.pdfManagers || [])];
+                      updated[idx] = { ...updated[idx], balePhone: e.target.value, baleUserId: e.target.value };
+                      updateFormField('pdfManagers', updated);
+                    }}
+                    className="form-input px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+                    dir="ltr"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const updated = (form.pdfManagers || []).filter((_, i) => i !== idx);
+                      updateFormField('pdfManagers', updated);
+                    }}
+                    className="p-2 rounded-lg text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors shrink-0 justify-self-end"
+                    title="حذف مدیر"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              ))}
+
+              <button
+                type="button"
+                onClick={() => {
+                  const newMgr: PdfManagerRecipient = {
+                    id: String(Date.now()),
+                    name: '',
+                    role: 'مدیر',
+                    telegramId: '',
+                    balePhone: '',
+                    baleUserId: '',
+                  };
+                  updateFormField('pdfManagers', [...(form.pdfManagers || []), newMgr]);
+                }}
+                className="w-full py-2.5 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-xs hover:border-amber-400 hover:text-amber-600 transition-colors flex items-center justify-center gap-2"
+              >
+                + افزودن مدیر جدید
+              </button>
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={handleSaveSettings}
+                disabled={isSaving}
+                className="customer-save-button text-xs py-2 px-3"
+              >
+                {isSaving ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />}
+                <span>{isSaving ? 'در حال ذخیره...' : 'ذخیره تنظیمات مدیران'}</span>
               </button>
             </div>
           </section>

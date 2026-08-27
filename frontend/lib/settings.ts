@@ -1,3 +1,12 @@
+export type PdfManagerRecipient = {
+  id: string;
+  name: string;
+  role: string;
+  telegramId: string;
+  balePhone: string;
+  baleUserId: string;
+};
+
 export type AppSettings = {
   id?: string;
   organizationName: string;
@@ -28,6 +37,10 @@ export type AppSettings = {
   printShowStamp: boolean;
   printShowSignature: boolean;
   printActiveTemplate: 'standard' | 'classic' | 'modern';
+
+  // Customer Print & PDF Recipient Settings
+  customerPrintColumns: string[];
+  pdfManagers: PdfManagerRecipient[];
 
   // PWA Settings
   pwaAppName: string;
@@ -71,6 +84,17 @@ export const defaultSettings: AppSettings = {
   printShowStamp: true,
   printShowSignature: true,
   printActiveTemplate: 'standard',
+
+  customerPrintColumns: [
+    'customerCode',
+    'name',
+    'groupName',
+    'city',
+    'phone1',
+    'goldBalance',
+    'rialBalance',
+  ],
+  pdfManagers: [],
 
   pwaAppName: 'زر فولیـو',
   pwaShortName: 'Zarfolio',
@@ -156,6 +180,20 @@ export function normalizeSettings(input: Record<string, unknown>): AppSettings {
     printShowStamp: typeof input.printShowStamp === 'boolean' ? input.printShowStamp : defaultSettings.printShowStamp,
     printShowSignature: typeof input.printShowSignature === 'boolean' ? input.printShowSignature : defaultSettings.printShowSignature,
     printActiveTemplate: (input.printActiveTemplate as AppSettings['printActiveTemplate']) || defaultSettings.printActiveTemplate,
+
+    customerPrintColumns: Array.isArray(input.customerPrintColumns)
+      ? (input.customerPrintColumns as string[]).map((c) => String(c))
+      : defaultSettings.customerPrintColumns,
+    pdfManagers: Array.isArray(input.pdfManagers)
+      ? (input.pdfManagers as PdfManagerRecipient[]).map((m) => ({
+          id: String(m.id || ''),
+          name: String(m.name || ''),
+          role: String(m.role || ''),
+          telegramId: String(m.telegramId || ''),
+          balePhone: String(m.balePhone || ''),
+          baleUserId: String(m.baleUserId || ''),
+        }))
+      : defaultSettings.pdfManagers,
 
     pwaAppName: String(input.pwaAppName ?? defaultSettings.pwaAppName).trim() || defaultSettings.pwaAppName,
     pwaShortName: String(input.pwaShortName ?? defaultSettings.pwaShortName).trim() || defaultSettings.pwaShortName,

@@ -3,6 +3,7 @@ import type { RecordModel } from 'pocketbase';
 
 export const customerTextFields = [
   'name',
+  'englishName',
   'gender',
   'groupName',
   'province',
@@ -72,6 +73,7 @@ export type Customer = {
   customerCode: number;
   openingBalanceTransaction: string;
   name: string;
+  englishName: string;
   groupName: string;
   province: string;
   city: string;
@@ -147,6 +149,7 @@ export function mapCustomer(
     ...result,
     id: record.id,
     customerCode: Number(record.customerCode ?? 0),
+    englishName: typeof record.english_name === 'string' ? record.english_name : (typeof record.englishName === 'string' ? record.englishName : ''),
     openingBalanceTransaction:
       typeof record.openingBalanceTransaction === 'string'
         ? record.openingBalanceTransaction

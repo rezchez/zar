@@ -4,6 +4,7 @@ import { getServerAuthContext } from '@/lib/auth';
 import { getCustomersWithBalances } from '@/lib/customer-service';
 import { createCustomersPdf } from '@/lib/pdf-reports';
 import { getMessengerProvider } from '@/lib/messengers';
+import { defaultAppSettings, normalizeSettings } from '@/lib/settings';
 
 export const runtime = 'nodejs';
 
@@ -23,6 +24,7 @@ export async function POST(request: Request) {
         showBalances?: boolean;
         showContact?: boolean;
         showGroupAndCity?: boolean;
+        columns?: string[];
       };
       customerIds?: string[];
     };
@@ -43,7 +45,21 @@ export async function POST(request: Request) {
       customers = customers.filter(c => customerIds.includes(c.id));
     }
 
-    const reportBuffer = await createCustomersPdf(customers, options);
+    let appSettings = defaultAppSettings;
+    try {
+      const record = await context.pb.collection('app_settings').getFirstListItem('');
+      if (record) appSettings = normalizeSettings(record);
+    } catch {
+      // Fallback
+    }
+
+    const mergedOptions = {
+      ...options,
+      columns: options?.columns || appSettings.customerPrintColumns,
+      storeName: appSettings.printStoreName,
+    };
+
+    const reportBuffer = await createCustomersPdf(customers, mergedOptions);
 
     await provider.sendDocument({
       chatId,

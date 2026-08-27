@@ -15,6 +15,7 @@ import { buildCustomerChanges } from '@/lib/customer-audit';
 import {
   getCustomerWithBalances,
   getCustomersWithBalances,
+  getPaginatedCustomersWithBalances,
 } from '@/lib/customer-service';
 import { syncOpeningBalanceTransaction } from '@/lib/transaction-service';
 
@@ -37,7 +38,13 @@ function buildPayload(formData: FormData, ownerId: string, customerCode: number)
   payload.append('createdBy', ownerId);
 
   for (const field of customerTextFields) {
-    payload.append(field, readFormValue(formData, field));
+    if (field === 'englishName') {
+      const val = readFormValue(formData, field);
+      payload.append('english_name', val);
+      payload.append('englishName', val);
+    } else {
+      payload.append(field, readFormValue(formData, field));
+    }
   }
   for (const field of customerNumberFields) {
     const value = Number(readFormValue(formData, field) || 0);
@@ -80,7 +87,9 @@ function readCustomerCode(formData: FormData) {
   return value;
 }
 
-export async function GET() {
+const ALLOWED_PER_PAGE = [25, 50, 75, 100, 500];
+
+export async function GET(request: Request) {
   const context = await getServerAuthContext();
   if (!context) {
     return NextResponse.json({ message: 'ابتدا وارد حساب شوید.' }, { status: 401 });
@@ -90,16 +99,59 @@ export async function GET() {
     return NextResponse.json({ message: 'دسترسی غیرمجاز به اطلاعات مشتریان.' }, { status: 403 });
   }
 
+  const url = new URL(request.url);
+  const isPaginated = url.searchParams.has('page') || url.searchParams.has('perPage');
+
   try {
     const rawCustomers = await getCustomersWithBalances(context.pb);
-    const sanitized = rawCustomers.map((c) => ({
+    let sanitized = rawCustomers.map((c) => ({
       ...c,
       hasPrivateDescription: Boolean(c.privateDescription && c.privateDescription.trim().length > 0),
       privateDescription: '', // Stripped from general list payload for security
     }));
 
+    if (!isPaginated) {
+      return NextResponse.json({
+        customers: sanitized,
+        totalItems: sanitized.length,
+        totalPages: 1,
+        page: 1,
+        perPage: sanitized.length,
+      });
+    }
+
+    const rawPage = Number(url.searchParams.get('page') || 1);
+    const page = Number.isFinite(rawPage) ? Math.max(1, Math.floor(rawPage)) : 1;
+
+    const rawPerPage = Number(url.searchParams.get('perPage') || 25);
+    const perPage = ALLOWED_PER_PAGE.includes(rawPerPage) ? rawPerPage : 25;
+
+    const group = (url.searchParams.get('group') || '').trim();
+    const query = (url.searchParams.get('q') || url.searchParams.get('query') || '').trim();
+    const sortKey = (url.searchParams.get('sortKey') || 'customerCode');
+    const sortDirection = url.searchParams.get('sortDirection') === 'asc' ? 'asc' : 'desc';
+
+    const paginatedResult = await getPaginatedCustomersWithBalances(context.pb, {
+      page,
+      perPage,
+      query,
+      group,
+      sortKey,
+      sortDirection,
+    });
+
+    const paginatedSanitized = paginatedResult.items.map((c) => ({
+      ...c,
+      hasPrivateDescription: Boolean(c.privateDescription && c.privateDescription.trim().length > 0),
+      privateDescription: '',
+    }));
+
     return NextResponse.json({
-      customers: sanitized,
+      customers: paginatedSanitized,
+      totalItems: paginatedResult.totalItems,
+      totalPages: paginatedResult.totalPages,
+      page: paginatedResult.page,
+      perPage: paginatedResult.perPage,
     });
   } catch {
     return NextResponse.json({ message: 'دریافت طرف‌حساب‌ها انجام نشد.' }, { status: 500 });
@@ -120,6 +172,11 @@ export async function POST(request: Request) {
   const name = readFormValue(formData, 'name');
   if (name.length < 2 || name.length > 160) {
     return NextResponse.json({ message: 'نام طرف‌حساب باید حداقل ۲ حرف داشته باشد.' }, { status: 400 });
+  }
+
+  const englishName = readFormValue(formData, 'englishName');
+  if (englishName && !/^[a-zA-Z\s]+$/.test(englishName)) {
+    return NextResponse.json({ message: 'نام انگلیسی فقط می‌تواند شامل حروف انگلیسی و فاصله باشد.' }, { status: 400 });
   }
 
   let requestedCode: number | null;

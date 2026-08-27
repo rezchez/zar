@@ -41,7 +41,15 @@ function readCustomerCode(formData: FormData) {
 function buildUpdatePayload(formData: FormData, customerCode: number) {
   const payload = new FormData();
   payload.append('customerCode', String(customerCode));
-  for (const field of customerTextFields) payload.append(field, readFormValue(formData, field));
+  for (const field of customerTextFields) {
+    if (field === 'englishName') {
+      const val = readFormValue(formData, field);
+      payload.append('english_name', val);
+      payload.append('englishName', val);
+    } else {
+      payload.append(field, readFormValue(formData, field));
+    }
+  }
   for (const field of customerNumberFields) {
     const value = Number(readFormValue(formData, field) || 0);
     payload.append(field, Number.isFinite(value) ? String(value) : '0');
@@ -76,6 +84,11 @@ export async function PATCH(
   const name = String(formData.get('name') ?? '').trim();
   if (name.length < 2 || name.length > 160) {
     return NextResponse.json({ message: 'نام طرف‌حساب معتبر نیست.' }, { status: 400 });
+  }
+
+  const englishName = readFormValue(formData, 'englishName');
+  if (englishName && !/^[a-zA-Z\s]+$/.test(englishName)) {
+    return NextResponse.json({ message: 'نام انگلیسی فقط می‌تواند شامل حروف انگلیسی و فاصله باشد.' }, { status: 400 });
   }
 
   try {

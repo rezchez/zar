@@ -38,8 +38,12 @@ function NavItem({
   onSelect: (item: NavItemData) => void;
   level?: number;
 }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const isActive = activeId === item.id;
+  const hasActiveChild = Boolean(
+    item.children?.some((child) => child.id === activeId || child.children?.some((c) => c.id === activeId)),
+  );
+  const [isOpen, setIsOpen] = useState(hasActiveChild);
+
+  const isActive = activeId === item.id || hasActiveChild;
   const hasChildren = Boolean(item.children?.length);
 
   function handleClick() {
