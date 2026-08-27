@@ -3,7 +3,7 @@ import { notFound, redirect } from 'next/navigation';
 import { getServerAuthContext } from '@/lib/auth';
 import { getCustomerWithBalances } from '@/lib/customer-service';
 import type { CustomerTransaction } from '@/lib/transaction';
-import CustomerForm from '@/src/components/CustomerForm';
+import CustomerForm from '@/src/components/CustomerFormLoader';
 import CustomerTransactionLedger from '@/src/components/CustomerTransactionLedger';
 import DashboardShell from '@/src/components/dashboard/DashboardShell';
 
