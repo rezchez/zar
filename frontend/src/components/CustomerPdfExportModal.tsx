@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useState, useEffect } from 'react';
 
 import type { Customer } from '@/lib/customer';
+import { useAppSettings } from './SettingsProvider';
 
 type CustomerPdfExportModalProps = {
   isOpen: boolean;
@@ -16,12 +17,14 @@ export default function CustomerPdfExportModal({ isOpen, onClose, visibleCustome
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const { settings } = useAppSettings();
 
   const [options, setOptions] = useState({
     title: 'گزارش طرف‌حساب‌ها',
     showBalances: true,
     showContact: false,
     showGroupAndCity: true,
+    columns: settings.printCustomerColumns,
   });
 
   const [providers, setProviders] = useState<string[]>([]);
@@ -56,7 +59,7 @@ export default function CustomerPdfExportModal({ isOpen, onClose, visibleCustome
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           format: 'pdf',
-          options,
+          options: { ...options, columns: settings.printCustomerColumns },
           customerIds: visibleCustomers.map(c => c.id),
         }),
       });
@@ -76,8 +79,8 @@ export default function CustomerPdfExportModal({ isOpen, onClose, visibleCustome
       window.URL.revokeObjectURL(url);
       a.remove();
       setSuccess('فایل PDF با موفقیت دریافت شد.');
-    } catch (err: any) {
-      setError(err.message || 'خطای ناشناخته در دریافت PDF');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'خطای ناشناخته در دریافت PDF');
     } finally {
       setLoading(false);
     }
@@ -100,7 +103,7 @@ export default function CustomerPdfExportModal({ isOpen, onClose, visibleCustome
         body: JSON.stringify({
           providerName: selectedProvider,
           chatId,
-          options,
+          options: { ...options, columns: settings.printCustomerColumns },
           customerIds: visibleCustomers.map(c => c.id),
         }),
       });
@@ -113,8 +116,8 @@ export default function CustomerPdfExportModal({ isOpen, onClose, visibleCustome
 
       setSuccess(data.message || 'فایل با موفقیت ارسال شد.');
       setTimeout(() => onClose(), 2000);
-    } catch (err: any) {
-      setError(err.message || 'خطای ناشناخته در ارسال فایل');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'خطای ناشناخته در ارسال فایل');
     } finally {
       setLoading(false);
     }

@@ -128,6 +128,8 @@ async function handleUpdate(request: Request) {
       printShowStamp: nextNormalized.printShowStamp,
       printShowSignature: nextNormalized.printShowSignature,
       printActiveTemplate: nextNormalized.printActiveTemplate,
+      printCustomerColumns: JSON.stringify(nextNormalized.printCustomerColumns),
+      printRecipients: JSON.stringify(nextNormalized.printRecipients),
 
       pwaAppName: nextNormalized.pwaAppName,
       pwaShortName: nextNormalized.pwaShortName,

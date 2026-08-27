@@ -28,6 +28,8 @@ export type AppSettings = {
   printShowStamp: boolean;
   printShowSignature: boolean;
   printActiveTemplate: 'standard' | 'classic' | 'modern';
+  printCustomerColumns: string[];
+  printRecipients: Array<{ name: string; role?: string; telegramId?: string; mobile?: string; baleUserId?: string; enabled?: boolean }>;
 
   // PWA Settings
   pwaAppName: string;
@@ -71,6 +73,8 @@ export const defaultSettings: AppSettings = {
   printShowStamp: true,
   printShowSignature: true,
   printActiveTemplate: 'standard',
+  printCustomerColumns: ['customerCode', 'name', 'groupName', 'phone1', 'city', 'goldBalance', 'rialBalance'],
+  printRecipients: [],
 
   pwaAppName: 'زر فولیـو',
   pwaShortName: 'Zarfolio',
@@ -156,6 +160,16 @@ export function normalizeSettings(input: Record<string, unknown>): AppSettings {
     printShowStamp: typeof input.printShowStamp === 'boolean' ? input.printShowStamp : defaultSettings.printShowStamp,
     printShowSignature: typeof input.printShowSignature === 'boolean' ? input.printShowSignature : defaultSettings.printShowSignature,
     printActiveTemplate: (input.printActiveTemplate as AppSettings['printActiveTemplate']) || defaultSettings.printActiveTemplate,
+    printCustomerColumns: Array.isArray(input.printCustomerColumns)
+      ? input.printCustomerColumns.map(String)
+      : typeof input.printCustomerColumns === 'string'
+        ? (() => { try { const value = JSON.parse(input.printCustomerColumns as string); return Array.isArray(value) ? value.map(String) : defaultSettings.printCustomerColumns; } catch { return defaultSettings.printCustomerColumns; } })()
+        : defaultSettings.printCustomerColumns,
+    printRecipients: Array.isArray(input.printRecipients)
+      ? input.printRecipients as AppSettings['printRecipients']
+      : typeof input.printRecipients === 'string'
+        ? (() => { try { const value = JSON.parse(input.printRecipients as string); return Array.isArray(value) ? value as AppSettings['printRecipients'] : defaultSettings.printRecipients; } catch { return defaultSettings.printRecipients; } })()
+        : defaultSettings.printRecipients,
 
     pwaAppName: String(input.pwaAppName ?? defaultSettings.pwaAppName).trim() || defaultSettings.pwaAppName,
     pwaShortName: String(input.pwaShortName ?? defaultSettings.pwaShortName).trim() || defaultSettings.pwaShortName,

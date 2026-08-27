@@ -2,7 +2,7 @@
 
 import { Download, Eye, Plus, RefreshCw, Search, SlidersHorizontal, Trash2, X } from 'lucide-react';
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { currencyDisplay, type Customer } from '@/lib/customer';
 import { useAppSettings } from './SettingsProvider';
@@ -28,15 +28,25 @@ function summaryCurrencyLabel(key: string) {
   return currencyDisplay(code, symbol);
 }
 
-export default function CustomerManagement({ initialCustomers, canDelete }: { initialCustomers: Customer[]; canDelete: boolean }) {
+type CustomerPageMeta = { page: number; perPage: number; totalItems: number; totalPages: number };
+
+export default function CustomerManagement({ initialCustomers, initialMeta, canDelete }: { initialCustomers: Customer[]; initialMeta: CustomerPageMeta; canDelete: boolean }) {
   const { formatMoney, formatWeight, settings } = useAppSettings();
   const [customers, setCustomers] = useState(initialCustomers);
+  const [meta, setMeta] = useState(initialMeta);
+  const [page, setPage] = useState(initialMeta.page);
+  const [perPage, setPerPage] = useState(initialMeta.perPage || 25);
   const [query, setQuery] = useState('');
   const [group, setGroup] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('customerCode');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const baseCurrencySymbol = settings.baseCurrency === 'IRT' ? 'تومان' : 'ریال';
 
@@ -84,16 +94,26 @@ export default function CustomerManagement({ initialCustomers, canDelete }: { in
     }
   }
 
-  async function reload() {
+  async function reload(nextPage = page, nextPerPage = perPage) {
     setLoading(true);
     try {
-      const response = await fetch('/api/customers', { cache: 'no-store' });
-      const data = (await response.json().catch(() => null)) as { customers?: Customer[] } | null;
-      if (response.ok) setCustomers(data?.customers ?? []);
+      const params = new URLSearchParams({ page: String(nextPage), perPage: String(nextPerPage), search: query, group, sort: sortDirection === 'asc' ? sortKey : `-${sortKey}` });
+      const response = await fetch(`/api/customers?${params}`, { cache: 'no-store' });
+      const data = (await response.json().catch(() => null)) as { customers?: Customer[]; page?: number; perPage?: number; totalItems?: number; totalPages?: number } | null;
+      if (response.ok) {
+        setCustomers(data?.customers ?? []);
+        setMeta({ page: data?.page ?? nextPage, perPage: data?.perPage ?? nextPerPage, totalItems: data?.totalItems ?? 0, totalPages: data?.totalPages ?? 1 });
+        setPage(data?.page ?? nextPage);
+      }
     } finally {
       setLoading(false);
     }
   }
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void reload(1, perPage); }, 250);
+    return () => window.clearTimeout(timer);
+  }, [query, group, sortKey, sortDirection, perPage]);
 
   async function removeCustomer(customer: Customer) {
     if (!window.confirm(`آیا از حذف «${customer.name}» مطمئن هستید؟`)) return;
@@ -104,23 +124,7 @@ export default function CustomerManagement({ initialCustomers, canDelete }: { in
     }
   }
 
-  const visibleCustomers = useMemo(() => {
-    const normalized = query.trim().toLocaleLowerCase();
-    return customers
-      .filter((customer) =>
-        (!group || customer.groupName === group)
-        && `${customer.customerCode} ${customer.name} ${customer.email} ${customer.phone1} ${customer.city}`
-          .toLocaleLowerCase()
-          .includes(normalized))
-      .sort((left, right) => {
-        const a = left[sortKey];
-        const b = right[sortKey];
-        const comparison = typeof a === 'number' && typeof b === 'number'
-          ? a - b
-          : String(a ?? '').localeCompare(String(b ?? ''), 'fa');
-        return sortDirection === 'asc' ? comparison : -comparison;
-      });
-  }, [customers, group, query, sortDirection, sortKey]);
+  const visibleCustomers = customers;
 
   const totals = useMemo(() => {
     return {
@@ -191,6 +195,7 @@ export default function CustomerManagement({ initialCustomers, canDelete }: { in
             <button type="button" className="dashboard-secondary-button" onClick={() => void reload()} disabled={loading}><RefreshCw size={15} /> تازه‌سازی</button>
           </div>
         </div>
+        {mounted ? <Pagination page={page} totalPages={meta.totalPages} totalItems={meta.totalItems} perPage={perPage} loading={loading} onPage={(next) => void reload(next, perPage)} onPerPage={(next) => { setPerPage(next); setPage(1); }} /> : null}
         <div className="users-table-wrap">
           <table className="users-table customers-table">
             <thead><tr><th>کد</th><th>طرف‌حساب</th><th>جنسیت</th><th>گروه</th><th>شهر</th><th>طلا</th><th>نقره</th><th>پلاتین</th><th>{baseCurrencySymbol}</th><th>ارز دوم</th><th>ارز سوم</th><th>عملیات</th></tr></thead>
@@ -202,19 +207,17 @@ export default function CustomerManagement({ initialCustomers, canDelete }: { in
                     <div className="managed-user-cell">
                       <span className="managed-user-avatar">{customer.name.charAt(0)}</span>
                       <div>
-                        <div className="flex items-center gap-1.5">
-                          <strong>{customer.name}</strong>
-                          {(customer.hasPrivateDescription || Boolean(customer.privateDescription)) ? (
-                            <button
-                              type="button"
-                              onClick={() => void openPrivateNote(customer)}
-                              className="text-amber-500 hover:text-amber-600 transition-colors p-0.5 rounded focus:outline-none"
-                              title="مشاهده توضیحات محرمانه"
-                            >
-                              <Eye size={15} />
-                            </button>
-                          ) : null}
-                        </div>
+                        <strong>{customer.name}</strong>
+                        <button
+                          type="button"
+                          onClick={() => void openPrivateNote(customer)}
+                          className={`text-amber-500 hover:text-amber-600 transition-colors p-0.5 rounded focus:outline-none ${(customer.hasPrivateDescription || Boolean(customer.privateDescription)) ? '' : 'invisible pointer-events-none'}`}
+                          title="مشاهده توضیحات محرمانه"
+                          aria-hidden={!(customer.hasPrivateDescription || Boolean(customer.privateDescription))}
+                          tabIndex={(customer.hasPrivateDescription || Boolean(customer.privateDescription)) ? 0 : -1}
+                        >
+                          <Eye size={15} />
+                        </button>
                         <small>{customer.phone1 || customer.email || 'بدون اطلاعات تماس'}</small>
                       </div>
                     </div>
@@ -234,6 +237,7 @@ export default function CustomerManagement({ initialCustomers, canDelete }: { in
             </tbody>
           </table>
         </div>
+        {mounted ? <Pagination page={page} totalPages={meta.totalPages} totalItems={meta.totalItems} perPage={perPage} loading={loading} onPage={(next) => void reload(next, perPage)} onPerPage={(next) => { setPerPage(next); setPage(1); }} /> : null}
       </section>
 
       <CustomerPdfExportModal
@@ -277,6 +281,47 @@ export default function CustomerManagement({ initialCustomers, canDelete }: { in
       ) : null}
     </div>
   );
+}
+
+function Pagination({ page, totalPages, totalItems, perPage, loading, onPage, onPerPage }: { page: number; totalPages: number; totalItems: number; perPage: number; loading: boolean; onPage: (page: number) => void; onPerPage: (value: number) => void }) {
+  const first = totalItems ? (page - 1) * perPage + 1 : 0;
+  const last = Math.min(page * perPage, totalItems);
+  const visiblePages = Array.from(
+    { length: Math.min(Math.max(totalPages, 1), 7) },
+    (_, index) => {
+      if (totalPages <= 7) return index + 1;
+      if (page <= 4) return index + 1;
+      if (page >= totalPages - 3) return totalPages - 6 + index;
+      return page - 3 + index;
+    },
+  );
+  return <div className="customer-pagination" dir="rtl">
+    <span className="customer-pagination-count">نمایش {first} تا {last} از {totalItems} طرف‌حساب</span>
+    <label className="customer-pagination-size">تعداد در صفحه
+      <select value={perPage} onChange={(e) => onPerPage(Number(e.target.value))} disabled={loading}>
+        {[25, 50, 75, 100, 500].map((size) => <option key={size} value={size}>{size}</option>)}
+      </select>
+    </label>
+    <div className="customer-pagination-pages" aria-label="شماره صفحات">
+      <button type="button" onClick={() => onPage(1)} disabled={loading || page <= 1}>اولین</button>
+      <button type="button" onClick={() => onPage(page - 1)} disabled={loading || page <= 1}>‹</button>
+      {visiblePages.map((pageNumber) => (
+        <button
+          type="button"
+          key={pageNumber}
+          className={pageNumber === page ? 'is-current' : ''}
+          aria-current={pageNumber === page ? 'page' : undefined}
+          onClick={() => onPage(pageNumber)}
+          disabled={loading || pageNumber === page}
+        >
+          {pageNumber}
+        </button>
+      ))}
+      <button type="button" onClick={() => onPage(page + 1)} disabled={loading || page >= totalPages}>›</button>
+      <button type="button" onClick={() => onPage(totalPages)} disabled={loading || page >= totalPages}>آخرین</button>
+    </div>
+    <span className="customer-pagination-current">صفحه {page} از {Math.max(totalPages, 1)}</span>
+  </div>;
 }
 
 function BalanceCell({ labelStr, toneValue }: { labelStr: string; toneValue: number }) {

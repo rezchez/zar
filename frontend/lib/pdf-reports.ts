@@ -125,6 +125,7 @@ export interface CustomerPdfOptions {
   showBalances?: boolean;
   showContact?: boolean;
   showGroupAndCity?: boolean;
+  columns?: string[];
 }
 
 export function createCustomersPdf(customers: Customer[], options: CustomerPdfOptions = {}) {

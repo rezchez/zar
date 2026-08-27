@@ -85,3 +85,49 @@ export async function getCustomersWithBalances(pb: PocketBase) {
     ),
   );
 }
+
+export async function getCustomersPageWithBalances(
+  pb: PocketBase,
+  options: { page?: number; perPage?: number; search?: string; group?: string; sort?: string } = {},
+) {
+  const page = Math.max(1, Number(options.page) || 1);
+  const perPage = Math.min(500, Math.max(25, Number(options.perPage) || 25));
+  const filters = ['is_deleted = false'];
+  if (options.search?.trim()) {
+    const search = options.search.trim();
+    filters.push(pb.filter('(name ~ {:search} || englishName ~ {:search} || customerCode ~ {:search} || phone1 ~ {:search} || city ~ {:search})', { search }));
+  }
+  if (options.group?.trim()) filters.push(pb.filter('groupName = {:group}', { group: options.group.trim() }));
+  const result = await pb.collection('customers').getList(page, perPage, {
+    sort: options.sort || '-customerCode',
+    filter: filters.join(' && '),
+  });
+  const ids = result.items.map((record) => record.id);
+  let transactionRecords: RecordModel[] = [];
+  if (ids.length) {
+    try {
+      const customerFilter = ids.map((id, index) => `customer = {:customer${index}}`).join(' || ');
+      const params = Object.fromEntries(ids.map((id, index) => [`customer${index}`, id]));
+      transactionRecords = await pb.collection('transactions').getFullList({
+        sort: '-transactionDate,-created',
+        filter: pb.filter(`is_deleted = false && (${customerFilter})`, params),
+      });
+    } catch {
+      transactionRecords = [];
+    }
+  }
+  const transactionsByCustomer = new Map<string, CustomerTransaction[]>();
+  for (const record of transactionRecords) {
+    const transaction = mapTransaction(record);
+    const current = transactionsByCustomer.get(transaction.customerId) ?? [];
+    current.push(transaction);
+    transactionsByCustomer.set(transaction.customerId, current);
+  }
+  return {
+    customers: result.items.map((record) => mapCustomerWithTransactions(pb, record, transactionsByCustomer.get(record.id) ?? [])),
+    page: result.page,
+    perPage: result.perPage,
+    totalItems: result.totalItems,
+    totalPages: result.totalPages,
+  };
+}

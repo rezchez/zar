@@ -1,7 +1,7 @@
 'use client';
 
 import { ChevronRight, X, type LucideIcon } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 export type NavItemData = {
   id: string;
@@ -38,7 +38,14 @@ function NavItem({
   onSelect: (item: NavItemData) => void;
   level?: number;
 }) {
+  const hasActiveChild = Boolean(item.children?.some((child) => child.id === activeId || child.children?.some((nested) => nested.id === activeId)));
+  // Keep the initial state deterministic for SSR/CSR hydration. Route activity
+  // controls visibility; local state only remembers a user's manual toggle.
   const [isOpen, setIsOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const routeActive = mounted && hasActiveChild;
+  const effectiveOpen = routeActive || isOpen;
   const isActive = activeId === item.id;
   const hasChildren = Boolean(item.children?.length);
 
@@ -55,7 +62,7 @@ function NavItem({
     <div className="dashboard-nav-tree">
       <button
         type="button"
-        className={`dashboard-nav-item ${isActive ? 'is-active' : ''}`}
+        className={`dashboard-nav-item ${isActive || routeActive ? 'is-active' : ''}`}
         style={{ paddingRight: `${12 + level * 14}px` }}
         onClick={handleClick}
       >
@@ -75,7 +82,7 @@ function NavItem({
           {hasChildren ? (
             <ChevronRight
               size={14}
-              className={isOpen ? 'is-rotated' : ''}
+              className={effectiveOpen ? 'is-rotated' : ''}
               strokeWidth={1.8}
             />
           ) : null}
@@ -85,7 +92,7 @@ function NavItem({
       {hasChildren ? (
         <div
           className={`dashboard-nav-children ${
-            isOpen ? 'is-open' : ''
+            effectiveOpen ? 'is-open' : ''
           }`}
         >
           {item.children?.map((child) => (

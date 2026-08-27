@@ -13,8 +13,8 @@ import { recordAuditEvent } from '@/lib/audit';
 import { getNextAutoCustomerCode } from '@/lib/account-code';
 import { buildCustomerChanges } from '@/lib/customer-audit';
 import {
+  getCustomersPageWithBalances,
   getCustomerWithBalances,
-  getCustomersWithBalances,
 } from '@/lib/customer-service';
 import { syncOpeningBalanceTransaction } from '@/lib/transaction-service';
 
@@ -80,7 +80,7 @@ function readCustomerCode(formData: FormData) {
   return value;
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const context = await getServerAuthContext();
   if (!context) {
     return NextResponse.json({ message: 'ابتدا وارد حساب شوید.' }, { status: 401 });
@@ -91,7 +91,15 @@ export async function GET() {
   }
 
   try {
-    const rawCustomers = await getCustomersWithBalances(context.pb);
+    const url = new URL(request.url);
+    const rawPage = await getCustomersPageWithBalances(context.pb, {
+      page: Number(url.searchParams.get('page') || 1),
+      perPage: Number(url.searchParams.get('perPage') || 25),
+      search: url.searchParams.get('search') || '',
+      group: url.searchParams.get('group') || '',
+      sort: url.searchParams.get('sort') || '-customerCode',
+    });
+    const rawCustomers = rawPage.customers;
     const sanitized = rawCustomers.map((c) => ({
       ...c,
       hasPrivateDescription: Boolean(c.privateDescription && c.privateDescription.trim().length > 0),
@@ -100,6 +108,10 @@ export async function GET() {
 
     return NextResponse.json({
       customers: sanitized,
+      page: rawPage.page,
+      perPage: rawPage.perPage,
+      totalItems: rawPage.totalItems,
+      totalPages: rawPage.totalPages,
     });
   } catch {
     return NextResponse.json({ message: 'دریافت طرف‌حساب‌ها انجام نشد.' }, { status: 500 });
@@ -120,6 +132,10 @@ export async function POST(request: Request) {
   const name = readFormValue(formData, 'name');
   if (name.length < 2 || name.length > 160) {
     return NextResponse.json({ message: 'نام طرف‌حساب باید حداقل ۲ حرف داشته باشد.' }, { status: 400 });
+  }
+  const englishName = readFormValue(formData, 'englishName');
+  if (englishName && !/^[A-Za-z][A-Za-z\s.'-]*$/.test(englishName)) {
+    return NextResponse.json({ message: 'نام انگلیسی فقط باید شامل حروف انگلیسی باشد.' }, { status: 400 });
   }
 
   let requestedCode: number | null;

@@ -779,6 +779,24 @@ export default function ProgramSettings() {
                   placeholder="متن توضیحات پایانی..."
                 />
               </label>
+              <label className="account-field md:col-span-3">
+                <span className="font-bold text-slate-700 dark:text-slate-300">ستون‌های طرف‌حساب در خروجی (با کاما جدا کنید)</span>
+                <input
+                  type="text"
+                  value={(form.printCustomerColumns || []).join(',')}
+                  onChange={(e) => updateFormField('printCustomerColumns', e.target.value.split(',').map((v) => v.trim()).filter(Boolean))}
+                  placeholder="customerCode,name,groupName,phone1,city,goldBalance,rialBalance"
+                />
+              </label>
+              <label className="account-field md:col-span-3">
+                <span className="font-bold text-slate-700 dark:text-slate-300">مدیران / دریافت‌کنندگان خروجی (JSON)</span>
+                <textarea
+                  rows={3}
+                  value={JSON.stringify(form.printRecipients || [], null, 2)}
+                  onChange={(e) => { try { updateFormField('printRecipients', JSON.parse(e.target.value)); } catch { /* تا تکمیل JSON صبر می‌کنیم */ } }}
+                  placeholder='[{"name":"مدیر فروش","role":"manager","telegramId":"","mobile":"","baleUserId":""}]'
+                />
+              </label>
             </div>
 
             <div className="flex justify-end pt-2 border-t border-slate-100 dark:border-slate-800">

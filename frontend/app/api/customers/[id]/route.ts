@@ -77,6 +77,10 @@ export async function PATCH(
   if (name.length < 2 || name.length > 160) {
     return NextResponse.json({ message: 'نام طرف‌حساب معتبر نیست.' }, { status: 400 });
   }
+  const englishName = String(formData.get('englishName') ?? '').trim();
+  if (englishName && !/^[A-Za-z][A-Za-z\s.'-]*$/.test(englishName)) {
+    return NextResponse.json({ message: 'نام انگلیسی فقط باید شامل حروف انگلیسی باشد.' }, { status: 400 });
+  }
 
   try {
     const beforeRecord = await context.pb.collection('customers').getOne(id);

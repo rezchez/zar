@@ -13,6 +13,7 @@ import {
   X,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 
 import {
@@ -35,6 +36,7 @@ type FormState = Record<string, string | number | boolean>;
 
 const textLabels: Record<string, string> = {
   name: 'نام / عنوان طرف‌حساب',
+  englishName: 'نام و نام خانوادگی انگلیسی',
   gender: 'جنسیت',
   groupName: 'گروه',
   province: 'استان',
@@ -464,11 +466,14 @@ export default function CustomerForm({
           <h1>{customer ? 'ویرایش طرف‌حساب' : 'افزودن طرف‌حساب'}</h1>
           <p>اطلاعات هویتی، ارتباطی و مانده اولیه را با دقت ثبت کنید.</p>
         </div>
-        {customer ? <span className="customer-code-badge">کد فعلی {customer.customerCode}</span> : null}
+        <div className="flex items-center gap-2">
+          <Link className="dashboard-secondary-button" href="/dashboard/customers">بازگشت به فهرست</Link>
+          {customer ? <span className="customer-code-badge">کد فعلی {customer.customerCode}</span> : null}
+        </div>
       </div>
 
-      {message ? <p className="account-message">{message}</p> : null}
-      {errorMessage ? <p className="form-error">{errorMessage}</p> : null}
+      {message ? <p className="account-message" role="status">{message}</p> : null}
+      {errorMessage ? <p className="form-error" role="alert">{errorMessage}</p> : null}
 
       <section className="dashboard-panel customer-form-panel">
         <div className="customer-form-section">
@@ -476,6 +481,15 @@ export default function CustomerForm({
           <div className="customer-form-grid">
             <Field label="نام / عنوان طرف‌حساب" required>
               <input value={String(state.name)} onChange={(e) => setValue('name', e.target.value)} required />
+            </Field>
+            <Field label="نام و نام خانوادگی انگلیسی">
+              <input
+                value={String(state.englishName ?? '')}
+                onChange={(e) => setValue('englishName', e.target.value.replace(/[^A-Za-z\s.'-]/g, ''))}
+                pattern="[A-Za-z][A-Za-z\s.'-]*"
+                dir="ltr"
+                placeholder="Optional"
+              />
             </Field>
 
             {/* Account Code Selection */}
@@ -660,7 +674,7 @@ export default function CustomerForm({
                   </Field>
                 ))}
 
-                <Field label="تاریخ تولد (سال/ماه/روز)">
+                <Field label="تاریخ تولد (روز/ماه/سال)">
                   <div className="flex gap-2" dir="ltr">
                     <input
                       type="text"
@@ -815,10 +829,12 @@ export default function CustomerForm({
         </div> : null}
       </section>
 
-      <button className="customer-save-button" disabled={loading} type="submit">
-        {loading ? <LoaderCircle size={17} className="spin" /> : <Save size={17} />}
-        {loading ? 'در حال ذخیره...' : customer ? 'ذخیره تغییرات طرف‌حساب' : 'ذخیره طرف‌حساب'}
-      </button>
+      <div className="customer-save-bar">
+        <button className="customer-save-button" disabled={loading} type="submit">
+          {loading ? <LoaderCircle size={17} className="spin" /> : <Save size={17} />}
+          {loading ? 'در حال ذخیره...' : customer ? 'ذخیره تغییرات طرف‌حساب' : 'ذخیره طرف‌حساب'}
+        </button>
+      </div>
 
       {/* Modal for Creating New Group */}
       {isGroupModalOpen ? (

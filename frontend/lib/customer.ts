@@ -3,6 +3,7 @@ import type { RecordModel } from 'pocketbase';
 
 export const customerTextFields = [
   'name',
+  'englishName',
   'gender',
   'groupName',
   'province',
@@ -72,6 +73,7 @@ export type Customer = {
   customerCode: number;
   openingBalanceTransaction: string;
   name: string;
+  englishName: string;
   groupName: string;
   province: string;
   city: string;
