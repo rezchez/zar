@@ -1,6 +1,6 @@
 /// <reference path="../pb_data/types.d.ts" />
-migrate((db) => {
-  const collection = $app.dao().findCollectionByNameOrId('customers');
+migrate((app) => {
+  const collection = app.findCollectionByNameOrId('customers');
 
   const fieldsToRemove = [
     'satisfactionLevel',
@@ -14,26 +14,26 @@ migrate((db) => {
   ];
 
   for (const fieldName of fieldsToRemove) {
-    const field = collection.schema.getFieldByName(fieldName);
+    const field = collection.fields.getByName(fieldName);
     if (field) {
-      collection.schema.removeField(field.id);
+      collection.fields.removeByName(fieldName);
     }
   }
 
-  $app.dao().saveCollection(collection);
-}, (db) => {
+  return app.save(collection);
+}, (app) => {
   // Revert logic for customer fields (basic restoration)
-  const collection = $app.dao().findCollectionByNameOrId('customers');
+  const collection = app.findCollectionByNameOrId('customers');
 
-  if (!collection.schema.getFieldByName('satisfactionLevel')) {
-    collection.schema.addField(new SchemaField({ name: 'satisfactionLevel', type: 'number', required: false }));
+  if (!collection.fields.getByName('satisfactionLevel')) {
+    collection.fields.add(new NumberField({ name: 'satisfactionLevel', required: false }));
   }
-  if (!collection.schema.getFieldByName('startDocumentNumber')) {
-    collection.schema.addField(new SchemaField({ name: 'startDocumentNumber', type: 'text', required: false }));
+  if (!collection.fields.getByName('startDocumentNumber')) {
+    collection.fields.add(new TextField({ name: 'startDocumentNumber', required: false }));
   }
-  if (!collection.schema.getFieldByName('detailedDescription')) {
-    collection.schema.addField(new SchemaField({ name: 'detailedDescription', type: 'text', required: false }));
+  if (!collection.fields.getByName('detailedDescription')) {
+    collection.fields.add(new TextField({ name: 'detailedDescription', required: false }));
   }
 
-  $app.dao().saveCollection(collection);
+  return app.save(collection);
 });

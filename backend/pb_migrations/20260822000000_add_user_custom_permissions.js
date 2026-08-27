@@ -15,7 +15,7 @@ migrate((app) => {
       const hasField = (name) => existingFields.some((f) => f.name === name);
 
       if (!hasField("customPermissions")) {
-        usersCol.fields.add(new JsonField({ name: "customPermissions" }));
+        usersCol.fields.add(new JSONField({ name: "customPermissions" }));
         modified = true;
       }
 

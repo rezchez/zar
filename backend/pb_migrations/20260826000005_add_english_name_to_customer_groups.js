@@ -1,15 +1,15 @@
 /// <reference path="../pb_data/types.d.ts" />
-migrate((db) => {
-  const collection = $app.dao().findCollectionByNameOrId('customer_groups');
-  if (!collection.schema.getFieldByName('english_name')) {
-    collection.schema.addField(new SchemaField({ name: 'english_name', type: 'text', required: false }));
+migrate((app) => {
+  const collection = app.findCollectionByNameOrId('customer_groups');
+  if (!collection.fields.getByName('english_name')) {
+    collection.fields.add(new TextField({ name: 'english_name', required: false }));
   }
-  $app.dao().saveCollection(collection);
-}, (db) => {
-  const collection = $app.dao().findCollectionByNameOrId('customer_groups');
-  const field = collection.schema.getFieldByName('english_name');
+  return app.save(collection);
+}, (app) => {
+  const collection = app.findCollectionByNameOrId('customer_groups');
+  const field = collection.fields.getByName('english_name');
   if (field) {
-    collection.schema.removeField(field.id);
+    collection.fields.removeByName('english_name');
   }
-  $app.dao().saveCollection(collection);
+  return app.save(collection);
 });

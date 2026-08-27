@@ -1,15 +1,15 @@
 /// <reference path="../pb_data/types.d.ts" />
-migrate((db) => {
-  const collection = $app.dao().findCollectionByNameOrId('customers');
-  if (!collection.schema.getFieldByName('birthDate')) {
-    collection.schema.addField(new SchemaField({ name: 'birthDate', type: 'text', required: false }));
+migrate((app) => {
+  const collection = app.findCollectionByNameOrId('customers');
+  if (!collection.fields.getByName('birthDate')) {
+    collection.fields.add(new TextField({ name: 'birthDate', required: false }));
   }
-  $app.dao().saveCollection(collection);
-}, (db) => {
-  const collection = $app.dao().findCollectionByNameOrId('customers');
-  const field = collection.schema.getFieldByName('birthDate');
+  return app.save(collection);
+}, (app) => {
+  const collection = app.findCollectionByNameOrId('customers');
+  const field = collection.fields.getByName('birthDate');
   if (field) {
-    collection.schema.removeField(field.id);
+    collection.fields.removeByName('birthDate');
   }
-  $app.dao().saveCollection(collection);
+  return app.save(collection);
 });
