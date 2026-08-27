@@ -1734,7 +1734,7 @@ button:disabled {
 .users-table th,
 .users-table td {
   border-bottom: 1px solid #eef1f5;
-  padding: 14px 16px;
+  padding: 10px 8px;
   vertical-align: middle;
 }
 
@@ -3045,7 +3045,8 @@ button:disabled {
 }
 
 .customers-table {
-  min-width: 1320px;
+  min-width: 1000px;
+
 }
 
 [data-theme="dark"] .authenticator-card,

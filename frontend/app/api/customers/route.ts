@@ -80,7 +80,10 @@ function readCustomerCode(formData: FormData) {
   return value;
 }
 
-export async function GET() {
+
+const ALLOWED_PER_PAGE = [25, 50, 75, 100, 500];
+
+export async function GET(request: Request) {
   const context = await getServerAuthContext();
   if (!context) {
     return NextResponse.json({ message: 'ابتدا وارد حساب شوید.' }, { status: 401 });
@@ -90,21 +93,57 @@ export async function GET() {
     return NextResponse.json({ message: 'دسترسی غیرمجاز به اطلاعات مشتریان.' }, { status: 403 });
   }
 
+  const url = new URL(request.url);
+  const rawPage = Number(url.searchParams.get('page') || 1);
+  const page = Number.isFinite(rawPage) ? Math.max(1, Math.floor(rawPage)) : 1;
+
+  const rawPerPage = Number(url.searchParams.get('perPage') || 25);
+  const perPage = ALLOWED_PER_PAGE.includes(rawPerPage) ? rawPerPage : 25;
+
+  const group = url.searchParams.get('group')?.trim() ?? '';
+  const q = (url.searchParams.get('q') || url.searchParams.get('query') || '').trim();
+
+  // If page is provided we do pagination, else we just return all (for backward compatibility if needed, but we should probably migrate all to pagination)
+  const isPaginated = url.searchParams.has('page') || url.searchParams.has('perPage');
+
+  if (!isPaginated && !q && !group) {
+    try {
+      const rawCustomers = await getCustomersWithBalances(context.pb);
+      const sanitized = rawCustomers.map((c) => ({
+        ...c,
+        hasPrivateDescription: Boolean(c.privateDescription && c.privateDescription.trim().length > 0),
+        privateDescription: '', // Stripped from general list payload for security
+      }));
+
+      return NextResponse.json({
+        customers: sanitized,
+      });
+    } catch {
+      return NextResponse.json({ message: 'دریافت طرف‌حساب‌ها انجام نشد.' }, { status: 500 });
+    }
+  }
+
+  // Handle paginated request
   try {
-    const rawCustomers = await getCustomersWithBalances(context.pb);
-    const sanitized = rawCustomers.map((c) => ({
+    const { getPaginatedCustomersWithBalances } = await import('@/lib/customer-service');
+    const result = await getPaginatedCustomersWithBalances(context.pb, page, perPage, q, group);
+
+    const sanitized = result.customers.map((c: any) => ({
       ...c,
       hasPrivateDescription: Boolean(c.privateDescription && c.privateDescription.trim().length > 0),
-      privateDescription: '', // Stripped from general list payload for security
+      privateDescription: '',
     }));
 
     return NextResponse.json({
       customers: sanitized,
+      totalItems: result.totalItems,
+      totalPages: result.totalPages,
     });
-  } catch {
+  } catch (err) {
     return NextResponse.json({ message: 'دریافت طرف‌حساب‌ها انجام نشد.' }, { status: 500 });
   }
 }
+
 
 export async function POST(request: Request) {
   const context = await getServerAuthContext();
@@ -120,6 +159,15 @@ export async function POST(request: Request) {
   const name = readFormValue(formData, 'name');
   if (name.length < 2 || name.length > 160) {
     return NextResponse.json({ message: 'نام طرف‌حساب باید حداقل ۲ حرف داشته باشد.' }, { status: 400 });
+  }
+
+
+
+
+
+  const englishName = readFormValue(formData, 'englishName');
+  if (englishName && !/^[a-zA-Z\s]*$/.test(englishName)) {
+    return NextResponse.json({ message: 'نام انگلیسی فقط باید شامل حروف انگلیسی و فاصله باشد.' }, { status: 400 });
   }
 
   let requestedCode: number | null;

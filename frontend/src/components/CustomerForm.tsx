@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  ArrowRight,
   Check,
   ChevronDown,
   ImagePlus,
@@ -30,6 +31,7 @@ import {
   getCitiesByProvince,
   getProvinces,
 } from '@/lib/iran-cities';
+import { AnimatePresence, motion } from 'framer-motion';
 import JalaliDatePicker from './JalaliDatePicker';
 
 type FormState = Record<string, string | number | boolean>;
@@ -84,6 +86,7 @@ function initialState(customer?: Customer): FormState {
 
   const state: FormState = {
     name: customer?.name ?? '',
+    englishName: customer?.englishName ?? '',
     gender: customer?.gender ?? '',
     groupName: customer?.groupName ?? '',
     province: initialProvince,
@@ -97,6 +100,7 @@ function initialState(customer?: Customer): FormState {
     showBalanceByUnit: customer?.showBalanceByUnit ?? true,
     customerCodeMode: 'auto',
     customerCode: customer?.customerCode ?? '',
+    birthDate: customer?.birthDate ?? '',
   };
 
   for (const field of customerTextFields) {
@@ -389,8 +393,10 @@ export default function CustomerForm({
       const data = (await response.json().catch(() => null)) as
         | { message?: string; customer?: Customer }
         | null;
+
       if (!response.ok || !data?.customer) {
         setErrorMessage(data?.message ?? 'ذخیره طرف‌حساب انجام نشد.');
+        setTimeout(() => setErrorMessage(''), 5000);
         return;
       }
 
@@ -399,6 +405,8 @@ export default function CustomerForm({
           ? 'اطلاعات طرف‌حساب ذخیره شد.'
           : `طرف‌حساب با کد ${data.customer.customerCode} ثبت شد.`,
       );
+      setTimeout(() => setMessage(''), 5000);
+
       setIsDirty(false);
       if (!customer) {
         router.replace(`/dashboard/customers/${data.customer.id}`);
@@ -459,18 +467,27 @@ export default function CustomerForm({
   const cities = selectedProvince ? getCitiesByProvince(selectedProvince) : [];
 
   return (
-    <form className="customer-form-page" onSubmit={save}>
-      <div className="dashboard-page-heading">
+        <form className="customer-form-page relative pb-24" onSubmit={save}>
+      <div className="dashboard-page-heading items-center">
         <div>
-          <p className="eyebrow">طرف‌حساب و مشتری</p>
+          <p className="eyebrow flex items-center gap-2">
+            <button
+              type="button"
+              className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
+              onClick={() => router.push('/dashboard/customers')}
+              title="بازگشت به فهرست"
+            >
+              <ArrowRight size={14} />
+            </button>
+            طرف‌حساب و مشتری
+          </p>
           <h1>{customer ? 'ویرایش طرف‌حساب' : 'افزودن طرف‌حساب'}</h1>
           <p>اطلاعات هویتی، ارتباطی و مانده اولیه را با دقت ثبت کنید.</p>
         </div>
         {customer ? <span className="customer-code-badge">کد فعلی {customer.customerCode}</span> : null}
       </div>
 
-      {message ? <p className="account-message">{message}</p> : null}
-      {errorMessage ? <p className="form-error">{errorMessage}</p> : null}
+
 
       <section className="dashboard-panel customer-form-panel">
         <div className="customer-form-section">
@@ -479,6 +496,21 @@ export default function CustomerForm({
             <Field label="نام / عنوان طرف‌حساب" required>
               <input value={String(state.name)} onChange={(e) => setValue('name', e.target.value)} required />
             </Field>
+
+            <Field label="نام و نام خانوادگی انگلیسی (اختیاری)">
+              <input
+                type="text"
+                value={String(state.englishName ?? '')}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (!/^[a-zA-Z\s]*$/.test(val)) return; // prevent non-english chars, spaces allowed
+                  setValue('englishName', val);
+                }}
+                dir="ltr"
+                placeholder="English Name (Optional)"
+              />
+            </Field>
+
 
             {/* Account Code Selection */}
             {customer ? (
@@ -837,6 +869,52 @@ export default function CustomerForm({
           </div>
         </div>
       ) : null}
+
+      <div className="fixed bottom-0 left-0 right-0 md:right-64 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 p-4 z-40 flex justify-end gap-3 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] dark:shadow-[0_-4px_20px_rgba(0,0,0,0.2)]">
+        <button
+          type="button"
+          onClick={() => router.push('/dashboard/customers')}
+          className="dashboard-secondary-button"
+        >
+          انصراف
+        </button>
+        <button
+          type="submit"
+          className="account-save-button px-8 py-2.5 text-base"
+          disabled={loading}
+        >
+          {loading ? <LoaderCircle className="animate-spin" size={18} /> : <Save size={18} />}
+          {loading ? 'در حال ذخیره...' : customer ? 'ذخیره تغییرات' : 'ذخیره طرف‌حساب'}
+        </button>
+      </div>
+
+
+      {/* Toast Notification */}
+      <AnimatePresence>
+        {(message || errorMessage) && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 50, scale: 0.9 }}
+            className={`fixed bottom-24 right-4 z-50 p-4 rounded-xl shadow-lg border flex items-center gap-3 w-80 backdrop-blur-md text-sm font-bold ${
+              errorMessage
+                ? 'bg-rose-50/90 border-rose-200 text-rose-700 dark:bg-rose-950/90 dark:border-rose-800 dark:text-rose-200'
+                : 'bg-emerald-50/90 border-emerald-200 text-emerald-700 dark:bg-emerald-950/90 dark:border-emerald-800 dark:text-emerald-200'
+            }`}
+          >
+            {errorMessage ? <X size={20} className="text-rose-500" /> : <Check size={20} className="text-emerald-500" />}
+            <span className="flex-1">{errorMessage || message}</span>
+            <button
+              type="button"
+              onClick={() => { setMessage(''); setErrorMessage(''); }}
+              className="text-slate-400 hover:text-slate-600 transition-colors"
+            >
+              <X size={16} />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
     </form>
   );
 }

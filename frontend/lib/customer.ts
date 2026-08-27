@@ -3,6 +3,7 @@ import type { RecordModel } from 'pocketbase';
 
 export const customerTextFields = [
   'name',
+  'englishName',
   'gender',
   'groupName',
   'province',
@@ -68,13 +69,14 @@ export function emptyCustomerBalances(): CustomerBalanceValues {
   };
 }
 
-export const customerDateFields = [] as const;
+export const customerDateFields = ['birthDate'] as const;
 
 export type Customer = {
   id: string;
   customerCode: number;
   openingBalanceTransaction: string;
   name: string;
+  englishName: string;
   groupName: string;
   province: string;
   city: string;
@@ -110,6 +112,7 @@ export type Customer = {
   privateDescription: string;
   hasPrivateDescription?: boolean;
   startDocumentNumber: string;
+  birthDate?: string;
   avatarUrl?: string;
   openingBalances: CustomerBalanceValues;
   created: string;

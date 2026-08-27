@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useState, useEffect } from 'react';
 
 import type { Customer } from '@/lib/customer';
+import { useAppSettings } from './SettingsProvider';
 
 type CustomerPdfExportModalProps = {
   isOpen: boolean;
@@ -13,6 +14,9 @@ type CustomerPdfExportModalProps = {
 };
 
 export default function CustomerPdfExportModal({ isOpen, onClose, visibleCustomers }: CustomerPdfExportModalProps) {
+  const { settings } = useAppSettings();
+  const pdfManagers = settings?.pdfManagers || [];
+  const [selectedManagerIndex, setSelectedManagerIndex] = useState('-1');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -154,6 +158,28 @@ export default function CustomerPdfExportModal({ isOpen, onClose, visibleCustome
             </div>
 
             <div className="space-y-4">
+
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">انتخاب مدیر (از تنظیمات)</label>
+                          <select
+                            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-shadow outline-none text-slate-900 dark:text-white"
+                            value={selectedManagerIndex}
+                            onChange={(e) => {
+                              setSelectedManagerIndex(e.target.value);
+                              const idx = Number(e.target.value);
+                              if (idx >= 0 && pdfManagers[idx]) {
+                                if (selectedProvider === 'telegram') setChatId(pdfManagers[idx].telegramId || '');
+                                if (selectedProvider === 'bale') setChatId(pdfManagers[idx].baleId || '');
+                              }
+                            }}
+                          >
+                            <option value="-1">-- وارد کردن دستی --</option>
+                            {pdfManagers.map((m: any, idx: number) => (
+                              <option key={idx} value={idx}>{m.name} ({m.role})</option>
+                            ))}
+                          </select>
+                        </div>
+
               <label className="block space-y-1.5">
                 <span className="text-sm font-medium text-slate-700 dark:text-slate-300">عنوان گزارش</span>
                 <input

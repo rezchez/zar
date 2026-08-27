@@ -43,7 +43,15 @@ export async function POST(request: Request) {
       customers = customers.filter(c => customerIds.includes(c.id));
     }
 
-    const reportBuffer = await createCustomersPdf(customers, options);
+        // Fetch settings to pass configured columns
+    const settingsRecord = await context.pb.collection('app_settings').getFirstListItem('');
+    const { normalizeSettings } = await import('@/lib/settings');
+    const settings = normalizeSettings(settingsRecord);
+
+    const reportBuffer = await createCustomersPdf(customers, {
+      ...options,
+      columns: settings.customerPrintColumns
+    });
     return new NextResponse(new Uint8Array(reportBuffer), {
       headers: {
         'Content-Type': 'application/pdf',
@@ -113,7 +121,14 @@ export async function GET(request: Request) {
       });
     }
 
-    const reportBuffer = await createCustomersPdf(customers);
+        // Fetch settings to pass configured columns
+    const settingsRecord = await context.pb.collection('app_settings').getFirstListItem('');
+    const { normalizeSettings } = await import('@/lib/settings');
+    const settings = normalizeSettings(settingsRecord);
+
+    const reportBuffer = await createCustomersPdf(customers, {
+            columns: settings.customerPrintColumns
+    });
     return new NextResponse(new Uint8Array(reportBuffer), {
       headers: {
         'Content-Type': 'application/pdf',

@@ -125,49 +125,102 @@ export interface CustomerPdfOptions {
   showBalances?: boolean;
   showContact?: boolean;
   showGroupAndCity?: boolean;
+  columns?: string[];
 }
 
 export function createCustomersPdf(customers: Customer[], options: CustomerPdfOptions = {}) {
   const {
     title = 'گزارش طرف‌حساب‌ها',
-    showBalances = true,
-    showContact = false,
-    showGroupAndCity = true,
+    columns = ['customerCode', 'name', 'groupName', 'city', 'goldBalance', 'rialBalance'],
   } = options;
 
-  const pdf = createPdfDocument({ size: 'A4', margin: 36 });
-  pdf.font('DoranNoEn').fontSize(18).fillColor('#17202a')
-    .text(title, { align: 'center' });
-  pdf.moveDown();
-  pdf.font('Vazirmatn').fontSize(9);
+  const pdf = createPdfDocument({ size: 'A4', margin: 36, layout: 'landscape' });
+  let y = 36;
+  const width = pdf.page.width - 72;
+
+  pdf.font('DoranNoEn').fontSize(16).fillColor('#17202a')
+    .text(title, 36, y, { width, align: 'center' });
+  y += 28;
 
   if (!customers.length) {
-    pdf.text('رکوردی برای نمایش وجود ندارد.');
-  } else {
-    customers.forEach((customer, index) => {
-      pdf.font('DoranNoEnRegular').fontSize(10)
-        .text(`${index + 1}. ${customer.customerCode} - ${customer.name}`);
+    pdf.font('Vazirmatn').fontSize(10).text('رکوردی برای نمایش وجود ندارد.', 36, y, { width, align: 'center' });
+    return pdfBuffer(pdf);
+  }
 
-      const parts = [];
+  // Determine headers
+  const headerMap: Record<string, string> = {
+    customerCode: 'کد',
+    name: 'نام',
+    gender: 'جنسیت',
+    groupName: 'گروه',
+    city: 'شهر',
+    goldBalance: 'طلا',
+    silverBalance: 'نقره',
+    platinumBalance: 'پلاتین',
+    rialBalance: 'ریال',
+    foreignBalance: 'ارز دوم',
+    tertiaryBalance: 'ارز سوم'
+  };
 
-      if (showGroupAndCity) {
-        parts.push(`گروه: ${customer.groupName || '-'} | شهر: ${customer.city || '-'}`);
+  const activeCols = columns.filter((c: string) => headerMap[c]);
+  if (activeCols.length === 0) activeCols.push('customerCode', 'name');
+
+  const colWidth = width / activeCols.length;
+
+  // Header Row
+  pdf.rect(36, y - 6, width, 24).fill('#f1f5f9');
+  pdf.fillColor('#475569');
+  pdf.font('DoranNoEn').fontSize(10);
+
+  let currentX = pdf.page.width - 36; // Start from right (RTL)
+
+  for (const col of activeCols) {
+    pdf.text(headerMap[col], currentX - colWidth, y, { width: colWidth, align: 'center' });
+    currentX -= colWidth;
+  }
+  y += 24;
+
+  pdf.font('Vazirmatn').fontSize(9).fillColor('#1e293b');
+
+  for (const customer of customers) {
+    if (y > pdf.page.height - 56) {
+      pdf.addPage();
+      y = 36;
+
+      pdf.rect(36, y - 6, width, 24).fill('#f1f5f9');
+      pdf.fillColor('#475569');
+      pdf.font('DoranNoEn').fontSize(10);
+      currentX = pdf.page.width - 36;
+      for (const col of activeCols) {
+        pdf.text(headerMap[col], currentX - colWidth, y, { width: colWidth, align: 'center' });
+        currentX -= colWidth;
       }
+      y += 24;
+      pdf.font('Vazirmatn').fontSize(9).fillColor('#1e293b');
+    }
 
-      if (showContact) {
-        parts.push(`تلفن: ${customer.phone1 || '-'}`);
-      }
+    currentX = pdf.page.width - 36;
+    for (const col of activeCols) {
+      let val = '';
+      if (col === 'customerCode') val = String(customer.customerCode);
+      else if (col === 'name') val = customer.name;
+      else if (col === 'gender') val = customer.gender === 'male' ? 'آقا' : customer.gender === 'female' ? 'خانم' : '-';
+      else if (col === 'groupName') val = customer.groupName || '-';
+      else if (col === 'city') val = customer.city || '-';
+      else if (col === 'goldBalance') val = String(customer.goldBalance);
+      else if (col === 'silverBalance') val = String(customer.silverBalance);
+      else if (col === 'platinumBalance') val = String(customer.platinumBalance);
+      else if (col === 'rialBalance') val = new Intl.NumberFormat('fa-IR').format(customer.rialBalance);
+      else if (col === 'foreignBalance') val = String(customer.foreignBalance);
+      else if (col === 'tertiaryBalance') val = String(customer.tertiaryBalance);
 
-      if (showBalances) {
-        parts.push(`طلا: ${customer.goldBalance} گرم | نقره: ${customer.silverBalance} گرم | پلاتین: ${customer.platinumBalance} گرم | ریال: ${customer.rialBalance} | ارز دوم (${currencyDisplay(customer.secondaryCurrency, customer.secondaryCurrencySymbol)}): ${customer.foreignBalance} | ارز سوم (${currencyDisplay(customer.tertiaryCurrency, customer.tertiaryCurrencySymbol)}): ${customer.tertiaryBalance}`);
-      }
+      pdf.text(val, currentX - colWidth, y, { width: colWidth, align: 'center' });
+      currentX -= colWidth;
+    }
+    y += 20;
 
-      if (parts.length > 0) {
-        pdf.font('Vazirmatn').fontSize(8).text(parts.join(' | '));
-      }
-
-      pdf.moveDown(0.5);
-    });
+    // Draw row separator
+    pdf.lineWidth(0.5).strokeColor('#e2e8f0').moveTo(36, y - 4).lineTo(pdf.page.width - 36, y - 4).stroke();
   }
 
   return pdfBuffer(pdf);

@@ -1,8 +1,8 @@
 'use client';
 
-import { Download, Eye, Plus, RefreshCw, Search, SlidersHorizontal, Trash2, X } from 'lucide-react';
+import { Download, Eye, Plus, RefreshCw, Search, SlidersHorizontal, Trash2, X, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Layers } from 'lucide-react';
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { currencyDisplay, type Customer } from '@/lib/customer';
 import { useAppSettings } from './SettingsProvider';
@@ -30,13 +30,28 @@ function summaryCurrencyLabel(key: string) {
 
 export default function CustomerManagement({ initialCustomers, canDelete }: { initialCustomers: Customer[]; canDelete: boolean }) {
   const { formatMoney, formatWeight, settings } = useAppSettings();
+
   const [customers, setCustomers] = useState(initialCustomers);
+  const [totalItems, setTotalItems] = useState(initialCustomers.length);
+  const [totalPages, setTotalPages] = useState(1);
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(25);
   const [query, setQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [group, setGroup] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('customerCode');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedQuery(query);
+    }, 500);
+    return () => clearTimeout(handler);
+  }, [query]);
 
   const baseCurrencySymbol = settings.baseCurrency === 'IRT' ? 'تومان' : 'ریال';
 
@@ -104,23 +119,59 @@ export default function CustomerManagement({ initialCustomers, canDelete }: { in
     }
   }
 
+
   const visibleCustomers = useMemo(() => {
-    const normalized = query.trim().toLocaleLowerCase();
-    return customers
-      .filter((customer) =>
-        (!group || customer.groupName === group)
-        && `${customer.customerCode} ${customer.name} ${customer.email} ${customer.phone1} ${customer.city}`
-          .toLocaleLowerCase()
-          .includes(normalized))
-      .sort((left, right) => {
-        const a = left[sortKey];
-        const b = right[sortKey];
-        const comparison = typeof a === 'number' && typeof b === 'number'
-          ? a - b
-          : String(a ?? '').localeCompare(String(b ?? ''), 'fa');
-        return sortDirection === 'asc' ? comparison : -comparison;
-      });
-  }, [customers, group, query, sortDirection, sortKey]);
+    return [...customers].sort((a, b) => {
+      let valA: any = a[sortKey];
+      let valB: any = b[sortKey];
+
+      if (sortKey === 'goldBalance' || sortKey === 'rialBalance' || sortKey === 'customerCode') {
+        valA = Number(valA) || 0;
+        valB = Number(valB) || 0;
+      } else {
+        valA = String(valA || '').toLowerCase();
+        valB = String(valB || '').toLowerCase();
+      }
+
+      if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+      if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [customers, sortDirection, sortKey]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedQuery, group, perPage]);
+
+  useEffect(() => {
+    let active = true;
+    async function fetchCustomers() {
+      setLoading(true);
+      try {
+        const params = new URLSearchParams({
+          page: String(page),
+          perPage: String(perPage),
+          q: debouncedQuery,
+          group: group,
+        });
+        const res = await fetch(`/api/customers?${params.toString()}`);
+        if (!active) return;
+        if (res.ok) {
+          const data = await res.json();
+          setCustomers(data.customers || []);
+          setTotalItems(data.totalItems || data.customers?.length || 0);
+          setTotalPages(data.totalPages || 1);
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+    fetchCustomers();
+    return () => { active = false; };
+  }, [page, perPage, debouncedQuery, group]);
+
 
   const totals = useMemo(() => {
     return {
@@ -182,17 +233,35 @@ export default function CustomerManagement({ initialCustomers, canDelete }: { in
       </section>
       <section className="dashboard-panel users-table-panel">
         <div className="users-toolbar customer-toolbar">
+
           <label className="users-search gooey-search"><Search size={16} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="جست‌وجو با کد، نام، تلفن یا شهر..." /></label>
-          <label className="users-sort"><SlidersHorizontal size={15} /><span>گروه</span><select value={group} onChange={(e) => setGroup(e.target.value)}><option value="">همه</option>{Object.entries(groupLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
-          <label className="users-sort"><span>مرتب‌سازی</span><select value={sortKey} onChange={(e) => changeSort(e.target.value as SortKey)}><option value="customerCode">کد</option><option value="name">نام</option><option value="gender">جنسیت</option><option value="groupName">گروه</option><option value="city">شهر</option><option value="goldBalance">مانده طلا</option><option value="rialBalance">مانده ریالی</option><option value="created">تاریخ ثبت</option></select><span>{sortDirection === 'asc' ? 'صعودی' : 'نزولی'}</span></label>
+          <div className="activity-toolbar-selectors flex gap-2">
+            <label className="users-sort"><SlidersHorizontal size={15} /><span>گروه</span><select value={group} onChange={(e) => setGroup(e.target.value)}><option value="">همه</option>{Object.entries(groupLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
+            <label className="users-sort"><span>مرتب‌سازی</span><select value={sortKey} onChange={(e) => changeSort(e.target.value as SortKey)}><option value="customerCode">کد</option><option value="name">نام</option><option value="gender">جنسیت</option><option value="groupName">گروه</option><option value="city">شهر</option><option value="goldBalance">مانده طلا</option><option value="rialBalance">مانده ریالی</option><option value="created">تاریخ ثبت</option></select><span>{sortDirection === 'asc' ? 'صعودی' : 'نزولی'}</span></label>
+            <label className="users-sort per-page-selector">
+              <Layers size={15} />
+              <span>تعداد</span>
+              <select value={perPage} onChange={(e) => setPerPage(Number(e.target.value))}>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={75}>75</option>
+                <option value={100}>100</option>
+                <option value={500}>500</option>
+              </select>
+            </label>
+          </div>
+
           <div className="customer-export-actions">
             <Link className="dashboard-secondary-button" href="/api/customers/export?format=xlsx"><Download size={15} /> Excel</Link>
             <button type="button" className="dashboard-secondary-button" onClick={() => setPdfModalOpen(true)}><Download size={15} /> PDF</button>
             <button type="button" className="dashboard-secondary-button" onClick={() => void reload()} disabled={loading}><RefreshCw size={15} /> تازه‌سازی</button>
           </div>
         </div>
+
+        <CustomerPaginationControls page={page} totalPages={totalPages} totalItems={totalItems} perPage={perPage} loading={loading} onPageChange={setPage} position="top" />
         <div className="users-table-wrap">
           <table className="users-table customers-table">
+
             <thead><tr><th>کد</th><th>طرف‌حساب</th><th>جنسیت</th><th>گروه</th><th>شهر</th><th>طلا</th><th>نقره</th><th>پلاتین</th><th>{baseCurrencySymbol}</th><th>ارز دوم</th><th>ارز سوم</th><th>عملیات</th></tr></thead>
             <tbody>
               {visibleCustomers.length ? visibleCustomers.map((customer) => (
@@ -203,7 +272,7 @@ export default function CustomerManagement({ initialCustomers, canDelete }: { in
                       <span className="managed-user-avatar">{customer.name.charAt(0)}</span>
                       <div>
                         <div className="flex items-center gap-1.5">
-                          <strong>{customer.name}</strong>
+                          <strong className="max-w-[150px] truncate inline-block" title={customer.name}>{customer.name}</strong>
                           {(customer.hasPrivateDescription || Boolean(customer.privateDescription)) ? (
                             <button
                               type="button"
@@ -215,7 +284,7 @@ export default function CustomerManagement({ initialCustomers, canDelete }: { in
                             </button>
                           ) : null}
                         </div>
-                        <small>{customer.phone1 || customer.email || 'بدون اطلاعات تماس'}</small>
+                        <small className="max-w-[150px] truncate inline-block" title={customer.phone1 || customer.email || 'بدون اطلاعات تماس'}>{customer.phone1 || customer.email || 'بدون اطلاعات تماس'}</small>
                       </div>
                     </div>
                   </td>
@@ -232,8 +301,11 @@ export default function CustomerManagement({ initialCustomers, canDelete }: { in
                 </tr>
               )) : <tr><td colSpan={12} className="users-table-empty">طرف‌حسابی پیدا نشد.</td></tr>}
             </tbody>
+
           </table>
         </div>
+        <CustomerPaginationControls page={page} totalPages={totalPages} totalItems={totalItems} perPage={perPage} loading={loading} onPageChange={setPage} position="bottom" />
+
       </section>
 
       <CustomerPdfExportModal
@@ -294,5 +366,106 @@ function BalanceSummaryCard({ label, formattedValue, value, unit }: { label: str
       <strong>{value === 0 ? '۰' : formattedValue}</strong>
       <small>{value === 0 ? 'بدون مانده' : value > 0 ? `بدهی ما به طرف‌حساب · ${unit}` : `طلب ما از طرف‌حساب · ${unit}`}</small>
     </article>
+  );
+}
+
+
+function CustomerPaginationControls({
+  page,
+  totalPages,
+  totalItems,
+  perPage,
+  loading,
+  onPageChange,
+  position,
+}: {
+  page: number;
+  totalPages: number;
+  totalItems: number;
+  perPage: number;
+  loading: boolean;
+  onPageChange: (newPage: number) => void;
+  position: 'top' | 'bottom';
+}) {
+  const startItem = totalItems === 0 ? 0 : (page - 1) * perPage + 1;
+  const endItem = Math.min(page * perPage, totalItems);
+
+  function getPageNumbers(current: number, total: number) {
+    if (total <= 5) return Array.from({ length: total }, (_, i) => i + 1);
+    if (current <= 3) return [1, 2, 3, 4, '...', total];
+    if (current >= total - 2) return [1, '...', total - 3, total - 2, total - 1, total];
+    return [1, '...', current - 1, current, current + 1, '...', total];
+  }
+  const pageNumbers = getPageNumbers(page, totalPages);
+
+  return (
+    <div className={`activity-pagination-bar ${position}`}>
+      <div className="activity-pagination-info">
+        <span>
+          نمایش <strong>{startItem}</strong> تا <strong>{endItem}</strong> از <strong>{totalItems}</strong> طرف‌حساب
+        </span>
+        <span className="activity-pagination-page-badge">
+          صفحه {page} از {totalPages}
+        </span>
+      </div>
+
+      <div className="activity-pagination-buttons">
+        <button
+          type="button"
+          className="pagination-btn"
+          onClick={() => onPageChange(1)}
+          disabled={loading || page <= 1}
+          title="صفحه نخست"
+        >
+          <ChevronsRight size={16} />
+        </button>
+        <button
+          type="button"
+          className="pagination-btn"
+          onClick={() => onPageChange(page - 1)}
+          disabled={loading || page <= 1}
+          title="صفحه قبلی"
+        >
+          <ChevronRight size={16} />
+        </button>
+
+        <div className="pagination-numbers">
+          {pageNumbers.map((p, idx) => (
+            p === '...' ? (
+              <span key={`ellipsis-${idx}`} className="pagination-ellipsis">...</span>
+            ) : (
+              <button
+                key={`page-${p}`}
+                type="button"
+                className={`pagination-num-btn ${p === page ? 'active' : ''}`}
+                onClick={() => onPageChange(p as number)}
+                disabled={loading}
+              >
+                {p}
+              </button>
+            )
+          ))}
+        </div>
+
+        <button
+          type="button"
+          className="pagination-btn"
+          onClick={() => onPageChange(page + 1)}
+          disabled={loading || page >= totalPages}
+          title="صفحه بعدی"
+        >
+          <ChevronLeft size={16} />
+        </button>
+        <button
+          type="button"
+          className="pagination-btn"
+          onClick={() => onPageChange(totalPages)}
+          disabled={loading || page >= totalPages}
+          title="صفحه پایانی"
+        >
+          <ChevronsLeft size={16} />
+        </button>
+      </div>
+    </div>
   );
 }

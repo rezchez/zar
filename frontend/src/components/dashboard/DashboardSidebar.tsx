@@ -1,7 +1,7 @@
 'use client';
 
 import { ChevronRight, X, type LucideIcon } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 export type NavItemData = {
   id: string;
@@ -38,9 +38,16 @@ function NavItem({
   onSelect: (item: NavItemData) => void;
   level?: number;
 }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const isActive = activeId === item.id;
   const hasChildren = Boolean(item.children?.length);
+  const isChildActive = hasChildren && item.children?.some(child => child.id === activeId || child.children?.some(c => c.id === activeId));
+  const isActive = activeId === item.id || isChildActive;
+
+  const [isOpen, setIsOpen] = useState(isChildActive);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (isChildActive) setIsOpen(true);
+  }, [isChildActive]);
 
   function handleClick() {
     if (hasChildren) {

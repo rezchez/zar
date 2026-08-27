@@ -27,7 +27,10 @@ export type AppSettings = {
   printFooterText: string;
   printShowStamp: boolean;
   printShowSignature: boolean;
-  printActiveTemplate: 'standard' | 'classic' | 'modern';
+
+  printActiveTemplate: 'standard' | 'classic' | 'modern' | string;
+  customerPrintColumns: string[];
+  pdfManagers: { name: string; role: string; telegramId: string; baleId: string }[];
 
   // PWA Settings
   pwaAppName: string;
@@ -70,7 +73,10 @@ export const defaultSettings: AppSettings = {
   printFooterText: 'از خرید شما متشکریم. اجناس فروخته شده پس از کسر کارمزد طبق ضوابط اتحادیه قابل استرداد می‌باشند.',
   printShowStamp: true,
   printShowSignature: true,
+
   printActiveTemplate: 'standard',
+  customerPrintColumns: ['customerCode', 'name', 'groupName', 'city', 'goldBalance', 'rialBalance'],
+  pdfManagers: [],
 
   pwaAppName: 'زر فولیـو',
   pwaShortName: 'Zarfolio',
@@ -155,7 +161,10 @@ export function normalizeSettings(input: Record<string, unknown>): AppSettings {
     printFooterText: String(input.printFooterText ?? defaultSettings.printFooterText).trim(),
     printShowStamp: typeof input.printShowStamp === 'boolean' ? input.printShowStamp : defaultSettings.printShowStamp,
     printShowSignature: typeof input.printShowSignature === 'boolean' ? input.printShowSignature : defaultSettings.printShowSignature,
+
     printActiveTemplate: (input.printActiveTemplate as AppSettings['printActiveTemplate']) || defaultSettings.printActiveTemplate,
+    customerPrintColumns: Array.isArray(input.customerPrintColumns) ? input.customerPrintColumns : defaultSettings.customerPrintColumns,
+    pdfManagers: Array.isArray(input.pdfManagers) ? input.pdfManagers as any : defaultSettings.pdfManagers,
 
     pwaAppName: String(input.pwaAppName ?? defaultSettings.pwaAppName).trim() || defaultSettings.pwaAppName,
     pwaShortName: String(input.pwaShortName ?? defaultSettings.pwaShortName).trim() || defaultSettings.pwaShortName,

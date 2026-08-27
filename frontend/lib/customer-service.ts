@@ -85,3 +85,71 @@ export async function getCustomersWithBalances(pb: PocketBase) {
     ),
   );
 }
+
+
+export async function getPaginatedCustomersWithBalances(
+  pb: PocketBase,
+  page: number,
+  perPage: number,
+  q: string,
+  group: string
+) {
+  const filterConditions: string[] = ['is_deleted = false'];
+  const filterParams: Record<string, string> = {};
+
+  if (group) {
+    filterConditions.push('groupName = {:group}');
+    filterParams.group = group;
+  }
+
+  if (q) {
+    filterConditions.push('(name ~ {:q} || customerCode ~ {:q} || phone1 ~ {:q} || city ~ {:q})');
+    filterParams.q = q;
+  }
+
+  const filter = filterConditions.join(' && ');
+
+  const result = await pb.collection('customers').getList(page, perPage, {
+    sort: '-customerCode',
+    filter,
+    requestKey: null,
+  });
+
+  const customerIds = result.items.map((r) => r.id);
+
+  let transactionRecords: RecordModel[] = [];
+  if (customerIds.length > 0) {
+    try {
+      // Fetch only transactions for the current page of customers
+      const idsString = customerIds.map((id) => `'${id}'`).join(',');
+      transactionRecords = await pb.collection('transactions').getFullList({
+        sort: '-transactionDate,-created',
+        filter: `is_deleted = false && customerId ?~ [${idsString}]`,
+      });
+    } catch {
+      transactionRecords = [];
+    }
+  }
+
+  const transactionsByCustomer = new Map<string, CustomerTransaction[]>();
+  for (const record of transactionRecords) {
+    const transaction = mapTransaction(record);
+    const current = transactionsByCustomer.get(transaction.customerId) ?? [];
+    current.push(transaction);
+    transactionsByCustomer.set(transaction.customerId, current);
+  }
+
+  const customers = result.items.map((record) =>
+    mapCustomerWithTransactions(
+      pb,
+      record,
+      transactionsByCustomer.get(record.id) ?? [],
+    ),
+  );
+
+  return {
+    customers,
+    totalItems: result.totalItems,
+    totalPages: result.totalPages,
+  };
+}
