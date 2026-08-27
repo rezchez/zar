@@ -1,6 +1,6 @@
 'use client';
 
-import { Download, Eye, Plus, RefreshCw, Search, SlidersHorizontal, Trash2, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, Eye, Plus, RefreshCw, Search, SlidersHorizontal, Trash2, X } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -42,11 +42,6 @@ export default function CustomerManagement({ initialCustomers, initialMeta, canD
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   const baseCurrencySymbol = settings.baseCurrency === 'IRT' ? 'تومان' : 'ریال';
 
@@ -195,7 +190,7 @@ export default function CustomerManagement({ initialCustomers, initialMeta, canD
             <button type="button" className="dashboard-secondary-button" onClick={() => void reload()} disabled={loading}><RefreshCw size={15} /> تازه‌سازی</button>
           </div>
         </div>
-        {mounted ? <Pagination page={page} totalPages={meta.totalPages} totalItems={meta.totalItems} perPage={perPage} loading={loading} onPage={(next) => void reload(next, perPage)} onPerPage={(next) => { setPerPage(next); setPage(1); }} /> : null}
+        <Pagination page={page} totalPages={meta.totalPages} totalItems={meta.totalItems} perPage={perPage} loading={loading} onPage={(next) => void reload(next, perPage)} onPerPage={(next) => { setPerPage(next); setPage(1); }} />
         <div className="users-table-wrap">
           <table className="users-table customers-table">
             <thead><tr><th>کد</th><th>طرف‌حساب</th><th>جنسیت</th><th>گروه</th><th>شهر</th><th>طلا</th><th>نقره</th><th>پلاتین</th><th>{baseCurrencySymbol}</th><th>ارز دوم</th><th>ارز سوم</th><th>عملیات</th></tr></thead>
@@ -237,7 +232,7 @@ export default function CustomerManagement({ initialCustomers, initialMeta, canD
             </tbody>
           </table>
         </div>
-        {mounted ? <Pagination page={page} totalPages={meta.totalPages} totalItems={meta.totalItems} perPage={perPage} loading={loading} onPage={(next) => void reload(next, perPage)} onPerPage={(next) => { setPerPage(next); setPage(1); }} /> : null}
+        <Pagination page={page} totalPages={meta.totalPages} totalItems={meta.totalItems} perPage={perPage} loading={loading} onPage={(next) => void reload(next, perPage)} onPerPage={(next) => { setPerPage(next); setPage(1); }} />
       </section>
 
       <CustomerPdfExportModal
@@ -286,42 +281,38 @@ export default function CustomerManagement({ initialCustomers, initialMeta, canD
 function Pagination({ page, totalPages, totalItems, perPage, loading, onPage, onPerPage }: { page: number; totalPages: number; totalItems: number; perPage: number; loading: boolean; onPage: (page: number) => void; onPerPage: (value: number) => void }) {
   const first = totalItems ? (page - 1) * perPage + 1 : 0;
   const last = Math.min(page * perPage, totalItems);
-  const visiblePages = Array.from(
-    { length: Math.min(Math.max(totalPages, 1), 7) },
-    (_, index) => {
-      if (totalPages <= 7) return index + 1;
-      if (page <= 4) return index + 1;
-      if (page >= totalPages - 3) return totalPages - 6 + index;
-      return page - 3 + index;
-    },
-  );
-  return <div className="customer-pagination" dir="rtl">
+  const safeTotalPages = Math.max(totalPages, 1);
+  const pages = Array.from({ length: Math.min(safeTotalPages, 5) }, (_, index) => {
+    if (safeTotalPages <= 5) return index + 1;
+    if (page <= 3) return index + 1;
+    if (page >= safeTotalPages - 2) return safeTotalPages - 4 + index;
+    return page - 2 + index;
+  });
+  const showLeftEllipsis = safeTotalPages > 5 && page > 3;
+  const showRightEllipsis = safeTotalPages > 5 && page < safeTotalPages - 2;
+
+  return <nav className="customer-pagination customer-pagination-visible" dir="rtl" aria-label="صفحه‌بندی طرف‌حساب‌ها">
     <span className="customer-pagination-count">نمایش {first} تا {last} از {totalItems} طرف‌حساب</span>
+    <span className="customer-pagination-divider" aria-hidden="true" />
+    <div className="customer-pagination-pages" aria-label="صفحه‌بندی">
+      <button type="button" onClick={() => onPage(1)} disabled={loading || page <= 1}>اولین</button>
+      <button type="button" aria-label="صفحه قبل" onClick={() => onPage(page - 1)} disabled={loading || page <= 1}><ChevronRight size={16} /></button>
+      {showLeftEllipsis ? <span className="customer-pagination-ellipsis">…</span> : null}
+      {pages.map((pageNumber) => (
+        <button type="button" key={pageNumber} className={pageNumber === page ? 'is-current' : ''} aria-current={pageNumber === page ? 'page' : undefined} onClick={() => onPage(pageNumber)} disabled={loading || pageNumber === page}>{pageNumber}</button>
+      ))}
+      {showRightEllipsis ? <span className="customer-pagination-ellipsis">…</span> : null}
+      <button type="button" aria-label="صفحه بعد" onClick={() => onPage(page + 1)} disabled={loading || page >= safeTotalPages}><ChevronLeft size={16} /></button>
+      <button type="button" onClick={() => onPage(safeTotalPages)} disabled={loading || page >= safeTotalPages}>آخرین</button>
+    </div>
+    <span className="customer-pagination-divider" aria-hidden="true" />
+    <span className="customer-pagination-current">صفحه {page} از {safeTotalPages}</span>
     <label className="customer-pagination-size">تعداد در صفحه
       <select value={perPage} onChange={(e) => onPerPage(Number(e.target.value))} disabled={loading}>
         {[25, 50, 75, 100, 500].map((size) => <option key={size} value={size}>{size}</option>)}
       </select>
     </label>
-    <div className="customer-pagination-pages" aria-label="شماره صفحات">
-      <button type="button" onClick={() => onPage(1)} disabled={loading || page <= 1}>اولین</button>
-      <button type="button" onClick={() => onPage(page - 1)} disabled={loading || page <= 1}>‹</button>
-      {visiblePages.map((pageNumber) => (
-        <button
-          type="button"
-          key={pageNumber}
-          className={pageNumber === page ? 'is-current' : ''}
-          aria-current={pageNumber === page ? 'page' : undefined}
-          onClick={() => onPage(pageNumber)}
-          disabled={loading || pageNumber === page}
-        >
-          {pageNumber}
-        </button>
-      ))}
-      <button type="button" onClick={() => onPage(page + 1)} disabled={loading || page >= totalPages}>›</button>
-      <button type="button" onClick={() => onPage(totalPages)} disabled={loading || page >= totalPages}>آخرین</button>
-    </div>
-    <span className="customer-pagination-current">صفحه {page} از {Math.max(totalPages, 1)}</span>
-  </div>;
+  </nav>;
 }
 
 function BalanceCell({ labelStr, toneValue }: { labelStr: string; toneValue: number }) {
