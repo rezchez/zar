@@ -4,7 +4,10 @@ import * as XLSX from 'xlsx';
 import { getServerAuthContext } from '@/lib/auth';
 import { currencyDisplay } from '@/lib/customer';
 import { getCustomersWithBalances } from '@/lib/customer-service';
-import { createCustomersPdf } from '@/lib/pdf-reports';
+import { createCustomersPdf, type CustomerPdfOptions } from '@/lib/pdf-reports';
+import { getServerAppSettings } from '@/lib/server-settings';
+
+import { DEFAULT_REPORT_TEMPLATES } from '@/lib/report-templates';
 
 export const runtime = 'nodejs';
 
@@ -21,15 +24,11 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const { format, options, customerIds } = body as {
+    const { format, options, customerIds, templateId } = body as {
       format?: string;
-      options?: {
-        title?: string;
-        showBalances?: boolean;
-        showContact?: boolean;
-        showGroupAndCity?: boolean;
-      };
+      options?: CustomerPdfOptions;
       customerIds?: string[];
+      templateId?: string;
     };
 
     if (format !== 'pdf') {
@@ -40,10 +39,40 @@ export async function POST(request: Request) {
       .sort((left, right) => left.customerCode - right.customerCode);
 
     if (customerIds && customerIds.length > 0) {
-      customers = customers.filter(c => customerIds.includes(c.id));
+      customers = customers.filter((c) => customerIds.includes(c.id));
     }
 
-    const reportBuffer = await createCustomersPdf(customers, options);
+    const settings = await getServerAppSettings();
+    const reportTemplates = Array.isArray(settings.reportTemplates) && settings.reportTemplates.length > 0
+      ? settings.reportTemplates
+      : DEFAULT_REPORT_TEMPLATES;
+
+    const chosenTemplate = (templateId ? reportTemplates.find((t) => t.id === templateId) : null)
+      || reportTemplates.find((t) => t.reportType === 'customer' && t.isDefault)
+      || reportTemplates.find((t) => t.reportType === 'customer')
+      || DEFAULT_REPORT_TEMPLATES[0];
+
+    const templateCols = chosenTemplate?.table?.columns?.filter((c) => c.visible !== false).map((c) => c.id);
+
+    const resolvedOptions: CustomerPdfOptions = {
+      title: options?.title || chosenTemplate?.header?.customTitle || chosenTemplate?.name || 'گزارش طرف‌حساب‌ها',
+      subtitle: chosenTemplate?.header?.customSubtitle,
+      orientation: chosenTemplate?.page?.orientation || 'landscape',
+      showBalances: options?.showBalances !== false,
+      showContact: options?.showContact !== false,
+      showGroupAndCity: options?.showGroupAndCity !== false,
+      showLogo: chosenTemplate?.header?.showLogo !== false,
+      storeName: options?.storeName || settings.printStoreName || settings.organizationName || 'زر فولیـو',
+      columns: options?.columns && options.columns.length > 0
+        ? options.columns
+        : (templateCols && templateCols.length > 0 ? templateCols : settings.printCustomerColumns),
+      footerNotes: chosenTemplate?.footer?.customFooterText || settings.printFooterText,
+      showStamp: chosenTemplate?.footer?.showStamp,
+      showSignature: chosenTemplate?.footer?.showSignature,
+      showTotalCount: chosenTemplate?.footer?.showTotalCount !== false,
+    };
+
+    const reportBuffer = await createCustomersPdf(customers, resolvedOptions);
     return new NextResponse(new Uint8Array(reportBuffer), {
       headers: {
         'Content-Type': 'application/pdf',
@@ -52,8 +81,10 @@ export async function POST(request: Request) {
         'Cache-Control': 'no-store',
       },
     });
-  } catch {
-    return new NextResponse('ساخت گزارش PDF انجام نشد.', {
+  } catch (error) {
+    console.error('Customer PDF Export Error:', error);
+    const errorMsg = error instanceof Error ? error.message : 'ساخت گزارش PDF انجام نشد.';
+    return new NextResponse(errorMsg, {
       status: 500,
       headers: {
         'Content-Type': 'text/plain; charset=utf-8',
@@ -113,7 +144,11 @@ export async function GET(request: Request) {
       });
     }
 
-    const reportBuffer = await createCustomersPdf(customers);
+    const settings = await getServerAppSettings();
+    const reportBuffer = await createCustomersPdf(customers, {
+      storeName: settings.printStoreName || settings.organizationName || 'زر فولیـو',
+      columns: settings.printCustomerColumns,
+    });
     return new NextResponse(new Uint8Array(reportBuffer), {
       headers: {
         'Content-Type': 'application/pdf',
@@ -122,8 +157,10 @@ export async function GET(request: Request) {
         'Cache-Control': 'no-store',
       },
     });
-  } catch {
-    return new NextResponse('ساخت گزارش PDF انجام نشد.', {
+  } catch (error) {
+    console.error('Customer Export GET Error:', error);
+    const errorMsg = error instanceof Error ? error.message : 'ساخت گزارش PDF انجام نشد.';
+    return new NextResponse(errorMsg, {
       status: 500,
       headers: {
         'Content-Type': 'text/plain; charset=utf-8',

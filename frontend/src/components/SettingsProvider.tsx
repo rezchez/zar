@@ -40,7 +40,11 @@ function applyTypographyCssVariables(settings: AppSettings) {
   const bodyFamily = resolveFontFamilyCss(settings.bodyFontFamily);
   const headingFamily = resolveFontFamilyCss(settings.headingFontFamily);
 
-  const bodySize = BODY_FONT_SIZES[settings.bodyFontSize] || settings.bodyFontSize || '1rem';
+  const numSize = settings.bodyFontSizeNumber;
+  const bodySize = (typeof numSize === 'number' && numSize >= 10 && numSize <= 26)
+    ? `${numSize}px`
+    : (BODY_FONT_SIZES[settings.bodyFontSize] || settings.bodyFontSize || '14px');
+
   const headingSize = HEADING_FONT_SIZES[settings.headingFontSize] || settings.headingFontSize || '1.4rem';
 
   root.style.setProperty('--app-font-body', bodyFamily);

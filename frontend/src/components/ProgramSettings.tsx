@@ -41,6 +41,9 @@ import { jalaliDateToIso, parseJalaliDate, formatJalaliDate } from '@/lib/jalali
 import { formatMoney } from '@/lib/money';
 import type { PriceApiSettings, PriceApiUnit } from '@/lib/price-api';
 import InvoicePrintDesigner from '@/src/components/InvoicePrintDesigner';
+import LogoManager from '@/src/components/LogoManager';
+import ReportPrintDesigner from '@/src/components/ReportPrintDesigner';
+import CustomFontManager from '@/src/components/CustomFontManager';
 
 const ALL_CUSTOMER_COLUMNS = [
   { id: 'customerCode', label: 'کد حساب' },
@@ -105,8 +108,8 @@ const SETTINGS_TABS = [
   },
   {
     id: 'print_customization',
-    label: 'شخصی‌سازی چاپ فاکتور',
-    description: 'طراحی قالب، لوگو و اطلاعات فاکتور',
+    label: 'شخصی‌سازی چاپ',
+    description: 'طراحی قالب، لوگو، فاکتورها و گزارشات',
     icon: Palette,
   },
   {
@@ -124,14 +127,8 @@ const SETTINGS_TABS = [
   {
     id: 'appearance',
     label: 'تنظیمات ظاهری و تایپوگرافی',
-    description: 'فونت‌های متن، اندازه، وزن و پیش‌نمایش متون',
+    description: 'فونت‌های متن، اندازه، وزن، فونت‌های سفارشی و پیش‌نمایش',
     icon: Type,
-  },
-  {
-    id: 'custom_fonts',
-    label: 'افزودن فونت سفارشی',
-    description: 'بارگذاری فونت‌های WOFF2 و مدیریت وزن‌ها',
-    icon: Upload,
   },
   {
     id: 'pwa_settings',
@@ -150,7 +147,7 @@ export default function ProgramSettings() {
     reloadFonts,
   } = useAppSettings();
 
-  const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'price_api' | 'custom_fonts' | 'print_customization' | 'manager_notifications' | 'pwa_settings'>('print_customization');
+  const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'price_api' | 'print_customization' | 'manager_notifications' | 'pwa_settings'>('print_customization');
 
   // Form State initialized directly from settings
   const [form, setForm] = useState(() => ({ ...settings }));
@@ -172,15 +169,6 @@ export default function ProgramSettings() {
   const [calendarViewMonth, setCalendarViewMonth] = useState(1);
   const datePickerRef = useRef<HTMLDivElement>(null);
 
-  // Upload custom font state
-  const [fontForm, setFontForm] = useState({
-    displayName: '',
-    fontFamily: '',
-    weights: [400],
-  });
-  const [fontFile, setFontFile] = useState<File | null>(null);
-  const [isUploadingFont, setIsUploadingFont] = useState(false);
-  const [fontUploadMessage, setFontUploadMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [priceApi, setPriceApi] = useState<PriceApiSettings | null>(null);
   const [isPriceApiSaving, setIsPriceApiSaving] = useState(false);
   const [priceApiMessage, setPriceApiMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -197,6 +185,7 @@ export default function ProgramSettings() {
   // Manager Recipient modal state
   const [isManagerModalOpen, setIsManagerModalOpen] = useState(false);
   const [editingManagerIndex, setEditingManagerIndex] = useState<number | null>(null);
+  const [printSubTab, setPrintSubTab] = useState<'reports' | 'invoices' | 'logo' | 'store_info'>('reports');
   const [managerForm, setManagerForm] = useState<{
     name: string;
     role: string;
@@ -445,68 +434,6 @@ export default function ProgramSettings() {
     }
   }
 
-  // Upload Custom Font
-  async function handleUploadFont(e: React.FormEvent) {
-    e.preventDefault();
-    if (!fontFile) {
-      setFontUploadMessage({ type: 'error', text: 'لطفاً یک فایل فونت انتخاب کنید.' });
-      return;
-    }
-    if (!fontForm.displayName) {
-      setFontUploadMessage({ type: 'error', text: 'لطفاً نام نمایشی فونت را وارد کنید.' });
-      return;
-    }
-
-    setIsUploadingFont(true);
-    setFontUploadMessage(null);
-
-    try {
-      const body = new FormData();
-      body.append('displayName', fontForm.displayName);
-      body.append('fontFamily', fontForm.fontFamily || fontForm.displayName);
-      body.append('availableWeights', JSON.stringify(fontForm.weights));
-      body.append('file', fontFile);
-
-      const res = await fetch('/api/settings/fonts', {
-        method: 'POST',
-        body,
-      });
-
-      const data = await res.json();
-      setIsUploadingFont(false);
-
-      if (!res.ok) {
-        setFontUploadMessage({ type: 'error', text: data.message || 'خطا در آپلود فونت' });
-        return;
-      }
-
-      setFontUploadMessage({ type: 'success', text: 'فونت سفارشی با موفقیت اضافه شد.' });
-      setFontForm({ displayName: '', fontFamily: '', weights: [400] });
-      setFontFile(null);
-      await reloadFonts();
-    } catch (err) {
-      setIsUploadingFont(false);
-      setFontUploadMessage({
-        type: 'error',
-        text: err instanceof Error ? err.message : 'خطا در ارتباط با سرور',
-      });
-    }
-  }
-
-  // Delete Custom Font
-  async function handleDeleteFont(id: string) {
-    if (!confirm('آیا از حذف این فونت سفارشی اطمینان دارید؟')) return;
-
-    try {
-      const res = await fetch(`/api/settings/fonts/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        await reloadFonts();
-      }
-    } catch {
-      // Ignore error
-    }
-  }
-
   // Get available font families
   const availableFontFamilies = useMemo(() => {
     const list = [
@@ -555,9 +482,8 @@ export default function ProgramSettings() {
       {/* Heading */}
       <div className="dashboard-page-heading">
         <div>
-          <p className="eyebrow">مدیریت سامانه</p>
+          <p className="eyebrow">تنظیمات سامانه</p>
           <h1>تنظیمات کلی برنامه</h1>
-          <p>تنظیمات اصلی و پایدار سامانه Zarfolio.</p>
         </div>
         <span className="dashboard-status-pill">
           <Settings2 size={15} />
@@ -912,78 +838,153 @@ export default function ProgramSettings() {
         </div>
       )}
 
-      {/* TAB 2: Print Customization Interactive Designer */}
+      {/* TAB 2: Print & Report Customization */}
       {activeTab === 'print_customization' && (
         <div className="space-y-6">
-          {/* Store Info Fields */}
-          <section className="dashboard-panel p-6 space-y-4">
-            <div className="account-panel-heading border-b border-slate-100 dark:border-slate-800 pb-3">
-              <div>
-                <p className="eyebrow">اطلاعات فروشگاه در چاپ</p>
-                <h2 className="flex items-center gap-2 text-sm font-black">
-                  <Building2 size={16} className="text-amber-600" />
-                  اطلاعات ثابت سربرگ و پانویس فاکتور
-                </h2>
+          {/* Sub Navigation Bar */}
+          <div className="flex flex-wrap items-center gap-1.5 p-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs">
+            <button
+              type="button"
+              onClick={() => setPrintSubTab('reports')}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition-all ${
+                printSubTab === 'reports'
+                  ? 'bg-amber-500 text-slate-950 shadow-xs'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <FileText size={16} />
+              <span>شخصی‌سازی قالب گزارشات</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setPrintSubTab('invoices')}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition-all ${
+                printSubTab === 'invoices'
+                  ? 'bg-amber-500 text-slate-950 shadow-xs'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <Palette size={16} />
+              <span>طراحی قالب فاکتور و اسناد</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setPrintSubTab('logo')}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition-all ${
+                printSubTab === 'logo'
+                  ? 'bg-amber-500 text-slate-950 shadow-xs'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <Building2 size={16} />
+              <span>لوگو و نشان تجاری</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setPrintSubTab('store_info')}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition-all ${
+                printSubTab === 'store_info'
+                  ? 'bg-amber-500 text-slate-950 shadow-xs'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <Settings2 size={16} />
+              <span>اطلاعات ثابت سربرگ و پانویس</span>
+            </button>
+          </div>
+
+          {printSubTab === 'reports' && (
+            <ReportPrintDesigner
+              settings={form}
+              onSettingsUpdated={async () => {
+                await updateSettings({});
+              }}
+            />
+          )}
+
+          {printSubTab === 'invoices' && (
+            <InvoicePrintDesigner />
+          )}
+
+          {printSubTab === 'logo' && (
+            <LogoManager
+              settings={form}
+              onLogoUpdated={(url) => {
+                updateFormField('printLogoUrl', url);
+              }}
+            />
+          )}
+
+          {printSubTab === 'store_info' && (
+            <section className="dashboard-panel p-6 space-y-4">
+              <div className="account-panel-heading border-b border-slate-100 dark:border-slate-800 pb-3">
+                <div>
+                  <p className="eyebrow">اطلاعات فروشگاه در چاپ</p>
+                  <h2 className="flex items-center gap-2 text-sm font-black">
+                    <Building2 size={16} className="text-amber-600" />
+                    اطلاعات ثابت سربرگ و پانویس فاکتور و گزارش‌ها
+                  </h2>
+                </div>
               </div>
-            </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-              <label className="account-field">
-                <span className="font-bold text-slate-700 dark:text-slate-300">نام فروشگاه / گالری</span>
-                <input
-                  type="text"
-                  value={form.printStoreName}
-                  onChange={(e) => updateFormField('printStoreName', e.target.value)}
-                  placeholder="مثال: گالری طلا و جواهر زر"
-                />
-              </label>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                <label className="account-field">
+                  <span className="font-bold text-slate-700 dark:text-slate-300">نام فروشگاه / گالری</span>
+                  <input
+                    type="text"
+                    value={form.printStoreName}
+                    onChange={(e) => updateFormField('printStoreName', e.target.value)}
+                    placeholder="مثال: گالری طلا و جواهر زر"
+                  />
+                </label>
 
-              <label className="account-field">
-                <span className="font-bold text-slate-700 dark:text-slate-300">شماره تماس پشتیبانی</span>
-                <input
-                  type="text"
-                  value={form.printPhone}
-                  onChange={(e) => updateFormField('printPhone', e.target.value)}
-                  placeholder="۰۲۱-۱۲۳۴۵۶۷۸"
-                />
-              </label>
+                <label className="account-field">
+                  <span className="font-bold text-slate-700 dark:text-slate-300">شماره تماس پشتیبانی</span>
+                  <input
+                    type="text"
+                    value={form.printPhone}
+                    onChange={(e) => updateFormField('printPhone', e.target.value)}
+                    placeholder="۰۲۱-۱۲۳۴۵۶۷۸"
+                  />
+                </label>
 
-              <label className="account-field">
-                <span className="font-bold text-slate-700 dark:text-slate-300">آدرس فروشگاه</span>
-                <input
-                  type="text"
-                  value={form.printAddress}
-                  onChange={(e) => updateFormField('printAddress', e.target.value)}
-                  placeholder="آدرس جهت درج در فاکتور"
-                />
-              </label>
+                <label className="account-field">
+                  <span className="font-bold text-slate-700 dark:text-slate-300">آدرس فروشگاه</span>
+                  <input
+                    type="text"
+                    value={form.printAddress}
+                    onChange={(e) => updateFormField('printAddress', e.target.value)}
+                    placeholder="آدرس جهت درج در فاکتور"
+                  />
+                </label>
 
-              <label className="account-field md:col-span-3">
-                <span className="font-bold text-slate-700 dark:text-slate-300">متن پانویس فاکتور</span>
-                <input
-                  type="text"
-                  value={form.printFooterText}
-                  onChange={(e) => updateFormField('printFooterText', e.target.value)}
-                  placeholder="متن توضیحات پایانی..."
-                />
-              </label>
-            </div>
+                <label className="account-field md:col-span-3">
+                  <span className="font-bold text-slate-700 dark:text-slate-300">متن پانویس فاکتور و اسناد</span>
+                  <input
+                    type="text"
+                    value={form.printFooterText}
+                    onChange={(e) => updateFormField('printFooterText', e.target.value)}
+                    placeholder="متن توضیحات پایانی..."
+                  />
+                </label>
+              </div>
 
-            <div className="flex justify-end pt-2 border-t border-slate-100 dark:border-slate-800">
-              <button
-                type="button"
-                onClick={handleSaveSettings}
-                disabled={isSaving}
-                className="customer-save-button text-xs py-2 px-3"
-              >
-                {isSaving ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />}
-                <span>{isSaving ? 'در حال ذخیره...' : 'ذخیره اطلاعات سربرگ'}</span>
-              </button>
-            </div>
-          </section>
-
-          {/* Interactive Print Designer System Component */}
-          <InvoicePrintDesigner />
+              <div className="flex justify-end pt-2 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={handleSaveSettings}
+                  disabled={isSaving}
+                  className="customer-save-button text-xs py-2 px-3"
+                >
+                  {isSaving ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />}
+                  <span>{isSaving ? 'در حال ذخیره...' : 'ذخیره اطلاعات سربرگ'}</span>
+                </button>
+              </div>
+            </section>
+          )}
         </div>
       )}
 
@@ -1492,7 +1493,7 @@ export default function ProgramSettings() {
                 <input
                   type="checkbox"
                   checked={priceApi.enabled}
-                  onChange={(e) => setPriceApi((current) => current && ({ ...current, enabled: e.target.checked }))}
+                  onChange={(e) => setPriceApi((current: PriceApiSettings | null) => current && ({ ...current, enabled: e.target.checked }))}
                   className="accent-amber-500"
                 />
                 فعال‌سازی دریافت خودکار
@@ -1516,7 +1517,7 @@ export default function ProgramSettings() {
                   <input
                     type="password"
                     value={priceApi.apiKey}
-                    onChange={(e) => setPriceApi((current) => current && ({ ...current, apiKey: e.target.value }))}
+                    onChange={(e) => setPriceApi((current: PriceApiSettings | null) => current && ({ ...current, apiKey: e.target.value }))}
                     placeholder="کلید API سرویس را وارد کنید"
                     autoComplete="off"
                     className="min-w-0 flex-1"
@@ -1543,7 +1544,7 @@ export default function ProgramSettings() {
                   max="1440"
                   step="1"
                   value={priceApi.intervalMinutes}
-                  onChange={(e) => setPriceApi((current) => current && ({ ...current, intervalMinutes: Number(e.target.value) }))}
+                  onChange={(e) => setPriceApi((current: PriceApiSettings | null) => current && ({ ...current, intervalMinutes: Number(e.target.value) }))}
                   required
                 />
                 <small className="text-slate-500">هر ۱ تا ۱۴۴۰ دقیقه یک درخواست جدید به API ارسال می‌شود.</small>
@@ -1568,11 +1569,11 @@ export default function ProgramSettings() {
                         <input
                           type="checkbox"
                           checked={checked}
-                          onChange={(e) => setPriceApi((current) => {
+                          onChange={(e) => setPriceApi((current: PriceApiSettings | null) => {
                             if (!current) return current;
                             const selectedSymbols = e.target.checked
                               ? [...new Set([...current.selectedSymbols, unit.symbol])]
-                              : current.selectedSymbols.filter((symbol) => symbol !== unit.symbol);
+                              : current.selectedSymbols.filter((symbol: string) => symbol !== unit.symbol);
                             return { ...current, selectedSymbols };
                           })}
                           className="accent-amber-500"
@@ -1664,10 +1665,10 @@ export default function ProgramSettings() {
                 </select>
               </label>
 
-              {/* Body Font Size */}
+              {/* Body Font Size (Named Preset) */}
               <label className="account-field">
                 <span className="font-bold text-xs text-slate-700 dark:text-slate-300">
-                  اندازه فونت بدنه
+                  پیش‌فرض اندازه فونت بدنه
                 </span>
                 <select
                   value={form.bodyFontSize}
@@ -1679,6 +1680,47 @@ export default function ProgramSettings() {
                     </option>
                   ))}
                 </select>
+              </label>
+
+              {/* Numeric Body Font Size */}
+              <label className="account-field">
+                <span className="font-bold text-xs text-slate-700 dark:text-slate-300 flex items-center justify-between">
+                  <span>اندازه دقیق فونت (پیکسل)</span>
+                  <span className="text-amber-600 font-mono text-[11px] font-bold">{form.bodyFontSizeNumber || 14}px</span>
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => updateFormField('bodyFontSizeNumber', Math.max(11, (form.bodyFontSizeNumber || 14) - 1))}
+                    className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-black text-sm transition-colors"
+                    title="کاهش اندازه فونت"
+                  >
+                    -
+                  </button>
+                  <input
+                    type="number"
+                    min="11"
+                    max="22"
+                    step="1"
+                    value={form.bodyFontSizeNumber || 14}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      if (!isNaN(val)) {
+                        updateFormField('bodyFontSizeNumber', Math.min(22, Math.max(11, val)));
+                      }
+                    }}
+                    className="text-center font-bold font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => updateFormField('bodyFontSizeNumber', Math.min(22, (form.bodyFontSizeNumber || 14) + 1))}
+                    className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-black text-sm transition-colors"
+                    title="افزایش اندازه فونت"
+                  >
+                    +
+                  </button>
+                </div>
+                <small className="text-slate-500">محدوده مجاز بین ۱۱ تا ۲۲ پیکسل (پیش‌فرض: ۱۴px)</small>
               </label>
 
               {/* Heading Font Size */}
@@ -1755,8 +1797,9 @@ export default function ProgramSettings() {
                   style={{
                     fontFamily: form.bodyFontFamily,
                     fontWeight: form.bodyFontWeight,
+                    fontSize: `${form.bodyFontSizeNumber || 14}px`,
                   }}
-                  className="text-sm text-slate-600 dark:text-slate-400"
+                  className="text-slate-600 dark:text-slate-400"
                 >
                   موجودی حساب، اسناد، گزارش‌ها و طرف‌حساب‌ها در یک نگاه.
                 </p>
@@ -1773,6 +1816,9 @@ export default function ProgramSettings() {
               </div>
             </div>
           </section>
+
+          {/* Custom Font Manager Integration */}
+          <CustomFontManager />
         </div>
       )}
 
@@ -2012,128 +2058,7 @@ export default function ProgramSettings() {
         </div>
       )}
 
-      {/* TAB 5: Custom Fonts Management */}
-      {activeTab === 'custom_fonts' && (
-        <div className="space-y-6">
-          <section className="dashboard-panel p-6 space-y-6">
-            <div className="account-panel-heading border-b border-slate-100 dark:border-slate-800 pb-4">
-              <div>
-                <p className="eyebrow">آپلود فونت جدید</p>
-                <h2 className="flex items-center gap-2">
-                  <Upload size={18} className="text-amber-600" />
-                  بارگذاری فایل فونت سفارشی
-                </h2>
-              </div>
-            </div>
 
-            {fontUploadMessage && (
-              <div
-                className={`p-3.5 rounded-xl text-xs flex items-center gap-2 border ${
-                  fontUploadMessage.type === 'success'
-                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
-                    : 'bg-rose-500/10 border-rose-500/30 text-rose-700 dark:text-rose-300'
-                }`}
-              >
-                {fontUploadMessage.type === 'success' ? <Check size={16} /> : <AlertCircle size={16} />}
-                <span>{fontUploadMessage.text}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleUploadFont} className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <label className="account-field">
-                <span className="font-bold text-xs text-slate-700 dark:text-slate-300">
-                  نام نمایشی فونت (مثال: ایران‌یکان سفارشی)
-                </span>
-                <input
-                  type="text"
-                  value={fontForm.displayName}
-                  onChange={(e) =>
-                    setFontForm((prev) => ({
-                      ...prev,
-                      displayName: e.target.value,
-                      fontFamily: e.target.value.replace(/[^a-zA-Z0-9]/g, '') || prev.fontFamily,
-                    }))}
-                  placeholder="ایران‌یکان سفارشی"
-                  required
-                />
-              </label>
-
-              <label className="account-field">
-                <span className="font-bold text-xs text-slate-700 dark:text-slate-300">
-                  شناسه انگلیسی FontFamily
-                </span>
-                <input
-                  type="text"
-                  value={fontForm.fontFamily}
-                  onChange={(e) => setFontForm((prev) => ({ ...prev, fontFamily: e.target.value }))}
-                  placeholder="IRANYekanCustom"
-                />
-              </label>
-
-              <label className="account-field md:col-span-2">
-                <span className="font-bold text-xs text-slate-700 dark:text-slate-300">
-                  فایل فونت (فرمت‌های woff2, woff, ttf, otf - حداکثر ۱۰MB)
-                </span>
-                <input
-                  type="file"
-                  accept=".woff2,.woff,.ttf,.otf"
-                  onChange={(e) => setFontFile(e.target.files?.[0] || null)}
-                  className="file:ml-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-amber-500/20 file:text-amber-700 hover:file:bg-amber-500/30 cursor-pointer"
-                  required
-                />
-              </label>
-
-              <div className="md:col-span-2 flex justify-end">
-                <button
-                  type="submit"
-                  disabled={isUploadingFont}
-                  className="customer-save-button"
-                >
-                  {isUploadingFont ? <Loader2 className="animate-spin" size={16} /> : <Upload size={16} />}
-                  <span>{isUploadingFont ? 'در حال آپلود...' : 'بارگذاری فونت سفارشی'}</span>
-                </button>
-              </div>
-            </form>
-          </section>
-
-          {/* List of Custom Fonts */}
-          <section className="dashboard-panel p-6 space-y-4">
-            <h3 className="font-bold text-sm text-slate-800 dark:text-slate-200">
-              فونت‌های سفارشی آپلودشده ({customFonts.length})
-            </h3>
-
-            {customFonts.length === 0 ? (
-              <p className="text-xs text-slate-500 py-4 text-center">
-                هنوز هیچ فونت سفارشی آپلود نشده است.
-              </p>
-            ) : (
-              <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                {customFonts.map((cf) => (
-                  <div key={cf.id} className="py-3 flex items-center justify-between text-xs">
-                    <div>
-                      <strong className="block text-slate-800 dark:text-slate-200">
-                        {cf.displayName}
-                      </strong>
-                      <small className="text-slate-500">
-                        خانواده: {cf.fontFamily} · فرمت: {cf.format}
-                      </small>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteFont(cf.id)}
-                      className="p-2 rounded-lg text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
-                      title="حذف فونت"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-        </div>
-      )}
 
           {/* Save Button for Settings */}
           {(activeTab === 'general' || activeTab === 'appearance' || activeTab === 'pwa_settings' || activeTab === 'manager_notifications') && (

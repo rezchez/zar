@@ -37,7 +37,14 @@ export type AuditEvent =
   | 'print_template_deleted'
   | 'activity_log_cleaned';
 
-export function getRequestMetadata(request: Request) {
+export function getRequestMetadata(request?: Request) {
+  if (!request || !request.headers) {
+    return {
+      ipAddress: 'unknown',
+      userAgent: '',
+      operatingSystem: 'unknown',
+    };
+  }
   const forwarded = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
   const ipAddress = forwarded
     || request.headers.get('x-real-ip')
@@ -65,7 +72,7 @@ export async function recordAuditEvent({
 }: {
   userId: string;
   event: AuditEvent;
-  request: Request;
+  request?: Request;
   details?: string;
   entityType?: string;
   entityId?: string;

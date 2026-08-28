@@ -122,52 +122,107 @@ export function createLedgerPdf(
 
 export interface CustomerPdfOptions {
   title?: string;
+  subtitle?: string;
+  orientation?: 'landscape' | 'portrait';
   showBalances?: boolean;
   showContact?: boolean;
   showGroupAndCity?: boolean;
+  showLogo?: boolean;
   columns?: string[];
   storeName?: string;
+  logoUrl?: string;
+  logoBuffer?: Buffer;
+  footerNotes?: string;
+  showStamp?: boolean;
+  showSignature?: boolean;
+  showTotalCount?: boolean;
 }
 
 export function createCustomersPdf(customers: Customer[], options: CustomerPdfOptions = {}) {
   const {
     title = 'گزارش طرف‌حساب‌ها',
+    subtitle,
+    orientation = 'landscape',
     showBalances = true,
     showContact = true,
     showGroupAndCity = true,
-    columns = ['customerCode', 'name', 'groupName', 'phone1', 'city', 'goldBalance', 'rialBalance'],
+    showLogo = true,
+    columns,
     storeName = 'زر فولیـو',
+    logoBuffer,
+    footerNotes,
+    showStamp,
+    showSignature,
+    showTotalCount = true,
   } = options;
 
-  const pdf = createPdfDocument({ size: 'A4', layout: 'landscape', margin: 28 });
+  const pdf = createPdfDocument({ size: 'A4', layout: orientation, margin: 28 });
   const width = pdf.page.width - 56;
 
   let y = 28;
 
-  // Header Title & Store Name
+  // Header Section with optional Logo
+  if (showLogo && logoBuffer && logoBuffer.length > 0) {
+    try {
+      pdf.image(logoBuffer, 28, y, { width: 50, height: 35, fit: [50, 35] });
+    } catch {
+      // Ignore logo render error if format unsupported by pdfkit
+    }
+  }
+
   pdf.font('DoranNoEn').fontSize(16).fillColor('#17202a')
     .text(title, 28, y, { width, align: 'right' });
-  pdf.font('Vazirmatn').fontSize(9).fillColor('#475569')
-    .text(`${storeName}  |  تاریخ گزارش: ${new Intl.DateTimeFormat('fa-IR', { dateStyle: 'medium' }).format(new Date())}`, 28, y + 6, { width, align: 'left' });
-  y += 30;
 
-  // Define Columns
-  const columnDefs: Array<{ id: string; label: string; widthRatio: number }> = [
-    { id: 'index', label: 'ردیف', widthRatio: 0.05 },
-    { id: 'customerCode', label: 'کد حساب', widthRatio: 0.09 },
-    { id: 'name', label: 'نام طرف‌حساب', widthRatio: 0.22 },
-    ...(showGroupAndCity ? [
-      { id: 'groupName', label: 'گروه', widthRatio: 0.12 },
-      { id: 'city', label: 'شهر', widthRatio: 0.10 },
-    ] : []),
-    ...(showContact ? [
-      { id: 'phone1', label: 'تلفن تماس', widthRatio: 0.12 },
-    ] : []),
-    ...(showBalances ? [
-      { id: 'goldBalance', label: 'مانده طلا (گرم)', widthRatio: 0.14 },
-      { id: 'rialBalance', label: 'مانده ریالی', widthRatio: 0.16 },
-    ] : []),
-  ];
+  const dateStr = new Intl.DateTimeFormat('fa-IR', { dateStyle: 'medium' }).format(new Date());
+  const headerMeta = subtitle
+    ? `${subtitle}  |  ${storeName}  |  تاریخ: ${dateStr}`
+    : `${storeName}  |  تاریخ گزارش: ${dateStr}`;
+
+  pdf.font('Vazirmatn').fontSize(9).fillColor('#475569')
+    .text(headerMeta, 28, y + 6, { width, align: 'left' });
+  y += 34;
+
+  // Available Column Definitions Map
+  const availableColumnMap: Record<string, { label: string; widthRatio: number; align?: 'right' | 'center' | 'left'; getValue: (c: Customer, idx: number) => string }> = {
+    index: { label: 'ردیف', widthRatio: 0.05, align: 'center', getValue: (_, idx) => String(idx + 1) },
+    customerCode: { label: 'کد حساب', widthRatio: 0.09, align: 'center', getValue: (c) => String(c.customerCode || '—') },
+    name: { label: 'نام طرف‌حساب', widthRatio: 0.22, align: 'right', getValue: (c) => c.name || '—' },
+    groupName: { label: 'گروه', widthRatio: 0.12, align: 'center', getValue: (c) => c.groupName || '—' },
+    city: { label: 'شهر', widthRatio: 0.10, align: 'center', getValue: (c) => c.city || '—' },
+    province: { label: 'استان', widthRatio: 0.10, align: 'center', getValue: (c) => c.province || '—' },
+    phone1: { label: 'تلفن تماس', widthRatio: 0.12, align: 'center', getValue: (c) => c.phone1 || '—' },
+    phone2: { label: 'تلفن ۲', widthRatio: 0.12, align: 'center', getValue: (c) => c.phone2 || '—' },
+    address: { label: 'آدرس', widthRatio: 0.20, align: 'right', getValue: (c) => c.address1 || '—' },
+    goldBalance: { label: 'مانده طلا (گرم)', widthRatio: 0.14, align: 'center', getValue: (c) => `${c.goldBalance || 0}` },
+    silverBalance: { label: 'مانده نقره (گرم)', widthRatio: 0.14, align: 'center', getValue: (c) => `${c.silverBalance || 0}` },
+    platinumBalance: { label: 'مانده پلاتین (گرم)', widthRatio: 0.14, align: 'center', getValue: (c) => `${c.platinumBalance || 0}` },
+    rialBalance: { label: 'مانده ریالی', widthRatio: 0.16, align: 'center', getValue: (c) => `${new Intl.NumberFormat('fa-IR').format(c.rialBalance || 0)}` },
+    foreignBalance: { label: 'مانده ارز دوم', widthRatio: 0.14, align: 'center', getValue: (c) => `${c.foreignBalance || 0}` },
+    tertiaryBalance: { label: 'مانده ارز سوم', widthRatio: 0.14, align: 'center', getValue: (c) => `${c.tertiaryBalance || 0}` },
+  };
+
+  // Determine Active Columns
+  let activeColKeys: string[] = [];
+  if (Array.isArray(columns) && columns.length > 0) {
+    activeColKeys = ['index', ...columns.filter(c => c !== 'index' && availableColumnMap[c])];
+  } else {
+    activeColKeys = [
+      'index',
+      'customerCode',
+      'name',
+      ...(showGroupAndCity ? ['groupName', 'city'] : []),
+      ...(showContact ? ['phone1'] : []),
+      ...(showBalances ? ['goldBalance', 'rialBalance'] : []),
+    ];
+  }
+
+  const columnDefs = activeColKeys.map(k => ({
+    id: k,
+    label: availableColumnMap[k]?.label || k,
+    widthRatio: availableColumnMap[k]?.widthRatio || 0.1,
+    align: availableColumnMap[k]?.align || 'center',
+    getValue: availableColumnMap[k]?.getValue || ((c: Customer) => String((c as any)[k] ?? '—')),
+  }));
 
   const totalRatio = columnDefs.reduce((acc, c) => acc + c.widthRatio, 0);
   const resolvedColumns = columnDefs.map(c => ({
@@ -193,7 +248,7 @@ export function createCustomersPdf(customers: Customer[], options: CustomerPdfOp
       .text('رکوردی برای نمایش وجود ندارد.', 28, y + 20, { width, align: 'center' });
   } else {
     customers.forEach((customer, index) => {
-      if (y > pdf.page.height - 55) {
+      if (y > pdf.page.height - 70) {
         pdf.addPage();
         y = 28;
         drawHeader();
@@ -205,21 +260,12 @@ export function createCustomersPdf(customers: Customer[], options: CustomerPdfOp
 
       let x = 28;
       resolvedColumns.forEach((col) => {
-        let value = '—';
-        if (col.id === 'index') value = String(index + 1);
-        else if (col.id === 'customerCode') value = String(customer.customerCode || '—');
-        else if (col.id === 'name') value = customer.name || '—';
-        else if (col.id === 'groupName') value = customer.groupName || '—';
-        else if (col.id === 'city') value = customer.city || '—';
-        else if (col.id === 'phone1') value = customer.phone1 || '—';
-        else if (col.id === 'goldBalance') value = `${customer.goldBalance || 0}`;
-        else if (col.id === 'rialBalance') value = `${new Intl.NumberFormat('fa-IR').format(customer.rialBalance || 0)}`;
-
+        const value = col.getValue(customer, index);
         pdf.text(value, x + 3, y + 6, {
           width: col.widthMm - 6,
           height: rowHeight - 6,
           ellipsis: true,
-          align: col.id === 'name' ? 'right' : 'center',
+          align: col.align,
         });
         x += col.widthMm;
       });
@@ -232,9 +278,34 @@ export function createCustomersPdf(customers: Customer[], options: CustomerPdfOp
     });
   }
 
-  // Footer text
+  // Stamp and Signature Boxes if requested
+  if ((showStamp || showSignature) && y < pdf.page.height - 80) {
+    const boxY = Math.min(y + 20, pdf.page.height - 65);
+    if (showStamp) {
+      pdf.rect(28, boxY, 110, 40).strokeColor('#cbd5e1').lineWidth(0.5).stroke();
+      pdf.font('Vazirmatn').fontSize(7.5).fillColor('#94a3b8')
+        .text('محل مهر فروشگاه', 32, boxY + 14, { width: 102, align: 'center' });
+    }
+    if (showSignature) {
+      pdf.rect(width - 82, boxY, 110, 40).strokeColor('#cbd5e1').lineWidth(0.5).stroke();
+      pdf.font('Vazirmatn').fontSize(7.5).fillColor('#94a3b8')
+        .text('امضای مسئول', width - 78, boxY + 14, { width: 102, align: 'center' });
+    }
+  }
+
+  // Footer notes and total count
+  const footerTextParts: string[] = [];
+  if (showTotalCount) {
+    footerTextParts.push(`تعداد کل طرف‌حساب‌ها: ${new Intl.NumberFormat('fa-IR').format(customers.length)} رکورد`);
+  }
+  if (footerNotes) {
+    footerTextParts.push(footerNotes);
+  } else {
+    footerTextParts.push('سامانه زر فولیو');
+  }
+
   pdf.font('Vazirmatn').fontSize(7.5).fillColor('#64748b').text(
-    `تعداد کل طرف‌حساب‌ها: ${new Intl.NumberFormat('fa-IR').format(customers.length)} رکورد  |  سامانه زر فولیو`,
+    footerTextParts.join('  |  '),
     28,
     pdf.page.height - 24,
     { width, align: 'right' },

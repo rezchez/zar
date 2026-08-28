@@ -126,6 +126,7 @@ async function handleUpdate(request: Request) {
 
       bodyFontFamily: nextNormalized.bodyFontFamily,
       bodyFontSize: nextNormalized.bodyFontSize,
+      bodyFontSizeNumber: nextNormalized.bodyFontSizeNumber,
       bodyFontWeight: nextNormalized.bodyFontWeight,
 
       headingFontFamily: nextNormalized.headingFontFamily,

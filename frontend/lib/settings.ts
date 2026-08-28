@@ -1,3 +1,5 @@
+import { DEFAULT_REPORT_TEMPLATES, type ReportPrintTemplate } from './report-templates';
+
 export type AppSettings = {
   id?: string;
   organizationName: string;
@@ -13,6 +15,7 @@ export type AppSettings = {
 
   bodyFontFamily: string;
   bodyFontSize: string;
+  bodyFontSizeNumber?: number;
   bodyFontWeight: number;
 
   headingFontFamily: string;
@@ -55,6 +58,9 @@ export type AppSettings = {
   baleSendText: boolean;
   baleMessageTemplate: string;
 
+  // Report Print Templates
+  reportTemplates?: import('./report-templates').ReportPrintTemplate[];
+
   // Legacy compatibility fields
   pwa_enabled?: boolean;
   company_name?: string;
@@ -77,6 +83,7 @@ export const defaultSettings: AppSettings = {
 
   bodyFontFamily: 'Vazirmatn',
   bodyFontSize: 'md',
+  bodyFontSizeNumber: 14,
   bodyFontWeight: 400,
 
   headingFontFamily: 'DoranNoEn',
@@ -116,6 +123,8 @@ export const defaultSettings: AppSettings = {
   baleSendPdf: true,
   baleSendText: true,
   baleMessageTemplate: 'گزارش جدید از سامانه زر فولیو ارسال شد.\nعنوان: {title}\nتاریخ: {date}\nتعداد: {count}',
+
+  reportTemplates: DEFAULT_REPORT_TEMPLATES,
 };
 
 export const defaultAppSettings = defaultSettings;
@@ -179,6 +188,16 @@ export function normalizeSettings(input: Record<string, unknown>): AppSettings {
 
     bodyFontFamily: String(input.bodyFontFamily ?? input.body_font_family ?? defaultSettings.bodyFontFamily).trim(),
     bodyFontSize: String(input.bodyFontSize ?? input.body_font_size ?? defaultSettings.bodyFontSize).trim(),
+    bodyFontSizeNumber: (() => {
+      const raw = Number(input.bodyFontSizeNumber ?? input.body_font_size_number);
+      if (!isNaN(raw) && raw >= 10 && raw <= 26) return raw;
+      const named = String(input.bodyFontSize ?? input.body_font_size);
+      if (named === 'xs') return 12;
+      if (named === 'sm') return 13;
+      if (named === 'lg') return 16;
+      if (named === 'xl') return 18;
+      return 14;
+    })(),
     bodyFontWeight: Number(input.bodyFontWeight ?? input.body_font_weight) || defaultSettings.bodyFontWeight,
 
     headingFontFamily: String(
@@ -231,6 +250,19 @@ export function normalizeSettings(input: Record<string, unknown>): AppSettings {
     baleSendPdf: typeof input.baleSendPdf === 'boolean' ? input.baleSendPdf : defaultSettings.baleSendPdf,
     baleSendText: typeof input.baleSendText === 'boolean' ? input.baleSendText : defaultSettings.baleSendText,
     baleMessageTemplate: String(input.baleMessageTemplate ?? defaultSettings.baleMessageTemplate).trim() || defaultSettings.baleMessageTemplate,
+
+    reportTemplates: Array.isArray(input.reportTemplates)
+      ? (input.reportTemplates as ReportPrintTemplate[])
+      : typeof input.reportTemplates === 'string'
+        ? (() => {
+            try {
+              const parsed = JSON.parse(input.reportTemplates as string);
+              return Array.isArray(parsed) ? (parsed as ReportPrintTemplate[]) : defaultSettings.reportTemplates;
+            } catch {
+              return defaultSettings.reportTemplates;
+            }
+          })()
+        : defaultSettings.reportTemplates,
 
     // Legacy fallback mapping
     pwa_enabled:

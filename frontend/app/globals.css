@@ -1723,9 +1723,9 @@ button:disabled {
 }
 
 .users-table th {
-  background: #fbfcfd;
-  color: #9aa4b4;
-  font-size: 10px;
+  background: #f1f5f9;
+  color: #0f172a;
+  font-size: 11.5px;
   font-weight: 800;
   text-align: right;
   white-space: nowrap;
@@ -1733,9 +1733,11 @@ button:disabled {
 
 .users-table th,
 .users-table td {
-  border-bottom: 1px solid #eef1f5;
-  padding: 14px 16px;
+  border-bottom: 1px solid #e2e8f0;
+  padding: 12px 14px;
   vertical-align: middle;
+  color: #0f172a;
+  font-size: 13px;
 }
 
 .users-table tbody tr:last-child td {
@@ -2437,47 +2439,56 @@ button:disabled {
 .account-field {
   display: grid;
   gap: 7px;
-  color: #5f6b7e;
-  font-size: 11px;
+  color: #334155;
+  font-size: 12.5px;
 }
 
 .account-field > span {
   display: flex;
   align-items: center;
   gap: 6px;
-  color: #697589;
-  font-weight: 800;
+  color: #1e293b;
+  font-weight: 700;
+  font-size: 12.5px;
 }
 
 .account-field input,
 .account-field select {
   width: 100%;
-  border: 1px solid #e2e8ef;
-  border-radius: 9px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
   outline: 0;
-  background: #fbfcfd;
-  padding: 10px 11px;
-  color: #253149;
+  background: #ffffff;
+  padding: 9px 12px;
+  color: #0f172a;
   font-family: inherit;
-  font-size: 12px;
+  font-size: 13.5px;
+}
+
+.account-field input::placeholder,
+.account-field select::placeholder,
+.account-field textarea::placeholder {
+  color: #64748b;
+  opacity: 0.95;
 }
 
 .account-field input:focus,
 .account-field select:focus {
-  border-color: #9bd9de;
-  background: white;
-  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.08);
+  border-color: #0d9488;
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.12);
 }
 
 .account-field input:disabled {
   cursor: not-allowed;
-  background: #f2f4f7;
-  color: #a0aab8;
+  background: #f1f5f9;
+  color: #64748b;
+  border-color: #e2e8f0;
 }
 
 .account-field small {
-  color: #a0aab8;
-  font-size: 10px;
+  color: #64748b;
+  font-size: 11px;
   line-height: 1.7;
 }
 
@@ -2868,26 +2879,26 @@ button:disabled {
 .customer-form-page .account-field input:hover,
 .customer-form-page .account-field select:hover,
 .customer-form-page .account-field textarea:hover {
-  border-color: #c5d8df;
+  border-color: #94a3b8;
 }
 
 .customer-form-page .account-field input:focus,
 .customer-form-page .account-field select:focus,
 .customer-form-page .account-field textarea:focus {
-  border-color: #65cbd0;
-  box-shadow: 0 0 0 3px rgba(15, 156, 169, 0.1);
+  border-color: #0d9488;
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.12);
 }
 
 .customer-form-page .account-field textarea {
   width: 100%;
-  border: 1px solid #e2e8ef;
-  border-radius: 9px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
   outline: 0;
-  background: #fbfcfd;
-  padding: 10px 11px;
-  color: #253149;
+  background: #ffffff;
+  padding: 9px 12px;
+  color: #0f172a;
   font-family: inherit;
-  font-size: 12px;
+  font-size: 13.5px;
 }
 
 [data-theme="dark"] .customer-form-panel {
@@ -3171,12 +3182,18 @@ button:disabled {
 
 .customer-save-bar {
   position: sticky;
-  bottom: 12px;
+  bottom: 16px;
   z-index: 20;
   display: flex;
   justify-content: flex-end;
-  padding: 12px 0 4px;
-  background: linear-gradient(to top, var(--dashboard-bg, #f5f8fa) 65%, transparent);
+  align-items: center;
+  padding: 8px 0;
+  pointer-events: none;
+  background: transparent;
+}
+
+.customer-save-bar > * {
+  pointer-events: auto;
 }
 
 .customer-pagination {
@@ -3294,12 +3311,14 @@ button:disabled {
 [data-theme="dark"] .customer-pagination-pages button:hover:not(:disabled) { background: rgba(45, 212, 191, .12); color: #5eead4; }
 .dark .customer-pagination-pages .is-current,
 [data-theme="dark"] .customer-pagination-pages .is-current { background: linear-gradient(135deg, #0f9ca9, #087b88); border-color: #0f9ca9; color: #fff; }
+.customers-table th { background: #f1f5f9; color: #0f172a; font-weight: 800; font-size: 11.5px; border-bottom: 1px solid #cbd5e1; }
+.customers-table td { color: #0f172a; font-size: 13px; border-bottom: 1px solid #e2e8f0; }
 .customers-table th, .customers-table td { padding: 9px 8px; white-space: nowrap; }
 .customers-table th:nth-child(2), .customers-table td:nth-child(2) { min-width: 170px; max-width: 230px; }
 .customers-table td:nth-child(2) strong, .customers-table td:nth-child(2) small { display: block; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
 
 @media (max-width: 700px) {
-  .customer-save-bar { bottom: 0; margin-inline: -12px; padding: 10px 12px; }
+  .customer-save-bar { bottom: 12px; margin-inline: 0; padding: 8px 0; }
   .customer-pagination { justify-content: center; gap: 10px; padding: 10px; font-size: 10px; }
   .customer-pagination-divider { display: none; }
   .customer-pagination-count,

@@ -459,7 +459,7 @@ export default function CustomerForm({
   const cities = selectedProvince ? getCitiesByProvince(selectedProvince) : [];
 
   return (
-    <form className="customer-form-page" onSubmit={save}>
+    <form className="customer-form-page pb-12" onSubmit={save}>
       <div className="dashboard-page-heading">
         <div>
           <p className="eyebrow">طرف‌حساب و مشتری</p>
