@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { formatRials, IRANIAN_BANKS, type BankAccount, type BankTransferKind } from '@/lib/bank';
+import { formatRials, searchBanks, type BankAccount, type BankTransferKind } from '@/lib/bank';
 import type { Customer } from '@/lib/customer';
 import { formatJalaliDate, jalaliToGregorian, normalizeDigits } from '@/lib/jalali';
 import {
@@ -212,9 +212,7 @@ export default function BankOperation({
   }, [banks, search]);
 
   const filteredIranianBanks = useMemo(() => {
-    const query = bankSearchQuery.trim().toLocaleLowerCase();
-    if (!query) return IRANIAN_BANKS;
-    return IRANIAN_BANKS.filter((name) => name.toLocaleLowerCase().includes(query));
+    return searchBanks(bankSearchQuery);
   }, [bankSearchQuery]);
 
   const numericAmount = parseLocalizedAmount(amount);
@@ -397,10 +395,13 @@ export default function BankOperation({
                 onClick={() => setBankDropdownOpen((v) => !v)}
                 className="flex h-11 w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-900"
               >
-                <span className={newBankName ? 'font-bold' : 'text-slate-400'}>
-                  {newBankName || 'انتخاب نام بانک...'}
+                <span className="flex items-center gap-2 min-w-0">
+                  {newBankName ? <BankLogo bankName={newBankName} size={24} /> : null}
+                  <span className={`truncate ${newBankName ? 'font-bold' : 'text-slate-400'}`}>
+                    {newBankName || 'انتخاب نام بانک...'}
+                  </span>
                 </span>
-                <ChevronDown size={16} />
+                <ChevronDown size={16} className="shrink-0" />
               </button>
 
               {bankDropdownOpen ? (
@@ -408,23 +409,32 @@ export default function BankOperation({
                   <input
                     value={bankSearchQuery}
                     onChange={(e) => setBankSearchQuery(e.target.value)}
-                    placeholder="جست‌وجوی بانک..."
+                    placeholder="جست‌وجوی بانک یا کد..."
                     className="mb-2 w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-800"
+                    autoFocus
                   />
-                  {filteredIranianBanks.map((name) => (
-                    <button
-                      type="button"
-                      key={name}
-                      onClick={() => {
-                        setNewBankName(name);
-                        setBankDropdownOpen(false);
-                      }}
-                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-right text-xs hover:bg-slate-100 dark:hover:bg-slate-800"
-                    >
-                      <BankLogo bankName={name} size={22} />
-                      <span>{name}</span>
-                    </button>
-                  ))}
+                  {filteredIranianBanks.length === 0 ? (
+                    <p className="p-2 text-center text-xs text-slate-400">بانکی با این نام یافت نشد.</p>
+                  ) : (
+                    filteredIranianBanks.map((bank) => (
+                      <button
+                        type="button"
+                        key={bank.id}
+                        onClick={() => {
+                          setNewBankName(bank.name);
+                          setBankDropdownOpen(false);
+                        }}
+                        className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-right text-xs transition ${
+                          newBankName === bank.name
+                            ? 'bg-emerald-50 font-bold text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200'
+                            : 'hover:bg-slate-100 dark:hover:bg-slate-800'
+                        }`}
+                      >
+                        <BankLogo bankId={bank.id} bankName={bank.name} size={24} />
+                        <span className="truncate">{bank.name}</span>
+                      </button>
+                    ))
+                  )}
                 </div>
               ) : null}
             </div>

@@ -35,6 +35,7 @@ import {
   Square,
   ShieldCheck,
   HelpCircle,
+  FolderTree,
 } from 'lucide-react';
 import { useAppSettings } from './SettingsProvider';
 import { jalaliDateToIso, parseJalaliDate, formatJalaliDate } from '@/lib/jalali';
@@ -44,6 +45,7 @@ import InvoicePrintDesigner from '@/src/components/InvoicePrintDesigner';
 import LogoManager from '@/src/components/LogoManager';
 import ReportPrintDesigner from '@/src/components/ReportPrintDesigner';
 import CustomFontManager from '@/src/components/CustomFontManager';
+import ChartOfAccounts from '@/src/components/accounting/ChartOfAccounts';
 
 const ALL_CUSTOMER_COLUMNS = [
   { id: 'customerCode', label: 'کد حساب' },
@@ -107,6 +109,12 @@ const SETTINGS_TABS = [
     icon: Building2,
   },
   {
+    id: 'accounting_chart',
+    label: 'سرفصل‌های حسابداری (COA)',
+    description: 'درختواره سرفصل‌ها، گروه، کل، معین و تفصیلی با ساختار استاندارد طلا و جواهر',
+    icon: FolderTree,
+  },
+  {
     id: 'print_customization',
     label: 'شخصی‌سازی چاپ',
     description: 'طراحی قالب، لوگو، فاکتورها و گزارشات',
@@ -147,7 +155,7 @@ export default function ProgramSettings() {
     reloadFonts,
   } = useAppSettings();
 
-  const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'price_api' | 'print_customization' | 'manager_notifications' | 'pwa_settings'>('print_customization');
+  const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'price_api' | 'print_customization' | 'manager_notifications' | 'pwa_settings' | 'accounting_chart'>('general');
 
   // Form State initialized directly from settings
   const [form, setForm] = useState(() => ({ ...settings }));
@@ -548,6 +556,13 @@ export default function ProgramSettings() {
             >
               {statusMessage.type === 'success' ? <Check size={16} /> : <AlertCircle size={16} />}
               <span>{statusMessage.text}</span>
+            </div>
+          )}
+
+          {/* TAB: Accounting Chart of Accounts */}
+          {activeTab === 'accounting_chart' && (
+            <div className="space-y-6">
+              <ChartOfAccounts />
             </div>
           )}
 

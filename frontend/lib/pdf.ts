@@ -33,8 +33,11 @@ export function pdfFontPaths() {
 export function createPdfDocument(
   options: ConstructorParameters<typeof PDFDocument>[0] = {},
 ) {
-  const document = new PDFDocument(options);
   const fonts = pdfFontPaths();
+  const document = new PDFDocument({
+    ...options,
+    font: fonts.regular,
+  });
   document.registerFont('Vazirmatn', fonts.regular);
   document.registerFont('VazirmatnBold', fonts.bold);
   document.registerFont('DoranNoEn', fonts.heading);
