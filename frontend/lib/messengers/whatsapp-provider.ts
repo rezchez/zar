@@ -65,9 +65,45 @@ export class WhatsAppProvider implements MessengerProvider {
       body: JSON.stringify(payload),
     });
 
-    const sendData = await sendResponse.json().catch(() => null) as { error?: { message: string } } | null;
+    const sendData = (await sendResponse.json().catch(() => null)) as { error?: { message: string } } | null;
     if (!sendResponse.ok || sendData?.error) {
       throw new Error(sendData?.error?.message || `WhatsApp Messages API returned ${sendResponse.status}.`);
     }
+  }
+
+  async sendMessage(options: { chatId: string; message: string }) {
+    if (!this.isConfigured()) {
+      throw new Error('WhatsApp provider is not configured.');
+    }
+    const token = process.env.WHATSAPP_API_TOKEN;
+    const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+    const sendUrl = `https://graph.facebook.com/v17.0/${phoneNumberId}/messages`;
+
+    const response = await fetch(sendUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: options.chatId,
+        type: 'text',
+        text: { body: options.message },
+      }),
+    });
+
+    const data = (await response.json().catch(() => null)) as { error?: { message: string } } | null;
+    if (!response.ok || data?.error) {
+      throw new Error(data?.error?.message || `WhatsApp Messages API returned ${response.status}.`);
+    }
+  }
+
+  async testConnection(): Promise<{ success: boolean; message: string }> {
+    if (!this.isConfigured()) {
+      return { success: false, message: 'تنظیمات واتس‌اپ کامل نیست.' };
+    }
+    return { success: true, message: 'سرویس واتس‌اپ پیکربندی شده است.' };
   }
 }

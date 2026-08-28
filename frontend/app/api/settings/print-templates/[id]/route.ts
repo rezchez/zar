@@ -23,11 +23,14 @@ export async function GET(
     const template: InvoicePrintTemplate = {
       id: record.id,
       name: record.name,
+      templateType: record.templateType === 'customer' ? 'customer' : 'invoice',
       isActive: Boolean(record.isActive),
       isSystemDefault: Boolean(record.isSystemDefault),
       page: record.page,
       design: record.design,
       elements: record.elements,
+      table: record.table,
+      footer: record.footer,
       created: record.created,
       updated: record.updated,
     };
@@ -83,9 +86,15 @@ export async function PUT(
       }
     }
 
-    // Handle isActive toggle
+    const templateType = body.templateType !== undefined
+      ? (body.templateType === 'customer' ? 'customer' : 'invoice')
+      : (existing.templateType === 'customer' ? 'customer' : 'invoice');
+
+    // Handle isActive toggle per templateType
     if (body.isActive && !existing.isActive) {
-      const activeRecords = await collection.getFullList({ filter: 'isActive = true' });
+      const activeRecords = await collection.getFullList({
+        filter: `isActive = true && templateType = "${templateType}" && id != "${id}"`,
+      });
       for (const rec of activeRecords) {
         await collection.update(rec.id, { isActive: false });
       }
@@ -93,10 +102,13 @@ export async function PUT(
 
     const payload = {
       ...(body.name !== undefined ? { name: body.name.trim() } : {}),
+      templateType,
       ...(body.isActive !== undefined ? { isActive: body.isActive } : {}),
       ...(body.page !== undefined ? { page: body.page } : {}),
       ...(body.design !== undefined ? { design: body.design } : {}),
       ...(body.elements !== undefined ? { elements: body.elements } : {}),
+      ...(body.table !== undefined ? { table: body.table } : {}),
+      ...(body.footer !== undefined ? { footer: body.footer } : {}),
     };
 
     const updatedRecord = await collection.update(id, payload);
@@ -104,11 +116,14 @@ export async function PUT(
     const updatedTemplate: InvoicePrintTemplate = {
       id: updatedRecord.id,
       name: updatedRecord.name,
+      templateType: updatedRecord.templateType === 'customer' ? 'customer' : 'invoice',
       isActive: Boolean(updatedRecord.isActive),
       isSystemDefault: Boolean(updatedRecord.isSystemDefault),
       page: updatedRecord.page,
       design: updatedRecord.design,
       elements: updatedRecord.elements,
+      table: updatedRecord.table,
+      footer: updatedRecord.footer,
       created: updatedRecord.created,
       updated: updatedRecord.updated,
     };

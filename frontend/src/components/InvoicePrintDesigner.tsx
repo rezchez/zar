@@ -915,6 +915,13 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
                   >
                     <span className="truncate flex-1">{tpl.name}</span>
                     <div className="flex items-center gap-1 shrink-0">
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${
+                        tpl.templateType === 'customer'
+                          ? 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300'
+                          : 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300'
+                      }`}>
+                        {tpl.templateType === 'customer' ? 'طرف‌حساب' : 'فاکتور'}
+                      </span>
                       {tpl.isActive && (
                         <span className="w-2 h-2 rounded-full bg-emerald-500" title="قالب فعال چاپ" />
                       )}

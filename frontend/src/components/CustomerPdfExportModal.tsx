@@ -224,6 +224,32 @@ export default function CustomerPdfExportModal({ isOpen, onClose, visibleCustome
                         ))}
                       </select>
                     </label>
+                    {(settings.printRecipients || []).filter(r => r.enabled !== false).length > 0 && (
+                      <label className="block space-y-1.5">
+                        <span className="text-sm font-medium text-slate-700 dark:text-slate-300">انتخاب از بین مدیران</span>
+                        <select
+                          className="w-full form-input bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm"
+                          onChange={(e) => {
+                            const found = (settings.printRecipients || []).find(r => r.name === e.target.value);
+                            if (found) {
+                              if (selectedProvider.toLowerCase() === 'telegram' && found.telegramId) {
+                                setChatId(found.telegramId);
+                              } else if (selectedProvider.toLowerCase() === 'bale' && found.baleUserId) {
+                                setChatId(found.baleUserId);
+                              } else if (found.mobile) {
+                                setChatId(found.mobile);
+                              }
+                            }
+                          }}
+                          defaultValue=""
+                        >
+                          <option value="" disabled>انتخاب مدیر جهت پر شدن خودکار شناسه...</option>
+                          {(settings.printRecipients || []).filter(r => r.enabled !== false).map((r, i) => (
+                            <option key={i} value={r.name}>{r.name} ({r.role || 'مدیر'})</option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
                     <label className="block space-y-1.5">
                       <span className="text-sm font-medium text-slate-700 dark:text-slate-300">شناسه گیرنده (Chat ID / شماره)</span>
                       <input

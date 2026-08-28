@@ -319,7 +319,7 @@ export default function UserManagement({
   const visibleUsers = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
     const filtered = users.filter((user) =>
-      `${user.name} ${user.email} ${roleLabel(user.role)}`
+      `${user.name} ${user.email} ${user.phone} ${roleLabel(user.role)}`
         .toLocaleLowerCase()
         .includes(normalizedQuery),
     );
@@ -674,7 +674,7 @@ function UserRow({
         <td>
           <div className="managed-user-cell">
             <span className="managed-user-avatar">
-              {(user.name || user.email).charAt(0)}
+              {(user.name || user.email || '—').charAt(0)}
             </span>
             <div>
               <div className="managed-user-name-edit">
@@ -703,7 +703,7 @@ function UserRow({
                   </button>
                 ) : null}
               </div>
-              <small>{user.email}</small>
+              <small>{user.email || 'ایمیل ثبت نشده'}</small>
               <small>{user.phone || 'تلفن همراه ثبت نشده'}</small>
               {isCurrentUser ? <em>حساب فعلی</em> : null}
             </div>

@@ -20,17 +20,25 @@ export default async function UserManagementPage() {
   let initialUsers: ManagedUser[] = [];
 
   try {
-    const users = await context.pb.collection('users').getFullList({
+    let queryClient = context.pb;
+    try {
+      const { getPocketBaseServiceClient } = await import('@/lib/pocketbase-service');
+      queryClient = await getPocketBaseServiceClient();
+    } catch {
+      queryClient = context.pb;
+    }
+
+    const users = await queryClient.collection('users').getFullList({
       sort: '-created',
       ...(context.user.role === 'manager'
-        ? { filter: context.pb.filter("role != 'admin'") }
+        ? { filter: queryClient.filter("role != 'admin'") }
         : {}),
     });
 
     initialUsers = users.map((record) => ({
       id: record.id,
       name: record.name ?? '',
-      email: String(record.email ?? record.username ?? ''),
+      email: String(record.email ?? ''),
       role: record.role === 'admin' || record.role === 'manager'
         ? record.role
         : 'user',

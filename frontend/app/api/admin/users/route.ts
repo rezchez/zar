@@ -19,12 +19,20 @@ export async function GET() {
   }
 
   try {
+    let queryClient = context.pb;
+    try {
+      const { getPocketBaseServiceClient } = await import('@/lib/pocketbase-service');
+      queryClient = await getPocketBaseServiceClient();
+    } catch {
+      queryClient = context.pb;
+    }
+
     // Note: Since user accounts grow slowly, a getFullList is acceptable in many small setups,
     // but enforcing a limit ensures memory safety at scale. We use getList with a high limit.
-    const users = await context.pb.collection('users').getList(1, 1000, {
+    const users = await queryClient.collection('users').getList(1, 1000, {
       sort: '-created',
       ...(context.user.role === 'manager'
-        ? { filter: context.pb.filter("role != 'admin'") }
+        ? { filter: queryClient.filter("role != 'admin'") }
         : {}),
     });
 
@@ -32,7 +40,7 @@ export async function GET() {
       users: users.items.map((user) => ({
         id: user.id,
         name: String(user.name ?? ''),
-        email: String(user.email ?? user.username ?? ''),
+        email: String(user.email ?? ''),
         role: user.role ?? 'user',
         status: user.status ?? 'active',
         blockedUntil: user.blockedUntil ?? null,
@@ -294,7 +302,7 @@ export async function PATCH(request: Request) {
       user: {
         id: user.id,
         name: String(user.name ?? ''),
-        email: String(user.email ?? user.username ?? ''),
+        email: String(user.email ?? targetUser.email ?? ''),
         role: user.role ?? role,
         status: user.status ?? status,
         blockedUntil: user.blockedUntil ?? null,

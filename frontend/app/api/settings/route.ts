@@ -3,7 +3,15 @@ import { NextResponse } from 'next/server';
 import { recordAuditEvent } from '@/lib/audit';
 import { getServerAuthContext } from '@/lib/auth';
 import { hasPermission } from '@/lib/authorization';
-import { defaultSettings, normalizeSettings } from '@/lib/settings';
+import { type AppSettings, defaultSettings, normalizeSettings } from '@/lib/settings';
+
+function maskSettings(s: AppSettings): AppSettings {
+  return {
+    ...s,
+    telegramBotToken: s.telegramBotToken ? '••••••••' : '',
+    baleBotToken: s.baleBotToken ? '••••••••' : '',
+  };
+}
 
 export async function GET() {
   const context = await getServerAuthContext();
@@ -17,9 +25,9 @@ export async function GET() {
 
   try {
     const record = await context.pb.collection('app_settings').getFirstListItem('id != ""');
-    return NextResponse.json({ settings: normalizeSettings(record as Record<string, unknown>) });
+    return NextResponse.json({ settings: maskSettings(normalizeSettings(record as Record<string, unknown>)) });
   } catch {
-    return NextResponse.json({ settings: defaultSettings });
+    return NextResponse.json({ settings: maskSettings(defaultSettings) });
   }
 }
 
@@ -90,6 +98,10 @@ async function handleUpdate(request: Request) {
     }
   }
 
+  if (body.pwaEnabled !== undefined && typeof body.pwaEnabled !== 'boolean') {
+    return NextResponse.json({ message: 'وضعیت فعال‌سازی PWA باید مقدار بولی (true/false) باشد.' }, { status: 400 });
+  }
+
   try {
     const collection = context.pb.collection('app_settings');
     const existing = await collection.getFirstListItem('id != ""').catch(() => null);
@@ -131,11 +143,30 @@ async function handleUpdate(request: Request) {
       printCustomerColumns: JSON.stringify(nextNormalized.printCustomerColumns),
       printRecipients: JSON.stringify(nextNormalized.printRecipients),
 
+      pwaEnabled: nextNormalized.pwaEnabled,
       pwaAppName: nextNormalized.pwaAppName,
       pwaShortName: nextNormalized.pwaShortName,
       pwaThemeColor: nextNormalized.pwaThemeColor,
       pwaBackgroundColor: nextNormalized.pwaBackgroundColor,
       pwaDisplayMode: nextNormalized.pwaDisplayMode,
+
+      telegramEnabled: nextNormalized.telegramEnabled,
+      telegramBotToken: body.telegramBotToken !== undefined && String(body.telegramBotToken).trim() !== '' && !String(body.telegramBotToken).includes('••••')
+        ? String(body.telegramBotToken).trim()
+        : existing ? String((existing as Record<string, unknown>).telegramBotToken ?? '') : '',
+      telegramDefaultChatId: nextNormalized.telegramDefaultChatId,
+      telegramSendPdf: nextNormalized.telegramSendPdf,
+      telegramSendText: nextNormalized.telegramSendText,
+      telegramMessageTemplate: nextNormalized.telegramMessageTemplate,
+
+      baleEnabled: nextNormalized.baleEnabled,
+      baleBotToken: body.baleBotToken !== undefined && String(body.baleBotToken).trim() !== '' && !String(body.baleBotToken).includes('••••')
+        ? String(body.baleBotToken).trim()
+        : existing ? String((existing as Record<string, unknown>).baleBotToken ?? '') : '',
+      baleDefaultChatId: nextNormalized.baleDefaultChatId,
+      baleSendPdf: nextNormalized.baleSendPdf,
+      baleSendText: nextNormalized.baleSendText,
+      baleMessageTemplate: nextNormalized.baleMessageTemplate,
 
       // Legacy fallback fields
       company_name: nextNormalized.organizationName,
@@ -162,13 +193,13 @@ async function handleUpdate(request: Request) {
       entityId: record.id,
       entityLabel: nextNormalized.organizationName,
       changes: {
-        before: prevNormalized,
-        after: updatedSettings,
+        before: maskSettings(prevNormalized),
+        after: maskSettings(updatedSettings),
       },
       authenticatedClient: context.pb,
     });
 
-    return NextResponse.json({ settings: updatedSettings });
+    return NextResponse.json({ settings: maskSettings(updatedSettings) });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'خطا در ثبت تنظیمات در دیتابیس.';
     return NextResponse.json({ message }, { status: 500 });

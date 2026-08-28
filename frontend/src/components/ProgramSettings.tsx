@@ -22,12 +22,42 @@ import {
   RefreshCw,
   Palette,
   AppWindow,
+  AlertTriangle,
+  Smartphone,
+  BellRing,
+  Send,
+  MessageSquare,
+  Plus,
+  Edit3,
+  UserCheck,
+  UserX,
+  CheckSquare,
+  Square,
+  ShieldCheck,
+  HelpCircle,
 } from 'lucide-react';
 import { useAppSettings } from './SettingsProvider';
 import { jalaliDateToIso, parseJalaliDate, formatJalaliDate } from '@/lib/jalali';
 import { formatMoney } from '@/lib/money';
 import type { PriceApiSettings, PriceApiUnit } from '@/lib/price-api';
 import InvoicePrintDesigner from '@/src/components/InvoicePrintDesigner';
+
+const ALL_CUSTOMER_COLUMNS = [
+  { id: 'customerCode', label: 'کد حساب' },
+  { id: 'name', label: 'نام طرف‌حساب' },
+  { id: 'groupName', label: 'گروه طرف‌حساب' },
+  { id: 'phone1', label: 'تلفن همراه ۱' },
+  { id: 'phone2', label: 'تلفن ۲' },
+  { id: 'province', label: 'استان' },
+  { id: 'city', label: 'شهر' },
+  { id: 'address', label: 'آدرس' },
+  { id: 'goldBalance', label: 'مانده طلا (گرم)' },
+  { id: 'silverBalance', label: 'مانده نقره (گرم)' },
+  { id: 'platinumBalance', label: 'مانده پلاتین (گرم)' },
+  { id: 'rialBalance', label: 'مانده ریالی' },
+  { id: 'foreignBalance', label: 'مانده ارز دوم' },
+  { id: 'tertiaryBalance', label: 'مانده ارز سوم' },
+];
 
 const FONT_WEIGHT_LABELS: Record<number, string> = {
   100: '100 - نازک (Thin)',
@@ -66,6 +96,51 @@ function toFaDigits(str: string | number): string {
   return String(str).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
 }
 
+const SETTINGS_TABS = [
+  {
+    id: 'general',
+    label: 'تنظیمات عمومی مجموعه',
+    description: 'اطلاعات پایه، سال مالی، ارز مبنا و عیارها',
+    icon: Building2,
+  },
+  {
+    id: 'print_customization',
+    label: 'شخصی‌سازی چاپ فاکتور',
+    description: 'طراحی قالب، لوگو و اطلاعات فاکتور',
+    icon: Palette,
+  },
+  {
+    id: 'manager_notifications',
+    label: 'اطلاع‌رسانی مدیران',
+    description: 'ستون‌های خروجی، مدیران دریافت‌کننده، ربات تلگرام و بله',
+    icon: BellRing,
+  },
+  {
+    id: 'price_api',
+    label: 'API قیمت',
+    description: 'پیکربندی کلید، تامین‌کننده و همگام‌سازی نرخ‌ها',
+    icon: KeyRound,
+  },
+  {
+    id: 'appearance',
+    label: 'تنظیمات ظاهری و تایپوگرافی',
+    description: 'فونت‌های متن، اندازه، وزن و پیش‌نمایش متون',
+    icon: Type,
+  },
+  {
+    id: 'custom_fonts',
+    label: 'افزودن فونت سفارشی',
+    description: 'بارگذاری فونت‌های WOFF2 و مدیریت وزن‌ها',
+    icon: Upload,
+  },
+  {
+    id: 'pwa_settings',
+    label: 'تنظیمات PWA',
+    description: 'فعال/غیرفعال‌سازی، نام و تم وب‌اپلیکیشن',
+    icon: AppWindow,
+  },
+] as const;
+
 export default function ProgramSettings() {
   const {
     settings,
@@ -75,7 +150,7 @@ export default function ProgramSettings() {
     reloadFonts,
   } = useAppSettings();
 
-  const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'price_api' | 'custom_fonts' | 'print_customization' | 'pwa_settings'>('print_customization');
+  const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'price_api' | 'custom_fonts' | 'print_customization' | 'manager_notifications' | 'pwa_settings'>('print_customization');
 
   // Form State initialized directly from settings
   const [form, setForm] = useState(() => ({ ...settings }));
@@ -110,6 +185,141 @@ export default function ProgramSettings() {
   const [isPriceApiSaving, setIsPriceApiSaving] = useState(false);
   const [priceApiMessage, setPriceApiMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [isPriceApiSyncing, setIsPriceApiSyncing] = useState(false);
+  const [showDisablePwaModal, setShowDisablePwaModal] = useState(false);
+
+  // Messenger test states
+  const [isTestingTelegram, setIsTestingTelegram] = useState(false);
+  const [telegramTestStatus, setTelegramTestStatus] = useState<{ success: boolean; message: string } | null>(null);
+
+  const [isTestingBale, setIsTestingBale] = useState(false);
+  const [baleTestStatus, setBaleTestStatus] = useState<{ success: boolean; message: string } | null>(null);
+
+  // Manager Recipient modal state
+  const [isManagerModalOpen, setIsManagerModalOpen] = useState(false);
+  const [editingManagerIndex, setEditingManagerIndex] = useState<number | null>(null);
+  const [managerForm, setManagerForm] = useState<{
+    name: string;
+    role: string;
+    mobile: string;
+    telegramId: string;
+    baleUserId: string;
+    enabled: boolean;
+  }>({
+    name: '',
+    role: '',
+    mobile: '',
+    telegramId: '',
+    baleUserId: '',
+    enabled: true,
+  });
+
+  const openAddManagerModal = () => {
+    setEditingManagerIndex(null);
+    setManagerForm({
+      name: '',
+      role: '',
+      mobile: '',
+      telegramId: '',
+      baleUserId: '',
+      enabled: true,
+    });
+    setIsManagerModalOpen(true);
+  };
+
+  const openEditManagerModal = (index: number) => {
+    const item = form.printRecipients?.[index];
+    if (!item) return;
+    setEditingManagerIndex(index);
+    setManagerForm({
+      name: item.name || '',
+      role: item.role || '',
+      mobile: item.mobile || '',
+      telegramId: item.telegramId || '',
+      baleUserId: item.baleUserId || '',
+      enabled: item.enabled !== false,
+    });
+    setIsManagerModalOpen(true);
+  };
+
+  const handleSaveManager = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!managerForm.name.trim()) return;
+
+    const list = [...(form.printRecipients || [])];
+    if (editingManagerIndex !== null && editingManagerIndex >= 0) {
+      list[editingManagerIndex] = { ...managerForm };
+    } else {
+      list.push({ ...managerForm });
+    }
+    updateFormField('printRecipients', list);
+    setIsManagerModalOpen(false);
+  };
+
+  const handleDeleteManager = (index: number) => {
+    const list = [...(form.printRecipients || [])];
+    list.splice(index, 1);
+    updateFormField('printRecipients', list);
+  };
+
+  const handleToggleManagerEnabled = (index: number) => {
+    const list = [...(form.printRecipients || [])];
+    if (list[index]) {
+      list[index] = { ...list[index], enabled: !list[index].enabled };
+      updateFormField('printRecipients', list);
+    }
+  };
+
+  const toggleCustomerColumn = (columnId: string) => {
+    const current = form.printCustomerColumns || [];
+    const next = current.includes(columnId)
+      ? current.filter(c => c !== columnId)
+      : [...current, columnId];
+    updateFormField('printCustomerColumns', next);
+  };
+
+  async function handleTestMessenger(provider: 'telegram' | 'bale') {
+    if (provider === 'telegram') {
+      setIsTestingTelegram(true);
+      setTelegramTestStatus(null);
+    } else {
+      setIsTestingBale(true);
+      setBaleTestStatus(null);
+    }
+
+    try {
+      const res = await fetch('/api/messengers/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider,
+          token: provider === 'telegram' ? form.telegramBotToken : form.baleBotToken,
+          chatId: provider === 'telegram' ? form.telegramDefaultChatId : form.baleDefaultChatId,
+        }),
+      });
+      const data = await res.json();
+      if (provider === 'telegram') {
+        setTelegramTestStatus({
+          success: res.ok && data.success,
+          message: data.message || (res.ok ? 'اتصال تلگرام با موفقیت برقرار شد.' : 'خطا در ارتباط با تلگرام'),
+        });
+      } else {
+        setBaleTestStatus({
+          success: res.ok && data.success,
+          message: data.message || (res.ok ? 'اتصال بله با موفقیت برقرار شد.' : 'خطا در ارتباط با بله'),
+        });
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'خطا در ارسال درخواست تست';
+      if (provider === 'telegram') {
+        setTelegramTestStatus({ success: false, message: msg });
+      } else {
+        setBaleTestStatus({ success: false, message: msg });
+      }
+    } finally {
+      if (provider === 'telegram') setIsTestingTelegram(false);
+      else setIsTestingBale(false);
+    }
+  }
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -134,6 +344,19 @@ export default function ProgramSettings() {
     setSaveSuccess(false);
     setStatusMessage(null);
     setForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function handlePwaToggle(enabled: boolean) {
+    if (!enabled) {
+      setShowDisablePwaModal(true);
+    } else {
+      updateFormField('pwaEnabled', true);
+    }
+  }
+
+  function handleConfirmDisablePwa() {
+    updateFormField('pwaEnabled', false);
+    setShowDisablePwaModal(false);
   }
 
   // Handle Jalali Fiscal Year Start Date selection from Calendar
@@ -342,100 +565,65 @@ export default function ProgramSettings() {
         </span>
       </div>
 
-      {/* Tabs Bar */}
-      <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-3 overflow-x-auto">
-        <button
-          type="button"
-          onClick={() => setActiveTab('general')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-extrabold text-xs whitespace-nowrap transition-all ${
-            activeTab === 'general'
-              ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30'
-              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-          }`}
-        >
-          <Building2 size={16} />
-          تنظیمات عمومی مجموعه
-        </button>
+      {/* Settings Grid: Vertical Sidebar Navigation + Content Panel */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* Vertical Tabs Sidebar */}
+        <aside className="lg:col-span-4 xl:col-span-3">
+          <nav className="flex flex-col gap-2 p-2.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm" aria-label="تب‌های تنظیمات کلی">
+            {SETTINGS_TABS.map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id as typeof activeTab)}
+                  className={`w-full flex items-start gap-3 p-3 rounded-xl text-right transition-all group ${
+                    isActive
+                      ? 'bg-amber-500/15 text-amber-900 dark:text-amber-300 border border-amber-500/30 shadow-xs'
+                      : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/70 border border-transparent'
+                  }`}
+                >
+                  <div
+                    className={`p-2 rounded-lg shrink-0 transition-colors ${
+                      isActive
+                        ? 'bg-amber-500 text-slate-950 shadow-sm'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 group-hover:text-amber-500 dark:group-hover:text-amber-400'
+                    }`}
+                  >
+                    <Icon size={18} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <span className={`text-xs font-black truncate ${isActive ? 'text-amber-900 dark:text-amber-200' : 'text-slate-800 dark:text-slate-200'}`}>
+                        {tab.label}
+                      </span>
+                    </div>
+                    <p className={`text-[11px] mt-0.5 line-clamp-2 leading-relaxed ${isActive ? 'text-amber-700/80 dark:text-amber-400/80 font-medium' : 'text-slate-500 dark:text-slate-400'}`}>
+                      {tab.description}
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
+          </nav>
+        </aside>
 
-        <button
-          type="button"
-          onClick={() => setActiveTab('print_customization')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-extrabold text-xs whitespace-nowrap transition-all ${
-            activeTab === 'print_customization'
-              ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30'
-              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-          }`}
-        >
-          <Palette size={16} />
-          شخصی‌سازی چاپ فاکتور
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('price_api')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-extrabold text-xs whitespace-nowrap transition-all ${
-            activeTab === 'price_api'
-              ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30'
-              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-          }`}
-        >
-          <KeyRound size={16} />
-          API قیمت
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('appearance')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-extrabold text-xs whitespace-nowrap transition-all ${
-            activeTab === 'appearance'
-              ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30'
-              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-          }`}
-        >
-          <Type size={16} />
-          تنظیمات ظاهری و تایپوگرافی
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('custom_fonts')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-extrabold text-xs whitespace-nowrap transition-all ${
-            activeTab === 'custom_fonts'
-              ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30'
-              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-          }`}
-        >
-          <Upload size={16} />
-          افزودن فونت سفارشی
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('pwa_settings')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-extrabold text-xs whitespace-nowrap transition-all ${
-            activeTab === 'pwa_settings'
-              ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30'
-              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-          }`}
-        >
-          <AppWindow size={16} />
-          تنظیمات PWA
-        </button>
-      </div>
-
-      {/* Status Messages */}
-      {statusMessage && (
-        <div
-          className={`p-3.5 rounded-xl text-xs flex items-center gap-2 border ${
-            statusMessage.type === 'success'
-              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
-              : 'bg-rose-500/10 border-rose-500/30 text-rose-700 dark:text-rose-300'
-          }`}
-        >
-          {statusMessage.type === 'success' ? <Check size={16} /> : <AlertCircle size={16} />}
-          <span>{statusMessage.text}</span>
-        </div>
-      )}
+        {/* Tab Content Panel */}
+        <main className="lg:col-span-8 xl:col-span-9 min-w-0 space-y-6">
+          {/* Status Messages */}
+          {statusMessage && (
+            <div
+              className={`p-3.5 rounded-xl text-xs flex items-center gap-2 border ${
+                statusMessage.type === 'success'
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
+                  : 'bg-rose-500/10 border-rose-500/30 text-rose-700 dark:text-rose-300'
+              }`}
+            >
+              {statusMessage.type === 'success' ? <Check size={16} /> : <AlertCircle size={16} />}
+              <span>{statusMessage.text}</span>
+            </div>
+          )}
 
       {/* TAB 1: General Settings */}
       {activeTab === 'general' && (
@@ -779,24 +967,6 @@ export default function ProgramSettings() {
                   placeholder="متن توضیحات پایانی..."
                 />
               </label>
-              <label className="account-field md:col-span-3">
-                <span className="font-bold text-slate-700 dark:text-slate-300">ستون‌های طرف‌حساب در خروجی (با کاما جدا کنید)</span>
-                <input
-                  type="text"
-                  value={(form.printCustomerColumns || []).join(',')}
-                  onChange={(e) => updateFormField('printCustomerColumns', e.target.value.split(',').map((v) => v.trim()).filter(Boolean))}
-                  placeholder="customerCode,name,groupName,phone1,city,goldBalance,rialBalance"
-                />
-              </label>
-              <label className="account-field md:col-span-3">
-                <span className="font-bold text-slate-700 dark:text-slate-300">مدیران / دریافت‌کنندگان خروجی (JSON)</span>
-                <textarea
-                  rows={3}
-                  value={JSON.stringify(form.printRecipients || [], null, 2)}
-                  onChange={(e) => { try { updateFormField('printRecipients', JSON.parse(e.target.value)); } catch { /* تا تکمیل JSON صبر می‌کنیم */ } }}
-                  placeholder='[{"name":"مدیر فروش","role":"manager","telegramId":"","mobile":"","baleUserId":""}]'
-                />
-              </label>
             </div>
 
             <div className="flex justify-end pt-2 border-t border-slate-100 dark:border-slate-800">
@@ -814,6 +984,495 @@ export default function ProgramSettings() {
 
           {/* Interactive Print Designer System Component */}
           <InvoicePrintDesigner />
+        </div>
+      )}
+
+      {/* TAB: Manager Notifications & Integrations */}
+      {activeTab === 'manager_notifications' && (
+        <div className="space-y-6">
+          {/* Section 1: Customer Export Columns */}
+          <section className="dashboard-panel p-6 space-y-6">
+            <div className="account-panel-heading border-b border-slate-100 dark:border-slate-800 pb-4">
+              <div>
+                <p className="eyebrow">قالب و خروجی چاپی</p>
+                <h2 className="flex items-center gap-2">
+                  <FileText size={18} className="text-amber-600" />
+                  ستون‌های طرف‌حساب در خروجی و چاپ
+                </h2>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => updateFormField('printCustomerColumns', ALL_CUSTOMER_COLUMNS.map((c) => c.id))}
+                  className="text-xs px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-colors"
+                >
+                  انتخاب همه
+                </button>
+                <button
+                  type="button"
+                  onClick={() => updateFormField('printCustomerColumns', ['customerCode', 'name'])}
+                  className="text-xs px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-colors"
+                >
+                  حداقل ستون‌ها
+                </button>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              ستون‌هایی که مایلید در فایل‌های PDF خروجی، پیش‌نمایش چاپ و گزارش‌های چاپی طرف‌حساب‌ها نمایش داده شوند را انتخاب نمایید:
+            </p>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+              {ALL_CUSTOMER_COLUMNS.map((col) => {
+                const isSelected = (form.printCustomerColumns || []).includes(col.id);
+                return (
+                  <button
+                    key={col.id}
+                    type="button"
+                    onClick={() => toggleCustomerColumn(col.id)}
+                    className={`flex items-center justify-between p-3 rounded-2xl border text-xs font-bold transition-all text-right ${
+                      isSelected
+                        ? 'bg-amber-500/10 border-amber-500/40 text-amber-900 dark:text-amber-300 shadow-sm'
+                        : 'bg-white dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:border-slate-300'
+                    }`}
+                  >
+                    <span>{col.label}</span>
+                    {isSelected ? (
+                      <CheckSquare size={16} className="text-amber-600 shrink-0" />
+                    ) : (
+                      <Square size={16} className="text-slate-300 dark:text-slate-600 shrink-0" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* Section 2: Managers & Recipients */}
+          <section className="dashboard-panel p-6 space-y-6">
+            <div className="account-panel-heading border-b border-slate-100 dark:border-slate-800 pb-4">
+              <div>
+                <p className="eyebrow">دریافت‌کنندگان گزارش‌ها</p>
+                <h2 className="flex items-center gap-2">
+                  <BellRing size={18} className="text-amber-600" />
+                  مدیران و دریافت‌کنندگان خروجی
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={openAddManagerModal}
+                className="customer-save-button text-xs py-2 px-3"
+              >
+                <Plus size={14} />
+                <span>افزودن دریافت‌کننده</span>
+              </button>
+            </div>
+
+            {(form.printRecipients || []).length === 0 ? (
+              <div className="p-8 text-center rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 space-y-3">
+                <p className="text-xs text-slate-500">
+                  هنوز هیچ مدیری برای دریافت خودکار گزارش‌ها تعریف نشده است.
+                </p>
+                <button
+                  type="button"
+                  onClick={openAddManagerModal}
+                  className="text-xs text-amber-600 hover:text-amber-700 font-bold"
+                >
+                  + ثبت اولین مدیر دریافت‌کننده
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {(form.printRecipients || []).map((m, idx) => (
+                  <div
+                    key={idx}
+                    className={`p-4 rounded-2xl border transition-all ${
+                      m.enabled !== false
+                        ? 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm'
+                        : 'bg-slate-50 dark:bg-slate-900/40 border-slate-200/60 dark:border-slate-800/60 opacity-60'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2 pb-3 border-b border-slate-100 dark:border-slate-800">
+                      <div>
+                        <strong className="block text-sm text-slate-800 dark:text-slate-100">
+                          {m.name}
+                        </strong>
+                        <span className="text-[11px] font-bold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full inline-block mt-1">
+                          {m.role || 'مدیر / مسئول'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleManagerEnabled(idx)}
+                          className={`p-1.5 rounded-lg text-xs transition-colors ${
+                            m.enabled !== false
+                              ? 'text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30'
+                              : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                          }`}
+                          title={m.enabled !== false ? 'غیرفعال‌سازی' : 'فعال‌سازی'}
+                        >
+                          {m.enabled !== false ? <UserCheck size={16} /> : <UserX size={16} />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openEditManagerModal(idx)}
+                          className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                          title="ویرایش اطلاعات"
+                        >
+                          <Edit3 size={15} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteManager(idx)}
+                          className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
+                          title="حذف دریافت‌کننده"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="pt-3 space-y-1.5 text-xs text-slate-600 dark:text-slate-400">
+                      {m.mobile && (
+                        <div className="flex items-center justify-between">
+                          <span>شماره همراه:</span>
+                          <span className="font-mono text-slate-800 dark:text-slate-200" dir="ltr">{m.mobile}</span>
+                        </div>
+                      )}
+                      {m.telegramId && (
+                        <div className="flex items-center justify-between">
+                          <span>شناسه تلگرام:</span>
+                          <span className="font-mono text-blue-600 dark:text-blue-400" dir="ltr">{m.telegramId}</span>
+                        </div>
+                      )}
+                      {m.baleUserId && (
+                        <div className="flex items-center justify-between">
+                          <span>شناسه بله:</span>
+                          <span className="font-mono text-emerald-600 dark:text-emerald-400" dir="ltr">{m.baleUserId}</span>
+                        </div>
+                      )}
+                      {!m.mobile && !m.telegramId && !m.baleUserId && (
+                        <p className="text-[11px] text-slate-400 italic">اطلاعات تماسی ثبت نشده است.</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* Section 3: Telegram Bot Integration */}
+          <section className="dashboard-panel p-6 space-y-6">
+            <div className="account-panel-heading border-b border-slate-100 dark:border-slate-800 pb-4">
+              <div>
+                <p className="eyebrow">پیام‌رسان بین‌المللی</p>
+                <h2 className="flex items-center gap-2">
+                  <Send size={18} className="text-blue-500" />
+                  اتصال به ربات تلگرام (Telegram)
+                </h2>
+              </div>
+              <label className="flex items-center gap-2 text-xs font-bold cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.telegramEnabled}
+                  onChange={(e) => updateFormField('telegramEnabled', e.target.checked)}
+                  className="accent-blue-500"
+                />
+                فعال‌سازی ربات تلگرام
+              </label>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <label className="account-field md:col-span-2">
+                <span className="font-bold text-slate-700 dark:text-slate-300">
+                  توکن ربات تلگرام (Bot Token)
+                </span>
+                <input
+                  type="password"
+                  value={form.telegramBotToken}
+                  onChange={(e) => updateFormField('telegramBotToken', e.target.value)}
+                  placeholder="مثال: 123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ..."
+                  dir="ltr"
+                  className="font-mono"
+                />
+                <span className="text-[11px] text-slate-400">
+                  توکن ربات به صورت محرمانه در سرور ذخیره می‌شود و در مرورگر نمایش داده نخواهد شد.
+                </span>
+              </label>
+
+              <label className="account-field">
+                <span className="font-bold text-slate-700 dark:text-slate-300">
+                  شناسه چت / کانال پیش‌فرض (Chat ID)
+                </span>
+                <input
+                  type="text"
+                  value={form.telegramDefaultChatId}
+                  onChange={(e) => updateFormField('telegramDefaultChatId', e.target.value)}
+                  placeholder="مثال: 123456789 یا @channel_name"
+                  dir="ltr"
+                  className="font-mono"
+                />
+              </label>
+
+              <div className="flex flex-col justify-center space-y-2 p-3 bg-slate-50 dark:bg-slate-900/40 rounded-xl border border-slate-100 dark:border-slate-800">
+                <label className="flex items-center gap-2 text-xs font-bold cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.telegramSendPdf}
+                    onChange={(e) => updateFormField('telegramSendPdf', e.target.checked)}
+                    className="accent-blue-500"
+                  />
+                  ارسال خودکار فایل PDF گزارش‌ها
+                </label>
+                <label className="flex items-center gap-2 text-xs font-bold cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.telegramSendText}
+                    onChange={(e) => updateFormField('telegramSendText', e.target.checked)}
+                    className="accent-blue-500"
+                  />
+                  ارسال پیام متنی خلاصه
+                </label>
+              </div>
+
+              <label className="account-field md:col-span-2">
+                <span className="font-bold text-slate-700 dark:text-slate-300">الگوی متن پیام ارسالی</span>
+                <textarea
+                  rows={3}
+                  value={form.telegramMessageTemplate}
+                  onChange={(e) => updateFormField('telegramMessageTemplate', e.target.value)}
+                  placeholder="الگوی پیام ارسالی با متغیرهای {title}، {date} و {count}..."
+                />
+              </label>
+            </div>
+
+            {/* Test Telegram Box */}
+            <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => handleTestMessenger('telegram')}
+                disabled={isTestingTelegram || !form.telegramBotToken}
+                className="text-xs py-2 px-3.5 rounded-xl bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/40 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/60 font-bold flex items-center gap-2 transition-colors disabled:opacity-50"
+              >
+                {isTestingTelegram ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                <span>{isTestingTelegram ? 'در حال بررسی اتصال...' : 'تست اتصال ربات تلگرام'}</span>
+              </button>
+
+              {telegramTestStatus && (
+                <div className={`text-xs px-3 py-1.5 rounded-xl border ${
+                  telegramTestStatus.success
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
+                    : 'bg-rose-500/10 border-rose-500/30 text-rose-700 dark:text-rose-300'
+                }`}>
+                  {telegramTestStatus.message}
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* Section 4: Bale Bot Integration */}
+          <section className="dashboard-panel p-6 space-y-6">
+            <div className="account-panel-heading border-b border-slate-100 dark:border-slate-800 pb-4">
+              <div>
+                <p className="eyebrow">پیام‌رسان بومی</p>
+                <h2 className="flex items-center gap-2">
+                  <MessageSquare size={18} className="text-emerald-500" />
+                  اتصال به ربات بله (Bale)
+                </h2>
+              </div>
+              <label className="flex items-center gap-2 text-xs font-bold cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.baleEnabled}
+                  onChange={(e) => updateFormField('baleEnabled', e.target.checked)}
+                  className="accent-emerald-500"
+                />
+                فعال‌سازی ربات بله
+              </label>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <label className="account-field md:col-span-2">
+                <span className="font-bold text-slate-700 dark:text-slate-300">
+                  توکن ربات بله (Bot Token)
+                </span>
+                <input
+                  type="password"
+                  value={form.baleBotToken}
+                  onChange={(e) => updateFormField('baleBotToken', e.target.value)}
+                  placeholder="توکن ربات دریافتی از BotFather بله..."
+                  dir="ltr"
+                  className="font-mono"
+                />
+                <span className="text-[11px] text-slate-400">
+                  توکن ربات به صورت ایمن در سرور نگهداری شده و به کاربران کلاینت نشان داده نمی‌شود.
+                </span>
+              </label>
+
+              <label className="account-field">
+                <span className="font-bold text-slate-700 dark:text-slate-300">
+                  شناسه چت / کاربری پیش‌فرض بله (Chat ID)
+                </span>
+                <input
+                  type="text"
+                  value={form.baleDefaultChatId}
+                  onChange={(e) => updateFormField('baleDefaultChatId', e.target.value)}
+                  placeholder="مثال: 123456789"
+                  dir="ltr"
+                  className="font-mono"
+                />
+              </label>
+
+              <div className="flex flex-col justify-center space-y-2 p-3 bg-slate-50 dark:bg-slate-900/40 rounded-xl border border-slate-100 dark:border-slate-800">
+                <label className="flex items-center gap-2 text-xs font-bold cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.baleSendPdf}
+                    onChange={(e) => updateFormField('baleSendPdf', e.target.checked)}
+                    className="accent-emerald-500"
+                  />
+                  ارسال خودکار فایل PDF گزارش‌ها
+                </label>
+                <label className="flex items-center gap-2 text-xs font-bold cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.baleSendText}
+                    onChange={(e) => updateFormField('baleSendText', e.target.checked)}
+                    className="accent-emerald-500"
+                  />
+                  ارسال پیام متنی خلاصه
+                </label>
+              </div>
+
+              <label className="account-field md:col-span-2">
+                <span className="font-bold text-slate-700 dark:text-slate-300">الگوی متن پیام ارسالی</span>
+                <textarea
+                  rows={3}
+                  value={form.baleMessageTemplate}
+                  onChange={(e) => updateFormField('baleMessageTemplate', e.target.value)}
+                  placeholder="الگوی پیام ارسالی با متغیرهای {title}، {date} و {count}..."
+                />
+              </label>
+            </div>
+
+            {/* Test Bale Box */}
+            <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => handleTestMessenger('bale')}
+                disabled={isTestingBale || !form.baleBotToken}
+                className="text-xs py-2 px-3.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 font-bold flex items-center gap-2 transition-colors disabled:opacity-50"
+              >
+                {isTestingBale ? <Loader2 size={14} className="animate-spin" /> : <MessageSquare size={14} />}
+                <span>{isTestingBale ? 'در حال بررسی اتصال...' : 'تست اتصال ربات بله'}</span>
+              </button>
+
+              {baleTestStatus && (
+                <div className={`text-xs px-3 py-1.5 rounded-xl border ${
+                  baleTestStatus.success
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
+                    : 'bg-rose-500/10 border-rose-500/30 text-rose-700 dark:text-rose-300'
+                }`}>
+                  {baleTestStatus.message}
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* Modal to Add/Edit Manager */}
+          {isManagerModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+              <div className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
+                <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                  <BellRing size={18} className="text-amber-600" />
+                  {editingManagerIndex !== null ? 'ویرایش دریافت‌کننده' : 'افزودن مدیر دریافت‌کننده جدید'}
+                </h3>
+
+                <form onSubmit={handleSaveManager} className="space-y-3 text-xs">
+                  <label className="account-field block">
+                    <span className="font-bold">نام و نام خانوادگی *</span>
+                    <input
+                      type="text"
+                      required
+                      value={managerForm.name}
+                      onChange={(e) => setManagerForm((m) => ({ ...m, name: e.target.value }))}
+                      placeholder="مثال: علی رضایی"
+                    />
+                  </label>
+
+                  <label className="account-field block">
+                    <span className="font-bold">سمت / عنوان سازمانی</span>
+                    <input
+                      type="text"
+                      value={managerForm.role}
+                      onChange={(e) => setManagerForm((m) => ({ ...m, role: e.target.value }))}
+                      placeholder="مثال: مدیر فروش، حسابدار"
+                    />
+                  </label>
+
+                  <label className="account-field block">
+                    <span className="font-bold">شماره همراه</span>
+                    <input
+                      type="text"
+                      value={managerForm.mobile}
+                      onChange={(e) => setManagerForm((m) => ({ ...m, mobile: e.target.value }))}
+                      placeholder="09123456789"
+                      dir="ltr"
+                    />
+                  </label>
+
+                  <label className="account-field block">
+                    <span className="font-bold">شناسه چت تلگرام (Chat ID)</span>
+                    <input
+                      type="text"
+                      value={managerForm.telegramId}
+                      onChange={(e) => setManagerForm((m) => ({ ...m, telegramId: e.target.value }))}
+                      placeholder="123456789"
+                      dir="ltr"
+                    />
+                  </label>
+
+                  <label className="account-field block">
+                    <span className="font-bold">شناسه کاربری بله (Bale User ID)</span>
+                    <input
+                      type="text"
+                      value={managerForm.baleUserId}
+                      onChange={(e) => setManagerForm((m) => ({ ...m, baleUserId: e.target.value }))}
+                      placeholder="123456789"
+                      dir="ltr"
+                    />
+                  </label>
+
+                  <label className="flex items-center gap-2 pt-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={managerForm.enabled}
+                      onChange={(e) => setManagerForm((m) => ({ ...m, enabled: e.target.checked }))}
+                      className="accent-amber-500"
+                    />
+                    <span>دریافت فعال باشد</span>
+                  </label>
+
+                  <div className="flex justify-end gap-2 pt-4 border-t border-slate-100 dark:border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => setIsManagerModalOpen(false)}
+                      className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors font-bold"
+                    >
+                      انصراف
+                    </button>
+                    <button
+                      type="submit"
+                      className="customer-save-button text-xs py-2 px-4"
+                    >
+                      ثبت اطلاعات
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1121,98 +1780,235 @@ export default function ProgramSettings() {
       {activeTab === 'pwa_settings' && (
         <div className="space-y-6">
           <section className="dashboard-panel p-6 space-y-6">
-            <div className="account-panel-heading border-b border-slate-100 dark:border-slate-800 pb-4">
+            <div className="account-panel-heading border-b border-slate-100 dark:border-slate-800 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <p className="eyebrow">Progressive Web App</p>
-                <h2>تنظیمات PWA</h2>
+                <h2>تنظیمات وب‌اپلیکیشن (PWA)</h2>
+              </div>
+              <div className="flex items-center gap-2">
+                <span
+                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition-colors ${
+                    form.pwaEnabled
+                      ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30'
+                      : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-300 dark:border-slate-700'
+                  }`}
+                >
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      form.pwaEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'
+                    }`}
+                  />
+                  {form.pwaEnabled ? 'PWA فعال است' : 'PWA غیرفعال است'}
+                </span>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <label className="account-field">
-                <span>نام برنامه (App Name)</span>
-                <input
-                  type="text"
-                  value={form.pwaAppName || ''}
-                  onChange={(e) => setForm((prev) => ({ ...prev, pwaAppName: e.target.value }))}
-                  placeholder="مثال: زر فولیـو"
-                  maxLength={120}
-                  dir="auto"
-                />
-              </label>
-
-              <label className="account-field">
-                <span>نام کوتاه (Short Name)</span>
-                <input
-                  type="text"
-                  value={form.pwaShortName || ''}
-                  onChange={(e) => setForm((prev) => ({ ...prev, pwaShortName: e.target.value }))}
-                  placeholder="مثال: Zarfolio"
-                  maxLength={50}
-                  dir="auto"
-                />
-              </label>
-
-              <label className="account-field">
-                <span>رنگ پوسته (Theme Color)</span>
-                <div className="flex gap-2">
-                  <input
-                    type="color"
-                    value={form.pwaThemeColor || '#1e293b'}
-                    onChange={(e) => setForm((prev) => ({ ...prev, pwaThemeColor: e.target.value }))}
-                    className="w-10 h-10 p-0 border-0 rounded"
-                  />
-                  <input
-                    type="text"
-                    value={form.pwaThemeColor || ''}
-                    onChange={(e) => setForm((prev) => ({ ...prev, pwaThemeColor: e.target.value }))}
-                    placeholder="#1e293b"
-                    className="flex-1"
-                    dir="ltr"
-                  />
+            {/* PWA Master Switch Card */}
+            <div
+              className={`p-5 rounded-2xl border transition-all ${
+                form.pwaEnabled
+                  ? 'bg-emerald-500/5 border-emerald-500/25 dark:bg-emerald-950/20 dark:border-emerald-500/30'
+                  : 'bg-slate-50 border-slate-200 dark:bg-slate-900/40 dark:border-slate-800'
+              }`}
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-1.5 flex-1">
+                  <div className="flex items-center gap-2">
+                    <Smartphone
+                      size={20}
+                      className={form.pwaEnabled ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}
+                    />
+                    <h3 className="text-sm font-black text-slate-900 dark:text-white">
+                      قابلیت وب‌اپلیکیشن پیش‌رونده (PWA)
+                    </h3>
+                  </div>
+                  <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                    {form.pwaEnabled
+                      ? 'فعال بودن PWA امکان نصب برنامه، Service Worker و قابلیت‌های مرتبط با PWA را فراهم می‌کند.'
+                      : 'با غیرفعال کردن PWA، قابلیت‌های مربوط به Service Worker، نصب برنامه و Offline Mode غیرفعال می‌شوند.'}
+                  </p>
                 </div>
-              </label>
 
-              <label className="account-field">
-                <span>رنگ پس‌زمینه (Background Color)</span>
-                <div className="flex gap-2">
-                  <input
-                    type="color"
-                    value={form.pwaBackgroundColor || '#ffffff'}
-                    onChange={(e) => setForm((prev) => ({ ...prev, pwaBackgroundColor: e.target.value }))}
-                    className="w-10 h-10 p-0 border-0 rounded"
-                  />
-                  <input
-                    type="text"
-                    value={form.pwaBackgroundColor || ''}
-                    onChange={(e) => setForm((prev) => ({ ...prev, pwaBackgroundColor: e.target.value }))}
-                    placeholder="#ffffff"
-                    className="flex-1"
-                    dir="ltr"
-                  />
+                <div className="flex items-center gap-3 self-end sm:self-center">
+                  <button
+                    type="button"
+                    onClick={() => handlePwaToggle(!form.pwaEnabled)}
+                    className={`relative inline-flex h-7 w-14 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 ${
+                      form.pwaEnabled ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700'
+                    }`}
+                    role="switch"
+                    aria-checked={form.pwaEnabled}
+                    aria-label="تغییر وضعیت PWA"
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                        form.pwaEnabled ? '-translate-x-7' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                  <span className="text-xs font-bold min-w-14 text-slate-700 dark:text-slate-300">
+                    {form.pwaEnabled ? 'فعال' : 'غیرفعال'}
+                  </span>
                 </div>
-              </label>
-
-              <label className="account-field">
-                <span>حالت نمایش (Display Mode)</span>
-                <select
-                  value={form.pwaDisplayMode || 'standalone'}
-                  onChange={(e) => setForm((prev) => ({ ...prev, pwaDisplayMode: e.target.value as 'standalone' | 'fullscreen' | 'minimal-ui' | 'browser' }))}
-                  dir="ltr"
-                >
-                  <option value="standalone">Standalone (مستقل)</option>
-                  <option value="fullscreen">Fullscreen (تمام‌صفحه)</option>
-                  <option value="minimal-ui">Minimal UI</option>
-                  <option value="browser">Browser</option>
-                </select>
-              </label>
+              </div>
             </div>
-            <div className="p-4 bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400 rounded-xl text-xs leading-relaxed">
-              <strong>توجه:</strong>
-              {' '}
-              برای اعمال تغییرات در نام برنامه یا رنگ‌ها، ممکن است نیاز باشد برنامه را یکبار در دستگاه خود حذف کرده و دوباره از طریق مرورگر به صفحه اصلی (Home Screen) اضافه کنید (Add to Home Screen).
+
+            {/* PWA Manifest Fields */}
+            <div className={`space-y-4 transition-opacity duration-200 ${!form.pwaEnabled ? 'opacity-50 pointer-events-none select-none' : ''}`}>
+              {!form.pwaEnabled && (
+                <div className="p-3 bg-amber-500/10 border border-amber-500/20 text-amber-800 dark:text-amber-300 rounded-xl text-xs flex items-center gap-2">
+                  <AlertTriangle size={16} className="shrink-0 text-amber-600 dark:text-amber-400" />
+                  <span>
+                    قابلیت PWA در حال حاضر غیرفعال است. برای اعمال و استفاده از این فیلدها، سوئیچ PWA را فعال کنید.
+                  </span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <label className="account-field">
+                  <span>نام برنامه (App Name)</span>
+                  <input
+                    type="text"
+                    value={form.pwaAppName || ''}
+                    onChange={(e) => setForm((prev) => ({ ...prev, pwaAppName: e.target.value }))}
+                    placeholder="مثال: زر فولیـو"
+                    maxLength={120}
+                    disabled={!form.pwaEnabled}
+                    dir="auto"
+                  />
+                </label>
+
+                <label className="account-field">
+                  <span>نام کوتاه (Short Name)</span>
+                  <input
+                    type="text"
+                    value={form.pwaShortName || ''}
+                    onChange={(e) => setForm((prev) => ({ ...prev, pwaShortName: e.target.value }))}
+                    placeholder="مثال: Zarfolio"
+                    maxLength={50}
+                    disabled={!form.pwaEnabled}
+                    dir="auto"
+                  />
+                </label>
+
+                <label className="account-field">
+                  <span>رنگ پوسته (Theme Color)</span>
+                  <div className="flex gap-2">
+                    <input
+                      type="color"
+                      value={form.pwaThemeColor || '#1e293b'}
+                      onChange={(e) => setForm((prev) => ({ ...prev, pwaThemeColor: e.target.value }))}
+                      disabled={!form.pwaEnabled}
+                      className="w-10 h-10 p-0 border-0 rounded"
+                    />
+                    <input
+                      type="text"
+                      value={form.pwaThemeColor || ''}
+                      onChange={(e) => setForm((prev) => ({ ...prev, pwaThemeColor: e.target.value }))}
+                      placeholder="#1e293b"
+                      disabled={!form.pwaEnabled}
+                      className="flex-1"
+                      dir="ltr"
+                    />
+                  </div>
+                </label>
+
+                <label className="account-field">
+                  <span>رنگ پس‌زمینه (Background Color)</span>
+                  <div className="flex gap-2">
+                    <input
+                      type="color"
+                      value={form.pwaBackgroundColor || '#ffffff'}
+                      onChange={(e) => setForm((prev) => ({ ...prev, pwaBackgroundColor: e.target.value }))}
+                      disabled={!form.pwaEnabled}
+                      className="w-10 h-10 p-0 border-0 rounded"
+                    />
+                    <input
+                      type="text"
+                      value={form.pwaBackgroundColor || ''}
+                      onChange={(e) => setForm((prev) => ({ ...prev, pwaBackgroundColor: e.target.value }))}
+                      placeholder="#ffffff"
+                      disabled={!form.pwaEnabled}
+                      className="flex-1"
+                      dir="ltr"
+                    />
+                  </div>
+                </label>
+
+                <label className="account-field">
+                  <span>حالت نمایش (Display Mode)</span>
+                  <select
+                    value={form.pwaDisplayMode || 'standalone'}
+                    onChange={(e) => setForm((prev) => ({ ...prev, pwaDisplayMode: e.target.value as 'standalone' | 'fullscreen' | 'minimal-ui' | 'browser' }))}
+                    disabled={!form.pwaEnabled}
+                    dir="ltr"
+                  >
+                    <option value="standalone">Standalone (مستقل)</option>
+                    <option value="fullscreen">Fullscreen (تمام‌صفحه)</option>
+                    <option value="minimal-ui">Minimal UI</option>
+                    <option value="browser">Browser</option>
+                  </select>
+                </label>
+              </div>
+
+              <div className="p-4 bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400 rounded-xl text-xs leading-relaxed">
+                <strong>توجه:</strong>
+                {' '}
+                برای اعمال تغییرات در نام برنامه یا رنگ‌ها، ممکن است نیاز باشد برنامه را یکبار در دستگاه خود حذف کرده و دوباره از طریق مرورگر به صفحه اصلی (Home Screen) اضافه کنید (Add to Home Screen).
+              </div>
             </div>
           </section>
+
+          {/* Confirmation Modal for Disabling PWA */}
+          {showDisablePwaModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in">
+              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 animate-in zoom-in-95">
+                <div className="flex items-center gap-3 text-amber-600 dark:text-amber-400">
+                  <div className="p-2.5 bg-amber-500/10 rounded-xl">
+                    <AlertTriangle size={24} />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-base text-slate-900 dark:text-white">
+                      آیا از غیرفعال‌سازی PWA اطمینان دارید؟
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      تغییر در نحوه عملکرد و ذخیره‌سازی آفلاین
+                    </p>
+                  </div>
+                </div>
+
+                <div className="text-xs text-slate-600 dark:text-slate-300 space-y-2 leading-relaxed bg-slate-50 dark:bg-slate-800/50 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700/50">
+                  <p>با غیرفعال کردن PWA:</p>
+                  <ul className="list-disc list-inside space-y-1 text-slate-500 dark:text-slate-400 pr-1">
+                    <li>ثبت Service Worker لغو خواهد شد.</li>
+                    <li>حافظه موقت کَش آفلاین برنامه پاک‌سازی می‌شود.</li>
+                    <li>اعلان نصب برنامه به کاربران نمایش داده نخواهد شد.</li>
+                  </ul>
+                  <p className="font-semibold text-slate-700 dark:text-slate-200 pt-1">
+                    سامانه و بخش‌های عادی تحت وب بدون هیچ مشکلی به کار خود ادامه خواهند داد.
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-end gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowDisablePwaModal(false)}
+                    className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+                  >
+                    انصراف
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirmDisablePwa}
+                    className="px-4 py-2 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white rounded-xl shadow-xs transition-colors cursor-pointer"
+                  >
+                    بله، غیرفعال شود
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1339,32 +2135,34 @@ export default function ProgramSettings() {
         </div>
       )}
 
-      {/* Save Button for Settings */}
-      {(activeTab === 'general' || activeTab === 'appearance' || activeTab === 'pwa_settings') && (
-        <div className="flex justify-end pt-4">
-          <button
-            type="button"
-            onClick={handleSaveSettings}
-            disabled={isSaving}
-            className="customer-save-button"
-          >
-            {isSaving ? (
-              <Loader2 className="animate-spin" size={17} />
-            ) : saveSuccess ? (
-              <Check size={17} />
-            ) : (
-              <Save size={17} />
-            )}
-            <span>
-              {isSaving
-                ? 'در حال ذخیره...'
-                : saveSuccess
-                  ? 'تنظیمات ذخیره شد'
-                  : 'ذخیره تغییرات تنظیمات'}
-            </span>
-          </button>
-        </div>
-      )}
+          {/* Save Button for Settings */}
+          {(activeTab === 'general' || activeTab === 'appearance' || activeTab === 'pwa_settings' || activeTab === 'manager_notifications') && (
+            <div className="flex justify-end pt-4">
+              <button
+                type="button"
+                onClick={handleSaveSettings}
+                disabled={isSaving}
+                className="customer-save-button"
+              >
+                {isSaving ? (
+                  <Loader2 className="animate-spin" size={17} />
+                ) : saveSuccess ? (
+                  <Check size={17} />
+                ) : (
+                  <Save size={17} />
+                )}
+                <span>
+                  {isSaving
+                    ? 'در حال ذخیره...'
+                    : saveSuccess
+                      ? 'تنظیمات ذخیره شد'
+                      : 'ذخیره تغییرات تنظیمات'}
+                </span>
+              </button>
+            </div>
+          )}
+        </main>
+      </div>
     </div>
   );
 }

@@ -25,11 +25,14 @@ export async function GET() {
     const templates: InvoicePrintTemplate[] = records.map((rec) => ({
       id: rec.id,
       name: rec.name,
+      templateType: rec.templateType === 'customer' ? 'customer' : 'invoice',
       isActive: Boolean(rec.isActive),
       isSystemDefault: Boolean(rec.isSystemDefault),
       page: rec.page,
       design: rec.design || { zoom: 1, gridEnabled: true, gridSizeMm: 5 },
       elements: rec.elements || [],
+      table: rec.table,
+      footer: rec.footer,
       created: rec.created,
       updated: rec.updated,
     }));
@@ -74,9 +77,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: 'قالبی با این نام از قبل وجود دارد. لطفاً نام دیگری انتخاب کنید.' }, { status: 400 });
     }
 
-    // Handle isActive single selection
+    // Handle isActive single selection per templateType
+    const templateType = body.templateType === 'customer' ? 'customer' : 'invoice';
     if (body.isActive) {
-      const activeRecords = await collection.getFullList({ filter: 'isActive = true' });
+      const activeRecords = await collection.getFullList({
+        filter: `isActive = true && templateType = "${templateType}"`,
+      });
       for (const rec of activeRecords) {
         await collection.update(rec.id, { isActive: false });
       }
@@ -84,11 +90,14 @@ export async function POST(request: Request) {
 
     const payload = {
       name,
+      templateType,
       isActive: Boolean(body.isActive),
       isSystemDefault: false,
       page: body.page || DEFAULT_SYSTEM_TEMPLATES[0].page,
       design: body.design || DEFAULT_SYSTEM_TEMPLATES[0].design,
       elements: body.elements || DEFAULT_SYSTEM_TEMPLATES[0].elements,
+      table: body.table,
+      footer: body.footer,
     };
 
     const record = await collection.create(payload);
@@ -96,11 +105,14 @@ export async function POST(request: Request) {
     const createdTemplate: InvoicePrintTemplate = {
       id: record.id,
       name: record.name,
+      templateType: record.templateType === 'customer' ? 'customer' : 'invoice',
       isActive: Boolean(record.isActive),
       isSystemDefault: Boolean(record.isSystemDefault),
       page: record.page,
       design: record.design,
       elements: record.elements,
+      table: record.table,
+      footer: record.footer,
       created: record.created,
       updated: record.updated,
     };

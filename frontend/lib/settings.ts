@@ -32,13 +32,31 @@ export type AppSettings = {
   printRecipients: Array<{ name: string; role?: string; telegramId?: string; mobile?: string; baleUserId?: string; enabled?: boolean }>;
 
   // PWA Settings
+  pwaEnabled: boolean;
   pwaAppName: string;
   pwaShortName: string;
   pwaThemeColor: string;
   pwaBackgroundColor: string;
   pwaDisplayMode: 'fullscreen' | 'standalone' | 'minimal-ui' | 'browser';
 
+  // Telegram Notifications Settings
+  telegramEnabled: boolean;
+  telegramBotToken: string;
+  telegramDefaultChatId: string;
+  telegramSendPdf: boolean;
+  telegramSendText: boolean;
+  telegramMessageTemplate: string;
+
+  // Bale Notifications Settings
+  baleEnabled: boolean;
+  baleBotToken: string;
+  baleDefaultChatId: string;
+  baleSendPdf: boolean;
+  baleSendText: boolean;
+  baleMessageTemplate: string;
+
   // Legacy compatibility fields
+  pwa_enabled?: boolean;
   company_name?: string;
   fiscal_year_start?: string;
   base_currency?: string;
@@ -76,11 +94,28 @@ export const defaultSettings: AppSettings = {
   printCustomerColumns: ['customerCode', 'name', 'groupName', 'phone1', 'city', 'goldBalance', 'rialBalance'],
   printRecipients: [],
 
+  pwaEnabled: true,
   pwaAppName: 'زر فولیـو',
   pwaShortName: 'Zarfolio',
   pwaThemeColor: '#1e293b',
   pwaBackgroundColor: '#ffffff',
   pwaDisplayMode: 'standalone',
+
+  // Telegram Defaults
+  telegramEnabled: false,
+  telegramBotToken: '',
+  telegramDefaultChatId: '',
+  telegramSendPdf: true,
+  telegramSendText: true,
+  telegramMessageTemplate: 'گزارش جدید از سامانه زر فولیو ارسال شد.\nعنوان: {title}\nتاریخ: {date}\nتعداد: {count}',
+
+  // Bale Defaults
+  baleEnabled: false,
+  baleBotToken: '',
+  baleDefaultChatId: '',
+  baleSendPdf: true,
+  baleSendText: true,
+  baleMessageTemplate: 'گزارش جدید از سامانه زر فولیو ارسال شد.\nعنوان: {title}\nتاریخ: {date}\nتعداد: {count}',
 };
 
 export const defaultAppSettings = defaultSettings;
@@ -171,13 +206,39 @@ export function normalizeSettings(input: Record<string, unknown>): AppSettings {
         ? (() => { try { const value = JSON.parse(input.printRecipients as string); return Array.isArray(value) ? value as AppSettings['printRecipients'] : defaultSettings.printRecipients; } catch { return defaultSettings.printRecipients; } })()
         : defaultSettings.printRecipients,
 
+    pwaEnabled:
+      typeof input.pwaEnabled === 'boolean'
+        ? input.pwaEnabled
+        : typeof input.pwa_enabled === 'boolean'
+          ? input.pwa_enabled
+          : defaultSettings.pwaEnabled,
     pwaAppName: String(input.pwaAppName ?? defaultSettings.pwaAppName).trim() || defaultSettings.pwaAppName,
     pwaShortName: String(input.pwaShortName ?? defaultSettings.pwaShortName).trim() || defaultSettings.pwaShortName,
     pwaThemeColor: String(input.pwaThemeColor ?? defaultSettings.pwaThemeColor).trim() || defaultSettings.pwaThemeColor,
     pwaBackgroundColor: String(input.pwaBackgroundColor ?? defaultSettings.pwaBackgroundColor).trim() || defaultSettings.pwaBackgroundColor,
     pwaDisplayMode: (input.pwaDisplayMode as AppSettings['pwaDisplayMode']) || defaultSettings.pwaDisplayMode,
 
+    telegramEnabled: typeof input.telegramEnabled === 'boolean' ? input.telegramEnabled : defaultSettings.telegramEnabled,
+    telegramBotToken: String(input.telegramBotToken ?? defaultSettings.telegramBotToken).trim(),
+    telegramDefaultChatId: String(input.telegramDefaultChatId ?? defaultSettings.telegramDefaultChatId).trim(),
+    telegramSendPdf: typeof input.telegramSendPdf === 'boolean' ? input.telegramSendPdf : defaultSettings.telegramSendPdf,
+    telegramSendText: typeof input.telegramSendText === 'boolean' ? input.telegramSendText : defaultSettings.telegramSendText,
+    telegramMessageTemplate: String(input.telegramMessageTemplate ?? defaultSettings.telegramMessageTemplate).trim() || defaultSettings.telegramMessageTemplate,
+
+    baleEnabled: typeof input.baleEnabled === 'boolean' ? input.baleEnabled : defaultSettings.baleEnabled,
+    baleBotToken: String(input.baleBotToken ?? defaultSettings.baleBotToken).trim(),
+    baleDefaultChatId: String(input.baleDefaultChatId ?? defaultSettings.baleDefaultChatId).trim(),
+    baleSendPdf: typeof input.baleSendPdf === 'boolean' ? input.baleSendPdf : defaultSettings.baleSendPdf,
+    baleSendText: typeof input.baleSendText === 'boolean' ? input.baleSendText : defaultSettings.baleSendText,
+    baleMessageTemplate: String(input.baleMessageTemplate ?? defaultSettings.baleMessageTemplate).trim() || defaultSettings.baleMessageTemplate,
+
     // Legacy fallback mapping
+    pwa_enabled:
+      typeof input.pwaEnabled === 'boolean'
+        ? input.pwaEnabled
+        : typeof input.pwa_enabled === 'boolean'
+          ? input.pwa_enabled
+          : defaultSettings.pwaEnabled,
     company_name: orgName,
     fiscal_year_start: fiscalStart ? String(fiscalStart) : '',
     base_currency: baseCurrency,

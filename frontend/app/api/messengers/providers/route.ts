@@ -9,6 +9,6 @@ export async function GET() {
     return NextResponse.json({ message: 'ابتدا وارد حساب شوید.' }, { status: 401 });
   }
 
-  const providers = getAvailableProviders();
+  const providers = await getAvailableProviders();
   return NextResponse.json({ providers });
 }

@@ -31,7 +31,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: 'ارسال کننده و شناسه گیرنده الزامی است.' }, { status: 400 });
     }
 
-    const provider = getMessengerProvider(providerName);
+    const provider = await getMessengerProvider(providerName);
     if (!provider.isConfigured()) {
       return NextResponse.json({ message: `سرویس ${provider.name} پیکربندی نشده است.` }, { status: 400 });
     }

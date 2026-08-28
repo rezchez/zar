@@ -113,6 +113,7 @@ export interface InvoicePrintTemplateDesign {
 export interface InvoicePrintTemplate {
   id: string;
   name: string;
+  templateType?: 'invoice' | 'customer';
   isActive: boolean;
   isSystemDefault: boolean;
   page: InvoicePrintTemplatePage;
@@ -494,10 +495,170 @@ export function createStandardElements(pageWidthMm = 210): InvoicePrintElement[]
   ];
 }
 
+export const CUSTOMER_DEFAULT_TABLE_COLUMNS: InvoiceTableColumnConfig[] = [
+  { id: 'index', label: 'ردیف', visible: true, widthMm: 12, textAlign: 'center' },
+  { id: 'customerCode', label: 'کد حساب', visible: true, widthMm: 20, textAlign: 'center' },
+  { id: 'name', label: 'نام طرف‌حساب', visible: true, widthMm: 36, textAlign: 'right' },
+  { id: 'groupName', label: 'گروه', visible: true, widthMm: 22, textAlign: 'center' },
+  { id: 'phone1', label: 'تلفن تماس', visible: true, widthMm: 24, textAlign: 'center' },
+  { id: 'city', label: 'شهر', visible: true, widthMm: 20, textAlign: 'center' },
+  { id: 'goldBalance', label: 'مانده طلا (گرم)', visible: true, widthMm: 26, textAlign: 'center' },
+  { id: 'rialBalance', label: 'مانده ریالی', visible: true, widthMm: 30, textAlign: 'center' },
+];
+
+export function createCustomerStandardElements(pageWidthMm = 210): InvoicePrintElement[] {
+  const contentWidth = pageWidthMm - 20;
+
+  return [
+    {
+      id: 'shop_name',
+      type: 'shop_name',
+      visible: true,
+      position: { xMm: pageWidthMm - 10 - 100, yMm: 12 },
+      size: { widthMm: 100, heightMm: 10 },
+      style: {
+        fontFamily: 'DoranNoEn',
+        fontSizePt: 16,
+        fontWeight: 'bold',
+        color: '#1e293b',
+        textAlign: 'right',
+      },
+      zIndex: 10,
+    },
+    {
+      id: 'invoice_title',
+      type: 'invoice_title',
+      visible: true,
+      position: { xMm: (pageWidthMm - 70) / 2, yMm: 12 },
+      size: { widthMm: 70, heightMm: 10 },
+      style: {
+        fontFamily: 'DoranNoEn',
+        fontSizePt: 15,
+        fontWeight: 'bold',
+        color: '#b45309',
+        textAlign: 'center',
+      },
+      content: { text: 'گزارش و صورت وضعیت طرف‌حساب‌ها' },
+      zIndex: 10,
+    },
+    {
+      id: 'shop_phone',
+      type: 'shop_phone',
+      visible: true,
+      position: { xMm: 12, yMm: 12 },
+      size: { widthMm: 60, heightMm: 6 },
+      style: {
+        fontFamily: 'Vazirmatn',
+        fontSizePt: 8.5,
+        fontWeight: 'normal',
+        color: '#475569',
+        textAlign: 'left',
+      },
+      zIndex: 10,
+    },
+    {
+      id: 'invoice_date',
+      type: 'invoice_date',
+      visible: true,
+      position: { xMm: 12, yMm: 20 },
+      size: { widthMm: 60, heightMm: 6 },
+      style: {
+        fontFamily: 'Vazirmatn',
+        fontSizePt: 8.5,
+        fontWeight: 'medium',
+        color: '#334155',
+        textAlign: 'left',
+      },
+      zIndex: 10,
+    },
+    {
+      id: 'items_table',
+      type: 'items_table',
+      label: 'جدول فهرست طرف‌حساب‌ها',
+      visible: true,
+      position: { xMm: 10, yMm: 32 },
+      size: { widthMm: contentWidth, heightMm: 215 },
+      style: {
+        fontFamily: 'Vazirmatn',
+        fontSizePt: 8.5,
+        fontWeight: 'normal',
+        color: '#0f172a',
+        borderColor: '#cbd5e1',
+        borderWidthMm: 0.4,
+      },
+      zIndex: 10,
+    },
+    {
+      id: 'footer_text',
+      type: 'footer_text',
+      visible: true,
+      position: { xMm: 10, yMm: 252 },
+      size: { widthMm: contentWidth, heightMm: 8 },
+      style: {
+        fontFamily: 'Vazirmatn',
+        fontSizePt: 8,
+        fontWeight: 'normal',
+        color: '#64748b',
+        textAlign: 'center',
+      },
+      content: { text: 'گزارش تولید شده از سامانه حسابداری طلا و جواهر زر فولیو' },
+      zIndex: 10,
+    },
+    {
+      id: 'seller_signature',
+      type: 'seller_signature',
+      visible: true,
+      position: { xMm: pageWidthMm - 15 - 60, yMm: 262 },
+      size: { widthMm: 60, heightMm: 18 },
+      style: {
+        fontFamily: 'Vazirmatn',
+        fontSizePt: 8.5,
+        fontWeight: 'bold',
+        color: '#334155',
+        textAlign: 'center',
+      },
+      content: { text: 'تایید و امضای مدیریت' },
+      zIndex: 10,
+    },
+    {
+      id: 'stamp',
+      type: 'stamp',
+      visible: true,
+      position: { xMm: 15, yMm: 262 },
+      size: { widthMm: 50, heightMm: 18 },
+      style: {
+        fontFamily: 'Vazirmatn',
+        fontSizePt: 8.5,
+        fontWeight: 'bold',
+        color: '#334155',
+        textAlign: 'center',
+      },
+      content: { text: 'مهر فروشگاه' },
+      zIndex: 10,
+    },
+    {
+      id: 'print_datetime',
+      type: 'print_datetime',
+      visible: true,
+      position: { xMm: 10, yMm: 284 },
+      size: { widthMm: contentWidth, heightMm: 5 },
+      style: {
+        fontFamily: 'Vazirmatn',
+        fontSizePt: 7,
+        fontWeight: 'normal',
+        color: '#94a3b8',
+        textAlign: 'left',
+      },
+      zIndex: 10,
+    },
+  ];
+}
+
 export const DEFAULT_SYSTEM_TEMPLATES: InvoicePrintTemplate[] = [
   {
     id: 'tpl_standard_gold',
     name: 'فاکتور استاندارد طلافروشی',
+    templateType: 'invoice',
     isActive: true,
     isSystemDefault: true,
     page: {
@@ -541,6 +702,7 @@ export const DEFAULT_SYSTEM_TEMPLATES: InvoicePrintTemplate[] = [
   {
     id: 'tpl_small_sale',
     name: 'فاکتور کوچک فروش',
+    templateType: 'invoice',
     isActive: false,
     isSystemDefault: true,
     page: {
@@ -587,5 +749,48 @@ export const DEFAULT_SYSTEM_TEMPLATES: InvoicePrintTemplate[] = [
       }
       return el;
     }),
+  },
+  {
+    id: 'tpl_customer_default',
+    name: 'قالب پیش‌فرض چاپ طرف‌حساب‌ها',
+    templateType: 'customer',
+    isActive: true,
+    isSystemDefault: true,
+    page: {
+      size: 'A4',
+      orientation: 'portrait',
+      widthMm: 210,
+      heightMm: 297,
+      marginTopMm: 10,
+      marginRightMm: 10,
+      marginBottomMm: 10,
+      marginLeftMm: 10,
+      backgroundColor: '#ffffff',
+      borderEnabled: true,
+      borderColor: '#e2e8f0',
+      borderWidthMm: 0.5,
+    },
+    design: {
+      zoom: 1,
+      gridEnabled: true,
+      gridSizeMm: 5,
+    },
+    table: {
+      columns: JSON.parse(JSON.stringify(CUSTOMER_DEFAULT_TABLE_COLUMNS)),
+      headerBackgroundColor: '#f1f5f9',
+      headerTextColor: '#0f172a',
+      bodyTextColor: '#1e293b',
+      borderColor: '#cbd5e1',
+      borderWidthMm: 0.4,
+      showIndexColumn: true,
+      fontSizePt: 8.5,
+    },
+    footer: {
+      showSellerSignature: true,
+      showCustomerSignature: false,
+      showStamp: true,
+      sellerSignatureTitle: 'تایید و امضای مدیریت',
+    },
+    elements: createCustomerStandardElements(210),
   },
 ];
