@@ -4,10 +4,12 @@ import { NextResponse } from 'next/server';
 import { recordAuditEvent } from '@/lib/audit';
 import { getServerAuthContext } from '@/lib/auth';
 import { ensureChecksCollection } from '@/lib/check-collection';
-import { mapCheckRecord } from '@/lib/check';
-import { jalaliDateToIso, normalizeDigits } from '@/lib/jalali';
+import { mapCheckRecord, type CheckStatus, type ChequeType } from '@/lib/check';
+import { formatJalaliDate, jalaliDateToIso, normalizeDigits } from '@/lib/jalali';
 import { parseLocalizedAmount } from '@/lib/money';
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
+import { postPayableChequeIssue, postReceivableChequeReceipt } from '@/lib/accounting-posting-engine';
+import { mapBankAccount } from '@/lib/bank';
 
 function text(value: unknown, max = 120) {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
@@ -79,15 +81,21 @@ export async function POST(request: Request) {
   const normalizedSayadId = normalizeDigits(rawSayadId).replace(/\D/g, '');
   const description = text(body?.description || body?.babat, 500);
   const dueDateJalali = text(body?.dueDateJalali, 20) || text(body?.dueDate, 20);
+  const issueDateJalali = text(body?.issueDateJalali, 20) || formatJalaliDate();
   const currency = text(body?.currency, 16).toUpperCase() || 'IRR';
   const amount = parseLocalizedAmount(String(body?.amount ?? 0));
+  const rawStatus = text(body?.status, 20) || 'issued';
+  const validStatus: CheckStatus = (
+    rawStatus === 'draft' || rawStatus === 'delivered' || rawStatus === 'pending'
+  ) ? (rawStatus as CheckStatus) : 'issued';
+  const chequeType: ChequeType = body?.chequeType === 'receivable' ? 'receivable' : 'payable';
 
   if (!bankAccountId) {
-    return NextResponse.json({ message: 'حساب بانکی پرداخت‌کننده را انتخاب کنید.' }, { status: 400 });
+    return NextResponse.json({ message: 'حساب بانکی صادرکننده/مرتبط را انتخاب کنید.' }, { status: 400 });
   }
 
   if (!customerId) {
-    return NextResponse.json({ message: 'طرف‌حساب (گیرنده چک) را انتخاب کنید.' }, { status: 400 });
+    return NextResponse.json({ message: 'طرف‌حساب را انتخاب کنید.' }, { status: 400 });
   }
 
   if (amount <= 0) {
@@ -107,6 +115,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: 'تاریخ سررسید معتبر نیست. نمونه: ۱۴۰۵/۰۵/۲۹' }, { status: 400 });
   }
 
+  const issueDateIso = jalaliDateToIso(issueDateJalali) || new Date().toISOString().slice(0, 10);
+
   const writer = await writerFor(context);
   if (!writer) {
     return NextResponse.json({ message: 'اتصال به پایگاه داده برقرار نشد.' }, { status: 500 });
@@ -124,21 +134,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: 'چک دیگری با این شناسه صیاد قبلاً ثبت شده است.' }, { status: 409 });
     }
 
-    // Verify bank account & check balance
-    const bankAccount = await writer.collection('bank_accounts').getOne(bankAccountId);
+    // Verify bank account & customer
+    const rawBankAccount = await writer.collection('bank_accounts').getOne(bankAccountId, {
+      expand: 'accountId',
+    });
+    const bankAccount = mapBankAccount(rawBankAccount);
     const customer = await writer.collection('customers').getOne(customerId);
-
-    const currentBankBalance = Number(bankAccount.currentBalance ?? bankAccount.balance ?? 0);
-    if (currentBankBalance < amount) {
-      return NextResponse.json(
-        { message: `موجودی حساب بانکی (${currentBankBalance.toLocaleString('fa-IR')} ${bankAccount.currency || 'ریال'}) برای صدور این چک کافی نیست.` },
-        { status: 400 },
-      );
-    }
 
     const documentId = text(body?.documentId, 80) || randomUUID();
 
-    // Create Check record with status 'issued'
+    // 1. Create Check record
     const checkRecord = await writer.collection('checks').create({
       bankAccount: bankAccount.id,
       customer: customer.id,
@@ -146,23 +151,68 @@ export async function POST(request: Request) {
       amount,
       currency,
       description,
+      chequeType,
+      issueDate: issueDateIso,
+      issueDateJalali,
       dueDate: dueDateIso,
       dueDateJalali,
-      status: 'issued',
+      status: validStatus,
       document: documentId,
       createdBy: context.user.id,
       updatedBy: context.user.id,
     });
 
-    // Update bank balance immediately upon check issuance
-    const nextBalance = currentBankBalance - amount;
-    await writer.collection('bank_accounts').update(bankAccount.id, {
-      balance: nextBalance,
-      currentBalance: nextBalance,
-      updatedBy: context.user.id,
-    });
+    // 2. Execute Balanced Double-Entry Accounting Entry
+    // Note: Standard Accounting rule: Issuing a cheque transfers debt to Notes Payable (2110).
+    // Bank balance is NOT deducted until clearing!
+    let journalResult: any = null;
+    if (chequeType === 'payable') {
+      journalResult = await postPayableChequeIssue(
+        {
+          id: checkRecord.id,
+          amount,
+          sayadId: normalizedSayadId,
+          description,
+          dueDateJalali,
+          bankAccount: bankAccount.id,
+          customer: customer.id,
+        },
+        {
+          id: customer.id,
+          name: customer.name,
+          customerCode: Number(customer.customerCode ?? 0),
+        },
+        bankAccount,
+        context.user.id,
+        writer,
+      );
+    } else {
+      journalResult = await postReceivableChequeReceipt(
+        {
+          id: checkRecord.id,
+          amount,
+          sayadId: normalizedSayadId,
+          description,
+          dueDateJalali,
+          customer: customer.id,
+        },
+        {
+          id: customer.id,
+          name: customer.name,
+        },
+        context.user.id,
+        writer,
+      );
+    }
 
-    // Create accounting transaction
+    // Update check record with journalEntryId
+    if (journalResult?.id) {
+      await writer.collection('checks').update(checkRecord.id, {
+        journalEntryId: journalResult.id,
+      }).catch(() => undefined);
+    }
+
+    // 3. Customer Transaction Ledger Entry (settlementMethod: 'check')
     await writer.collection('transactions').create({
       customer: customer.id,
       customerCode: Number(customer.customerCode ?? 0),
@@ -175,14 +225,14 @@ export async function POST(request: Request) {
       transactionDate: new Date().toISOString(),
       documentId,
       documentNumber: '',
-      description: `پرداخت چک صیادی ${normalizedSayadId} — ${description}`,
-      documentNature: 'paid',
+      description: `صدور چک صیادی ${normalizedSayadId} — ${description}`,
+      documentNature: chequeType === 'payable' ? 'paid' : 'received',
       documentTab: 'bank',
       documentSubType: 'check-payment',
       settlementMethod: 'check',
       balanceSource: 'current',
-      rialAmount: currency === 'IRR' ? -amount : 0,
-      foreignAmount: currency !== 'IRR' ? -amount : 0,
+      rialAmount: currency === 'IRR' ? (chequeType === 'payable' ? -amount : amount) : 0,
+      foreignAmount: currency !== 'IRR' ? (chequeType === 'payable' ? -amount : amount) : 0,
       foreignCurrency: currency !== 'IRR' ? currency : '',
       documentDetails: JSON.stringify({
         checkId: checkRecord.id,
@@ -191,10 +241,11 @@ export async function POST(request: Request) {
         bankName: bankAccount.bankName,
         dueDateJalali,
         dueDate: dueDateIso,
+        journalEntryId: journalResult?.id || null,
       }),
     }).catch(() => undefined);
 
-    // Audit Log (mask Sayad ID for security)
+    // 4. Audit Log (mask Sayad ID for security)
     const maskedSayadId = `${normalizedSayadId.slice(0, 4)}****${normalizedSayadId.slice(12)}`;
     await recordAuditEvent({
       userId: context.user.id,
@@ -213,11 +264,16 @@ export async function POST(request: Request) {
         currency,
         dueDateJalali,
         dueDate: dueDateIso,
+        journalEntryId: journalResult?.id,
       },
       authenticatedClient: context.pb,
     });
 
-    return NextResponse.json({ check: mapCheckRecord(checkRecord) }, { status: 201 });
+    const fullCheck = await writer.collection('checks').getOne(checkRecord.id, {
+      expand: 'bankAccount,customer',
+    }).catch(() => checkRecord);
+
+    return NextResponse.json({ check: mapCheckRecord(fullCheck) }, { status: 201 });
   } catch (error) {
     console.error('check_create_failed', error);
     return NextResponse.json({ message: 'ثبت چک انجام نشد. اطلاعات را بررسی و دوباره تلاش کنید.' }, { status: 400 });

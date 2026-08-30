@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { convertRialToToman, convertTomanToRial, parseLocalizedAmount, formatMoney } from '../lib/money';
+import { normalizePriceString, formatPriceWithCommas } from '../components/ui/price-input';
 
 describe('Financial Math Precision & Currency tests', () => {
   test('convertRialToToman divides by 10 and floors correctly', () => {
@@ -23,5 +24,19 @@ describe('Financial Math Precision & Currency tests', () => {
   test('formatMoney outputs correctly localized string based on base currency', () => {
     expect(formatMoney(150000, 'IRR')).toContain('۱۵۰٬۰۰۰ ریال');
     expect(formatMoney(150000, 'IRT')).toContain('۱۵٬۰۰۰ تومان');
+  });
+
+  test('normalizePriceString normalizes Persian and Arabic-Indic numerals and strips commas', () => {
+    expect(normalizePriceString('۱,۲۵۰,۰۰۰')).toBe('1250000');
+    expect(normalizePriceString('١٢٥٠٠٠٠')).toBe('1250000');
+    expect(normalizePriceString(' -۵,۰۰۰.۵۰ ')).toBe('-5000.50');
+    expect(normalizePriceString('-۵,۰۰۰', false)).toBe('5000');
+  });
+
+  test('formatPriceWithCommas separates groups with commas correctly', () => {
+    expect(formatPriceWithCommas('1250000')).toBe('1,250,000');
+    expect(formatPriceWithCommas('-5000000')).toBe('-5,000,000');
+    expect(formatPriceWithCommas('1234.56')).toBe('1,234.56');
+    expect(formatPriceWithCommas('')).toBe('');
   });
 });

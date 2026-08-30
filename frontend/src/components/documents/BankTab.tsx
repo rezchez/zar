@@ -5,18 +5,13 @@ import {
   ArrowRightLeft,
   ArrowUpRight,
   Building2,
-  CalendarDays,
   Check,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   CreditCard,
   FileText,
   ListPlus,
   LoaderCircle,
   Plus,
-  Search,
-  UserCheck,
   Wallet,
   X,
 } from 'lucide-react';
@@ -24,16 +19,18 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import { formatRials, searchBanks, type BankAccount } from '@/lib/bank';
 import type { Customer } from '@/lib/customer';
-import { formatJalaliDate, jalaliToGregorian, normalizeDigits } from '@/lib/jalali';
+import { formatJalaliDate, normalizeDigits } from '@/lib/jalali';
 import {
   formatCurrencyAmount,
   getReadableCurrencyAmount,
-  numberToPersianWords,
   parseLocalizedAmount,
   SUPPORTED_CURRENCIES,
 } from '@/lib/money';
 import BankLogo from '@/src/components/documents/BankLogo';
 import Field from '@/src/components/documents/Field';
+import AccountTreeSelector from '@/src/components/accounting/AccountTreeSelector';
+import DatePicker from '@/components/ui/date-picker';
+import { PriceInput } from '@/components/ui/price-input';
 import type { DetailState, DocumentLine } from '@/src/components/documents/RawGoldTab';
 
 type BankOperationKind =
@@ -61,61 +58,6 @@ type Notice = {
   tone: 'success' | 'error' | 'warning';
   text: string;
 };
-
-type DateParts = {
-  year: number;
-  month: number;
-  day: number;
-};
-
-const jalaliMonthNames = [
-  'فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور',
-  'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند',
-];
-
-const weekDayNames = ['ش', 'ی', 'د', 'س', 'چ', 'پ', 'ج'];
-
-function parseJalaliParts(value: string): DateParts {
-  const parts = normalizeDigits(value).replace(/[.-]/g, '/').split('/').map(Number);
-  if (parts.length !== 3 || parts.some((part) => !Number.isInteger(part))) {
-    return { year: 1405, month: 1, day: 1 };
-  }
-  return {
-    year: parts[0],
-    month: Math.min(12, Math.max(1, parts[1])),
-    day: Math.min(31, Math.max(1, parts[2])),
-  };
-}
-
-function buildJalaliDate({ year, month, day }: DateParts) {
-  const y = String(year);
-  const m = String(month).padStart(2, '0');
-  const d = String(day).padStart(2, '0');
-  return `${y}/${m}/${d}`;
-}
-
-function daysInJalaliMonth(year: number, month: number) {
-  const current = jalaliToGregorian(`${year}/${month}/1`);
-  const nextYear = month === 12 ? year + 1 : year;
-  const nextMonth = month === 12 ? 1 : month + 1;
-  const next = jalaliToGregorian(`${nextYear}/${nextMonth}/1`);
-  if (!current || !next) return month <= 6 ? 31 : month <= 11 ? 30 : 29;
-
-  const currentTime = Date.UTC(current.year, current.month - 1, current.day);
-  const nextTime = Date.UTC(next.year, next.month - 1, next.day);
-  return Math.round((nextTime - currentTime) / 86_400_000);
-}
-
-function firstWeekDayOfJalaliMonth(year: number, month: number) {
-  const gregorian = jalaliToGregorian(`${year}/${month}/1`);
-  if (!gregorian) return 0;
-  const weekDay = new Date(Date.UTC(
-    gregorian.year,
-    gregorian.month - 1,
-    gregorian.day,
-  )).getUTCDay();
-  return (weekDay + 1) % 7;
-}
 
 export default function BankTab({
   nature,
@@ -148,18 +90,12 @@ export default function BankTab({
   const [newAccountNumber, setNewAccountNumber] = useState('');
   const [newBalance, setNewBalance] = useState('0');
   const [newCurrency, setNewCurrency] = useState('IRR');
+  const [newAccountId, setNewAccountId] = useState<string | null>(null);
 
   // Check Issuance States
   const [sayadId, setSayadId] = useState('');
-  const initialDueDate = parseJalaliParts(formatJalaliDate());
-  const [dueDateParts, setDueDateParts] = useState<DateParts>(initialDueDate);
-  const [calendarView, setCalendarView] = useState({
-    year: initialDueDate.year,
-    month: initialDueDate.month,
-  });
-  const [dueDatePickerOpen, setDueDatePickerOpen] = useState(false);
+  const [dueDateJalali, setDueDateJalali] = useState(() => formatJalaliDate());
 
-  const datePickerRef = useRef<HTMLDivElement>(null);
   const bankDropdownRef = useRef<HTMLDivElement>(null);
 
   const customerName = selectedCustomer ? selectedCustomer.name : 'طرف‌حساب';
@@ -213,9 +149,6 @@ export default function BankTab({
 
   useEffect(() => {
     function closeOnOutsideClick(event: MouseEvent) {
-      if (datePickerRef.current && !datePickerRef.current.contains(event.target as Node)) {
-        setDueDatePickerOpen(false);
-      }
       if (bankDropdownRef.current && !bankDropdownRef.current.contains(event.target as Node)) {
         setBankDropdownOpen(false);
       }
@@ -261,6 +194,7 @@ export default function BankTab({
           accountNumber: newAccountNumber,
           currentBalance: parseLocalizedAmount(newBalance),
           currency: newCurrency,
+          accountId: newAccountId || null,
           accountCodeZero: '0',
           isActive: true,
         }),
@@ -277,6 +211,7 @@ export default function BankTab({
       setNewAccountNumber('');
       setNewBalance('0');
       setNewCurrency('IRR');
+      setNewAccountId(null);
       setShowCreateModal(false);
       setNotice({ tone: 'success', text: 'حساب بانکی جدید با موفقیت ایجاد شد.' });
     } catch (error) {
@@ -298,85 +233,93 @@ export default function BankTab({
       sourceTab: 'bank',
       documentNature: nature,
       documentTypeLabel: opLabel,
-      description: description || opLabel,
+      description: description || current.description,
       details: {
         ...current.details,
         totalAmount: String(numericAmount),
+        bankAccountId: selectedSource,
+        destinationBankId: selectedDestination,
+        bankName: selectedSourceAccount?.bankName || '',
+        bankBranch: selectedSourceAccount?.branchName || '',
+        accountNumber: selectedSourceAccount?.accountNumber || '',
+        sayadId: normalizedSayad,
+        dueDateJalali,
+        bankOperationKind: kind,
       },
     }));
 
-    setTimeout(() => {
-      commitDraftLine();
-    }, 50);
+    commitDraftLine();
   }
 
   return (
-    <div className="space-y-4">
-      {/* Header Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 pb-2 border-b border-slate-100 dark:border-slate-800">
-        <div>
-          <h3 className="text-xs font-bold text-slate-800 dark:text-slate-100">عملیات حساب بانکی و چک</h3>
-          <p className="text-[10px] text-slate-500">انتخاب نوع عملیات بانکی و ثبت ردیف سند</p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setShowCreateModal(true)}
-          className="inline-flex items-center gap-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 px-3 py-1.5 text-xs font-extrabold text-slate-950 shadow-md transition"
-        >
-          <Plus size={15} />
-          افزودن حساب بانکی
-        </button>
-      </div>
-
-      {/* Notice Message */}
+    <div className="space-y-4" dir="rtl">
+      {/* Notice Banner */}
       {notice ? (
-        <div className={`p-3 rounded-xl text-xs flex items-center justify-between border ${
-          notice.tone === 'success'
-            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
-            : 'bg-rose-500/10 border-rose-500/30 text-rose-700 dark:text-rose-300'
-        }`}>
+        <div
+          className={`flex items-center justify-between p-3 rounded-xl text-xs font-bold ${
+            notice.tone === 'success'
+              ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+              : notice.tone === 'warning'
+                ? 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                : 'bg-rose-50 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+          }`}
+        >
           <span>{notice.text}</span>
-          <button type="button" onClick={() => setNotice(null)}><X size={14} /></button>
+          <button type="button" onClick={() => setNotice(null)} className="p-1">
+            <X size={14} />
+          </button>
         </div>
       ) : null}
 
-      {/* Operation Selection Mode Dropdown / Buttons */}
-      <div className="grid gap-1.5 grid-cols-2 sm:grid-cols-3 xl:grid-cols-6">
-        {operationOptions.map((option) => {
-          const Icon = option.icon;
-          const isActive = kind === option.value;
-          return (
-            <button
-              type="button"
-              key={option.value}
-              onClick={() => {
-                setKind(option.value);
-                setNotice(null);
-              }}
-              className={`flex items-center gap-1.5 px-2 py-1.5 rounded-xl text-right text-[11px] font-bold transition border leading-tight ${
-                isActive
-                  ? 'bg-amber-500/20 border-amber-500/50 text-slate-900 dark:text-slate-100 shadow-sm'
-                  : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:bg-slate-50 text-slate-600 dark:text-slate-300'
-              }`}
-            >
-              <Icon size={14} className="shrink-0 text-amber-600" />
-              <span className="leading-snug">{option.label}</span>
-            </button>
-          );
-        })}
+      {/* Top Controls: Operation Kind Selector & Add Bank Button */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-800 pb-3">
+        <div className="flex flex-wrap gap-1.5">
+          {operationOptions.map((opt) => {
+            const Icon = opt.icon;
+            const isSelected = kind === opt.value;
+            return (
+              <button
+                type="button"
+                key={opt.value}
+                onClick={() => {
+                  setKind(opt.value);
+                  setNotice(null);
+                }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
+                  isSelected
+                    ? 'bg-amber-500 text-slate-950 shadow-sm'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                }`}
+              >
+                <Icon size={14} />
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setShowCreateModal(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 text-amber-800 dark:text-amber-300 hover:bg-amber-500/20 rounded-xl text-xs font-extrabold transition-colors border border-amber-500/30 cursor-pointer"
+        >
+          <Plus size={14} />
+          حساب جدید
+        </button>
       </div>
 
-      {/* Dynamic Content Based on Operation Kind */}
+      {/* Dynamic Operation Form */}
       {banks.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-amber-300 bg-amber-50/70 p-6 text-center dark:border-amber-700/60 dark:bg-amber-950/30">
-          <p className="text-sm font-bold text-amber-900 dark:text-amber-200">هنوز هیچ حساب بانکی فعالی ثبت نشده است.</p>
-          <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">برای ثبت و پردازش چک یا انتقال بانکی، ابتدا یک حساب بانکی ایجاد کنید.</p>
+        <div className="text-center py-8 px-4 rounded-2xl border border-dashed border-amber-300 dark:border-amber-800/60 bg-amber-50/50 dark:bg-amber-950/20">
+          <Building2 className="mx-auto text-amber-500 mb-2" size={32} />
+          <p className="text-xs font-bold text-slate-700 dark:text-slate-300">هنوز هیچ حساب بانکی ثبت نشده است.</p>
+          <p className="text-[11px] text-slate-500 mt-1">برای ثبت عملیات چک یا واریز/برداشت، ابتدا یک حساب بانکی تعریف کنید.</p>
           <button
             type="button"
             onClick={() => setShowCreateModal(true)}
-            className="mt-3 inline-flex items-center gap-2 rounded-xl bg-amber-600 px-4 py-2 text-xs font-bold text-white shadow-md"
+            className="mt-3 px-4 py-2 bg-amber-500 text-slate-950 font-extrabold rounded-xl text-xs inline-flex items-center gap-1.5 shadow cursor-pointer"
           >
-            <Plus size={15} />
+            <Plus size={14} />
             افزودن حساب بانکی
           </button>
         </div>
@@ -393,22 +336,23 @@ export default function BankTab({
                 {banks.map((bank) => (
                   <option key={bank.id} value={bank.id}>
                     {bank.bankName} {bank.branchName ? `(${bank.branchName})` : ''} · {formatCurrencyAmount(bank.currentBalance ?? bank.balance, bank.currency)}
+                    {bank.accountCode ? ` [کدینگ: ${bank.accountCode}]` : ''}
                   </option>
                 ))}
               </select>
             </Field>
 
             <Field label="مبلغ چک">
-              <input
+              <PriceInput
                 value={amount}
-                onChange={(e) => {
-                  const parsed = parseLocalizedAmount(e.target.value);
-                  setAmount(parsed > 0 ? parsed.toLocaleString('fa-IR') : e.target.value);
-                  updateDraftDetail?.('totalAmount', String(parsed));
+                onValueChange={(parsed, rawVal) => {
+                  setAmount(rawVal);
+                  updateDraftDetail?.('totalAmount', String(parsed || 0));
                 }}
-                inputMode="decimal"
+                baseCurrency="IRR"
+                currencySuffix="ریال"
                 placeholder="۰"
-                className="h-10 text-xs font-bold"
+                showWords
               />
             </Field>
 
@@ -422,75 +366,20 @@ export default function BankTab({
               />
             </Field>
 
-            {/* Jalali Due Date */}
+            {/* PersianLabs Jalali Due Date */}
             <Field label="تاریخ سررسید چک">
-              <div className="relative" ref={datePickerRef}>
-                <button
-                  type="button"
-                  onClick={() => setDueDatePickerOpen((v) => !v)}
-                  className="flex h-10 w-full items-center justify-between rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs font-bold"
-                >
-                  <div className="flex items-center gap-1.5">
-                    <CalendarDays size={14} className="text-amber-600" />
-                    <span>{buildJalaliDate(dueDateParts)}</span>
-                  </div>
-                  <ChevronLeft size={14} />
-                </button>
-
-                {dueDatePickerOpen ? (
-                  <div className="absolute top-full z-30 mt-1 rounded-2xl border border-slate-200 bg-white p-3 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
-                    <div className="flex items-center justify-between mb-2">
-                      <button
-                        type="button"
-                        onClick={() => setCalendarView((c) => c.month === 12 ? { year: c.year + 1, month: 1 } : { year: c.year, month: c.month + 1 })}
-                        className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
-                      >
-                        <ChevronRight size={15} />
-                      </button>
-                      <span className="text-xs font-bold">
-                        {jalaliMonthNames[calendarView.month - 1]} {calendarView.year}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setCalendarView((c) => c.month === 1 ? { year: c.year - 1, month: 12 } : { year: c.year, month: c.month - 1 })}
-                        className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
-                      >
-                        <ChevronLeft size={15} />
-                      </button>
-                    </div>
-
-                    <div className="grid grid-cols-7 text-center text-[10px] font-bold text-slate-400 mb-1">
-                      {weekDayNames.map((w) => <span key={w}>{w}</span>)}
-                    </div>
-
-                    <div className="grid grid-cols-7 gap-1 text-center text-xs">
-                      {Array.from({ length: firstWeekDayOfJalaliMonth(calendarView.year, calendarView.month) }).map((_, i) => (
-                        <span key={`empty-${i}`} />
-                      ))}
-                      {Array.from({ length: daysInJalaliMonth(calendarView.year, calendarView.month) }, (_, i) => i + 1).map((day) => {
-                        const isSel = dueDateParts.year === calendarView.year && dueDateParts.month === calendarView.month && dueDateParts.day === day;
-                        return (
-                          <button
-                            type="button"
-                            key={day}
-                            onClick={() => {
-                              setDueDateParts({ year: calendarView.year, month: calendarView.month, day });
-                              setDueDatePickerOpen(false);
-                            }}
-                            className={`h-7 w-7 rounded-lg font-medium transition ${
-                              isSel
-                                ? 'bg-amber-500 text-slate-950 font-bold'
-                                : 'hover:bg-slate-100 dark:hover:bg-slate-800'
-                            }`}
-                          >
-                            {day}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
+              <DatePicker
+                value={dueDateJalali}
+                onValueChange={(_iso, jalali) => {
+                  if (jalali) {
+                    setDueDateJalali(jalali);
+                    updateDraftDetail?.('dueDateJalali', jalali);
+                  }
+                }}
+                calendarType="shamsi"
+                format="yyyy/MM/dd"
+                placeholder="انتخاب تاریخ سررسید"
+              />
             </Field>
 
             <Field label="بابت / شرح چک" wide>
@@ -500,14 +389,22 @@ export default function BankTab({
                   setDescription(e.target.value);
                   setDraftLine((curr) => ({ ...curr, description: e.target.value }));
                 }}
-                placeholder="توضیحات بابت چک..."
+                placeholder="شرح صدور چک صیادی..."
               />
             </Field>
           </div>
+
+          {/* Insufficient Balance Alert */}
+          {numericAmount > 0 && !isBalanceSufficient ? (
+            <div className="flex items-center gap-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-800 dark:text-amber-300 text-xs font-bold">
+              <FileText size={15} />
+              <span>مبلغ چک از موجودی فعلی حساب بیشتر است.</span>
+            </div>
+          ) : null}
         </div>
       ) : kind === 'bank-to-bank' ? (
-        /* Account to Account */
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 p-4 rounded-2xl border border-slate-200 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-900/60">
+        /* Bank to Bank Transfer Form */
+        <div className="grid gap-3 sm:grid-cols-2 p-4 rounded-2xl border border-slate-200 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-900/60">
           <Field label="حساب مبدأ">
             <select
               value={selectedSource}
@@ -518,6 +415,7 @@ export default function BankTab({
               {banks.map((bank) => (
                 <option key={bank.id} value={bank.id}>
                   {bank.bankName} {bank.branchName ? `(${bank.branchName})` : ''} · {formatRials(bank.currentBalance ?? bank.balance)}
+                  {bank.accountCode ? ` [کد: ${bank.accountCode}]` : ''}
                 </option>
               ))}
             </select>
@@ -533,22 +431,23 @@ export default function BankTab({
               {banks.map((bank) => (
                 <option key={bank.id} value={bank.id}>
                   {bank.bankName} {bank.branchName ? `(${bank.branchName})` : ''} · {formatRials(bank.currentBalance ?? bank.balance)}
+                  {bank.accountCode ? ` [کد: ${bank.accountCode}]` : ''}
                 </option>
               ))}
             </select>
           </Field>
 
-          <Field label="مبلغ انتقال">
-            <input
+          <Field label="مبلغ انتقال (ریال)" wide>
+            <PriceInput
               value={amount}
-              onChange={(e) => {
-                const parsed = parseLocalizedAmount(e.target.value);
-                setAmount(parsed > 0 ? parsed.toLocaleString('fa-IR') : e.target.value);
-                updateDraftDetail?.('totalAmount', String(parsed));
+              onValueChange={(parsed, rawVal) => {
+                setAmount(rawVal);
+                updateDraftDetail?.('totalAmount', String(parsed || 0));
               }}
-              inputMode="decimal"
+              baseCurrency="IRR"
+              currencySuffix="ریال"
               placeholder="۰"
-              className="h-10 text-xs font-bold"
+              showWords
             />
           </Field>
 
@@ -576,22 +475,23 @@ export default function BankTab({
               {banks.map((bank) => (
                 <option key={bank.id} value={bank.id}>
                   {bank.bankName} {bank.branchName ? `(${bank.branchName})` : ''} · {formatRials(bank.currentBalance ?? bank.balance)}
+                  {bank.accountCode ? ` [کد: ${bank.accountCode}]` : ''}
                 </option>
               ))}
             </select>
           </Field>
 
           <Field label="مبلغ (ریال)">
-            <input
+            <PriceInput
               value={amount}
-              onChange={(e) => {
-                const parsed = parseLocalizedAmount(e.target.value);
-                setAmount(parsed > 0 ? parsed.toLocaleString('fa-IR') : e.target.value);
-                updateDraftDetail?.('totalAmount', String(parsed));
+              onValueChange={(parsed, rawVal) => {
+                setAmount(rawVal);
+                updateDraftDetail?.('totalAmount', String(parsed || 0));
               }}
-              inputMode="decimal"
+              baseCurrency="IRR"
+              currencySuffix="ریال"
               placeholder="۰"
-              className="h-10 text-xs font-bold"
+              showWords
             />
           </Field>
 
@@ -613,7 +513,7 @@ export default function BankTab({
         <div className={`sticky ${isLinesPinned ? 'bottom-32' : 'bottom-3'} z-30 flex justify-center pt-2 transition-all duration-300`}>
           <button
             type="button"
-            className="document-commit-line-button shadow-lg max-w-sm"
+            className="document-commit-line-button shadow-lg max-w-sm cursor-pointer"
             onClick={handleCommitLine}
           >
             <ListPlus size={16} /> {editingLineId ? 'ثبت اصلاح ردیف' : 'ثبت ردیف'}
@@ -631,9 +531,9 @@ export default function BankTab({
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
               <h3 className="font-extrabold text-sm text-slate-800 dark:text-slate-200 flex items-center gap-2">
                 <Building2 size={18} className="text-amber-600" />
-                افزودن حساب بانکی جدید
+                افزودن حساب بانکی جدید و اتصال به کدینگ
               </h3>
-              <button type="button" onClick={() => setShowCreateModal(false)} className="text-slate-400 hover:text-slate-600">
+              <button type="button" onClick={() => setShowCreateModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
                 <X size={18} />
               </button>
             </div>
@@ -645,7 +545,7 @@ export default function BankTab({
                 <button
                   type="button"
                   onClick={() => setBankDropdownOpen((v) => !v)}
-                  className="flex h-10 w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-3 text-xs dark:border-slate-700 dark:bg-slate-800"
+                  className="flex h-10 w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-3 text-xs dark:border-slate-700 dark:bg-slate-800 cursor-pointer"
                 >
                   <span className="flex items-center gap-2 min-w-0">
                     {newBankName ? <BankLogo bankName={newBankName} size={22} /> : null}
@@ -725,31 +625,42 @@ export default function BankTab({
               </Field>
 
               <Field label="موجودی اولیه / فعلی *" wide>
-                <input
+                <PriceInput
                   value={newBalance}
-                  onChange={(e) => {
-                    const parsed = parseLocalizedAmount(e.target.value);
-                    setNewBalance(parsed > 0 ? parsed.toLocaleString('fa-IR') : e.target.value);
+                  onValueChange={(_parsed, rawVal) => {
+                    setNewBalance(rawVal);
                   }}
-                  inputMode="decimal"
+                  baseCurrency="IRR"
+                  currencySuffix="ریال"
                   placeholder="۰"
-                  className="h-10 text-xs font-bold"
+                  showWords
                 />
               </Field>
+
+              {/* Tree Selector for Chart of Accounts Linkage */}
+              <div className="sm:col-span-2">
+                <AccountTreeSelector
+                  value={newAccountId}
+                  onChange={(id) => setNewAccountId(id)}
+                  filterType="asset"
+                  label="اتصال به سرفصل کدینگ حسابداری"
+                  placeholder="انتخاب سرفصل از درختواره حساب‌ها..."
+                />
+              </div>
             </div>
 
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
               <button
                 type="button"
                 onClick={() => setShowCreateModal(false)}
-                className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold rounded-xl text-xs"
+                className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold rounded-xl text-xs cursor-pointer"
               >
                 انصراف
               </button>
               <button
                 type="submit"
                 disabled={loading}
-                className="px-4 py-2 bg-amber-500 text-slate-950 font-extrabold rounded-xl hover:bg-amber-400 text-xs transition-colors flex items-center gap-1.5"
+                className="px-4 py-2 bg-amber-500 text-slate-950 font-extrabold rounded-xl hover:bg-amber-400 text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
               >
                 {loading ? <LoaderCircle size={15} className="animate-spin" /> : <Check size={15} />}
                 ایجاد حساب بانکی

@@ -17,6 +17,7 @@ import type { ReactNode } from 'react';
 
 import type { Customer } from '@/lib/customer';
 import BankOperation from '@/src/components/documents/BankOperation';
+import CoinEntryComponent from '@/src/components/documents/CoinEntryComponent';
 import PlaceholderTab from '@/src/components/documents/PlaceholderTab';
 
 type DocumentEntryTabsProps = {
@@ -24,7 +25,9 @@ type DocumentEntryTabsProps = {
   goldSaleTabContent?: ReactNode;
   goldSaleTabLabel?: string;
   currencyTabContent?: ReactNode;
+  coinTabContent?: ReactNode;
   cashTabContent?: ReactNode;
+  cashTabLabel?: string;
   bankTabContent?: ReactNode;
   claimTabContent?: ReactNode;
   accountCodeZero?: string;
@@ -49,7 +52,9 @@ export default function DocumentEntryTabs({
   goldSaleTabContent,
   goldSaleTabLabel,
   currencyTabContent,
+  coinTabContent,
   cashTabContent,
+  cashTabLabel,
   bankTabContent,
   claimTabContent,
   accountCodeZero = '0',
@@ -69,6 +74,8 @@ export default function DocumentEntryTabs({
     onActiveTabChange?.(tab);
   }
 
+  const dynamicCashLabel = cashTabLabel ?? (nature === 'received' ? 'ورود وجه نقد' : 'خروج وجه نقد');
+
   const tabs: TabDefinition[] = [
     { id: 'metals', label: metalsTabLabel, icon: Gem, content: firstTabContent },
     { id: 'gold-sale', label: goldSaleTabLabel ?? (nature === 'received' ? 'خرید طلا' : 'فروش طلا'), icon: Gem, content: goldSaleTabContent ?? <PlaceholderTab label="خرید و فروش فلزات" /> },
@@ -80,12 +87,17 @@ export default function DocumentEntryTabs({
       content: currencyTabContent ?? <PlaceholderTab label="عملیات ارزی" />,
     },
     { id: 'stone', label: 'سنگ', icon: Sparkles, content: <PlaceholderTab label="عملیات سنگ" /> },
-    { id: 'coin', label: 'سکه', icon: Coins, content: <PlaceholderTab label="عملیات سکه" /> },
+    {
+      id: 'coin',
+      label: 'سکه',
+      icon: Coins,
+      content: coinTabContent ?? <CoinEntryComponent nature={nature} />,
+    },
     {
       id: 'cash',
-      label: 'وجه نقد',
+      label: dynamicCashLabel,
       icon: Wallet,
-      content: cashTabContent ?? <PlaceholderTab label="وجه نقد" />,
+      content: cashTabContent ?? <PlaceholderTab label={dynamicCashLabel} />,
     },
     {
       id: 'bank',
@@ -137,19 +149,19 @@ export default function DocumentEntryTabs({
               onClick={() => selectTab(tab.id)}
               aria-current={isActive ? 'page' : undefined}
               disabled={isEditingMode && !isActive}
-              className={`flex min-w-max items-center gap-2 rounded-lg px-2.5 py-2 text-right text-[11px] font-bold transition-all duration-300 lg:w-full ${
+              className={`flex min-w-max items-center gap-2 rounded-xl px-3 py-2.5 text-right text-xs font-bold transition-all duration-200 lg:w-full border ${
                 isBlurred ? 'filter blur-[1.5px] opacity-35 pointer-events-none' : 'filter blur-0 opacity-100'
               } ${
                 isActive
                   ? nature === 'paid'
-                    ? 'bg-rose-600 text-white shadow-sm shadow-rose-600/20'
-                    : 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/20'
+                    ? 'bg-rose-600 text-white border-rose-700 shadow-md shadow-rose-600/25 font-extrabold'
+                    : 'bg-emerald-600 text-white border-emerald-700 shadow-md shadow-emerald-600/25 font-extrabold'
                   : nature === 'paid'
-                    ? 'bg-slate-100 text-slate-600 hover:bg-rose-50 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-rose-950/40'
-                    : 'bg-slate-100 text-slate-600 hover:bg-emerald-50 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-emerald-950/40'
+                    ? 'bg-slate-100/90 text-slate-900 border-slate-200 hover:bg-rose-50 hover:text-rose-700 dark:bg-slate-800/90 dark:text-slate-100 dark:border-slate-700 dark:hover:bg-rose-950/50 dark:hover:text-rose-300'
+                    : 'bg-slate-100/90 text-slate-900 border-slate-200 hover:bg-emerald-50 hover:text-emerald-700 dark:bg-slate-800/90 dark:text-slate-100 dark:border-slate-700 dark:hover:bg-emerald-950/50 dark:hover:text-emerald-300'
               }`}
             >
-              <Icon size={14} />
+              <Icon size={15} />
               <span>{tab.label}</span>
             </button>
           );

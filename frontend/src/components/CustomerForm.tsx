@@ -16,6 +16,8 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 
+import DatePicker from '@/components/ui/date-picker';
+
 import {
   currencyDisplay,
   currencyOptions,
@@ -675,44 +677,16 @@ export default function CustomerForm({
                 ))}
 
                 <Field label="تاریخ تولد (روز/ماه/سال)">
-                  <div className="flex gap-2" dir="ltr">
-                    <input
-                      type="text"
-                      className="w-1/3 text-center"
-                      placeholder="روز"
-                      maxLength={2}
-                      value={state.birthDate && typeof state.birthDate === 'string' && state.birthDate !== 'undefined' ? String(state.birthDate).split('/')[2] || '' : ''}
-                      onChange={(e) => {
-                        const parts = (state.birthDate && typeof state.birthDate === 'string' && state.birthDate !== 'undefined' ? String(state.birthDate) : '//').split('/');
-                        parts[2] = e.target.value.replace(/\D/g, '').slice(0, 2);
-                        setValue('birthDate', parts.join('/'));
-                      }}
-                    />
-                    <input
-                      type="text"
-                      className="w-1/3 text-center"
-                      placeholder="ماه"
-                      maxLength={2}
-                      value={state.birthDate && typeof state.birthDate === 'string' && state.birthDate !== 'undefined' ? String(state.birthDate).split('/')[1] || '' : ''}
-                      onChange={(e) => {
-                        const parts = (state.birthDate && typeof state.birthDate === 'string' && state.birthDate !== 'undefined' ? String(state.birthDate) : '//').split('/');
-                        parts[1] = e.target.value.replace(/\D/g, '').slice(0, 2);
-                        setValue('birthDate', parts.join('/'));
-                      }}
-                    />
-                    <input
-                      type="text"
-                      className="w-1/3 text-center"
-                      placeholder="سال"
-                      maxLength={4}
-                      value={state.birthDate && typeof state.birthDate === 'string' && state.birthDate !== 'undefined' ? String(state.birthDate).split('/')[0] || '' : ''}
-                      onChange={(e) => {
-                        const parts = (state.birthDate && typeof state.birthDate === 'string' && state.birthDate !== 'undefined' ? String(state.birthDate) : '//').split('/');
-                        parts[0] = e.target.value.replace(/\D/g, '').slice(0, 4);
-                        setValue('birthDate', parts.join('/'));
-                      }}
-                    />
-                  </div>
+                  <DatePicker
+                    value={state.birthDate && typeof state.birthDate === 'string' && state.birthDate !== 'undefined' ? String(state.birthDate) : ''}
+                    onValueChange={(_iso, jalali) => {
+                      setValue('birthDate', jalali || '');
+                    }}
+                    calendarType="shamsi"
+                    format="yyyy/MM/dd"
+                    placeholder="انتخاب تاریخ تولد"
+                    className="w-full"
+                  />
                 </Field>
 
                 <Field label="توضیحات محرمانه" wide><textarea value={String(state.privateDescription)} onChange={(e) => setValue('privateDescription', e.target.value)} /></Field>

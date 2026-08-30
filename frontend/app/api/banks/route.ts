@@ -5,6 +5,7 @@ import { getServerAuthContext } from '@/lib/auth';
 import { hasPermission } from '@/lib/authorization';
 import { mapBankAccount } from '@/lib/bank';
 import { ensureBankAccountsCollection } from '@/lib/bank-collection';
+import { ensureBankAccountDetailInChart } from '@/lib/chart-of-accounts';
 import { parseLocalizedAmount } from '@/lib/money';
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
 
@@ -42,6 +43,7 @@ export async function GET(request: Request) {
     const records = await context.pb.collection('bank_accounts').getFullList({
       filter,
       sort: 'bankName,accountNumber',
+      expand: 'accountId',
     });
     return NextResponse.json({ banks: records.map((record) => mapBankAccount(record)) });
   } catch (error) {
@@ -72,6 +74,7 @@ export async function POST(request: Request) {
   const rawBalance = body?.currentBalance ?? body?.balance ?? 0;
   const initialBalance = parseLocalizedAmount(String(rawBalance));
   const isActive = typeof body?.isActive === 'boolean' ? body.isActive : true;
+  const explicitAccountId = body?.accountId ? text(body.accountId, 40) : null;
 
   if (!bankName || !accountNumber || initialBalance < 0) {
     return NextResponse.json(
@@ -95,6 +98,23 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: 'این شماره حساب قبلاً ثبت شده است.' }, { status: 409 });
     }
 
+    let linkedAccountId: string | null = null;
+    try {
+      const detailAccount = await ensureBankAccountDetailInChart(writer, {
+        bankName,
+        branchName,
+        accountNumber,
+        currency,
+        existingAccountId: explicitAccountId || null,
+        userId: context.user.id,
+      });
+      if (detailAccount?.id && detailAccount.id.trim().length > 0) {
+        linkedAccountId = detailAccount.id;
+      }
+    } catch (err) {
+      console.warn('ensureBankAccountDetailInChart failed, proceeding without linked account:', err);
+    }
+
     const record = await writer.collection('bank_accounts').create({
       bankName,
       branchName,
@@ -103,11 +123,16 @@ export async function POST(request: Request) {
       currentBalance: initialBalance,
       currency,
       isActive,
+      accountId: linkedAccountId || null,
       accountCodeZero,
       owner: context.user.id,
       createdBy: context.user.id,
       updatedBy: context.user.id,
     });
+
+    const fullRecord = await writer.collection('bank_accounts').getOne(record.id, {
+      expand: 'accountId',
+    }).catch(() => record);
 
     await recordAuditEvent({
       userId: context.user.id,
@@ -117,15 +142,15 @@ export async function POST(request: Request) {
       entityType: 'bank_account',
       entityId: record.id,
       entityLabel: `${bankName} - ${accountNumber}`,
-      changes: { bankName, branchName, accountNumber, balance: initialBalance, currency },
+      changes: { bankName, branchName, accountNumber, balance: initialBalance, currency, accountId: linkedAccountId },
       authenticatedClient: context.pb,
     });
 
-    return NextResponse.json({ bank: mapBankAccount(record) }, { status: 201 });
-  } catch (error) {
+    return NextResponse.json({ bank: mapBankAccount(fullRecord) }, { status: 201 });
+  } catch (error: any) {
     console.error('bank_account_create_failed', error);
     return NextResponse.json(
-      { message: 'ثبت حساب بانکی انجام نشد. ابتدا کالکشن bank_accounts را در PocketBase بسازید.' },
+      { message: error?.message || 'ثبت حساب بانکی انجام نشد.' },
       { status: 400 },
     );
   }

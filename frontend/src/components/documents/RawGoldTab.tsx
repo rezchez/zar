@@ -34,6 +34,14 @@ export type DetailState = {
   claimFinancial?: string;
   claimWeight?: string;
   claimPurpose?: string;
+  bankAccountId?: string;
+  destinationBankId?: string;
+  bankName?: string;
+  bankBranch?: string;
+  accountNumber?: string;
+  sayadId?: string;
+  dueDateJalali?: string;
+  bankOperationKind?: string;
 };
 
 export type DocumentLine = {

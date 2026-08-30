@@ -2,12 +2,8 @@
 
 import {
   ArrowLeftRight,
-  CalendarDays,
   Check,
-  ChevronLeft,
-  ChevronRight,
   ClipboardList,
-  Clock3,
   LoaderCircle,
   PencilLine,
   Pin,
@@ -23,13 +19,13 @@ import {
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
+import DatePicker from '@/components/ui/date-picker';
 import { currencyDisplay, type Customer } from '@/lib/customer';
 import DocumentSubmitActions from '@/components/documents/document-submit-actions';
 import DocumentEntryTabs from '@/src/components/documents/DocumentEntryTabs';
 import type { DocumentNature } from '@/lib/document';
 import {
   formatJalaliDate,
-  jalaliToGregorian,
   normalizeDigits,
 } from '@/lib/jalali';
 import { useAppSettings } from '@/src/components/SettingsProvider';
@@ -287,50 +283,7 @@ function validateLine(line: DocumentLine) {
   return '';
 }
 
-function daysInJalaliMonth(year: number, month: number) {
-  const current = jalaliToGregorian(`${year}/${month}/1`);
-  const nextYear = month === 12 ? year + 1 : year;
-  const nextMonth = month === 12 ? 1 : month + 1;
-  const next = jalaliToGregorian(`${nextYear}/${nextMonth}/1`);
-  if (!current || !next) return month <= 6 ? 31 : month <= 11 ? 30 : 29;
 
-  const currentTime = Date.UTC(current.year, current.month - 1, current.day);
-  const nextTime = Date.UTC(next.year, next.month - 1, next.day);
-  return Math.round((nextTime - currentTime) / 86_400_000);
-}
-
-function firstWeekDayOfJalaliMonth(year: number, month: number) {
-  const gregorian = jalaliToGregorian(`${year}/${month}/1`);
-  if (!gregorian) return 0;
-  const weekDay = new Date(Date.UTC(
-    gregorian.year,
-    gregorian.month - 1,
-    gregorian.day,
-  )).getUTCDay();
-  return (weekDay + 1) % 7;
-}
-
-function dateDistanceLabel(dateParts: DateParts) {
-  const gregorian = jalaliToGregorian(
-    `${dateParts.year}/${dateParts.month}/${dateParts.day}`,
-  );
-  if (!gregorian) return 'تاریخ انتخاب‌شده معتبر نیست';
-
-  const now = new Date();
-  const todayUtc = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
-  const selectedUtc = Date.UTC(
-    gregorian.year,
-    gregorian.month - 1,
-    gregorian.day,
-  );
-  const difference = Math.round((selectedUtc - todayUtc) / 86_400_000);
-
-  if (difference === 0) return 'امروز';
-  if (difference === -1) return 'دیروز';
-  if (difference === 1) return 'فردا';
-  if (difference < 0) return `${faNumber(Math.abs(difference))} روز پیش`;
-  return `${faNumber(difference)} روز بعد`;
-}
 
 function getLineDocumentTypeLabel(
   nature: DocumentNature,
@@ -397,18 +350,12 @@ export default function DocumentForm({
     };
   }
 
-  const initialDate = parseJalaliParts(formatJalaliDate());
   const [customerQuery, setCustomerQuery] = useState('');
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [documentNumberDisplay, setDocumentNumberDisplay] = useState('');
   const [documentNumberLoading, setDocumentNumberLoading] = useState(false);
   const [documentId, setDocumentId] = useState(() => crypto.randomUUID());
-  const [dateParts, setDateParts] = useState<DateParts>(initialDate);
-  const [calendarView, setCalendarView] = useState({
-    year: initialDate.year,
-    month: initialDate.month,
-  });
-  const [dateOpen, setDateOpen] = useState(false);
+  const [documentDateJalali, setDocumentDateJalali] = useState(() => formatJalaliDate());
   const [documentNature, setDocumentNature] = useState<DocumentNature>('received');
   const [draftLine, setDraftLine] = useState<DocumentLine>(() => createSettingsLine('received', 'metals'));
   const [committedLines, setCommittedLines] = useState<DocumentLine[]>([]);
@@ -438,16 +385,41 @@ export default function DocumentForm({
   const [hawalaLine, setHawalaLine] = useState<DocumentLine | null>(null);
   const [pendingHawala, setPendingHawala] = useState<PendingHawala | null>(null);
 
+  const baseCurrency = (settings.baseCurrency || 'IRR') as 'IRR' | 'IRT';
+
   // Currency Selection & Custom Currency Creation Modal
-  const [availableCurrencies, setAvailableCurrencies] = useState<Array<{ code: string; label: string }>>([
-    { code: 'IRT', label: 'ریال / تومان' },
-    { code: 'USD', label: 'دلار' },
-    { code: 'EUR', label: 'یورو' },
-    { code: 'GBP', label: 'پوند' },
-    { code: 'AED', label: 'درهم' },
-    { code: 'CNY', label: 'یوان' },
-  ]);
-  const [selectedCurrency, setSelectedCurrency] = useState('IRT');
+  const defaultCurrencies = useMemo(() => {
+    const isToman = baseCurrency === 'IRT';
+    const primary = isToman ? { code: 'IRT', label: 'تومان' } : { code: 'IRR', label: 'ریال' };
+    const secondary = isToman ? { code: 'IRR', label: 'ریال' } : { code: 'IRT', label: 'تومان' };
+    return [
+      primary,
+      secondary,
+      { code: 'USD', label: 'دلار' },
+      { code: 'EUR', label: 'یورو' },
+      { code: 'GBP', label: 'پوند' },
+      { code: 'AED', label: 'درهم' },
+      { code: 'CNY', label: 'یوان' },
+      { code: 'TRY', label: 'لیر' },
+      { code: 'IQD', label: 'دینار' },
+    ];
+  }, [baseCurrency]);
+
+  const [customCurrencies, setCustomCurrencies] = useState<Array<{ code: string; label: string }>>([]);
+  const [selectedCurrency, setSelectedCurrency] = useState<string>(baseCurrency);
+  const [hasUserSelectedCurrency, setHasUserSelectedCurrency] = useState(false);
+
+  const availableCurrencies = useMemo(() => {
+    return [...defaultCurrencies, ...customCurrencies];
+  }, [defaultCurrencies, customCurrencies]);
+
+  // Keep selectedCurrency synchronized with the global settings baseCurrency if user hasn't explicitly chosen another currency
+  useEffect(() => {
+    if (!hasUserSelectedCurrency) {
+      setSelectedCurrency(baseCurrency);
+    }
+  }, [baseCurrency, hasUserSelectedCurrency]);
+
   const [showAddCurrencyModal, setShowAddCurrencyModal] = useState(false);
   const [newCurrencyLabel, setNewCurrencyLabel] = useState('');
   const [addCurrencyError, setAddCurrencyError] = useState('');
@@ -572,8 +544,6 @@ export default function DocumentForm({
     setMessage('حواله لغو شد و هیچ تغییری در سند و طرف‌حساب ایجاد نگردید.');
   }
 
-  const datePickerRef = useRef<HTMLDivElement>(null);
-
   const selectedCustomer = customers.find(
     (customer) => customer.id === selectedCustomerId,
   );
@@ -594,8 +564,6 @@ export default function DocumentForm({
       .slice(0, 8);
   }, [customerQuery, customers, selectedCustomer]);
 
-  const documentDateJalali = buildJalaliDate(dateParts);
-  const distanceLabel = dateDistanceLabel(dateParts);
   const draftReady = isLineReady(draftLine);
   const currencyUnits = useMemo(() => {
     const units = [
@@ -651,20 +619,6 @@ export default function DocumentForm({
       .catch(() => setMeltedInventory([]));
   }, [documentNature, draftLine.details.rawKind]);
 
-  useEffect(() => {
-    function closeOnOutsideClick(event: MouseEvent) {
-      if (
-        datePickerRef.current
-        && !datePickerRef.current.contains(event.target as Node)
-      ) {
-        setDateOpen(false);
-      }
-    }
-
-    document.addEventListener('mousedown', closeOnOutsideClick);
-    return () => document.removeEventListener('mousedown', closeOnOutsideClick);
-  }, []);
-
   const isFormDirty = Boolean(selectedCustomerId && (committedLines.length > 0 || draftReady));
 
   // Handle browser close/refresh beforeunload
@@ -713,8 +667,9 @@ export default function DocumentForm({
 
     const newCode = label.toUpperCase().slice(0, 10);
     const newEntry = { code: newCode, label };
-    setAvailableCurrencies((prev) => [...prev, newEntry]);
+    setCustomCurrencies((prev) => [...prev, newEntry]);
     setSelectedCurrency(newCode);
+    setHasUserSelectedCurrency(true);
 
     // Update draft currency unit if currently on currency tab
     updateDraftDetail('currencyUnit', newCode);
@@ -1074,34 +1029,6 @@ export default function DocumentForm({
     setRestorationState(null);
   }
 
-  function goToPreviousMonth() {
-    setCalendarView((current) => current.month === 1
-      ? { year: current.year - 1, month: 12 }
-      : { year: current.year, month: current.month - 1 });
-  }
-
-  function goToNextMonth() {
-    setCalendarView((current) => current.month === 12
-      ? { year: current.year + 1, month: 1 }
-      : { year: current.year, month: current.month + 1 });
-  }
-
-  function selectCalendarDay(day: number) {
-    setDateParts({
-      year: calendarView.year,
-      month: calendarView.month,
-      day,
-    });
-    setDateOpen(false);
-  }
-
-  function selectToday() {
-    const today = parseJalaliParts(formatJalaliDate());
-    setDateParts(today);
-    setCalendarView({ year: today.year, month: today.month });
-    setDateOpen(false);
-  }
-
   async function save(status: 'temporary' | 'final') {
     setSaving(true);
     setMessage('');
@@ -1444,7 +1371,9 @@ export default function DocumentForm({
                 onChange={(event) => {
                   const curr = event.target.value;
                   setSelectedCurrency(curr);
-                  updateDraftDetail('currencyUnit', curr);
+                  setHasUserSelectedCurrency(true);
+                  const currObj = availableCurrencies.find((c) => c.code === curr);
+                  updateDraftDetail('currencyUnit', currObj?.label || curr);
                 }}
               >
                 {availableCurrencies.map((curr) => (
@@ -1468,75 +1397,23 @@ export default function DocumentForm({
           </Field>
 
           <Field label="تاریخ سند">
-            <div className="jalali-picker relative z-20" ref={datePickerRef}>
-              <button
-                type="button"
-                className={`jalali-picker-trigger text-xs h-9 ${dateOpen ? 'is-open' : ''}`}
-                onClick={() => {
-                  setCalendarView({ year: dateParts.year, month: dateParts.month });
-                  setDateOpen((value) => !value);
-                }}
-                aria-expanded={dateOpen}
-              >
-                <CalendarDays size={15} />
-                <span>{documentDateJalali}</span>
-                <ChevronLeft size={13} />
-              </button>
-
-              <AnimatePresence>
-                {dateOpen ? (
-                  <JalaliDatePicker
-                    selected={dateParts}
-                    view={calendarView}
-                    onViewChange={setCalendarView}
-                    onPreviousMonth={goToPreviousMonth}
-                    onNextMonth={goToNextMonth}
-                    onSelectDay={selectCalendarDay}
-                    onToday={selectToday}
-                  />
-                ) : null}
-              </AnimatePresence>
-
-              <small className="document-date-distance text-[10px]">
-                <Clock3 size={12} />
-                {distanceLabel}
-              </small>
-            </div>
+            <DatePicker
+              value={documentDateJalali}
+              onValueChange={(_iso, jalali) => {
+                if (jalali) setDocumentDateJalali(jalali);
+              }}
+              calendarType="shamsi"
+              format="yyyy/MM/dd"
+              placeholder="انتخاب تاریخ سند"
+              className="w-full"
+            />
           </Field>
         </div>
       </section>
 
       {/* ENTRY TABS EDITOR */}
       <section className={`dashboard-panel document-entry-panel document-draft-editor relative overflow-hidden p-3.5 space-y-3 ${editingLineId ? 'ring-2 ring-amber-500/50 shadow-xl' : ''}`}>
-        <AnimatePresence>
-          {!selectedCustomerId ? (
-            <motion.div
-              key="customer-lock-overlay"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.25, ease: 'easeInOut' }}
-              className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-slate-900/30 backdrop-blur-md p-6 text-center select-none"
-            >
-              <motion.div
-                initial={{ scale: 0.9, y: 10 }}
-                animate={{ scale: 1, y: 0 }}
-                exit={{ scale: 0.9, y: 10 }}
-                transition={{ duration: 0.2, ease: 'easeOut' }}
-                className="flex flex-col items-center gap-3.5 rounded-2xl bg-white/95 dark:bg-slate-900/95 p-6 shadow-2xl border border-slate-200/80 dark:border-slate-800 max-w-sm"
-              >
-                <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shadow-inner">
-                  <UserRound size={26} />
-                </div>
-                <p className="text-xs sm:text-sm font-extrabold text-slate-800 dark:text-slate-100 leading-relaxed">
-                  برای ثبت سند میبایست ابتدا طرف حساب را انتخاب کنید
-                </p>
-              </motion.div>
-            </motion.div>
-          ) : null}
-        </AnimatePresence>
-
-        <div className={!selectedCustomerId ? 'filter blur-[5px] pointer-events-none select-none transition-all duration-300' : 'transition-all duration-300'}>
+        <div>
         {editingLineId ? (
           <div className="document-draft-editor-head flex items-center justify-between pb-2 border-b border-amber-200 dark:border-amber-900/60 bg-amber-50/50 dark:bg-amber-950/20 -mx-3.5 -mt-3.5 p-3 rounded-t-xl">
             <span className="text-xs font-black text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
@@ -1659,6 +1536,9 @@ export default function DocumentForm({
               updateDraftDetail={updateDraftDetail}
               handleKeyDownEnter={handleKeyDownEnter}
               draftReady={draftReady}
+              baseCurrency={baseCurrency}
+              selectedCurrency={selectedCurrency}
+              currencyLabel={availableCurrencies.find((c) => c.code === selectedCurrency)?.label}
             />
           )}
           claimTabContent={(
@@ -2137,111 +2017,6 @@ export default function DocumentForm({
         ) : null}
       </AnimatePresence>
     </div>
-  );
-}
-
-function JalaliDatePicker({
-  selected,
-  view,
-  onViewChange,
-  onPreviousMonth,
-  onNextMonth,
-  onSelectDay,
-  onToday,
-}: {
-  selected: DateParts;
-  view: { year: number; month: number };
-  onViewChange: (view: { year: number; month: number }) => void;
-  onPreviousMonth: () => void;
-  onNextMonth: () => void;
-  onSelectDay: (day: number) => void;
-  onToday: () => void;
-}) {
-  const days = daysInJalaliMonth(view.year, view.month);
-  const offset = firstWeekDayOfJalaliMonth(view.year, view.month);
-  const today = parseJalaliParts(formatJalaliDate());
-  const years = Array.from({ length: 21 }, (_, index) => today.year - 10 + index);
-
-  return (
-    <motion.div
-      className="jalali-picker-popover"
-      initial={{ opacity: 0, y: -8, scale: 0.97 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: -8, scale: 0.97 }}
-      transition={{ duration: 0.18 }}
-    >
-      <div className="jalali-picker-header">
-        <button type="button" onClick={onNextMonth} aria-label="ماه بعد">
-          <ChevronRight size={17} />
-        </button>
-        <div className="jalali-picker-selects">
-          <select
-            value={view.month}
-            onChange={(event) => onViewChange({
-              ...view,
-              month: Number(event.target.value),
-            })}
-            aria-label="ماه"
-          >
-            {jalaliMonthNames.map((month, index) => (
-              <option key={month} value={index + 1}>{month}</option>
-            ))}
-          </select>
-          <select
-            value={view.year}
-            onChange={(event) => onViewChange({
-              ...view,
-              year: Number(event.target.value),
-            })}
-            aria-label="سال"
-          >
-            {years.map((year) => (
-              <option key={year} value={year}>{toPersianDigits(String(year))}</option>
-            ))}
-          </select>
-        </div>
-        <button type="button" onClick={onPreviousMonth} aria-label="ماه قبل">
-          <ChevronLeft size={17} />
-        </button>
-      </div>
-
-      <div className="jalali-picker-weekdays">
-        {weekDayNames.map((day) => <span key={day}>{day}</span>)}
-      </div>
-
-      <div className="jalali-picker-days">
-        {Array.from({ length: offset }, (_, index) => (
-          <span className="is-empty" key={`empty-${index}`} />
-        ))}
-        {Array.from({ length: days }, (_, index) => index + 1).map((day) => {
-          const isSelected = selected.year === view.year
-            && selected.month === view.month
-            && selected.day === day;
-          const isToday = today.year === view.year
-            && today.month === view.month
-            && today.day === day;
-          return (
-            <button
-              type="button"
-              key={day}
-              className={`${isSelected ? 'is-selected' : ''} ${isToday ? 'is-today' : ''}`}
-              onClick={() => onSelectDay(day)}
-              aria-pressed={isSelected}
-            >
-              {toPersianDigits(String(day))}
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="jalali-picker-footer">
-        <button type="button" onClick={onToday}>
-          <CalendarDays size={14} />
-          انتخاب امروز
-        </button>
-        <span>{jalaliMonthNames[view.month - 1]} {toPersianDigits(String(view.year))}</span>
-      </div>
-    </motion.div>
   );
 }
 

@@ -4,7 +4,9 @@ import { ListPlus, Wallet } from 'lucide-react';
 import type React from 'react';
 
 import Field from '@/src/components/documents/Field';
+import MoneyInputField from '@/src/components/documents/MoneyInputField';
 import type { DetailState, DocumentLine } from '@/src/components/documents/RawGoldTab';
+import { SUPPORTED_CURRENCIES } from '@/lib/money';
 
 type CashTabProps = {
   nature: 'received' | 'paid';
@@ -17,6 +19,9 @@ type CashTabProps = {
   updateDraftDetail?: <K extends keyof DetailState>(field: K, value: DetailState[K]) => void;
   handleKeyDownEnter?: (event: React.KeyboardEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => void;
   draftReady?: boolean;
+  baseCurrency?: 'IRR' | 'IRT';
+  selectedCurrency?: string;
+  currencyLabel?: string;
 };
 
 export default function CashTab({
@@ -30,9 +35,24 @@ export default function CashTab({
   updateDraftDetail,
   handleKeyDownEnter,
   draftReady = false,
+  baseCurrency = 'IRR',
+  selectedCurrency,
+  currencyLabel,
 }: CashTabProps) {
   const isReceived = nature === 'received';
   const titleText = isReceived ? 'ورود وجه نقد' : 'خروج وجه نقد';
+
+  // Determine active currency symbol / suffix from the header currency field or base currency
+  const activeCurrencyCode = selectedCurrency || (baseCurrency === 'IRT' ? 'IRT' : 'IRR');
+  const currencySuffix =
+    currencyLabel ||
+    (activeCurrencyCode === 'IRT'
+      ? 'تومان'
+      : activeCurrencyCode === 'IRR'
+        ? 'ریال'
+        : SUPPORTED_CURRENCIES[activeCurrencyCode]?.symbol || activeCurrencyCode);
+
+  const effectiveBaseCurrency: 'IRR' | 'IRT' = activeCurrencyCode === 'IRT' ? 'IRT' : 'IRR';
 
   return (
     <div className="space-y-4">
@@ -48,27 +68,25 @@ export default function CashTab({
 
       <div className="document-dynamic-fields">
         <div className="document-special-grid">
-          {/* Field 1: Quantity / Amount (تعداد) */}
-          <Field label="تعداد / مبلغ">
-            <input
-              type="text"
-              inputMode="numeric"
-              value={draftLine.details.totalAmount || ''}
-              onChange={(e) => {
-                const val = e.target.value;
-                if (updateDraftDetail) {
-                  updateDraftDetail('totalAmount', val);
-                } else {
-                  setDraftLine((current) => ({
-                    ...current,
-                    details: { ...current.details, totalAmount: val },
-                  }));
-                }
-              }}
-              onKeyDown={handleKeyDownEnter}
-              placeholder="۰"
-            />
-          </Field>
+          {/* Field 1: Amount (مبلغ وجه نقد) */}
+          <MoneyInputField
+            label={`مبلغ وجه نقد (${currencySuffix})`}
+            value={draftLine.details.totalAmount || ''}
+            onChange={(val) => {
+              if (updateDraftDetail) {
+                updateDraftDetail('totalAmount', val);
+              } else {
+                setDraftLine((current) => ({
+                  ...current,
+                  details: { ...current.details, totalAmount: val },
+                }));
+              }
+            }}
+            baseCurrency={effectiveBaseCurrency}
+            currencySuffix={currencySuffix}
+            onKeyDown={handleKeyDownEnter}
+            showWords
+          />
 
           {/* Field 2: Description (شرح) */}
           <Field label="شرح" wide>

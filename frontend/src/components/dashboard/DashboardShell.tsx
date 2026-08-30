@@ -2,12 +2,13 @@
 
 import {
   BarChart3,
-  ContactRound,
-  FilePlus2,
+  FileSpreadsheet,
+  History,
   LayoutDashboard,
-  ScrollText,
-  Settings,
-  UserRoundCog,
+  ShieldCheck,
+  SlidersHorizontal,
+  UserPlus,
+  Users,
 } from 'lucide-react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
@@ -32,41 +33,42 @@ const SIDEBAR_STATE_STORAGE_KEY = 'zar-sidebar-state';
 
 const navGroupsBase: NavGroupData[] = [
   {
+    heading: 'عملیات و حسابداری',
     items: [
       {
         id: 'home',
-        title: 'خانه',
+        title: 'داشبورد اصلی',
         icon: LayoutDashboard,
         href: '/dashboard',
       },
       {
         id: 'customers',
-        title: 'طرف‌حساب / مشتری',
-        icon: ContactRound,
+        title: 'طرف‌حساب‌ها',
+        icon: Users,
         children: [
           {
             id: 'customer-list',
             title: 'فهرست طرف‌حساب‌ها',
-            icon: ContactRound,
+            icon: Users,
             href: '/dashboard/customers',
           },
           {
             id: 'customer-new',
-            title: 'افزودن طرف‌حساب',
-            icon: ContactRound,
+            title: 'افزودن طرف‌حساب جدید',
+            icon: UserPlus,
             href: '/dashboard/customers/new',
           },
         ],
       },
       {
         id: 'document-new',
-        title: 'ثبت سند',
-        icon: FilePlus2,
+        title: 'ثبت سند مالی',
+        icon: FileSpreadsheet,
         href: '/dashboard/documents/new',
       },
       {
         id: 'reports',
-        title: 'گزارشات',
+        title: 'گزارش‌ها و ترازها',
         icon: BarChart3,
         href: '/dashboard/reports',
       },
@@ -180,27 +182,29 @@ export default function DashboardShell({
     }));
 
     if (user.role === 'admin' || user.role === 'manager') {
-      groups[0].items = [
-        ...groups[0].items,
-        {
-          id: 'user-management',
-          title: 'مدیریت کاربران',
-          icon: UserRoundCog,
-          href: '/dashboard/users',
-        },
-        {
-          id: 'activity-log',
-          title: 'لاگ برنامه',
-          icon: ScrollText,
-          href: '/dashboard/activity-log',
-        },
-        {
-          id: 'program-settings',
-          title: 'تنظیمات کلی برنامه',
-          icon: Settings,
-          href: '/dashboard/settings',
-        },
-      ];
+      groups.push({
+        heading: 'مدیریت و تنظیمات',
+        items: [
+          {
+            id: 'user-management',
+            title: 'مدیریت کاربران',
+            icon: ShieldCheck,
+            href: '/dashboard/users',
+          },
+          {
+            id: 'activity-log',
+            title: 'لاگ و رویدادها',
+            icon: History,
+            href: '/dashboard/activity-log',
+          },
+          {
+            id: 'program-settings',
+            title: 'تنظیمات کلی سامانه',
+            icon: SlidersHorizontal,
+            href: '/dashboard/settings',
+          },
+        ],
+      });
     }
 
     return groups;
@@ -306,6 +310,7 @@ export default function DashboardShell({
         navGroups={navGroups}
         activeId={activeId}
         onSelect={handleSelect}
+        user={user}
       />
 
       <section className="dashboard-main">

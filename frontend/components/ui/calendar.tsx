@@ -39,7 +39,9 @@ export type CalendarEvent = {
 
 const DEFAULT_MONTH_FALLBACK = new Date(2024, 0, 1);
 
-export type CalendarProps = Omit<DayPickerProps, 'classNames'> & {
+type DistributiveOmit<T, K extends keyof any> = T extends any ? Omit<T, K> : never;
+
+export type CalendarProps = DistributiveOmit<DayPickerProps, 'classNames'> & {
   /** @default "shamsi" */
   calendarType?: CalendarType;
   /**

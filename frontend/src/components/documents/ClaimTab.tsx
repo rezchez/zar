@@ -4,6 +4,7 @@ import { HandCoins, ListPlus } from 'lucide-react';
 import type React from 'react';
 
 import Field from '@/src/components/documents/Field';
+import MoneyInputField from '@/src/components/documents/MoneyInputField';
 import type { DetailState, DocumentLine } from '@/src/components/documents/RawGoldTab';
 
 type ClaimTabProps = {
@@ -16,6 +17,7 @@ type ClaimTabProps = {
   updateDraftDetail: <K extends keyof DetailState>(field: K, value: DetailState[K]) => void;
   handleKeyDownEnter: (event: React.KeyboardEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => void;
   draftReady: boolean;
+  baseCurrency?: 'IRR' | 'IRT';
 };
 
 export default function ClaimTab({
@@ -28,6 +30,7 @@ export default function ClaimTab({
   updateDraftDetail,
   handleKeyDownEnter,
   draftReady,
+  baseCurrency = 'IRR',
 }: ClaimTabProps) {
   const isPaid = nature === 'paid';
 
@@ -48,20 +51,17 @@ export default function ClaimTab({
       <div className="document-dynamic-fields">
         <div className="document-special-grid">
           {/* Field 1: Financial Claim / Debt */}
-          <Field label={isPaid ? 'طلب مالی ما' : 'بدهی مالی ما'}>
-            <input
-              type="text"
-              inputMode="numeric"
-              value={draftLine.details.claimFinancial ?? draftLine.details.totalAmount ?? ''}
-              onChange={(e) => {
-                const val = e.target.value;
-                updateDraftDetail('claimFinancial', val);
-                updateDraftDetail('totalAmount', val);
-              }}
-              onKeyDown={handleKeyDownEnter}
-              placeholder="۰"
-            />
-          </Field>
+          <MoneyInputField
+            label={isPaid ? 'طلب مالی ما' : 'بدهی مالی ما'}
+            value={draftLine.details.claimFinancial ?? draftLine.details.totalAmount ?? ''}
+            onChange={(val) => {
+              updateDraftDetail('claimFinancial', val);
+              updateDraftDetail('totalAmount', val);
+            }}
+            baseCurrency={baseCurrency}
+            onKeyDown={handleKeyDownEnter}
+            showWords
+          />
 
           {/* Field 2: Weight Claim / Debt */}
           <Field label={isPaid ? 'طلب وزنی ما (گرم)' : 'بدهی وزنی ما (گرم)'}>

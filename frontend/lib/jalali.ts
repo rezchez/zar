@@ -7,6 +7,11 @@ export function normalizeDigits(value: string) {
     .replace(/[٠-٩]/g, (digit) => String(ARABIC_DIGITS.indexOf(digit)));
 }
 
+export function toPersianDigits(value: number | string | undefined | null): string {
+  if (value === undefined || value === null) return '';
+  return String(value).replace(/\d/g, (digit) => PERSIAN_DIGITS[parseInt(digit, 10)]);
+}
+
 export function parseJalaliDate(value: string) {
   const normalized = normalizeDigits(value.trim()).replace(/[./-]/g, '/');
   const parts = normalized.split('/').map(Number);

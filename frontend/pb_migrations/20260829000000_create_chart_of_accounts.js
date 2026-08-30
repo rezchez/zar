@@ -40,15 +40,6 @@ migrate((app) => {
         "max": 200
       },
       {
-        "id": "relation_parent_id",
-        "name": "parentId",
-        "type": "relation",
-        "collectionId": "pbc_chart_of_accounts",
-        "cascadeDelete": false,
-        "maxSelect": 1,
-        "required": false
-      },
-      {
         "id": "text_path",
         "name": "path",
         "type": "text",
@@ -160,11 +151,24 @@ migrate((app) => {
     "indexes": [
       "CREATE UNIQUE INDEX idx_coa_code ON chart_of_accounts (code)",
       "CREATE INDEX idx_coa_path ON chart_of_accounts (path)",
-      "CREATE INDEX idx_coa_parent ON chart_of_accounts (parentId)",
       "CREATE INDEX idx_coa_type ON chart_of_accounts (accountType)",
       "CREATE INDEX idx_coa_level ON chart_of_accounts (level)"
     ]
   });
+
+  app.save(collection);
+
+  // Add self-referencing parentId relation after collection is created
+  collection.fields.add(new RelationField({
+    "id": "relation_parent_id",
+    "name": "parentId",
+    "collectionId": "pbc_chart_of_accounts",
+    "cascadeDelete": false,
+    "maxSelect": 1,
+    "required": false
+  }));
+
+  collection.indexes.push("CREATE INDEX idx_coa_parent ON chart_of_accounts (parentId)");
 
   return app.save(collection);
 }, (app) => {

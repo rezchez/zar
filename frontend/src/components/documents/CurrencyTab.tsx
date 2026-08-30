@@ -4,6 +4,7 @@ import { ListPlus } from 'lucide-react';
 import type React from 'react';
 
 import Field from '@/src/components/documents/Field';
+import MoneyInputField from '@/src/components/documents/MoneyInputField';
 import type { DetailState, DocumentLine } from '@/src/components/documents/RawGoldTab';
 
 type CurrencyTabProps = {
@@ -68,30 +69,20 @@ export default function CurrencyTab({
             placeholder="۰"
           />
         </Field>
-        <Field label="قیمت هر واحد (ریال)">
-          <input
-            type="number"
-            min="0"
-            step="1"
-            inputMode="decimal"
-            value={draftLine.details.currencyUnitPrice}
-            onChange={(event) => updateCurrencyValue('currencyUnitPrice', event.target.value)}
-            onKeyDown={handleKeyDownEnter}
-            placeholder="۰"
-          />
-        </Field>
-        <Field label="مبلغ کل (ریال)">
-          <input
-            type="number"
-            min="0"
-            step="1"
-            inputMode="decimal"
-            value={draftLine.details.currencyTotalAmount}
-            onChange={(event) => updateCurrencyValue('currencyTotalAmount', event.target.value)}
-            onKeyDown={handleKeyDownEnter}
-            placeholder="۰"
-          />
-        </Field>
+        <MoneyInputField
+          label="قیمت هر واحد (ریال)"
+          value={draftLine.details.currencyUnitPrice}
+          onChange={(val) => updateCurrencyValue('currencyUnitPrice', val)}
+          baseCurrency="IRR"
+          onKeyDown={handleKeyDownEnter}
+        />
+        <MoneyInputField
+          label="مبلغ کل (ریال)"
+          value={draftLine.details.currencyTotalAmount}
+          onChange={(val) => updateCurrencyValue('currencyTotalAmount', val)}
+          baseCurrency="IRR"
+          onKeyDown={handleKeyDownEnter}
+        />
         <label className="flex min-h-12 items-center gap-3 rounded-xl border border-amber-300/70 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900 dark:border-amber-700/60 dark:bg-amber-950/30 dark:text-amber-200">
           <input
             type="checkbox"

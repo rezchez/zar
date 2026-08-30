@@ -87,7 +87,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: false,
     sortOrder: 1000,
-    description: 'گروه دارایی‌های جاری و غیرجاری موسسه',
+    description: 'مجموع کلیه حقوق مالی و منابع اقتصادی متعلق به کسب‌وکار طلا و جواهر (جاری و غیرجاری)',
   },
   {
     id: 'sys_1100',
@@ -104,7 +104,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: false,
     sortOrder: 1100,
-    description: 'کل دارایی‌های جاری قابل تبدیل به نقد ظرف یک سال مالی',
+    description: 'وجوه نقد، موجودی طلا و مسکوکات، مطالبات و دارایی‌هایی که ظرف یک سال مالی نقد یا مصرف می‌شوند',
   },
   {
     id: 'sys_1110',
@@ -121,7 +121,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 1110,
-    description: 'صندوق‌ها، حساب‌های بانکی ریالی و ارزی',
+    description: 'سرفصل معین وجوه نقد، صندوق‌ها، تنخواه‌گردان و حساب‌های بانکی ریالی و ارزی',
   },
   {
     id: 'sys_1120',
@@ -138,7 +138,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 1120,
-    description: 'چک‌ها و مطالبات تجاری و غیرتجاری',
+    description: 'مطالبات تجاری از مشتریان، چک‌های وارده از طرف‌حساب‌ها و بدهکاران متفرقه',
   },
   {
     id: 'sys_1130',
@@ -155,7 +155,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 1130,
-    description: 'موجودی طلای خام، آبشده، سکه و مصنوعات طلا و نقره',
+    description: 'موجودی طلای خام، آبشده، سکه، شمش، پلاتین و مصنوعات طلا و جواهر در گاوصندوق و ویترین',
   },
   {
     id: 'sys_1140',
@@ -172,7 +172,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 1140,
-    description: 'پیش‌پرداخت خرید طلا، اجاره و خدمات',
+    description: 'مبالغ پرداختی قبل از تحویل طلا، اقلام یا خدمات (پیش‌پرداخت خرید طلا، اجاره و بیمه)',
   },
   {
     id: 'sys_1150',
@@ -189,6 +189,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 1150,
+    description: 'سپرده‌های کوتاه‌مدت، مساعده پرسنل و سایر مطالبات متفرقه جاری',
   },
   {
     id: 'sys_1200',
@@ -205,6 +206,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: false,
     sortOrder: 1200,
+    description: 'دارایی‌های با عمر مفید بیش از یک سال مالی جهت استفاده در فعالیت‌های طلاسازی و فروشگاهی',
   },
   {
     id: 'sys_1210',
@@ -221,7 +223,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 1210,
-    description: 'تجهیزات طلاسازی، گاوصندوق، ویترین، اثاثه و وسایط نقلیه',
+    description: 'ابزار و ماشین‌آلات طلاسازی، کوره‌های ذوب، گاوصندوق‌ها، ویترین، دکوراسیون و اثاثه اداری',
   },
   {
     id: 'sys_1220',
@@ -238,7 +240,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 1220,
-    description: 'سرقفلی، نرم‌افزارها و علائم تجاری',
+    description: 'حق سرقفلی فروشگاه یا کارگاه، لایسنس نرم‌افزارهای تخصصی و علائم تجاری ثبت‌شده',
   },
   {
     id: 'sys_1230',
@@ -255,6 +257,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 1230,
+    description: 'سرمایه‌گذاری‌های بلندمدت، اوراق بهادار، سهام و سپرده‌های بلندمدت بانکی',
   },
   {
     id: 'sys_1240',
@@ -271,6 +274,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 1240,
+    description: 'ودیعه‌های بلندمدت اجاره محل کسب، حق انشعابات و وثایق نزد اشخاص ثالث',
   },
 
   // 2000: بدهی‌ها
@@ -289,6 +293,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: false,
     sortOrder: 2000,
+    description: 'تعهدات مالی، وزنی و پولی موسسه در برابر مشتریان، بنکداران، بانک‌ها و مراجع قانونی',
   },
   {
     id: 'sys_2100',
@@ -305,6 +310,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: false,
     sortOrder: 2100,
+    description: 'تعهداتی که سررسید پرداخت و تسویه آن‌ها ظرف یک سال مالی جاری می‌باشد',
   },
   {
     id: 'sys_2110',
@@ -321,7 +327,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 2110,
-    description: 'چک‌های صادره پرداختی و بستانکاران تجاری',
+    description: 'چک‌های صادرشده عهده حساب‌های بانکی و اسناد تجاری متعهدشده جهت پرداخت',
   },
   {
     id: 'sys_2120',
@@ -338,7 +344,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 2120,
-    description: 'بدهی‌های وزنی و ریالی به بنکداران، آبکاران، مخراجکاران و مشتریان',
+    description: 'مانده بستانکاری وزنی (طلایی) و ریالی بنکداران، آبکاران، مخراجکاران، همکاران و مشتریان',
   },
   {
     id: 'sys_2130',
@@ -355,7 +361,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 2130,
-    description: 'ارزش افزوده اجرت و سود، مالیات عملکرد و تکلیفی',
+    description: 'مالیات بر ارزش افزوده اجرت و سود طلا، مالیات بر عملکرد و مالیات‌های تکلیفی پرداختنی',
   },
   {
     id: 'sys_2140',
@@ -372,6 +378,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 2140,
+    description: 'حقوق پایه، اضافه کاری، حق اولاد، عیدی، پاداش و بیمه پرداختنی به پرسنل',
   },
   {
     id: 'sys_2150',
@@ -388,6 +395,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 2150,
+    description: 'وجوه یا طلای دریافتی از مشتریان قبل از ساخت یا تحویل سفارش مصنوعات',
   },
   {
     id: 'sys_2160',
@@ -404,6 +412,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 2160,
+    description: 'سایر تعهدات کوتاه‌مدت مالی، سپرده‌های دریافتی امانی و دیون متفرقه',
   },
   {
     id: 'sys_2200',
@@ -420,6 +429,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: false,
     sortOrder: 2200,
+    description: 'تعهدات مالی با سررسید تسویه بیش از یک سال مالی',
   },
   {
     id: 'sys_2210',
@@ -436,6 +446,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 2210,
+    description: 'اصل و کارمزد وام‌های بانکی و اعتبارات بلندمدت دریافتی از شبکه بانکی',
   },
   {
     id: 'sys_2220',
@@ -452,6 +463,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 2220,
+    description: 'دیون تجاری بلندمدت و ذخایر مربوط به مزایای پایان خدمت کارکنان',
   },
 
   // 3000: حقوق مالکانه
@@ -470,6 +482,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: false,
     sortOrder: 3000,
+    description: 'حق مالی مالکان و شرکا در خالص دارایی‌های موسسه پس از کسر کلیه بدهی‌ها',
   },
   {
     id: 'sys_3100',
@@ -486,7 +499,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 3100,
-    description: 'سرمایه اولیه و ثبت‌شده موسسه',
+    description: 'سرمایه اولیه ثبت‌شده، آورده‌های نقدی و وزنی طلا توسط شرکا و صاحبان کسب‌وکار',
   },
   {
     id: 'sys_3200',
@@ -503,6 +516,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 3200,
+    description: 'اندوخته‌های قانونی، احتیاطی و توسعه کسب‌وکار جهت تقویت بنیه مالی',
   },
   {
     id: 'sys_3300',
@@ -519,6 +533,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 3300,
+    description: 'سود یا زیان سال‌های قبل که بین شرکا تقسیم نشده و به دوره‌های آتی منتقل شده است',
   },
   {
     id: 'sys_3400',
@@ -535,7 +550,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 3400,
-    description: 'برداشت‌ها و واریزی‌های موقت شرکا و مالکین',
+    description: 'برداشت‌های موقت نقدی یا طلایی و واریزی‌های جاری شرکا طی دوره مالی',
   },
   {
     id: 'sys_3500',
@@ -552,6 +567,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 3500,
+    description: 'حساب خلاصه سود و زیان جاری ناشی از بستن حساب‌های درآمد و هزینه در پایان دوره',
   },
 
   // 4000: درآمدها
@@ -570,6 +586,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: false,
     sortOrder: 4000,
+    description: 'افزایش در حقوق مالکانه ناشی از فروش طلا، مصنوعات، نقره، مسکوکات و ارائه خدمات',
   },
   {
     id: 'sys_4100',
@@ -586,6 +603,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: false,
     sortOrder: 4100,
+    description: 'درآمدهای حاصل از فعالیت اصلی خرید و فروش فلزات گرانبها و مصنوعات طلا',
   },
   {
     id: 'sys_4110',
@@ -602,7 +620,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 4110,
-    description: 'درآمد حاصل از فروش طلای خام و آبشده',
+    description: 'درآمد حاصل از فروش طلای خام، آبشده، شمش و مسکوکات طلا',
   },
   {
     id: 'sys_4120',
@@ -619,7 +637,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 4120,
-    description: 'فروش مصنوعات و جواهرات ساخته‌شده',
+    description: 'درآمد حاصل از فروش زیورآلات، جواهرات و مصنوعات ساخته‌شده طلا',
   },
   {
     id: 'sys_4130',
@@ -636,6 +654,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 4130,
+    description: 'درآمد حاصل از فروش ساچمه نقره، شمش نقره و ظروف و مصنوعات نقره',
   },
   {
     id: 'sys_4140',
@@ -652,7 +671,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 4140,
-    description: 'سکه، جعبه، متعلقات و سایر اقلام',
+    description: 'درآمد حاصل از فروش سکه‌های بانکی، سنگ‌های قیمتی، جعبه و متعلقات',
   },
   {
     id: 'sys_4200',
@@ -669,6 +688,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: false,
     sortOrder: 4200,
+    description: 'درآمدهای حاصل از ارائه خدمات فنی و تخصصی در حوزه طلاسازی و کارگاهی',
   },
   {
     id: 'sys_4210',
@@ -685,6 +705,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 4210,
+    description: 'درآمد حاصل از آبکاری رادیوم، طلای زرد، رزگلد و پوشش‌دهی مصنوعات',
   },
   {
     id: 'sys_4220',
@@ -701,6 +722,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 4220,
+    description: 'اجرت نصب و سوار کردن نگین، برلیان و سنگ‌های قیمتی روی پایه مصنوعات',
   },
   {
     id: 'sys_4230',
@@ -717,6 +739,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 4230,
+    description: 'اجرت جوشکاری، تغییر سایز انگشتر، رفع عیوب و بازسازی مصنوعات مشتریان',
   },
   {
     id: 'sys_4240',
@@ -733,7 +756,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 4240,
-    description: 'اجرت طراحی، عیارسنجی، ری‌گیری و حکاکی',
+    description: 'اجرت طراحی سه‌بعدی طلا، ری‌گیری و عیارسنجی، قالب‌سازی و حکاکی لیزری',
   },
   {
     id: 'sys_4300',
@@ -750,6 +773,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 4300,
+    description: 'درآمدهای غیرعملیاتی شامل سود سپرده‌های بانکی، تسعیر ارز و فروش ضایعات',
   },
 
   // 5000: بهای تمام‌شده
@@ -768,6 +792,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: false,
     sortOrder: 5000,
+    description: 'هزینه‌های مستقیم مواد اولیه و طلای مصرف‌شده جهت فروش یا تولید کالا',
   },
   {
     id: 'sys_5100',
@@ -784,6 +809,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 5100,
+    description: 'بهای تمام‌شده کلیه کالاها، طلا و مصنوعات به فروش‌رسیده در طی دوره',
   },
   {
     id: 'sys_5200',
@@ -800,6 +826,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 5200,
+    description: 'بهای تمام‌شده طلای خام، آبشده و مسکوکات واگذار شده به مشتریان',
   },
   {
     id: 'sys_5300',
@@ -816,6 +843,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 5300,
+    description: 'بهای تمام‌شده پایه طلا و سنگ‌های قیمتی مصنوعات فروخته‌شده',
   },
   {
     id: 'sys_5400',
@@ -832,6 +860,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 5400,
+    description: 'بهای تمام‌شده نقره خام و مصنوعات نقره فروخته‌شده',
   },
   {
     id: 'sys_5500',
@@ -848,7 +877,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 5500,
-    description: 'کسری ذوب، کسری عیار، اجرت ریختگری و نگین',
+    description: 'هزینه‌های ریختگری، نگین، کسری ذوب استاندارد و عیار کسرشده در فرایند ساخت',
   },
 
   // 6000: هزینه‌ها
@@ -867,6 +896,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: false,
     sortOrder: 6000,
+    description: 'کلیه مخارج عملیاتی، جاری، پرسنلی، مالی و استهلاک جهت اداره موسسه',
   },
   {
     id: 'sys_6100',
@@ -883,6 +913,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: false,
     sortOrder: 6100,
+    description: 'مخارج عمومی اداره فروشگاه، گالری یا کارگاه طلاسازی',
   },
   {
     id: 'sys_6110',
@@ -899,6 +930,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 6110,
+    description: 'حقوق ماهانه، اضافه کاری، بیمه سهم کارفرما و پاداش پرسنل و فروشندگان',
   },
   {
     id: 'sys_6120',
@@ -915,7 +947,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 6120,
-    description: 'اجاره محل فروشگاه یا کارگاه طلاسازی',
+    description: 'اجاره‌بهای ماهانه مغازه، گالری، دفتر مرکزی یا کارگاه طلاسازی',
   },
   {
     id: 'sys_6130',
@@ -932,6 +964,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 6130,
+    description: 'هزینه‌های انشعابات مصرفی، برق صنعتی کارگاه و مصارف فروشگاه',
   },
   {
     id: 'sys_6140',
@@ -948,6 +981,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 6140,
+    description: 'هزینه‌های خطوط تلفن ثابت، همراه، اینترنت پرسرعت و سرور نرم‌افزار',
   },
   {
     id: 'sys_6150',
@@ -964,6 +998,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 6150,
+    description: 'مخارج تعمیر گاوصندوق، دوربین‌های مداربسته، ترازوها و تجهیزات طلاسازی',
   },
   {
     id: 'sys_6200',
@@ -980,6 +1015,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 6200,
+    description: 'هزینه‌های تبلیغات فضای مجازی، عکاسی از طلا، بسته‌بندی لوکس و هدایا',
   },
   {
     id: 'sys_6300',
@@ -996,7 +1032,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 6300,
-    description: 'کارمزد تراکنش‌های کارتخوان، انتقال ساتنا، پایا و سود تسهیلات',
+    description: 'کارمزد تراکنش دستگاه‌های POS، کارمزد حواله‌های ساتنا و پایا و سود تسهیلات',
   },
   {
     id: 'sys_6400',
@@ -1013,6 +1049,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 6400,
+    description: 'استهلاک دارایی‌های ثابت شامل دکوراسیون، ویترین، گاوصندوق و ابزارآلات',
   },
   {
     id: 'sys_6500',
@@ -1029,6 +1066,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 6500,
+    description: 'هزینه‌های ایاب و ذهاب، پذیرایی، لوازم‌التحریر، پیک امنیتی طلا و متفرقه',
   },
 
   // 7000: حساب‌های انتظامی
@@ -1047,6 +1085,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: false,
     sortOrder: 7000,
+    description: 'حساب‌های آماری جهت ثبت تعهدات، اسناد امانی و تضامین بدون اثر بر ترازنامه',
   },
   {
     id: 'sys_7100',
@@ -1063,6 +1102,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: false,
     sortOrder: 7100,
+    description: 'مجموع اسناد و تضامین دریافتی از مشتریان و واگذار شده به اشخاص',
   },
   {
     id: 'sys_7110',
@@ -1079,7 +1119,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 7110,
-    description: 'چک‌ها و سفته‌های ضمانتی دریافتی از مشتریان و همکاران',
+    description: 'چک‌ها و سفته‌های امانی و تضمینی دریافتی از خریداران، پرسنل یا همکاران',
   },
   {
     id: 'sys_7120',
@@ -1096,7 +1136,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 7120,
-    description: 'اسناد و چک‌های ضمانتی تحویل‌شده به دیگران',
+    description: 'اسناد و چک‌های تضمینی واگذار شده به بانک‌ها، مالکان یا طرف‌های قرارداد',
   },
 
   // 8000: طرف حساب‌های انتظامی
@@ -1115,6 +1155,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: false,
     sortOrder: 8000,
+    description: 'طرف مقابل حساب‌های انتظامی جهت تراز شدن ثبت‌های دوطرفه آماری',
   },
   {
     id: 'sys_8100',
@@ -1131,6 +1172,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: false,
     sortOrder: 8100,
+    description: 'حساب معادل و متقابل اسناد تضمینی در سیستم دوبل انتظامی',
   },
   {
     id: 'sys_8110',
@@ -1147,6 +1189,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 8110,
+    description: 'طرف حساب معادل چک‌ها و سفته‌های تضمینی دریافتی نزد موسسه',
   },
   {
     id: 'sys_8120',
@@ -1163,6 +1206,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isActive: true,
     isPostable: true,
     sortOrder: 8120,
+    description: 'طرف حساب معادل اسناد تضمینی تودیع‌شده به دیگران',
   },
 ];
 
@@ -1586,3 +1630,189 @@ export function canEditAccount(account: ChartOfAccountRecord): {
     canToggleActive: true,
   };
 }
+
+/**
+ * Calculates the next available 6-digit Level 4 Detail account code for a given parent subsidiary code.
+ * E.g., for parentCode '1110', it generates codes like '111001', '111002', etc.
+ * Uses gap detection to reuse the smallest available slot if any gap exists.
+ */
+export function getNextDetailAccountCode(
+  parentCode: string,
+  existingCodes: string[],
+): string {
+  const normParent = normalizeAccountCode(parentCode);
+  const prefix = normParent;
+  const existingDetailNumbers: number[] = [];
+
+  for (const c of existingCodes) {
+    const norm = normalizeAccountCode(c);
+    if (norm.startsWith(prefix) && norm.length === prefix.length + 2) {
+      const subNum = parseInt(norm.slice(prefix.length), 10);
+      if (!isNaN(subNum) && subNum > 0) {
+        existingDetailNumbers.push(subNum);
+      }
+    }
+  }
+
+  existingDetailNumbers.sort((a, b) => a - b);
+  let nextSub = 1;
+  for (const num of existingDetailNumbers) {
+    if (num === nextSub) {
+      nextSub++;
+    } else if (num > nextSub) {
+      break;
+    }
+  }
+
+  return `${prefix}${String(nextSub).padStart(2, '0')}`;
+}
+
+/**
+ * Ensures a BankAccount is mapped to a dedicated Level 4 Detail account under '1110' (موجودی نقد و بانک).
+ * If existingAccountId is supplied and exists, returns that account.
+ * Otherwise, automatically creates a Level 4 detail account under '1110' in PocketBase with a standardized name and code.
+ */
+export async function ensureBankAccountDetailInChart(
+  pb: any,
+  params: {
+    bankName: string;
+    branchName?: string;
+    accountNumber: string;
+    currency?: string;
+    existingAccountId?: string | null;
+    userId?: string;
+  },
+): Promise<{ id: string; code: string; name: string; path: string }> {
+  // 1. If existingAccountId is supplied, verify it
+  if (params.existingAccountId) {
+    try {
+      const existing = await pb.collection('chart_of_accounts').getOne(params.existingAccountId).catch(() => null);
+      if (existing) {
+        return {
+          id: existing.id,
+          code: existing.code,
+          name: existing.name,
+          path: existing.path || `/1000/1100/1110/${existing.code}/`,
+        };
+      }
+    } catch {
+      // fallback to creating
+    }
+  }
+
+  // 2. Resolve parent '1110' (موجودی نقد و بانک)
+  let parentRecord: any = null;
+  try {
+    parentRecord = await pb.collection('chart_of_accounts').getFirstListItem('code = "1110"').catch(() => null);
+    if (!parentRecord) {
+      // Check if root 1000 and 1100 exist, if not create them
+      let root1000 = await pb.collection('chart_of_accounts').getFirstListItem('code = "1000"').catch(() => null);
+      if (!root1000) {
+        root1000 = await pb.collection('chart_of_accounts').create({
+          code: '1000',
+          name: 'دارایی‌ها',
+          parentId: null,
+          path: '/1000/',
+          level: 1,
+          accountType: 'asset',
+          normalBalance: 'debit',
+          isSystem: true,
+          isActive: true,
+          isPostable: false,
+          description: 'مجموع کلیه حقوق مالی و منابع اقتصادی متعلق به کسب‌وکار طلا و جواهر (جاری و غیرجاری)',
+        }).catch(() => null);
+      }
+
+      let kol1100 = await pb.collection('chart_of_accounts').getFirstListItem('code = "1100"').catch(() => null);
+      if (!kol1100) {
+        kol1100 = await pb.collection('chart_of_accounts').create({
+          code: '1100',
+          name: 'دارایی‌های جاری',
+          parentId: root1000?.id || null,
+          path: '/1000/1100/',
+          level: 2,
+          accountType: 'asset',
+          normalBalance: 'debit',
+          isSystem: true,
+          isActive: true,
+          isPostable: false,
+          description: 'وجوه نقد، موجودی طلا و مسکوکات، مطالبات و دارایی‌هایی که ظرف یک سال مالی نقد یا مصرف می‌شوند',
+        }).catch(() => null);
+      }
+
+      parentRecord = await pb.collection('chart_of_accounts').create({
+        code: '1110',
+        name: 'موجودی نقد و بانک',
+        parentId: kol1100?.id || null,
+        path: '/1000/1100/1110/',
+        level: 3,
+        accountType: 'asset',
+        normalBalance: 'debit',
+        isMultiCurrency: true,
+        isSystem: true,
+        isActive: true,
+        isPostable: true,
+        description: 'سرفصل معین وجوه نقد، صندوق‌ها، تنخواه‌گردان و حساب‌های بانکی ریالی و ارزی',
+      }).catch(() => null);
+    }
+  } catch {
+    //
+  }
+
+  const parentId = parentRecord?.id || null;
+  const parentPath = parentRecord?.path || '/1000/1100/1110/';
+
+  // 3. Find existing detail codes under 1110
+  let existingCodes: string[] = [];
+  try {
+    const filterStr = parentId ? `parentId = "${parentId}" || code ~ "1110"` : 'code ~ "1110"';
+    const records = await pb.collection('chart_of_accounts').getFullList({
+      filter: filterStr,
+      fields: 'code',
+    }).catch(() => []);
+    existingCodes = records.map((r: any) => r.code);
+  } catch {
+    //
+  }
+
+  const newCode = getNextDetailAccountCode('1110', existingCodes);
+  const accountName = `بانک ${params.bankName}${params.branchName ? ' - ' + params.branchName : ''} (${params.accountNumber})`;
+  const description = `حساب بانکی تفصیلی مربوط به ${params.bankName} شماره حساب ${params.accountNumber}`;
+
+  try {
+    const created = await pb.collection('chart_of_accounts').create({
+      code: newCode,
+      name: accountName,
+      parentId: parentId,
+      path: `${parentPath}${newCode}/`,
+      level: 4,
+      accountType: 'asset',
+      normalBalance: 'debit',
+      requiresWeight: false,
+      isMultiCurrency: (params.currency || 'IRR') !== 'IRR',
+      isSystem: false,
+      isActive: true,
+      isPostable: true,
+      sortOrder: Number(newCode) || 111001,
+      description: description,
+      createdBy: params.userId || null,
+      updatedBy: params.userId || null,
+    });
+
+    return {
+      id: created.id,
+      code: created.code,
+      name: created.name,
+      path: created.path,
+    };
+  } catch {
+    // If creation fails, return empty ID so bank_accounts does not fail foreign key relation check
+    return {
+      id: '',
+      code: newCode,
+      name: accountName,
+      path: `${parentPath}${newCode}/`,
+    };
+  }
+}
+

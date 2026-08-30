@@ -483,9 +483,16 @@ export type BankAccount = {
   accountCodeZero: string;
   currency: string;
   isActive: boolean;
+  accountId?: string | null;
+  accountCode?: string | null;
+  accountName?: string | null;
+  accountPath?: string | null;
   owner?: string;
   created: string;
   updated: string;
+  expand?: {
+    accountId?: Record<string, unknown>;
+  };
 };
 
 export type BankTransferKind = 'bank-to-bank' | 'cash-to-bank' | 'bank-to-cash' | 'check-payment';
@@ -497,6 +504,19 @@ export function mapBankAccount(record: Record<string, unknown>): BankAccount {
       ? record.balance
       : 0;
 
+  const expandObj = typeof record.expand === 'object' && record.expand !== null
+    ? (record.expand as Record<string, unknown>)
+    : undefined;
+  const expandedAccount = expandObj && typeof expandObj.accountId === 'object' && expandObj.accountId !== null
+    ? (expandObj.accountId as Record<string, unknown>)
+    : undefined;
+
+  const accountId = typeof record.accountId === 'string' && record.accountId
+    ? record.accountId
+    : expandedAccount && typeof expandedAccount.id === 'string'
+      ? expandedAccount.id
+      : null;
+
   return {
     id: typeof record.id === 'string' ? record.id : '',
     bankName: typeof record.bankName === 'string' ? record.bankName : '',
@@ -507,9 +527,14 @@ export function mapBankAccount(record: Record<string, unknown>): BankAccount {
     accountCodeZero: typeof record.accountCodeZero === 'string' ? record.accountCodeZero : '',
     currency: typeof record.currency === 'string' && record.currency ? record.currency : 'IRR',
     isActive: typeof record.isActive === 'boolean' ? record.isActive : true,
+    accountId,
+    accountCode: expandedAccount && typeof expandedAccount.code === 'string' ? expandedAccount.code : null,
+    accountName: expandedAccount && typeof expandedAccount.name === 'string' ? expandedAccount.name : null,
+    accountPath: expandedAccount && typeof expandedAccount.path === 'string' ? expandedAccount.path : null,
     owner: typeof record.owner === 'string' ? record.owner : undefined,
     created: typeof record.created === 'string' ? record.created : '',
     updated: typeof record.updated === 'string' ? record.updated : '',
+    expand: expandObj ? (expandObj as BankAccount['expand']) : undefined,
   };
 }
 

@@ -2,6 +2,7 @@
 
 import { ArrowDownLeft, ArrowUpRight, LoaderCircle, Wallet } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { PriceInput } from '@/components/ui/price-input';
 
 type Vault = { id: string; currency_name: string; balance: number };
 
@@ -55,7 +56,13 @@ export default function CashOperation() {
       </div>
       <div className="grid gap-3 sm:grid-cols-3">
         <input value={currency} onChange={(event) => setCurrency(event.target.value.toUpperCase())} placeholder="واحد ارز" className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900" />
-        <input value={amount} onChange={(event) => setAmount(event.target.value)} inputMode="decimal" placeholder="مبلغ" className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900" />
+        <PriceInput
+          value={amount}
+          onValueChange={(_parsed, rawVal) => setAmount(rawVal)}
+          placeholder="مبلغ"
+          currencySuffix={currency || 'ریال'}
+          showWords
+        />
         <input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="شرح" className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900" />
       </div>
       <div className="flex flex-wrap gap-2">

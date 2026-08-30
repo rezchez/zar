@@ -42,7 +42,7 @@ self.addEventListener('activate', (event) => {
 
   // Active PWA Service Worker served dynamically from backend
   const activeSw = `
-const CACHE_NAME = 'zarfolio-pwa-cache-v1';
+const CACHE_NAME = 'zarfolio-pwa-cache-v2';
 const STATIC_ASSETS = [
   '/',
   '/favicon.ico',
@@ -86,18 +86,20 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Next.js build assets and static files - Cache First strategy
+  // Next.js build assets & static files: Network First with cache fallback
   if (url.pathname.startsWith('/_next/') || url.pathname.includes('/public/')) {
     event.respondWith(
-      caches.match(event.request).then((cachedResponse) => {
-        if (cachedResponse) return cachedResponse;
-        return fetch(event.request).then((networkResponse) => {
-          return caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, networkResponse.clone());
-            return networkResponse;
-          });
-        });
-      })
+      fetch(event.request)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const responseClone = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(event.request, responseClone);
+            });
+          }
+          return networkResponse;
+        })
+        .catch(() => caches.match(event.request))
     );
     return;
   }
