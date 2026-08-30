@@ -38,6 +38,7 @@ import RawGoldTab, {
 } from '@/src/components/documents/RawGoldTab';
 import GoldSaleTab from '@/src/components/documents/GoldSaleTab';
 import CurrencyTab from '@/src/components/documents/CurrencyTab';
+import CoinTab from '@/src/components/documents/CoinTab';
 import CashTab from '@/src/components/documents/CashTab';
 import ClaimTab from '@/src/components/documents/ClaimTab';
 import BankTab from '@/src/components/documents/BankTab';
@@ -1508,6 +1509,21 @@ export default function DocumentForm({
               updateCurrencyValue={updateCurrencyValue}
               handleKeyDownEnter={handleKeyDownEnter}
               draftReady={draftReady}
+            />
+          )}
+          coinTabContent={(
+            <CoinTab
+              nature={documentNature}
+              draftLine={draftLine}
+              setDraftLine={setDraftLine}
+              committedLines={committedLines}
+              editingLineId={editingLineId}
+              isLinesPinned={isLinesPinned}
+              commitDraftLine={commitDraftLine}
+              updateDraftDetail={updateDraftDetail}
+              handleKeyDownEnter={handleKeyDownEnter}
+              draftReady={draftReady}
+              baseCurrency={baseCurrency}
             />
           )}
           bankTabContent={(
