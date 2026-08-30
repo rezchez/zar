@@ -42,12 +42,25 @@ export type DetailState = {
   sayadId?: string;
   dueDateJalali?: string;
   bankOperationKind?: string;
+  // Workmanship / Manufactured Artifact fields (کار ساخته)
+  workmanshipName?: string;
+  workmanshipOptionId?: number;
+  workmanshipOptionLabel?: string;
+  quantity?: string;
+  wage?: string;
+  wageMode?: 'per_gram' | 'per_item';
+  goldenPercentage?: string;
+  profitPercentage?: string;
+  metalTotalPrice?: string;
+  profitAmount?: string;
+  discountAmount?: string;
+  convertedWeight?: string;
 };
 
 export type DocumentLine = {
   id: string;
   documentNature: 'received' | 'paid';
-  documentTab: 'raw-gold' | 'gold-sale' | 'currency' | 'cash';
+  documentTab: 'raw-gold' | 'gold-sale' | 'currency' | 'cash' | 'workmanship' | 'coin' | 'bank' | 'claim';
   sourceTab?: string;
   documentSubType: string;
   documentTypeLabel?: string;

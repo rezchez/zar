@@ -30,6 +30,7 @@ type DocumentEntryTabsProps = {
   cashTabLabel?: string;
   bankTabContent?: ReactNode;
   claimTabContent?: ReactNode;
+  workmanshipTabContent?: ReactNode;
   accountCodeZero?: string;
   selectedCustomer?: Customer | null;
   documentId?: string;
@@ -57,6 +58,7 @@ export default function DocumentEntryTabs({
   cashTabLabel,
   bankTabContent,
   claimTabContent,
+  workmanshipTabContent,
   accountCodeZero = '0',
   selectedCustomer,
   documentId,
@@ -123,7 +125,12 @@ export default function DocumentEntryTabs({
       icon: HandCoins,
       content: claimTabContent ?? <PlaceholderTab label={nature === 'received' ? 'بدهی ما' : 'طلب ما'} />,
     },
-    { id: 'workmanship', label: 'کار ساخته', icon: Wrench, content: <PlaceholderTab label="کار ساخته" /> },
+    {
+      id: 'workmanship',
+      label: 'کار ساخته',
+      icon: Wrench,
+      content: workmanshipTabContent ?? <PlaceholderTab label="کار ساخته" />,
+    },
   ];
 
   const selectedTab = tabs.find((tab) => tab.id === activeTab) ?? tabs[0];

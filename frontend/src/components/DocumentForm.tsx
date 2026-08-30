@@ -42,6 +42,7 @@ import CoinTab from '@/src/components/documents/CoinTab';
 import CashTab from '@/src/components/documents/CashTab';
 import ClaimTab from '@/src/components/documents/ClaimTab';
 import BankTab from '@/src/components/documents/BankTab';
+import WorkmanshipTab from '@/src/components/documents/WorkmanshipTab';
 import Field from '@/src/components/documents/Field';
 import HawalaModal from '@/src/components/documents/HawalaModal';
 import DocumentPrint from '@/src/components/documents/DocumentPrint';
@@ -167,7 +168,21 @@ function currencyDocumentSubType(nature: DocumentNature) {
 }
 
 function createLine(nature: DocumentNature = 'received', sourceTab = 'metals'): DocumentLine {
-  const docTab = sourceTab === 'currency' ? 'currency' : sourceTab === 'gold-sale' ? 'gold-sale' : 'raw-gold';
+  const docTab = sourceTab === 'currency'
+    ? 'currency'
+    : sourceTab === 'gold-sale'
+      ? 'gold-sale'
+      : sourceTab === 'workmanship'
+        ? 'workmanship'
+        : sourceTab === 'coin'
+          ? 'coin'
+          : sourceTab === 'cash'
+            ? 'cash'
+            : sourceTab === 'bank'
+              ? 'bank'
+              : sourceTab === 'claim'
+                ? 'claim'
+                : 'raw-gold';
   return {
     id: crypto.randomUUID(),
     documentNature: nature,
@@ -234,6 +249,10 @@ function isLineReady(line: DocumentLine) {
       && numberValue(line.details.currencyUnitPrice) > 0
       && numberValue(line.details.currencyTotalAmount) > 0;
   }
+  if (line.documentTab === 'workmanship') {
+    const rawWeight = numberValue(line.details.rawWeight);
+    return rawWeight > 0 && Boolean(line.details.workmanshipName?.trim());
+  }
   const rawWeight = line.details.calculationMethod === 'money'
     ? actualWeightFromMoney(line.details)
     : numberValue(line.details.rawWeight);
@@ -249,6 +268,12 @@ function validateLine(line: DocumentLine) {
     if (numberValue(line.details.currencyQuantity) <= 0) return 'تعداد ارز باید بیشتر از صفر باشد.';
     if (numberValue(line.details.currencyUnitPrice) <= 0) return 'قیمت هر واحد باید بیشتر از صفر باشد.';
     if (numberValue(line.details.currencyTotalAmount) <= 0) return 'مبلغ کل باید بیشتر از صفر باشد.';
+    return '';
+  }
+  if (line.documentTab === 'workmanship') {
+    const rawWeight = numberValue(line.details.rawWeight);
+    if (rawWeight <= 0) return 'وزن کار ساخته باید بیشتر از صفر باشد.';
+    if (!line.details.workmanshipName?.trim()) return 'نام کار ساخته را وارد کنید.';
     return '';
   }
   const rawWeight = line.details.calculationMethod === 'money'
@@ -301,6 +326,10 @@ function getLineDocumentTypeLabel(
 
   if (tab === 'cash') {
     return nature === 'received' ? 'دریافت نقد' : 'پرداخت نقد';
+  }
+
+  if (tab === 'workmanship') {
+    return nature === 'received' ? 'ورود کار ساخته' : 'خروج کار ساخته';
   }
 
   if (tab === 'gold-sale') {
@@ -747,10 +776,7 @@ export default function DocumentForm({
     if (tab === 'currency') {
       setDraftLine(createCurrencyLine(documentNature));
     } else {
-      setDraftLine({
-        ...createSettingsLine(documentNature, tab),
-        documentTab: tab === 'gold-sale' ? 'gold-sale' : 'raw-gold',
-      });
+      setDraftLine(createSettingsLine(documentNature, tab));
     }
   }
 
@@ -1568,6 +1594,21 @@ export default function DocumentForm({
               updateDraftDetail={updateDraftDetail}
               handleKeyDownEnter={handleKeyDownEnter}
               draftReady={draftReady}
+            />
+          )}
+          workmanshipTabContent={(
+            <WorkmanshipTab
+              nature={documentNature}
+              draftLine={draftLine}
+              setDraftLine={setDraftLine}
+              committedLines={committedLines}
+              editingLineId={editingLineId}
+              isLinesPinned={isLinesPinned}
+              commitDraftLine={commitDraftLine}
+              updateDraftDetail={updateDraftDetail}
+              handleKeyDownEnter={handleKeyDownEnter}
+              draftReady={draftReady}
+              baseCurrency={baseCurrency}
             />
           )}
         />
