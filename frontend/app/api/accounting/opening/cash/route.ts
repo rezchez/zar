@@ -40,10 +40,15 @@ export async function GET() {
   }
 
   try {
+    const currenciesList = await context.pb.collection('currencies').getFullList().catch(() => []);
+    const currencyMap = new Map<string, any>(currenciesList.map((c: any) => [c.id, c]));
+
     const funds = await context.pb.collection('cash_funds').getFullList({
       sort: '-created',
       expand: 'currency',
-    }).catch(() => []);
+    }).catch(async () => context.pb.collection('cash_funds').getFullList({
+      sort: '-created',
+    }).catch(() => []));
 
     const txs = await context.pb.collection('cash_transactions').getFullList({
       filter: 'is_opening_balance = true || transaction_type = "opening_balance"',
@@ -59,7 +64,7 @@ export async function GET() {
     const todayJalali = dateToJalaliString(new Date());
 
     const result = funds.map((f: any) => {
-      const currency = f.expand?.currency;
+      const currency = f.expand?.currency || (f.currency ? currencyMap.get(f.currency) : null);
       const currencyId = String(f.currency || currency?.id || '');
       const currencyName = String(currency?.name || f.currency_name || 'ارز نامشخص');
       const currencyCode = String(currency?.code || '');
@@ -77,7 +82,7 @@ export async function GET() {
         currencyName,
         currencyCode,
         currencySymbol,
-        openingBalance: Number(f.opening_balance ?? tx?.amount ?? 0),
+        openingBalance: Math.abs(Number(f.opening_balance ?? tx?.amount ?? 0)),
         balance: Number(f.balance ?? 0),
         openingBalanceDate: openingDate,
         description,
@@ -113,7 +118,7 @@ export async function POST(request: Request) {
     if (!Number.isFinite(rawAmount) || rawAmount < 0) {
       return NextResponse.json({ message: 'لطفاً مبلغ معتبری برای موجودی اولیه وارد کنید.' }, { status: 400 });
     }
-    const amount = Math.round(rawAmount);
+    const amount = Math.abs(Math.round(rawAmount));
 
     // MODE 1: EDIT EXISTING FUND OPENING BALANCE
     if (fundId) {
@@ -163,6 +168,7 @@ export async function POST(request: Request) {
         if (existingTx) {
           await context.pb.collection('cash_transactions').update(existingTx.id, {
             amount,
+            direction: 'in',
             date: dateValue,
             description: description || `موجودی اول دوره صندوق - ${currencySymbol}`,
           });
@@ -174,6 +180,7 @@ export async function POST(request: Request) {
             currency_name: currencyName.slice(0, 32),
             currency_symbol: currencySymbol,
             amount,
+            direction: 'in',
             source_key: `opening:cash:${currencyId}`,
             transaction_type: 'opening_balance',
             is_opening_balance: true,
@@ -222,16 +229,18 @@ export async function POST(request: Request) {
     // Clamp currency_name to 32 chars to satisfy strict legacy PocketBase column limits
     const safeCurrencyName = currencyName.slice(0, 32);
 
-    // Duplicate Check: Enforce strictly one cash fund per currency
+    // Duplicate Check: Enforce strictly one cash fund per currency (Source of truth: cash_funds collection)
     const existingFundForCurrency = await context.pb.collection('cash_funds').getFirstListItem(
       context.pb.filter('currency = {:currencyId}', { currencyId: currencyRecord.id }),
-    ).catch(async () => context.pb.collection('cash_funds').getFirstListItem(
-      context.pb.filter('currency_name = {:currency}', { currency: currencyName }),
-    ).catch(() => null));
+    ).catch(async () => {
+      return context.pb.collection('cash_funds').getFirstListItem(
+        context.pb.filter('(currency = "" || currency = null) && currency_name = {:currency}', { currency: currencyName }),
+      ).catch(() => null);
+    });
 
     if (existingFundForCurrency) {
       return NextResponse.json({
-        message: 'برای این ارز قبلاً صندوق وجه نقد ایجاد شده است.',
+        message: 'برای این واحد پولی قبلا صندوق ایجاد شده است.',
       }, { status: 400 });
     }
 
@@ -263,6 +272,7 @@ export async function POST(request: Request) {
         currency_name: safeCurrencyName,
         currency_symbol: currencySymbol,
         amount,
+        direction: 'in',
         source_key: sourceKey,
         transaction_type: 'opening_balance',
         is_opening_balance: true,

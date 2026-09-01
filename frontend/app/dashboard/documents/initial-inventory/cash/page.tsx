@@ -17,10 +17,15 @@ export default async function InitialCashFundsListPage() {
 
   let initialFunds: any[] = [];
   try {
+    const currenciesList = await context.pb.collection('currencies').getFullList().catch(() => []);
+    const currencyMap = new Map<string, any>(currenciesList.map((c: any) => [c.id, c]));
+
     const funds = await context.pb.collection('cash_funds').getFullList({
       sort: '-created',
       expand: 'currency',
-    }).catch(() => []);
+    }).catch(async () => context.pb.collection('cash_funds').getFullList({
+      sort: '-created',
+    }).catch(() => []));
 
     const txs = await context.pb.collection('cash_transactions').getFullList({
       filter: 'is_opening_balance = true || transaction_type = "opening_balance"',
@@ -34,7 +39,7 @@ export default async function InitialCashFundsListPage() {
     const todayJalali = dateToJalaliString(new Date());
 
     initialFunds = funds.map((f: any) => {
-      const currency = f.expand?.currency;
+      const currency = f.expand?.currency || (f.currency ? currencyMap.get(f.currency) : null);
       const currencyId = String(f.currency || currency?.id || '');
       const currencyName = String(currency?.name || f.currency_name || 'ارز نامشخص');
       const currencyCode = String(currency?.code || '');
@@ -51,7 +56,7 @@ export default async function InitialCashFundsListPage() {
         currencyName,
         currencyCode,
         currencySymbol,
-        openingBalance: Number(f.opening_balance ?? tx?.amount ?? 0),
+        openingBalance: Math.abs(Number(f.opening_balance ?? tx?.amount ?? 0)),
         balance: Number(f.balance ?? 0),
         openingBalanceDate: openingDate,
       };
