@@ -52,9 +52,15 @@ export default function CurrencyTab({
         <Field label="واحد ارز">
           <select
             value={draftLine.details.currencyUnit}
-            onChange={(event) => updateDraftDetail('currencyUnit', event.target.value)}
+            onChange={(event) => {
+              updateDraftDetail('currencyUnit', event.target.value);
+              updateDraftDetail('settlementCurrencyUnit', event.target.value);
+            }}
+            disabled={currencyUnits.length === 0}
           >
-            {currencyUnits.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
+            {currencyUnits.length === 0 ? (
+              <option value="">ارزی در کالکشن ثبت نشده است</option>
+            ) : currencyUnits.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
           </select>
         </Field>
         <Field label="تعداد">

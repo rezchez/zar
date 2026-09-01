@@ -234,3 +234,16 @@ export function getReadableCurrencyAmount(
   const words = numberToPersianWords(absNum);
   return currency ? `${words} ${currency.faName}` : `${words} ${code}`;
 }
+
+export function formatPriceWithCommas(cleanVal: string | number): string {
+  if (!cleanVal && cleanVal !== 0) return '';
+  const str = String(cleanVal);
+  const isNeg = str.startsWith('-');
+  const unsigned = isNeg ? str.slice(1) : str;
+
+  const parts = unsigned.split('.');
+  const intPart = parts[0] ? parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',') : '';
+  const decimalPart = parts.length > 1 ? `.${parts[1]}` : '';
+
+  return `${isNeg ? '-' : ''}${intPart}${decimalPart}`;
+}

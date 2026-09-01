@@ -20,6 +20,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import DatePicker from '@/components/ui/date-picker';
+import { getCurrencyDisplayName, type Currency } from '@/lib/currencies';
 import { currencyDisplay, type Customer } from '@/lib/customer';
 import DocumentSubmitActions from '@/components/documents/document-submit-actions';
 import DocumentEntryTabs from '@/src/components/documents/DocumentEntryTabs';
@@ -203,13 +204,13 @@ function createLine(nature: DocumentNature = 'received', sourceTab = 'metals'): 
       totalAmount: '',
       labName: '',
       stampNumber: '',
-      currencyUnit: 'USD',
+      currencyUnit: '',
       currencyQuantity: '',
       currencyUnitPrice: '',
       currencyTotalAmount: '',
       unsettledTrade: false,
       currencyTradeId: '',
-      settlementCurrencyUnit: 'USD',
+      settlementCurrencyUnit: '',
       settlementQuantity: '',
       settlesTradeId: '',
       inventorySourceId: '',
@@ -417,42 +418,62 @@ export default function DocumentForm({
 
   const baseCurrency = (settings.baseCurrency || 'IRR') as 'IRR' | 'IRT';
 
-  // Currency Selection & Custom Currency Creation Modal
-  const defaultCurrencies = useMemo(() => {
-    const isToman = baseCurrency === 'IRT';
-    const primary = isToman ? { code: 'IRT', label: 'تومان' } : { code: 'IRR', label: 'ریال' };
-    const secondary = isToman ? { code: 'IRR', label: 'ریال' } : { code: 'IRT', label: 'تومان' };
-    return [
-      primary,
-      secondary,
-      { code: 'USD', label: 'دلار' },
-      { code: 'EUR', label: 'یورو' },
-      { code: 'GBP', label: 'پوند' },
-      { code: 'AED', label: 'درهم' },
-      { code: 'CNY', label: 'یوان' },
-      { code: 'TRY', label: 'لیر' },
-      { code: 'IQD', label: 'دینار' },
-    ];
-  }, [baseCurrency]);
-
-  const [customCurrencies, setCustomCurrencies] = useState<Array<{ code: string; label: string }>>([]);
-  const [selectedCurrency, setSelectedCurrency] = useState<string>(baseCurrency);
-  const [hasUserSelectedCurrency, setHasUserSelectedCurrency] = useState(false);
-
-  const availableCurrencies = useMemo(() => {
-    return [...defaultCurrencies, ...customCurrencies];
-  }, [defaultCurrencies, customCurrencies]);
-
-  // Keep selectedCurrency synchronized with the global settings baseCurrency if user hasn't explicitly chosen another currency
-  useEffect(() => {
-    if (!hasUserSelectedCurrency) {
-      setSelectedCurrency(baseCurrency);
-    }
-  }, [baseCurrency, hasUserSelectedCurrency]);
-
+  // The currencies collection is the single source for document currency fields.
+  const [availableCurrencies, setAvailableCurrencies] = useState<Currency[]>([]);
+  const [currenciesLoading, setCurrenciesLoading] = useState(false);
+  const [selectedCurrency, setSelectedCurrency] = useState('');
   const [showAddCurrencyModal, setShowAddCurrencyModal] = useState(false);
-  const [newCurrencyLabel, setNewCurrencyLabel] = useState('');
+  const [newCurrencyName, setNewCurrencyName] = useState('');
+  const [newCurrencySymbol, setNewCurrencySymbol] = useState('');
+  const [newCurrencyCode, setNewCurrencyCode] = useState('');
+  const [addingCurrency, setAddingCurrency] = useState(false);
   const [addCurrencyError, setAddCurrencyError] = useState('');
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setCurrenciesLoading(true);
+    fetch('/api/currencies', { cache: 'no-store', signal: controller.signal })
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok || !Array.isArray(data.currencies)) {
+          throw new Error(data.message || 'دریافت فهرست ارزها انجام نشد.');
+        }
+        return data.currencies as Currency[];
+      })
+      .then((currencies) => {
+        setAvailableCurrencies(currencies);
+        setSelectedCurrency((current) =>
+          currencies.some((currency) => currency.code === current)
+            ? current
+            : currencies[0]?.code ?? '',
+        );
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        setAvailableCurrencies([]);
+        setSelectedCurrency('');
+        setErrorMessage(error instanceof Error ? error.message : 'دریافت فهرست ارزها انجام نشد.');
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setCurrenciesLoading(false);
+      });
+
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    if (!selectedCurrency) return;
+    setDraftLine((current) => current.documentTab !== 'currency' || current.details.currencyUnit
+      ? current
+      : {
+          ...current,
+          details: {
+            ...current.details,
+            currencyUnit: selectedCurrency,
+            settlementCurrencyUnit: selectedCurrency,
+          },
+        });
+  }, [selectedCurrency, draftLine.documentTab]);
 
   // Document lines pin state initialized safely
   const [isLinesPinned, setIsLinesPinned] = useState<boolean>(false);
@@ -596,17 +617,8 @@ export default function DocumentForm({
 
   const draftReady = isLineReady(draftLine);
   const currencyUnits = useMemo(() => {
-    const units = [
-      selectedCustomer?.secondaryCurrency,
-      selectedCustomer?.tertiaryCurrency,
-      'USD',
-      'EUR',
-      'AED',
-      'TRY',
-      'GBP',
-    ].filter((value): value is string => Boolean(value?.trim()));
-    return [...new Set(units)];
-  }, [selectedCustomer]);
+    return availableCurrencies.map((currency) => currency.code);
+  }, [availableCurrencies]);
 
   // Per-customer document number querying
   useEffect(() => {
@@ -677,35 +689,56 @@ export default function DocumentForm({
     return () => window.removeEventListener('zar:navigation-attempt', handleNavigationAttempt);
   }, [isFormDirty]);
 
-  function handleAddCustomCurrency(e: React.FormEvent) {
+  async function handleAddCustomCurrency(e: React.FormEvent) {
     e.preventDefault();
     setAddCurrencyError('');
-    const label = newCurrencyLabel.trim();
-    if (!label) {
-      setAddCurrencyError('عنوان یا نام ارز را وارد کنید.');
+    const name = newCurrencyName.trim();
+    const symbol = newCurrencySymbol.trim();
+    const code = newCurrencyCode.trim().toUpperCase();
+    if (!name || !symbol || !code) {
+      setAddCurrencyError('نام، نماد و کد ارز الزامی است.');
       return;
     }
 
     const isDuplicate = availableCurrencies.some(
-      (c) => c.label.toLocaleLowerCase() === label.toLocaleLowerCase() || c.code.toLocaleLowerCase() === label.toLocaleLowerCase(),
+      (currency) => currency.name.toLocaleLowerCase('fa-IR') === name.toLocaleLowerCase('fa-IR')
+        || currency.code.toUpperCase() === code,
     );
 
     if (isDuplicate) {
-      setAddCurrencyError('این ارز قبلاً در فهرست وجود دارد.');
+      const duplicate = availableCurrencies.find(
+        (currency) => currency.name.toLocaleLowerCase('fa-IR') === name.toLocaleLowerCase('fa-IR')
+          || currency.code.toUpperCase() === code,
+      );
+      setAddCurrencyError(`ارز «${duplicate?.name || name}» با کد ${duplicate?.code || code} قبلاً ثبت شده است.`);
       return;
     }
 
-    const newCode = label.toUpperCase().slice(0, 10);
-    const newEntry = { code: newCode, label };
-    setCustomCurrencies((prev) => [...prev, newEntry]);
-    setSelectedCurrency(newCode);
-    setHasUserSelectedCurrency(true);
+    setAddingCurrency(true);
+    try {
+      const response = await fetch('/api/currencies', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name, symbol, code }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'ثبت ارز جدید انجام نشد.');
 
-    // Update draft currency unit if currently on currency tab
-    updateDraftDetail('currencyUnit', newCode);
-
-    setNewCurrencyLabel('');
-    setShowAddCurrencyModal(false);
+      const created = data.currency as Currency;
+      setAvailableCurrencies((current) => [...current, created]);
+      setSelectedCurrency(created.code);
+      updateDraftDetail('currencyUnit', created.code);
+      updateDraftDetail('settlementCurrencyUnit', created.code);
+      setNewCurrencyName('');
+      setNewCurrencySymbol('');
+      setNewCurrencyCode('');
+      setShowAddCurrencyModal(false);
+      setMessage(`ارز «${created.name}» با موفقیت به فهرست اضافه و انتخاب شد.`);
+    } catch (error) {
+      setAddCurrencyError(error instanceof Error ? error.message : 'ثبت ارز جدید انجام نشد.');
+    } finally {
+      setAddingCurrency(false);
+    }
   }
 
   function handleKeyDownEnter(
@@ -1398,14 +1431,19 @@ export default function DocumentForm({
                 onChange={(event) => {
                   const curr = event.target.value;
                   setSelectedCurrency(curr);
-                  setHasUserSelectedCurrency(true);
                   const currObj = availableCurrencies.find((c) => c.code === curr);
-                  updateDraftDetail('currencyUnit', currObj?.label || curr);
+                  updateDraftDetail('currencyUnit', currObj?.code || '');
+                  updateDraftDetail('settlementCurrencyUnit', currObj?.code || '');
                 }}
+                disabled={currenciesLoading || availableCurrencies.length === 0}
               >
-                {availableCurrencies.map((curr) => (
+                {availableCurrencies.length === 0 ? (
+                  <option value="">
+                    {currenciesLoading ? 'در حال دریافت ارزها...' : 'ارزی در کالکشن ثبت نشده است'}
+                  </option>
+                ) : availableCurrencies.map((curr) => (
                   <option key={curr.code} value={curr.code}>
-                    {curr.label} ({curr.code})
+                    {getCurrencyDisplayName(curr)} ({curr.code})
                   </option>
                 ))}
               </select>
@@ -1580,7 +1618,7 @@ export default function DocumentForm({
               draftReady={draftReady}
               baseCurrency={baseCurrency}
               selectedCurrency={selectedCurrency}
-              currencyLabel={availableCurrencies.find((c) => c.code === selectedCurrency)?.label}
+              currencyLabel={availableCurrencies.find((c) => c.code === selectedCurrency)?.name}
             />
           )}
           claimTabContent={(
@@ -2043,14 +2081,33 @@ export default function DocumentForm({
                 </p>
               ) : null}
 
-              <Field label="نام / عنوان ارز جدید">
+              <Field label="نام ارز">
                 <input
                   type="text"
-                  value={newCurrencyLabel}
-                  onChange={(e) => setNewCurrencyLabel(e.target.value)}
-                  placeholder="مثال: فرانک یا CHF"
+                  value={newCurrencyName}
+                  onChange={(e) => setNewCurrencyName(e.target.value)}
+                  placeholder="مثال: فرانک سوئیس"
                   required
                   autoFocus
+                />
+              </Field>
+              <Field label="نماد ارز">
+                <input
+                  type="text"
+                  value={newCurrencySymbol}
+                  onChange={(e) => setNewCurrencySymbol(e.target.value)}
+                  placeholder="مثال: Fr"
+                  required
+                />
+              </Field>
+              <Field label="کد ارز">
+                <input
+                  type="text"
+                  value={newCurrencyCode}
+                  onChange={(e) => setNewCurrencyCode(e.target.value.toUpperCase())}
+                  placeholder="مثال: CHF"
+                  required
+                  maxLength={16}
                 />
               </Field>
 
@@ -2064,9 +2121,10 @@ export default function DocumentForm({
                 </button>
                 <button
                   type="submit"
-                  className="rounded-xl bg-amber-500 px-4 py-2 text-xs font-extrabold text-slate-950 shadow-md hover:bg-amber-400"
+                  disabled={addingCurrency}
+                  className="rounded-xl bg-amber-500 px-4 py-2 text-xs font-extrabold text-slate-950 shadow-md hover:bg-amber-400 disabled:opacity-60"
                 >
-                  افزودن ارز
+                  {addingCurrency ? 'در حال افزودن...' : 'افزودن ارز'}
                 </button>
               </div>
             </motion.form>

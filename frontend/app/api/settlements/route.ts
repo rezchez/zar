@@ -11,7 +11,7 @@ function text(value: unknown, max = 160) {
 
 function positive(value: unknown) {
   const number = Number(String(value ?? '').replace(/,/g, ''));
-  return Number.isFinite(number) && number > 0 ? number : null;
+  return Number.isFinite(number) && number > 0 ? Math.round(number) : null;
 }
 
 export async function POST(request: Request) {
@@ -35,7 +35,8 @@ export async function POST(request: Request) {
   const customerId = text(body.customerId, 40);
   const sourceType = body.sourceType === 'bank' ? 'bank' : 'cash';
   const sourceId = text(body.sourceId, 40);
-  const currency = text(body.currency, 16).toUpperCase() || 'IRR';
+  const requestedCurrencyId = text(body.currencyId, 40);
+  const currency = text(body.currency, 30).toUpperCase() || 'IRR';
   const amount = positive(body.amount);
   const direction = body.direction === 'receive' ? 'receive' : 'pay';
   const idempotencyKey = text(body.idempotencyKey, 120) || `settlement:${randomUUID()}`;
@@ -47,6 +48,25 @@ export async function POST(request: Request) {
   try { writer = await getPocketBaseServiceClient(); } catch { /* authenticated fallback */ }
 
   try {
+    let cashCurrency: any = null;
+    if (sourceType === 'cash') {
+      cashCurrency = requestedCurrencyId
+        ? await writer.collection('currencies').getOne(requestedCurrencyId).catch(() => null)
+        : await writer.collection('currencies').getFirstListItem(
+          writer.filter('code = {:code} || name = {:name} || symbol = {:symbol}', {
+            code: currency,
+            name: body.currency,
+            symbol: body.currency,
+          }),
+        ).catch(() => null);
+      if (!cashCurrency) {
+        return NextResponse.json({ message: 'ارز انتخاب‌شده در کالکشن ارزها یافت نشد.' }, { status: 400 });
+      }
+    }
+    const cashCurrencyCode = sourceType === 'cash'
+      ? String(cashCurrency.code || currency).trim().toUpperCase()
+      : currency;
+
     const existing = await writer.collection('transactions').getFirstListItem(
       writer.filter('sourceKey = {:sourceKey} && is_deleted = false', { sourceKey: idempotencyKey }),
     ).catch(() => null);
@@ -54,19 +74,21 @@ export async function POST(request: Request) {
 
     const customer = await writer.collection('customers').getOne(customerId);
     const signed = direction === 'receive' ? amount : -amount;
-    const detail = JSON.stringify({ settlement: true, sourceType, sourceId, currency, direction });
+    const detail = JSON.stringify({ settlement: true, sourceType, sourceId, currency: cashCurrencyCode, direction });
 
     if (sourceType === 'bank') {
       const bank = await writer.collection('bank_accounts').getOne(sourceId);
-      if (String(bank.currency || 'IRR').toUpperCase() !== currency) {
+      if (String(bank.currency || 'IRR').toUpperCase() !== cashCurrencyCode) {
         return NextResponse.json({ message: 'واحد پول حساب بانکی با واحد تسویه یکسان نیست.' }, { status: 400 });
       }
       const next = Number(bank.balance ?? 0) + (direction === 'receive' ? amount : -amount);
       if (next < 0) return NextResponse.json({ message: 'موجودی حساب بانکی کافی نیست.' }, { status: 400 });
     } else {
       const vault = await writer.collection('cash_funds').getFirstListItem(
-        writer.filter('currency_name = {:currency}', { currency }),
-      ).catch(() => null);
+        writer.filter('currency = {:currencyId}', { currencyId: cashCurrency.id }),
+      ).catch(async () => writer.collection('cash_funds').getFirstListItem(
+        writer.filter('currency_name = {:currency}', { currency: cashCurrency.name }),
+      ).catch(() => null));
       const next = Number(vault?.balance ?? 0) + (direction === 'receive' ? amount : -amount);
       if (next < 0) return NextResponse.json({ message: 'موجودی صندوق کافی نیست.' }, { status: 400 });
     }
@@ -93,11 +115,11 @@ export async function POST(request: Request) {
       goldAmount: 0,
       silverAmount: 0,
       platinumAmount: 0,
-      rialAmount: currency === 'IRR' ? signed : 0,
-      foreignAmount: currency === 'IRR' ? 0 : signed,
+      rialAmount: cashCurrencyCode === 'IRR' ? signed : 0,
+      foreignAmount: cashCurrencyCode === 'IRR' ? 0 : signed,
       tertiaryAmount: 0,
-      foreignCurrency: currency === 'IRR' ? '' : currency,
-      foreignCurrencySymbol: currency === 'IRR' ? '' : currency,
+      foreignCurrency: cashCurrencyCode === 'IRR' ? '' : cashCurrencyCode,
+      foreignCurrencySymbol: cashCurrencyCode === 'IRR' ? '' : String(cashCurrency?.symbol || cashCurrencyCode),
       tertiaryCurrency: '',
       tertiaryCurrencySymbol: '',
     });
@@ -109,22 +131,39 @@ export async function POST(request: Request) {
       await writer.collection('bank_accounts').update(bank.id, { balance: next, updatedBy: context.user.id }).catch(() => undefined);
     } else {
       const vault = await writer.collection('cash_funds').getFirstListItem(
-        writer.filter('currency_name = {:currency}', { currency }),
-      ).catch(() => null);
+        writer.filter('currency = {:currencyId}', { currencyId: cashCurrency.id }),
+      ).catch(async () => writer.collection('cash_funds').getFirstListItem(
+        writer.filter('currency_name = {:currency}', { currency: cashCurrency.name }),
+      ).catch(() => null));
       const next = Number(vault?.balance ?? 0) + (direction === 'receive' ? amount : -amount);
       const updatedVault = vault
-        ? await writer.collection('cash_funds').update(vault.id, { balance: next, updated_by: context.user.id }).catch(() => null)
-        : await writer.collection('cash_funds').create({ currency_name: currency, balance: next, created_by: context.user.id, updated_by: context.user.id }).catch(() => null);
-      if (updatedVault) {
-        await writer.collection('cash_transactions').create({
-          vault: updatedVault.id,
-          currency,
-          amount: direction === 'receive' ? amount : -amount,
-          source_key: `${idempotencyKey}:cash`,
-          description: `تسویه طرف‌حساب - ${direction === 'receive' ? 'دریافت' : 'پرداخت'}`,
-          created_by: context.user.id,
-        }).catch(() => undefined);
-      }
+        ? await writer.collection('cash_funds').update(vault.id, {
+            currency: cashCurrency.id,
+            currency_name: cashCurrency.name,
+            balance: next,
+            updated_by: context.user.id,
+          })
+        : await writer.collection('cash_funds').create({
+            currency: cashCurrency.id,
+            currency_name: cashCurrency.name,
+            balance: next,
+            opening_balance: 0,
+            created_by: context.user.id,
+            updated_by: context.user.id,
+          });
+      await writer.collection('cash_transactions').create({
+        vault: updatedVault.id,
+        currency: cashCurrencyCode,
+        currency_name: cashCurrency.name,
+        currency_symbol: String(cashCurrency.symbol || cashCurrencyCode),
+        currency_ref: cashCurrency.id,
+        amount: direction === 'receive' ? amount : -amount,
+        source_key: `${idempotencyKey}:cash`,
+        transaction_type: direction === 'receive' ? 'cash_in' : 'cash_out',
+        is_opening_balance: false,
+        description: `تسویه طرف‌حساب - ${direction === 'receive' ? 'دریافت' : 'پرداخت'}`,
+        created_by: context.user.id,
+      });
     }
 
     return NextResponse.json({ transaction: mapTransaction(transaction) }, { status: 201 });

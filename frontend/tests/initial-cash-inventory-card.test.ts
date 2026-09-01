@@ -1,3 +1,4 @@
+import React from 'react';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import InitialCashInventoryCard from '../src/components/inventory/InitialCashInventoryCard';
@@ -12,7 +13,7 @@ describe('InitialCashInventoryCard UI Component Tests', () => {
 
   test('component renders exact header, subtext, and button labels in HTML markup', () => {
     const html = renderToStaticMarkup(
-      InitialCashInventoryCard({
+      React.createElement(InitialCashInventoryCard, {
         listHref: '/dashboard/documents/initial-inventory/cash',
         addHref: '/dashboard/documents/initial-inventory/cash/new',
       }),
@@ -31,7 +32,7 @@ describe('InitialCashInventoryCard UI Component Tests', () => {
     let addClicked = false;
 
     const html = renderToStaticMarkup(
-      InitialCashInventoryCard({
+      React.createElement(InitialCashInventoryCard, {
         onList: () => { listClicked = true; },
         onAdd: () => { addClicked = true; },
       }),

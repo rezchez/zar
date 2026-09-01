@@ -3,12 +3,14 @@
 import { ArrowDownLeft, ArrowUpRight, LoaderCircle, Wallet } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { PriceInput } from '@/components/ui/price-input';
+import type { Currency } from '@/lib/currencies';
 
 type Vault = { id: string; currency_name: string; balance: number };
 
 export default function CashOperation() {
   const [vaults, setVaults] = useState<Vault[]>([]);
-  const [currency, setCurrency] = useState('IRR');
+  const [currencies, setCurrencies] = useState<Currency[]>([]);
+  const [currencyId, setCurrencyId] = useState('');
   const [amount, setAmount] = useState('');
   const [direction, setDirection] = useState<'in' | 'out'>('in');
   const [description, setDescription] = useState('');
@@ -26,6 +28,24 @@ export default function CashOperation() {
     return () => window.clearTimeout(timer);
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/currencies', { cache: 'no-store' })
+      .then(async (response) => {
+        const data = (await response.json()) as { currencies?: Currency[] };
+        if (!cancelled && response.ok) {
+          const loaded = data.currencies ?? [];
+          setCurrencies(loaded);
+          setCurrencyId((current) => loaded.some((item) => item.id === current) ? current : (loaded[0]?.id ?? ''));
+        }
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, []);
+
+  const selectedCurrency = currencies.find((item) => item.id === currencyId);
+  const currency = selectedCurrency?.code ?? '';
+
   async function submit() {
     setLoading(true);
     setMessage('');
@@ -33,7 +53,7 @@ export default function CashOperation() {
       const response = await fetch('/api/cash-vault', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ currency, amount, direction, description }),
+        body: JSON.stringify({ currencyId, amount, direction, description }),
       });
       const data = (await response.json()) as { message?: string };
       if (!response.ok) throw new Error(data.message ?? 'ثبت تراکنش صندوق انجام نشد.');
@@ -55,7 +75,10 @@ export default function CashOperation() {
         <div><h3 className="text-sm font-bold">وجه نقد چندارزی</h3><p className="text-xs text-slate-500">ورود و خروج هر ارز در دفتر صندوق ثبت می‌شود.</p></div>
       </div>
       <div className="grid gap-3 sm:grid-cols-3">
-        <input value={currency} onChange={(event) => setCurrency(event.target.value.toUpperCase())} placeholder="واحد ارز" className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900" />
+        <select value={currencyId} onChange={(event) => setCurrencyId(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900">
+          {currencies.length === 0 ? <option value="">ارزی ثبت نشده است</option> : null}
+          {currencies.map((item) => <option key={item.id} value={item.id}>{item.name} ({item.code})</option>)}
+        </select>
         <PriceInput
           value={amount}
           onValueChange={(_parsed, rawVal) => setAmount(rawVal)}

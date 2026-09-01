@@ -5,7 +5,7 @@ import { hasPermission } from '@/lib/authorization';
 
 function amount(value: unknown) {
   const parsed = Number(String(value ?? '').replace(/,/g, ''));
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : null;
 }
 
 export async function GET() {
@@ -16,10 +16,20 @@ export async function GET() {
     return NextResponse.json({ message: 'دسترسی غیرمجاز به اطلاعات صندوق.' }, { status: 403 });
   }
 
-  const vaults = await context.pb.collection('cash_funds').getFullList({ sort: 'currency_name' }).catch(async () =>
+  const vaults = await context.pb.collection('cash_funds').getFullList({ sort: 'currency_name', expand: 'currency' }).catch(async () =>
     context.pb.collection('cash_vaults').getFullList({ sort: 'currency' }).catch(() => []),
   );
-  return NextResponse.json({ vaults });
+  return NextResponse.json({
+    vaults: vaults.map((vault: any) => ({
+      ...vault,
+      currencyId: String(vault.currency || vault.currency_id || ''),
+      currencyName: String(vault.expand?.currency?.name || vault.currency_name || ''),
+      currencyCode: String(vault.expand?.currency?.code || ''),
+      currencySymbol: String(vault.expand?.currency?.symbol || vault.currency_symbol || ''),
+      balance: Number(vault.balance ?? 0),
+      openingBalance: Number(vault.opening_balance ?? 0),
+    })),
+  });
 }
 
 export async function POST(request: Request) {
@@ -31,12 +41,30 @@ export async function POST(request: Request) {
   }
 
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-  const currency = String(body.currency ?? '').trim().slice(0, 12).toUpperCase();
+  const requestedCurrencyId = String(body.currencyId ?? '').trim();
+  const requestedCurrency = String(body.currency ?? '').trim();
   const value = amount(body.amount);
   const direction = body.direction === 'out' ? -1 : 1;
   const sourceKey = String(body.sourceKey ?? '').trim().slice(0, 120);
-  if (!currency || value === null) return NextResponse.json({ message: 'واحد ارز و مبلغ معتبر الزامی است.' }, { status: 400 });
+  if ((!requestedCurrencyId && !requestedCurrency) || value === null) {
+    return NextResponse.json({ message: 'واحد ارز و مبلغ معتبر الزامی است.' }, { status: 400 });
+  }
   try {
+    const currencyRecord = requestedCurrencyId
+      ? await context.pb.collection('currencies').getOne(requestedCurrencyId).catch(() => null)
+      : await context.pb.collection('currencies').getFirstListItem(
+        context.pb.filter('code = {:code} || name = {:name}', {
+          code: requestedCurrency.toUpperCase(),
+          name: requestedCurrency,
+        }),
+      ).catch(() => null);
+    if (!currencyRecord) {
+      return NextResponse.json({ message: 'ارز انتخاب‌شده در کالکشن ارزها یافت نشد.' }, { status: 400 });
+    }
+    const currencyName = String(currencyRecord.name || currencyRecord.code).trim();
+    const currencyCode = String(currencyRecord.code || currencyName).trim().toUpperCase();
+    const currencySymbol = String(currencyRecord.symbol || currencyCode).trim();
+
     const collection = context.pb.collection('cash_funds');
     if (sourceKey) {
       const existingTransaction = await context.pb.collection('cash_transactions').getFirstListItem(
@@ -44,20 +72,38 @@ export async function POST(request: Request) {
       ).catch(() => null);
       if (existingTransaction) return NextResponse.json({ alreadyExists: true, transaction: existingTransaction });
     }
-    const vault = await collection.getFirstListItem(context.pb.filter('currency_name = {:currency}', { currency })).catch(() => null);
+    const vault = await collection.getFirstListItem(
+      context.pb.filter('currency = {:currencyId}', { currencyId: currencyRecord.id }),
+    ).catch(async () => collection.getFirstListItem(
+      context.pb.filter('currency_name = {:currency}', { currency: currencyName }),
+    ).catch(() => null));
     const balance = Number(vault?.balance ?? 0) + direction * value;
     if (balance < 0) return NextResponse.json({ message: 'موجودی صندوق کافی نیست.' }, { status: 400 });
-    const payload = { currency_name: currency, balance, updated_by: context.user.id };
-    const record = vault ? await collection.update(vault.id, payload) : await collection.create({ ...payload, created_by: context.user.id });
+    const payload = {
+      currency: currencyRecord.id,
+      currency_name: currencyName,
+      balance,
+      updated_by: context.user.id,
+    };
+    const record = vault
+      ? await collection.update(vault.id, payload)
+      : await collection.create({ ...payload, opening_balance: 0, created_by: context.user.id });
     await context.pb.collection('cash_transactions').create({
-      currency,
+      currency: currencyCode,
+      currency_name: currencyName,
+      currency_symbol: currencySymbol,
+      currency_ref: currencyRecord.id,
       amount: direction * value,
-      description: direction < 0 ? `پرداخت وجه نقد - ${currency}` : `دریافت وجه نقد - ${currency}`,
+      transaction_type: direction < 0 ? 'cash_out' : 'cash_in',
+      is_opening_balance: false,
+      description: direction < 0 ? `پرداخت وجه نقد - ${currencySymbol}` : `دریافت وجه نقد - ${currencySymbol}`,
       created_by: context.user.id,
       vault: record.id,
       source_key: sourceKey,
-    }).catch(() => undefined);
-    return NextResponse.json({ vault: record }, { status: vault ? 200 : 201 });
+    });
+    return NextResponse.json({
+      vault: { ...record, currencyCode, currencyName, currencySymbol },
+    }, { status: vault ? 200 : 201 });
   } catch {
     return NextResponse.json({ message: 'ثبت تراکنش صندوق انجام نشد.' }, { status: 400 });
   }

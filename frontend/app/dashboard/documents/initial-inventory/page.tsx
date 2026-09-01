@@ -29,7 +29,7 @@ export default async function InitialInventoryPage() {
           </header>
 
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-            <InitialCashInventoryCard />
+            <InitialCashInventoryCard listHref="/dashboard/documents/initial-inventory/cash" />
           </div>
         </div>
       </main>
