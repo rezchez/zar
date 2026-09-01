@@ -4,6 +4,32 @@ import { getServerAuthContext } from '@/lib/auth';
 import { hasPermission } from '@/lib/authorization';
 import { dateToJalaliString } from '@/lib/jalali';
 
+function extractPbErrorMessage(error: unknown, fallback: string): string {
+  if (!error) return fallback;
+  if (typeof error === 'object') {
+    const errObj = error as any;
+    const responseData = errObj?.response?.data || errObj?.data;
+    if (responseData && typeof responseData === 'object') {
+      const fieldErrors: string[] = [];
+      for (const [key, val] of Object.entries(responseData)) {
+        if (val && typeof val === 'object' && 'message' in val) {
+          fieldErrors.push(`${key}: ${(val as any).message}`);
+        } else if (typeof val === 'string') {
+          fieldErrors.push(`${key}: ${val}`);
+        }
+      }
+      if (fieldErrors.length > 0) {
+        return `خطا در ثبت اطلاعات (${fieldErrors.join(' - ')})`;
+      }
+    }
+    if (errObj?.message && typeof errObj.message === 'string') {
+      return errObj.message;
+    }
+  }
+  if (error instanceof Error) return error.message;
+  return fallback;
+}
+
 export async function GET() {
   const context = await getServerAuthContext();
   if (!context) {
@@ -113,12 +139,17 @@ export async function POST(request: Request) {
         return NextResponse.json({ message: 'موجودی صندوق نمی‌تواند منفی شود.' }, { status: 400 });
       }
 
-      const updatedFund = await context.pb.collection('cash_funds').update(existingFund.id, {
-        name: fundName,
-        opening_balance: amount,
-        balance: nextBalance,
-        updated_by: context.user.id,
-      });
+      let updatedFund: any;
+      try {
+        updatedFund = await context.pb.collection('cash_funds').update(existingFund.id, {
+          name: fundName,
+          opening_balance: amount,
+          balance: nextBalance,
+          updated_by: context.user.id,
+        });
+      } catch (err) {
+        return NextResponse.json({ message: extractPbErrorMessage(err, 'ویرایش موجودی اولیه انجام نشد.') }, { status: 400 });
+      }
 
       const existingTx = await context.pb.collection('cash_transactions').getFirstListItem(
         context.pb.filter('vault = {:vaultId} && (is_opening_balance = true || transaction_type = "opening_balance")', {
@@ -128,27 +159,31 @@ export async function POST(request: Request) {
 
       const dateValue = dateInput || (existingTx?.date ? String(existingTx.date) : dateToJalaliString(new Date()));
 
-      if (existingTx) {
-        await context.pb.collection('cash_transactions').update(existingTx.id, {
-          amount,
-          date: dateValue,
-          description: description || `موجودی اول دوره صندوق - ${currencySymbol}`,
-        });
-      } else {
-        await context.pb.collection('cash_transactions').create({
-          vault: existingFund.id,
-          currency_ref: currencyId,
-          currency: currencyCode,
-          currency_name: currencyName,
-          currency_symbol: currencySymbol,
-          amount,
-          source_key: `opening:cash:${currencyId}`,
-          transaction_type: 'opening_balance',
-          is_opening_balance: true,
-          date: dateValue,
-          description: description || `موجودی اول دوره صندوق - ${currencySymbol}`,
-          created_by: context.user.id,
-        });
+      try {
+        if (existingTx) {
+          await context.pb.collection('cash_transactions').update(existingTx.id, {
+            amount,
+            date: dateValue,
+            description: description || `موجودی اول دوره صندوق - ${currencySymbol}`,
+          });
+        } else {
+          await context.pb.collection('cash_transactions').create({
+            vault: existingFund.id,
+            currency_ref: currencyId,
+            currency: currencyCode.slice(0, 16) || 'IRT',
+            currency_name: currencyName.slice(0, 32),
+            currency_symbol: currencySymbol,
+            amount,
+            source_key: `opening:cash:${currencyId}`,
+            transaction_type: 'opening_balance',
+            is_opening_balance: true,
+            date: dateValue,
+            description: description || `موجودی اول دوره صندوق - ${currencySymbol}`,
+            created_by: context.user.id,
+          });
+        }
+      } catch (err) {
+        return NextResponse.json({ message: extractPbErrorMessage(err, 'ثبت تراکنش موجودی اولیه با خطا مواجه شد.') }, { status: 400 });
       }
 
       return NextResponse.json({
@@ -184,6 +219,9 @@ export async function POST(request: Request) {
     const currencySymbol = String(currencyRecord.symbol || currencyCode).trim();
     const fundName = customFundName || `صندوق ${currencyName}`;
 
+    // Clamp currency_name to 32 chars to satisfy strict legacy PocketBase column limits
+    const safeCurrencyName = currencyName.slice(0, 32);
+
     // Duplicate Check: Enforce strictly one cash fund per currency
     const existingFundForCurrency = await context.pb.collection('cash_funds').getFirstListItem(
       context.pb.filter('currency = {:currencyId}', { currencyId: currencyRecord.id }),
@@ -200,26 +238,29 @@ export async function POST(request: Request) {
     const dateValue = dateInput || dateToJalaliString(new Date());
     const sourceKey = `opening:cash:${currencyRecord.id}`;
 
-    const fund = await context.pb.collection('cash_funds').create({
-      name: fundName,
-      currency: currencyRecord.id,
-      currency_name: currencyName,
-      opening_balance: amount,
-      balance: amount,
-      created_by: context.user.id,
-      updated_by: context.user.id,
-    });
-
-    if (!fund) {
-      throw new Error('ایجاد موجودی صندوق انجام نشد.');
+    let fund: any;
+    try {
+      fund = await context.pb.collection('cash_funds').create({
+        name: fundName,
+        currency: currencyRecord.id,
+        currency_name: safeCurrencyName,
+        opening_balance: amount,
+        balance: amount,
+        created_by: context.user.id,
+        updated_by: context.user.id,
+      });
+    } catch (err) {
+      return NextResponse.json({
+        message: extractPbErrorMessage(err, 'ایجاد صندوق وجه نقد با خطا مواجه شد.'),
+      }, { status: 400 });
     }
 
     try {
       await context.pb.collection('cash_transactions').create({
         vault: fund.id,
         currency_ref: currencyRecord.id,
-        currency: currencyCode,
-        currency_name: currencyName,
+        currency: currencyCode.slice(0, 16) || 'IRT',
+        currency_name: safeCurrencyName,
         currency_symbol: currencySymbol,
         amount,
         source_key: sourceKey,
@@ -231,7 +272,9 @@ export async function POST(request: Request) {
       });
     } catch (transactionError) {
       await context.pb.collection('cash_funds').delete(fund.id).catch(() => undefined);
-      throw transactionError;
+      return NextResponse.json({
+        message: extractPbErrorMessage(transactionError, 'ثبت تراکنش موجودی اولیه با خطا مواجه شد.'),
+      }, { status: 400 });
     }
 
     return NextResponse.json({
@@ -249,7 +292,7 @@ export async function POST(request: Request) {
       },
     }, { status: 201 });
   } catch (error) {
-    const msg = error instanceof Error ? error.message : 'ثبت موجودی اولیه انجام نشد.';
+    const msg = extractPbErrorMessage(error, 'ثبت موجودی اولیه انجام نشد.');
     return NextResponse.json({ message: msg }, { status: 400 });
   }
 }
