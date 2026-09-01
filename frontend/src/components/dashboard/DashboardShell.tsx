@@ -2,6 +2,7 @@
 
 import {
   BarChart3,
+  Boxes,
   FileSpreadsheet,
   History,
   LayoutDashboard,
@@ -61,10 +62,23 @@ const navGroupsBase: NavGroupData[] = [
         ],
       },
       {
-        id: 'document-new',
-        title: 'ثبت سند مالی',
+        id: 'documents',
+        title: 'اسناد',
         icon: FileSpreadsheet,
-        href: '/dashboard/documents/new',
+        children: [
+          {
+            id: 'document-new',
+            title: 'ثبت سند',
+            icon: FileSpreadsheet,
+            href: '/dashboard/documents/new',
+          },
+          {
+            id: 'document-initial-inventory',
+            title: 'تعریف موجودی اول دوره',
+            icon: Boxes,
+            href: '/dashboard/documents/initial-inventory',
+          },
+        ],
       },
       {
         id: 'reports',
@@ -226,13 +240,15 @@ export default function DashboardShell({
           ? 'reports'
           : pathname === '/dashboard/documents/new'
             ? 'document-new'
-            : pathname === '/dashboard/customers'
-              ? 'customer-list'
-              : pathname === '/dashboard/customers/new'
-                ? 'customer-new'
-                : pathname.startsWith('/dashboard/customers/')
-                  ? 'customer-list'
-                  : selectedItem;
+            : pathname === '/dashboard/documents/initial-inventory' || pathname === '/dashboard/documents/opening-balance'
+              ? 'document-initial-inventory'
+              : pathname === '/dashboard/customers'
+                ? 'customer-list'
+                : pathname === '/dashboard/customers/new'
+                  ? 'customer-new'
+                  : pathname.startsWith('/dashboard/customers/')
+                    ? 'customer-list'
+                    : selectedItem;
 
   function handleSelect(item: NavItemData) {
     setSelectedItem(item.id);
