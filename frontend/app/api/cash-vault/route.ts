@@ -19,9 +19,8 @@ export async function GET() {
   const currenciesList = await context.pb.collection('currencies').getFullList().catch(() => []);
   const currencyMap = new Map<string, any>(currenciesList.map((c: any) => [c.id, c]));
 
-  const vaults = await context.pb.collection('cash_funds').getFullList({ sort: 'currency_name', expand: 'currency' }).catch(async () =>
-    context.pb.collection('cash_funds').getFullList({ sort: 'currency_name' }).catch(() => []),
-  );
+  const vaults = await context.pb.collection('cash_funds').getFullList({ sort: 'currency_name' })
+    .catch(() => []);
 
   return NextResponse.json({
     vaults: vaults.map((vault: any) => {

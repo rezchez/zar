@@ -20,12 +20,8 @@ export default async function InitialCashFundsListPage() {
     const currenciesList = await context.pb.collection('currencies').getFullList().catch(() => []);
     const currencyMap = new Map<string, any>(currenciesList.map((c: any) => [c.id, c]));
 
-    const funds = await context.pb.collection('cash_funds').getFullList({
-      sort: '-created',
-      expand: 'currency',
-    }).catch(async () => context.pb.collection('cash_funds').getFullList({
-      sort: '-created',
-    }).catch(() => []));
+    const funds = await context.pb.collection('cash_funds').getFullList()
+      .catch(() => []);
 
     const txs = await context.pb.collection('cash_transactions').getFullList({
       filter: 'is_opening_balance = true || transaction_type = "opening_balance"',
