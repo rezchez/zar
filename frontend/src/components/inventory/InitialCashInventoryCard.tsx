@@ -4,6 +4,7 @@ import { Banknote, List, Plus } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 
+import CashFundsListModal from './CashFundsListModal';
 import InitialCashInventoryModal from './InitialCashInventoryModal';
 
 export type InitialCashInventoryCardProps = {
@@ -23,7 +24,18 @@ export default function InitialCashInventoryCard({
   enableModal = true,
   className = '',
 }: InitialCashInventoryCardProps) {
-  const [modalOpen, setModalOpen] = useState(false);
+  const [addModalOpen, setAddModalOpen] = useState(false);
+  const [listModalOpen, setListModalOpen] = useState(false);
+
+  function handleListClick() {
+    if (onList) {
+      onList();
+      return;
+    }
+    if (enableModal) {
+      setListModalOpen(true);
+    }
+  }
 
   function handleAddClick() {
     if (onAdd) {
@@ -31,7 +43,7 @@ export default function InitialCashInventoryCard({
       return;
     }
     if (enableModal) {
-      setModalOpen(true);
+      setAddModalOpen(true);
     }
   }
 
@@ -71,7 +83,7 @@ export default function InitialCashInventoryCard({
           ) : (
             <button
               type="button"
-              onClick={onList}
+              onClick={handleListClick}
               className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50/80 px-4 text-xs font-bold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-200 dark:hover:bg-slate-800"
             >
               <List size={16} />
@@ -100,11 +112,20 @@ export default function InitialCashInventoryCard({
         </div>
       </div>
 
-      {/* Initial Cash Inventory Modal */}
+      {/* Initial Cash Inventory Add Modal */}
       {enableModal && (
         <InitialCashInventoryModal
-          isOpen={modalOpen}
-          onClose={() => setModalOpen(false)}
+          isOpen={addModalOpen}
+          onClose={() => setAddModalOpen(false)}
+        />
+      )}
+
+      {/* Cash Funds List & Edit Modal */}
+      {enableModal && (
+        <CashFundsListModal
+          isOpen={listModalOpen}
+          onClose={() => setListModalOpen(false)}
+          onOpenAddModal={() => setAddModalOpen(true)}
         />
       )}
     </>

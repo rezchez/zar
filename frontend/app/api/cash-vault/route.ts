@@ -22,6 +22,8 @@ export async function GET() {
   return NextResponse.json({
     vaults: vaults.map((vault: any) => ({
       ...vault,
+      id: vault.id,
+      name: String(vault.name || `صندوق ${vault.expand?.currency?.name || vault.currency_name || ''}`).trim(),
       currencyId: String(vault.currency || vault.currency_id || ''),
       currencyName: String(vault.expand?.currency?.name || vault.currency_name || ''),
       currencyCode: String(vault.expand?.currency?.code || ''),
@@ -77,7 +79,12 @@ export async function POST(request: Request) {
     ).catch(async () => collection.getFirstListItem(
       context.pb.filter('currency_name = {:currency}', { currency: currencyName }),
     ).catch(() => null));
-    const balance = Number(vault?.balance ?? 0) + direction * value;
+
+    if (!vault) {
+      return NextResponse.json({ message: 'صندوقی برای این ارز یافت نشد. ابتدا صندوق اولیه را ایجاد کنید.' }, { status: 400 });
+    }
+
+    const balance = Number(vault.balance ?? 0) + direction * value;
     if (balance < 0) return NextResponse.json({ message: 'موجودی صندوق کافی نیست.' }, { status: 400 });
     const payload = {
       currency: currencyRecord.id,
@@ -85,9 +92,7 @@ export async function POST(request: Request) {
       balance,
       updated_by: context.user.id,
     };
-    const record = vault
-      ? await collection.update(vault.id, payload)
-      : await collection.create({ ...payload, opening_balance: 0, created_by: context.user.id });
+    const record = await collection.update(vault.id, payload);
     await context.pb.collection('cash_transactions').create({
       currency: currencyCode,
       currency_name: currencyName,
@@ -103,7 +108,7 @@ export async function POST(request: Request) {
     });
     return NextResponse.json({
       vault: { ...record, currencyCode, currencyName, currencySymbol },
-    }, { status: vault ? 200 : 201 });
+    }, { status: 200 });
   } catch {
     return NextResponse.json({ message: 'ثبت تراکنش صندوق انجام نشد.' }, { status: 400 });
   }

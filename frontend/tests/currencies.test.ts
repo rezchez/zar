@@ -92,7 +92,7 @@ describe('Currencies Database Collection & UI Dropdown Integration Tests', () =>
     );
 
     expect(html).toBeDefined();
-    expect(html).toContain('ثبت موجودی اولیه وجوه نقد صندوق');
+    expect(html).toContain('موجودی اولیه وجوه نقد صندوق');
     expect(html).toContain('نوع ارز');
     expect(html).toContain('ارزی در کالکشن ثبت نشده است');
     expect(html).not.toContain('دلار ($)');

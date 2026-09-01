@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import {
   AlertCircle,
   Banknote,
+  Calendar,
   Check,
   CheckCircle2,
   Coins,
@@ -11,18 +12,20 @@ import {
   Plus,
   X,
 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
   formatDynamicAmountLabel,
   type Currency,
 } from '@/lib/currencies';
+import { dateToJalaliString } from '@/lib/jalali';
 import { formatPriceWithCommas, parseLocalizedAmount } from '@/lib/money';
 
 export type InitialCashInventoryModalProps = {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess?: (entry: { currency: string; amount: number; description: string }) => void;
+  onSuccess?: (entry: { currency: string; amount: number; description: string; name?: string; date?: string }) => void;
 };
 
 export default function InitialCashInventoryModal({
@@ -30,10 +33,19 @@ export default function InitialCashInventoryModal({
   onClose,
   onSuccess,
 }: InitialCashInventoryModalProps) {
+  let router: { refresh: () => void } | null = null;
+  try {
+    router = useRouter();
+  } catch {
+    router = null;
+  }
+
   const [currencies, setCurrencies] = useState<Currency[]>([]);
   const [loadingCurrencies, setLoadingCurrencies] = useState(false);
   const [selectedCurrencyId, setSelectedCurrencyId] = useState<string>('');
+  const [fundName, setFundName] = useState<string>('');
   const [amount, setAmount] = useState<string>('');
+  const [openingDate, setOpeningDate] = useState<string>('');
   const [description, setDescription] = useState<string>('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -48,7 +60,6 @@ export default function InitialCashInventoryModal({
   const [addCurrencyError, setAddCurrencyError] = useState('');
   const [addCurrencySuccess, setAddCurrencySuccess] = useState('');
 
-  // The currency collection is the sole source for this selector.
   const loadCurrencies = useCallback(async () => {
     setLoadingCurrencies(true);
     try {
@@ -89,20 +100,21 @@ export default function InitialCashInventoryModal({
       setShowAddCurrency(false);
       setAddCurrencyError('');
       setAddCurrencySuccess('');
+      setOpeningDate(dateToJalaliString(new Date()));
+      setFundName('');
+      setAmount('');
+      setDescription('');
     }
   }, [isOpen, loadCurrencies]);
 
-  // Selected currency object
   const activeCurrency = useMemo(() => {
     return currencies.find((currency) => currency.id === selectedCurrencyId) ?? null;
   }, [currencies, selectedCurrencyId]);
 
-  // Dynamic amount label: قالب: موجودی اولیه [نام/نماد ارز]
   const dynamicAmountLabel = useMemo(() => {
     return formatDynamicAmountLabel(activeCurrency);
   }, [activeCurrency]);
 
-  // Amount change handler with formatted display
   function handleAmountChange(e: React.ChangeEvent<HTMLInputElement>) {
     const rawVal = e.target.value;
     const numericVal = parseLocalizedAmount(rawVal);
@@ -113,7 +125,6 @@ export default function InitialCashInventoryModal({
     }
   }
 
-  // Quick Add new currency
   async function handleAddCurrencySubmit(e: React.FormEvent) {
     e.preventDefault();
     setAddCurrencyError('');
@@ -181,19 +192,18 @@ export default function InitialCashInventoryModal({
     }
   }
 
-  // Main Submit handler
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
     setSuccess('');
 
-    if (!activeCurrency) {
-      setError('ابتدا یک ارز از کالکشن ارزها انتخاب یا اضافه کنید.');
+    if (!activeCurrency || !selectedCurrencyId) {
+      setError('انتخاب ارز الزامی است.');
       return;
     }
 
     const numericAmount = parseLocalizedAmount(amount);
-    if (!numericAmount || numericAmount <= 0) {
+    if (!Number.isFinite(numericAmount) || numericAmount < 0 || (amount.trim() !== '' && Number.isNaN(numericAmount))) {
       setError('لطفاً مبلغ معتبری برای موجودی اولیه وارد کنید.');
       return;
     }
@@ -206,9 +216,9 @@ export default function InitialCashInventoryModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           currencyId: activeCurrency.id,
-          currency: currencyNameOrCode,
-          currencyCode: activeCurrency.code || activeCurrency.symbol,
+          name: fundName.trim() || `صندوق ${currencyNameOrCode}`,
           amount: numericAmount,
+          date: openingDate.trim(),
           description: description.trim(),
         }),
       });
@@ -218,21 +228,28 @@ export default function InitialCashInventoryModal({
         throw new Error(data.message || 'ثبت موجودی اولیه انجام نشد.');
       }
 
-      setSuccess('موجودی اولیه با موفقیت ذخیره شد.');
+      setSuccess('صندوق و موجودی اولیه با موفقیت ثبت شد.');
       if (onSuccess) {
         onSuccess({
           currency: currencyNameOrCode,
           amount: numericAmount,
           description: description.trim(),
+          name: fundName.trim() || `صندوق ${currencyNameOrCode}`,
+          date: openingDate.trim(),
         });
+      }
+
+      if (router?.refresh) {
+        router.refresh();
       }
 
       setTimeout(() => {
         onClose();
+        setFundName('');
         setAmount('');
         setDescription('');
         setSuccess('');
-      }, 1000);
+      }, 800);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'خطا در ثبت موجودی اولیه.');
     } finally {
@@ -260,7 +277,7 @@ export default function InitialCashInventoryModal({
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 15 }}
           transition={{ type: 'spring', duration: 0.25 }}
-          className="relative z-10 w-full max-w-lg overflow-hidden rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900"
+          className="relative z-10 max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900"
           role="dialog"
           aria-modal="true"
           aria-labelledby="cash-inventory-modal-title"
@@ -276,10 +293,10 @@ export default function InitialCashInventoryModal({
                   id="cash-inventory-modal-title"
                   className="text-base font-extrabold text-slate-900 dark:text-white"
                 >
-                  ثبت موجودی اولیه وجوه نقد صندوق
+                  ثبت و تعریف موجودی اولیه وجوه نقد صندوق
                 </h2>
                 <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                  اسکناسهای داخل صندوق شامل تومان و ارز
+                  ایجاد صندوق بر اساس ارزهای معرفیشده در سیستم
                 </p>
               </div>
             </div>
@@ -329,12 +346,12 @@ export default function InitialCashInventoryModal({
                     {currencies.length === 0 ? (
                       <option value="">ارزی در کالکشن ثبت نشده است</option>
                     ) : currencies.map((curr) => {
-                      const val = curr.code || curr.symbol || curr.id;
+                      const val = curr.id || curr.code;
                       const label = curr.symbol
                         ? `${curr.name} (${curr.symbol})`
                         : curr.name;
                       return (
-                        <option key={curr.id || val} value={curr.id || curr.code || val}>
+                        <option key={curr.id || val} value={curr.id || curr.code}>
                           {label}
                         </option>
                       );
@@ -452,6 +469,39 @@ export default function InitialCashInventoryModal({
               )}
             </AnimatePresence>
 
+            {/* Fund Name Field */}
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                نام صندوق
+              </label>
+              <input
+                type="text"
+                placeholder={activeCurrency ? `صندوق ${activeCurrency.name}` : 'مثال: صندوق دلار'}
+                value={fundName}
+                onChange={(e) => setFundName(e.target.value)}
+                disabled={submitting}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-800 shadow-sm outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+              />
+            </div>
+
+            {/* Opening Date Field */}
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                تاریخ ثبت موجودی اولیه *
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="1405/01/01"
+                  value={openingDate}
+                  onChange={(e) => setOpeningDate(e.target.value)}
+                  disabled={submitting}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-right font-mono text-xs font-bold text-slate-800 shadow-sm outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                />
+                <Calendar size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              </div>
+            </div>
+
             {/* Dynamic Amount Input */}
             <div className="space-y-1.5">
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
@@ -480,7 +530,7 @@ export default function InitialCashInventoryModal({
                 توضیحات
               </label>
               <textarea
-                rows={3}
+                rows={2}
                 placeholder="توضیحات یا جزئیات مربوط به موجودی اولیه..."
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
@@ -490,7 +540,7 @@ export default function InitialCashInventoryModal({
             </div>
 
             {/* Modal Actions */}
-            <div className="mt-6 flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+            <div className="mt-6 flex items-center justify-end gap-3 border-t border-slate-100 pt-3 dark:border-slate-800">
               <button
                 type="button"
                 onClick={onClose}
