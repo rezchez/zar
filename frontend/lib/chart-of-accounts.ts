@@ -1013,7 +1013,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | '
     isMultiCurrency: false,
     isSystem: true,
     isActive: true,
-    isPostable: true,
+    isPostable: false,
     sortOrder: 6200,
     description: 'هزینه‌های تبلیغات فضای مجازی، عکاسی از طلا، بسته‌بندی لوکس و هدایا',
   },
@@ -1667,45 +1667,11 @@ export function getNextDetailAccountCode(
   return `${prefix}${String(nextSub).padStart(2, '0')}`;
 }
 
-/**
- * Ensures a BankAccount is mapped to a dedicated Level 4 Detail account under '1110' (موجودی نقد و بانک).
- * If existingAccountId is supplied and exists, returns that account.
- * Otherwise, automatically creates a Level 4 detail account under '1110' in PocketBase with a standardized name and code.
- */
-export async function ensureBankAccountDetailInChart(
-  pb: any,
-  params: {
-    bankName: string;
-    branchName?: string;
-    accountNumber: string;
-    currency?: string;
-    existingAccountId?: string | null;
-    userId?: string;
-  },
-): Promise<{ id: string; code: string; name: string; path: string }> {
-  // 1. If existingAccountId is supplied, verify it
-  if (params.existingAccountId) {
-    try {
-      const existing = await pb.collection('chart_of_accounts').getOne(params.existingAccountId).catch(() => null);
-      if (existing) {
-        return {
-          id: existing.id,
-          code: existing.code,
-          name: existing.name,
-          path: existing.path || `/1000/1100/1110/${existing.code}/`,
-        };
-      }
-    } catch {
-      // fallback to creating
-    }
-  }
-
-  // 2. Resolve parent '1110' (موجودی نقد و بانک)
+async function ensureParentCashAndBank(pb: any) {
   let parentRecord: any = null;
   try {
     parentRecord = await pb.collection('chart_of_accounts').getFirstListItem('code = "1110"').catch(() => null);
     if (!parentRecord) {
-      // Check if root 1000 and 1100 exist, if not create them
       let root1000 = await pb.collection('chart_of_accounts').getFirstListItem('code = "1000"').catch(() => null);
       if (!root1000) {
         root1000 = await pb.collection('chart_of_accounts').create({
@@ -1758,11 +1724,43 @@ export async function ensureBankAccountDetailInChart(
   } catch {
     //
   }
+  return parentRecord;
+}
 
+/**
+ * Ensures a BankAccount is mapped to a dedicated Level 4 Detail account under '1110' (موجودی نقد و بانک).
+ */
+export async function ensureBankAccountDetailInChart(
+  pb: any,
+  params: {
+    bankName: string;
+    branchName?: string;
+    accountNumber: string;
+    currency?: string;
+    existingAccountId?: string | null;
+    userId?: string;
+  },
+): Promise<{ id: string; code: string; name: string; path: string }> {
+  if (params.existingAccountId) {
+    try {
+      const existing = await pb.collection('chart_of_accounts').getOne(params.existingAccountId).catch(() => null);
+      if (existing) {
+        return {
+          id: existing.id,
+          code: existing.code,
+          name: existing.name,
+          path: existing.path || `/1000/1100/1110/${existing.code}/`,
+        };
+      }
+    } catch {
+      // fallback
+    }
+  }
+
+  const parentRecord = await ensureParentCashAndBank(pb);
   const parentId = parentRecord?.id || null;
   const parentPath = parentRecord?.path || '/1000/1100/1110/';
 
-  // 3. Find existing detail codes under 1110
   let existingCodes: string[] = [];
   try {
     const filterStr = parentId ? `parentId = "${parentId}" || code ~ "1110"` : 'code ~ "1110"';
@@ -1806,7 +1804,6 @@ export async function ensureBankAccountDetailInChart(
       path: created.path,
     };
   } catch {
-    // If creation fails, return empty ID so bank_accounts does not fail foreign key relation check
     return {
       id: '',
       code: newCode,
@@ -1816,3 +1813,86 @@ export async function ensureBankAccountDetailInChart(
   }
 }
 
+/**
+ * Ensures a CashFund is mapped to a dedicated Level 4 Detail account under '1110' (موجودی نقد و بانک).
+ */
+export async function ensureCashFundDetailInChart(
+  pb: any,
+  params: {
+    fundName: string;
+    currencyName?: string;
+    existingAccountId?: string | null;
+    userId?: string;
+  },
+): Promise<{ id: string; code: string; name: string; path: string }> {
+  if (params.existingAccountId) {
+    try {
+      const existing = await pb.collection('chart_of_accounts').getOne(params.existingAccountId).catch(() => null);
+      if (existing) {
+        return {
+          id: existing.id,
+          code: existing.code,
+          name: existing.name,
+          path: existing.path || `/1000/1100/1110/${existing.code}/`,
+        };
+      }
+    } catch {
+      // fallback
+    }
+  }
+
+  const parentRecord = await ensureParentCashAndBank(pb);
+  const parentId = parentRecord?.id || null;
+  const parentPath = parentRecord?.path || '/1000/1100/1110/';
+
+  let existingCodes: string[] = [];
+  try {
+    const filterStr = parentId ? `parentId = "${parentId}" || code ~ "1110"` : 'code ~ "1110"';
+    const records = await pb.collection('chart_of_accounts').getFullList({
+      filter: filterStr,
+      fields: 'code',
+    }).catch(() => []);
+    existingCodes = records.map((r: any) => r.code);
+  } catch {
+    //
+  }
+
+  const newCode = getNextDetailAccountCode('1110', existingCodes);
+  const accountName = params.fundName || `صندوق ${params.currencyName || ''}`.trim();
+  const description = `حساب تفصیلی سطح ۴ مربوط به ${accountName}`;
+
+  try {
+    const created = await pb.collection('chart_of_accounts').create({
+      code: newCode,
+      name: accountName,
+      parentId: parentId,
+      path: `${parentPath}${newCode}/`,
+      level: 4,
+      accountType: 'asset',
+      normalBalance: 'debit',
+      requiresWeight: false,
+      isMultiCurrency: true,
+      isSystem: false,
+      isActive: true,
+      isPostable: true,
+      sortOrder: Number(newCode) || 111001,
+      description: description,
+      createdBy: params.userId || null,
+      updatedBy: params.userId || null,
+    });
+
+    return {
+      id: created.id,
+      code: created.code,
+      name: created.name,
+      path: created.path,
+    };
+  } catch {
+    return {
+      id: '',
+      code: newCode,
+      name: accountName,
+      path: `${parentPath}${newCode}/`,
+    };
+  }
+}

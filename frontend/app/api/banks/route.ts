@@ -13,6 +13,17 @@ function text(value: unknown, max = 120) {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
 }
 
+export function validateIranianSheba(sheba: string): { valid: boolean; error?: string } {
+  const clean = sheba.trim().toUpperCase().replace(/[\s-]/g, '');
+  if (!clean) return { valid: true }; // Optional field
+
+  const norm = clean.startsWith('IR') ? clean : `IR${clean}`;
+  if (!/^IR[0-9]{24}$/.test(norm)) {
+    return { valid: false, error: 'شماره شبا باید با IR شروع شده و شامل ۲۴ رقم باشد (مثال: IR123456789012345678901234).' };
+  }
+  return { valid: true };
+}
+
 async function writerFor(context: Awaited<ReturnType<typeof getServerAuthContext>>) {
   if (!context) return null;
   try {
@@ -69,6 +80,9 @@ export async function POST(request: Request) {
   const bankName = text(body?.bankName);
   const branchName = text(body?.branchName, 120);
   const accountNumber = text(body?.accountNumber, 80);
+  const rawSheba = text(body?.shebaNumber || body?.iban, 34);
+  const hasCheckbook = Boolean(body?.hasCheckbook);
+  const hasVirtualCheck = Boolean(body?.hasVirtualCheck);
   const accountCodeZero = text(body?.accountCodeZero, 80) || '0';
   const currency = text(body?.currency, 16).toUpperCase() || 'IRR';
   const rawBalance = body?.currentBalance ?? body?.balance ?? 0;
@@ -82,6 +96,15 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
+
+  if (rawSheba) {
+    const shebaValidation = validateIranianSheba(rawSheba);
+    if (!shebaValidation.valid) {
+      return NextResponse.json({ message: shebaValidation.error }, { status: 400 });
+    }
+  }
+
+  const normSheba = rawSheba ? (rawSheba.toUpperCase().startsWith('IR') ? rawSheba.toUpperCase() : `IR${rawSheba.toUpperCase()}`) : '';
 
   const writer = await writerFor(context);
   if (!writer) {
@@ -119,6 +142,9 @@ export async function POST(request: Request) {
       bankName,
       branchName,
       accountNumber,
+      shebaNumber: normSheba,
+      hasCheckbook,
+      hasVirtualCheck,
       balance: initialBalance,
       currentBalance: initialBalance,
       currency,
@@ -142,7 +168,7 @@ export async function POST(request: Request) {
       entityType: 'bank_account',
       entityId: record.id,
       entityLabel: `${bankName} - ${accountNumber}`,
-      changes: { bankName, branchName, accountNumber, balance: initialBalance, currency, accountId: linkedAccountId },
+      changes: { bankName, branchName, accountNumber, shebaNumber: normSheba, hasCheckbook, hasVirtualCheck, balance: initialBalance, currency, accountId: linkedAccountId },
       authenticatedClient: context.pb,
     });
 

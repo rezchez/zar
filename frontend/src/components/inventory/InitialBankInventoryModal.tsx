@@ -36,6 +36,9 @@ export type BankAccountEditItem = {
   bankName: string;
   branchName: string;
   accountNumber: string;
+  shebaNumber?: string;
+  hasCheckbook?: boolean;
+  hasVirtualCheck?: boolean;
   currencyId?: string;
   currencyName?: string;
   currencyCode?: string;
@@ -74,6 +77,9 @@ export default function InitialBankInventoryModal({
   const [customBankName, setCustomBankName] = useState<string>('');
   const [branchName, setBranchName] = useState<string>('');
   const [accountNumber, setAccountNumber] = useState<string>('');
+  const [shebaNumber, setShebaNumber] = useState<string>('');
+  const [hasCheckbook, setHasCheckbook] = useState<boolean>(false);
+  const [hasVirtualCheck, setHasVirtualCheck] = useState<boolean>(false);
   const [selectedCurrencyId, setSelectedCurrencyId] = useState<string>('');
   const [amount, setAmount] = useState<string>('');
   const [openingDate, setOpeningDate] = useState<string>('');
@@ -134,6 +140,9 @@ export default function InitialBankInventoryModal({
         setSelectedBankName(editItem.bankName || '');
         setBranchName(editItem.branchName || '');
         setAccountNumber(editItem.accountNumber || '');
+        setShebaNumber(editItem.shebaNumber ? editItem.shebaNumber.replace(/^IR/i, '') : '');
+        setHasCheckbook(Boolean(editItem.hasCheckbook));
+        setHasVirtualCheck(Boolean(editItem.hasVirtualCheck));
         setAmount(editItem.openingBalance ? formatPriceWithCommas(editItem.openingBalance) : '0');
         setOpeningDate(editItem.openingBalanceDate || dateToJalaliString(new Date()));
         setDescription(editItem.description || '');
@@ -143,6 +152,9 @@ export default function InitialBankInventoryModal({
         setCustomBankName('');
         setBranchName('');
         setAccountNumber('');
+        setShebaNumber('');
+        setHasCheckbook(false);
+        setHasVirtualCheck(false);
         setAmount('');
         setDescription('');
       }
@@ -184,6 +196,15 @@ export default function InitialBankInventoryModal({
       return;
     }
 
+    const trimmedSheba = shebaNumber.trim().toUpperCase();
+    if (trimmedSheba) {
+      const cleanSheba = trimmedSheba.startsWith('IR') ? trimmedSheba : `IR${trimmedSheba}`;
+      if (!/^IR[0-9]{24}$/.test(cleanSheba)) {
+        setError('شماره شبا باید شامل ۲۴ رقم باشد (مثال: IR123456789012345678901234).');
+        return;
+      }
+    }
+
     const numericAmount = parseLocalizedAmount(amount);
     if (!Number.isFinite(numericAmount) || numericAmount < 0 || (amount.trim() !== '' && Number.isNaN(numericAmount))) {
       setError('لطفاً مبلغ معتبری (غیرمنفی) برای موجودی اولیه وارد کنید.');
@@ -192,6 +213,7 @@ export default function InitialBankInventoryModal({
 
     setSubmitting(true);
     try {
+      const fullSheba = trimmedSheba ? (trimmedSheba.startsWith('IR') ? trimmedSheba : `IR${trimmedSheba}`) : '';
       const res = await fetch('/api/accounting/opening/bank', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -200,6 +222,9 @@ export default function InitialBankInventoryModal({
           bankName: effectiveBankName,
           branchName: branchName.trim(),
           accountNumber: trimmedAccNumber,
+          shebaNumber: fullSheba,
+          hasCheckbook,
+          hasVirtualCheck,
           currencyId: selectedCurrencyId,
           currency: activeCurrency?.code || 'IRT',
           amount: numericAmount,
@@ -234,6 +259,9 @@ export default function InitialBankInventoryModal({
         setCustomBankName('');
         setBranchName('');
         setAccountNumber('');
+        setShebaNumber('');
+        setHasCheckbook(false);
+        setHasVirtualCheck(false);
         setAmount('');
         setDescription('');
         setSuccess('');
@@ -263,7 +291,7 @@ export default function InitialBankInventoryModal({
         <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 15 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95, y: 15 }}
           transition={{ type: 'spring', duration: 0.25 }}
           className="relative z-10 max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900"
           role="dialog"
@@ -395,6 +423,57 @@ export default function InitialBankInventoryModal({
                   dir="ltr"
                 />
               </div>
+            </div>
+
+            {/* Sheba Number (شماره شبا) */}
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                شماره شبا
+              </label>
+              <div className="relative flex items-center dir-ltr">
+                <span className="flex h-10 shrink-0 items-center justify-center rounded-l-xl border border-r-0 border-slate-200 bg-slate-100 px-3 text-xs font-black text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                  IR
+                </span>
+                <input
+                  type="text"
+                  maxLength={24}
+                  placeholder="123456789012345678901234"
+                  value={shebaNumber}
+                  onChange={(e) => setShebaNumber(e.target.value.replace(/[^0-9]/g, ''))}
+                  disabled={submitting}
+                  className="w-full rounded-r-xl border border-slate-200 bg-white px-3.5 py-2.5 font-mono text-xs font-bold text-slate-800 shadow-sm outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                  dir="ltr"
+                />
+              </div>
+            </div>
+
+            {/* Checkbook & Virtual Check Checkboxes */}
+            <div className="flex flex-wrap items-center gap-6 rounded-xl border border-slate-100 bg-slate-50/80 p-3 dark:border-slate-800 dark:bg-slate-800/40">
+              <label className="inline-flex cursor-pointer items-center gap-2 select-none">
+                <input
+                  type="checkbox"
+                  checked={hasCheckbook}
+                  onChange={(e) => setHasCheckbook(e.target.checked)}
+                  disabled={submitting}
+                  className="size-4 rounded-md border-slate-300 text-amber-500 focus:ring-amber-500/20 dark:border-slate-700"
+                />
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  دسته چک
+                </span>
+              </label>
+
+              <label className="inline-flex cursor-pointer items-center gap-2 select-none">
+                <input
+                  type="checkbox"
+                  checked={hasVirtualCheck}
+                  onChange={(e) => setHasVirtualCheck(e.target.checked)}
+                  disabled={submitting}
+                  className="size-4 rounded-md border-slate-300 text-amber-500 focus:ring-amber-500/20 dark:border-slate-700"
+                />
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  چک مجازی
+                </span>
+              </label>
             </div>
 
             {/* Currency Selector */}

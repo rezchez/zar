@@ -2,9 +2,11 @@ import { NextResponse } from 'next/server';
 
 import { getServerAuthContext } from '@/lib/auth';
 import { hasPermission } from '@/lib/authorization';
+import { ensureBankAccountDetailInChart } from '@/lib/chart-of-accounts';
 import { dateToJalaliString } from '@/lib/jalali';
 import { parseLocalizedAmount } from '@/lib/money';
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
+import { validateIranianSheba } from '../../banks/route';
 
 function text(value: unknown, max = 120): string {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
@@ -92,6 +94,9 @@ export async function GET() {
         bankName: String(acc.bankName || ''),
         branchName: String(acc.branchName || ''),
         accountNumber: String(acc.accountNumber || ''),
+        shebaNumber: String(acc.shebaNumber || ''),
+        hasCheckbook: Boolean(acc.hasCheckbook),
+        hasVirtualCheck: Boolean(acc.hasVirtualCheck),
         currencyId,
         currencyName,
         currencyCode,
@@ -133,6 +138,9 @@ export async function POST(request: Request) {
     const bankName = text(body?.bankName);
     const branchName = text(body?.branchName);
     const accountNumber = text(body?.accountNumber, 80);
+    const rawSheba = text(body?.shebaNumber || body?.iban, 34);
+    const hasCheckbook = typeof body?.hasCheckbook === 'boolean' ? body.hasCheckbook : false;
+    const hasVirtualCheck = typeof body?.hasVirtualCheck === 'boolean' ? body.hasVirtualCheck : false;
     const requestedCurrencyId = text(body?.currencyId);
     const currencyCodeInput = text(body?.currency, 16).toUpperCase();
     const rawAmount = parseLocalizedAmount(String(body?.amount ?? body?.openingBalance ?? 0));
@@ -144,7 +152,15 @@ export async function POST(request: Request) {
     }
     const amount = Math.abs(Math.round(rawAmount));
 
-    // MODE 1: EDIT EXISTING BANK ACCOUNT OPENING BALANCE
+    if (rawSheba) {
+      const shebaValidation = validateIranianSheba(rawSheba);
+      if (!shebaValidation.valid) {
+        return NextResponse.json({ message: shebaValidation.error }, { status: 400 });
+      }
+    }
+    const normSheba = rawSheba ? (rawSheba.toUpperCase().startsWith('IR') ? rawSheba.toUpperCase() : `IR${rawSheba.toUpperCase()}`) : '';
+
+    // MODE 1: EDIT EXISTING BANK ACCOUNT OPENING BALANCE & METADATA
     if (bankAccountId) {
       let existingAccount: any = null;
       try {
@@ -167,13 +183,41 @@ export async function POST(request: Request) {
         return NextResponse.json({ message: 'موجودی حساب بانکی نمی‌تواند منفی شود.' }, { status: 400 });
       }
 
+      const updatePayload: Record<string, any> = {
+        balance: nextBalance,
+        currentBalance: nextBalance,
+        updatedBy: context.user.id,
+      };
+
+      if (bankName) updatePayload.bankName = bankName;
+      if (branchName !== undefined) updatePayload.branchName = branchName;
+      if (accountNumber) updatePayload.accountNumber = accountNumber;
+      updatePayload.shebaNumber = normSheba;
+      updatePayload.hasCheckbook = hasCheckbook;
+      updatePayload.hasVirtualCheck = hasVirtualCheck;
+
+      // Update Chart of Accounts detail account if needed
+      let linkedAccountId = existingAccount.accountId;
+      try {
+        const detailAccount = await ensureBankAccountDetailInChart(writer, {
+          bankName: bankName || existingAccount.bankName,
+          branchName: branchName ?? existingAccount.branchName,
+          accountNumber: accountNumber || existingAccount.accountNumber,
+          currency: currencyCodeInput || existingAccount.currency,
+          existingAccountId: existingAccount.accountId || null,
+          userId: context.user.id,
+        });
+        if (detailAccount?.id) {
+          linkedAccountId = detailAccount.id;
+          updatePayload.accountId = detailAccount.id;
+        }
+      } catch {
+        //
+      }
+
       let updatedAccount: any;
       try {
-        updatedAccount = await writer.collection('bank_accounts').update(existingAccount.id, {
-          balance: nextBalance,
-          currentBalance: nextBalance,
-          updatedBy: context.user.id,
-        });
+        updatedAccount = await writer.collection('bank_accounts').update(existingAccount.id, updatePayload);
       } catch (err) {
         return NextResponse.json({ message: extractPbErrorMessage(err, 'ویرایش حساب بانکی انجام نشد.') }, { status: 400 });
       }
@@ -186,7 +230,7 @@ export async function POST(request: Request) {
             amount,
             direction: 'in',
             date: dateValue,
-            description: description || `موجودی اول دوره حساب بانکی - ${existingAccount.bankName}`,
+            description: description || `موجودی اول دوره حساب بانکی - ${updatedAccount.bankName}`,
           });
         } else {
           await writer.collection('bank_transactions').create({
@@ -199,7 +243,7 @@ export async function POST(request: Request) {
             transaction_type: 'opening_balance',
             is_opening_balance: true,
             date: dateValue,
-            description: description || `موجودی اول دوره حساب بانکی - ${existingAccount.bankName}`,
+            description: description || `موجودی اول دوره حساب بانکی - ${updatedAccount.bankName}`,
             created_by: context.user.id,
           });
         }
@@ -214,6 +258,9 @@ export async function POST(request: Request) {
           bankName: updatedAccount.bankName,
           branchName: updatedAccount.branchName,
           accountNumber: updatedAccount.accountNumber,
+          shebaNumber: updatedAccount.shebaNumber,
+          hasCheckbook: Boolean(updatedAccount.hasCheckbook),
+          hasVirtualCheck: Boolean(updatedAccount.hasVirtualCheck),
           currency: updatedAccount.currency,
           openingBalance: amount,
           balance: nextBalance,
@@ -249,6 +296,22 @@ export async function POST(request: Request) {
       }
     }
 
+    let linkedAccountId: string | null = null;
+    try {
+      const detailAccount = await ensureBankAccountDetailInChart(writer, {
+        bankName,
+        branchName,
+        accountNumber,
+        currency: currencyCode,
+        userId: context.user.id,
+      });
+      if (detailAccount?.id && detailAccount.id.trim().length > 0) {
+        linkedAccountId = detailAccount.id;
+      }
+    } catch {
+      //
+    }
+
     const dateValue = dateInput || dateToJalaliString(new Date());
 
     let bankAccountRecord: any;
@@ -257,10 +320,14 @@ export async function POST(request: Request) {
         bankName,
         branchName,
         accountNumber,
+        shebaNumber: normSheba,
+        hasCheckbook,
+        hasVirtualCheck,
         balance: amount,
         currentBalance: amount,
         currency: currencyCode,
         accountCodeZero: '0',
+        accountId: linkedAccountId || null,
         isActive: true,
         owner: context.user.id,
         createdBy: context.user.id,
@@ -287,7 +354,6 @@ export async function POST(request: Request) {
         created_by: context.user.id,
       });
     } catch (transactionError) {
-      // Atomic rollback: Delete bank_account if transaction fails
       await writer.collection('bank_accounts').delete(bankAccountRecord.id).catch(() => undefined);
       return NextResponse.json({
         message: extractPbErrorMessage(transactionError, 'ثبت تراکنش موجودی اولیه حساب بانکی با خطا مواجه شد.'),
@@ -301,6 +367,9 @@ export async function POST(request: Request) {
         bankName,
         branchName,
         accountNumber,
+        shebaNumber: normSheba,
+        hasCheckbook,
+        hasVirtualCheck,
         currency: currencyCode,
         openingBalance: amount,
         balance: amount,
