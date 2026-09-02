@@ -4,6 +4,7 @@ import { Layers } from 'lucide-react';
 import { getServerAuthContext } from '@/lib/auth';
 import DashboardShell from '@/src/components/dashboard/DashboardShell';
 import InitialCashInventoryCard from '@/src/components/inventory/InitialCashInventoryCard';
+import InitialBankInventoryCard from '@/src/components/inventory/InitialBankInventoryCard';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,12 +25,13 @@ export default async function InitialInventoryPage() {
               تعریف موجودی اول دوره
             </h1>
             <p className="max-w-2xl text-xs leading-6 text-slate-500 dark:text-slate-400">
-              ثبت و مدیریت تراز پایه و موجودی اول دوره وجوه نقد، طلا، ارز و مسکوکات
+              ثبت و مدیریت تراز پایه و موجودی اول دوره وجوه نقد، حساب‌های بانکی، طلا، ارز و مسکوکات
             </p>
           </header>
 
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
             <InitialCashInventoryCard listHref="/dashboard/documents/initial-inventory/cash" />
+            <InitialBankInventoryCard listHref="/dashboard/documents/initial-inventory/bank" />
           </div>
         </div>
       </main>
