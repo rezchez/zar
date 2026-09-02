@@ -8,20 +8,10 @@ import { ensureBankAccountsCollection } from '@/lib/bank-collection';
 import { ensureBankAccountDetailInChart } from '@/lib/chart-of-accounts';
 import { parseLocalizedAmount } from '@/lib/money';
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
+import { validateIranianSheba } from '@/lib/sheba';
 
 function text(value: unknown, max = 120) {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
-}
-
-export function validateIranianSheba(sheba: string): { valid: boolean; error?: string } {
-  const clean = sheba.trim().toUpperCase().replace(/[\s-]/g, '');
-  if (!clean) return { valid: true }; // Optional field
-
-  const norm = clean.startsWith('IR') ? clean : `IR${clean}`;
-  if (!/^IR[0-9]{24}$/.test(norm)) {
-    return { valid: false, error: 'شماره شبا باید با IR شروع شده و شامل ۲۴ رقم باشد (مثال: IR123456789012345678901234).' };
-  }
-  return { valid: true };
 }
 
 async function writerFor(context: Awaited<ReturnType<typeof getServerAuthContext>>) {

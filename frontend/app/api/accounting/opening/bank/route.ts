@@ -6,7 +6,7 @@ import { ensureBankAccountDetailInChart } from '@/lib/chart-of-accounts';
 import { dateToJalaliString } from '@/lib/jalali';
 import { parseLocalizedAmount } from '@/lib/money';
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
-import { validateIranianSheba } from '../../banks/route';
+import { validateIranianSheba } from '@/lib/sheba';
 
 function text(value: unknown, max = 120): string {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';

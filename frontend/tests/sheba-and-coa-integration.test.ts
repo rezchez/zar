@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 
-import { validateIranianSheba } from '@/app/api/banks/route';
 import { ensureCashFundDetailInChart, ensureBankAccountDetailInChart } from '@/lib/chart-of-accounts';
+import { validateIranianSheba } from '@/lib/sheba';
 
 describe('Sheba Validation & Chart of Accounts Integration Tests', () => {
   it('validates Iranian Sheba (IBAN) format strictly', () => {
