@@ -1,30 +1,24 @@
 'use client';
 
-import { ArrowLeft, Banknote, List, Plus } from 'lucide-react';
+import { ArrowLeft, Banknote } from 'lucide-react';
 import Link from 'next/link';
 import React, { useState } from 'react';
 
 import CashFundsListModal from './CashFundsListModal';
-import InitialCashInventoryModal from './InitialCashInventoryModal';
 
 export type InitialCashInventoryCardProps = {
   onList?: () => void;
-  onAdd?: () => void;
   listHref?: string;
-  addHref?: string;
   enableModal?: boolean;
   className?: string;
 };
 
 export default function InitialCashInventoryCard({
   onList,
-  onAdd,
-  listHref,
-  addHref,
+  listHref = '/dashboard/documents/initial-inventory/cash',
   enableModal = true,
   className = '',
 }: InitialCashInventoryCardProps) {
-  const [addModalOpen, setAddModalOpen] = useState(false);
   const [listModalOpen, setListModalOpen] = useState(false);
 
   function handleListClick() {
@@ -34,16 +28,6 @@ export default function InitialCashInventoryCard({
     }
     if (enableModal) {
       setListModalOpen(true);
-    }
-  }
-
-  function handleAddClick() {
-    if (onAdd) {
-      onAdd();
-      return;
-    }
-    if (enableModal) {
-      setAddModalOpen(true);
     }
   }
 
@@ -76,64 +60,34 @@ export default function InitialCashInventoryCard({
           </div>
         </div>
 
-        {/* Footer Action Links / Buttons */}
-        <div className="relative z-10 mt-6 flex items-center gap-2 border-t border-slate-100 pt-4 dark:border-slate-800">
-          {listHref ? (
-            <Link
-              href={listHref}
-              className="inline-flex flex-1 items-center justify-between rounded-2xl bg-slate-50 px-4 py-2.5 text-xs font-black text-slate-700 transition hover:bg-amber-500 hover:text-slate-950 dark:bg-slate-800/80 dark:text-slate-200 dark:hover:bg-amber-400 dark:hover:text-slate-950"
-            >
-              <span>ورود به مدیریت و لیست صندوق‌ها</span>
-              <ArrowLeft size={16} className="transition-transform group-hover:-translate-x-1" />
-            </Link>
-          ) : (
+        {/* Footer Action Link */}
+        <div className="relative z-10 mt-6 border-t border-slate-100 pt-4 dark:border-slate-800">
+          {onList ? (
             <button
               type="button"
               onClick={handleListClick}
-              className="inline-flex flex-1 items-center justify-between rounded-2xl bg-slate-50 px-4 py-2.5 text-xs font-black text-slate-700 transition hover:bg-amber-500 hover:text-slate-950 dark:bg-slate-800/80 dark:text-slate-200 dark:hover:bg-amber-400 dark:hover:text-slate-950"
+              className="inline-flex w-full items-center justify-between rounded-2xl bg-slate-50 px-4 py-2.5 text-xs font-black text-slate-700 transition hover:bg-amber-500 hover:text-slate-950 dark:bg-slate-800/80 dark:text-slate-200 dark:hover:bg-amber-400 dark:hover:text-slate-950"
             >
-              <span>لیست صندوق‌ها</span>
-              <List size={16} />
+              <span>ورود به مدیریت موجودی صندوق‌ها</span>
+              <ArrowLeft size={16} className="transition-transform group-hover:-translate-x-1" />
             </button>
-          )}
-
-          {addHref ? (
-            <Link
-              href={addHref}
-              className="inline-flex items-center justify-center gap-1.5 rounded-2xl bg-amber-500 px-3.5 py-2.5 text-xs font-black text-slate-950 shadow-sm transition hover:bg-amber-400 dark:bg-amber-400 dark:hover:bg-amber-300"
-              title="افزودن"
-            >
-              <Plus size={16} strokeWidth={2.5} />
-              <span>افزودن</span>
-            </Link>
           ) : (
-            <button
-              type="button"
-              onClick={handleAddClick}
-              className="inline-flex items-center justify-center gap-1.5 rounded-2xl bg-amber-500 px-3.5 py-2.5 text-xs font-black text-slate-950 shadow-sm transition hover:bg-amber-400 dark:bg-amber-400 dark:hover:bg-amber-300"
-              title="افزودن"
+            <Link
+              href={listHref}
+              className="inline-flex w-full items-center justify-between rounded-2xl bg-slate-50 px-4 py-2.5 text-xs font-black text-slate-700 transition hover:bg-amber-500 hover:text-slate-950 dark:bg-slate-800/80 dark:text-slate-200 dark:hover:bg-amber-400 dark:hover:text-slate-950"
             >
-              <Plus size={16} strokeWidth={2.5} />
-              <span>افزودن</span>
-            </button>
+              <span>ورود به مدیریت موجودی صندوق‌ها</span>
+              <ArrowLeft size={16} className="transition-transform group-hover:-translate-x-1" />
+            </Link>
           )}
         </div>
       </article>
-
-      {/* Initial Cash Inventory Add Modal */}
-      {enableModal && (
-        <InitialCashInventoryModal
-          isOpen={addModalOpen}
-          onClose={() => setAddModalOpen(false)}
-        />
-      )}
 
       {/* Cash Funds List & Edit Modal */}
       {enableModal && (
         <CashFundsListModal
           isOpen={listModalOpen}
           onClose={() => setListModalOpen(false)}
-          onOpenAddModal={() => setAddModalOpen(true)}
         />
       )}
     </>

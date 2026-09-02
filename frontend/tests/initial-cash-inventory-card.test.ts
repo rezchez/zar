@@ -11,11 +11,10 @@ describe('InitialCashInventoryCard UI Component Tests', () => {
     expect(InitialCashInventoryCard).toBe(InitialCashInventoryCardReExport);
   });
 
-  test('component renders exact header, subtext, and button labels in HTML markup', () => {
+  test('component renders exact header, subtext, and single navigation action in HTML markup', () => {
     const html = renderToStaticMarkup(
       React.createElement(InitialCashInventoryCard, {
         listHref: '/dashboard/documents/initial-inventory/cash',
-        addHref: '/dashboard/documents/initial-inventory/cash/new',
       }),
     );
 
@@ -23,23 +22,20 @@ describe('InitialCashInventoryCard UI Component Tests', () => {
     expect(html).toContain('dir="rtl"');
     expect(html).toContain('موجودی اولیه وجوه نقد صندوق');
     expect(html).toContain('اسکناسهای داخل صندوق شامل تومان و ارز');
-    expect(html).toContain('لیست');
-    expect(html).toContain('افزودن');
+    expect(html).toContain('ورود به مدیریت موجودی صندوق‌ها');
+    expect(html).not.toContain('افزودن');
   });
 
-  test('renders button elements when callback handlers are provided', () => {
+  test('renders button element when callback handler is provided', () => {
     let listClicked = false;
-    let addClicked = false;
 
     const html = renderToStaticMarkup(
       React.createElement(InitialCashInventoryCard, {
         onList: () => { listClicked = true; },
-        onAdd: () => { addClicked = true; },
       }),
     );
 
     expect(html).toContain('<button');
-    expect(html).toContain('لیست');
-    expect(html).toContain('افزودن');
+    expect(html).toContain('ورود به مدیریت موجودی صندوق‌ها');
   });
 });

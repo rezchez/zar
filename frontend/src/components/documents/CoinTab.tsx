@@ -186,16 +186,6 @@ export const PREDEFINED_COIN_PRESETS: CoinPreset[] = [
     isFixedWeight: true,
     isFixedPurity: true,
   },
-  {
-    id: 'zioto_custom',
-    name: 'شمش زیوتو (وزن دلخواه)',
-    category: 'bar_zioto',
-    categoryLabel: 'شمش‌های زیوتو (Zioto)',
-    weight: 1.0,
-    purity: 995,
-    isFixedWeight: false,
-    isFixedPurity: true,
-  },
 
   // 4. شمش پارسیس (Parsis Bars)
   {
@@ -256,16 +246,6 @@ export const PREDEFINED_COIN_PRESETS: CoinPreset[] = [
     weight: 100.0,
     purity: 995,
     isFixedWeight: true,
-    isFixedPurity: true,
-  },
-  {
-    id: 'parsis_custom',
-    name: 'شمش پارسیس (وزن دلخواه)',
-    category: 'bar_parsis',
-    categoryLabel: 'شمش‌های پارسیس (Parsis)',
-    weight: 1.0,
-    purity: 995,
-    isFixedWeight: false,
     isFixedPurity: true,
   },
 
@@ -472,9 +452,43 @@ export default function CoinTab({
   const [newCustomPurity, setNewCustomPurity] = useState('900');
   const [customFormError, setCustomFormError] = useState<string | null>(null);
 
+  // Fetch master coin types from backend API /api/coin-types (Single Source of Truth)
+  useEffect(() => {
+    let isMounted = true;
+    async function loadCoinTypes() {
+      try {
+        const res = await fetch('/api/coin-types', { cache: 'no-store' });
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.coinTypes) && data.coinTypes.length > 0 && isMounted) {
+            const mapped: CoinPreset[] = data.coinTypes.map((item: any) => ({
+              id: item.id,
+              name: item.name,
+              category: item.nature === 'bullion' ? 'bar_other' : (item.coinSubtype?.includes('پهلوی') ? 'pahlavi_coin' : (item.coinSubtype?.includes('پارسیان') ? 'parsian' : 'bank_coin')),
+              categoryLabel: item.coinSubtype || (item.nature === 'bullion' ? 'شمش‌های معتبر' : 'سکه‌های بانکی'),
+              weight: Number(item.unitWeight || 1.0),
+              purity: Number(item.purity || 900),
+              isFixedWeight: true,
+              isFixedPurity: true,
+            }));
+            setCustomCoins(mapped);
+          }
+        }
+      } catch {
+        // keep default preset list
+      }
+    }
+    void loadCoinTypes();
+    return () => { isMounted = false; };
+  }, []);
+
   // All combined presets
   const allPresets = useMemo(() => {
-    return [...PREDEFINED_COIN_PRESETS, ...customCoins];
+    // Avoid duplicating items if customCoins loaded from backend contain existing preset IDs
+    const customFiltered = customCoins.filter(
+      (c) => !PREDEFINED_COIN_PRESETS.some((p) => p.name === c.name || p.id === c.id),
+    );
+    return [...PREDEFINED_COIN_PRESETS, ...customFiltered];
   }, [customCoins]);
 
   // Form Fields State
@@ -602,7 +616,7 @@ export default function CoinTab({
   ]);
 
   // Handle custom coin submission
-  const handleCreateCustomCoin = (e: React.FormEvent) => {
+  const handleCreateCustomCoin = async (e: React.FormEvent) => {
     e.preventDefault();
     const name = newCustomName.trim();
     if (!name) {
@@ -637,6 +651,22 @@ export default function CoinTab({
     setSelectedCoinId(newPreset.id);
     setUnitWeight(String(weight));
     setPurity(String(purityVal));
+
+    // Post to backend API /api/coin-types for single source of truth
+    try {
+      await fetch('/api/coin-types', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          nature: 'coin',
+          unitWeight: weight,
+          purity: purityVal,
+        }),
+      });
+    } catch {
+      // ignore network errors for local state
+    }
 
     setIsAddCustomModalOpen(false);
     setNewCustomName('');
