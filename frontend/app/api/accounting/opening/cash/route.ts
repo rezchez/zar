@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { getServerAuthContext } from '@/lib/auth';
 import { hasPermission } from '@/lib/authorization';
+import { ensureCashFundDetailInChart } from '@/lib/chart-of-accounts';
 import { dateToJalaliString } from '@/lib/jalali';
 
 function extractPbErrorMessage(error: unknown, fallback: string): string {
@@ -43,8 +44,9 @@ export async function GET() {
     const currenciesList = await context.pb.collection('currencies').getFullList().catch(() => []);
     const currencyMap = new Map<string, any>(currenciesList.map((c: any) => [c.id, c]));
 
-    const funds = await context.pb.collection('cash_funds').getFullList()
-      .catch(() => []);
+    const funds = await context.pb.collection('cash_funds').getFullList({
+      expand: 'currency,accountId',
+    }).catch(() => []);
 
     const txs = await context.pb.collection('cash_transactions').getFullList({
       filter: 'is_opening_balance = true || transaction_type = "opening_balance"',
@@ -66,6 +68,7 @@ export async function GET() {
       const currencyCode = String(currency?.code || '');
       const currencySymbol = String(currency?.symbol || '');
       const fundName = String(f.name || `صندوق ${currencyName}`).trim();
+      const accountId = String(f.accountId || f.expand?.accountId?.id || '');
 
       const tx = txMap.get(f.id);
       const openingDate = String(tx?.date || (f.created ? dateToJalaliString(new Date(f.created)) : todayJalali));
@@ -82,6 +85,7 @@ export async function GET() {
         balance: Number(f.balance ?? 0),
         openingBalanceDate: openingDate,
         description,
+        accountId: accountId || undefined,
         created: f.created,
         updated: f.updated,
       };
@@ -120,7 +124,7 @@ export async function POST(request: Request) {
     if (fundId) {
       let existingFund: any = null;
       try {
-        existingFund = await context.pb.collection('cash_funds').getOne(fundId, { expand: 'currency' });
+        existingFund = await context.pb.collection('cash_funds').getOne(fundId, { expand: 'currency,accountId' });
       } catch {
         return NextResponse.json({ message: 'صندوق مورد نظر یافت نشد.' }, { status: 404 });
       }
@@ -140,12 +144,28 @@ export async function POST(request: Request) {
         return NextResponse.json({ message: 'موجودی صندوق نمی‌تواند منفی شود.' }, { status: 400 });
       }
 
+      let linkedAccountId: string | null = existingFund.accountId || null;
+      try {
+        const detailAccount = await ensureCashFundDetailInChart(context.pb, {
+          fundName,
+          currencyName,
+          existingAccountId: linkedAccountId,
+          userId: context.user.id,
+        });
+        if (detailAccount?.id) {
+          linkedAccountId = detailAccount.id;
+        }
+      } catch (err) {
+        console.warn('ensureCashFundDetailInChart failed for edit:', err);
+      }
+
       let updatedFund: any;
       try {
         updatedFund = await context.pb.collection('cash_funds').update(existingFund.id, {
           name: fundName,
           opening_balance: amount,
           balance: nextBalance,
+          accountId: linkedAccountId || undefined,
           updated_by: context.user.id,
         });
       } catch (err) {
@@ -201,6 +221,7 @@ export async function POST(request: Request) {
           openingBalance: amount,
           balance: nextBalance,
           openingBalanceDate: dateValue,
+          accountId: linkedAccountId || undefined,
         },
       });
     }
@@ -243,6 +264,21 @@ export async function POST(request: Request) {
     const dateValue = dateInput || dateToJalaliString(new Date());
     const sourceKey = `opening:cash:${currencyRecord.id}`;
 
+    let linkedAccountId: string | null = null;
+    try {
+      const detailAccount = await ensureCashFundDetailInChart(context.pb, {
+        fundName,
+        currencyName,
+        existingAccountId: null,
+        userId: context.user.id,
+      });
+      if (detailAccount?.id) {
+        linkedAccountId = detailAccount.id;
+      }
+    } catch (err) {
+      console.warn('ensureCashFundDetailInChart failed for create:', err);
+    }
+
     let fund: any;
     try {
       fund = await context.pb.collection('cash_funds').create({
@@ -251,6 +287,7 @@ export async function POST(request: Request) {
         currency_name: safeCurrencyName,
         opening_balance: amount,
         balance: amount,
+        accountId: linkedAccountId || undefined,
         created_by: context.user.id,
         updated_by: context.user.id,
       });
@@ -295,6 +332,7 @@ export async function POST(request: Request) {
         openingBalance: amount,
         balance: amount,
         openingBalanceDate: dateValue,
+        accountId: linkedAccountId || undefined,
       },
     }, { status: 201 });
   } catch (error) {
