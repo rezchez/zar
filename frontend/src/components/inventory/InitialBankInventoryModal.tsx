@@ -4,9 +4,9 @@ import { AnimatePresence, motion } from 'framer-motion';
 import {
   AlertCircle,
   Building2,
-  Calendar,
   Check,
   CheckCircle2,
+  Edit2,
   Landmark,
   Loader2,
   X,
@@ -14,6 +14,7 @@ import {
 import { useRouter } from 'next/navigation';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
+import DatePicker from '@/components/ui/date-picker';
 import {
   formatDynamicAmountLabel,
   type Currency,
@@ -30,16 +31,33 @@ export type BankDefinitionItem = {
   isActive: boolean;
 };
 
+export type BankAccountEditItem = {
+  id: string;
+  bankName: string;
+  branchName: string;
+  accountNumber: string;
+  currencyId?: string;
+  currencyName?: string;
+  currencyCode?: string;
+  currencySymbol?: string;
+  openingBalance: number;
+  balance: number;
+  openingBalanceDate: string;
+  description?: string;
+};
+
 export type InitialBankInventoryModalProps = {
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: (entry: { bankName: string; accountNumber: string; amount: number; description: string; date?: string }) => void;
+  editItem?: BankAccountEditItem | null;
 };
 
 export default function InitialBankInventoryModal({
   isOpen,
   onClose,
   onSuccess,
+  editItem,
 }: InitialBankInventoryModalProps) {
   let router: { refresh: () => void } | null = null;
   try {
@@ -76,7 +94,7 @@ export default function InitialBankInventoryModal({
         const banksData = await banksRes.json();
         if (Array.isArray(banksData.banks)) {
           setBankDefinitions(banksData.banks);
-          if (banksData.banks.length > 0) {
+          if (banksData.banks.length > 0 && !editItem) {
             setSelectedBankName(banksData.banks[0].name);
           }
         }
@@ -87,7 +105,16 @@ export default function InitialBankInventoryModal({
         if (Array.isArray(currData.currencies)) {
           const list = currData.currencies as Currency[];
           setCurrencies(list);
-          setSelectedCurrencyId(list[0]?.id ?? '');
+          setSelectedCurrencyId((curr) => {
+            if (editItem?.currencyId && list.some((c) => c.id === editItem.currencyId)) {
+              return editItem.currencyId;
+            }
+            if (editItem?.currencyCode) {
+              const matched = list.find((c) => c.code.toUpperCase() === editItem.currencyCode?.toUpperCase());
+              if (matched) return matched.id;
+            }
+            return list.some((c) => c.id === curr) ? curr : list[0]?.id ?? '';
+          });
         }
       }
     } catch {
@@ -95,22 +122,32 @@ export default function InitialBankInventoryModal({
     } finally {
       setLoadingMaster(false);
     }
-  }, []);
+  }, [editItem]);
 
   useEffect(() => {
     if (isOpen) {
       void loadMasterData();
       setError('');
       setSuccess('');
-      setOpeningDate(dateToJalaliString(new Date()));
-      setSelectedBankName('');
-      setCustomBankName('');
-      setBranchName('');
-      setAccountNumber('');
-      setAmount('');
-      setDescription('');
+
+      if (editItem) {
+        setSelectedBankName(editItem.bankName || '');
+        setBranchName(editItem.branchName || '');
+        setAccountNumber(editItem.accountNumber || '');
+        setAmount(editItem.openingBalance ? formatPriceWithCommas(editItem.openingBalance) : '0');
+        setOpeningDate(editItem.openingBalanceDate || dateToJalaliString(new Date()));
+        setDescription(editItem.description || '');
+      } else {
+        setOpeningDate(dateToJalaliString(new Date()));
+        setSelectedBankName('');
+        setCustomBankName('');
+        setBranchName('');
+        setAccountNumber('');
+        setAmount('');
+        setDescription('');
+      }
     }
-  }, [isOpen, loadMasterData]);
+  }, [isOpen, loadMasterData, editItem]);
 
   const activeCurrency = useMemo(() => {
     return currencies.find((c) => c.id === selectedCurrencyId) ?? null;
@@ -159,6 +196,7 @@ export default function InitialBankInventoryModal({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          bankAccountId: editItem?.id,
           bankName: effectiveBankName,
           branchName: branchName.trim(),
           accountNumber: trimmedAccNumber,
@@ -172,10 +210,10 @@ export default function InitialBankInventoryModal({
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.message || 'ثبت موجودی اولیه حساب بانکی انجام نشد.');
+        throw new Error(data.message || 'ثبت/ویرایش موجودی اولیه حساب بانکی انجام نشد.');
       }
 
-      setSuccess('حساب بانکی و موجودی اولیه با موفقیت ثبت شد.');
+      setSuccess(editItem ? 'حساب بانکی و موجودی اولیه با موفقیت به‌روزرسانی شد.' : 'حساب بانکی و موجودی اولیه با موفقیت ثبت شد.');
       if (onSuccess) {
         onSuccess({
           bankName: effectiveBankName,
@@ -201,7 +239,7 @@ export default function InitialBankInventoryModal({
         setSuccess('');
       }, 800);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'خطا در ثبت موجودی اولیه حساب بانکی.');
+      setError(err instanceof Error ? err.message : 'خطا در ثبت/ویرایش موجودی اولیه حساب بانکی.');
     } finally {
       setSubmitting(false);
     }
@@ -225,7 +263,7 @@ export default function InitialBankInventoryModal({
         <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 15 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95, y: 15 }}
+          exit={{ opacity: 0, scale: 1, y: 0 }}
           transition={{ type: 'spring', duration: 0.25 }}
           className="relative z-10 max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900"
           role="dialog"
@@ -236,17 +274,17 @@ export default function InitialBankInventoryModal({
           <div className="flex items-center justify-between border-b border-slate-100 pb-4 dark:border-slate-800">
             <div className="flex items-center gap-3">
               <div className="flex size-10 items-center justify-center rounded-xl bg-amber-500/15 text-amber-600 dark:bg-amber-500/25 dark:text-amber-400">
-                <Landmark size={22} className="stroke-[2.2]" />
+                {editItem ? <Edit2 size={20} className="stroke-[2.2]" /> : <Landmark size={22} className="stroke-[2.2]" />}
               </div>
               <div>
                 <h2
                   id="bank-inventory-modal-title"
                   className="text-base font-extrabold text-slate-900 dark:text-white"
                 >
-                  ثبت و تعریف موجودی اولیه حساب بانکی
+                  {editItem ? 'ویرایش موجودی اولیه حساب بانکی' : 'ثبت و تعریف موجودی اولیه حساب بانکی'}
                 </h2>
                 <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                  ایجاد حساب بانکی و ثبت موجودی پایه در سیستم
+                  {editItem ? `ویرایش مقدار و تاریخ موجودی اولیه ${editItem.bankName} (${editItem.accountNumber})` : 'ایجاد حساب بانکی و ثبت موجودی پایه در سیستم'}
                 </p>
               </div>
             </div>
@@ -379,22 +417,17 @@ export default function InitialBankInventoryModal({
               </select>
             </div>
 
-            {/* Opening Date Field */}
+            {/* Opening Date Field (PersianLabs DatePicker) */}
             <div className="space-y-1.5">
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
                 تاریخ ثبت موجودی اولیه *
               </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  placeholder="1405/01/01"
-                  value={openingDate}
-                  onChange={(e) => setOpeningDate(e.target.value)}
-                  disabled={submitting}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-right font-mono text-xs font-bold text-slate-800 shadow-sm outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                />
-                <Calendar size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-              </div>
+              <DatePicker
+                value={openingDate}
+                onValueChange={(_iso, jalali) => setOpeningDate(jalali)}
+                disabled={submitting}
+                placeholder="انتخاب تاریخ موجودی اولیه"
+              />
             </div>
 
             {/* Dynamic Amount Input */}
@@ -455,7 +488,7 @@ export default function InitialBankInventoryModal({
                 ) : (
                   <Check size={16} strokeWidth={2.5} />
                 )}
-                <span>ثبت موجودی اولیه</span>
+                <span>{editItem ? 'ذخیره تغییرات' : 'ثبت موجودی اولیه'}</span>
               </button>
             </div>
           </form>

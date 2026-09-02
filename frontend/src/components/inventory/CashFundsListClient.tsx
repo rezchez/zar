@@ -1,10 +1,10 @@
 'use client';
 
-import { Banknote, Calendar, ChevronRight, Plus, RefreshCw, Wallet } from 'lucide-react';
+import { Banknote, Calendar, ChevronRight, Edit3, Plus, RefreshCw, Wallet } from 'lucide-react';
 import Link from 'next/link';
 import React, { useCallback, useEffect, useState } from 'react';
 
-import InitialCashInventoryModal from './InitialCashInventoryModal';
+import InitialCashInventoryModal, { type CashFundEditItem } from './InitialCashInventoryModal';
 
 export type CashFundItem = {
   id: string;
@@ -16,6 +16,7 @@ export type CashFundItem = {
   openingBalance: number;
   balance: number;
   openingBalanceDate: string;
+  description?: string;
 };
 
 export default function CashFundsListClient({
@@ -26,6 +27,7 @@ export default function CashFundsListClient({
   const [funds, setFunds] = useState<CashFundItem[]>(initialFunds);
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<CashFundEditItem | null>(null);
 
   const fetchFunds = useCallback(async () => {
     setLoading(true);
@@ -47,6 +49,16 @@ export default function CashFundsListClient({
   useEffect(() => {
     void fetchFunds();
   }, [fetchFunds]);
+
+  const handleOpenCreate = () => {
+    setEditingItem(null);
+    setModalOpen(true);
+  };
+
+  const handleOpenEdit = (fund: CashFundItem) => {
+    setEditingItem(fund);
+    setModalOpen(true);
+  };
 
   return (
     <div dir="rtl" className="mx-auto max-w-5xl space-y-6">
@@ -82,7 +94,7 @@ export default function CashFundsListClient({
 
           <button
             type="button"
-            onClick={() => setModalOpen(true)}
+            onClick={handleOpenCreate}
             className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-amber-500 px-4 text-xs font-black text-slate-950 shadow-md shadow-amber-500/20 transition hover:bg-amber-400 dark:bg-amber-400 dark:hover:bg-amber-300"
           >
             <Plus size={16} strokeWidth={2.5} />
@@ -105,7 +117,7 @@ export default function CashFundsListClient({
           </p>
           <button
             type="button"
-            onClick={() => setModalOpen(true)}
+            onClick={handleOpenCreate}
             className="mt-5 inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-amber-500 px-5 text-xs font-black text-slate-950 shadow-sm transition hover:bg-amber-400 dark:bg-amber-400 dark:hover:bg-amber-300"
           >
             <Plus size={16} strokeWidth={2.5} />
@@ -122,7 +134,7 @@ export default function CashFundsListClient({
                 className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm transition-all hover:border-amber-500/40 hover:shadow-md dark:border-slate-800 dark:bg-slate-900"
               >
                 <div>
-                  {/* Top Header: Fund Name & Currency */}
+                  {/* Top Header: Fund Name, Currency & Action */}
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-3">
                       <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 text-amber-600 dark:bg-amber-500/25 dark:text-amber-400">
@@ -139,6 +151,16 @@ export default function CashFundsListClient({
                         </p>
                       </div>
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleOpenEdit(fund)}
+                      className="inline-flex size-8 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-600 hover:border-amber-500/50 hover:bg-amber-500/10 hover:text-amber-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-amber-500/20 dark:hover:text-amber-300"
+                      title="ویرایش موجودی اولیه"
+                      aria-label="ویرایش موجودی اولیه"
+                    >
+                      <Edit3 size={15} />
+                    </button>
                   </div>
 
                   {/* Date section */}
@@ -177,7 +199,11 @@ export default function CashFundsListClient({
       {/* Initial Cash Inventory Modal */}
       <InitialCashInventoryModal
         isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
+        onClose={() => {
+          setModalOpen(false);
+          setEditingItem(null);
+        }}
+        editItem={editingItem}
         onSuccess={() => {
           void fetchFunds();
         }}

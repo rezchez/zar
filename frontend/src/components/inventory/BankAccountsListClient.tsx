@@ -1,11 +1,11 @@
 'use client';
 
-import { Calendar, ChevronRight, Landmark, Plus, RefreshCw } from 'lucide-react';
+import { Calendar, ChevronRight, Edit3, Landmark, Plus, RefreshCw } from 'lucide-react';
 import Link from 'next/link';
 import React, { useCallback, useEffect, useState } from 'react';
 
 import BankLogo from '@/src/components/documents/BankLogo';
-import InitialBankInventoryModal from './InitialBankInventoryModal';
+import InitialBankInventoryModal, { type BankAccountEditItem } from './InitialBankInventoryModal';
 
 export type BankAccountItem = {
   id: string;
@@ -19,6 +19,7 @@ export type BankAccountItem = {
   openingBalance: number;
   balance: number;
   openingBalanceDate: string;
+  description?: string;
 };
 
 export default function BankAccountsListClient({
@@ -29,6 +30,7 @@ export default function BankAccountsListClient({
   const [accounts, setAccounts] = useState<BankAccountItem[]>(initialAccounts);
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<BankAccountEditItem | null>(null);
 
   const fetchAccounts = useCallback(async () => {
     setLoading(true);
@@ -50,6 +52,16 @@ export default function BankAccountsListClient({
   useEffect(() => {
     void fetchAccounts();
   }, [fetchAccounts]);
+
+  const handleOpenCreate = () => {
+    setEditingItem(null);
+    setModalOpen(true);
+  };
+
+  const handleOpenEdit = (account: BankAccountItem) => {
+    setEditingItem(account);
+    setModalOpen(true);
+  };
 
   return (
     <div dir="rtl" className="mx-auto max-w-5xl space-y-6">
@@ -85,7 +97,7 @@ export default function BankAccountsListClient({
 
           <button
             type="button"
-            onClick={() => setModalOpen(true)}
+            onClick={handleOpenCreate}
             className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-amber-500 px-4 text-xs font-black text-slate-950 shadow-md shadow-amber-500/20 transition hover:bg-amber-400 dark:bg-amber-400 dark:hover:bg-amber-300"
           >
             <Plus size={16} strokeWidth={2.5} />
@@ -108,7 +120,7 @@ export default function BankAccountsListClient({
           </p>
           <button
             type="button"
-            onClick={() => setModalOpen(true)}
+            onClick={handleOpenCreate}
             className="mt-5 inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-amber-500 px-5 text-xs font-black text-slate-950 shadow-sm transition hover:bg-amber-400 dark:bg-amber-400 dark:hover:bg-amber-300"
           >
             <Plus size={16} strokeWidth={2.5} />
@@ -125,7 +137,7 @@ export default function BankAccountsListClient({
                 className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm transition-all hover:border-amber-500/40 hover:shadow-md dark:border-slate-800 dark:bg-slate-900"
               >
                 <div>
-                  {/* Top Header: Bank Name & Account Number */}
+                  {/* Top Header: Bank Name, Account Number & Action */}
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-3">
                       <BankLogo bankName={acc.bankName} size={42} />
@@ -140,6 +152,16 @@ export default function BankAccountsListClient({
                         </p>
                       </div>
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleOpenEdit(acc)}
+                      className="inline-flex size-8 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-600 hover:border-amber-500/50 hover:bg-amber-500/10 hover:text-amber-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-amber-500/20 dark:hover:text-amber-300"
+                      title="ویرایش موجودی اولیه"
+                      aria-label="ویرایش موجودی اولیه"
+                    >
+                      <Edit3 size={15} />
+                    </button>
                   </div>
 
                   {/* Date & Currency Section */}
@@ -180,7 +202,11 @@ export default function BankAccountsListClient({
       {/* Initial Bank Inventory Modal */}
       <InitialBankInventoryModal
         isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
+        onClose={() => {
+          setModalOpen(false);
+          setEditingItem(null);
+        }}
+        editItem={editingItem}
         onSuccess={() => {
           void fetchAccounts();
         }}

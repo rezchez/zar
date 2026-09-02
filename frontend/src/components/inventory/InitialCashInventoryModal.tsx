@@ -4,10 +4,10 @@ import { AnimatePresence, motion } from 'framer-motion';
 import {
   AlertCircle,
   Banknote,
-  Calendar,
   Check,
   CheckCircle2,
   Coins,
+  Edit2,
   Loader2,
   Plus,
   X,
@@ -15,6 +15,7 @@ import {
 import { useRouter } from 'next/navigation';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
+import DatePicker from '@/components/ui/date-picker';
 import {
   formatDynamicAmountLabel,
   type Currency,
@@ -22,16 +23,31 @@ import {
 import { dateToJalaliString } from '@/lib/jalali';
 import { formatPriceWithCommas, parseLocalizedAmount } from '@/lib/money';
 
+export type CashFundEditItem = {
+  id: string;
+  name: string;
+  currencyId: string;
+  currencyName: string;
+  currencyCode: string;
+  currencySymbol: string;
+  openingBalance: number;
+  balance: number;
+  openingBalanceDate: string;
+  description?: string;
+};
+
 export type InitialCashInventoryModalProps = {
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: (entry: { currency: string; amount: number; description: string; name?: string; date?: string }) => void;
+  editItem?: CashFundEditItem | null;
 };
 
 export default function InitialCashInventoryModal({
   isOpen,
   onClose,
   onSuccess,
+  editItem,
 }: InitialCashInventoryModalProps) {
   let router: { refresh: () => void } | null = null;
   try {
@@ -69,11 +85,14 @@ export default function InitialCashInventoryModal({
         if (Array.isArray(data.currencies)) {
           const collectionCurrencies = data.currencies as Currency[];
           setCurrencies(collectionCurrencies);
-          setSelectedCurrencyId((current) =>
-            collectionCurrencies.some((currency) => currency.id === current)
+          setSelectedCurrencyId((current) => {
+            if (editItem?.currencyId && collectionCurrencies.some((c) => c.id === editItem.currencyId)) {
+              return editItem.currencyId;
+            }
+            return collectionCurrencies.some((currency) => currency.id === current)
               ? current
-              : collectionCurrencies[0]?.id ?? '',
-          );
+              : collectionCurrencies[0]?.id ?? '';
+          });
         } else {
           setCurrencies([]);
           setSelectedCurrencyId('');
@@ -90,7 +109,7 @@ export default function InitialCashInventoryModal({
     } finally {
       setLoadingCurrencies(false);
     }
-  }, []);
+  }, [editItem?.currencyId]);
 
   useEffect(() => {
     if (isOpen) {
@@ -100,12 +119,21 @@ export default function InitialCashInventoryModal({
       setShowAddCurrency(false);
       setAddCurrencyError('');
       setAddCurrencySuccess('');
-      setOpeningDate(dateToJalaliString(new Date()));
-      setFundName('');
-      setAmount('');
-      setDescription('');
+
+      if (editItem) {
+        setFundName(editItem.name || '');
+        setAmount(editItem.openingBalance ? formatPriceWithCommas(editItem.openingBalance) : '0');
+        setOpeningDate(editItem.openingBalanceDate || dateToJalaliString(new Date()));
+        setDescription(editItem.description || '');
+        setSelectedCurrencyId(editItem.currencyId || '');
+      } else {
+        setOpeningDate(dateToJalaliString(new Date()));
+        setFundName('');
+        setAmount('');
+        setDescription('');
+      }
     }
-  }, [isOpen, loadCurrencies]);
+  }, [isOpen, loadCurrencies, editItem]);
 
   const activeCurrency = useMemo(() => {
     return currencies.find((currency) => currency.id === selectedCurrencyId) ?? null;
@@ -204,7 +232,7 @@ export default function InitialCashInventoryModal({
 
     const numericAmount = parseLocalizedAmount(amount);
     if (!Number.isFinite(numericAmount) || numericAmount < 0 || (amount.trim() !== '' && Number.isNaN(numericAmount))) {
-      setError('لطفاً مبلغ معتبری برای موجودی اولیه وارد کنید.');
+      setError('لطفاً مبلغ معتبری (غیرمنفی) برای موجودی اولیه وارد کنید.');
       return;
     }
 
@@ -215,6 +243,7 @@ export default function InitialCashInventoryModal({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          fundId: editItem?.id,
           currencyId: activeCurrency.id,
           name: fundName.trim() || `صندوق ${currencyNameOrCode}`,
           amount: numericAmount,
@@ -225,10 +254,10 @@ export default function InitialCashInventoryModal({
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.message || 'ثبت موجودی اولیه انجام نشد.');
+        throw new Error(data.message || 'ثبت/ویرایش موجودی اولیه انجام نشد.');
       }
 
-      setSuccess('صندوق و موجودی اولیه با موفقیت ثبت شد.');
+      setSuccess(editItem ? 'موجودی اولیه صندوق با موفقیت به روز شد.' : 'صندوق و موجودی اولیه با موفقیت ثبت شد.');
       if (onSuccess) {
         onSuccess({
           currency: currencyNameOrCode,
@@ -251,7 +280,7 @@ export default function InitialCashInventoryModal({
         setSuccess('');
       }, 800);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'خطا در ثبت موجودی اولیه.');
+      setError(err instanceof Error ? err.message : 'خطا در ثبت/ویرایش موجودی اولیه.');
     } finally {
       setSubmitting(false);
     }
@@ -286,17 +315,17 @@ export default function InitialCashInventoryModal({
           <div className="flex items-center justify-between border-b border-slate-100 pb-4 dark:border-slate-800">
             <div className="flex items-center gap-3">
               <div className="flex size-10 items-center justify-center rounded-xl bg-amber-500/15 text-amber-600 dark:bg-amber-500/25 dark:text-amber-400">
-                <Banknote size={22} className="stroke-[2.2]" />
+                {editItem ? <Edit2 size={20} className="stroke-[2.2]" /> : <Banknote size={22} className="stroke-[2.2]" />}
               </div>
               <div>
                 <h2
                   id="cash-inventory-modal-title"
                   className="text-base font-extrabold text-slate-900 dark:text-white"
                 >
-                  ثبت و تعریف موجودی اولیه وجوه نقد صندوق
+                  {editItem ? 'ویرایش موجودی اولیه صندوق' : 'ثبت و تعریف موجودی اولیه وجوه نقد صندوق'}
                 </h2>
                 <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                  ایجاد صندوق بر اساس ارزهای معرفیشده در سیستم
+                  {editItem ? `ویرایش مقدار و تاریخ موجودی اولیه ${editItem.name}` : 'ایجاد صندوق بر اساس ارزهای معرفیشده در سیستم'}
                 </p>
               </div>
             </div>
@@ -339,9 +368,9 @@ export default function InitialCashInventoryModal({
                   <select
                     value={selectedCurrencyId}
                     onChange={(e) => setSelectedCurrencyId(e.target.value)}
-                    disabled={loadingCurrencies || submitting || currencies.length === 0}
+                    disabled={Boolean(editItem) || loadingCurrencies || submitting || currencies.length === 0}
                     aria-label="نوع ارز"
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-800 shadow-sm outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-800 shadow-sm outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                   >
                     {currencies.length === 0 ? (
                       <option value="">ارزی در کالکشن ثبت نشده است</option>
@@ -359,19 +388,21 @@ export default function InitialCashInventoryModal({
                   </select>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => setShowAddCurrency((prev) => !prev)}
-                  className={`inline-flex size-9.5 shrink-0 items-center justify-center rounded-xl border transition ${
-                    showAddCurrency
-                      ? 'border-amber-500 bg-amber-500/10 text-amber-700 dark:text-amber-300'
-                      : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-amber-500/50 hover:bg-amber-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'
-                  }`}
-                  title="افزودن ارز جدید"
-                  aria-label="افزودن ارز جدید"
-                >
-                  <Plus size={18} strokeWidth={2.2} />
-                </button>
+                {!editItem && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAddCurrency((prev) => !prev)}
+                    className={`inline-flex size-9.5 shrink-0 items-center justify-center rounded-xl border transition ${
+                      showAddCurrency
+                        ? 'border-amber-500 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                        : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-amber-500/50 hover:bg-amber-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'
+                    }`}
+                    title="افزودن ارز جدید"
+                    aria-label="افزودن ارز جدید"
+                  >
+                    <Plus size={18} strokeWidth={2.2} />
+                  </button>
+                )}
               </div>
             </div>
 
@@ -384,7 +415,7 @@ export default function InitialCashInventoryModal({
 
             {/* Inline Quick Add Currency Sub-form */}
             <AnimatePresence>
-              {showAddCurrency && (
+              {showAddCurrency && !editItem && (
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
@@ -484,22 +515,17 @@ export default function InitialCashInventoryModal({
               />
             </div>
 
-            {/* Opening Date Field */}
+            {/* Opening Date Field (PersianLabs DatePicker) */}
             <div className="space-y-1.5">
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
                 تاریخ ثبت موجودی اولیه *
               </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  placeholder="1405/01/01"
-                  value={openingDate}
-                  onChange={(e) => setOpeningDate(e.target.value)}
-                  disabled={submitting}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-right font-mono text-xs font-bold text-slate-800 shadow-sm outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                />
-                <Calendar size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-              </div>
+              <DatePicker
+                value={openingDate}
+                onValueChange={(_iso, jalali) => setOpeningDate(jalali)}
+                disabled={submitting}
+                placeholder="انتخاب تاریخ موجودی اولیه"
+              />
             </div>
 
             {/* Dynamic Amount Input */}
@@ -560,7 +586,7 @@ export default function InitialCashInventoryModal({
                 ) : (
                   <Check size={16} strokeWidth={2.5} />
                 )}
-                <span>ثبت موجودی اولیه</span>
+                <span>{editItem ? 'ذخیره تغییرات' : 'ثبت موجودی اولیه'}</span>
               </button>
             </div>
           </form>

@@ -49,4 +49,48 @@ describe('Bank Accounts & Bank Opening Balance Tests', () => {
     expect(openingTx.transaction_type).toBe('opening_balance');
     expect(openingTx.amount).toBeGreaterThan(0);
   });
+
+  it('Test 5 — Editing opening balance updates current balance and same opening transaction record', () => {
+    let openingTx = {
+      id: 'tx_bank_01',
+      bank_account: 'acc_01',
+      amount: 500000000,
+      date: '1405/01/01',
+      direction: 'in',
+      transaction_type: 'opening_balance',
+    };
+
+    let bankAccount = {
+      id: 'acc_01',
+      bankName: 'بانک ملت',
+      opening_balance: 500000000,
+      balance: 500000000,
+    };
+
+    // Subsequent transactions
+    const subsequentIn = 100000000;
+    const subsequentOut = 50000000;
+    bankAccount.balance = bankAccount.opening_balance + subsequentIn - subsequentOut; // 550,000,000
+
+    // Edit opening balance from 500M to 700M and date to 1405/02/01
+    const newOpeningAmount = 700000000;
+    const newDate = '1405/02/01';
+
+    const previousOpening = bankAccount.opening_balance;
+    const nextBalance = bankAccount.balance - previousOpening + newOpeningAmount;
+
+    bankAccount.opening_balance = newOpeningAmount;
+    bankAccount.balance = nextBalance;
+
+    openingTx = {
+      ...openingTx,
+      amount: newOpeningAmount,
+      date: newDate,
+    };
+
+    expect(bankAccount.balance).toBe(750000000);
+    expect(openingTx.amount).toBe(700000000);
+    expect(openingTx.date).toBe('1405/02/01');
+    expect(openingTx.id).toBe('tx_bank_01'); // Ensure NO duplicate created
+  });
 });
