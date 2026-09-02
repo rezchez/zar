@@ -4,7 +4,7 @@ import { ArrowRight, Building2, Plus, Search } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 
-import { BankLogo } from '@/components/documents/BankLogo';
+import BankLogo from '@/src/components/documents/BankLogo';
 import { formatPriceWithCommas } from '@/lib/money';
 
 import BankAccountsListModal, { type BankAccountItem } from './BankAccountsListModal';

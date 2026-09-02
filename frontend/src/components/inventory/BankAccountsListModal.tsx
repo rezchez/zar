@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import React, { useCallback, useEffect, useState } from 'react';
 
-import { BankLogo } from '@/components/documents/BankLogo';
+import BankLogo from '@/src/components/documents/BankLogo';
 import { formatPriceWithCommas, parseLocalizedAmount } from '@/lib/money';
 
 export type BankAccountItem = {
