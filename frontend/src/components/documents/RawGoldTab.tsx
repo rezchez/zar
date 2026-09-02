@@ -42,6 +42,12 @@ export type DetailState = {
   sayadId?: string;
   dueDateJalali?: string;
   bankOperationKind?: string;
+  // Cash Fund fields (صندوق‌های وجه نقد)
+  cashFundId?: string;
+  cashFundName?: string;
+  cashFundCurrency?: string;
+  cashFundCurrencyId?: string;
+  cashFundBalance?: number;
   // Workmanship / Manufactured Artifact fields (کار ساخته)
   workmanshipName?: string;
   workmanshipOptionId?: number;
