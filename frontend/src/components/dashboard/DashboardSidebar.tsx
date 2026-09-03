@@ -9,6 +9,7 @@ import {
 import { useEffect, useState } from 'react';
 
 import type { DashboardUser } from '@/src/components/dashboard/DashboardShell';
+import { APP_VERSION } from '@/lib/version';
 
 export type NavItemData = {
   id: string;
@@ -288,7 +289,7 @@ export default function DashboardSidebar({
                   سامانه فعال و برخط
                 </span>
                 <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500">
-                  v2.0
+                  {APP_VERSION}
                 </span>
               </>
             ) : (

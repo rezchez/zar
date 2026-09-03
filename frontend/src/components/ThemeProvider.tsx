@@ -7,11 +7,13 @@ export type ThemeMode = 'light' | 'dark' | 'system';
 const STORAGE_KEY = 'zarfolio-theme';
 
 function resolveTheme(mode: ThemeMode) {
+  if (typeof window === 'undefined') return 'light';
   const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
   return mode === 'system' ? (prefersDark ? 'dark' : 'light') : mode;
 }
 
 function applyTheme(mode: ThemeMode) {
+  if (typeof window === 'undefined') return 'light';
   const theme = resolveTheme(mode);
   document.documentElement.dataset.theme = theme;
   document.documentElement.dataset.themeMode = mode;
@@ -25,23 +27,21 @@ export default function ThemeProvider({
 }: {
   children: React.ReactNode;
 }) {
-  const [mode, setMode] = useState<ThemeMode>(() => {
-    if (typeof window === 'undefined') return 'system';
-
-    try {
-      const stored = window.localStorage.getItem(STORAGE_KEY) as ThemeMode | null;
-      return stored === 'light' || stored === 'dark' || stored === 'system'
-        ? stored
-        : 'system';
-    } catch {
-      return 'system';
-    }
-  });
+  const [mode, setMode] = useState<ThemeMode>('system');
   const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>('light');
 
   useEffect(() => {
-    // Theme application is an external DOM synchronization.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    try {
+      const stored = window.localStorage.getItem(STORAGE_KEY) as ThemeMode | null;
+      const initialMode = stored === 'light' || stored === 'dark' || stored === 'system' ? stored : 'system';
+      setMode(initialMode);
+      setResolvedTheme(applyTheme(initialMode));
+    } catch {
+      setResolvedTheme(applyTheme('system'));
+    }
+  }, []);
+
+  useEffect(() => {
     setResolvedTheme(applyTheme(mode));
 
     const media = window.matchMedia('(prefers-color-scheme: dark)');
@@ -59,7 +59,7 @@ export default function ThemeProvider({
     try {
       window.localStorage.setItem(STORAGE_KEY, nextMode);
     } catch {
-      // تنظیمات تم بدون localStorage نیز باید قابل استفاده باشد.
+      //
     }
   }
 
