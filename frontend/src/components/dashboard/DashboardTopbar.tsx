@@ -4,8 +4,6 @@ import {
   ChevronDown,
   Menu,
   Moon,
-  PanelLeftClose,
-  PanelLeftOpen,
   Pin,
   PinOff,
   Search,
@@ -22,6 +20,7 @@ import NotificationCenter from './NotificationCenter';
 import DashboardTopbarSearch, {
   type DashboardTopbarSearchItem,
 } from './DashboardTopbarSearch';
+import SidebarToggleButton from './SidebarToggleButton';
 
 export type DashboardTopbarUser = {
   id: string;
@@ -83,19 +82,10 @@ export default function DashboardTopbar({
             <Menu size={19} />
           </button>
 
-          <button
-            type="button"
-            className="dashboard-icon-button dashboard-desktop-toggle"
-            onClick={onSidebarToggle}
-            aria-label={sidebarCollapsed ? 'باز کردن منو' : 'جمع کردن منو'}
-            aria-pressed={sidebarCollapsed}
-          >
-            {sidebarCollapsed ? (
-              <PanelLeftOpen size={18} />
-            ) : (
-              <PanelLeftClose size={18} />
-            )}
-          </button>
+          <SidebarToggleButton
+            collapsed={sidebarCollapsed}
+            onToggle={onSidebarToggle}
+          />
 
           <Breadcrumbs />
         </div>
