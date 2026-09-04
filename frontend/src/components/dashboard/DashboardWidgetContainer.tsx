@@ -1,22 +1,22 @@
 'use client';
 
-import { Settings, Eye, EyeOff, LayoutGrid, RotateCcw, SlidersHorizontal, LoaderCircle } from 'lucide-react';
+import { Eye, EyeOff, LayoutGrid, LoaderCircle, RotateCcw, Settings, SlidersHorizontal } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 
 import {
   getDefaultDashboardPreferences,
-  SIZE_GRID_CLASSES,
   SIZE_LABELS,
   type DashboardPreferencesMap,
   type DashboardWidgetDefinition,
   type DashboardWidgetSize,
 } from '@/lib/dashboard-widgets';
-import BankBalancesWidget from '@/src/components/dashboard/BankBalancesWidget';
-import CashBalanceWidget from '@/src/components/dashboard/CashBalanceWidget';
-import GoldBalanceTrackers from '@/src/components/GoldBalanceTrackers';
-import GoldMarketTicker from '@/src/components/GoldMarketTicker';
-import JalaliCalendar from '@/src/components/JalaliCalendar';
-import QuickGoldActions from '@/src/components/QuickGoldActions';
+import DashboardWidget from '@/src/components/dashboard/DashboardWidget';
+import BankBalanceWidget from '@/src/components/dashboard/widgets/BankBalanceWidget';
+import CalendarWidget from '@/src/components/dashboard/widgets/CalendarWidget';
+import CashBalanceWidget from '@/src/components/dashboard/widgets/CashBalanceWidget';
+import GoldTrackersWidget from '@/src/components/dashboard/widgets/GoldTrackersWidget';
+import MarketTickerWidget from '@/src/components/dashboard/widgets/MarketTickerWidget';
+import QuickActionsWidget from '@/src/components/dashboard/widgets/QuickActionsWidget';
 
 // Register all system widgets into central registry
 const widgetsList: DashboardWidgetDefinition[] = [
@@ -27,7 +27,7 @@ const widgetsList: DashboardWidgetDefinition[] = [
     defaultVisible: true,
     defaultSize: 'large',
     defaultOrder: 1,
-    component: QuickGoldActions,
+    component: QuickActionsWidget,
   },
   {
     id: 'market-ticker',
@@ -36,7 +36,7 @@ const widgetsList: DashboardWidgetDefinition[] = [
     defaultVisible: true,
     defaultSize: 'large',
     defaultOrder: 2,
-    component: GoldMarketTicker,
+    component: MarketTickerWidget,
   },
   {
     id: 'cash-balance',
@@ -54,7 +54,7 @@ const widgetsList: DashboardWidgetDefinition[] = [
     defaultVisible: true,
     defaultSize: 'medium',
     defaultOrder: 4,
-    component: BankBalancesWidget,
+    component: BankBalanceWidget,
   },
   {
     id: 'gold-trackers',
@@ -63,7 +63,7 @@ const widgetsList: DashboardWidgetDefinition[] = [
     defaultVisible: true,
     defaultSize: 'large',
     defaultOrder: 5,
-    component: GoldBalanceTrackers,
+    component: GoldTrackersWidget,
   },
   {
     id: 'jalali-calendar',
@@ -72,7 +72,7 @@ const widgetsList: DashboardWidgetDefinition[] = [
     defaultVisible: true,
     defaultSize: 'medium',
     defaultOrder: 6,
-    component: JalaliCalendar,
+    component: CalendarWidget,
   },
 ];
 
@@ -267,14 +267,21 @@ export default function DashboardWidgetContainer() {
           {activeWidgets.map((w) => {
             const size = preferences[w.id]?.size || w.defaultSize;
             const Component = w.component;
-            const gridClass = SIZE_GRID_CLASSES[size];
 
             if (!Component) return null;
 
             return (
-              <div key={w.id} className={`${gridClass} transition-all duration-300`}>
+              <DashboardWidget
+                key={w.id}
+                id={w.id}
+                title={w.title}
+                description={w.description}
+                size={size}
+                onSizeChange={changeSize}
+                onHide={toggleVisibility}
+              >
                 <Component size={size} />
-              </div>
+              </DashboardWidget>
             );
           })}
         </div>

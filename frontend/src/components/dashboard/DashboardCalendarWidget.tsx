@@ -1,18 +1,20 @@
 'use client';
 
+import { AnimatePresence, motion } from 'framer-motion';
+import { Calendar as CalendarIcon, CalendarDays, Sparkles } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
-import { Calendar as CalendarIcon, CalendarDays, Sparkles, AlertCircle } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
 
 import { Calendar, type CalendarEvent, type CalendarType } from '@/components/ui/calendar';
+import type { DashboardWidgetSize } from '@/lib/dashboard-widgets';
 import {
   formatDate,
-  toShamsi,
   toPersianDigits,
+  toShamsi,
 } from '@/lib/persian-date';
 import { getHolidayInfo, type ResolvedHoliday } from '@/lib/persian-holidays';
 
 export type DashboardCalendarWidgetProps = {
+  size?: DashboardWidgetSize;
   className?: string;
   calendarType?: CalendarType;
   events?: CalendarEvent[];
@@ -20,6 +22,7 @@ export type DashboardCalendarWidgetProps = {
 };
 
 export default function DashboardCalendarWidget({
+  size = 'medium',
   className = '',
   calendarType = 'shamsi',
   events = [],
@@ -80,7 +83,7 @@ export default function DashboardCalendarWidget({
 
   return (
     <div
-      className={`dashboard-panel w-full rounded-2xl p-4 sm:p-5 text-slate-900 dark:text-slate-100 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-slate-200/80 dark:border-slate-800/80 shadow-xl transition-all ${className}`}
+      className={`dashboard-panel w-full h-full rounded-2xl p-4 sm:p-5 text-slate-900 dark:text-slate-100 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-slate-200/80 dark:border-slate-800/80 shadow-xl transition-all ${className}`}
       dir="rtl"
     >
       {/* Top Header */}
@@ -96,9 +99,11 @@ export default function DashboardCalendarWidget({
               </h2>
               <Sparkles size={13} className="text-amber-500 opacity-90 animate-pulse" />
             </div>
-            <p className="text-[11px] font-bold text-slate-600 dark:text-slate-400">
-              تعطیلات و مناسبت‌های رسمی ایران
-            </p>
+            {size !== 'small' ? (
+              <p className="text-[11px] font-bold text-slate-600 dark:text-slate-400">
+                تعطیلات و مناسبت‌های رسمی ایران
+              </p>
+            ) : null}
           </div>
         </div>
 
@@ -127,7 +132,7 @@ export default function DashboardCalendarWidget({
       </div>
 
       {/* Selected Day Details Section */}
-      {selectedDate && (
+      {selectedDate && size !== 'small' && (
         <AnimatePresence mode="wait">
           <motion.div
             key={selectedDate.toISOString()}

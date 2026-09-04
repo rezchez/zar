@@ -5,8 +5,10 @@
  * فاکتور خرید/فروش طلا، ثبت طلای شرطی، دریافت/پرداخت نقد و چک.
  */
 import { motion } from 'framer-motion';
-import { useRouter } from 'next/navigation';
 import { FilePlus2, HandCoins, Landmark, ReceiptText } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+
+import type { DashboardWidgetSize } from '@/lib/dashboard-widgets';
 
 const ACTIONS = [
   { id: 'invoice', title: 'فاکتور خرید / فروش طلا', icon: ReceiptText, href: '/dashboard/documents/new', accent: true },
@@ -15,12 +17,18 @@ const ACTIONS = [
   { id: 'cheque', title: 'ثبت چک', icon: FilePlus2, href: '/dashboard/documents/new' },
 ];
 
-export default function QuickGoldActions() {
+interface QuickGoldActionsProps {
+  size?: DashboardWidgetSize;
+}
+
+export default function QuickGoldActions({ size = 'large' }: QuickGoldActionsProps) {
   const router = useRouter();
 
+  const displayedActions = size === 'small' ? ACTIONS.slice(0, 2) : size === 'medium' ? ACTIONS.slice(0, 3) : ACTIONS;
+
   return (
-    <div className="quick-gold-actions" role="group" aria-label="عملیات سریع حسابداری">
-      {ACTIONS.map((action, index) => (
+    <div className="quick-gold-actions w-full h-full" role="group" aria-label="عملیات سریع حسابداری">
+      {displayedActions.map((action, index) => (
         <motion.button
           key={action.id}
           type="button"
