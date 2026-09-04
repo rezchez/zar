@@ -5,6 +5,7 @@ const nextConfig: NextConfig = {
   // both processes writing to the same `.next` directory.
   distDir: process.env.NEXT_DIST_DIR ?? '.next',
   serverExternalPackages: ['pdfkit'],
+  transpilePackages: ['morphicons'],
 };
 
 export default nextConfig;

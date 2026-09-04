@@ -6,10 +6,10 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   const settings = await getServerAppSettings();
 
-  if (!settings.pwaEnabled) {
-    // Return self-destructing/unregistering service worker when PWA is disabled in backend
+  if (!settings.pwaEnabled || process.env.NODE_ENV !== 'production') {
+    // Return self-destructing/unregistering service worker when PWA is disabled in backend or in development
     const disabledSw = `
-// PWA is disabled by administrator in backend settings
+// PWA is disabled by administrator in backend settings or running in development mode
 self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
