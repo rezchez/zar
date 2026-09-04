@@ -6,15 +6,21 @@
  */
 import { motion } from 'framer-motion';
 import { Scale, Banknote, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
+
+import type { DashboardWidgetSize } from '@/lib/dashboard-widgets';
 import { useAppSettings } from './SettingsProvider';
 
-export default function GoldBalanceTrackers() {
+interface GoldBalanceTrackersProps {
+  size?: DashboardWidgetSize;
+}
+
+export default function GoldBalanceTrackers({ size = 'large' }: GoldBalanceTrackersProps) {
   const { formatMoney, formatWeight, settings } = useAppSettings();
 
   const isToman = settings.baseCurrency === 'IRT';
   const currencyTitle = isToman ? 'تراز تومانی' : 'تراز ریالی';
 
-  const trackers = [
+  const allTrackers = [
     {
       id: 'weight',
       icon: Scale,
@@ -53,38 +59,44 @@ export default function GoldBalanceTrackers() {
     },
   ];
 
+  const trackers = size === 'small' ? allTrackers.slice(0, 1) : size === 'medium' ? allTrackers.slice(0, 2) : allTrackers;
+
   return (
-    <div className="gold-balance-grid">
+    <div className={`gold-balance-grid h-full ${size === 'small' ? '!grid-cols-1' : size === 'medium' ? '!grid-cols-1 sm:!grid-cols-2' : ''}`}>
       {trackers.map((tracker, index) => (
         <motion.article
           key={tracker.id}
-          className="gold-balance-card"
+          className="gold-balance-card h-full flex flex-col justify-between"
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: index * 0.07, duration: 0.35, ease: 'easeOut' }}
         >
-          <div className="gold-balance-card-head">
-            <span className="gold-balance-icon">
-              <tracker.icon size={17} strokeWidth={1.7} />
-            </span>
-            <span>{tracker.title}</span>
+          <div>
+            <div className="gold-balance-card-head">
+              <span className="gold-balance-icon">
+                <tracker.icon size={17} strokeWidth={1.7} />
+              </span>
+              <span>{tracker.title}</span>
+            </div>
+            <strong className="gold-balance-value">
+              {tracker.value}
+            </strong>
           </div>
-          <strong className="gold-balance-value">
-            {tracker.value}
-          </strong>
-          <div className="gold-balance-bar" role="progressbar" aria-valuenow={tracker.percent} aria-valuemin={0} aria-valuemax={100}>
-            <motion.span
-              initial={{ width: 0 }}
-              animate={{ width: `${tracker.percent}%` }}
-              transition={{ delay: 0.25 + index * 0.07, duration: 0.7, ease: 'easeOut' }}
-            />
-          </div>
-          <div className="gold-balance-card-foot">
-            <small>{tracker.caption}</small>
-            <span className={tracker.trend.dir === 'up' ? 'is-up' : 'is-down'}>
-              {tracker.trend.dir === 'up' ? <ArrowUpRight size={12} /> : <ArrowDownLeft size={12} />}
-              {tracker.trend.label}
-            </span>
+          <div>
+            <div className="gold-balance-bar" role="progressbar" aria-valuenow={tracker.percent} aria-valuemin={0} aria-valuemax={100}>
+              <motion.span
+                initial={{ width: 0 }}
+                animate={{ width: `${tracker.percent}%` }}
+                transition={{ delay: 0.25 + index * 0.07, duration: 0.7, ease: 'easeOut' }}
+              />
+            </div>
+            <div className="gold-balance-card-foot">
+              <small>{tracker.caption}</small>
+              <span className={tracker.trend.dir === 'up' ? 'is-up' : 'is-down'}>
+                {tracker.trend.dir === 'up' ? <ArrowUpRight size={12} /> : <ArrowDownLeft size={12} />}
+                {tracker.trend.label}
+              </span>
+            </div>
           </div>
         </motion.article>
       ))}
