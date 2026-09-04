@@ -8,8 +8,6 @@ import {
   Sparkles,
   Calculator,
   Lock,
-  Layers,
-  FileText,
   X,
   Check,
 } from 'lucide-react';
@@ -27,7 +25,7 @@ import {
   type CoinEntryRow,
   type CoinTotals,
 } from '@/lib/coin';
-import { formatMoney, parseLocalizedAmount } from '@/lib/money';
+import { formatMoney } from '@/lib/money';
 import { normalizeDigits, toPersianDigits } from '@/lib/jalali';
 import { cn } from '@/lib/utils';
 
@@ -43,7 +41,6 @@ export interface CoinEntryComponentProps {
 }
 
 export default function CoinEntryComponent({
-  mode = 'payment_coin_or_bar_quantity',
   nature = 'paid',
   displayTitle = 'خروج سکه یا شمش - تعدادی',
   rows: controlledRows,
@@ -59,6 +56,7 @@ export default function CoinEntryComponent({
 
   const [customCoins, setCustomCoins] = useState<CoinDefinition[]>([]);
   const [isAddCustomModalOpen, setIsAddCustomModalOpen] = useState(false);
+  const [submittingCustom, setSubmittingCustom] = useState(false);
 
   // New custom coin form state
   const [newCustomName, setNewCustomName] = useState('');
@@ -149,7 +147,7 @@ export default function CoinEntryComponent({
   };
 
   // Submit custom coin
-  const handleCreateCustomCoin = (e: React.FormEvent) => {
+  const handleCreateCustomCoin = async (e: React.FormEvent) => {
     e.preventDefault();
     const name = newCustomName.trim();
     if (!name) {
@@ -169,24 +167,51 @@ export default function CoinEntryComponent({
       return;
     }
 
-    const newDef: CoinDefinition = {
-      id: `custom_coin_${Date.now()}`,
-      name,
-      category: newCustomCategory,
-      categoryLabel: COIN_CATEGORY_LABELS[newCustomCategory] || 'انواع سفارشی',
-      unitWeight: weight,
-      purity,
-      isFixedWeight: false,
-      isFixedPurity: false,
-      description: `نوع سفارشی تعریف‌شده توسط کاربر (${weight}g / عیار ${purity})`,
-    };
-
-    setCustomCoins((prev) => [...prev, newDef]);
-    setIsAddCustomModalOpen(false);
-    setNewCustomName('');
-    setNewCustomWeight('1.0');
-    setNewCustomPurity('750');
+    setSubmittingCustom(true);
     setCustomFormError(null);
+
+    try {
+      const natureStr = newCustomCategory === 'bar' ? 'bullion' : 'coin';
+      const res = await fetch('/api/coin-types', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          nature: natureStr,
+          unitWeight: weight,
+          purity,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setCustomFormError(data.message || 'ثبت سکه/شمش سفارشی با خطا مواجه شد.');
+        return;
+      }
+
+      const created = data.coinType;
+      const newDef: CoinDefinition = {
+        id: created.id,
+        name: created.name,
+        category: newCustomCategory,
+        categoryLabel: COIN_CATEGORY_LABELS[newCustomCategory] || 'انواع سفارشی',
+        unitWeight: Number(created.unitWeight || weight),
+        purity: Number(created.purity || purity),
+        isFixedWeight: false,
+        isFixedPurity: false,
+        description: `نوع سفارشی تعریف‌شده توسط کاربر (${weight}g / عیار ${purity})`,
+      };
+
+      setCustomCoins((prev) => [...prev.filter((c) => c.id !== created.id), newDef]);
+      setIsAddCustomModalOpen(false);
+      setNewCustomName('');
+      setNewCustomWeight('1.0');
+      setNewCustomPurity('750');
+    } catch (err) {
+      setCustomFormError(err instanceof Error ? err.message : 'خطا در ثبت سکه/شمش سفارشی.');
+    } finally {
+      setSubmittingCustom(false);
+    }
   };
 
   return (
@@ -748,10 +773,11 @@ export default function CoinEntryComponent({
                   </button>
                   <button
                     type="submit"
-                    className="flex items-center gap-1 rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold text-white shadow-md hover:bg-amber-600 active:scale-95 transition-all"
+                    disabled={submittingCustom}
+                    className="flex items-center gap-1 rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold text-white shadow-md hover:bg-amber-600 active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
                   >
                     <Check size={14} />
-                    <span>ثبت و اضافه به لیست</span>
+                    <span>{submittingCustom ? 'در حال ثبت...' : 'ثبت و اضافه به لیست'}</span>
                   </button>
                 </div>
               </form>

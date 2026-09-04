@@ -4,10 +4,8 @@ import React, { useMemo, useState, useEffect } from 'react';
 import {
   Coins,
   Plus,
-  Trash2,
   Sparkles,
   Calculator,
-  Lock,
   ListPlus,
   X,
   Check,
@@ -16,7 +14,6 @@ import {
   TrendingDown,
   TrendingUp,
   FileText,
-  BadgePercent,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 
@@ -25,7 +22,7 @@ import { PriceInput } from '@/components/ui/price-input';
 import Field from '@/src/components/documents/Field';
 import type { DetailState, DocumentLine } from '@/src/components/documents/RawGoldTab';
 import { normalizeDigits, toPersianDigits } from '@/lib/jalali';
-import { parseLocalizedAmount, formatMoney } from '@/lib/money';
+import { parseLocalizedAmount } from '@/lib/money';
 
 export type CoinOperationType =
   // Payment operations (سند پرداختی)
@@ -330,13 +327,10 @@ export interface CoinTabProps {
 
 export default function CoinTab({
   nature = 'paid',
-  draftLine,
   setDraftLine,
-  committedLines = [],
   editingLineId = null,
   isLinesPinned = false,
   commitDraftLine,
-  updateDraftDetail,
   handleKeyDownEnter,
   draftReady = true,
   baseCurrency = 'IRR',
@@ -427,18 +421,16 @@ export default function CoinTab({
     return nature === 'paid' ? 'payment_exit' : 'receipt_entry';
   });
 
-  // Keep selectedOperation synced with nature switch
-  useEffect(() => {
-    if (nature === 'paid') {
-      if (!selectedOperation.startsWith('payment_')) {
-        setSelectedOperation('payment_exit');
-      }
-    } else {
-      if (!selectedOperation.startsWith('receipt_')) {
-        setSelectedOperation('receipt_entry');
-      }
+  // Adjust state during render if nature prop changes
+  const [prevNature, setPrevNature] = useState(nature);
+  if (prevNature !== nature) {
+    setPrevNature(nature);
+    if (nature === 'paid' && !selectedOperation.startsWith('payment_')) {
+      setSelectedOperation('payment_exit');
+    } else if (nature === 'received' && !selectedOperation.startsWith('receipt_')) {
+      setSelectedOperation('receipt_entry');
     }
-  }, [nature, selectedOperation]);
+  }
 
   const currentOp = useMemo(() => {
     return operationOptions.find((op) => op.id === selectedOperation) || operationOptions[0];
@@ -447,6 +439,7 @@ export default function CoinTab({
   // Custom coin list & modal
   const [customCoins, setCustomCoins] = useState<CoinPreset[]>([]);
   const [isAddCustomModalOpen, setIsAddCustomModalOpen] = useState(false);
+  const [submittingCustom, setSubmittingCustom] = useState(false);
   const [newCustomName, setNewCustomName] = useState('');
   const [newCustomWeight, setNewCustomWeight] = useState('1.0');
   const [newCustomPurity, setNewCustomPurity] = useState('900');
@@ -461,7 +454,7 @@ export default function CoinTab({
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data.coinTypes) && data.coinTypes.length > 0 && isMounted) {
-            const mapped: CoinPreset[] = data.coinTypes.map((item: any) => ({
+            const mapped: CoinPreset[] = data.coinTypes.map((item: { id: string; name: string; nature?: string; coinSubtype?: string; unitWeight?: number; purity?: number }) => ({
               id: item.id,
               name: item.name,
               category: item.nature === 'bullion' ? 'bar_other' : (item.coinSubtype?.includes('پهلوی') ? 'pahlavi_coin' : (item.coinSubtype?.includes('پارسیان') ? 'parsian' : 'bank_coin')),
@@ -581,7 +574,7 @@ export default function CoinTab({
     if (setDraftLine) {
       setDraftLine((curr) => ({
         ...curr,
-        documentTab: 'coin' as any,
+        documentTab: 'coin',
         documentSubType: selectedOperation,
         documentTypeLabel: currentOp.label,
         converted750: convertedToX,
@@ -636,25 +629,11 @@ export default function CoinTab({
       return;
     }
 
-    const newPreset: CoinPreset = {
-      id: `custom_coin_${Date.now()}`,
-      name,
-      category: 'custom',
-      categoryLabel: 'سکه‌ها و شمش‌های سفارشی',
-      weight,
-      purity: purityVal,
-      isFixedWeight: false,
-      isFixedPurity: false,
-    };
+    setSubmittingCustom(true);
+    setCustomFormError(null);
 
-    setCustomCoins((prev) => [...prev, newPreset]);
-    setSelectedCoinId(newPreset.id);
-    setUnitWeight(String(weight));
-    setPurity(String(purityVal));
-
-    // Post to backend API /api/coin-types for single source of truth
     try {
-      await fetch('/api/coin-types', {
+      const res = await fetch('/api/coin-types', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -664,15 +643,39 @@ export default function CoinTab({
           purity: purityVal,
         }),
       });
-    } catch {
-      // ignore network errors for local state
-    }
 
-    setIsAddCustomModalOpen(false);
-    setNewCustomName('');
-    setNewCustomWeight('1.0');
-    setNewCustomPurity('900');
-    setCustomFormError(null);
+      const data = await res.json();
+      if (!res.ok) {
+        setCustomFormError(data.message || 'ثبت سکه/شمش سفارشی با خطا مواجه شد.');
+        return;
+      }
+
+      const createdItem = data.coinType;
+      const newPreset: CoinPreset = {
+        id: createdItem.id,
+        name: createdItem.name,
+        category: 'custom',
+        categoryLabel: 'سکه‌ها و شمش‌های سفارشی',
+        weight: Number(createdItem.unitWeight || weight),
+        purity: Number(createdItem.purity || purityVal),
+        isFixedWeight: false,
+        isFixedPurity: false,
+      };
+
+      setCustomCoins((prev) => [...prev.filter((c) => c.id !== createdItem.id), newPreset]);
+      setSelectedCoinId(createdItem.id);
+      setUnitWeight(String(newPreset.weight));
+      setPurity(String(newPreset.purity));
+
+      setIsAddCustomModalOpen(false);
+      setNewCustomName('');
+      setNewCustomWeight('1.0');
+      setNewCustomPurity('900');
+    } catch (err) {
+      setCustomFormError(err instanceof Error ? err.message : 'خطا در ثبت سکه/شمش سفارشی.');
+    } finally {
+      setSubmittingCustom(false);
+    }
   };
 
   // Group presets for select optgroups
@@ -695,7 +698,7 @@ export default function CoinTab({
       }
     });
 
-    return Object.entries(groups).filter(([_, g]) => g.items.length > 0);
+    return Object.entries(groups).filter(([, g]) => g.items.length > 0);
   }, [allPresets]);
 
   return (
@@ -1068,10 +1071,11 @@ export default function CoinTab({
                   </button>
                   <button
                     type="submit"
-                    className="flex items-center gap-1.5 rounded-xl bg-amber-500 px-4 py-2 text-xs font-black text-white shadow-md hover:bg-amber-600 active:scale-95 transition-all cursor-pointer"
+                    disabled={submittingCustom}
+                    className="flex items-center gap-1.5 rounded-xl bg-amber-500 px-4 py-2 text-xs font-black text-white shadow-md hover:bg-amber-600 active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
                   >
                     <Check size={14} />
-                    <span>ثبت و اضافه به لیست</span>
+                    <span>{submittingCustom ? 'در حال ثبت...' : 'ثبت و اضافه به لیست'}</span>
                   </button>
                 </div>
               </form>

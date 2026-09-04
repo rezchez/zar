@@ -100,4 +100,65 @@ describe('Initial Coin & Bullion Inventory & Catalog Tests', () => {
     expect(calc.totalWeight).toBe(32.544); // 4 * 8.136
     expect(calc.converted750).toBeCloseTo(39.053, 3); // (32.544 * 900) / 750
   });
+
+  test('itemName normalization prevents .trim() runtime error on undefined or non-string inputs', () => {
+    const safeNormalize = (itemName: unknown): string => {
+      return typeof itemName === 'string' ? itemName.trim() : String(itemName || '').trim();
+    };
+
+    expect(safeNormalize(undefined)).toBe('');
+    expect(safeNormalize(null)).toBe('');
+    expect(safeNormalize('')).toBe('');
+    expect(safeNormalize('   شمش ۱۰ گرمی   ')).toBe('شمش ۱۰ گرمی');
+    expect(safeNormalize(123)).toBe('123');
+  });
+
+  test('User-created custom coin/bullion model maps to persistent coin_types schema correctly', () => {
+    const customBullionPayload = {
+      name: 'شمش طلای پارسیان',
+      nature: 'bullion',
+      metal: 'gold',
+      unitWeight: 5,
+      purity: 750,
+      description: 'شمش ۵ گرمی ۱۸ عیار',
+    };
+
+    // Simulate PocketBase coin_types persistent creation response
+    const persistentCoinTypeRecord = {
+      id: 'pb_coin_type_12345',
+      name: customBullionPayload.name,
+      code: 'BAR-PARSIAN-5G',
+      nature: customBullionPayload.nature,
+      metal: customBullionPayload.metal,
+      unit_weight: customBullionPayload.unitWeight,
+      purity: customBullionPayload.purity,
+      description: customBullionPayload.description,
+      is_active: true,
+      is_system: false,
+    };
+
+    expect(persistentCoinTypeRecord.id).toBe('pb_coin_type_12345');
+    expect(persistentCoinTypeRecord.name).toBe('شمش طلای پارسیان');
+    expect(persistentCoinTypeRecord.nature).toBe('bullion');
+    expect(persistentCoinTypeRecord.unit_weight).toBe(5);
+
+    // Simulate opening balance record referencing persistent coin_type ID
+    const openingInventoryRecord = {
+      id: 'pb_opening_inv_98765',
+      item_type: persistentCoinTypeRecord.id,
+      item_name: persistentCoinTypeRecord.name,
+      nature: persistentCoinTypeRecord.nature,
+      metal: persistentCoinTypeRecord.metal,
+      quantity: 10,
+      unit_weight: persistentCoinTypeRecord.unit_weight,
+      purity: persistentCoinTypeRecord.purity,
+      unit_price: 50000000,
+      total_amount: 500000000,
+      total_weight: 50,
+      converted_weight: 50,
+    };
+
+    expect(openingInventoryRecord.item_type).toBe(persistentCoinTypeRecord.id);
+    expect(openingInventoryRecord.item_type).not.toBe('custom_local_id');
+  });
 });

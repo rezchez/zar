@@ -6,14 +6,14 @@ import { dateToJalaliString } from '@/lib/jalali';
 
 function extractPbErrorMessage(error: unknown, fallback: string): string {
   if (!error) return fallback;
-  if (typeof error === 'object') {
-    const errObj = error as any;
-    const responseData = errObj?.response?.data || errObj?.data;
+  if (typeof error === 'object' && error !== null) {
+    const errObj = error as Record<string, unknown>;
+    const responseData = (errObj?.response as Record<string, unknown> | undefined)?.data || errObj?.data;
     if (responseData && typeof responseData === 'object') {
       const fieldErrors: string[] = [];
-      for (const [key, val] of Object.entries(responseData)) {
+      for (const [key, val] of Object.entries(responseData as Record<string, unknown>)) {
         if (val && typeof val === 'object' && 'message' in val) {
-          fieldErrors.push(`${key}: ${(val as any).message}`);
+          fieldErrors.push(`${key}: ${String((val as { message?: string }).message || '')}`);
         } else if (typeof val === 'string') {
           fieldErrors.push(`${key}: ${val}`);
         }
@@ -22,7 +22,7 @@ function extractPbErrorMessage(error: unknown, fallback: string): string {
         return `خطا در ثبت اطلاعات (${fieldErrors.join(' - ')})`;
       }
     }
-    if (errObj?.message && typeof errObj.message === 'string') {
+    if (typeof errObj?.message === 'string') {
       return errObj.message;
     }
   }
@@ -42,10 +42,10 @@ export async function GET() {
       expand: 'item_type',
     }).catch(() => []);
 
-    const result = records.map((r: any) => ({
-      id: r.id,
-      itemTypeId: String(r.item_type || r.expand?.item_type?.id || ''),
-      itemName: String(r.item_name || r.expand?.item_type?.name || 'سکه/شمش نامشخص'),
+    const result = records.map((r: Record<string, unknown>) => ({
+      id: String(r.id || ''),
+      itemTypeId: String(r.item_type || (r.expand as Record<string, Record<string, unknown>> | undefined)?.item_type?.id || ''),
+      itemName: String(r.item_name || (r.expand as Record<string, Record<string, unknown>> | undefined)?.item_type?.name || 'سکه/شمش نامشخص'),
       nature: String(r.nature || 'coin'),
       coinSubtype: String(r.coin_subtype || ''),
       metal: String(r.metal || 'gold'),
@@ -132,7 +132,7 @@ export async function POST(request: Request) {
       updated_by: context.user.id,
     };
 
-    let resultRecord: any;
+    let resultRecord: Record<string, unknown>;
     if (recordId) {
       resultRecord = await context.pb.collection('coin_opening_inventory').update(recordId, payload);
     } else {

@@ -56,8 +56,8 @@ export async function GET(request: Request) {
       }).catch(() => []);
     }
 
-    let coinTypes = records.map((r: any) => ({
-      id: r.id,
+    let coinTypes = records.map((r: Record<string, unknown>) => ({
+      id: String(r.id || ''),
       name: String(r.name || ''),
       code: String(r.code || ''),
       nature: String(r.nature || 'coin'),
@@ -206,7 +206,8 @@ export async function POST(request: Request) {
         isSystem: false,
       },
     }, { status: 201 });
-  } catch (error: any) {
-    return NextResponse.json({ message: error?.message || 'ثبت سکه/شمش سفارشی با خطا مواجه شد.' }, { status: 400 });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : 'ثبت سکه/شمش سفارشی با خطا مواجه شد.';
+    return NextResponse.json({ message: msg }, { status: 400 });
   }
 }

@@ -75,6 +75,7 @@ export default function InitialCoinInventoryModal({
 
   // Custom Item Creation State
   const [isCreatingCustomType, setIsCreatingCustomType] = useState(false);
+  const [savingCustomType, setSavingCustomType] = useState(false);
   const [customName, setCustomName] = useState('');
   const [customNature, setCustomNature] = useState<'coin' | 'bullion'>('coin');
   const [customSubtype, setCustomSubtype] = useState('سکه تمام طرح جدید (امامی)');
@@ -83,15 +84,17 @@ export default function InitialCoinInventoryModal({
   const [customPurity, setCustomPurity] = useState('750');
 
   const selectItemDetails = useCallback((typeId: string, typesList: CoinTypeMasterItem[]) => {
-    setSelectedItemTypeId(typeId);
+    setSelectedItemTypeId(typeId || '');
     const found = typesList.find((t) => t.id === typeId);
     if (found) {
-      setItemName(found.name);
-      setNature(found.nature || 'coin');
-      setCoinSubtype(found.coinSubtype || '');
-      setMetal(found.metal || 'gold');
-      setUnitWeight(String(found.unitWeight || '1.0'));
-      setPurity(String(found.purity || '750'));
+      setItemName(String(found.name || ''));
+      setNature(String(found.nature || 'coin'));
+      setCoinSubtype(String(found.coinSubtype || ''));
+      setMetal(String(found.metal || 'gold'));
+      setUnitWeight(String(found.unitWeight ?? '1.0'));
+      setPurity(String(found.purity ?? '750'));
+    } else {
+      setItemName('');
     }
   }, []);
 
@@ -116,14 +119,14 @@ export default function InitialCoinInventoryModal({
         if (editItem) {
           const itemNat = (editItem.nature || 'coin') === 'bullion' ? 'bullion' : 'coin';
           setSelectedNature(itemNat);
-          setSelectedItemTypeId(editItem.itemTypeId || '');
-          setItemName(editItem.itemName || '');
-          setNature(editItem.nature || 'coin');
-          setCoinSubtype(editItem.coinSubtype || '');
-          setMetal(editItem.metal || 'gold');
-          setQuantity(String(editItem.quantity || '1'));
-          setUnitWeight(String(editItem.unitWeight || '1.0'));
-          setPurity(String(editItem.purity || '750'));
+          setSelectedItemTypeId(String(editItem.itemTypeId || ''));
+          setItemName(String(editItem.itemName || ''));
+          setNature(String(editItem.nature || 'coin'));
+          setCoinSubtype(String(editItem.coinSubtype || ''));
+          setMetal(String(editItem.metal || 'gold'));
+          setQuantity(String(editItem.quantity ?? '1'));
+          setUnitWeight(String(editItem.unitWeight ?? '1.0'));
+          setPurity(String(editItem.purity ?? '750'));
           setUnitPrice(editItem.unitPrice ? String(editItem.unitPrice) : '');
           setDate(editItem.date || dateToJalaliString(new Date()));
           setDescription(editItem.description || '');
@@ -138,6 +141,9 @@ export default function InitialCoinInventoryModal({
           const defaultCoin = activeList.find((t) => (t.nature || 'coin') === 'coin');
           if (defaultCoin) {
             selectItemDetails(defaultCoin.id, activeList);
+          } else {
+            setSelectedItemTypeId('');
+            setItemName('');
           }
         }
       } catch {
@@ -181,14 +187,21 @@ export default function InitialCoinInventoryModal({
 
   async function handleCreateCustomType(e: React.FormEvent) {
     e.preventDefault();
-    if (!customName.trim()) return;
+    const nameStr = typeof customName === 'string' ? customName.trim() : String(customName || '').trim();
+    if (!nameStr) {
+      setErrorMsg('نام عنوان جدید الزامی است.');
+      return;
+    }
+
+    setSavingCustomType(true);
+    setErrorMsg(null);
 
     try {
       const res = await fetch('/api/coin-types', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: customName.trim(),
+          name: nameStr,
           nature: customNature,
           coinSubtype: customNature === 'coin' ? customSubtype : '',
           metal: customMetal,
@@ -197,25 +210,34 @@ export default function InitialCoinInventoryModal({
         }),
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        if (data.coinType) {
-          const updated = [...coinTypes, data.coinType];
-          setCoinTypes(updated);
-          setSelectedNature(data.coinType.nature || 'coin');
-          selectItemDetails(data.coinType.id, updated);
-          setIsCreatingCustomType(false);
-          setCustomName('');
-        }
+      const data = await res.json();
+      if (!res.ok) {
+        setErrorMsg(data.message || 'ثبت سکه/شمش سفارشی با خطا مواجه شد.');
+        return;
       }
-    } catch {
-      // ignore
+
+      if (data.coinType) {
+        const updated = [...coinTypes.filter((c) => c.id !== data.coinType.id), data.coinType];
+        setCoinTypes(updated);
+        setSelectedNature(data.coinType.nature || 'coin');
+        selectItemDetails(data.coinType.id, updated);
+        setIsCreatingCustomType(false);
+        setCustomName('');
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'خطا در ثبت سکه/شمش سفارشی.';
+      setErrorMsg(msg);
+    } finally {
+      setSavingCustomType(false);
     }
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!itemName.trim()) {
+
+    const normalizedItemName = typeof itemName === 'string' ? itemName.trim() : String(itemName || '').trim();
+
+    if (!normalizedItemName) {
       setErrorMsg('انتخاب یا ورود نام سکه/شمش الزامی است.');
       return;
     }
@@ -236,13 +258,38 @@ export default function InitialCoinInventoryModal({
     setErrorMsg(null);
 
     try {
+      // Ensure we have a persistent coin_types record ID
+      let effectiveItemTypeId = selectedItemTypeId;
+      if (!effectiveItemTypeId) {
+        // Try creating or resolving coin_type by name if not selected
+        const typeRes = await fetch('/api/coin-types', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: normalizedItemName,
+            nature,
+            coinSubtype,
+            metal,
+            unitWeight: numWeight,
+            purity: numPurity,
+          }),
+        });
+        if (typeRes.ok) {
+          const typeData = await typeRes.json();
+          if (typeData.coinType?.id) {
+            effectiveItemTypeId = typeData.coinType.id;
+            setSelectedItemTypeId(effectiveItemTypeId);
+          }
+        }
+      }
+
       const res = await fetch('/api/accounting/opening/coin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: editItem?.id,
-          itemTypeId: selectedItemTypeId,
-          itemName,
+          itemTypeId: effectiveItemTypeId,
+          itemName: normalizedItemName,
           nature,
           coinSubtype,
           metal,
@@ -521,11 +568,12 @@ export default function InitialCoinInventoryModal({
                 <div className="flex justify-end">
                   <button
                     type="button"
+                    disabled={savingCustomType}
                     onClick={handleCreateCustomType}
-                    className="inline-flex h-8 items-center justify-center gap-1 rounded-xl bg-amber-500 px-3 text-xs font-black text-slate-950 hover:bg-amber-400 cursor-pointer"
+                    className="inline-flex h-8 items-center justify-center gap-1 rounded-xl bg-amber-500 px-3 text-xs font-black text-slate-950 hover:bg-amber-400 disabled:opacity-50 cursor-pointer"
                   >
                     <Check size={14} />
-                    <span>افزودن و انتخاب</span>
+                    <span>{savingCustomType ? 'در حال ثبت...' : 'افزودن و انتخاب'}</span>
                   </button>
                 </div>
               </motion.div>
