@@ -1,15 +1,15 @@
 'use client';
 
-import {
-  ChevronDown,
-  Sparkles,
-  X,
-  type LucideIcon,
-} from 'lucide-react';
+import { Sparkles, X, type LucideIcon } from 'lucide-react';
+import { MorphIcon } from 'morphicons/react';
 import { useEffect, useState } from 'react';
 
 import type { DashboardUser } from '@/src/components/dashboard/DashboardShell';
 import { APP_VERSION } from '@/lib/version';
+
+// Icon SVG path nodes for Morphicons
+const CHEVRON_DOWN_NODE = [['path', { d: 'm6 9 6 6 6-6' }]] as const;
+const CHEVRON_UP_NODE = [['path', { d: 'm18 15-6-6-6 6' }]] as const;
 
 export type NavItemData = {
   id: string;
@@ -55,7 +55,7 @@ function NavSubItem({
       aria-current={isActive ? 'page' : undefined}
       className={`group flex w-full items-center justify-between gap-2.5 rounded-lg px-2.5 py-2 text-right text-xs font-bold transition-all duration-150 ${
         isActive
-          ? 'bg-amber-500/15 text-amber-800 dark:bg-amber-500/25 dark:text-amber-200 font-extrabold shadow-sm'
+          ? 'bg-amber-500/15 text-amber-800 dark:bg-amber-500/25 dark:text-amber-200 font-extrabold shadow-xs'
           : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-400 dark:hover:bg-slate-800/80 dark:hover:text-slate-100'
       }`}
     >
@@ -131,7 +131,7 @@ function NavMenuItem({
           isCollapsed ? 'justify-center px-2' : ''
         } ${
           isActive || routeActive
-            ? 'bg-amber-500/10 text-amber-900 border-r-[3px] border-amber-500 dark:bg-amber-500/20 dark:text-amber-200 dark:border-amber-400 font-extrabold shadow-sm'
+            ? 'bg-amber-500/10 text-amber-900 border-r-[3px] border-amber-500 dark:bg-amber-500/20 dark:text-amber-200 dark:border-amber-400 font-extrabold shadow-xs'
             : 'text-slate-700 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-800/80 dark:hover:text-white'
         }`}
       >
@@ -163,12 +163,20 @@ function NavMenuItem({
             ) : null}
 
             {hasChildren ? (
-              <ChevronDown
-                size={14}
-                className={`text-slate-400 transition-transform duration-200 dark:text-slate-500 ${
-                  effectiveOpen ? 'rotate-180 text-amber-600 dark:text-amber-400' : ''
-                }`}
-              />
+              <div className="flex size-4 items-center justify-center">
+                <MorphIcon
+                  icon={effectiveOpen ? CHEVRON_UP_NODE : CHEVRON_DOWN_NODE}
+                  spring="smooth"
+                  reducedMotion="user"
+                  size={14}
+                  strokeWidth={2}
+                  className={`transition-colors ${
+                    effectiveOpen
+                      ? 'text-amber-600 dark:text-amber-400'
+                      : 'text-slate-400 dark:text-slate-500'
+                  }`}
+                />
+              </div>
             ) : null}
           </span>
         )}
@@ -205,7 +213,7 @@ export default function DashboardSidebar({
       {sidebarOpen && (
         <button
           type="button"
-          className="fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-sm transition-opacity lg:hidden"
+          className="fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-xs transition-opacity lg:hidden"
           aria-label="بستن منو"
           onClick={onCloseMobile}
         />

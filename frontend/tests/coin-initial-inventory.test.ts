@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import InitialCashInventoryCard from '../src/components/inventory/InitialCashInventoryCard';
 import InitialCoinInventoryCard from '../src/components/inventory/InitialCoinInventoryCard';
+import { STANDARD_COINS, calculateCoinRow } from '../lib/coin';
 
 describe('Initial Coin & Bullion Inventory & Catalog Tests', () => {
   test('InitialCashInventoryCard has no separate "افزودن" button in UI markup', () => {
@@ -62,5 +63,41 @@ describe('Initial Coin & Bullion Inventory & Catalog Tests', () => {
     expect(totalWeight).toBe(50);
     expect(totalAmount).toBe(225000000);
     expect(convertedWeight).toBeCloseTo(66.333, 3);
+  });
+
+  test('STANDARD_COINS contains both coin and bullion items with codes', () => {
+    const coins = STANDARD_COINS.filter((c) => c.category !== 'bar');
+    const bullions = STANDARD_COINS.filter((c) => c.category === 'bar');
+
+    expect(coins.length).toBeGreaterThan(0);
+    expect(bullions.length).toBeGreaterThan(0);
+
+    STANDARD_COINS.forEach((item) => {
+      expect(item.code).toBeDefined();
+      if (item.code) {
+        expect(item.code.length).toBeGreaterThan(0);
+      }
+      expect(item.unitWeight).toBeGreaterThan(0);
+      expect(item.purity).toBeGreaterThan(0);
+    });
+  });
+
+  test('calculateCoinRow separates quantity and weight and calculates converted 750 weight', () => {
+    const row = {
+      id: 'row-1',
+      coinTypeId: 'emami_full',
+      quantity: '4',
+      unitWeight: '8.136',
+      purity: '900',
+      totalAmount: '200000000',
+      description: 'افتتاحیه ۴ عدد سکه امامی',
+    };
+
+    const calc = calculateCoinRow(row, [], 3);
+
+    expect(calc.quantity).toBe(4);
+    expect(calc.unitWeight).toBe(8.136);
+    expect(calc.totalWeight).toBe(32.544); // 4 * 8.136
+    expect(calc.converted750).toBeCloseTo(39.053, 3); // (32.544 * 900) / 750
   });
 });

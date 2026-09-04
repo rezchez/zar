@@ -18,13 +18,18 @@ migrate((app) => {
       deleteRule: '@request.auth.id != ""',
       fields: [
         new TextField({ name: "name", required: true, min: 1, max: 120 }),
+        new TextField({ name: "code", required: false, max: 80 }),
         new TextField({ name: "nature", required: true, min: 1, max: 20 }), // "coin" | "bullion"
         new TextField({ name: "coin_subtype", required: false, max: 80 }),
         new TextField({ name: "metal", required: true, min: 1, max: 30 }), // "gold" | "silver" | "platinum"
         new NumberField({ name: "unit_weight", required: true, min: 0 }),
         new NumberField({ name: "purity", required: true, min: 0, max: 1000 }),
+        new TextField({ name: "manufacturer", required: false, max: 120 }),
+        new TextField({ name: "country", required: false, max: 80 }),
         new TextField({ name: "description", required: false, max: 500 }),
+        new BoolField({ name: "is_active", required: false }),
         new BoolField({ name: "is_system", required: false }),
+        new NumberField({ name: "sort_order", required: false, min: 0 }),
         new RelationField({ name: "created_by", collectionId: "_pb_users_auth_", maxSelect: 1, cascadeDelete: false }),
         new RelationField({ name: "updated_by", collectionId: "_pb_users_auth_", maxSelect: 1, cascadeDelete: false }),
       ],

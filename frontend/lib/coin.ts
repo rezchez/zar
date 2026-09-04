@@ -10,6 +10,7 @@ export type CoinCategory = 'bank_coin' | 'pahlavi_coin' | 'parsian' | 'bar' | 'c
 
 export interface CoinDefinition {
   id: string;
+  code?: string;
   name: string;
   category: CoinCategory;
   categoryLabel: string;
@@ -18,6 +19,7 @@ export interface CoinDefinition {
   isFixedWeight: boolean; // whether the standard weight is fixed or variable
   isFixedPurity: boolean; // whether the standard purity is fixed or variable
   description?: string;
+  isActive?: boolean;
 }
 
 export const COIN_CATEGORY_LABELS: Record<CoinCategory, string> = {
@@ -36,6 +38,7 @@ export const STANDARD_COINS: CoinDefinition[] = [
   // 1. سکه‌های بانکی بهار آزادی (عیار ۹۰۰)
   {
     id: 'emami_full',
+    code: 'COIN-EMAMI-FULL',
     name: 'سکه تمام بهار آزادی (امامی)',
     category: 'bank_coin',
     categoryLabel: 'سکه‌های بانکی (بهار آزادی)',
@@ -43,10 +46,12 @@ export const STANDARD_COINS: CoinDefinition[] = [
     purity: 900,
     isFixedWeight: true,
     isFixedPurity: true,
+    isActive: true,
     description: 'سکه تمام بهار آزادی طرح جدید (امامی) - وزن استاندارد ۸.۱۳۶ گرم با عیار ۹۰۰',
   },
   {
     id: 'bahar_azadi_old',
+    code: 'COIN-BAHAR-OLD',
     name: 'سکه تمام بهار آزادی (طرح قدیم)',
     category: 'bank_coin',
     categoryLabel: 'سکه‌های بانکی (بهار آزادی)',
@@ -54,10 +59,12 @@ export const STANDARD_COINS: CoinDefinition[] = [
     purity: 900,
     isFixedWeight: true,
     isFixedPurity: true,
+    isActive: true,
     description: 'سکه تمام بهار آزادی طرح قدیم - وزن ۸.۱۳۶ گرم با عیار ۹۰۰',
   },
   {
     id: 'half_bahar',
+    code: 'COIN-BAHAR-HALF',
     name: 'نیم سکه بهار آزادی',
     category: 'bank_coin',
     categoryLabel: 'سکه‌های بانکی (بهار آزادی)',
@@ -65,10 +72,12 @@ export const STANDARD_COINS: CoinDefinition[] = [
     purity: 900,
     isFixedWeight: true,
     isFixedPurity: true,
+    isActive: true,
     description: 'نیم سکه بهار آزادی بانکی - وزن ۴.۰۶۸ گرم با عیار ۹۰۰',
   },
   {
     id: 'quarter_bahar',
+    code: 'COIN-BAHAR-QUARTER',
     name: 'ربع سکه بهار آزادی',
     category: 'bank_coin',
     categoryLabel: 'سکه‌های بانکی (بهار آزادی)',
@@ -76,10 +85,12 @@ export const STANDARD_COINS: CoinDefinition[] = [
     purity: 900,
     isFixedWeight: true,
     isFixedPurity: true,
+    isActive: true,
     description: 'ربع سکه بهار آزادی بانکی - وزن ۲.۰۳۴ گرم با عیار ۹۰۰',
   },
   {
     id: 'gram_coin',
+    code: 'COIN-BAHAR-GRAM',
     name: 'سکه گرمی (بانک مرکزی)',
     category: 'bank_coin',
     categoryLabel: 'سکه‌های بانکی (بهار آزادی)',
@@ -87,12 +98,14 @@ export const STANDARD_COINS: CoinDefinition[] = [
     purity: 900,
     isFixedWeight: true,
     isFixedPurity: true,
+    isActive: true,
     description: 'سکه یک گرمی بانک مرکزی - وزن ۱.۰۱۸ گرم با عیار ۹۰۰',
   },
 
   // 2. سکه‌های پهلوی (عیار ۹۰۰)
   {
     id: 'pahlavi_full',
+    code: 'COIN-PAHLAVI-FULL',
     name: 'سکه پهلوی (یک پهلوی)',
     category: 'pahlavi_coin',
     categoryLabel: 'سکه‌های پهلوی',
@@ -100,10 +113,12 @@ export const STANDARD_COINS: CoinDefinition[] = [
     purity: 900,
     isFixedWeight: true,
     isFixedPurity: true,
+    isActive: true,
     description: 'سکه یک پهلوی طلا - وزن ۸.۱۳۶ گرم با عیار ۹۰۰',
   },
   {
     id: 'pahlavi_half',
+    code: 'COIN-PAHLAVI-HALF',
     name: 'نیم پهلوی',
     category: 'pahlavi_coin',
     categoryLabel: 'سکه‌های پهلوی',
@@ -111,10 +126,12 @@ export const STANDARD_COINS: CoinDefinition[] = [
     purity: 900,
     isFixedWeight: true,
     isFixedPurity: true,
+    isActive: true,
     description: 'سکه نیم پهلوی طلا - وزن ۴.۰۶۸ گرم با عیار ۹۰۰',
   },
   {
     id: 'pahlavi_quarter',
+    code: 'COIN-PAHLAVI-QUARTER',
     name: 'ربع پهلوی',
     category: 'pahlavi_coin',
     categoryLabel: 'سکه‌های پهلوی',
@@ -122,12 +139,14 @@ export const STANDARD_COINS: CoinDefinition[] = [
     purity: 900,
     isFixedWeight: true,
     isFixedPurity: true,
+    isActive: true,
     description: 'سکه ربع پهلوی طلا - وزن ۲.۰۳۴ گرم با عیار ۹۰۰',
   },
 
   // 3. پارسیان (عیار ۷۵۰ - ۱۸ عیار)
   {
     id: 'parsian_300',
+    code: 'COIN-PARSIAN-300',
     name: 'سکه پارسیان ۰.۳۰۰ (۳۰۰ سوتی)',
     category: 'parsian',
     categoryLabel: 'سکه‌های پارسیان (۱۸ عیار)',
@@ -135,10 +154,12 @@ export const STANDARD_COINS: CoinDefinition[] = [
     purity: 750,
     isFixedWeight: true,
     isFixedPurity: true,
+    isActive: true,
     description: 'سکه پارسیان ۳۰۰ سوت - وزن ۰.۳ گرم با عیار ۷۵۰',
   },
   {
     id: 'parsian_500',
+    code: 'COIN-PARSIAN-500',
     name: 'سکه پارسیان ۰.۵۰۰ (۵۰۰ سوتی)',
     category: 'parsian',
     categoryLabel: 'سکه‌های پارسیان (۱۸ عیار)',
@@ -146,10 +167,12 @@ export const STANDARD_COINS: CoinDefinition[] = [
     purity: 750,
     isFixedWeight: true,
     isFixedPurity: true,
+    isActive: true,
     description: 'سکه پارسیان نیم گرمی - وزن ۰.۵ گرم با عیار ۷۵۰',
   },
   {
     id: 'parsian_1000',
+    code: 'COIN-PARSIAN-1000',
     name: 'سکه پارسیان ۱.۰۰۰ (۱ گرمی)',
     category: 'parsian',
     categoryLabel: 'سکه‌های پارسیان (۱۸ عیار)',
@@ -157,10 +180,12 @@ export const STANDARD_COINS: CoinDefinition[] = [
     purity: 750,
     isFixedWeight: true,
     isFixedPurity: true,
+    isActive: true,
     description: 'سکه پارسیان یک گرمی - وزن ۱.۰ گرم با عیار ۷۵۰',
   },
   {
     id: 'parsian_1500',
+    code: 'COIN-PARSIAN-1500',
     name: 'سکه پارسیان ۱.۵۰۰ (۱.۵ گرمی)',
     category: 'parsian',
     categoryLabel: 'سکه‌های پارسیان (۱۸ عیار)',
@@ -168,10 +193,12 @@ export const STANDARD_COINS: CoinDefinition[] = [
     purity: 750,
     isFixedWeight: true,
     isFixedPurity: true,
+    isActive: true,
     description: 'سکه پارسیان یک و نیم گرمی - وزن ۱.۵ گرم با عیار ۷۵۰',
   },
   {
     id: 'parsian_2000',
+    code: 'COIN-PARSIAN-2000',
     name: 'سکه پارسیان ۲.۰۰۰ (۲ گرمی)',
     category: 'parsian',
     categoryLabel: 'سکه‌های پارسیان (۱۸ عیار)',
@@ -179,10 +206,12 @@ export const STANDARD_COINS: CoinDefinition[] = [
     purity: 750,
     isFixedWeight: true,
     isFixedPurity: true,
+    isActive: true,
     description: 'سکه پارسیان دو گرمی - وزن ۲.۰ گرم با عیار ۷۵۰',
   },
   {
     id: 'parsian_custom',
+    code: 'COIN-PARSIAN-CUSTOM',
     name: 'سکه پارسیان (وزن سفارشی)',
     category: 'parsian',
     categoryLabel: 'سکه‌های پارسیان (۱۸ عیار)',
@@ -190,12 +219,14 @@ export const STANDARD_COINS: CoinDefinition[] = [
     purity: 750,
     isFixedWeight: false,
     isFixedPurity: true,
+    isActive: true,
     description: 'سکه پارسیان با وزن متغیر - عیار ۷۵۰',
   },
 
   // 4. شمش‌های طلا (شمش ۲۴ عیار / ۹۹۵ یا ۹۹۹.۹)
   {
     id: 'bar_1g',
+    code: 'BAR-GOLD-1G',
     name: 'شمش طلا ۱ گرمی',
     category: 'bar',
     categoryLabel: 'شمش‌های طلا (۲۴ عیار)',
@@ -203,10 +234,12 @@ export const STANDARD_COINS: CoinDefinition[] = [
     purity: 995,
     isFixedWeight: true,
     isFixedPurity: true,
+    isActive: true,
     description: 'شمش طلا ۱ گرمی استاندارد - عیار ۹۹۵ (۲۴ عیار)',
   },
   {
     id: 'bar_5g',
+    code: 'BAR-GOLD-5G',
     name: 'شمش طلا ۵ گرمی',
     category: 'bar',
     categoryLabel: 'شمش‌های طلا (۲۴ عیار)',
@@ -214,10 +247,12 @@ export const STANDARD_COINS: CoinDefinition[] = [
     purity: 995,
     isFixedWeight: true,
     isFixedPurity: true,
+    isActive: true,
     description: 'شمش طلا ۵ گرمی استاندارد - عیار ۹۹۵',
   },
   {
     id: 'bar_10g',
+    code: 'BAR-GOLD-10G',
     name: 'شمش طلا ۱۰ گرمی',
     category: 'bar',
     categoryLabel: 'شمش‌های طلا (۲۴ عیار)',
@@ -225,10 +260,12 @@ export const STANDARD_COINS: CoinDefinition[] = [
     purity: 995,
     isFixedWeight: true,
     isFixedPurity: true,
+    isActive: true,
     description: 'شمش طلا ۱۰ گرمی استاندارد - عیار ۹۹۵',
   },
   {
     id: 'bar_ounce',
+    code: 'BAR-GOLD-1OUNCE',
     name: 'شمش طلا ۱ اونس (۳۱.۱۰۳۵ گرم)',
     category: 'bar',
     categoryLabel: 'شمش‌های طلا (۲۴ عیار)',
@@ -236,10 +273,12 @@ export const STANDARD_COINS: CoinDefinition[] = [
     purity: 999.9,
     isFixedWeight: true,
     isFixedPurity: true,
+    isActive: true,
     description: 'شمش طلا یک اونس تروا (۳۱.۱۰۳۵ گرم) - عیار ۹۹۹.۹',
   },
   {
     id: 'bar_50g',
+    code: 'BAR-GOLD-50G',
     name: 'شمش طلا ۵۰ گرمی',
     category: 'bar',
     categoryLabel: 'شمش‌های طلا (۲۴ عیار)',
@@ -247,10 +286,12 @@ export const STANDARD_COINS: CoinDefinition[] = [
     purity: 995,
     isFixedWeight: true,
     isFixedPurity: true,
-    description: 'شمش طلا ۵۰ گرمی - عیار ۹۹۵',
+    isActive: true,
+    description: 'شمش طلا ۵0 گرمی - عیار ۹۹۵',
   },
   {
     id: 'bar_100g',
+    code: 'BAR-GOLD-100G',
     name: 'شمش طلا ۱۰۰ گرمی',
     category: 'bar',
     categoryLabel: 'شمش‌های طلا (۲۴ عیار)',
@@ -258,10 +299,12 @@ export const STANDARD_COINS: CoinDefinition[] = [
     purity: 995,
     isFixedWeight: true,
     isFixedPurity: true,
+    isActive: true,
     description: 'شمش طلا ۱۰۰ گرمی - عیار ۹۹۵',
   },
   {
     id: 'bar_1000g',
+    code: 'BAR-GOLD-1000G',
     name: 'شمش طلا ۱ کیلوگرمی',
     category: 'bar',
     categoryLabel: 'شمش‌های طلا (۲۴ عیار)',
@@ -269,10 +312,12 @@ export const STANDARD_COINS: CoinDefinition[] = [
     purity: 995,
     isFixedWeight: true,
     isFixedPurity: true,
+    isActive: true,
     description: 'شمش طلا یک کیلویی شمش استاندارد بین‌المللی - عیار ۹۹۵',
   },
   {
     id: 'bar_custom',
+    code: 'BAR-GOLD-CUSTOM',
     name: 'شمش طلا (وزن و عیار سفارشی)',
     category: 'bar',
     categoryLabel: 'شمش‌های طلا (۲۴ عیار)',
@@ -280,12 +325,14 @@ export const STANDARD_COINS: CoinDefinition[] = [
     purity: 995,
     isFixedWeight: false,
     isFixedPurity: false,
+    isActive: true,
     description: 'شمش طلا با وزن و عیار متغیر',
   },
 
   // 5. نوع سفارشی
   {
     id: 'custom_coin',
+    code: 'COIN-CUSTOM-ITEM',
     name: 'سکه / شمش سفارشی جدید',
     category: 'custom',
     categoryLabel: 'انواع سفارشی',
@@ -293,6 +340,7 @@ export const STANDARD_COINS: CoinDefinition[] = [
     purity: 750,
     isFixedWeight: false,
     isFixedPurity: false,
+    isActive: true,
     description: 'تعریف سکه یا شمش دلخواه با نام، وزن و عیار سفارشی',
   },
 ];

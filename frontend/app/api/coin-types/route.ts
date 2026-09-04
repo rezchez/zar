@@ -3,15 +3,18 @@ import { NextResponse } from 'next/server';
 import { getServerAuthContext } from '@/lib/auth';
 import { STANDARD_COINS } from '@/lib/coin';
 
-export async function GET() {
+export async function GET(request: Request) {
   const context = await getServerAuthContext();
   if (!context) {
     return NextResponse.json({ message: 'ابتدا وارد حساب شوید.' }, { status: 401 });
   }
 
+  const url = new URL(request.url);
+  const filterNature = url.searchParams.get('nature') || url.searchParams.get('itemType');
+
   try {
     let records = await context.pb.collection('coin_types').getFullList({
-      sort: 'name',
+      sort: 'sort_order,name',
     }).catch(() => []);
 
     // Seed default standard coins if database collection is empty
@@ -33,12 +36,14 @@ export async function GET() {
         try {
           await context.pb.collection('coin_types').create({
             name: item.name,
+            code: item.code,
             nature,
             coin_subtype: coinSubtype,
             metal: 'gold',
             unit_weight: item.unitWeight,
             purity: item.purity,
             description: item.description || '',
+            is_active: item.isActive !== false,
             is_system: true,
           }).catch(() => null);
         } catch {
@@ -47,36 +52,61 @@ export async function GET() {
       }
 
       records = await context.pb.collection('coin_types').getFullList({
-        sort: 'name',
+        sort: 'sort_order,name',
       }).catch(() => []);
     }
 
-    const coinTypes = records.map((r: any) => ({
+    let coinTypes = records.map((r: any) => ({
       id: r.id,
       name: String(r.name || ''),
+      code: String(r.code || ''),
       nature: String(r.nature || 'coin'),
+      itemType: String(r.nature || 'coin'),
       coinSubtype: String(r.coin_subtype || ''),
       metal: String(r.metal || 'gold'),
       unitWeight: Number(r.unit_weight || 0),
+      nominalWeight: Number(r.unit_weight || 0),
       purity: Number(r.purity || 750),
+      manufacturer: String(r.manufacturer || ''),
+      country: String(r.country || ''),
       description: String(r.description || ''),
+      isActive: r.is_active !== false,
       isSystem: Boolean(r.is_system),
+      sortOrder: Number(r.sort_order || 0),
     }));
+
+    if (filterNature) {
+      const targetNature = filterNature.trim().toLowerCase();
+      coinTypes = coinTypes.filter((c) => c.nature === targetNature);
+    }
 
     return NextResponse.json({ coinTypes });
   } catch {
     // Return fallback catalog from STANDARD_COINS if collection is unpopulated
-    const fallbackTypes = STANDARD_COINS.map((c) => ({
+    let fallbackTypes = STANDARD_COINS.map((c) => ({
       id: c.id,
+      code: c.code,
       name: c.name,
       nature: c.category === 'bar' ? 'bullion' : 'coin',
+      itemType: c.category === 'bar' ? 'bullion' : 'coin',
       coinSubtype: c.categoryLabel,
       metal: 'gold',
       unitWeight: c.unitWeight,
+      nominalWeight: c.unitWeight,
       purity: c.purity,
+      manufacturer: '',
+      country: '',
       description: c.description || '',
+      isActive: c.isActive !== false,
       isSystem: true,
+      sortOrder: 0,
     }));
+
+    if (filterNature) {
+      const targetNature = filterNature.trim().toLowerCase();
+      fallbackTypes = fallbackTypes.filter((c) => c.nature === targetNature);
+    }
+
     return NextResponse.json({ coinTypes: fallbackTypes });
   }
 }
@@ -90,11 +120,14 @@ export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
     const name = String(body?.name || '').trim();
-    const nature = String(body?.nature || 'coin').trim().toLowerCase(); // 'coin' | 'bullion'
+    const rawCode = String(body?.code || '').trim();
+    const nature = String(body?.nature || body?.itemType || 'coin').trim().toLowerCase(); // 'coin' | 'bullion'
     const coinSubtype = String(body?.coinSubtype || '').trim();
     const metal = String(body?.metal || 'gold').trim().toLowerCase(); // 'gold' | 'silver' | 'platinum'
-    const unitWeight = Math.max(0, Number(body?.unitWeight || 0));
+    const unitWeight = Math.max(0, Number(body?.unitWeight ?? body?.nominalWeight ?? 0));
     const purity = Math.max(0, Math.min(1000, Number(body?.purity || 750)));
+    const manufacturer = String(body?.manufacturer || '').trim();
+    const country = String(body?.country || '').trim();
     const description = String(body?.description || '').trim();
 
     if (!name) {
@@ -104,6 +137,9 @@ export async function POST(request: Request) {
     if (nature !== 'coin' && nature !== 'bullion') {
       return NextResponse.json({ message: 'ماهیت باید سکه یا شمش باشد.' }, { status: 400 });
     }
+
+    // Auto-generate code if empty
+    const code = rawCode || `${nature === 'bullion' ? 'BAR' : 'COIN'}-${Date.now().toString(36).toUpperCase()}`;
 
     // Check duplicate name
     const existing = await context.pb.collection('coin_types').getFirstListItem(
@@ -116,12 +152,18 @@ export async function POST(request: Request) {
         coinType: {
           id: existing.id,
           name: existing.name,
+          code: existing.code || '',
           nature: existing.nature,
+          itemType: existing.nature,
           coinSubtype: existing.coin_subtype || '',
           metal: existing.metal,
           unitWeight: Number(existing.unit_weight || 0),
+          nominalWeight: Number(existing.unit_weight || 0),
           purity: Number(existing.purity || 750),
+          manufacturer: existing.manufacturer || '',
+          country: existing.country || '',
           description: existing.description || '',
+          isActive: existing.is_active !== false,
           isSystem: Boolean(existing.is_system),
         },
       });
@@ -129,12 +171,16 @@ export async function POST(request: Request) {
 
     const created = await context.pb.collection('coin_types').create({
       name,
+      code,
       nature,
       coin_subtype: nature === 'coin' ? coinSubtype : '',
       metal,
       unit_weight: unitWeight,
       purity,
+      manufacturer,
+      country,
       description,
+      is_active: true,
       is_system: false,
       created_by: context.user.id,
       updated_by: context.user.id,
@@ -145,12 +191,18 @@ export async function POST(request: Request) {
       coinType: {
         id: created.id,
         name: created.name,
+        code: created.code || code,
         nature: created.nature,
+        itemType: created.nature,
         coinSubtype: created.coin_subtype || '',
         metal: created.metal,
         unitWeight: Number(created.unit_weight || 0),
+        nominalWeight: Number(created.unit_weight || 0),
         purity: Number(created.purity || 750),
+        manufacturer: created.manufacturer || '',
+        country: created.country || '',
         description: created.description || '',
+        isActive: created.is_active !== false,
         isSystem: false,
       },
     }, { status: 201 });

@@ -2,7 +2,7 @@
 
 import { AnimatePresence, motion } from 'framer-motion';
 import { Check, Coins, Plus, X } from 'lucide-react';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 
 import DatePicker from '@/components/ui/date-picker';
 import { useAppSettings } from '@/src/components/SettingsProvider';
@@ -13,12 +13,14 @@ import { parseLocalizedAmount } from '@/lib/money';
 export type CoinTypeMasterItem = {
   id: string;
   name: string;
+  code?: string;
   nature: string; // 'coin' | 'bullion'
   coinSubtype?: string;
   metal: string; // 'gold' | 'silver' | 'platinum'
   unitWeight: number;
   purity: number;
   description?: string;
+  isActive?: boolean;
 };
 
 export type CoinInventoryEditItem = {
@@ -54,11 +56,12 @@ export default function InitialCoinInventoryModal({
   const currencySuffix = effectiveCurrency === 'IRT' ? 'تومان' : 'ریال';
 
   const [coinTypes, setCoinTypes] = useState<CoinTypeMasterItem[]>([]);
+  const [selectedNature, setSelectedNature] = useState<'coin' | 'bullion'>('coin');
   const [selectedItemTypeId, setSelectedItemTypeId] = useState<string>('');
   const [itemName, setItemName] = useState<string>('');
-  const [nature, setNature] = useState<string>('coin'); // 'coin' | 'bullion'
+  const [nature, setNature] = useState<string>('coin');
   const [coinSubtype, setCoinSubtype] = useState<string>('سکه تمام طرح جدید (امامی)');
-  const [metal, setMetal] = useState<string>('gold'); // 'gold' | 'silver' | 'platinum'
+  const [metal, setMetal] = useState<string>('gold');
   const [quantity, setQuantity] = useState<string>('1');
   const [unitWeight, setUnitWeight] = useState<string>('8.136');
   const [purity, setPurity] = useState<string>('900');
@@ -66,75 +69,91 @@ export default function InitialCoinInventoryModal({
   const [date, setDate] = useState<string>(dateToJalaliString(new Date()));
   const [description, setDescription] = useState<string>('');
 
+  const [loadingTypes, setLoadingTypes] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Custom Item Creation State
   const [isCreatingCustomType, setIsCreatingCustomType] = useState(false);
   const [customName, setCustomName] = useState('');
-  const [customNature, setCustomNature] = useState('coin');
+  const [customNature, setCustomNature] = useState<'coin' | 'bullion'>('coin');
   const [customSubtype, setCustomSubtype] = useState('سکه تمام طرح جدید (امامی)');
   const [customMetal, setCustomMetal] = useState('gold');
   const [customWeight, setCustomWeight] = useState('1.0');
   const [customPurity, setCustomPurity] = useState('750');
 
-  // Load coin types from backend
+  const selectItemDetails = useCallback((typeId: string, typesList: CoinTypeMasterItem[]) => {
+    setSelectedItemTypeId(typeId);
+    const found = typesList.find((t) => t.id === typeId);
+    if (found) {
+      setItemName(found.name);
+      setNature(found.nature || 'coin');
+      setCoinSubtype(found.coinSubtype || '');
+      setMetal(found.metal || 'gold');
+      setUnitWeight(String(found.unitWeight || '1.0'));
+      setPurity(String(found.purity || '750'));
+    }
+  }, []);
+
+  // Load coin types from backend & sync edit or initial selection
   useEffect(() => {
     if (!isOpen) return;
 
     let active = true;
-    async function fetchTypes() {
+    async function initModal() {
+      setLoadingTypes(true);
       try {
         const res = await fetch('/api/coin-types', { cache: 'no-store' });
-        if (res.ok) {
-          const data = await res.json();
-          if (Array.isArray(data.coinTypes) && active) {
-            setCoinTypes(data.coinTypes);
-            if (!editItem && data.coinTypes.length > 0 && !selectedItemTypeId) {
-              const first = data.coinTypes[0];
-              setSelectedItemTypeId(first.id);
-              setItemName(first.name);
-              setNature(first.nature || 'coin');
-              setCoinSubtype(first.coinSubtype || 'سکه تمام طرح جدید (امامی)');
-              setMetal(first.metal || 'gold');
-              setUnitWeight(String(first.unitWeight || '8.136'));
-              setPurity(String(first.purity || '900'));
-            }
+        if (!res.ok || !active) return;
+        const data = await res.json();
+        const activeList: CoinTypeMasterItem[] = Array.isArray(data.coinTypes)
+          ? data.coinTypes.filter((t: CoinTypeMasterItem) => t.isActive !== false)
+          : [];
+
+        if (!active) return;
+        setCoinTypes(activeList);
+
+        if (editItem) {
+          const itemNat = (editItem.nature || 'coin') === 'bullion' ? 'bullion' : 'coin';
+          setSelectedNature(itemNat);
+          setSelectedItemTypeId(editItem.itemTypeId || '');
+          setItemName(editItem.itemName || '');
+          setNature(editItem.nature || 'coin');
+          setCoinSubtype(editItem.coinSubtype || '');
+          setMetal(editItem.metal || 'gold');
+          setQuantity(String(editItem.quantity || '1'));
+          setUnitWeight(String(editItem.unitWeight || '1.0'));
+          setPurity(String(editItem.purity || '750'));
+          setUnitPrice(editItem.unitPrice ? String(editItem.unitPrice) : '');
+          setDate(editItem.date || dateToJalaliString(new Date()));
+          setDescription(editItem.description || '');
+          setErrorMsg(null);
+        } else {
+          setQuantity('1');
+          setUnitPrice('');
+          setDate(dateToJalaliString(new Date()));
+          setDescription('');
+          setErrorMsg(null);
+
+          const defaultCoin = activeList.find((t) => (t.nature || 'coin') === 'coin');
+          if (defaultCoin) {
+            selectItemDetails(defaultCoin.id, activeList);
           }
         }
       } catch {
         // ignore
+      } finally {
+        if (active) setLoadingTypes(false);
       }
     }
-    void fetchTypes();
-    return () => { active = false; };
-  }, [isOpen, editItem, selectedItemTypeId]);
 
-  // Sync edit item if present
-  useEffect(() => {
-    if (editItem && isOpen) {
-      setSelectedItemTypeId(editItem.itemTypeId || '');
-      setItemName(editItem.itemName || '');
-      setNature(editItem.nature || 'coin');
-      setCoinSubtype(editItem.coinSubtype || 'سکه تمام طرح جدید (امامی)');
-      setMetal(editItem.metal || 'gold');
-      setQuantity(String(editItem.quantity || '1'));
-      setUnitWeight(String(editItem.unitWeight || '1.0'));
-      setPurity(String(editItem.purity || '750'));
-      setUnitPrice(editItem.unitPrice ? String(editItem.unitPrice) : '');
-      setDate(editItem.date || dateToJalaliString(new Date()));
-      setDescription(editItem.description || '');
-      setErrorMsg(null);
-    } else if (!editItem && isOpen) {
-      setQuantity('1');
-      setUnitPrice('');
-      setDate(dateToJalaliString(new Date()));
-      setDescription('');
-      setErrorMsg(null);
-    }
-  }, [editItem, isOpen]);
+    void initModal();
+    return () => { active = false; };
+  }, [isOpen, editItem, selectItemDetails]);
 
   if (!isOpen) return null;
+
+  const filteredCoinTypes = coinTypes.filter((t) => (t.nature || 'coin') === selectedNature);
 
   const numQty = Math.max(0, parseFloat(quantity) || 0);
   const numWeight = Math.max(0, parseFloat(unitWeight) || 0);
@@ -145,17 +164,19 @@ export default function InitialCoinInventoryModal({
   const totalAmount = numQty * numUnitPrice;
   const convertedWeight = baseKarat > 0 ? (totalWeight * numPurity) / baseKarat : totalWeight;
 
-  function handleTypeSelect(typeId: string) {
-    setSelectedItemTypeId(typeId);
-    const found = coinTypes.find((t) => t.id === typeId);
-    if (found) {
-      setItemName(found.name);
-      setNature(found.nature || 'coin');
-      setCoinSubtype(found.coinSubtype || 'سکه تمام طرح جدید (امامی)');
-      setMetal(found.metal || 'gold');
-      setUnitWeight(String(found.unitWeight || '1.0'));
-      setPurity(String(found.purity || '750'));
+  function handleNatureChange(newNature: 'coin' | 'bullion') {
+    setSelectedNature(newNature);
+    const matched = coinTypes.filter((t) => (t.nature || 'coin') === newNature);
+    if (matched.length > 0) {
+      selectItemDetails(matched[0].id, coinTypes);
+    } else {
+      setSelectedItemTypeId('');
+      setItemName('');
     }
+  }
+
+  function handleTypeSelect(typeId: string) {
+    selectItemDetails(typeId, coinTypes);
   }
 
   async function handleCreateCustomType(e: React.FormEvent) {
@@ -179,14 +200,16 @@ export default function InitialCoinInventoryModal({
       if (res.ok) {
         const data = await res.json();
         if (data.coinType) {
-          setCoinTypes((prev) => [...prev, data.coinType]);
-          handleTypeSelect(data.coinType.id);
+          const updated = [...coinTypes, data.coinType];
+          setCoinTypes(updated);
+          setSelectedNature(data.coinType.nature || 'coin');
+          selectItemDetails(data.coinType.id, updated);
           setIsCreatingCustomType(false);
           setCustomName('');
         }
       }
     } catch {
-      //
+      // ignore
     }
   }
 
@@ -202,6 +225,10 @@ export default function InitialCoinInventoryModal({
     }
     if (numWeight <= 0) {
       setErrorMsg('وزن واحد باید عددی مثبت باشد.');
+      return;
+    }
+    if (numPurity <= 0 || numPurity > 1000) {
+      setErrorMsg('عیار معتبر وارد کنید (بین ۱ تا ۱۰۰۰).');
       return;
     }
 
@@ -237,8 +264,9 @@ export default function InitialCoinInventoryModal({
 
       onSuccess?.();
       onClose();
-    } catch (err: any) {
-      setErrorMsg(err?.message || 'خطا در ثبت اطلاعات.');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'خطا در ثبت اطلاعات.';
+      setErrorMsg(msg);
     } finally {
       setSubmitting(false);
     }
@@ -290,27 +318,68 @@ export default function InitialCoinInventoryModal({
         ) : null}
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Nature selector tabs: سکه vs شمش */}
+          <div>
+            <label className="mb-1 block text-xs font-extrabold text-slate-700 dark:text-slate-300">
+              نوع کالا <span className="text-rose-500">*</span>
+            </label>
+            <div className="flex h-10 rounded-2xl border border-slate-200 bg-slate-100 p-1 dark:border-slate-800 dark:bg-slate-800/60">
+              <button
+                type="button"
+                onClick={() => handleNatureChange('coin')}
+                className={`flex-1 rounded-xl text-xs font-extrabold transition cursor-pointer ${
+                  selectedNature === 'coin'
+                    ? 'bg-amber-500 text-slate-950 shadow-xs dark:bg-amber-400'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                }`}
+              >
+                سکه
+              </button>
+              <button
+                type="button"
+                onClick={() => handleNatureChange('bullion')}
+                className={`flex-1 rounded-xl text-xs font-extrabold transition cursor-pointer ${
+                  selectedNature === 'bullion'
+                    ? 'bg-amber-500 text-slate-950 shadow-xs dark:bg-amber-400'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                }`}
+              >
+                شمش
+              </button>
+            </div>
+          </div>
+
           {/* Item Name Dropdown + Add Custom Button */}
           <div>
             <label className="mb-1 block text-xs font-extrabold text-slate-700 dark:text-slate-300">
-              نام سکه یا شمش <span className="text-rose-500">*</span>
+              {selectedNature === 'coin' ? 'نام سکه' : 'نام شمش'} <span className="text-rose-500">*</span>
             </label>
             <div className="flex gap-2">
-              <select
-                value={selectedItemTypeId}
-                onChange={(e) => handleTypeSelect(e.target.value)}
-                className="h-10 w-full rounded-2xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-900 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-              >
-                {coinTypes.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name} ({t.nature === 'bullion' ? 'شمش' : 'سکه'} — {t.unitWeight}گرم)
-                  </option>
-                ))}
-              </select>
+              {filteredCoinTypes.length > 0 ? (
+                <select
+                  value={selectedItemTypeId}
+                  onChange={(e) => handleTypeSelect(e.target.value)}
+                  disabled={loadingTypes}
+                  className="h-10 w-full rounded-2xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-900 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                >
+                  {filteredCoinTypes.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} ({t.unitWeight} گرم — عیار {t.purity})
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <div className="flex h-10 w-full items-center rounded-2xl border border-dashed border-amber-300 bg-amber-50/50 px-3 text-xs font-bold text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                  {selectedNature === 'coin' ? 'هیچ نوع سکه‌ای تعریف نشده است.' : 'هیچ نوع شمشی تعریف نشده است.'}
+                </div>
+              )}
 
               <button
                 type="button"
-                onClick={() => setIsCreatingCustomType(true)}
+                onClick={() => {
+                  setCustomNature(selectedNature);
+                  setIsCreatingCustomType(true);
+                }}
                 className="inline-flex size-10 shrink-0 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-700 hover:bg-amber-500/25 dark:bg-amber-500/25 dark:text-amber-300 cursor-pointer"
                 title="افزودن مورد جدید"
               >
@@ -330,7 +399,7 @@ export default function InitialCoinInventoryModal({
               >
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-black text-amber-900 dark:text-amber-200">
-                    تعریف سکه یا شمش جدید
+                    تعریف {customNature === 'coin' ? 'سکه' : 'شمش'} جدید
                   </span>
                   <button
                     type="button"
@@ -350,7 +419,7 @@ export default function InitialCoinInventoryModal({
                       type="text"
                       value={customName}
                       onChange={(e) => setCustomName(e.target.value)}
-                      placeholder="مثلا: شمش ۲۰ گرمی سوئیسی"
+                      placeholder={customNature === 'coin' ? 'مثلا: سکه طلا سفارشی' : 'مثلا: شمش ۲۰ گرمی سوئیسی'}
                       className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-xs font-bold text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                     />
                   </div>
