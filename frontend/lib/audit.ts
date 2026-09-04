@@ -35,7 +35,14 @@ export type AuditEvent =
   | 'print_template_created'
   | 'print_template_updated'
   | 'print_template_deleted'
-  | 'activity_log_cleaned';
+  | 'activity_log_cleaned'
+  | 'cache_rebuilt'
+  | 'backup_created'
+  | 'backup_downloaded'
+  | 'backup_validated'
+  | 'backup_restored'
+  | 'backup_deleted'
+  | 'backup_failed';
 
 export function getRequestMetadata(request?: Request) {
   if (!request || !request.headers) {

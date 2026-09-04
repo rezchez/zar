@@ -10,7 +10,6 @@ import {
   Coins,
   Scale,
   Type,
-  Upload,
   Trash2,
   AlertCircle,
   Eye,
@@ -33,9 +32,8 @@ import {
   UserX,
   CheckSquare,
   Square,
-  ShieldCheck,
-  HelpCircle,
   FolderTree,
+  Database,
 } from 'lucide-react';
 import { useAppSettings } from './SettingsProvider';
 import { jalaliDateToIso, parseJalaliDate, formatJalaliDate } from '@/lib/jalali';
@@ -46,6 +44,7 @@ import LogoManager from '@/src/components/LogoManager';
 import ReportPrintDesigner from '@/src/components/ReportPrintDesigner';
 import CustomFontManager from '@/src/components/CustomFontManager';
 import ChartOfAccounts from '@/src/components/accounting/ChartOfAccounts';
+import DatabaseBackupSection from '@/src/components/settings/DatabaseBackupSection';
 
 const ALL_CUSTOMER_COLUMNS = [
   { id: 'customerCode', label: 'کد حساب' },
@@ -109,6 +108,12 @@ const SETTINGS_TABS = [
     icon: Building2,
   },
   {
+    id: 'database_backup',
+    label: 'پشتیبان‌گیری و بازیابی اطلاعات',
+    description: 'ایجاد پشتیبان دستی، بررسی سلامت SHA-256 و بازیابی ایمن دیتابیس',
+    icon: Database,
+  },
+  {
     id: 'accounting_chart',
     label: 'سرفصل‌های حسابداری (COA)',
     description: 'درختواره سرفصل‌ها، گروه، کل، معین و تفصیلی با ساختار استاندارد طلا و جواهر',
@@ -152,10 +157,18 @@ export default function ProgramSettings() {
     customFonts,
     isLoading,
     updateSettings,
-    reloadFonts,
   } = useAppSettings();
 
-  const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'price_api' | 'print_customization' | 'manager_notifications' | 'pwa_settings' | 'accounting_chart'>('general');
+  const [activeTab, setActiveTab] = useState<
+    | 'general'
+    | 'database_backup'
+    | 'appearance'
+    | 'price_api'
+    | 'print_customization'
+    | 'manager_notifications'
+    | 'pwa_settings'
+    | 'accounting_chart'
+  >('general');
 
   // Form State initialized directly from settings
   const [form, setForm] = useState(() => ({ ...settings }));
@@ -557,6 +570,11 @@ export default function ProgramSettings() {
               {statusMessage.type === 'success' ? <Check size={16} /> : <AlertCircle size={16} />}
               <span>{statusMessage.text}</span>
             </div>
+          )}
+
+          {/* TAB: Database Backup & Restore */}
+          {activeTab === 'database_backup' && (
+            <DatabaseBackupSection />
           )}
 
           {/* TAB: Accounting Chart of Accounts */}
@@ -2072,8 +2090,6 @@ export default function ProgramSettings() {
           )}
         </div>
       )}
-
-
 
           {/* Save Button for Settings */}
           {(activeTab === 'general' || activeTab === 'appearance' || activeTab === 'pwa_settings' || activeTab === 'manager_notifications') && (

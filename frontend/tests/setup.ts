@@ -2,6 +2,11 @@ import { mock } from 'bun:test';
 
 mock.module('server-only', () => ({}));
 
+mock.module('next/cache', () => ({
+  revalidatePath: () => {},
+  revalidateTag: () => {},
+}));
+
 class MockNextResponse {
   body: any;
   status: number;

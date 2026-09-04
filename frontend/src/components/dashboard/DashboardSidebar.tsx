@@ -5,6 +5,7 @@ import { MorphIcon } from 'morphicons/react';
 import { useEffect, useState } from 'react';
 
 import type { DashboardUser } from '@/src/components/dashboard/DashboardShell';
+import CacheRebuildButton from '@/src/components/dashboard/CacheRebuildButton';
 import { APP_VERSION } from '@/lib/version';
 
 // Icon SVG path nodes for Morphicons
@@ -102,6 +103,7 @@ function NavMenuItem({
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
   }, []);
 
@@ -296,12 +298,18 @@ export default function DashboardSidebar({
                   <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
                   سامانه فعال و برخط
                 </span>
-                <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500">
-                  {APP_VERSION}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <CacheRebuildButton collapsed={false} />
+                  <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500">
+                    {APP_VERSION}
+                  </span>
+                </div>
               </>
             ) : (
-              <div className="mx-auto size-2 rounded-full bg-emerald-500 animate-pulse" title="سامانه برخط" />
+              <div className="flex flex-col items-center gap-2 mx-auto">
+                <div className="size-2 rounded-full bg-emerald-500 animate-pulse" title="سامانه برخط" />
+                <CacheRebuildButton collapsed={true} />
+              </div>
             )}
           </div>
         </div>
