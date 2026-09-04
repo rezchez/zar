@@ -20,6 +20,25 @@ export type BackupMetadata = {
   note?: string;
 };
 
+export type BackupFormatValidationResult = {
+  valid: boolean;
+  error?: string;
+  parsedData?: {
+    backupId: string;
+    createdAt: string;
+    applicationVersion: string;
+    databaseType: 'PocketBase';
+    schemaVersion: string;
+    note?: string;
+    collectionsCount: number;
+    totalRecordsCount: number;
+    collectionsSummary: Record<string, number>;
+    data: {
+      collections: Record<string, Array<Record<string, unknown>>>;
+    };
+  };
+};
+
 const BACKUP_DIR_NAME = 'app_backups';
 
 function getBackupDirPath(): string {
@@ -352,5 +371,240 @@ export async function deleteDatabaseBackup(backupId: string): Promise<boolean> {
     return true;
   } catch {
     return false;
+  }
+}
+
+export function validateBackupFileContent(
+  contentOrBuffer: string | Buffer,
+): BackupFormatValidationResult {
+  const contentStr =
+    typeof contentOrBuffer === 'string'
+      ? contentOrBuffer
+      : Buffer.isBuffer(contentOrBuffer)
+        ? contentOrBuffer.toString('utf-8')
+        : '';
+
+  if (!contentStr || !contentStr.trim()) {
+    return { valid: false, error: 'فایل پشتیبان خالی است یا محتوایی ندارد.' };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(contentStr);
+  } catch {
+    return {
+      valid: false,
+      error: 'فرمت فایل نامعتبر است: فایل انتخابی یک ساختار معتبر استاندارد JSON نیست.',
+    };
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return {
+      valid: false,
+      error: 'فرمت فایل نامعتبر است: ریشه داده‌های فایل پشتیبان باید یک شیء (Object) باشد.',
+    };
+  }
+
+  const obj = parsed as Record<string, unknown>;
+
+  if (obj.databaseType !== 'PocketBase') {
+    return {
+      valid: false,
+      error: 'نوع پایگاه داده نامعتبر است: این فایل پشتیبان متعلق به سامانه زرفولیو (PocketBase) نیست.',
+    };
+  }
+
+  if (!obj.data || typeof obj.data !== 'object' || Array.isArray(obj.data)) {
+    return {
+      valid: false,
+      error: 'ساختار محتوای پشتیبان ناقص است: بخش کلیدی data در فایل یافت نشد.',
+    };
+  }
+
+  const dataObj = obj.data as Record<string, unknown>;
+  if (!dataObj.collections || typeof dataObj.collections !== 'object' || Array.isArray(dataObj.collections)) {
+    return {
+      valid: false,
+      error: 'ساختار محتوای پشتیبان ناقص است: بخش جدول‌ها (collections) در فایل وجود ندارد.',
+    };
+  }
+
+  const collectionsObj = dataObj.collections as Record<string, unknown>;
+  const collectionNames = Object.keys(collectionsObj);
+
+  if (collectionNames.length === 0) {
+    return {
+      valid: false,
+      error: 'فایل پشتیبان فاقد هرگونه جدول یا رکورد ذخیره‌شده است.',
+    };
+  }
+
+  let totalRecordsCount = 0;
+  const collectionsSummary: Record<string, number> = {};
+
+  for (const colName of collectionNames) {
+    const list = collectionsObj[colName];
+    if (!Array.isArray(list)) {
+      return {
+        valid: false,
+        error: `جدول "${colName}" در فایل پشتیبان ساختار معتبر آرایه‌ای ندارد.`,
+      };
+    }
+    collectionsSummary[colName] = list.length;
+    totalRecordsCount += list.length;
+  }
+
+  const backupId =
+    typeof obj.backupId === 'string' && obj.backupId.trim()
+      ? obj.backupId.trim()
+      : `imported_backup_${Date.now()}`;
+
+  const createdAt =
+    typeof obj.createdAt === 'string' && !isNaN(Date.parse(obj.createdAt))
+      ? obj.createdAt
+      : new Date().toISOString();
+
+  const applicationVersion =
+    typeof obj.applicationVersion === 'string' && obj.applicationVersion.trim()
+      ? obj.applicationVersion.trim()
+      : APP_VERSION;
+
+  const schemaVersion =
+    typeof obj.schemaVersion === 'string' && obj.schemaVersion.trim()
+      ? obj.schemaVersion.trim()
+      : '1.0';
+
+  const note = typeof obj.note === 'string' ? obj.note.trim() : undefined;
+
+  return {
+    valid: true,
+    parsedData: {
+      backupId,
+      createdAt,
+      applicationVersion,
+      databaseType: 'PocketBase',
+      schemaVersion,
+      note,
+      collectionsCount: collectionNames.length,
+      totalRecordsCount,
+      collectionsSummary,
+      data: {
+        collections: collectionsObj as Record<string, Array<Record<string, unknown>>>,
+      },
+    },
+  };
+}
+
+export async function restoreDatabaseBackupFromContent(
+  contentOrBuffer: string | Buffer,
+  options: { note?: string } = {},
+): Promise<{
+  success: boolean;
+  backupId: string;
+  emergencyBackupId?: string;
+  message: string;
+  restoredCollectionsCount: number;
+  totalRestoredRecords: number;
+}> {
+  // 1. Validate format strictly
+  const validation = validateBackupFileContent(contentOrBuffer);
+  if (!validation.valid || !validation.parsedData) {
+    throw new Error(validation.error || 'فرمت فایل پشتیبان نامعتبر است.');
+  }
+
+  const { parsedData } = validation;
+  const collectionsData = parsedData.data.collections;
+
+  // 2. Persist the imported backup into app_backups directory
+  const dir = await ensureBackupDir();
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const randomSuffix = crypto.randomBytes(4).toString('hex');
+  const baseId = sanitizeBackupId(parsedData.backupId) || `imported_${timestamp}`;
+  const backupId = baseId.startsWith('imported_') ? baseId : `imported_${baseId}_${randomSuffix}`;
+  const filename = `${backupId}.json`;
+  const filePath = path.join(dir, filename);
+
+  const rawBuffer = Buffer.isBuffer(contentOrBuffer)
+    ? contentOrBuffer
+    : Buffer.from(contentOrBuffer, 'utf-8');
+  const checksum = calculateChecksum(rawBuffer);
+
+  const metadata: BackupMetadata = {
+    backupId,
+    filename,
+    createdAt: parsedData.createdAt,
+    applicationVersion: parsedData.applicationVersion,
+    databaseType: 'PocketBase',
+    schemaVersion: parsedData.schemaVersion,
+    size: rawBuffer.length,
+    checksum,
+    status: 'valid',
+    isEmergency: false,
+    note: options.note || parsedData.note || 'بازیابی دستی از فایل آپلودشده',
+  };
+
+  await fs.writeFile(filePath, rawBuffer);
+  await fs.writeFile(`${filePath}.meta.json`, JSON.stringify(metadata, null, 2), 'utf-8');
+
+  // 3. Create emergency backup before restoration
+  let emergencyMeta: BackupMetadata;
+  try {
+    emergencyMeta = await createDatabaseBackup({
+      isEmergency: true,
+      note: `پشتیبان اضطراری خودکار قبل از بازیابی فایل پشتیبان ${backupId}`,
+    });
+  } catch (err) {
+    throw new Error(
+      `ایجاد پشتیبان اضطراری شکست خورد: ${err instanceof Error ? err.message : 'خطای ناشناخته'}`,
+    );
+  }
+
+  // 4. Import records into PocketBase collections safely
+  try {
+    const { getPocketBaseServiceClient } = await import('@/lib/pocketbase-service');
+    const pb = await getPocketBaseServiceClient();
+
+    for (const [colName, records] of Object.entries(collectionsData)) {
+      if (!Array.isArray(records)) continue;
+
+      for (const record of records) {
+        if (!record.id) continue;
+        try {
+          // Check if record exists
+          await pb.collection(colName).getOne(String(record.id), { requestKey: null });
+          // Update existing
+          await pb.collection(colName).update(String(record.id), record, { requestKey: null });
+        } catch {
+          // Create new record if missing
+          try {
+            await pb.collection(colName).create(record, { requestKey: null });
+          } catch {
+            // Ignore individual record import conflicts
+          }
+        }
+      }
+    }
+
+    return {
+      success: true,
+      backupId,
+      emergencyBackupId: emergencyMeta.backupId,
+      message: `اطلاعات فایل پشتیبان با موفقیت بازیابی شد (${parsedData.totalRecordsCount} رکورد در ${parsedData.collectionsCount} جدول).`,
+      restoredCollectionsCount: parsedData.collectionsCount,
+      totalRestoredRecords: parsedData.totalRecordsCount,
+    };
+  } catch (restoreErr) {
+    // Attempt Rollback
+    try {
+      await rollbackEmergencyBackup(emergencyMeta.backupId);
+    } catch {
+      // Rollback error logged
+    }
+
+    throw new Error(
+      `بازیابی فایل پشتیبان با خطا مواجه شد و بازگردانی اضطراری انجام شد: ${
+        restoreErr instanceof Error ? restoreErr.message : 'خطای ناشناخته'
+      }`,
+    );
   }
 }

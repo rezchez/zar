@@ -61,8 +61,15 @@ mock.module('qrcode', () => ({
 
 class MockPocketBase {
   autoCancellation() {}
+  authStore = {
+    token: 'mock_token',
+    isValid: true,
+    save: () => {},
+    clear: () => {},
+  };
   collection() {
     return {
+      authWithPassword: async () => ({ token: 'mock_token', record: {} }),
       getFullList: async () => [],
       getFirstListItem: async () => null,
       getOne: async () => ({}),
