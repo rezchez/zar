@@ -11,7 +11,6 @@ export type CoinInventoryRecordItem = {
   itemTypeId: string;
   itemName: string;
   nature: string;
-  coinSubtype?: string;
   metal: string;
   quantity: number;
   unitWeight: number;

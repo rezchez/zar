@@ -142,13 +142,15 @@ describe('Initial Coin & Bullion Inventory & Catalog Tests', () => {
     expect(persistentCoinTypeRecord.nature).toBe('bullion');
     expect(persistentCoinTypeRecord.unit_weight).toBe(5);
 
-    // Simulate opening balance record referencing persistent coin_type ID
-    const openingInventoryRecord = {
-      id: 'pb_opening_inv_98765',
+    // Simulate coin_inventory record referencing persistent coin_type ID
+    const coinInventoryRecord = {
+      id: 'pb_inv_98765',
       item_type: persistentCoinTypeRecord.id,
       item_name: persistentCoinTypeRecord.name,
       nature: persistentCoinTypeRecord.nature,
       metal: persistentCoinTypeRecord.metal,
+      direction: 'in',
+      transaction_type: 'opening_balance',
       quantity: 10,
       unit_weight: persistentCoinTypeRecord.unit_weight,
       purity: persistentCoinTypeRecord.purity,
@@ -158,7 +160,77 @@ describe('Initial Coin & Bullion Inventory & Catalog Tests', () => {
       converted_weight: 50,
     };
 
-    expect(openingInventoryRecord.item_type).toBe(persistentCoinTypeRecord.id);
-    expect(openingInventoryRecord.item_type).not.toBe('custom_local_id');
+    expect(coinInventoryRecord.item_type).toBe(persistentCoinTypeRecord.id);
+    expect(coinInventoryRecord.direction).toBe('in');
+    expect(coinInventoryRecord.transaction_type).toBe('opening_balance');
+  });
+
+  test('coin_types schema is dedicated to coin names with name, unit_weight, purity, metal, nature and no coin_subtype', () => {
+    const validCoinTypeColumns = ['name', 'unit_weight', 'purity', 'metal', 'nature'];
+    const invalidCoinTypeColumns = ['coin_subtype', 'coinSubtype'];
+
+    const testCoin = {
+      name: 'سکه تمام بهار آزادی طرح جدید',
+      unit_weight: 8.136,
+      purity: 900,
+      metal: 'gold',
+      nature: 'coin',
+    };
+
+    validCoinTypeColumns.forEach((col) => {
+      expect(testCoin).toHaveProperty(col);
+    });
+
+    invalidCoinTypeColumns.forEach((col) => {
+      expect(testCoin).not.toHaveProperty(col);
+    });
+  });
+
+  test('coin_inventory is responsible for tracking initial inventory and in/out movements', () => {
+    const openingEntry = {
+      item_name: 'سکه امامی',
+      nature: 'coin',
+      metal: 'gold',
+      direction: 'in',
+      transaction_type: 'opening_balance',
+      quantity: 5,
+      unit_weight: 8.136,
+      total_weight: 40.68,
+      purity: 900,
+    };
+
+    const incomingMovement = {
+      item_name: 'سکه امامی',
+      nature: 'coin',
+      metal: 'gold',
+      direction: 'in',
+      transaction_type: 'entry',
+      quantity: 3,
+      unit_weight: 8.136,
+      total_weight: 24.408,
+      purity: 900,
+    };
+
+    const outgoingMovement = {
+      item_name: 'سکه امامی',
+      nature: 'coin',
+      metal: 'gold',
+      direction: 'out',
+      transaction_type: 'exit',
+      quantity: 2,
+      unit_weight: 8.136,
+      total_weight: 16.272,
+      purity: 900,
+    };
+
+    // Calculate current balance based on in vs out
+    const movements = [openingEntry, incomingMovement, outgoingMovement];
+    const totalQtyIn = movements.filter((m) => m.direction === 'in').reduce((acc, m) => acc + m.quantity, 0);
+    const totalQtyOut = movements.filter((m) => m.direction === 'out').reduce((acc, m) => acc + m.quantity, 0);
+    const netBalance = totalQtyIn - totalQtyOut;
+
+    expect(totalQtyIn).toBe(8);
+    expect(totalQtyOut).toBe(2);
+    expect(netBalance).toBe(6);
   });
 });

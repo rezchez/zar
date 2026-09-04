@@ -15,7 +15,6 @@ export type CoinTypeMasterItem = {
   name: string;
   code?: string;
   nature: string; // 'coin' | 'bullion'
-  coinSubtype?: string;
   metal: string; // 'gold' | 'silver' | 'platinum'
   unitWeight: number;
   purity: number;
@@ -28,7 +27,6 @@ export type CoinInventoryEditItem = {
   itemTypeId?: string;
   itemName?: string;
   nature?: string;
-  coinSubtype?: string;
   metal?: string;
   quantity?: number;
   unitWeight?: number;
@@ -60,7 +58,6 @@ export default function InitialCoinInventoryModal({
   const [selectedItemTypeId, setSelectedItemTypeId] = useState<string>('');
   const [itemName, setItemName] = useState<string>('');
   const [nature, setNature] = useState<string>('coin');
-  const [coinSubtype, setCoinSubtype] = useState<string>('سکه تمام طرح جدید (امامی)');
   const [metal, setMetal] = useState<string>('gold');
   const [quantity, setQuantity] = useState<string>('1');
   const [unitWeight, setUnitWeight] = useState<string>('8.136');
@@ -78,7 +75,6 @@ export default function InitialCoinInventoryModal({
   const [savingCustomType, setSavingCustomType] = useState(false);
   const [customName, setCustomName] = useState('');
   const [customNature, setCustomNature] = useState<'coin' | 'bullion'>('coin');
-  const [customSubtype, setCustomSubtype] = useState('سکه تمام طرح جدید (امامی)');
   const [customMetal, setCustomMetal] = useState('gold');
   const [customWeight, setCustomWeight] = useState('1.0');
   const [customPurity, setCustomPurity] = useState('750');
@@ -89,7 +85,6 @@ export default function InitialCoinInventoryModal({
     if (found) {
       setItemName(String(found.name || ''));
       setNature(String(found.nature || 'coin'));
-      setCoinSubtype(String(found.coinSubtype || ''));
       setMetal(String(found.metal || 'gold'));
       setUnitWeight(String(found.unitWeight ?? '1.0'));
       setPurity(String(found.purity ?? '750'));
@@ -122,7 +117,6 @@ export default function InitialCoinInventoryModal({
           setSelectedItemTypeId(String(editItem.itemTypeId || ''));
           setItemName(String(editItem.itemName || ''));
           setNature(String(editItem.nature || 'coin'));
-          setCoinSubtype(String(editItem.coinSubtype || ''));
           setMetal(String(editItem.metal || 'gold'));
           setQuantity(String(editItem.quantity ?? '1'));
           setUnitWeight(String(editItem.unitWeight ?? '1.0'));
@@ -203,7 +197,6 @@ export default function InitialCoinInventoryModal({
         body: JSON.stringify({
           name: nameStr,
           nature: customNature,
-          coinSubtype: customNature === 'coin' ? customSubtype : '',
           metal: customMetal,
           unitWeight: parseFloat(customWeight) || 1.0,
           purity: parseFloat(customPurity) || 750,
@@ -268,7 +261,6 @@ export default function InitialCoinInventoryModal({
           body: JSON.stringify({
             name: normalizedItemName,
             nature,
-            coinSubtype,
             metal,
             unitWeight: numWeight,
             purity: numPurity,
@@ -291,7 +283,6 @@ export default function InitialCoinInventoryModal({
           itemTypeId: effectiveItemTypeId,
           itemName: normalizedItemName,
           nature,
-          coinSubtype,
           metal,
           quantity: numQty,
           unitWeight: numWeight,
@@ -500,29 +491,6 @@ export default function InitialCoinInventoryModal({
                       </button>
                     </div>
                   </div>
-
-                  {customNature === 'coin' ? (
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
-                        نوع سکه
-                      </label>
-                      <select
-                        value={customSubtype}
-                        onChange={(e) => setCustomSubtype(e.target.value)}
-                        className="h-9 w-full rounded-xl border border-slate-300 bg-white px-2.5 text-xs font-bold text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                      >
-                        <option value="سکه تمام طرح جدید (امامی)">سکه تمام طرح جدید (امامی)</option>
-                        <option value="سکه تمام طرح قدیم">سکه تمام طرح قدیم</option>
-                        <option value="نیم سکه">نیم سکه</option>
-                        <option value="ربع سکه">ربع سکه</option>
-                        <option value="سکه یک گرمی">سکه یک گرمی</option>
-                        <option value="نیم سکه سال پایین">نیم سکه سال پایین</option>
-                        <option value="ربع سکه سال پایین">ربع سکه سال پایین</option>
-                        <option value="سکه پهلوی">سکه پهلوی</option>
-                        <option value="پارسیان">پارسیان</option>
-                      </select>
-                    </div>
-                  ) : null}
 
                   <div>
                     <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">

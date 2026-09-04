@@ -1,86 +1,443 @@
 /// <reference path="../pb_data/types.d.ts" />
 
 migrate((app) => {
-  const findColl = (name) => {
-    try { return app.findCollectionByNameOrId(name); } catch { return null; }
-  };
+  let coinTypes;
+  try {
+    coinTypes = app.findCollectionByNameOrId("coin_types");
+  } catch {
+    coinTypes = null;
+  }
 
-  let coinTypes = findColl("coin_types");
   if (!coinTypes) {
     coinTypes = new Collection({
-      id: "pbc_coin_types",
-      name: "coin_types",
-      type: "base",
-      listRule: '@request.auth.id != ""',
-      viewRule: '@request.auth.id != ""',
-      createRule: '@request.auth.id != ""',
-      updateRule: '@request.auth.id != ""',
-      deleteRule: '@request.auth.id != ""',
-      fields: [
-        new TextField({ name: "name", required: true, min: 1, max: 120 }),
-        new TextField({ name: "code", required: false, max: 80 }),
-        new TextField({ name: "nature", required: true, min: 1, max: 20 }), // "coin" | "bullion"
-        new TextField({ name: "coin_subtype", required: false, max: 80 }),
-        new TextField({ name: "metal", required: true, min: 1, max: 30 }), // "gold" | "silver" | "platinum"
-        new NumberField({ name: "unit_weight", required: true, min: 0 }),
-        new NumberField({ name: "purity", required: true, min: 0, max: 1000 }),
-        new TextField({ name: "manufacturer", required: false, max: 120 }),
-        new TextField({ name: "country", required: false, max: 80 }),
-        new TextField({ name: "description", required: false, max: 500 }),
-        new BoolField({ name: "is_active", required: false }),
-        new BoolField({ name: "is_system", required: false }),
-        new NumberField({ name: "sort_order", required: false, min: 0 }),
-        new RelationField({ name: "created_by", collectionId: "_pb_users_auth_", maxSelect: 1, cascadeDelete: false }),
-        new RelationField({ name: "updated_by", collectionId: "_pb_users_auth_", maxSelect: 1, cascadeDelete: false }),
+      "id": "pbc_coin_types",
+      "name": "coin_types",
+      "type": "base",
+      "system": false,
+      "listRule": "@request.auth.id != \"\"",
+      "viewRule": "@request.auth.id != \"\"",
+      "createRule": "@request.auth.id != \"\"",
+      "updateRule": "@request.auth.id != \"\"",
+      "deleteRule": "@request.auth.id != \"\"",
+      "fields": [
+        {
+          "autogeneratePattern": "[a-z0-9]{15}",
+          "hidden": false,
+          "id": "text_id",
+          "max": 15,
+          "min": 15,
+          "name": "id",
+          "pattern": "^[a-z0-9]+$",
+          "primaryKey": true,
+          "required": true,
+          "system": true,
+          "type": "text"
+        },
+        {
+          "hidden": false,
+          "id": "text_name",
+          "max": 120,
+          "min": 1,
+          "name": "name",
+          "pattern": "",
+          "primaryKey": false,
+          "required": true,
+          "system": false,
+          "type": "text"
+        },
+        {
+          "hidden": false,
+          "id": "text_code",
+          "max": 80,
+          "min": 0,
+          "name": "code",
+          "pattern": "",
+          "primaryKey": false,
+          "required": false,
+          "system": false,
+          "type": "text"
+        },
+        {
+          "hidden": false,
+          "id": "text_nature",
+          "max": 20,
+          "min": 1,
+          "name": "nature",
+          "pattern": "",
+          "primaryKey": false,
+          "required": true,
+          "system": false,
+          "type": "text"
+        },
+        {
+          "hidden": false,
+          "id": "text_metal",
+          "max": 30,
+          "min": 1,
+          "name": "metal",
+          "pattern": "",
+          "primaryKey": false,
+          "required": true,
+          "system": false,
+          "type": "text"
+        },
+        {
+          "hidden": false,
+          "id": "number_unit_weight",
+          "max": null,
+          "min": 0,
+          "name": "unit_weight",
+          "onlyInt": false,
+          "presentable": false,
+          "required": true,
+          "system": false,
+          "type": "number"
+        },
+        {
+          "hidden": false,
+          "id": "number_purity",
+          "max": 1000,
+          "min": 0,
+          "name": "purity",
+          "onlyInt": false,
+          "presentable": false,
+          "required": true,
+          "system": false,
+          "type": "number"
+        },
+        {
+          "hidden": false,
+          "id": "text_description",
+          "max": 500,
+          "min": 0,
+          "name": "description",
+          "pattern": "",
+          "primaryKey": false,
+          "required": false,
+          "system": false,
+          "type": "text"
+        },
+        {
+          "hidden": false,
+          "id": "bool_is_active",
+          "name": "is_active",
+          "presentable": false,
+          "required": false,
+          "system": false,
+          "type": "bool"
+        },
+        {
+          "hidden": false,
+          "id": "bool_is_system",
+          "name": "is_system",
+          "presentable": false,
+          "required": false,
+          "system": false,
+          "type": "bool"
+        },
+        {
+          "hidden": false,
+          "id": "number_sort_order",
+          "max": null,
+          "min": 0,
+          "name": "sort_order",
+          "onlyInt": true,
+          "presentable": false,
+          "required": false,
+          "system": false,
+          "type": "number"
+        },
+        {
+          "hidden": false,
+          "id": "autodate_created",
+          "name": "created",
+          "onCreate": true,
+          "onUpdate": false,
+          "presentable": false,
+          "system": false,
+          "type": "autodate"
+        },
+        {
+          "hidden": false,
+          "id": "autodate_updated",
+          "name": "updated",
+          "onCreate": true,
+          "onUpdate": true,
+          "presentable": false,
+          "system": false,
+          "type": "autodate"
+        }
       ],
-      indexes: [
-        "CREATE UNIQUE INDEX idx_coin_types_name ON coin_types (name)",
-      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX idx_coin_types_name ON coin_types (name)"
+      ]
     });
     app.save(coinTypes);
   }
 
-  let coinOpeningInventory = findColl("coin_opening_inventory");
-  if (!coinOpeningInventory) {
-    coinOpeningInventory = new Collection({
-      id: "pbc_coin_opening_inventory",
-      name: "coin_opening_inventory",
-      type: "base",
-      listRule: '@request.auth.id != ""',
-      viewRule: '@request.auth.id != ""',
-      createRule: '@request.auth.id != ""',
-      updateRule: '@request.auth.id != ""',
-      deleteRule: '@request.auth.id != ""',
-      fields: [
-        new RelationField({ name: "item_type", collectionId: "pbc_coin_types", maxSelect: 1, cascadeDelete: false }),
-        new TextField({ name: "item_name", required: true, min: 1, max: 120 }),
-        new TextField({ name: "nature", required: true, min: 1, max: 20 }),
-        new TextField({ name: "coin_subtype", required: false, max: 80 }),
-        new TextField({ name: "metal", required: true, min: 1, max: 30 }),
-        new NumberField({ name: "quantity", required: true, min: 0 }),
-        new NumberField({ name: "unit_weight", required: true, min: 0 }),
-        new NumberField({ name: "purity", required: true, min: 0, max: 1000 }),
-        new NumberField({ name: "unit_price", required: false, min: 0 }),
-        new NumberField({ name: "total_amount", required: false, min: 0 }),
-        new NumberField({ name: "total_weight", required: false, min: 0 }),
-        new NumberField({ name: "converted_weight", required: false, min: 0 }),
-        new TextField({ name: "date", required: false, max: 30 }),
-        new TextField({ name: "description", required: false, max: 500 }),
-        new RelationField({ name: "created_by", collectionId: "_pb_users_auth_", maxSelect: 1, cascadeDelete: false }),
-        new RelationField({ name: "updated_by", collectionId: "_pb_users_auth_", maxSelect: 1, cascadeDelete: false }),
+  let coinInventory;
+  try {
+    coinInventory = app.findCollectionByNameOrId("coin_inventory");
+  } catch {
+    coinInventory = null;
+  }
+
+  if (!coinInventory) {
+    const coinTypesCol = app.findCollectionByNameOrId("coin_types");
+    coinInventory = new Collection({
+      "id": "pbc_coin_inventory",
+      "name": "coin_inventory",
+      "type": "base",
+      "system": false,
+      "listRule": "@request.auth.id != \"\"",
+      "viewRule": "@request.auth.id != \"\"",
+      "createRule": "@request.auth.id != \"\"",
+      "updateRule": "@request.auth.id != \"\"",
+      "deleteRule": "@request.auth.id != \"\"",
+      "fields": [
+        {
+          "autogeneratePattern": "[a-z0-9]{15}",
+          "hidden": false,
+          "id": "text_id",
+          "max": 15,
+          "min": 15,
+          "name": "id",
+          "pattern": "^[a-z0-9]+$",
+          "primaryKey": true,
+          "required": true,
+          "system": true,
+          "type": "text"
+        },
+        {
+          "cascadeDelete": false,
+          "collectionId": coinTypesCol ? coinTypesCol.id : "coin_types",
+          "hidden": false,
+          "id": "relation_item_type",
+          "maxSelect": 1,
+          "minSelect": 0,
+          "name": "item_type",
+          "presentable": false,
+          "required": false,
+          "system": false,
+          "type": "relation"
+        },
+        {
+          "hidden": false,
+          "id": "text_item_name",
+          "max": 120,
+          "min": 1,
+          "name": "item_name",
+          "pattern": "",
+          "primaryKey": false,
+          "required": true,
+          "system": false,
+          "type": "text"
+        },
+        {
+          "hidden": false,
+          "id": "text_nature",
+          "max": 20,
+          "min": 1,
+          "name": "nature",
+          "pattern": "",
+          "primaryKey": false,
+          "required": true,
+          "system": false,
+          "type": "text"
+        },
+        {
+          "hidden": false,
+          "id": "text_metal",
+          "max": 30,
+          "min": 1,
+          "name": "metal",
+          "pattern": "",
+          "primaryKey": false,
+          "required": true,
+          "system": false,
+          "type": "text"
+        },
+        {
+          "hidden": false,
+          "id": "text_direction",
+          "max": 10,
+          "min": 1,
+          "name": "direction",
+          "pattern": "",
+          "primaryKey": false,
+          "required": true,
+          "system": false,
+          "type": "text"
+        },
+        {
+          "hidden": false,
+          "id": "text_tx_type",
+          "max": 40,
+          "min": 1,
+          "name": "transaction_type",
+          "pattern": "",
+          "primaryKey": false,
+          "required": true,
+          "system": false,
+          "type": "text"
+        },
+        {
+          "hidden": false,
+          "id": "number_quantity",
+          "max": null,
+          "min": 0,
+          "name": "quantity",
+          "onlyInt": false,
+          "presentable": false,
+          "required": true,
+          "system": false,
+          "type": "number"
+        },
+        {
+          "hidden": false,
+          "id": "number_unit_weight",
+          "max": null,
+          "min": 0,
+          "name": "unit_weight",
+          "onlyInt": false,
+          "presentable": false,
+          "required": true,
+          "system": false,
+          "type": "number"
+        },
+        {
+          "hidden": false,
+          "id": "number_purity",
+          "max": 1000,
+          "min": 0,
+          "name": "purity",
+          "onlyInt": false,
+          "presentable": false,
+          "required": true,
+          "system": false,
+          "type": "number"
+        },
+        {
+          "hidden": false,
+          "id": "number_unit_price",
+          "max": null,
+          "min": 0,
+          "name": "unit_price",
+          "onlyInt": false,
+          "presentable": false,
+          "required": false,
+          "system": false,
+          "type": "number"
+        },
+        {
+          "hidden": false,
+          "id": "number_total_amount",
+          "max": null,
+          "min": 0,
+          "name": "total_amount",
+          "onlyInt": false,
+          "presentable": false,
+          "required": false,
+          "system": false,
+          "type": "number"
+        },
+        {
+          "hidden": false,
+          "id": "number_total_weight",
+          "max": null,
+          "min": 0,
+          "name": "total_weight",
+          "onlyInt": false,
+          "presentable": false,
+          "required": false,
+          "system": false,
+          "type": "number"
+        },
+        {
+          "hidden": false,
+          "id": "number_converted_weight",
+          "max": null,
+          "min": 0,
+          "name": "converted_weight",
+          "onlyInt": false,
+          "presentable": false,
+          "required": false,
+          "system": false,
+          "type": "number"
+        },
+        {
+          "hidden": false,
+          "id": "text_date",
+          "max": 30,
+          "min": 0,
+          "name": "date",
+          "pattern": "",
+          "primaryKey": false,
+          "required": false,
+          "system": false,
+          "type": "text"
+        },
+        {
+          "hidden": false,
+          "id": "text_document_id",
+          "max": 120,
+          "min": 0,
+          "name": "document_id",
+          "pattern": "",
+          "primaryKey": false,
+          "required": false,
+          "system": false,
+          "type": "text"
+        },
+        {
+          "hidden": false,
+          "id": "text_description",
+          "max": 500,
+          "min": 0,
+          "name": "description",
+          "pattern": "",
+          "primaryKey": false,
+          "required": false,
+          "system": false,
+          "type": "text"
+        },
+        {
+          "hidden": false,
+          "id": "autodate_created",
+          "name": "created",
+          "onCreate": true,
+          "onUpdate": false,
+          "presentable": false,
+          "system": false,
+          "type": "autodate"
+        },
+        {
+          "hidden": false,
+          "id": "autodate_updated",
+          "name": "updated",
+          "onCreate": true,
+          "onUpdate": true,
+          "presentable": false,
+          "system": false,
+          "type": "autodate"
+        }
       ],
-      indexes: [
-        "CREATE INDEX idx_coin_opening_inventory_date ON coin_opening_inventory (date)",
-      ],
+      "indexes": [
+        "CREATE INDEX idx_coin_inventory_item_type ON coin_inventory (item_type)",
+        "CREATE INDEX idx_coin_inventory_date ON coin_inventory (date)",
+        "CREATE INDEX idx_coin_inventory_tx_type ON coin_inventory (transaction_type)"
+      ]
     });
-    app.save(coinOpeningInventory);
+    app.save(coinInventory);
   }
 }, (app) => {
-  const findColl = (name) => {
-    try { return app.findCollectionByNameOrId(name); } catch { return null; }
-  };
-  const inv = findColl("coin_opening_inventory");
-  if (inv) app.delete(inv);
-  const types = findColl("coin_types");
-  if (types) app.delete(types);
+  try {
+    const inv = app.findCollectionByNameOrId("coin_inventory");
+    if (inv) app.delete(inv);
+  } catch {}
+
+  try {
+    const types = app.findCollectionByNameOrId("coin_types");
+    if (types) app.delete(types);
+  } catch {}
 });

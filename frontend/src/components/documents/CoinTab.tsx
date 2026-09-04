@@ -454,11 +454,11 @@ export default function CoinTab({
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data.coinTypes) && data.coinTypes.length > 0 && isMounted) {
-            const mapped: CoinPreset[] = data.coinTypes.map((item: { id: string; name: string; nature?: string; coinSubtype?: string; unitWeight?: number; purity?: number }) => ({
+            const mapped: CoinPreset[] = data.coinTypes.map((item: { id: string; name: string; nature?: string; unitWeight?: number; purity?: number }) => ({
               id: item.id,
               name: item.name,
-              category: item.nature === 'bullion' ? 'bar_other' : (item.coinSubtype?.includes('پهلوی') ? 'pahlavi_coin' : (item.coinSubtype?.includes('پارسیان') ? 'parsian' : 'bank_coin')),
-              categoryLabel: item.coinSubtype || (item.nature === 'bullion' ? 'شمش‌های معتبر' : 'سکه‌های بانکی'),
+              category: item.nature === 'bullion' ? 'bar_other' : (item.name?.includes('پهلوی') ? 'pahlavi_coin' : (item.name?.includes('پارسیان') ? 'parsian' : 'bank_coin')),
+              categoryLabel: item.nature === 'bullion' ? 'شمش‌های معتبر' : 'انواع سکه',
               weight: Number(item.unitWeight || 1.0),
               purity: Number(item.purity || 900),
               isFixedWeight: true,

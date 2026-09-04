@@ -37,18 +37,26 @@ export async function GET() {
   }
 
   try {
-    const records = await context.pb.collection('coin_opening_inventory').getFullList({
+    const records = await context.pb.collection('coin_inventory').getFullList({
+      filter: 'transaction_type = "opening_balance"',
       sort: '-created',
       expand: 'item_type',
-    }).catch(() => []);
+    }).catch(async () => {
+      // Fallback in case filter returns empty or legacy records without transaction_type
+      return context.pb.collection('coin_inventory').getFullList({
+        sort: '-created',
+        expand: 'item_type',
+      }).catch(() => []);
+    });
 
     const result = records.map((r: Record<string, unknown>) => ({
       id: String(r.id || ''),
       itemTypeId: String(r.item_type || (r.expand as Record<string, Record<string, unknown>> | undefined)?.item_type?.id || ''),
       itemName: String(r.item_name || (r.expand as Record<string, Record<string, unknown>> | undefined)?.item_type?.name || 'سکه/شمش نامشخص'),
       nature: String(r.nature || 'coin'),
-      coinSubtype: String(r.coin_subtype || ''),
       metal: String(r.metal || 'gold'),
+      direction: String(r.direction || 'in'),
+      transactionType: String(r.transaction_type || 'opening_balance'),
       quantity: Number(r.quantity || 0),
       unitWeight: Number(r.unit_weight || 0),
       purity: Number(r.purity || 750),
@@ -83,7 +91,6 @@ export async function POST(request: Request) {
     const itemTypeId = String(body?.itemTypeId || '').trim();
     const itemName = String(body?.itemName || '').trim();
     const nature = String(body?.nature || 'coin').trim().toLowerCase();
-    const coinSubtype = String(body?.coinSubtype || '').trim();
     const metal = String(body?.metal || 'gold').trim().toLowerCase();
     const quantity = Number(String(body?.quantity ?? '').replace(/,/g, ''));
     const unitWeight = Number(String(body?.unitWeight ?? '').replace(/,/g, ''));
@@ -118,8 +125,9 @@ export async function POST(request: Request) {
       item_type: itemTypeId || null,
       item_name: itemName,
       nature,
-      coin_subtype: nature === 'coin' ? coinSubtype : '',
       metal,
+      direction: 'in',
+      transaction_type: 'opening_balance',
       quantity,
       unit_weight: unitWeight,
       purity,
@@ -129,17 +137,13 @@ export async function POST(request: Request) {
       converted_weight: Number(convertedWeight.toFixed(3)),
       date: dateValue,
       description,
-      updated_by: context.user.id,
     };
 
     let resultRecord: Record<string, unknown>;
     if (recordId) {
-      resultRecord = await context.pb.collection('coin_opening_inventory').update(recordId, payload);
+      resultRecord = await context.pb.collection('coin_inventory').update(recordId, payload);
     } else {
-      resultRecord = await context.pb.collection('coin_opening_inventory').create({
-        ...payload,
-        created_by: context.user.id,
-      });
+      resultRecord = await context.pb.collection('coin_inventory').create(payload);
     }
 
     return NextResponse.json({
@@ -149,8 +153,9 @@ export async function POST(request: Request) {
         itemTypeId: String(resultRecord.item_type || itemTypeId || ''),
         itemName,
         nature,
-        coinSubtype: nature === 'coin' ? coinSubtype : '',
         metal,
+        direction: 'in',
+        transactionType: 'opening_balance',
         quantity,
         unitWeight,
         purity,
@@ -183,7 +188,7 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ message: 'شناسه مشخص نشده است.' }, { status: 400 });
     }
 
-    await context.pb.collection('coin_opening_inventory').delete(id);
+    await context.pb.collection('coin_inventory').delete(id);
     return NextResponse.json({ success: true });
   } catch (error) {
     return NextResponse.json({ message: extractPbErrorMessage(error, 'حذف رکورد انجام نشد.') }, { status: 400 });

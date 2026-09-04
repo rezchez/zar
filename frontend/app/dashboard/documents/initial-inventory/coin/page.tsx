@@ -16,17 +16,22 @@ export default async function InitialCoinInventoryPage() {
 
   let initialInventory: any[] = [];
   try {
-    const records = await context.pb.collection('coin_opening_inventory').getFullList({
+    const records = await context.pb.collection('coin_inventory').getFullList({
+      filter: 'transaction_type = "opening_balance"',
       sort: '-created',
       expand: 'item_type',
-    }).catch(() => []);
+    }).catch(async () => {
+      return context.pb.collection('coin_inventory').getFullList({
+        sort: '-created',
+        expand: 'item_type',
+      }).catch(() => []);
+    });
 
     initialInventory = records.map((r: any) => ({
       id: r.id,
       itemTypeId: String(r.item_type || r.expand?.item_type?.id || ''),
       itemName: String(r.item_name || r.expand?.item_type?.name || 'سکه/شمش نامشخص'),
       nature: String(r.nature || 'coin'),
-      coinSubtype: String(r.coin_subtype || ''),
       metal: String(r.metal || 'gold'),
       quantity: Number(r.quantity || 0),
       unitWeight: Number(r.unit_weight || 0),
