@@ -23,10 +23,6 @@ self.addEventListener('activate', (event) => {
           .map((name) => caches.delete(name))
       ))
       .then(() => self.registration.unregister())
-      .then(() => self.clients.matchAll())
-      .then((clients) => {
-        clients.forEach((client) => client.navigate(client.url));
-      })
   );
   self.clients.claim();
 });

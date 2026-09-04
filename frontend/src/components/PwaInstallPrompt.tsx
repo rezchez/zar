@@ -36,8 +36,8 @@ export default function PwaInstallPrompt() {
 
     if (!isServiceWorkerSupported()) return;
 
-    if (!isPwaEnabled) {
-      // PWA is disabled: cleanly unregister Service Worker and clear PWA cache
+    if (!isPwaEnabled || process.env.NODE_ENV !== 'production') {
+      // PWA is disabled or in development mode: cleanly unregister Service Worker and clear PWA cache
       setShowPrompt(false);
       setDeferredPrompt(null);
       void unregisterPwaServiceWorker();

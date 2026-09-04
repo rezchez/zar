@@ -89,6 +89,7 @@ describe('Backend Server-Side PWA Handling', () => {
 
     const body = await response.text();
     expect(body.length).toBeGreaterThan(0);
+    expect(body).not.toContain('client.navigate');
   });
 
   it('/api/pwa/status route handler returns backend PWA state', async () => {
