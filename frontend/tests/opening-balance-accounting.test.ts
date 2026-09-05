@@ -113,6 +113,11 @@ describe('Opening Balance Accounting Foundation & Integration Tests', () => {
   test('Cash Fund Opening Balance: posts balanced double-entry journal (DEBIT cash detail, CREDIT 3100)', async () => {
     const pb = new MockPocketBase() as any;
 
+    pb.collectionsMap.set('chart_of_accounts', [
+      { id: 'sys_1110_detail_cash_01', code: '111001', name: 'صندوق اصلی ریالی', isActive: true },
+      { id: 'acc_3100', code: '3100', name: 'سرمایه اول دوره', isActive: true },
+    ]);
+
     const mockCashFund = {
       id: 'csh_vault_rial',
       name: 'صندوق اصلی ریالی',
@@ -208,6 +213,12 @@ describe('Opening Balance Accounting Foundation & Integration Tests', () => {
 
   test('Integration Test: Combined BANK + CASH + COIN opening operations result in balanced double-entry accounting', async () => {
     const pb = new MockPocketBase() as any;
+
+    pb.collectionsMap.set('chart_of_accounts', [
+      { id: 'acc_bnk_01', code: '111001', name: 'بانک پاسارگاد', isActive: true },
+      { id: 'acc_csh_01', code: '111002', name: 'صندوق ریالی', isActive: true },
+      { id: 'acc_3100', code: '3100', name: 'سرمایه اول دوره', isActive: true },
+    ]);
 
     // 1. Bank Opening: 1,000,000,000 IRR
     const bankJournal = await postBankOpeningBalance(
