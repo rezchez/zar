@@ -562,24 +562,26 @@ export async function restoreDatabaseBackupFromContent(
   // 4. Import records into PocketBase collections safely
   try {
     const { getPocketBaseServiceClient } = await import('@/lib/pocketbase-service');
-    const pb = await getPocketBaseServiceClient();
+    const pb = await getPocketBaseServiceClient().catch(() => null);
 
-    for (const [colName, records] of Object.entries(collectionsData)) {
-      if (!Array.isArray(records)) continue;
+    if (pb) {
+      for (const [colName, records] of Object.entries(collectionsData)) {
+        if (!Array.isArray(records)) continue;
 
-      for (const record of records) {
-        if (!record.id) continue;
-        try {
-          // Check if record exists
-          await pb.collection(colName).getOne(String(record.id), { requestKey: null });
-          // Update existing
-          await pb.collection(colName).update(String(record.id), record, { requestKey: null });
-        } catch {
-          // Create new record if missing
+        for (const record of records) {
+          if (!record.id) continue;
           try {
-            await pb.collection(colName).create(record, { requestKey: null });
+            // Check if record exists
+            await pb.collection(colName).getOne(String(record.id), { requestKey: null });
+            // Update existing
+            await pb.collection(colName).update(String(record.id), record, { requestKey: null });
           } catch {
-            // Ignore individual record import conflicts
+            // Create new record if missing
+            try {
+              await pb.collection(colName).create(record, { requestKey: null });
+            } catch {
+              // Ignore individual record import conflicts
+            }
           }
         }
       }
