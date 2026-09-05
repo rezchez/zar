@@ -5,22 +5,36 @@
 The Cash Opening Balance subsystem in ZarFolio establishes the reference accounting architecture for opening financial events. It enforces a strict multi-layer separation between operational cash fund management and general ledger double-entry accounting.
 
 ```
-                  Cash Opening Event
+                    Cash Opening
                          │
                          ▼
-                    Transaction (operational event)
+                    Transaction
                          │
                          ▼
-                Cash Transaction (cash_transactions)
+                  Cash Transaction
                          │
                          ▼
-              Journal Entry (pbc_journal_entries)
+                     Cash Fund
                          │
                          ▼
-              Journal Lines (pbc_journal_lines)
+          Chart of Accounts Detail Account
                          │
                          ▼
-            Chart of Accounts (pbc_chart_of_accounts)
+                   Journal Entry
+                         │
+                         ▼
+                   Journal Lines
+```
+
+### Expected Accounting Tree Hierarchy
+
+```
+دارایی‌ها (1000 - سطح ۱ گروه)
+ └── دارایی‌های جاری (1100 - سطح ۲ کل)
+      └── موجودی نقد و بانک (1110 - سطح ۳ معین)
+           ├── صندوق تومان (111001 - سطح ۴ تفصیلی)
+           ├── صندوق دلار (111002 - سطح ۴ تفصیلی)
+           └── صندوق یورو (111003 - سطح ۴ تفصیلی)
 ```
 
 ---

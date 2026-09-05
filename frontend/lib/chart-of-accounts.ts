@@ -1745,6 +1745,13 @@ export async function ensureBankAccountDetailInChart(
     try {
       const existing = await pb.collection('chart_of_accounts').getOne(params.existingAccountId).catch(() => null);
       if (existing) {
+        if (existing.isActive === false) {
+          throw new Error(`سرفصل حساب "${existing.name}" (${existing.code}) غیرفعال است.`);
+        }
+        const parentRecord = await ensureParentCashAndBank(pb);
+        if (existing.parentId && parentRecord && existing.parentId !== parentRecord.id && !existing.code.startsWith('1110')) {
+          throw new Error(`سرفصل حساب "${existing.name}" (${existing.code}) در سرفصل معین ۱۱۱۰ (موجودی نقد و بانک) قرار ندارد.`);
+        }
         return {
           id: existing.id,
           code: existing.code,
@@ -1752,8 +1759,10 @@ export async function ensureBankAccountDetailInChart(
           path: existing.path || `/1000/1100/1110/${existing.code}/`,
         };
       }
-    } catch {
-      // fallback
+    } catch (err) {
+      if (err instanceof Error) {
+        throw err;
+      }
     }
   }
 
@@ -1803,13 +1812,8 @@ export async function ensureBankAccountDetailInChart(
       name: created.name,
       path: created.path,
     };
-  } catch {
-    return {
-      id: '',
-      code: newCode,
-      name: accountName,
-      path: `${parentPath}${newCode}/`,
-    };
+  } catch (err) {
+    throw new Error(`ایجاد سرفصل حسابداری مربوط به حساب بانکی در کدینگ با خطا مواجه شد: ${(err as any)?.message || 'خطای ناشناخته'}`);
   }
 }
 
@@ -1829,6 +1833,13 @@ export async function ensureCashFundDetailInChart(
     try {
       const existing = await pb.collection('chart_of_accounts').getOne(params.existingAccountId).catch(() => null);
       if (existing) {
+        if (existing.isActive === false) {
+          throw new Error(`سرفصل حساب "${existing.name}" (${existing.code}) غیرفعال است.`);
+        }
+        const parentRecord = await ensureParentCashAndBank(pb);
+        if (existing.parentId && parentRecord && existing.parentId !== parentRecord.id && !existing.code.startsWith('1110')) {
+          throw new Error(`سرفصل حساب "${existing.name}" (${existing.code}) در سرفصل معین ۱۱۱۰ (موجودی نقد و بانک) قرار ندارد.`);
+        }
         return {
           id: existing.id,
           code: existing.code,
@@ -1836,8 +1847,10 @@ export async function ensureCashFundDetailInChart(
           path: existing.path || `/1000/1100/1110/${existing.code}/`,
         };
       }
-    } catch {
-      // fallback
+    } catch (err) {
+      if (err instanceof Error) {
+        throw err;
+      }
     }
   }
 
@@ -1887,12 +1900,7 @@ export async function ensureCashFundDetailInChart(
       name: created.name,
       path: created.path,
     };
-  } catch {
-    return {
-      id: '',
-      code: newCode,
-      name: accountName,
-      path: `${parentPath}${newCode}/`,
-    };
+  } catch (err) {
+    throw new Error(`ایجاد سرفصل حسابداری مربوط به صندوق در کدینگ با خطا مواجه شد: ${(err as any)?.message || 'خطای ناشناخته'}`);
   }
 }
