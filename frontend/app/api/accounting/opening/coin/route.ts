@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { postCoinOpeningInventory } from '@/lib/accounting-posting-engine';
 import { getServerAuthContext } from '@/lib/auth';
 import { hasPermission } from '@/lib/authorization';
 import { dateToJalaliString } from '@/lib/jalali';
@@ -144,6 +145,32 @@ export async function POST(request: Request) {
       resultRecord = await context.pb.collection('coin_inventory').update(recordId, payload);
     } else {
       resultRecord = await context.pb.collection('coin_inventory').create(payload);
+    }
+
+    // Generate double-entry journal entry if monetary valuation is provided
+    if (totalAmount > 0) {
+      try {
+        await postCoinOpeningInventory(
+          {
+            id: String(resultRecord.id || ''),
+            itemName,
+            quantity,
+            totalAmount,
+          },
+          dateValue,
+          context.user.id,
+          context.pb,
+          description || `موجودی اولیه مسکوکات و شمش: ${itemName} (${quantity} عدد)`,
+        );
+      } catch (err) {
+        // Rollback created inventory record if journal creation fails to ensure atomicity
+        if (!recordId && resultRecord.id) {
+          await context.pb.collection('coin_inventory').delete(String(resultRecord.id)).catch(() => undefined);
+        }
+        return NextResponse.json({
+          message: extractPbErrorMessage(err, 'ثبت سند حسابداری موجودی اولیه مسکوکات با خطا مواجه شد.'),
+        }, { status: 400 });
+      }
     }
 
     return NextResponse.json({

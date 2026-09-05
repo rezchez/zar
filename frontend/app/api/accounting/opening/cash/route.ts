@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { getServerAuthContext } from '@/lib/auth';
 import { hasPermission } from '@/lib/authorization';
+import { postCashOpeningBalance } from '@/lib/accounting-posting-engine';
 import { ensureCashFundDetailInChart } from '@/lib/chart-of-accounts';
 import { dateToJalaliString } from '@/lib/jalali';
 
@@ -205,8 +206,23 @@ export async function POST(request: Request) {
             created_by: context.user.id,
           });
         }
+
+        // Generate or update double-entry journal entry
+        await postCashOpeningBalance(
+          {
+            id: updatedFund.id,
+            name: fundName,
+            currencyName,
+            accountId: linkedAccountId || updatedFund.accountId,
+          },
+          amount,
+          dateValue,
+          context.user.id,
+          context.pb,
+          description || `موجودی اول دوره صندوق - ${currencySymbol}`,
+        );
       } catch (err) {
-        return NextResponse.json({ message: extractPbErrorMessage(err, 'ثبت تراکنش موجودی اولیه با خطا مواجه شد.') }, { status: 400 });
+        return NextResponse.json({ message: extractPbErrorMessage(err, 'ثبت تراکنش و سند موجودی اولیه با خطا مواجه شد.') }, { status: 400 });
       }
 
       return NextResponse.json({
@@ -313,10 +329,25 @@ export async function POST(request: Request) {
         description: description || `موجودی اول دوره صندوق - ${currencySymbol}`,
         created_by: context.user.id,
       });
+
+      // Generate double-entry journal entry
+      await postCashOpeningBalance(
+        {
+          id: fund.id,
+          name: fundName,
+          currencyName,
+          accountId: linkedAccountId || fund.accountId,
+        },
+        amount,
+        dateValue,
+        context.user.id,
+        context.pb,
+        description || `موجودی اول دوره صندوق - ${currencySymbol}`,
+      );
     } catch (transactionError) {
       await context.pb.collection('cash_funds').delete(fund.id).catch(() => undefined);
       return NextResponse.json({
-        message: extractPbErrorMessage(transactionError, 'ثبت تراکنش موجودی اولیه با خطا مواجه شد.'),
+        message: extractPbErrorMessage(transactionError, 'ثبت تراکنش و سند موجودی اولیه با خطا مواجه شد.'),
       }, { status: 400 });
     }
 

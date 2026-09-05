@@ -34,6 +34,9 @@ export interface CreateJournalEntryParams {
     | 'document'
     | 'bank_transfer'
     | 'settlement'
+    | 'opening_bank'
+    | 'opening_cash'
+    | 'opening_coin'
     | 'manual';
   sourceId: string;
   sourceKey: string;
@@ -65,6 +68,7 @@ export const SYSTEM_ACCOUNT_CODES = {
   GOLD_INVENTORY: '1130',
   NOTES_PAYABLE: '2110',
   COUNTERPARTY_LIABILITY: '2120',
+  OPENING_EQUITY: '3100',
   GOLD_SALES_REVENUE: '4110',
   GOLD_COST_OF_SALES: '5200',
   PROFIT_LOSS: '3500',
@@ -191,19 +195,27 @@ export async function postJournalEntry(
     ).catch(() => null);
 
     if (existing) {
+      const updated = await pb.collection('journal_entries').update(existing.id, {
+        description,
+        totalDebit,
+        totalCredit,
+        lines: resolvedLines,
+        updatedBy: userId || null,
+      }).catch(() => existing);
+
       return {
-        id: existing.id,
-        entryNumber: String(existing.entryNumber || entryNumber),
-        entryDate: String(existing.entryDate || entryDate),
-        entryDateJalali: String(existing.entryDateJalali || entryDateJalali),
-        description: String(existing.description || description),
-        sourceType: String(existing.sourceType || sourceType),
-        sourceId: String(existing.sourceId || sourceId),
-        sourceKey: String(existing.sourceKey || sourceKey),
-        status: existing.status as any,
-        totalDebit: Number(existing.totalDebit || totalDebit),
-        totalCredit: Number(existing.totalCredit || totalCredit),
-        lines: Array.isArray(existing.lines) ? existing.lines : resolvedLines,
+        id: updated.id,
+        entryNumber: String(updated.entryNumber || entryNumber),
+        entryDate: String(updated.entryDate || entryDate),
+        entryDateJalali: String(updated.entryDateJalali || entryDateJalali),
+        description: String(updated.description || description),
+        sourceType: String(updated.sourceType || sourceType),
+        sourceId: String(updated.sourceId || sourceId),
+        sourceKey: String(updated.sourceKey || sourceKey),
+        status: updated.status as any,
+        totalDebit: Number(updated.totalDebit || totalDebit),
+        totalCredit: Number(updated.totalCredit || totalCredit),
+        lines: Array.isArray(updated.lines) ? updated.lines : resolvedLines,
         alreadyExists: true,
       };
     }
@@ -389,6 +401,176 @@ export async function postPayableChequeClear(
   }).catch(() => undefined);
 
   return { journal, nextBankBalance };
+}
+
+// -------------------------------------------------------------
+// OPENING BALANCE POSTING WORKFLOWS
+// -------------------------------------------------------------
+
+/**
+ * Bank Account Opening Balance Posting:
+ * Debit: Bank Account Level 4 Detail Account under 1110 (موجودی نقد و بانک)
+ * Credit: Opening Capital / Equity (3100 سرمایه)
+ */
+export async function postBankOpeningBalance(
+  bankAccount: {
+    id: string;
+    bankName: string;
+    accountNumber: string;
+    accountId?: string | null;
+  },
+  amount: number,
+  entryDateJalali: string,
+  userId: string,
+  pb: PocketBase,
+  description?: string,
+): Promise<JournalEntryResult> {
+  const roundedAmount = Math.round(Math.abs(amount));
+  if (roundedAmount === 0) {
+    throw new Error('مبلغ موجودی اولیه حساب بانکی نمی‌تواند صفر باشد.');
+  }
+
+  const bankAccountCodeOrId = bankAccount.accountId || SYSTEM_ACCOUNT_CODES.CASH_AND_BANK;
+  const counterAccountCodeOrId = SYSTEM_ACCOUNT_CODES.OPENING_EQUITY;
+
+  const desc = description || `موجودی اول دوره حساب بانکی ${bankAccount.bankName} (${bankAccount.accountNumber})`;
+
+  return postJournalEntry(
+    {
+      entryDateJalali,
+      description: desc,
+      sourceType: 'opening_bank',
+      sourceId: bankAccount.id,
+      sourceKey: `opening:bank:${bankAccount.id}`,
+      userId,
+      lines: [
+        {
+          accountId: bankAccountCodeOrId,
+          debit: roundedAmount,
+          credit: 0,
+          description: `موجودی اول دوره حساب بانکی ${bankAccount.bankName}`,
+          bankAccountId: bankAccount.id,
+        },
+        {
+          accountId: counterAccountCodeOrId,
+          debit: 0,
+          credit: roundedAmount,
+          description: `طرف مقابل موجودی اول دوره حساب بانکی (سرمایه اول دوره)`,
+        },
+      ],
+    },
+    pb,
+  );
+}
+
+/**
+ * Cash Fund Opening Balance Posting:
+ * Debit: Cash Fund Level 4 Detail Account under 1110 (موجودی نقد و بانک)
+ * Credit: Opening Capital / Equity (3100 سرمایه)
+ */
+export async function postCashOpeningBalance(
+  cashFund: {
+    id: string;
+    name: string;
+    currencyName?: string;
+    accountId?: string | null;
+  },
+  amount: number,
+  entryDateJalali: string,
+  userId: string,
+  pb: PocketBase,
+  description?: string,
+): Promise<JournalEntryResult> {
+  const roundedAmount = Math.round(Math.abs(amount));
+  if (roundedAmount === 0) {
+    throw new Error('مبلغ موجودی اولیه صندوق نمی‌تواند صفر باشد.');
+  }
+
+  const cashAccountCodeOrId = cashFund.accountId || SYSTEM_ACCOUNT_CODES.CASH_AND_BANK;
+  const counterAccountCodeOrId = SYSTEM_ACCOUNT_CODES.OPENING_EQUITY;
+
+  const desc = description || `موجودی اول دوره ${cashFund.name}`;
+
+  return postJournalEntry(
+    {
+      entryDateJalali,
+      description: desc,
+      sourceType: 'opening_cash',
+      sourceId: cashFund.id,
+      sourceKey: `opening:cash:${cashFund.id}`,
+      userId,
+      lines: [
+        {
+          accountId: cashAccountCodeOrId,
+          debit: roundedAmount,
+          credit: 0,
+          description: `موجودی اول دوره ${cashFund.name}`,
+        },
+        {
+          accountId: counterAccountCodeOrId,
+          debit: 0,
+          credit: roundedAmount,
+          description: `طرف مقابل موجودی اول دوره صندوق (سرمایه اول دوره)`,
+        },
+      ],
+    },
+    pb,
+  );
+}
+
+/**
+ * Coin / Bullion Opening Inventory Posting:
+ * Debit: Gold / Coin Inventory (1130 موجودی کالا و طلا)
+ * Credit: Opening Capital / Equity (3100 سرمایه)
+ */
+export async function postCoinOpeningInventory(
+  inventoryItem: {
+    id: string;
+    itemName: string;
+    quantity: number;
+    totalAmount: number;
+    accountId?: string | null;
+  },
+  entryDateJalali: string,
+  userId: string,
+  pb: PocketBase,
+  description?: string,
+): Promise<JournalEntryResult> {
+  const roundedAmount = Math.round(Math.abs(inventoryItem.totalAmount));
+  if (roundedAmount === 0) {
+    throw new Error('مبلغ ارزشیابی موجودی اولیه مسکوکات/شمش نمی‌تواند صفر باشد.');
+  }
+
+  const inventoryAccountCodeOrId = inventoryItem.accountId || SYSTEM_ACCOUNT_CODES.GOLD_INVENTORY;
+  const counterAccountCodeOrId = SYSTEM_ACCOUNT_CODES.OPENING_EQUITY;
+
+  const desc = description || `موجودی اول دوره مسکوکات و شمش: ${inventoryItem.itemName} (${inventoryItem.quantity} عدد)`;
+
+  return postJournalEntry(
+    {
+      entryDateJalali,
+      description: desc,
+      sourceType: 'opening_coin',
+      sourceId: inventoryItem.id,
+      sourceKey: `opening:coin:${inventoryItem.id}`,
+      userId,
+      lines: [
+        {
+          accountId: inventoryAccountCodeOrId,
+          debit: roundedAmount,
+          credit: 0,
+          description: `موجودی اولیه مسکوکات/شمش: ${inventoryItem.itemName}`,
+        },
+        {
+          accountId: counterAccountCodeOrId,
+          debit: 0,
+          credit: roundedAmount,
+          description: `طرف مقابل موجودی اولیه مسکوکات و شمش (سرمایه اول دوره)`,
+        },
+      ],
+    },
+    pb,
+  );
 }
 
 /**
