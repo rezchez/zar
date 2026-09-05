@@ -216,10 +216,10 @@ migrate((app) => {
           "min": 0
         },
         {
-          "id": "json_lines",
+          "id": "json_lines_legacy",
           "name": "lines",
           "type": "json",
-          "required": true
+          "required": false
         },
         {
           "id": "relation_created_by",

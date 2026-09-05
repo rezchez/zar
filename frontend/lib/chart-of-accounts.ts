@@ -1803,13 +1803,8 @@ export async function ensureBankAccountDetailInChart(
       name: created.name,
       path: created.path,
     };
-  } catch {
-    return {
-      id: '',
-      code: newCode,
-      name: accountName,
-      path: `${parentPath}${newCode}/`,
-    };
+  } catch (err: any) {
+    throw new Error(`خطا در ایجاد سرفصل حساب برای صندوق: ${err?.message || 'خطای ناشناخته'}`);
   }
 }
 
@@ -1887,12 +1882,7 @@ export async function ensureCashFundDetailInChart(
       name: created.name,
       path: created.path,
     };
-  } catch {
-    return {
-      id: '',
-      code: newCode,
-      name: accountName,
-      path: `${parentPath}${newCode}/`,
-    };
+  } catch (err: any) {
+    throw new Error(`خطا در ایجاد سرفصل حساب برای صندوق: ${err?.message || 'خطای ناشناخته'}`);
   }
 }

@@ -153,11 +153,19 @@ export async function POST(request: Request) {
           existingAccountId: linkedAccountId,
           userId: context.user.id,
         });
-        if (detailAccount?.id) {
+        if (detailAccount?.id && detailAccount.id.trim().length > 0) {
           linkedAccountId = detailAccount.id;
         }
       } catch (err) {
-        console.warn('ensureCashFundDetailInChart failed for edit:', err);
+        return NextResponse.json({
+          message: extractPbErrorMessage(err, 'ایجاد یا یافتن سرفصل حسابداری مربوط به صندوق در کدینگ با خطا مواجه شد.'),
+        }, { status: 400 });
+      }
+
+      if (!linkedAccountId) {
+        return NextResponse.json({
+          message: 'تعیین سرفصل حسابداری برای صندوق امکان‌پذیر نشد.',
+        }, { status: 400 });
       }
 
       let updatedFund: any;
@@ -181,16 +189,22 @@ export async function POST(request: Request) {
 
       const dateValue = dateInput || (existingTx?.date ? String(existingTx.date) : dateToJalaliString(new Date()));
 
+      let updatedTxId: string | null = null;
+      let createdTxId: string | null = null;
+      let previousTxAmount = 0;
+
       try {
         if (existingTx) {
+          previousTxAmount = Number(existingTx.amount || 0);
           await context.pb.collection('cash_transactions').update(existingTx.id, {
             amount,
             direction: 'in',
             date: dateValue,
             description: description || `موجودی اول دوره صندوق - ${currencySymbol}`,
           });
+          updatedTxId = existingTx.id;
         } else {
-          await context.pb.collection('cash_transactions').create({
+          const newTx = await context.pb.collection('cash_transactions').create({
             vault: existingFund.id,
             currency_ref: currencyId,
             currency: currencyCode.slice(0, 16) || 'IRT',
@@ -205,6 +219,7 @@ export async function POST(request: Request) {
             description: description || `موجودی اول دوره صندوق - ${currencySymbol}`,
             created_by: context.user.id,
           });
+          createdTxId = newTx.id;
         }
 
         // Generate or update double-entry journal entry
@@ -222,6 +237,23 @@ export async function POST(request: Request) {
           description || `موجودی اول دوره صندوق - ${currencySymbol}`,
         );
       } catch (err) {
+        // Rollback transactions
+        if (createdTxId) {
+          await context.pb.collection('cash_transactions').delete(createdTxId).catch(() => undefined);
+        } else if (updatedTxId && existingTx) {
+          await context.pb.collection('cash_transactions').update(updatedTxId, {
+            amount: previousTxAmount,
+          }).catch(() => undefined);
+        }
+
+        // Rollback fund
+        await context.pb.collection('cash_funds').update(existingFund.id, {
+          name: existingFund.name,
+          opening_balance: previousOpening,
+          balance: previousBalance,
+          accountId: existingFund.accountId,
+        }).catch(() => undefined);
+
         return NextResponse.json({ message: extractPbErrorMessage(err, 'ثبت تراکنش و سند موجودی اولیه با خطا مواجه شد.') }, { status: 400 });
       }
 

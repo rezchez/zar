@@ -116,15 +116,7 @@ async function resolveAccount(
     return { id: defaultAcc.id, code: defaultAcc.code, name: defaultAcc.name };
   }
 
-  if (strict) {
-    throw new Error(`سرفصل حساب معتبر برای «${accountIdOrCode}» در کدینگ حساب‌ها یافت نشد.`);
-  }
-
-  return {
-    id: accountIdOrCode,
-    code: accountIdOrCode,
-    name: `سرفصل حساب ${accountIdOrCode}`,
-  };
+  throw new Error(`سرفصل حساب معتبر برای «${accountIdOrCode}» در کدینگ حساب‌ها یافت نشد.`);
 }
 
 /**
