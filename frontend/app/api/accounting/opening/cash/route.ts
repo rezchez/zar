@@ -153,11 +153,13 @@ export async function POST(request: Request) {
           existingAccountId: linkedAccountId,
           userId: context.user.id,
         });
-        if (detailAccount?.id) {
+        if (detailAccount?.id && detailAccount.id.trim().length > 0) {
           linkedAccountId = detailAccount.id;
+        } else {
+          return NextResponse.json({ message: 'تعیین سرفصل حسابداری برای صندوق امکان‌پذیر نشد.' }, { status: 400 });
         }
       } catch (err) {
-        console.warn('ensureCashFundDetailInChart failed for edit:', err);
+        return NextResponse.json({ message: extractPbErrorMessage(err, 'تعیین سرفصل حسابداری برای صندوق با خطا مواجه شد.') }, { status: 400 });
       }
 
       let updatedFund: any;
