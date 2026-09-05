@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { getServerAuthContext } from '@/lib/auth';
 import { hasPermission } from '@/lib/authorization';
+import { postCashOpeningBalance } from '@/lib/accounting-posting-engine';
 import { ensureCashFundDetailInChart } from '@/lib/chart-of-accounts';
 import { dateToJalaliString } from '@/lib/jalali';
 
@@ -205,8 +206,23 @@ export async function POST(request: Request) {
             created_by: context.user.id,
           });
         }
+
+        // Generate or update double-entry journal entry
+        await postCashOpeningBalance(
+          {
+            id: updatedFund.id,
+            name: fundName,
+            currencyName,
+            accountId: linkedAccountId || updatedFund.accountId,
+          },
+          amount,
+          dateValue,
+          context.user.id,
+          context.pb,
+          description || `موجودی اول دوره صندوق - ${currencySymbol}`,
+        );
       } catch (err) {
-        return NextResponse.json({ message: extractPbErrorMessage(err, 'ثبت تراکنش موجودی اولیه با خطا مواجه شد.') }, { status: 400 });
+        return NextResponse.json({ message: extractPbErrorMessage(err, 'ثبت تراکنش و سند موجودی اولیه با خطا مواجه شد.') }, { status: 400 });
       }
 
       return NextResponse.json({
@@ -272,11 +288,19 @@ export async function POST(request: Request) {
         existingAccountId: null,
         userId: context.user.id,
       });
-      if (detailAccount?.id) {
+      if (detailAccount?.id && detailAccount.id.trim().length > 0) {
         linkedAccountId = detailAccount.id;
       }
     } catch (err) {
-      console.warn('ensureCashFundDetailInChart failed for create:', err);
+      return NextResponse.json({
+        message: extractPbErrorMessage(err, 'ایجاد سرفصل حسابداری مربوط به صندوق در کدینگ با خطا مواجه شد.'),
+      }, { status: 400 });
+    }
+
+    if (!linkedAccountId) {
+      return NextResponse.json({
+        message: 'تعیین سرفصل حسابداری برای صندوق امکان‌پذیر نشد.',
+      }, { status: 400 });
     }
 
     let fund: any;
@@ -287,7 +311,7 @@ export async function POST(request: Request) {
         currency_name: safeCurrencyName,
         opening_balance: amount,
         balance: amount,
-        accountId: linkedAccountId || undefined,
+        accountId: linkedAccountId,
         created_by: context.user.id,
         updated_by: context.user.id,
       });
@@ -297,8 +321,9 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
+    let createdTx: any = null;
     try {
-      await context.pb.collection('cash_transactions').create({
+      createdTx = await context.pb.collection('cash_transactions').create({
         vault: fund.id,
         currency_ref: currencyRecord.id,
         currency: currencyCode.slice(0, 16) || 'IRT',
@@ -313,10 +338,31 @@ export async function POST(request: Request) {
         description: description || `موجودی اول دوره صندوق - ${currencySymbol}`,
         created_by: context.user.id,
       });
+
+      // Generate double-entry journal entry & lines
+      await postCashOpeningBalance(
+        {
+          id: fund.id,
+          name: fundName,
+          currencyName,
+          accountId: linkedAccountId,
+        },
+        amount,
+        dateValue,
+        context.user.id,
+        context.pb,
+        description || `موجودی اول دوره صندوق - ${currencySymbol}`,
+      );
     } catch (transactionError) {
-      await context.pb.collection('cash_funds').delete(fund.id).catch(() => undefined);
+      // Full Atomic Rollback: delete created cash_transaction & cash_fund on failure
+      if (createdTx?.id) {
+        await context.pb.collection('cash_transactions').delete(createdTx.id).catch(() => undefined);
+      }
+      if (fund?.id) {
+        await context.pb.collection('cash_funds').delete(fund.id).catch(() => undefined);
+      }
       return NextResponse.json({
-        message: extractPbErrorMessage(transactionError, 'ثبت تراکنش موجودی اولیه با خطا مواجه شد.'),
+        message: extractPbErrorMessage(transactionError, 'ثبت تراکنش و سند موجودی اولیه با خطا مواجه شد.'),
       }, { status: 400 });
     }
 

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { getServerAuthContext } from '@/lib/auth';
 import { hasPermission } from '@/lib/authorization';
+import { postBankOpeningBalance } from '@/lib/accounting-posting-engine';
 import { ensureBankAccountDetailInChart } from '@/lib/chart-of-accounts';
 import { dateToJalaliString } from '@/lib/jalali';
 import { parseLocalizedAmount } from '@/lib/money';
@@ -247,8 +248,23 @@ export async function POST(request: Request) {
             created_by: context.user.id,
           });
         }
+
+        // Generate or update double-entry journal entry
+        await postBankOpeningBalance(
+          {
+            id: updatedAccount.id,
+            bankName: updatedAccount.bankName,
+            accountNumber: updatedAccount.accountNumber,
+            accountId: linkedAccountId || updatedAccount.accountId,
+          },
+          amount,
+          dateValue,
+          context.user.id,
+          writer,
+          description || `موجودی اول دوره حساب بانکی - ${updatedAccount.bankName}`,
+        );
       } catch (err) {
-        return NextResponse.json({ message: extractPbErrorMessage(err, 'ثبت تراکنش موجودی اولیه با خطا مواجه شد.') }, { status: 400 });
+        return NextResponse.json({ message: extractPbErrorMessage(err, 'ثبت تراکنش و سند موجودی اولیه با خطا مواجه شد.') }, { status: 400 });
       }
 
       return NextResponse.json({
@@ -353,10 +369,25 @@ export async function POST(request: Request) {
         description: description || `موجودی اول دوره حساب بانکی - ${bankName}`,
         created_by: context.user.id,
       });
+
+      // Generate double-entry journal entry
+      await postBankOpeningBalance(
+        {
+          id: bankAccountRecord.id,
+          bankName,
+          accountNumber,
+          accountId: linkedAccountId || bankAccountRecord.accountId,
+        },
+        amount,
+        dateValue,
+        context.user.id,
+        writer,
+        description || `موجودی اول دوره حساب بانکی - ${bankName}`,
+      );
     } catch (transactionError) {
       await writer.collection('bank_accounts').delete(bankAccountRecord.id).catch(() => undefined);
       return NextResponse.json({
-        message: extractPbErrorMessage(transactionError, 'ثبت تراکنش موجودی اولیه حساب بانکی با خطا مواجه شد.'),
+        message: extractPbErrorMessage(transactionError, 'ثبت تراکنش و سند موجودی اولیه حساب بانکی با خطا مواجه شد.'),
       }, { status: 400 });
     }
 
