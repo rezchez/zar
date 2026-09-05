@@ -113,6 +113,21 @@ async function resolveAccount(
     (a) => a.id === accountIdOrCode || a.code === accountIdOrCode,
   );
   if (defaultAcc) {
+    try {
+      const dbAcc = await pb.collection('chart_of_accounts').getFirstListItem(
+        pb.filter('code = {:code}', { code: defaultAcc.code }),
+      ).catch(() => null);
+      if (dbAcc) {
+        if (dbAcc.isActive === false) {
+          throw new Error(`سرفصل حساب "${dbAcc.name}" (${dbAcc.code}) غیرفعال است.`);
+        }
+        return { id: dbAcc.id, code: dbAcc.code, name: dbAcc.name };
+      }
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('غیرفعال')) {
+        throw err;
+      }
+    }
     return { id: defaultAcc.id, code: defaultAcc.code, name: defaultAcc.name };
   }
 
@@ -270,27 +285,63 @@ export async function postJournalEntry(
       status,
       totalDebit,
       totalCredit,
+      // JSON snapshot of lines: the `lines` field is required by the
+      // journal_entries schema (legacy denormalized copy). The normalized
+      // source of truth remains the dedicated `journal_lines` collection below.
+      lines: resolvedLines,
       createdBy: userId || null,
       updatedBy: userId || null,
     });
   } catch (err: any) {
-    throw new Error(`ثبت سند حسابداری در پایگاه داده با خطا مواجه شد: ${err?.message || 'خطای ناشناخته'}`);
+    // Surface field-level validation details from PocketBase when available
+    const responseData = err?.response?.data;
+    const fieldDetails =
+      responseData && typeof responseData === 'object'
+        ? Object.entries(responseData)
+            .map(([field, val]) => `${field}: ${(val as any)?.message || String(val)}`)
+            .join(' | ')
+        : '';
+    throw new Error(
+      `ثبت سند حسابداری در پایگاه داده با خطا مواجه شد: ${fieldDetails || err?.message || 'خطای ناشناخته'}`,
+    );
   }
 
   // Create Dedicated Child Journal Lines in `journal_lines` Collection
   const createdLineIds: string[] = [];
   try {
     for (const line of resolvedLines) {
-      const createdLine = await pb.collection('journal_lines').create({
+      const linePayload: Record<string, unknown> = {
         journal_entry_id: createdJournal.id,
         account_id: line.accountId,
         debit: line.debit,
         credit: line.credit,
-        description: line.description,
-        party_id: line.partyId || null,
-        bank_account_id: line.bankAccountId || null,
-        cheque_id: line.chequeId || null,
-      });
+        description: line.description || '',
+      };
+      if (line.partyId && typeof line.partyId === 'string' && line.partyId.trim()) {
+        linePayload.party_id = line.partyId.trim();
+      }
+      if (line.bankAccountId && typeof line.bankAccountId === 'string' && line.bankAccountId.trim()) {
+        linePayload.bank_account_id = line.bankAccountId.trim();
+      }
+      if (line.chequeId && typeof line.chequeId === 'string' && line.chequeId.trim()) {
+        linePayload.cheque_id = line.chequeId.trim();
+      }
+
+      let createdLine: any;
+      try {
+        createdLine = await pb.collection('journal_lines').create(linePayload);
+      } catch (lineCreateErr: any) {
+        // If the error was specifically caused by party_id relation validation (e.g. legacy collection target),
+        // retry creating the line without party_id as a resilient fallback
+        const respData = lineCreateErr?.response?.data || lineCreateErr?.data;
+        if (respData?.party_id && linePayload.party_id) {
+          const fallbackPayload = { ...linePayload };
+          delete fallbackPayload.party_id;
+          createdLine = await pb.collection('journal_lines').create(fallbackPayload);
+        } else {
+          throw lineCreateErr;
+        }
+      }
       createdLineIds.push(createdLine.id);
     }
   } catch (lineError: any) {
@@ -299,7 +350,17 @@ export async function postJournalEntry(
       await pb.collection('journal_lines').delete(lineId).catch(() => undefined);
     }
     await pb.collection('journal_entries').delete(createdJournal.id).catch(() => undefined);
-    throw new Error(`ثبت ردیف‌های سند حسابداری با خطا مواجه شد: ${lineError?.message || 'خطای ناشناخته'}`);
+
+    const responseData = lineError?.response?.data || lineError?.data;
+    const fieldDetails =
+      responseData && typeof responseData === 'object'
+        ? Object.entries(responseData)
+            .map(([field, val]) => `${field}: ${(val as any)?.message || String(val)}`)
+            .join(' | ')
+        : '';
+    throw new Error(
+      `ثبت ردیف‌های سند حسابداری با خطا مواجه شد: ${fieldDetails || lineError?.message || 'خطای ناشناخته'}`,
+    );
   }
 
   return {

@@ -11,6 +11,12 @@ migrate((app) => {
   if (!journalLines) {
     const journalEntriesCol = app.findCollectionByNameOrId("journal_entries");
     const coaCol = app.findCollectionByNameOrId("chart_of_accounts");
+    let customersCol = null;
+    try {
+      customersCol = app.findCollectionByNameOrId("customers");
+    } catch {
+      customersCol = null;
+    }
 
     const newJournalLines = new Collection({
       "id": "pbc_journal_lines",
@@ -78,7 +84,7 @@ migrate((app) => {
         },
         {
           "cascadeDelete": false,
-          "collectionId": "_pb_users_auth_",
+          "collectionId": customersCol ? customersCol.id : "customers",
           "id": "relation_party_id",
           "maxSelect": 1,
           "name": "party_id",
