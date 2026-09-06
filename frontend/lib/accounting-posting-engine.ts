@@ -238,6 +238,14 @@ export async function postJournalEntry(
       }).catch(() => []);
 
       if (lineRecords.length > 0) {
+        // Normalize legacy lines before returning an idempotent opening entry; older records may have
+        // omitted the zero side and PocketBase then rejects subsequent edits as "credit cannot be blank".
+        await Promise.all(lineRecords.map((l: any) => {
+          const patch: Record<string, number> = {};
+          if (l.debit === null || l.debit === undefined || l.debit === '') patch.debit = 0;
+          if (l.credit === null || l.credit === undefined || l.credit === '') patch.credit = 0;
+          return Object.keys(patch).length ? pb.collection('journal_lines').update(l.id, patch).catch(() => undefined) : Promise.resolve();
+        }));
         existingLines = lineRecords.map((l: any) => ({
           accountId: String(l.account_id || ''),
           debit: Number(l.debit || 0),

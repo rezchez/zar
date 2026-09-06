@@ -1,5 +1,6 @@
 import 'server-only';
 
+import type PocketBase from 'pocketbase';
 import { createPocketBaseClient } from '@/lib/pocketbase';
 
 export class PocketBaseServiceConfigurationError extends Error {
@@ -9,24 +10,46 @@ export class PocketBaseServiceConfigurationError extends Error {
   }
 }
 
-export async function getPocketBaseServiceClient() {
-  const pb = createPocketBaseClient();
-  const token = process.env.POCKETBASE_SUPERUSER_TOKEN;
+let cachedClient: PocketBase | null = null;
+let authPromise: Promise<PocketBase> | null = null;
 
-  if (token) {
-    pb.authStore.save(token);
-    return pb;
+export async function getPocketBaseServiceClient(): Promise<PocketBase> {
+  if (cachedClient && cachedClient.authStore.isValid) {
+    return cachedClient;
   }
 
-  const email = process.env.POCKETBASE_SUPERUSER_EMAIL;
-  const password = process.env.POCKETBASE_SUPERUSER_PASSWORD;
-
-  if (!email || !password) {
-    throw new PocketBaseServiceConfigurationError(
-      'POCKETBASE_SUPERUSER_TOKEN یا POCKETBASE_SUPERUSER_EMAIL و POCKETBASE_SUPERUSER_PASSWORD تنظیم نشده‌اند.',
-    );
+  if (authPromise) {
+    return authPromise;
   }
 
-  await pb.collection('_superusers').authWithPassword(email, password);
-  return pb;
+  authPromise = (async () => {
+    try {
+      const pb = createPocketBaseClient();
+      const token = process.env.POCKETBASE_SUPERUSER_TOKEN;
+
+      if (token) {
+        pb.authStore.save(token);
+        cachedClient = pb;
+        return pb;
+      }
+
+      const email = process.env.POCKETBASE_SUPERUSER_EMAIL;
+      const password = process.env.POCKETBASE_SUPERUSER_PASSWORD;
+
+      if (!email || !password) {
+        throw new PocketBaseServiceConfigurationError(
+          'POCKETBASE_SUPERUSER_TOKEN یا POCKETBASE_SUPERUSER_EMAIL و POCKETBASE_SUPERUSER_PASSWORD تنظیم نشده‌اند.',
+        );
+      }
+
+      await pb.collection('_superusers').authWithPassword(email, password);
+      cachedClient = pb;
+      return pb;
+    } finally {
+      authPromise = null;
+    }
+  })();
+
+  return authPromise;
 }
+
