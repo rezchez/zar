@@ -1,1 +1,1 @@
-export * from './currencies';
+export * from '@/features/currencies/services/currency';

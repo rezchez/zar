@@ -1,2 +1,2 @@
-export { default } from '@/src/components/inventory/InitialCashInventoryCard';
-export * from '@/src/components/inventory/InitialCashInventoryCard';
+export { default } from '@/features/cash/components/InitialCashInventoryCard';
+export * from '@/features/cash/components/InitialCashInventoryCard';
