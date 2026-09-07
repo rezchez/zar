@@ -5,7 +5,7 @@ import { AnimatePresence, motion, useMotionValue, useSpring, useTransform } from
 import { ArrowLeft, Check, Eye, EyeOff, LockKeyhole, Mail, Phone, ShieldCheck, Sparkles, UserRound } from 'lucide-react';
 
 import { GoogleIcon } from './Icons';
-import { AuthLogicReturn } from './useAuthLogic';
+import { AuthLogicReturn } from '@/hooks/useAuthLogic';
 
 
 
@@ -224,7 +224,7 @@ export function MobileAuthView({ logic }: { logic: AuthLogicReturn }) {
                       />
                       <button
                         type="button"
-                        onClick={() => setShowPassword((v) => !v)}
+                        onClick={() => setShowPassword((v: boolean) => !v)}
                         className="absolute left-1 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-white transition-colors p-3 min-w-[44px] min-h-[44px] flex items-center justify-center"
                         aria-label={showPassword ? 'مخفی کردن رمز عبور' : 'نمایش رمز عبور'}
                       >
@@ -256,7 +256,7 @@ export function MobileAuthView({ logic }: { logic: AuthLogicReturn }) {
                         />
                         <button
                           type="button"
-                          onClick={() => setShowPassword((v) => !v)}
+                          onClick={() => setShowPassword((v: boolean) => !v)}
                           className="absolute left-1 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-white transition-colors p-3 min-w-[44px] min-h-[44px] flex items-center justify-center"
                           aria-label={showPassword ? 'مخفی کردن رمز عبور' : 'نمایش رمز عبور'}
                         >
@@ -284,7 +284,7 @@ export function MobileAuthView({ logic }: { logic: AuthLogicReturn }) {
                         />
                         <button
                           type="button"
-                          onClick={() => setShowPasswordConfirm((v) => !v)}
+                          onClick={() => setShowPasswordConfirm((v: boolean) => !v)}
                           className="absolute left-1 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-white transition-colors p-3 min-w-[44px] min-h-[44px] flex items-center justify-center"
                           aria-label={showPasswordConfirm ? 'مخفی کردن تکرار رمز عبور' : 'نمایش تکرار رمز عبور'}
                         >

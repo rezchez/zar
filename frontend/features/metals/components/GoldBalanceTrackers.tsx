@@ -6,7 +6,7 @@
  */
 import { motion } from 'framer-motion';
 import { Scale, Banknote, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
-import { useAppSettings } from './SettingsProvider';
+import { useAppSettings } from '@/components/shared/SettingsProvider';
 
 export default function GoldBalanceTrackers() {
   const { formatMoney, formatWeight, settings } = useAppSettings();

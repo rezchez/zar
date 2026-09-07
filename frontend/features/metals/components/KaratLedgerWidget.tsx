@@ -7,7 +7,7 @@
 import { motion } from 'framer-motion';
 import { FlaskConical, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
 import Link from 'next/link';
-import { useAppSettings } from './SettingsProvider';
+import { useAppSettings } from '@/components/shared/SettingsProvider';
 
 type Entry = {
   id: string;

@@ -3,7 +3,7 @@
 import React from 'react';
 import DashboardCalendarWidget, {
   type DashboardCalendarWidgetProps,
-} from './dashboard/DashboardCalendarWidget';
+} from './DashboardCalendarWidget';
 import type { CalendarEvent } from '@/components/ui/calendar';
 
 export type { CalendarEvent };

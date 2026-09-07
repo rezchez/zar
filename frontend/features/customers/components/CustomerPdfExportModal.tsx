@@ -6,7 +6,7 @@ import { useState, useEffect, useMemo } from 'react';
 
 import type { Customer } from '@/lib/customer';
 import { DEFAULT_REPORT_TEMPLATES, type ReportPrintTemplate } from '@/lib/report-templates';
-import { useAppSettings } from './SettingsProvider';
+import { useAppSettings } from '@/components/shared/SettingsProvider';
 
 type CustomerPdfExportModalProps = {
   isOpen: boolean;
@@ -25,11 +25,11 @@ export default function CustomerPdfExportModal({ isOpen, onClose, visibleCustome
     const list = Array.isArray(settings.reportTemplates) && settings.reportTemplates.length > 0
       ? settings.reportTemplates
       : DEFAULT_REPORT_TEMPLATES;
-    return list.filter((t) => t.reportType === 'customer' && t.isActive !== false);
+    return list.filter((t: ReportPrintTemplate) => t.reportType === 'customer' && t.isActive !== false);
   }, [settings.reportTemplates]);
 
   const defaultTemplate = useMemo(() => {
-    return customerTemplates.find((t) => t.isDefault) || customerTemplates[0];
+    return customerTemplates.find((t: ReportPrintTemplate) => t.isDefault) || customerTemplates[0];
   }, [customerTemplates]);
 
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>(defaultTemplate?.id || '');
@@ -43,7 +43,7 @@ export default function CustomerPdfExportModal({ isOpen, onClose, visibleCustome
   }, [defaultTemplate, selectedTemplateId]);
 
   const selectedTemplate = useMemo(() => {
-    return customerTemplates.find((t) => t.id === selectedTemplateId) || defaultTemplate;
+    return customerTemplates.find((t: ReportPrintTemplate) => t.id === selectedTemplateId) || defaultTemplate;
   }, [customerTemplates, selectedTemplateId, defaultTemplate]);
 
   const [options, setOptions] = useState({
@@ -251,16 +251,16 @@ export default function CustomerPdfExportModal({ isOpen, onClose, visibleCustome
                   value={selectedTemplateId}
                   onChange={(e) => setSelectedTemplateId(e.target.value)}
                 >
-                  {customerTemplates.map((t) => (
+                  {customerTemplates.map((t: ReportPrintTemplate) => (
                     <option key={t.id} value={t.id}>
-                      {t.name} {t.isDefault ? ' ⭐ (پیش‌فرض)' : ''} ({t.page.orientation === 'landscape' ? 'افقی' : 'عمودی'} · {t.table.columns.filter((c) => c.visible !== false).length} ستون)
+                      {t.name} {t.isDefault ? ' ⭐ (پیش‌فرض)' : ''} ({t.page.orientation === 'landscape' ? 'افقی' : 'عمودی'} · {t.table.columns.filter((c: any) => c.visible !== false).length} ستون)
                     </option>
                   ))}
                 </select>
 
                 <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 pt-1">
                   <span>ابعاد: {selectedTemplate?.page.size || 'A4'} ({selectedTemplate?.page.orientation === 'landscape' ? 'افقی / Landscape' : 'عمودی / Portrait'})</span>
-                  <span>تعداد ستون‌ها: {selectedTemplate?.table.columns.filter((c) => c.visible !== false).length || 0}</span>
+                  <span>تعداد ستون‌ها: {selectedTemplate?.table.columns.filter((c: any) => c.visible !== false).length || 0}</span>
                 </div>
               </div>
 
@@ -334,13 +334,13 @@ export default function CustomerPdfExportModal({ isOpen, onClose, visibleCustome
                         ))}
                       </select>
                     </label>
-                    {(settings.printRecipients || []).filter((r) => r.enabled !== false).length > 0 && (
+                    {(settings.printRecipients || []).filter((r: any) => r.enabled !== false).length > 0 && (
                       <label className="block space-y-1.5 text-xs">
                         <span className="font-bold text-slate-700 dark:text-slate-300">انتخاب از بین مدیران</span>
                         <select
                           className="w-full form-input bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2 outline-none focus:ring-2 focus:ring-amber-500/20 text-xs"
                           onChange={(e) => {
-                            const found = (settings.printRecipients || []).find((r) => r.name === e.target.value);
+                            const found = (settings.printRecipients || []).find((r: any) => r.name === e.target.value);
                             if (found) {
                               if (selectedProvider.toLowerCase() === 'telegram' && found.telegramId) {
                                 setChatId(found.telegramId);
@@ -354,7 +354,7 @@ export default function CustomerPdfExportModal({ isOpen, onClose, visibleCustome
                           defaultValue=""
                         >
                           <option value="" disabled>انتخاب مدیر جهت پر شدن خودکار شناسه...</option>
-                          {(settings.printRecipients || []).filter((r) => r.enabled !== false).map((r, i) => (
+                          {(settings.printRecipients || []).filter((r: any) => r.enabled !== false).map((r: any, i: number) => (
                             <option key={i} value={r.name}>{r.name} ({r.role || 'مدیر'})</option>
                           ))}
                         </select>

@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { DownloadCloud, X } from 'lucide-react';
-import { useAppSettings } from './SettingsProvider';
+import { useAppSettings } from '@/components/shared/SettingsProvider';
 import {
   isIosDevice,
   isStandaloneMode,

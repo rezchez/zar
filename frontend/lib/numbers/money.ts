@@ -1,4 +1,4 @@
-import { normalizeDigits } from './jalali';
+import { normalizeDigits } from '@/lib/dates/jalali';
 
 export type BaseCurrency = 'IRR' | 'IRT';
 

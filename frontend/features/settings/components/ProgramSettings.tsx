@@ -35,7 +35,7 @@ import {
   FolderTree,
   Database,
 } from 'lucide-react';
-import { useAppSettings } from './SettingsProvider';
+import { useAppSettings } from '@/components/shared/SettingsProvider';
 import { jalaliDateToIso, parseJalaliDate, formatJalaliDate } from '@/lib/jalali';
 import { formatMoney } from '@/lib/money';
 import type { PriceApiSettings, PriceApiUnit } from '@/lib/price-api';

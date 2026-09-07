@@ -1,6 +1,6 @@
 'use client';
 
-import DashboardCalendarWidget from './dashboard/DashboardCalendarWidget';
+import DashboardCalendarWidget from './DashboardCalendarWidget';
 import GlassJalaliCalendar from './GlassJalaliCalendar';
 
 export default DashboardCalendarWidget;

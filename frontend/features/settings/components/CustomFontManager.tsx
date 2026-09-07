@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { Upload, Trash2, Loader2, Check, AlertCircle, Sparkles } from 'lucide-react';
-import { useAppSettings } from './SettingsProvider';
+import { useAppSettings } from '@/components/shared/SettingsProvider';
 import type { CustomFontRecord } from '@/app/api/settings/fonts/route';
 
 interface CustomFontManagerProps {

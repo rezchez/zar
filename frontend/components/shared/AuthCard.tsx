@@ -1,8 +1,8 @@
 'use client';
 
-import { useAuthLogic } from './auth/useAuthLogic';
-import { DesktopAuthView } from './auth/DesktopAuthView';
-import { MobileAuthView } from './auth/MobileAuthView';
+import { useAuthLogic } from '@/hooks/useAuthLogic';
+import { DesktopAuthView } from './DesktopAuthView';
+import { MobileAuthView } from './MobileAuthView';
 
 interface AuthCardProps {
   initialMode?: 'login' | 'signup';

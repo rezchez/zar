@@ -1,4 +1,4 @@
-import { DEFAULT_REPORT_TEMPLATES, type ReportPrintTemplate } from './report-templates';
+import { DEFAULT_REPORT_TEMPLATES, type ReportPrintTemplate } from '@/lib/printing/report-templates';
 
 export type AppSettings = {
   id?: string;
@@ -59,7 +59,7 @@ export type AppSettings = {
   baleMessageTemplate: string;
 
   // Report Print Templates
-  reportTemplates?: import('./report-templates').ReportPrintTemplate[];
+  reportTemplates?: import('@/lib/printing/report-templates').ReportPrintTemplate[];
 
   // Legacy compatibility fields
   pwa_enabled?: boolean;

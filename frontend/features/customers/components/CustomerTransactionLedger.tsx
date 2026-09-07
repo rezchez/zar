@@ -8,7 +8,7 @@ import {
   type CustomerTransaction,
   sumPostedTransactions,
 } from '@/lib/transaction';
-import { useAppSettings } from './SettingsProvider';
+import { useAppSettings } from '@/components/shared/SettingsProvider';
 
 const transactionLabels: Record<string, string> = {
   opening_balance: 'مانده اول دوره',
