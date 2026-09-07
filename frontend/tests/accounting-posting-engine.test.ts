@@ -198,7 +198,7 @@ describe('Accounting Posting Engine', () => {
       accountCodeZero: '0',
       currency: 'IRR',
       isActive: true,
-      accountId: 'pbc_1110',
+      accountId: '1110', // valid fallback in default chart
       created: '',
       updated: '',
     };

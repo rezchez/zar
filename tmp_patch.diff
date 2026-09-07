@@ -1,0 +1,15 @@
+<<<<<<< SEARCH
+    const mockBankAccount = {
+      id: 'bnk_melli_01',
+      bankName: 'بانک ملی ایران',
+      accountNumber: '0102030405001',
+      accountId: 'sys_1110_detail_01',
+    };
+=======
+    const mockBankAccount = {
+      id: 'bnk_melli_01',
+      bankName: 'بانک ملی ایران',
+      accountNumber: '0102030405001',
+      accountId: '1110', // using a code that exists in DEFAULT_CHART_OF_ACCOUNTS
+    };
+>>>>>>> REPLACE
