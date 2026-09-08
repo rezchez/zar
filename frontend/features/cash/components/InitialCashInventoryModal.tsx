@@ -39,7 +39,7 @@ export type CashFundEditItem = {
 export type InitialCashInventoryModalProps = {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess?: (entry: { currency: string; amount: number; description: string; name?: string; date?: string }) => void;
+  onSuccess?: (entry: { currency: string; amount: number; description: string; name?: string; date?: string; fund?: CashFundEditItem }) => void;
   editItem?: CashFundEditItem | null;
 };
 
@@ -257,6 +257,8 @@ export default function InitialCashInventoryModal({
         throw new Error(data.message || 'ثبت/ویرایش موجودی اولیه انجام نشد.');
       }
 
+      const updatedFund = data.fund as CashFundEditItem | undefined;
+
       setSuccess(editItem ? 'موجودی اولیه صندوق با موفقیت به روز شد.' : 'صندوق و موجودی اولیه با موفقیت ثبت شد.');
       if (onSuccess) {
         onSuccess({
@@ -264,7 +266,8 @@ export default function InitialCashInventoryModal({
           amount: numericAmount,
           description: description.trim(),
           name: fundName.trim() || `صندوق ${currencyNameOrCode}`,
-          date: openingDate.trim(),
+          date: updatedFund?.openingBalanceDate || openingDate.trim(),
+          fund: updatedFund,
         });
       }
 

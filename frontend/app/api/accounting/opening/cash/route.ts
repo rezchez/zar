@@ -50,14 +50,18 @@ export async function GET() {
     }).catch(() => []);
 
     const txs = await context.pb.collection('cash_transactions').getFullList({
-      filter: 'is_opening_balance = true || transaction_type = "opening_balance"',
+      filter: 'is_opening_balance = true || transaction_type = "opening_balance" || source_key ~ "opening:cash:"',
+      sort: '-updated,-created',
     }).catch(() => []);
 
-    // Group opening transactions by vault ID for canonical mapping and duplicate detection
+    // Group opening transactions by vault ID or source_key for canonical mapping and duplicate detection
     const txMap = new Map<string, any[]>();
     for (const tx of txs) {
-      if (tx.vault) {
-        const vaultId = String(tx.vault);
+      let vaultId = tx.vault ? String(tx.vault) : '';
+      if (!vaultId && tx.source_key && String(tx.source_key).startsWith('opening:cash:')) {
+        vaultId = String(tx.source_key).replace('opening:cash:', '');
+      }
+      if (vaultId) {
         const list = txMap.get(vaultId) || [];
         list.push(tx);
         txMap.set(vaultId, list);
@@ -75,7 +79,7 @@ export async function GET() {
       const fundName = String(f.name || `صندوق ${currencyName}`).trim();
       const accountId = String(f.accountId || f.expand?.accountId?.id || '');
 
-      const vaultTxs = txMap.get(f.id) || [];
+      const vaultTxs = txMap.get(f.id) || (currencyId ? txMap.get(currencyId) : []) || [];
       const tx = vaultTxs[0] || null;
       const openingDate = String(tx?.date || (f.created ? dateToJalaliString(new Date(f.created)) : todayJalali));
       const description = String(tx?.description || '');
@@ -181,11 +185,17 @@ export async function POST(request: Request) {
         return NextResponse.json({ message: extractPbErrorMessage(err, 'ویرایش موجودی اولیه انجام نشد.') }, { status: 400 });
       }
 
-      // Fetch all existing opening transactions for this specific vault to handle duplicates safely
+      // Fetch all existing opening transactions for this specific vault/source_key to handle duplicates safely
+      const primarySourceKey = `opening:cash:${existingFund.id}`;
+      const altSourceKey = currencyId ? `opening:cash:${currencyId}` : '';
+
       const vaultOpeningTxs = await context.pb.collection('cash_transactions').getFullList({
-        filter: context.pb.filter('vault = {:vaultId} && (is_opening_balance = true || transaction_type = "opening_balance")', {
+        filter: context.pb.filter('vault = {:vaultId} || source_key = {:sk1} || (source_key = {:sk2} && {:sk2} != "")', {
           vaultId: existingFund.id,
+          sk1: primarySourceKey,
+          sk2: altSourceKey,
         }),
+        sort: '-updated,-created',
       }).catch(() => []);
 
       const canonicalTx = vaultOpeningTxs[0] || null;
@@ -194,18 +204,20 @@ export async function POST(request: Request) {
       try {
         if (canonicalTx) {
           await context.pb.collection('cash_transactions').update(canonicalTx.id, {
+            vault: existingFund.id,
+            currency_ref: currencyId || undefined,
+            currency: currencyCode.slice(0, 16) || 'IRT',
+            currency_name: currencyName.slice(0, 32),
+            currency_symbol: currencySymbol,
             amount,
             direction: 'in',
+            source_key: primarySourceKey,
+            transaction_type: 'opening_balance',
+            is_opening_balance: true,
             date: dateValue,
             description: description || `موجودی اول دوره صندوق - ${currencySymbol}`,
           });
 
-          // Clean up any historical duplicate opening transactions for this vault to prevent balance corruption
-          if (vaultOpeningTxs.length > 1) {
-            for (let i = 1; i < vaultOpeningTxs.length; i++) {
-              await context.pb.collection('cash_transactions').delete(vaultOpeningTxs[i].id).catch(() => undefined);
-            }
-          }
         } else {
           await context.pb.collection('cash_transactions').create({
             vault: existingFund.id,

@@ -166,11 +166,21 @@ export default function CashTab({
     activeFund !== null &&
     numericAmount > (activeFund.balance ?? 0);
 
-  function handleFundCreated(entry: { currency: string; amount: number; description: string; name?: string; date?: string }) {
+  function handleFundCreated(entry: { currency: string; amount: number; description: string; name?: string; date?: string; fund?: CashFundItem }) {
     setNotice({
       tone: 'success',
       text: `صندوق جدید «${entry.name || `صندوق ${entry.currency}`}» با موفقیت ایجاد و انتخاب شد.`,
     });
+    if (entry.fund) {
+      setFunds((prev) => {
+        const exists = prev.some((f) => f.id === entry.fund!.id);
+        if (exists) {
+          return prev.map((f) => (f.id === entry.fund!.id ? { ...f, ...entry.fund } : f));
+        }
+        return [...prev, entry.fund!];
+      });
+      setSelectedFundId(entry.fund.id);
+    }
     void fetchFunds();
   }
 

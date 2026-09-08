@@ -312,4 +312,104 @@ describe('Cash Opening Balance Hardening & GL Consistency Tests', () => {
       expect(line.credit).not.toBe(10000);
     }
   });
+
+  test('9. Repeated date edits preserve transaction ID and produce exactly 1 cash transaction record', async () => {
+    const pb = new MockPb() as any;
+
+    const fund = {
+      id: 'fund_usd_01',
+      name: 'صندوق دلار',
+      opening_balance: 5000,
+      balance: 5000,
+      currency: 'curr_usd',
+      currency_name: 'دلار',
+      accountId: 'acc_usd',
+    };
+    pb.collections.set('cash_funds', [fund]);
+
+    pb.collections.set('chart_of_accounts', [
+      { id: 'acc_usd', code: '111001', name: 'صندوق دلار', isActive: true },
+      { id: 'acc_equity_3100', code: '3100', name: 'سرمایه اول دوره', isActive: true },
+    ]);
+
+    // Initial creation: date = 1405/01/01
+    const initialTx = await pb.collection('cash_transactions').create({
+      vault: fund.id,
+      currency_ref: fund.currency,
+      currency: 'USD',
+      currency_name: fund.currency_name,
+      amount: 5000,
+      direction: 'in',
+      source_key: `opening:cash:${fund.id}`,
+      transaction_type: 'opening_balance',
+      is_opening_balance: true,
+      date: '1405/01/01',
+      description: 'موجودی اولیه دلار',
+    });
+
+    const initialTxId = initialTx.id;
+
+    async function editOpeningDate(fundId: string, newDate: string) {
+      const existingFund = await pb.collection('cash_funds').getOne(fundId);
+      const primarySourceKey = `opening:cash:${existingFund.id}`;
+
+      const vaultOpeningTxs = await pb.collection('cash_transactions').getFullList({
+        filter: pb.filter('vault = {:vaultId} || source_key = {:sk1}', {
+          vaultId: existingFund.id,
+          sk1: primarySourceKey,
+        }),
+      });
+
+      const canonicalTx = vaultOpeningTxs[0];
+      if (canonicalTx) {
+        await pb.collection('cash_transactions').update(canonicalTx.id, {
+          vault: existingFund.id,
+          amount: existingFund.opening_balance,
+          direction: 'in',
+          source_key: primarySourceKey,
+          transaction_type: 'opening_balance',
+          is_opening_balance: true,
+          date: newDate,
+        });
+
+      }
+
+      await postCashOpeningBalance(
+        {
+          id: existingFund.id,
+          name: existingFund.name,
+          currencyId: existingFund.currency,
+          accountId: existingFund.accountId,
+        },
+        existingFund.opening_balance,
+        newDate,
+        userId,
+        pb,
+      );
+    }
+
+    // Edit 1: 1405/06/15
+    await editOpeningDate('fund_usd_01', '1405/06/15');
+    let txs = pb.collections.get('cash_transactions');
+    expect(txs).toHaveLength(1);
+    expect(txs[0].id).toBe(initialTxId);
+    expect(txs[0].date).toBe('1405/06/15');
+
+    // Edit 2: 1405/06/20
+    await editOpeningDate('fund_usd_01', '1405/06/20');
+    txs = pb.collections.get('cash_transactions');
+    expect(txs).toHaveLength(1);
+    expect(txs[0].id).toBe(initialTxId);
+    expect(txs[0].date).toBe('1405/06/20');
+
+    // Repeated edits: 1405/02/01, 1405/03/01, 1405/04/01, 1405/05/01
+    const dates = ['1405/02/01', '1405/03/01', '1405/04/01', '1405/05/01'];
+    for (const d of dates) {
+      await editOpeningDate('fund_usd_01', d);
+      txs = pb.collections.get('cash_transactions');
+      expect(txs).toHaveLength(1);
+      expect(txs[0].id).toBe(initialTxId);
+      expect(txs[0].date).toBe(d);
+    }
+  });
 });

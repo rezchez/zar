@@ -130,6 +130,11 @@ export default function CashFundsListModal({
       }
 
       setEditSuccess('موجودی اولیه با موفقیت ویرایش و به روز شد.');
+      if (data.fund) {
+        setFunds((prev) =>
+          prev.map((f) => (f.id === data.fund.id ? { ...f, ...data.fund } : f))
+        );
+      }
       await fetchFunds();
 
       setTimeout(() => {

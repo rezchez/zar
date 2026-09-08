@@ -204,7 +204,16 @@ export default function CashFundsListClient({
           setEditingItem(null);
         }}
         editItem={editingItem}
-        onSuccess={() => {
+        onSuccess={(entry) => {
+          if (entry.fund) {
+            setFunds((prev) => {
+              const exists = prev.some((f) => f.id === entry.fund!.id);
+              if (exists) {
+                return prev.map((f) => (f.id === entry.fund!.id ? { ...f, ...entry.fund } : f));
+              }
+              return [entry.fund!, ...prev];
+            });
+          }
           void fetchFunds();
         }}
       />
