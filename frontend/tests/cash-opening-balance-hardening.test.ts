@@ -383,18 +383,41 @@ describe('Cash Opening Balance Hardening & GL Consistency Tests', () => {
     const dateValue = params.date;
     let persistedTxId = '';
 
+    // Resolve currency from collection or fund
+    let currencyRecord: any = null;
+    try {
+      currencyRecord = await pb.collection('currencies').getOne(currencyId);
+    } catch {}
+    const currencyName = String(currencyRecord?.name || existingFund.currency_name || 'ارز نامشخص');
+    let currencyCode = String(currencyRecord?.code || existingFund.code || '').trim().toUpperCase();
+    let currencySymbol = String(currencyRecord?.symbol || '').trim();
+
+    if (!currencyCode && canonicalTx?.currency) {
+      currencyCode = String(canonicalTx.currency).trim().toUpperCase();
+    }
+    if (!currencySymbol && canonicalTx?.currency_symbol) {
+      currencySymbol = String(canonicalTx.currency_symbol).trim();
+    }
+    if (!currencySymbol) {
+      currencySymbol = currencyCode;
+    }
+    const finalCurrencyCode = (currencyCode || 'IRT').slice(0, 16);
+
     if (canonicalTx) {
       persistedTxId = canonicalTx.id;
       await pb.collection('cash_transactions').update(canonicalTx.id, {
         vault: existingFund.id,
-        currency_ref: currencyId || undefined,
+        currency_ref: currencyId || canonicalTx.currency_ref || undefined,
+        currency: finalCurrencyCode,
+        currency_name: currencyName.slice(0, 32),
+        currency_symbol: currencySymbol,
         amount,
         direction: 'in',
         source_key: primarySourceKey,
         transaction_type: 'opening_balance',
         is_opening_balance: true,
         date: dateValue,
-        description: params.description || `موجودی اول دوره صندوق`,
+        description: params.description || `موجودی اول دوره صندوق - ${currencySymbol}`,
       });
 
       // Strictly ONE row in cash_transactions: delete duplicates
@@ -405,14 +428,17 @@ describe('Cash Opening Balance Hardening & GL Consistency Tests', () => {
     } else {
       const created = await pb.collection('cash_transactions').create({
         vault: existingFund.id,
-        currency_ref: currencyId,
+        currency_ref: currencyId || undefined,
+        currency: finalCurrencyCode,
+        currency_name: currencyName.slice(0, 32),
+        currency_symbol: currencySymbol,
         amount,
         direction: 'in',
         source_key: primarySourceKey,
         transaction_type: 'opening_balance',
         is_opening_balance: true,
         date: dateValue,
-        description: params.description || `موجودی اول دوره صندوق`,
+        description: params.description || `موجودی اول دوره صندوق - ${currencySymbol}`,
         created_by: userId,
       });
       persistedTxId = created.id;
@@ -640,5 +666,73 @@ describe('Cash Opening Balance Hardening & GL Consistency Tests', () => {
     expect(edit2.txId).toBe('TX_1');
     expect(allTxs[0].date).toBe('1405/06/20');
   });
+
+  test('12. Currency preservation on edit: Does NOT convert foreign currency (GBP, EUR, USD) to IRT', async () => {
+    const pb = new MockPb() as any;
+
+    pb.collections.set('currencies', [
+      { id: 'curr_gbp', name: 'پوند', code: 'GBP', symbol: '£' },
+      { id: 'curr_eur', name: 'یورو', code: 'EUR', symbol: '€' },
+      { id: 'curr_usd', name: 'دلار آمریکا', code: 'USD', symbol: '$' },
+      { id: 'curr_irt', name: 'تومان', code: 'IRT', symbol: 'IRT' },
+    ]);
+
+    const gbpFund = {
+      id: 'FUND_GBP',
+      name: 'صندوق پوند',
+      opening_balance: 500,
+      balance: 500,
+      currency: 'curr_gbp',
+      currency_name: 'پوند',
+      accountId: 'acc_gbp',
+    };
+    pb.collections.set('cash_funds', [gbpFund]);
+
+    pb.collections.set('chart_of_accounts', [
+      { id: 'acc_gbp', code: '111003', name: 'صندوق پوند', isActive: true },
+      { id: 'acc_equity_3100', code: '3100', name: 'سرمایه اول دوره', isActive: true },
+    ]);
+
+    // Initial transaction created with GBP
+    await pb.collection('cash_transactions').create({
+      id: 'TX_GBP',
+      vault: 'FUND_GBP',
+      currency_ref: 'curr_gbp',
+      currency: 'GBP',
+      currency_name: 'پوند',
+      currency_symbol: '£',
+      amount: 500,
+      direction: 'in',
+      source_key: 'opening:cash:FUND_GBP',
+      transaction_type: 'opening_balance',
+      is_opening_balance: true,
+      date: '1405/01/01',
+      created: '2026-01-01T00:00:00.000Z',
+    });
+
+    // User edits the date and amount
+    const editResult = await executeCashOpeningEdit(pb, {
+      fundId: 'FUND_GBP',
+      date: '1405/06/15',
+      amount: 600,
+      description: 'موجودی ویرایش‌شده صندوق پوند',
+    });
+
+    expect(editResult.txId).toBe('TX_GBP');
+
+    const allTxs = pb.collections.get('cash_transactions') || [];
+    expect(allTxs).toHaveLength(1);
+
+    const updatedTx = allTxs[0];
+    expect(updatedTx.id).toBe('TX_GBP');
+    expect(updatedTx.date).toBe('1405/06/15');
+    expect(updatedTx.amount).toBe(600);
+    // CRITICAL: Currency must remain GBP, NOT IRT!
+    expect(updatedTx.currency).toBe('GBP');
+    expect(updatedTx.currency_symbol).toBe('£');
+    expect(updatedTx.currency_name).toBe('پوند');
+    expect(updatedTx.currency_ref).toBe('curr_gbp');
+  });
 });
+
 

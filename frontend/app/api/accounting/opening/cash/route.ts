@@ -101,7 +101,12 @@ export async function GET() {
 
   try {
     const currenciesList = await client.collection('currencies').getFullList().catch(() => []);
-    const currencyMap = new Map<string, PbRecord>(currenciesList.map((c: PbRecord) => [String(c.id), c]));
+    const currencyMap = new Map<string, PbRecord>();
+    for (const c of currenciesList) {
+      if (c.id) currencyMap.set(String(c.id), c);
+      if (c.code) currencyMap.set(String(c.code).toUpperCase(), c);
+      if (c.name) currencyMap.set(String(c.name), c);
+    }
 
     const funds = await client.collection('cash_funds').getFullList({
       expand: 'currency,accountId',
@@ -119,11 +124,11 @@ export async function GET() {
 
     const result = funds.map((f: PbRecord) => {
       const expand = f.expand as Record<string, PbRecord> | undefined;
-      const currency = expand?.currency || (f.currency ? currencyMap.get(String(f.currency)) : null);
-      const currencyId = String(f.currency || currency?.id || '');
+      const currency = expand?.currency
+        || (f.currency ? currencyMap.get(String(f.currency)) : null)
+        || (f.currency_name ? currencyMap.get(String(f.currency_name)) : null);
+      const currencyId = String(currency?.id || f.currency || '');
       const currencyName = String(currency?.name || f.currency_name || 'ارز نامشخص');
-      const currencyCode = String(currency?.code || '');
-      const currencySymbol = String(currency?.symbol || '');
       const fundName = String(f.name || `صندوق ${currencyName}`).trim();
       const accountId = String(f.accountId || expand?.accountId?.id || '');
 
@@ -149,6 +154,8 @@ export async function GET() {
         || fundTxs[0]
         || null;
 
+      const currencyCode = String(currency?.code || canonicalTx?.currency || f.code || '').trim().toUpperCase();
+      const currencySymbol = String(currency?.symbol || canonicalTx?.currency_symbol || currencyCode).trim();
       const openingDate = String(canonicalTx?.date || todayJalali);
       const description = String(canonicalTx?.description || '');
 
@@ -217,11 +224,28 @@ export async function POST(request: Request) {
         return NextResponse.json({ message: 'صندوق مورد نظر یافت نشد.' }, { status: 404 });
       }
 
-      const currency = existingFund.expand?.currency;
-      const currencyId = String(existingFund.currency || currency?.id || '');
-      const currencyName = String(currency?.name || existingFund.currency_name || 'ارز نامشخص');
-      const currencyCode = String(currency?.code || '');
-      const currencySymbol = String(currency?.symbol || '');
+      // Resolve currency record properly for existing fund:
+      const targetCurrencyId = requestedCurrencyId || String(existingFund.currency || existingFund.expand?.currency?.id || '').trim();
+
+      let currencyRecord: CurrencyRecord | null = null;
+      if (targetCurrencyId) {
+        currencyRecord = await writer.collection('currencies').getOne(targetCurrencyId).catch(() => null);
+        if (!currencyRecord) {
+          currencyRecord = await writer.collection('currencies').getFirstListItem(
+            writer.filter('code = {:code} || name = {:code}', { code: targetCurrencyId }),
+          ).catch(() => null);
+        }
+      }
+      if (!currencyRecord && existingFund.currency_name) {
+        currencyRecord = await writer.collection('currencies').getFirstListItem(
+          writer.filter('name = {:name} || code = {:name}', { name: existingFund.currency_name }),
+        ).catch(() => null);
+      }
+
+      const currencyId = String(currencyRecord?.id || targetCurrencyId || existingFund.currency || '').trim();
+      const currencyName = String(currencyRecord?.name || existingFund.currency_name || 'ارز نامشخص').trim();
+      let currencyCode = String(currencyRecord?.code || existingFund.code || '').trim().toUpperCase();
+      let currencySymbol = String(currencyRecord?.symbol || '').trim();
       const fundName = customFundName || String(existingFund.name || `صندوق ${currencyName}`);
 
       const previousOpening = Number(existingFund.opening_balance ?? 0);
@@ -249,13 +273,20 @@ export async function POST(request: Request) {
 
       let updatedFund: CashFundRecord;
       try {
-        updatedFund = await writer.collection('cash_funds').update(existingFund.id, {
+        const fundUpdatePayload: Record<string, unknown> = {
           name: fundName,
           opening_balance: amount,
           balance: nextBalance,
           accountId: linkedAccountId || undefined,
           updated_by: context.user.id,
-        });
+        };
+        if (currencyId && existingFund.currency !== currencyId) {
+          fundUpdatePayload.currency = currencyId;
+        }
+        if (currencyName && existingFund.currency_name !== currencyName) {
+          fundUpdatePayload.currency_name = currencyName;
+        }
+        updatedFund = await writer.collection('cash_funds').update(existingFund.id, fundUpdatePayload);
       } catch (err) {
         return NextResponse.json({ message: extractPbErrorMessage(err, 'ویرایش موجودی اولیه انجام نشد.') }, { status: 400 });
       }
@@ -309,14 +340,26 @@ export async function POST(request: Request) {
 
       const dateValue = dateInput || (canonicalTx?.date ? String(canonicalTx.date) : dateToJalaliString(new Date()));
 
+      // Ensure currencyCode & currencySymbol are never empty or erroneously defaulted to IRT
+      if (!currencyCode && canonicalTx?.currency) {
+        currencyCode = String(canonicalTx.currency).trim().toUpperCase();
+      }
+      if (!currencySymbol && canonicalTx?.currency_symbol) {
+        currencySymbol = String(canonicalTx.currency_symbol).trim();
+      }
+      if (!currencySymbol) {
+        currencySymbol = currencyCode;
+      }
+      const finalCurrencyCode = (currencyCode || 'IRT').slice(0, 16);
+
       let persistedTxId = '';
       try {
         if (canonicalTx) {
           persistedTxId = canonicalTx.id;
           await writer.collection('cash_transactions').update(canonicalTx.id, {
             vault: existingFund.id,
-            currency_ref: currencyId || undefined,
-            currency: currencyCode.slice(0, 16) || 'IRT',
+            currency_ref: currencyId || canonicalTx.currency_ref || undefined,
+            currency: finalCurrencyCode,
             currency_name: currencyName.slice(0, 32),
             currency_symbol: currencySymbol,
             amount,
@@ -340,8 +383,8 @@ export async function POST(request: Request) {
         } else {
           const created = await writer.collection('cash_transactions').create({
             vault: existingFund.id,
-            currency_ref: currencyId,
-            currency: currencyCode.slice(0, 16) || 'IRT',
+            currency_ref: currencyId || undefined,
+            currency: finalCurrencyCode,
             currency_name: currencyName.slice(0, 32),
             currency_symbol: currencySymbol,
             amount,
@@ -388,7 +431,7 @@ export async function POST(request: Request) {
           name: fundName,
           currencyId,
           currencyName,
-          currencyCode,
+          currencyCode: finalCurrencyCode,
           currencySymbol,
           openingBalance: amount,
           balance: nextBalance,

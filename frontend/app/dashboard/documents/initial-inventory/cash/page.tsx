@@ -32,7 +32,12 @@ export default async function InitialCashFundsListPage() {
   let initialFunds: CashFundItem[] = [];
   try {
     const currenciesList = await context.pb.collection('currencies').getFullList().catch(() => []);
-    const currencyMap = new Map<string, PbRecord>(currenciesList.map((c: PbRecord) => [String(c.id), c]));
+    const currencyMap = new Map<string, PbRecord>();
+    for (const c of currenciesList) {
+      if (c.id) currencyMap.set(String(c.id), c);
+      if (c.code) currencyMap.set(String(c.code).toUpperCase(), c);
+      if (c.name) currencyMap.set(String(c.name), c);
+    }
 
     const funds = await context.pb.collection('cash_funds').getFullList()
       .catch(() => []);
@@ -49,11 +54,11 @@ export default async function InitialCashFundsListPage() {
 
     initialFunds = funds.map((f: PbRecord) => {
       const expand = f.expand as Record<string, PbRecord> | undefined;
-      const currency = expand?.currency || (f.currency ? currencyMap.get(String(f.currency)) : null);
-      const currencyId = String(f.currency || currency?.id || '');
+      const currency = expand?.currency
+        || (f.currency ? currencyMap.get(String(f.currency)) : null)
+        || (f.currency_name ? currencyMap.get(String(f.currency_name)) : null);
+      const currencyId = String(currency?.id || f.currency || '');
       const currencyName = String(currency?.name || f.currency_name || 'ارز نامشخص');
-      const currencyCode = String(currency?.code || '');
-      const currencySymbol = String(currency?.symbol || '');
       const fundName = String(f.name || `صندوق ${currencyName}`).trim();
 
       // Group transactions belonging to this fund
@@ -75,6 +80,8 @@ export default async function InitialCashFundsListPage() {
         || fundTxs[0]
         || null;
 
+      const currencyCode = String(currency?.code || canonicalTx?.currency || f.code || '').trim().toUpperCase();
+      const currencySymbol = String(currency?.symbol || canonicalTx?.currency_symbol || currencyCode).trim();
       const openingDate = String(canonicalTx?.date || todayJalali);
 
       return {
