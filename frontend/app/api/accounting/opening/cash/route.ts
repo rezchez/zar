@@ -189,12 +189,18 @@ export async function POST(request: Request) {
       const primarySourceKey = `opening:cash:${existingFund.id}`;
       const altSourceKey = currencyId ? `opening:cash:${currencyId}` : '';
 
+      const filterConditions = ['vault = {:vaultId}', 'source_key = {:primarySk}'];
+      const filterParams: Record<string, string> = {
+        vaultId: existingFund.id,
+        primarySk: primarySourceKey,
+      };
+      if (altSourceKey) {
+        filterConditions.push('source_key = {:altSk}');
+        filterParams.altSk = altSourceKey;
+      }
+
       const vaultOpeningTxs = await context.pb.collection('cash_transactions').getFullList({
-        filter: context.pb.filter('vault = {:vaultId} || source_key = {:sk1} || (source_key = {:sk2} && {:sk2} != "")', {
-          vaultId: existingFund.id,
-          sk1: primarySourceKey,
-          sk2: altSourceKey,
-        }),
+        filter: context.pb.filter(filterConditions.join(' || '), filterParams),
         sort: '-updated,-created',
       }).catch(() => []);
 
