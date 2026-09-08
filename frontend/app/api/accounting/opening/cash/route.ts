@@ -5,17 +5,64 @@ import { hasPermission } from '@/lib/authorization';
 import { postCashOpeningBalance } from '@/lib/accounting-posting-engine';
 import { ensureCashFundDetailInChart } from '@/lib/chart-of-accounts';
 import { dateToJalaliString } from '@/lib/jalali';
+import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
+
+type PbRecord = Record<string, unknown>;
+
+interface CashFundRecord extends PbRecord {
+  id: string;
+  name?: string;
+  currency?: string;
+  currency_name?: string;
+  opening_balance?: number;
+  balance?: number;
+  accountId?: string;
+  created?: string;
+  expand?: {
+    currency?: {
+      id?: string;
+      name?: string;
+      code?: string;
+      symbol?: string;
+    };
+    accountId?: {
+      id?: string;
+    };
+  };
+}
+
+interface CashTxRecord extends PbRecord {
+  id: string;
+  vault?: string;
+  source_key?: string;
+  currency_ref?: string;
+  currency?: string;
+  currency_name?: string;
+  currency_symbol?: string;
+  amount?: number;
+  date?: string;
+  description?: string;
+  created?: string;
+}
+
+interface CurrencyRecord extends PbRecord {
+  id: string;
+  name?: string;
+  code?: string;
+  symbol?: string;
+}
 
 function extractPbErrorMessage(error: unknown, fallback: string): string {
   if (!error) return fallback;
   if (typeof error === 'object' && error !== null) {
-    const errObj = error as any;
-    const responseData = errObj?.response?.data || errObj?.data;
+    const errObj = error as Record<string, unknown>;
+    const response = errObj.response as Record<string, unknown> | undefined;
+    const responseData = (response?.data || errObj.data) as Record<string, unknown> | undefined;
     if (responseData && typeof responseData === 'object') {
       const fieldErrors: string[] = [];
       for (const [key, val] of Object.entries(responseData)) {
         if (val && typeof val === 'object' && 'message' in val) {
-          fieldErrors.push(`${key}: ${(val as any).message}`);
+          fieldErrors.push(`${key}: ${String((val as { message?: unknown }).message ?? '')}`);
         } else if (typeof val === 'string') {
           fieldErrors.push(`${key}: ${val}`);
         }
@@ -24,12 +71,21 @@ function extractPbErrorMessage(error: unknown, fallback: string): string {
         return `خطا در ثبت اطلاعات (${fieldErrors.join(' - ')})`;
       }
     }
-    if (errObj?.message && typeof errObj.message === 'string') {
+    if (errObj.message && typeof errObj.message === 'string') {
       return errObj.message;
     }
   }
   if (error instanceof Error) return error.message;
   return fallback;
+}
+
+async function writerFor(context: Awaited<ReturnType<typeof getServerAuthContext>>) {
+  if (!context) return null;
+  try {
+    return await getPocketBaseServiceClient();
+  } catch {
+    return context.pb;
+  }
 }
 
 export async function GET() {
@@ -41,48 +97,60 @@ export async function GET() {
     return NextResponse.json({ message: 'دسترسی غیرمجاز به اطلاعات صندوق.' }, { status: 403 });
   }
 
-  try {
-    const currenciesList = await context.pb.collection('currencies').getFullList().catch(() => []);
-    const currencyMap = new Map<string, any>(currenciesList.map((c: any) => [c.id, c]));
+  const client = (await writerFor(context)) || context.pb;
 
-    const funds = await context.pb.collection('cash_funds').getFullList({
+  try {
+    const currenciesList = await client.collection('currencies').getFullList().catch(() => []);
+    const currencyMap = new Map<string, PbRecord>(currenciesList.map((c: PbRecord) => [String(c.id), c]));
+
+    const funds = await client.collection('cash_funds').getFullList({
       expand: 'currency,accountId',
     }).catch(() => []);
 
-    const txs = await context.pb.collection('cash_transactions').getFullList({
+    const txs = await client.collection('cash_transactions').getFullList({
       filter: 'is_opening_balance = true || transaction_type = "opening_balance" || source_key ~ "opening:cash:"',
-      sort: '-updated,-created',
-    }).catch(() => []);
-
-    // Group opening transactions by vault ID or source_key for canonical mapping and duplicate detection
-    const txMap = new Map<string, any[]>();
-    for (const tx of txs) {
-      let vaultId = tx.vault ? String(tx.vault) : '';
-      if (!vaultId && tx.source_key && String(tx.source_key).startsWith('opening:cash:')) {
-        vaultId = String(tx.source_key).replace('opening:cash:', '');
-      }
-      if (vaultId) {
-        const list = txMap.get(vaultId) || [];
-        list.push(tx);
-        txMap.set(vaultId, list);
-      }
-    }
+    }).catch(async () => {
+      return client.collection('cash_transactions').getFullList({
+        filter: 'is_opening_balance = true || transaction_type = "opening_balance"',
+      }).catch(() => []);
+    });
 
     const todayJalali = dateToJalaliString(new Date());
 
-    const result = funds.map((f: any) => {
-      const currency = f.expand?.currency || (f.currency ? currencyMap.get(f.currency) : null);
+    const result = funds.map((f: PbRecord) => {
+      const expand = f.expand as Record<string, PbRecord> | undefined;
+      const currency = expand?.currency || (f.currency ? currencyMap.get(String(f.currency)) : null);
       const currencyId = String(f.currency || currency?.id || '');
       const currencyName = String(currency?.name || f.currency_name || 'ارز نامشخص');
       const currencyCode = String(currency?.code || '');
       const currencySymbol = String(currency?.symbol || '');
       const fundName = String(f.name || `صندوق ${currencyName}`).trim();
-      const accountId = String(f.accountId || f.expand?.accountId?.id || '');
+      const accountId = String(f.accountId || expand?.accountId?.id || '');
 
-      const vaultTxs = txMap.get(f.id) || (currencyId ? txMap.get(currencyId) : []) || [];
-      const tx = vaultTxs[0] || null;
-      const openingDate = String(tx?.date || (f.created ? dateToJalaliString(new Date(f.created)) : todayJalali));
-      const description = String(tx?.description || '');
+      // Group transactions belonging to this fund by vault, source_key, or currency_ref
+      const fundTxs = txs.filter((tx: PbRecord) => {
+        const v = tx.vault ? String(tx.vault) : '';
+        const sk = tx.source_key ? String(tx.source_key) : '';
+        const cr = tx.currency_ref ? String(tx.currency_ref) : '';
+        return (
+          v === String(f.id) ||
+          sk === `opening:cash:${String(f.id)}` ||
+          (currencyId && (v === currencyId || sk === `opening:cash:${currencyId}` || cr === currencyId)) ||
+          (f.currency && cr === String(f.currency))
+        );
+      });
+
+      // Canonical Record Selection Rule:
+      // 1. Primary match: record with exact primary source_key
+      // 2. Secondary match: record with exact vault relation
+      // 3. Fallback: earliest created transaction (deterministic tie-breaker)
+      const canonicalTx = fundTxs.find((t: PbRecord) => t.source_key === `opening:cash:${String(f.id)}`)
+        || fundTxs.find((t: PbRecord) => t.vault === String(f.id))
+        || fundTxs[0]
+        || null;
+
+      const openingDate = String(canonicalTx?.date || todayJalali);
+      const description = String(canonicalTx?.description || '');
 
       return {
         id: f.id,
@@ -91,14 +159,15 @@ export async function GET() {
         currencyName,
         currencyCode,
         currencySymbol,
-        openingBalance: Math.abs(Number(f.opening_balance ?? tx?.amount ?? 0)),
+        openingBalance: Math.abs(Number(f.opening_balance ?? canonicalTx?.amount ?? 0)),
         balance: Number(f.balance ?? 0),
         openingBalanceDate: openingDate,
         description,
         accountId: accountId || undefined,
-        hasDuplicates: vaultTxs.length > 1,
-        duplicateCount: vaultTxs.length,
-        duplicateTxIds: vaultTxs.map((t) => t.id),
+        canonicalTxId: canonicalTx?.id || undefined,
+        hasDuplicates: fundTxs.length > 1,
+        duplicateCount: fundTxs.length,
+        duplicateTxIds: fundTxs.map((t) => t.id),
         created: f.created,
         updated: f.updated,
       };
@@ -119,6 +188,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: 'دسترسی غیرمجاز به ثبت/ویرایش موجودی صندوق.' }, { status: 403 });
   }
 
+  const writer = (await writerFor(context)) || context.pb;
+
   try {
     const body = await request.json().catch(() => ({}));
     const fundId = String(body?.fundId || body?.id || '').trim();
@@ -135,10 +206,14 @@ export async function POST(request: Request) {
 
     // MODE 1: EDIT EXISTING FUND OPENING BALANCE (Idempotent Update)
     if (fundId) {
-      let existingFund: any = null;
+      let existingFund: CashFundRecord | null = null;
       try {
-        existingFund = await context.pb.collection('cash_funds').getOne(fundId, { expand: 'currency,accountId' });
+        existingFund = await writer.collection('cash_funds').getOne(fundId, { expand: 'currency,accountId' });
       } catch {
+        return NextResponse.json({ message: 'صندوق مورد نظر یافت نشد.' }, { status: 404 });
+      }
+
+      if (!existingFund) {
         return NextResponse.json({ message: 'صندوق مورد نظر یافت نشد.' }, { status: 404 });
       }
 
@@ -159,7 +234,7 @@ export async function POST(request: Request) {
 
       let linkedAccountId: string | null = existingFund.accountId || null;
       try {
-        const detailAccount = await ensureCashFundDetailInChart(context.pb, {
+        const detailAccount = await ensureCashFundDetailInChart(writer, {
           fundName,
           currencyName,
           existingAccountId: linkedAccountId,
@@ -172,9 +247,9 @@ export async function POST(request: Request) {
         console.warn('ensureCashFundDetailInChart failed for edit:', err);
       }
 
-      let updatedFund: any;
+      let updatedFund: CashFundRecord;
       try {
-        updatedFund = await context.pb.collection('cash_funds').update(existingFund.id, {
+        updatedFund = await writer.collection('cash_funds').update(existingFund.id, {
           name: fundName,
           opening_balance: amount,
           balance: nextBalance,
@@ -189,27 +264,56 @@ export async function POST(request: Request) {
       const primarySourceKey = `opening:cash:${existingFund.id}`;
       const altSourceKey = currencyId ? `opening:cash:${currencyId}` : '';
 
-      const filterConditions = ['vault = {:vaultId}', 'source_key = {:primarySk}'];
-      const filterParams: Record<string, string> = {
-        vaultId: existingFund.id,
-        primarySk: primarySourceKey,
-      };
-      if (altSourceKey) {
-        filterConditions.push('source_key = {:altSk}');
-        filterParams.altSk = altSourceKey;
+      // Step 1: Query by vault and sourceKey
+      let vaultOpeningTxs: CashTxRecord[] = [];
+      try {
+        const filterConditions = ['vault = {:vaultId}', 'source_key = {:primarySk}'];
+        const filterParams: Record<string, string> = {
+          vaultId: existingFund.id,
+          primarySk: primarySourceKey,
+        };
+        if (altSourceKey) {
+          filterConditions.push('source_key = {:altSk}');
+          filterParams.altSk = altSourceKey;
+        }
+
+        vaultOpeningTxs = await writer.collection('cash_transactions').getFullList({
+          filter: writer.filter(filterConditions.join(' || '), filterParams),
+        });
+      } catch {
+        vaultOpeningTxs = [];
       }
 
-      const vaultOpeningTxs = await context.pb.collection('cash_transactions').getFullList({
-        filter: context.pb.filter(filterConditions.join(' || '), filterParams),
-        sort: '-updated,-created',
-      }).catch(() => []);
+      // Step 2: Fallback to currency_ref lookup for legacy unmigrated rows if none found by vault/source_key
+      if (vaultOpeningTxs.length === 0 && currencyId) {
+        try {
+          vaultOpeningTxs = await writer.collection('cash_transactions').getFullList({
+            filter: writer.filter(
+              'currency_ref = {:currencyId} && (is_opening_balance = true || transaction_type = "opening_balance")',
+              { currencyId },
+            ),
+          });
+        } catch {
+          vaultOpeningTxs = [];
+        }
+      }
 
-      const canonicalTx = vaultOpeningTxs[0] || null;
+      // Deterministic Canonical Record Selection Rule:
+      // 1. Transaction with exact primary source_key
+      // 2. Transaction with exact vault relation
+      // 3. Fallback: Earliest transaction (deterministic tie-breaker)
+      const canonicalTx = vaultOpeningTxs.find((t: CashTxRecord) => t.source_key === primarySourceKey)
+        || vaultOpeningTxs.find((t: CashTxRecord) => t.vault === existingFund.id)
+        || vaultOpeningTxs[0]
+        || null;
+
       const dateValue = dateInput || (canonicalTx?.date ? String(canonicalTx.date) : dateToJalaliString(new Date()));
 
+      let persistedTxId = '';
       try {
         if (canonicalTx) {
-          await context.pb.collection('cash_transactions').update(canonicalTx.id, {
+          persistedTxId = canonicalTx.id;
+          await writer.collection('cash_transactions').update(canonicalTx.id, {
             vault: existingFund.id,
             currency_ref: currencyId || undefined,
             currency: currencyCode.slice(0, 16) || 'IRT',
@@ -224,8 +328,17 @@ export async function POST(request: Request) {
             description: description || `موجودی اول دوره صندوق - ${currencySymbol}`,
           });
 
+          // Enforce strictly ONE row in cash_transactions: delete any historical duplicates
+          const duplicates = vaultOpeningTxs.filter((t: CashTxRecord) => t.id !== canonicalTx.id);
+          for (const dup of duplicates) {
+            try {
+              await writer.collection('cash_transactions').delete(dup.id);
+            } catch (delErr) {
+              console.warn(`Failed to remove duplicate cash_transactions record ${dup.id}:`, delErr);
+            }
+          }
         } else {
-          await context.pb.collection('cash_transactions').create({
+          const created = await writer.collection('cash_transactions').create({
             vault: existingFund.id,
             currency_ref: currencyId,
             currency: currencyCode.slice(0, 16) || 'IRT',
@@ -233,13 +346,14 @@ export async function POST(request: Request) {
             currency_symbol: currencySymbol,
             amount,
             direction: 'in',
-            source_key: `opening:cash:${existingFund.id}`,
+            source_key: primarySourceKey,
             transaction_type: 'opening_balance',
             is_opening_balance: true,
             date: dateValue,
             description: description || `موجودی اول دوره صندوق - ${currencySymbol}`,
             created_by: context.user.id,
           });
+          persistedTxId = created.id;
         }
 
         // Post or update double-entry journal entry and child lines in place (Model A)
@@ -254,7 +368,7 @@ export async function POST(request: Request) {
           amount,
           dateValue,
           context.user.id,
-          context.pb,
+          writer,
           description || `موجودی اول دوره صندوق - ${currencySymbol}`,
         );
       } catch (err) {
@@ -263,6 +377,12 @@ export async function POST(request: Request) {
 
       return NextResponse.json({
         success: true,
+        transaction: {
+          id: persistedTxId,
+          vault: existingFund.id,
+          date: dateValue,
+          amount,
+        },
         fund: {
           id: updatedFund.id,
           name: fundName,
@@ -283,9 +403,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: 'انتخاب ارز الزامی است.' }, { status: 400 });
     }
 
-    let currencyRecord: Record<string, any>;
+    let currencyRecord: CurrencyRecord;
     try {
-      currencyRecord = await context.pb.collection('currencies').getOne(requestedCurrencyId);
+      currencyRecord = await writer.collection('currencies').getOne(requestedCurrencyId);
     } catch {
       return NextResponse.json({ message: 'ارز انتخاب‌شده در کالکشن ارزها یافت نشد.' }, { status: 400 });
     }
@@ -299,11 +419,11 @@ export async function POST(request: Request) {
     const safeCurrencyName = currencyName.slice(0, 32);
 
     // Duplicate Check: Enforce strictly one cash fund per currency (Source of truth: cash_funds collection)
-    const existingFundForCurrency = await context.pb.collection('cash_funds').getFirstListItem(
-      context.pb.filter('currency = {:currencyId}', { currencyId: currencyRecord.id }),
+    const existingFundForCurrency = await writer.collection('cash_funds').getFirstListItem(
+      writer.filter('currency = {:currencyId}', { currencyId: currencyRecord.id }),
     ).catch(async () => {
-      return context.pb.collection('cash_funds').getFirstListItem(
-        context.pb.filter('(currency = "" || currency = null) && currency_name = {:currency}', { currency: currencyName }),
+      return writer.collection('cash_funds').getFirstListItem(
+        writer.filter('(currency = "" || currency = null) && currency_name = {:currency}', { currency: currencyName }),
       ).catch(() => null);
     });
 
@@ -317,7 +437,7 @@ export async function POST(request: Request) {
 
     let linkedAccountId: string | null = null;
     try {
-      const detailAccount = await ensureCashFundDetailInChart(context.pb, {
+      const detailAccount = await ensureCashFundDetailInChart(writer, {
         fundName,
         currencyName,
         existingAccountId: null,
@@ -338,9 +458,9 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
-    let fund: any;
+    let fund: CashFundRecord;
     try {
-      fund = await context.pb.collection('cash_funds').create({
+      fund = await writer.collection('cash_funds').create({
         name: fundName,
         currency: currencyRecord.id,
         currency_name: safeCurrencyName,
@@ -357,9 +477,9 @@ export async function POST(request: Request) {
     }
 
     const sourceKey = `opening:cash:${fund.id}`;
-    let createdTx: any = null;
+    let createdTx: CashTxRecord | null = null;
     try {
-      createdTx = await context.pb.collection('cash_transactions').create({
+      createdTx = await writer.collection('cash_transactions').create({
         vault: fund.id,
         currency_ref: currencyRecord.id,
         currency: currencyCode.slice(0, 16) || 'IRT',
@@ -387,16 +507,16 @@ export async function POST(request: Request) {
         amount,
         dateValue,
         context.user.id,
-        context.pb,
+        writer,
         description || `موجودی اول دوره صندوق - ${currencySymbol}`,
       );
     } catch (transactionError) {
       // Full Atomic Rollback: delete created cash_transaction & cash_fund on failure
       if (createdTx?.id) {
-        await context.pb.collection('cash_transactions').delete(createdTx.id).catch(() => undefined);
+        await writer.collection('cash_transactions').delete(createdTx.id).catch(() => undefined);
       }
       if (fund?.id) {
-        await context.pb.collection('cash_funds').delete(fund.id).catch(() => undefined);
+        await writer.collection('cash_funds').delete(fund.id).catch(() => undefined);
       }
       return NextResponse.json({
         message: extractPbErrorMessage(transactionError, 'ثبت تراکنش و سند موجودی اولیه با خطا مواجه شد.'),

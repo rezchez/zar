@@ -47,8 +47,19 @@ export default function CashFundsListClient({
   }, []);
 
   useEffect(() => {
-    void fetchFunds();
-  }, [fetchFunds]);
+    let ignore = false;
+    fetch('/api/accounting/opening/cash', { cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!ignore && data && Array.isArray(data.funds)) {
+          setFunds(data.funds);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
   const handleOpenCreate = () => {
     setEditingItem(null);
@@ -83,7 +94,7 @@ export default function CashFundsListClient({
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={fetchFunds}
+            onClick={() => void fetchFunds()}
             disabled={loading}
             className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
             title="به‌روزرسانی لیست"
@@ -204,7 +215,16 @@ export default function CashFundsListClient({
           setEditingItem(null);
         }}
         editItem={editingItem}
-        onSuccess={() => {
+        onSuccess={(entry) => {
+          if (entry?.fund) {
+            setFunds((prev) => {
+              const exists = prev.some((f) => f.id === entry.fund!.id);
+              if (exists) {
+                return prev.map((f) => (f.id === entry.fund!.id ? { ...f, ...entry.fund } : f));
+              }
+              return [entry.fund!, ...prev];
+            });
+          }
           void fetchFunds();
         }}
       />
