@@ -1,8 +1,20 @@
 'use client';
 
-import { Banknote, Calendar, ChevronRight, Edit3, Plus, RefreshCw, Wallet } from 'lucide-react';
+import {
+  Banknote,
+  Calendar,
+  ChevronRight,
+  Edit3,
+  Lock,
+  MoreVertical,
+  Plus,
+  RefreshCw,
+  Trash2,
+  Unlock,
+  Wallet,
+} from 'lucide-react';
 import Link from 'next/link';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import InitialCashInventoryModal, { type CashFundEditItem } from './InitialCashInventoryModal';
 
@@ -17,7 +29,189 @@ export type CashFundItem = {
   balance: number;
   openingBalanceDate: string;
   description?: string;
+  isBlocked?: boolean;
 };
+
+// ─── Confirmation Dialog ───────────────────────────────────────────────────────
+type ConfirmDialogProps = {
+  open: boolean;
+  title: string;
+  description: string;
+  confirmLabel: string;
+  confirmDestructive?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+  loading?: boolean;
+};
+
+function ConfirmDialog({
+  open,
+  title,
+  description,
+  confirmLabel,
+  confirmDestructive = false,
+  onConfirm,
+  onCancel,
+  loading = false,
+}: ConfirmDialogProps) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div
+        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+        onClick={onCancel}
+        aria-hidden="true"
+      />
+      <div
+        dir="rtl"
+        className="relative z-10 w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+        role="dialog"
+        aria-modal="true"
+      >
+        <h2 className="text-base font-bold text-slate-900 dark:text-white">{title}</h2>
+        <p className="mt-2 text-xs leading-relaxed text-slate-500 dark:text-slate-400">{description}</p>
+        <div className="mt-5 flex gap-2 justify-end">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={loading}
+            className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+          >
+            انصراف
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={loading}
+            className={`rounded-xl px-4 py-2 text-xs font-bold transition disabled:opacity-50 ${
+              confirmDestructive
+                ? 'bg-red-500 text-white hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-500'
+                : 'bg-amber-500 text-slate-950 hover:bg-amber-400 dark:bg-amber-400 dark:hover:bg-amber-300'
+            }`}
+          >
+            {loading ? 'در حال انجام...' : confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Action Dropdown ───────────────────────────────────────────────────────────
+type FundAction = 'edit' | 'block' | 'unblock' | 'delete';
+
+type ActionMenuProps = {
+  fund: CashFundItem;
+  onAction: (action: FundAction, fund: CashFundItem) => void;
+};
+
+function FundActionMenu({ fund, onAction }: ActionMenuProps) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const handleAction = (action: FundAction) => {
+    setOpen(false);
+    onAction(action, fund);
+  };
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex size-8 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-600 hover:border-amber-500/50 hover:bg-amber-500/10 hover:text-amber-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-amber-500/20 dark:hover:text-amber-300"
+        title="عملیات"
+        aria-label="عملیات"
+        aria-haspopup="true"
+        aria-expanded={open}
+      >
+        <MoreVertical size={15} />
+      </button>
+
+      {open && (
+        <div className="absolute left-0 top-9 z-30 min-w-[168px] rounded-xl border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-900">
+          {/* ویرایش */}
+          <button
+            type="button"
+            onClick={() => handleAction('edit')}
+            className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            <Edit3 size={14} className="text-slate-400" />
+            ویرایش موجودی اولیه
+          </button>
+
+          {/* مسدودی / رفع مسدودی */}
+          {fund.isBlocked ? (
+            <button
+              type="button"
+              onClick={() => handleAction('unblock')}
+              className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-amber-700 transition hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-500/10"
+            >
+              <Unlock size={14} />
+              رفع مسدودی
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => handleAction('block')}
+              className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
+            >
+              <Lock size={14} className="text-slate-400" />
+              مسدود کردن
+            </button>
+          )}
+
+          <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
+
+          {/* حذف — destructive */}
+          <button
+            type="button"
+            onClick={() => handleAction('delete')}
+            className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10"
+          >
+            <Trash2 size={14} />
+            حذف صندوق
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Status Badge ──────────────────────────────────────────────────────────────
+function StatusBadge({ isBlocked }: { isBlocked?: boolean }) {
+  if (isBlocked) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700 dark:bg-red-500/15 dark:text-red-400">
+        <Lock size={9} />
+        مسدود
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400">
+      فعال
+    </span>
+  );
+}
+
+// ─── Main Component ────────────────────────────────────────────────────────────
+type DialogState =
+  | { type: 'none' }
+  | { type: 'block'; fund: CashFundItem }
+  | { type: 'unblock'; fund: CashFundItem }
+  | { type: 'delete'; fund: CashFundItem };
+
+type FilterTab = 'all' | 'active' | 'blocked';
 
 export default function CashFundsListClient({
   initialFunds = [],
@@ -28,6 +222,19 @@ export default function CashFundsListClient({
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<CashFundEditItem | null>(null);
+  const [dialog, setDialog] = useState<DialogState>({ type: 'none' });
+  const [actionLoading, setActionLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [filterTab, setFilterTab] = useState<FilterTab>('all');
+
+  const activeCount = funds.filter((f) => !f.isBlocked).length;
+  const blockedCount = funds.filter((f) => f.isBlocked).length;
+
+  const displayedFunds = funds.filter((f) => {
+    if (filterTab === 'active') return !f.isBlocked;
+    if (filterTab === 'blocked') return f.isBlocked;
+    return true;
+  });
 
   const fetchFunds = useCallback(async () => {
     setLoading(true);
@@ -66,10 +273,91 @@ export default function CashFundsListClient({
     setModalOpen(true);
   };
 
-  const handleOpenEdit = (fund: CashFundItem) => {
-    setEditingItem(fund);
-    setModalOpen(true);
+  const handleAction = (action: FundAction, fund: CashFundItem) => {
+    setErrorMsg('');
+    if (action === 'edit') {
+      setEditingItem(fund);
+      setModalOpen(true);
+    } else {
+      setDialog({ type: action as 'block' | 'unblock' | 'delete', fund });
+    }
   };
+
+  const handleConfirm = async () => {
+    if (dialog.type === 'none') return;
+    const { type, fund } = dialog;
+    setActionLoading(true);
+    setErrorMsg('');
+
+    try {
+      let res: Response;
+      if (type === 'delete') {
+        res = await fetch(`/api/cash-funds/${fund.id}`, { method: 'DELETE' });
+      } else if (type === 'block') {
+        res = await fetch(`/api/cash-funds/${fund.id}/block`, { method: 'POST' });
+      } else {
+        res = await fetch(`/api/cash-funds/${fund.id}/unblock`, { method: 'POST' });
+      }
+
+      const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+
+      if (!res.ok) {
+        setErrorMsg(String(data.message || 'عملیات انجام نشد.'));
+        return;
+      }
+
+      // Update local state
+      if (type === 'delete') {
+        setFunds((prev) => prev.filter((f) => f.id !== fund.id));
+      } else if (type === 'block') {
+        setFunds((prev) => prev.map((f) => f.id === fund.id ? { ...f, isBlocked: true } : f));
+      } else {
+        setFunds((prev) => prev.map((f) => f.id === fund.id ? { ...f, isBlocked: false } : f));
+      }
+
+      setDialog({ type: 'none' });
+    } catch {
+      setErrorMsg('خطا در ارتباط با سرور. لطفاً دوباره تلاش کنید.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleCancel = () => {
+    if (!actionLoading) {
+      setDialog({ type: 'none' });
+      setErrorMsg('');
+    }
+  };
+
+  // Dialog configuration
+  const dialogConfig = (() => {
+    if (dialog.type === 'delete') {
+      return {
+        title: 'آیا از حذف این صندوق اطمینان دارید؟',
+        description: 'این عملیات فقط برای صندوقی مجاز است که هیچ تراکنش وجه نقدی نداشته باشد. این عملیات برگشت‌پذیر نیست.',
+        confirmLabel: 'حذف صندوق',
+        confirmDestructive: true,
+      };
+    }
+    if (dialog.type === 'block') {
+      return {
+        title: 'آیا می‌خواهید این صندوق را مسدود کنید؟',
+        description: 'پس از مسدود شدن، ثبت ورود و خروج وجه نقد برای این صندوق امکان‌پذیر نخواهد بود. سوابق و موجودی صندوق حفظ می‌شود.',
+        confirmLabel: 'مسدود کردن',
+        confirmDestructive: false,
+      };
+    }
+    if (dialog.type === 'unblock') {
+      return {
+        title: 'آیا می‌خواهید مسدودی این صندوق را بردارید؟',
+        description: 'پس از رفع مسدودی، صندوق دوباره می‌تواند تراکنش جدید دریافت کند.',
+        confirmLabel: 'رفع مسدودی',
+        confirmDestructive: false,
+      };
+    }
+    return null;
+  })();
 
   return (
     <div dir="rtl" className="mx-auto max-w-5xl space-y-6">
@@ -86,7 +374,7 @@ export default function CashFundsListClient({
           <div>
             <h1 className="text-2xl font-black text-slate-900 dark:text-white">فهرست صندوق‌های وجه نقد</h1>
             <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-              صندوق‌های معرفیشده و موجودی اولیه به ازای هر ارز
+              صندوق‌های معرفی‌شده و موجودی اولیه به ازای هر ارز
             </p>
           </div>
         </div>
@@ -114,6 +402,60 @@ export default function CashFundsListClient({
         </div>
       </div>
 
+      {/* Filter Tabs */}
+      {funds.length > 0 && (
+        <div className="flex items-center gap-1.5 rounded-2xl border border-slate-200/80 bg-white p-1.5 shadow-sm dark:border-slate-800 dark:bg-slate-900 w-fit">
+          <button
+            type="button"
+            onClick={() => setFilterTab('all')}
+            className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition ${
+              filterTab === 'all'
+                ? 'bg-amber-500 text-slate-950 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+            }`}
+          >
+            <span>همه</span>
+            <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-black ${
+              filterTab === 'all' ? 'bg-amber-600/30 text-slate-950' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+            }`}>
+              {funds.length}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilterTab('active')}
+            className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition ${
+              filterTab === 'active'
+                ? 'bg-amber-500 text-slate-950 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+            }`}
+          >
+            <span>فعال</span>
+            <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-black ${
+              filterTab === 'active' ? 'bg-amber-600/30 text-slate-950' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+            }`}>
+              {activeCount}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilterTab('blocked')}
+            className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition ${
+              filterTab === 'blocked'
+                ? 'bg-amber-500 text-slate-950 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+            }`}
+          >
+            <span>مسدود</span>
+            <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-black ${
+              filterTab === 'blocked' ? 'bg-amber-600/30 text-slate-950' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+            }`}>
+              {blockedCount}
+            </span>
+          </button>
+        </div>
+      )}
+
       {/* List / Grid Content */}
       {funds.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-white p-12 text-center dark:border-slate-800 dark:bg-slate-900">
@@ -124,7 +466,7 @@ export default function CashFundsListClient({
             هنوز هیچ صندوقی ثبت نشده است
           </h2>
           <p className="mt-1 max-w-sm text-xs text-slate-500 dark:text-slate-400">
-            با کلیک روی دکمه زیر می‌توانید اولین صندوق وجه نقد خود را بر اساس ارزهای معرفیشده ایجاد کنید.
+            با کلیک روی دکمه زیر می‌توانید اولین صندوق وجه نقد خود را بر اساس ارزهای معرفی‌شده ایجاد کنید.
           </p>
           <button
             type="button"
@@ -135,47 +477,53 @@ export default function CashFundsListClient({
             <span>ایجاد اولین صندوق</span>
           </button>
         </div>
+      ) : displayedFunds.length === 0 ? (
+        <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-xs text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+          صندوقی با وضعیت انتخابی یافت نشد.
+        </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {funds.map((fund) => {
+          {displayedFunds.map((fund) => {
             const currencyLabel = [fund.currencySymbol, fund.currencyCode].filter(Boolean).join(' · ');
             return (
               <article
                 key={fund.id}
-                className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm transition-all hover:border-amber-500/40 hover:shadow-md dark:border-slate-800 dark:bg-slate-900"
+                className={`group relative flex flex-col justify-between overflow-hidden rounded-2xl border bg-white p-5 shadow-sm transition-all hover:shadow-md dark:bg-slate-900 ${
+                  fund.isBlocked
+                    ? 'border-red-200/80 hover:border-red-300/60 dark:border-red-800/60'
+                    : 'border-slate-200/80 hover:border-amber-500/40 dark:border-slate-800'
+                }`}
               >
                 <div>
                   {/* Top Header: Fund Name, Currency & Action */}
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-3">
-                      <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 text-amber-600 dark:bg-amber-500/25 dark:text-amber-400">
-                        <Banknote size={22} className="stroke-[2.2]" />
+                      <div className={`flex size-11 shrink-0 items-center justify-center rounded-xl ${
+                        fund.isBlocked
+                          ? 'bg-red-100 text-red-600 dark:bg-red-500/20 dark:text-red-400'
+                          : 'bg-amber-500/15 text-amber-600 dark:bg-amber-500/25 dark:text-amber-400'
+                      }`}>
+                        {fund.isBlocked ? <Lock size={20} className="stroke-[2.2]" /> : <Banknote size={22} className="stroke-[2.2]" />}
                       </div>
                       <div>
                         {/* 1. نام صندوق */}
                         <h2 className="text-sm font-extrabold text-slate-900 dark:text-white">
                           {fund.name}
                         </h2>
-                        {/* 2. ارز */}
-                        <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                          {fund.currencyName} {currencyLabel ? `(${currencyLabel})` : ''}
-                        </p>
+                        {/* 2. ارز + وضعیت */}
+                        <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                          <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                            {fund.currencyName} {currencyLabel ? `(${currencyLabel})` : ''}
+                          </p>
+                          <StatusBadge isBlocked={fund.isBlocked} />
+                        </div>
                       </div>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => handleOpenEdit(fund)}
-                      className="inline-flex size-8 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-600 hover:border-amber-500/50 hover:bg-amber-500/10 hover:text-amber-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-amber-500/20 dark:hover:text-amber-300"
-                      title="ویرایش موجودی اولیه"
-                      aria-label="ویرایش موجودی اولیه"
-                    >
-                      <Edit3 size={15} />
-                    </button>
+                    <FundActionMenu fund={fund} onAction={handleAction} />
                   </div>
 
                   {/* Date section */}
-                  {/* 5. تاریخ موجودی اولیه */}
                   <div className="mt-4 flex items-center gap-1.5 rounded-xl bg-slate-50 px-3 py-1.5 text-[11px] font-bold text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">
                     <Calendar size={13} className="text-slate-400" />
                     <span>تاریخ موجودی اولیه:</span>
@@ -193,9 +541,9 @@ export default function CashFundsListClient({
                     </div>
 
                     {/* 4. موجودی فعلی */}
-                    <div className="rounded-xl bg-amber-500/10 p-2.5 dark:bg-amber-500/15">
-                      <span className="block text-[10px] font-bold text-amber-700 dark:text-amber-300">موجودی فعلی</span>
-                      <span className="mt-0.5 block font-mono text-sm font-black text-amber-900 dark:text-amber-200">
+                    <div className={`rounded-xl p-2.5 ${fund.isBlocked ? 'bg-red-50 dark:bg-red-500/10' : 'bg-amber-500/10 dark:bg-amber-500/15'}`}>
+                      <span className={`block text-[10px] font-bold ${fund.isBlocked ? 'text-red-700 dark:text-red-300' : 'text-amber-700 dark:text-amber-300'}`}>موجودی فعلی</span>
+                      <span className={`mt-0.5 block font-mono text-sm font-black ${fund.isBlocked ? 'text-red-900 dark:text-red-200' : 'text-amber-900 dark:text-amber-200'}`}>
                         {Number(fund.balance || 0).toLocaleString('fa-IR')} {fund.currencySymbol || fund.currencyCode}
                       </span>
                     </div>
@@ -205,6 +553,27 @@ export default function CashFundsListClient({
             );
           })}
         </div>
+      )}
+
+      {/* Error message from action */}
+      {errorMsg && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400">
+          {errorMsg}
+        </div>
+      )}
+
+      {/* Confirmation Dialogs */}
+      {dialogConfig && (
+        <ConfirmDialog
+          open={dialog.type !== 'none'}
+          title={dialogConfig.title}
+          description={dialogConfig.description}
+          confirmLabel={dialogConfig.confirmLabel}
+          confirmDestructive={dialogConfig.confirmDestructive}
+          onConfirm={() => void handleConfirm()}
+          onCancel={handleCancel}
+          loading={actionLoading}
+        />
       )}
 
       {/* Initial Cash Inventory Modal */}

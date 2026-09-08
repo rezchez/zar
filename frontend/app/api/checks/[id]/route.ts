@@ -139,6 +139,17 @@ export async function PATCH(
         return NextResponse.json({ message: 'حساب بانکی مرتبط با چک یافت نشد.' }, { status: 400 });
       }
 
+      if (bankAccount.isBlocked === true) {
+        return NextResponse.json(
+          {
+            success: false,
+            code: 'BANK_ACCOUNT_BLOCKED',
+            message: 'این حساب بانکی مسدود است و امکان ثبت تراکنش جدید برای آن وجود ندارد.',
+          },
+          { status: 409 },
+        );
+      }
+
       const clearedDateJalali = text(body?.clearedDateJalali, 20) || formatJalaliDate();
       const clearedDateIso = jalaliDateToIso(clearedDateJalali) || new Date().toISOString().slice(0, 10);
 

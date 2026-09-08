@@ -83,6 +83,28 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: 'حساب‌های بانکی انتخاب‌شده معتبر نیستند.' }, { status: 400 });
     }
 
+    // isBlocked guard — Backend enforcement for blocked bank accounts
+    if (sourceBank && sourceBank.isBlocked === true) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: 'BANK_ACCOUNT_BLOCKED',
+          message: 'حساب بانکی مبدأ مسدود است و امکان ثبت تراکنش جدید برای آن وجود ندارد.',
+        },
+        { status: 409 },
+      );
+    }
+    if (destinationBank && destinationBank.isBlocked === true) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: 'BANK_ACCOUNT_BLOCKED',
+          message: 'حساب بانکی مقصد مسدود است و امکان ثبت تراکنش جدید برای آن وجود ندارد.',
+        },
+        { status: 409 },
+      );
+    }
+
     const existing = await writer.collection('transactions').getFirstListItem(
       writer.filter('sourceKey = {:sourceKey} && is_deleted = false', { sourceKey: `bank-transfer:${idempotencyKey}-out` }),
     ).catch(() => null);

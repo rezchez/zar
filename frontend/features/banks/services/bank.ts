@@ -483,6 +483,7 @@ export type BankAccount = {
   accountCodeZero: string;
   currency: string;
   isActive: boolean;
+  isBlocked?: boolean;
   accountId?: string | null;
   accountCode?: string | null;
   accountName?: string | null;
@@ -527,6 +528,7 @@ export function mapBankAccount(record: Record<string, unknown>): BankAccount {
     accountCodeZero: typeof record.accountCodeZero === 'string' ? record.accountCodeZero : '',
     currency: typeof record.currency === 'string' && record.currency ? record.currency : 'IRR',
     isActive: typeof record.isActive === 'boolean' ? record.isActive : true,
+    isBlocked: typeof record.isBlocked === 'boolean' ? record.isBlocked : false,
     accountId,
     accountCode: expandedAccount && typeof expandedAccount.code === 'string' ? expandedAccount.code : null,
     accountName: expandedAccount && typeof expandedAccount.name === 'string' ? expandedAccount.name : null,
@@ -537,6 +539,7 @@ export function mapBankAccount(record: Record<string, unknown>): BankAccount {
     expand: expandObj ? (expandObj as BankAccount['expand']) : undefined,
   };
 }
+
 
 export function formatRials(value: number) {
   return new Intl.NumberFormat('fa-IR').format(value);

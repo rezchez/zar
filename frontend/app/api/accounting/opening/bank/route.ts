@@ -107,6 +107,7 @@ export async function GET() {
         openingBalanceDate: openingDate,
         description,
         isActive: acc.isActive ?? true,
+        isBlocked: acc.isBlocked === true,
         created: acc.created,
         updated: acc.updated,
       };

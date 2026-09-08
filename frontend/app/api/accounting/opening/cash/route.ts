@@ -170,6 +170,7 @@ export async function GET() {
         balance: Number(f.balance ?? 0),
         openingBalanceDate: openingDate,
         description,
+        isBlocked: f.isBlocked === true,
         accountId: accountId || undefined,
         canonicalTxId: canonicalTx?.id || undefined,
         hasDuplicates: fundTxs.length > 1,

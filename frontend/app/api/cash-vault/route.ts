@@ -108,6 +108,18 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: 'صندوقی برای این ارز یافت نشد. ابتدا صندوق اولیه را ایجاد کنید.' }, { status: 400 });
     }
 
+    // isBlocked guard — Backend enforcement for blocked cash funds
+    if (vault.isBlocked === true) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: 'CASH_FUND_BLOCKED',
+          message: 'این صندوق مسدود است و امکان ثبت ورود یا خروج وجه نقد برای آن وجود ندارد.',
+        },
+        { status: 409 },
+      );
+    }
+
     const signedDelta = direction === 'in' ? value : -value;
     const balance = Number(vault.balance ?? 0) + signedDelta;
     if (balance < 0) return NextResponse.json({ message: 'موجودی صندوق کافی نیست.' }, { status: 400 });

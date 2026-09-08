@@ -15,6 +15,7 @@ const bankCollectionPayload = {
     { id: 'current_balance', name: 'currentBalance', type: 'number', required: false, min: 0 },
     { id: 'currency', name: 'currency', type: 'text', required: false, max: 16 },
     { id: 'is_active', name: 'isActive', type: 'bool', required: false },
+    { id: 'is_blocked', name: 'isBlocked', type: 'bool', required: false },
     { id: 'account_id_rel', name: 'accountId', type: 'relation', collectionId: 'pbc_chart_of_accounts', maxSelect: 1, required: false },
     { id: 'account_code_zero', name: 'accountCodeZero', type: 'text', required: true, max: 80 },
     { id: 'owner', name: 'owner', type: 'text', required: false, max: 80 },
@@ -26,6 +27,7 @@ const bankCollectionPayload = {
   indexes: [
     'CREATE UNIQUE INDEX idx_bank_accounts_account_number ON bank_accounts (accountNumber)',
     'CREATE INDEX idx_bank_accounts_account_id ON bank_accounts (accountId)',
+    'CREATE INDEX idx_bank_accounts_is_blocked ON bank_accounts (isBlocked)',
   ],
   listRule: '@request.auth.id != ""',
   viewRule: '@request.auth.id != ""',

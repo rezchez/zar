@@ -266,6 +266,39 @@ export async function POST(request: Request) {
       // fallback
     }
 
+    // Validate that referenced cash funds and bank accounts are not blocked
+    for (const prepared of preparedLines) {
+      const fundId = typeof prepared.documentDetails.cashFundId === 'string' ? prepared.documentDetails.cashFundId : null;
+      if (fundId) {
+        const fund = await writer.collection('cash_funds').getOne(fundId).catch(() => null);
+        if (fund && fund.isBlocked === true) {
+          return NextResponse.json(
+            {
+              success: false,
+              code: 'CASH_FUND_BLOCKED',
+              message: 'این صندوق مسدود است و امکان ثبت ورود یا خروج وجه نقد برای آن وجود ندارد.',
+            },
+            { status: 409 },
+          );
+        }
+      }
+
+      const bankId = typeof prepared.documentDetails.bankAccountId === 'string' ? prepared.documentDetails.bankAccountId : null;
+      if (bankId) {
+        const bankAcc = await writer.collection('bank_accounts').getOne(bankId).catch(() => null);
+        if (bankAcc && bankAcc.isBlocked === true) {
+          return NextResponse.json(
+            {
+              success: false,
+              code: 'BANK_ACCOUNT_BLOCKED',
+              message: 'این حساب بانکی مسدود است و امکان ثبت تراکنش جدید برای آن وجود ندارد.',
+            },
+            { status: 409 },
+          );
+        }
+      }
+    }
+
     const activePrefix = await getActiveDocumentPrefix(writer);
     let attempts = 0;
     let finalRecords: Record<string, unknown>[] = [];

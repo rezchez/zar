@@ -282,7 +282,7 @@ export default function CashTab({
                     const currLabel = [fund.currencySymbol, fund.currencyCode].filter(Boolean).join(' · ');
                     return (
                       <option key={fund.id} value={fund.id}>
-                        {fund.name} · {fund.currencyName} {currLabel ? `(${currLabel})` : ''} · موجودی: {Number(fund.balance || 0).toLocaleString('fa-IR')} {fund.currencySymbol || fund.currencyCode}
+                        {fund.isBlocked ? '⛔ [مسدود] ' : ''}{fund.name} · {fund.currencyName} {currLabel ? `(${currLabel})` : ''} · موجودی: {Number(fund.balance || 0).toLocaleString('fa-IR')} {fund.currencySymbol || fund.currencyCode}
                       </option>
                     );
                   })}
@@ -292,11 +292,22 @@ export default function CashTab({
 
             {/* Selected Fund Info Badge */}
             {activeFund ? (
-              <div className="flex flex-col justify-center rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 dark:bg-amber-500/10">
+              <div className={`flex flex-col justify-center rounded-xl border px-3 py-2 ${
+                activeFund.isBlocked
+                  ? 'border-red-500/30 bg-red-500/10 dark:bg-red-500/15'
+                  : 'border-amber-500/20 bg-amber-500/5 dark:bg-amber-500/10'
+              }`}>
                 <div className="flex items-center justify-between">
-                  <span className="flex items-center gap-1.5 text-[11px] font-bold text-amber-900 dark:text-amber-200">
+                  <span className={`flex items-center gap-1.5 text-[11px] font-bold ${
+                    activeFund.isBlocked ? 'text-red-900 dark:text-red-200' : 'text-amber-900 dark:text-amber-200'
+                  }`}>
                     <Banknote size={14} />
                     <span>{activeFund.name}</span>
+                    {activeFund.isBlocked && (
+                      <span className="rounded bg-red-200 px-1 py-0.2 text-[9px] font-black text-red-800 dark:bg-red-800 dark:text-red-100">
+                        مسدود
+                      </span>
+                    )}
                   </span>
                   <span className="rounded-md bg-amber-500/20 px-2 py-0.5 text-[10px] font-black text-amber-800 dark:text-amber-300">
                     {activeFund.currencyName}
@@ -335,6 +346,14 @@ export default function CashTab({
               />
             </div>
           </div>
+
+          {/* Blocked Fund Warning */}
+          {activeFund?.isBlocked ? (
+            <div className="flex items-center gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-900 dark:text-red-200 text-xs font-bold">
+              <AlertCircle size={16} className="shrink-0 text-red-600" />
+              <span>این صندوق مسدود است و امکان ثبت ورود یا خروج وجه نقد برای آن وجود ندارد.</span>
+            </div>
+          ) : null}
 
           {/* Insufficient Fund Balance Warning on Cash Out */}
           {isFundBalanceInsufficient ? (
@@ -396,7 +415,23 @@ export default function CashTab({
       {/* Sticky Commit Line Button */}
       {commitDraftLine && draftReady && funds.length > 0 ? (
         <div className={`sticky ${isLinesPinned ? 'bottom-32' : 'bottom-3'} z-30 flex justify-center pt-2 transition-all duration-300`}>
-          <button type="button" className="document-commit-line-button shadow-lg max-w-sm cursor-pointer" onClick={commitDraftLine}>
+          <button
+            type="button"
+            className={`document-commit-line-button shadow-lg max-w-sm ${
+              activeFund?.isBlocked ? 'opacity-50 cursor-not-allowed bg-slate-400 dark:bg-slate-700' : 'cursor-pointer'
+            }`}
+            disabled={Boolean(activeFund?.isBlocked)}
+            onClick={() => {
+              if (activeFund?.isBlocked) {
+                setNotice({
+                  tone: 'error',
+                  text: 'این صندوق مسدود است و امکان ثبت ورود یا خروج وجه نقد برای آن وجود ندارد.',
+                });
+                return;
+              }
+              commitDraftLine();
+            }}
+          >
             <ListPlus size={16} /> {editingLineId ? 'ثبت اصلاح ردیف' : 'ثبت ردیف'}
           </button>
         </div>

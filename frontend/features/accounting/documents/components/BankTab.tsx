@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  AlertCircle,
   ArrowDownLeft,
   ArrowRightLeft,
   ArrowUpRight,
@@ -225,6 +226,25 @@ export default function BankTab({
   function handleCommitLine() {
     if (!commitDraftLine) return;
 
+    if (selectedSourceAccount?.isBlocked) {
+      setNotice({
+        tone: 'error',
+        text: 'این حساب بانکی مسدود است و امکان ثبت تراکنش جدید برای آن وجود ندارد.',
+      });
+      return;
+    }
+
+    if (kind === 'bank-to-bank') {
+      const destAccount = banks.find((b) => b.id === selectedDestination);
+      if (destAccount?.isBlocked) {
+        setNotice({
+          tone: 'error',
+          text: 'حساب بانکی مقصد مسدود است و امکان ثبت تراکنش جدید برای آن وجود ندارد.',
+        });
+        return;
+      }
+    }
+
     const opLabel = operationOptions.find((o) => o.value === kind)?.label || 'عملیات بانکی';
 
     setDraftLine((current) => ({
@@ -335,7 +355,7 @@ export default function BankTab({
               >
                 {banks.map((bank) => (
                   <option key={bank.id} value={bank.id}>
-                    {bank.bankName} {bank.branchName ? `(${bank.branchName})` : ''} · {formatCurrencyAmount(bank.currentBalance ?? bank.balance, bank.currency)}
+                    {bank.isBlocked ? '⛔ [مسدود] ' : ''}{bank.bankName} {bank.branchName ? `(${bank.branchName})` : ''} · {formatCurrencyAmount(bank.currentBalance ?? bank.balance, bank.currency)}
                     {bank.accountCode ? ` [کدینگ: ${bank.accountCode}]` : ''}
                   </option>
                 ))}
@@ -414,7 +434,7 @@ export default function BankTab({
               <option value="">انتخاب حساب مبدأ...</option>
               {banks.map((bank) => (
                 <option key={bank.id} value={bank.id}>
-                  {bank.bankName} {bank.branchName ? `(${bank.branchName})` : ''} · {formatRials(bank.currentBalance ?? bank.balance)}
+                  {bank.isBlocked ? '⛔ [مسدود] ' : ''}{bank.bankName} {bank.branchName ? `(${bank.branchName})` : ''} · {formatRials(bank.currentBalance ?? bank.balance)}
                   {bank.accountCode ? ` [کد: ${bank.accountCode}]` : ''}
                 </option>
               ))}
@@ -430,7 +450,7 @@ export default function BankTab({
               <option value="">انتخاب حساب مقصد...</option>
               {banks.map((bank) => (
                 <option key={bank.id} value={bank.id}>
-                  {bank.bankName} {bank.branchName ? `(${bank.branchName})` : ''} · {formatRials(bank.currentBalance ?? bank.balance)}
+                  {bank.isBlocked ? '⛔ [مسدود] ' : ''}{bank.bankName} {bank.branchName ? `(${bank.branchName})` : ''} · {formatRials(bank.currentBalance ?? bank.balance)}
                   {bank.accountCode ? ` [کد: ${bank.accountCode}]` : ''}
                 </option>
               ))}
@@ -474,7 +494,7 @@ export default function BankTab({
               <option value="">انتخاب حساب بانکی...</option>
               {banks.map((bank) => (
                 <option key={bank.id} value={bank.id}>
-                  {bank.bankName} {bank.branchName ? `(${bank.branchName})` : ''} · {formatRials(bank.currentBalance ?? bank.balance)}
+                  {bank.isBlocked ? '⛔ [مسدود] ' : ''}{bank.bankName} {bank.branchName ? `(${bank.branchName})` : ''} · {formatRials(bank.currentBalance ?? bank.balance)}
                   {bank.accountCode ? ` [کد: ${bank.accountCode}]` : ''}
                 </option>
               ))}
@@ -508,12 +528,23 @@ export default function BankTab({
         </div>
       )}
 
+      {/* Blocked Bank Account Warning */}
+      {selectedSourceAccount?.isBlocked ? (
+        <div className="flex items-center gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-900 dark:text-red-200 text-xs font-bold">
+          <AlertCircle size={16} className="shrink-0 text-red-600" />
+          <span>این حساب بانکی مسدود است و امکان ثبت تراکنش جدید برای آن وجود ندارد.</span>
+        </div>
+      ) : null}
+
       {/* Sticky Commit Line Button */}
       {commitDraftLine ? (
         <div className={`sticky ${isLinesPinned ? 'bottom-32' : 'bottom-3'} z-30 flex justify-center pt-2 transition-all duration-300`}>
           <button
             type="button"
-            className="document-commit-line-button shadow-lg max-w-sm cursor-pointer"
+            className={`document-commit-line-button shadow-lg max-w-sm ${
+              selectedSourceAccount?.isBlocked ? 'opacity-50 cursor-not-allowed bg-slate-400 dark:bg-slate-700' : 'cursor-pointer'
+            }`}
+            disabled={Boolean(selectedSourceAccount?.isBlocked)}
             onClick={handleCommitLine}
           >
             <ListPlus size={16} /> {editingLineId ? 'ثبت اصلاح ردیف' : 'ثبت ردیف'}

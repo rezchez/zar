@@ -78,6 +78,16 @@ export async function POST(request: Request) {
 
     if (sourceType === 'bank') {
       const bank = await writer.collection('bank_accounts').getOne(sourceId);
+      if (bank.isBlocked === true) {
+        return NextResponse.json(
+          {
+            success: false,
+            code: 'BANK_ACCOUNT_BLOCKED',
+            message: 'این حساب بانکی مسدود است و امکان ثبت تراکنش جدید برای آن وجود ندارد.',
+          },
+          { status: 409 },
+        );
+      }
       if (String(bank.currency || 'IRR').toUpperCase() !== cashCurrencyCode) {
         return NextResponse.json({ message: 'واحد پول حساب بانکی با واحد تسویه یکسان نیست.' }, { status: 400 });
       }
@@ -89,6 +99,16 @@ export async function POST(request: Request) {
       ).catch(async () => writer.collection('cash_funds').getFirstListItem(
         writer.filter('(currency = "" || currency = null) && currency_name = {:currency}', { currency: cashCurrency.name }),
       ).catch(() => null));
+      if (vault && vault.isBlocked === true) {
+        return NextResponse.json(
+          {
+            success: false,
+            code: 'CASH_FUND_BLOCKED',
+            message: 'این صندوق مسدود است و امکان ثبت ورود یا خروج وجه نقد برای آن وجود ندارد.',
+          },
+          { status: 409 },
+        );
+      }
       const next = Number(vault?.balance ?? 0) + (direction === 'receive' ? amount : -amount);
       if (next < 0) return NextResponse.json({ message: 'موجودی صندوق کافی نیست.' }, { status: 400 });
     }

@@ -1,8 +1,19 @@
 'use client';
 
-import { Calendar, ChevronRight, Edit3, Landmark, Plus, RefreshCw } from 'lucide-react';
+import {
+  Calendar,
+  ChevronRight,
+  Edit3,
+  Landmark,
+  Lock,
+  MoreVertical,
+  Plus,
+  RefreshCw,
+  Trash2,
+  Unlock,
+} from 'lucide-react';
 import Link from 'next/link';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import BankLogo from '@/src/components/documents/BankLogo';
 import InitialBankInventoryModal, { type BankAccountEditItem } from './InitialBankInventoryModal';
@@ -20,7 +31,189 @@ export type BankAccountItem = {
   balance: number;
   openingBalanceDate: string;
   description?: string;
+  isBlocked?: boolean;
 };
+
+// ─── Confirmation Dialog ───────────────────────────────────────────────────────
+type ConfirmDialogProps = {
+  open: boolean;
+  title: string;
+  description: string;
+  confirmLabel: string;
+  confirmDestructive?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+  loading?: boolean;
+};
+
+function ConfirmDialog({
+  open,
+  title,
+  description,
+  confirmLabel,
+  confirmDestructive = false,
+  onConfirm,
+  onCancel,
+  loading = false,
+}: ConfirmDialogProps) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div
+        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+        onClick={onCancel}
+        aria-hidden="true"
+      />
+      <div
+        dir="rtl"
+        className="relative z-10 w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+        role="dialog"
+        aria-modal="true"
+      >
+        <h2 className="text-base font-bold text-slate-900 dark:text-white">{title}</h2>
+        <p className="mt-2 text-xs leading-relaxed text-slate-500 dark:text-slate-400">{description}</p>
+        <div className="mt-5 flex gap-2 justify-end">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={loading}
+            className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+          >
+            انصراف
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={loading}
+            className={`rounded-xl px-4 py-2 text-xs font-bold transition disabled:opacity-50 ${
+              confirmDestructive
+                ? 'bg-red-500 text-white hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-500'
+                : 'bg-amber-500 text-slate-950 hover:bg-amber-400 dark:bg-amber-400 dark:hover:bg-amber-300'
+            }`}
+          >
+            {loading ? 'در حال انجام...' : confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Action Dropdown ───────────────────────────────────────────────────────────
+type AccountAction = 'edit' | 'block' | 'unblock' | 'delete';
+
+type ActionMenuProps = {
+  account: BankAccountItem;
+  onAction: (action: AccountAction, account: BankAccountItem) => void;
+};
+
+function BankActionMenu({ account, onAction }: ActionMenuProps) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const handleAction = (action: AccountAction) => {
+    setOpen(false);
+    onAction(action, account);
+  };
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex size-8 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-600 hover:border-amber-500/50 hover:bg-amber-500/10 hover:text-amber-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-amber-500/20 dark:hover:text-amber-300"
+        title="عملیات"
+        aria-label="عملیات"
+        aria-haspopup="true"
+        aria-expanded={open}
+      >
+        <MoreVertical size={15} />
+      </button>
+
+      {open && (
+        <div className="absolute left-0 top-9 z-30 min-w-[168px] rounded-xl border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-900">
+          {/* ویرایش */}
+          <button
+            type="button"
+            onClick={() => handleAction('edit')}
+            className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            <Edit3 size={14} className="text-slate-400" />
+            ویرایش موجودی اولیه
+          </button>
+
+          {/* مسدودی / رفع مسدودی */}
+          {account.isBlocked ? (
+            <button
+              type="button"
+              onClick={() => handleAction('unblock')}
+              className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-amber-700 transition hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-500/10"
+            >
+              <Unlock size={14} />
+              رفع مسدودی
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => handleAction('block')}
+              className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
+            >
+              <Lock size={14} className="text-slate-400" />
+              مسدود کردن
+            </button>
+          )}
+
+          <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
+
+          {/* حذف — destructive */}
+          <button
+            type="button"
+            onClick={() => handleAction('delete')}
+            className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10"
+          >
+            <Trash2 size={14} />
+            حذف حساب بانکی
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Status Badge ──────────────────────────────────────────────────────────────
+function StatusBadge({ isBlocked }: { isBlocked?: boolean }) {
+  if (isBlocked) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700 dark:bg-red-500/15 dark:text-red-400">
+        <Lock size={9} />
+        مسدود
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400">
+      فعال
+    </span>
+  );
+}
+
+// ─── Main Component ────────────────────────────────────────────────────────────
+type DialogState =
+  | { type: 'none' }
+  | { type: 'block'; account: BankAccountItem }
+  | { type: 'unblock'; account: BankAccountItem }
+  | { type: 'delete'; account: BankAccountItem };
+
+type FilterTab = 'all' | 'active' | 'blocked';
 
 export default function BankAccountsListClient({
   initialAccounts = [],
@@ -31,6 +224,19 @@ export default function BankAccountsListClient({
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<BankAccountEditItem | null>(null);
+  const [dialog, setDialog] = useState<DialogState>({ type: 'none' });
+  const [actionLoading, setActionLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [filterTab, setFilterTab] = useState<FilterTab>('all');
+
+  const activeCount = accounts.filter((a) => !a.isBlocked).length;
+  const blockedCount = accounts.filter((a) => a.isBlocked).length;
+
+  const displayedAccounts = accounts.filter((a) => {
+    if (filterTab === 'active') return !a.isBlocked;
+    if (filterTab === 'blocked') return a.isBlocked;
+    return true;
+  });
 
   const fetchAccounts = useCallback(async () => {
     setLoading(true);
@@ -58,10 +264,92 @@ export default function BankAccountsListClient({
     setModalOpen(true);
   };
 
-  const handleOpenEdit = (account: BankAccountItem) => {
-    setEditingItem(account);
-    setModalOpen(true);
+  const handleAction = (action: AccountAction, account: BankAccountItem) => {
+    setErrorMsg('');
+    if (action === 'edit') {
+      setEditingItem(account);
+      setModalOpen(true);
+    } else {
+      setDialog({ type: action as 'block' | 'unblock' | 'delete', account });
+    }
   };
+
+  const handleConfirm = async () => {
+    if (dialog.type === 'none') return;
+    const { type, account } = dialog;
+    setActionLoading(true);
+    setErrorMsg('');
+
+    try {
+      let res: Response;
+      if (type === 'delete') {
+        res = await fetch(`/api/banks/${account.id}`, { method: 'DELETE' });
+      } else if (type === 'block') {
+        res = await fetch(`/api/banks/${account.id}/block`, { method: 'POST' });
+      } else {
+        res = await fetch(`/api/banks/${account.id}/unblock`, { method: 'POST' });
+      }
+
+      const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+
+      if (!res.ok) {
+        setErrorMsg(String(data.message || 'عملیات انجام نشد.'));
+        return;
+      }
+
+      // Update local state
+      if (type === 'delete') {
+        setAccounts((prev) => prev.filter((a) => a.id !== account.id));
+      } else if (type === 'block') {
+        setAccounts((prev) => prev.map((a) => a.id === account.id ? { ...a, isBlocked: true } : a));
+      } else {
+        setAccounts((prev) => prev.map((a) => a.id === account.id ? { ...a, isBlocked: false } : a));
+      }
+
+      setDialog({ type: 'none' });
+    } catch {
+      setErrorMsg('خطا در ارتباط با سرور. لطفاً دوباره تلاش کنید.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleCancel = () => {
+    if (!actionLoading) {
+      setDialog({ type: 'none' });
+      setErrorMsg('');
+    }
+  };
+
+  const dialogAccount = dialog.type !== 'none' ? dialog.account : null;
+
+  const dialogConfig = (() => {
+    if (dialog.type === 'delete') {
+      return {
+        title: 'آیا از حذف این حساب بانکی اطمینان دارید؟',
+        description: 'این عملیات فقط برای حسابی مجاز است که هیچ تراکنش مالی نداشته باشد. این عملیات برگشت‌پذیر نیست.',
+        confirmLabel: 'حذف حساب بانکی',
+        confirmDestructive: true,
+      };
+    }
+    if (dialog.type === 'block') {
+      return {
+        title: 'آیا می‌خواهید این حساب بانکی را مسدود کنید؟',
+        description: 'پس از مسدود شدن، امکان ثبت تراکنش جدید برای این حساب وجود نخواهد داشت. سوابق مالی و موجودی حساب حفظ می‌شود.',
+        confirmLabel: 'مسدود کردن',
+        confirmDestructive: false,
+      };
+    }
+    if (dialog.type === 'unblock') {
+      return {
+        title: 'آیا می‌خواهید مسدودی این حساب بانکی را بردارید؟',
+        description: 'پس از رفع مسدودی، حساب دوباره می‌تواند تراکنش جدید دریافت کند.',
+        confirmLabel: 'رفع مسدودی',
+        confirmDestructive: false,
+      };
+    }
+    return null;
+  })();
 
   return (
     <div dir="rtl" className="mx-auto max-w-5xl space-y-6">
@@ -86,7 +374,7 @@ export default function BankAccountsListClient({
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={fetchAccounts}
+            onClick={() => void fetchAccounts()}
             disabled={loading}
             className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
             title="به‌روزرسانی لیست"
@@ -105,6 +393,60 @@ export default function BankAccountsListClient({
           </button>
         </div>
       </div>
+
+      {/* Filter Tabs */}
+      {accounts.length > 0 && (
+        <div className="flex items-center gap-1.5 rounded-2xl border border-slate-200/80 bg-white p-1.5 shadow-sm dark:border-slate-800 dark:bg-slate-900 w-fit">
+          <button
+            type="button"
+            onClick={() => setFilterTab('all')}
+            className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition ${
+              filterTab === 'all'
+                ? 'bg-amber-500 text-slate-950 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+            }`}
+          >
+            <span>همه</span>
+            <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-black ${
+              filterTab === 'all' ? 'bg-amber-600/30 text-slate-950' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+            }`}>
+              {accounts.length}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilterTab('active')}
+            className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition ${
+              filterTab === 'active'
+                ? 'bg-amber-500 text-slate-950 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+            }`}
+          >
+            <span>فعال</span>
+            <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-black ${
+              filterTab === 'active' ? 'bg-amber-600/30 text-slate-950' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+            }`}>
+              {activeCount}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilterTab('blocked')}
+            className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition ${
+              filterTab === 'blocked'
+                ? 'bg-amber-500 text-slate-950 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+            }`}
+          >
+            <span>مسدود</span>
+            <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-black ${
+              filterTab === 'blocked' ? 'bg-amber-600/30 text-slate-950' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+            }`}>
+              {blockedCount}
+            </span>
+          </button>
+        </div>
+      )}
 
       {/* List / Grid Content */}
       {accounts.length === 0 ? (
@@ -127,14 +469,22 @@ export default function BankAccountsListClient({
             <span>ایجاد اولین حساب بانکی</span>
           </button>
         </div>
+      ) : displayedAccounts.length === 0 ? (
+        <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-xs text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+          حساب بانکی با وضعیت انتخابی یافت نشد.
+        </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {accounts.map((acc) => {
+          {displayedAccounts.map((acc) => {
             const currencyLabel = [acc.currencySymbol, acc.currencyCode].filter(Boolean).join(' · ');
             return (
               <article
                 key={acc.id}
-                className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm transition-all hover:border-amber-500/40 hover:shadow-md dark:border-slate-800 dark:bg-slate-900"
+                className={`group relative flex flex-col justify-between overflow-hidden rounded-2xl border bg-white p-5 shadow-sm transition-all hover:shadow-md dark:bg-slate-900 ${
+                  acc.isBlocked
+                    ? 'border-red-200/80 hover:border-red-300/60 dark:border-red-800/60'
+                    : 'border-slate-200/80 hover:border-amber-500/40 dark:border-slate-800'
+                }`}
               >
                 <div>
                   {/* Top Header: Bank Name, Account Number & Action */}
@@ -142,26 +492,21 @@ export default function BankAccountsListClient({
                     <div className="flex items-center gap-3">
                       <BankLogo bankName={acc.bankName} size={42} />
                       <div>
-                        {/* 1. نام بانک */}
+                        {/* 1. نام بانک + وضعیت */}
                         <h2 className="text-sm font-extrabold text-slate-900 dark:text-white">
                           {acc.bankName} {acc.branchName ? `(${acc.branchName})` : ''}
                         </h2>
-                        {/* 2. شماره حساب */}
-                        <p className="font-mono text-[11px] font-semibold text-slate-500 dark:text-slate-400" dir="ltr">
-                          {acc.accountNumber}
-                        </p>
+                        <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                          {/* 2. شماره حساب */}
+                          <p className="font-mono text-[11px] font-semibold text-slate-500 dark:text-slate-400" dir="ltr">
+                            {acc.accountNumber}
+                          </p>
+                          <StatusBadge isBlocked={acc.isBlocked} />
+                        </div>
                       </div>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => handleOpenEdit(acc)}
-                      className="inline-flex size-8 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-600 hover:border-amber-500/50 hover:bg-amber-500/10 hover:text-amber-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-amber-500/20 dark:hover:text-amber-300"
-                      title="ویرایش موجودی اولیه"
-                      aria-label="ویرایش موجودی اولیه"
-                    >
-                      <Edit3 size={15} />
-                    </button>
+                    <BankActionMenu account={acc} onAction={handleAction} />
                   </div>
 
                   {/* Date & Currency Section */}
@@ -185,9 +530,9 @@ export default function BankAccountsListClient({
                     </div>
 
                     {/* 4. موجودی فعلی */}
-                    <div className="rounded-xl bg-amber-500/10 p-2.5 dark:bg-amber-500/15">
-                      <span className="block text-[10px] font-bold text-amber-700 dark:text-amber-300">موجودی فعلی</span>
-                      <span className="mt-0.5 block font-mono text-sm font-black text-amber-900 dark:text-amber-200">
+                    <div className={`rounded-xl p-2.5 ${acc.isBlocked ? 'bg-red-50 dark:bg-red-500/10' : 'bg-amber-500/10 dark:bg-amber-500/15'}`}>
+                      <span className={`block text-[10px] font-bold ${acc.isBlocked ? 'text-red-700 dark:text-red-300' : 'text-amber-700 dark:text-amber-300'}`}>موجودی فعلی</span>
+                      <span className={`mt-0.5 block font-mono text-sm font-black ${acc.isBlocked ? 'text-red-900 dark:text-red-200' : 'text-amber-900 dark:text-amber-200'}`}>
                         {Number(acc.balance || 0).toLocaleString('fa-IR')} {acc.currencySymbol || acc.currencyCode}
                       </span>
                     </div>
@@ -197,6 +542,27 @@ export default function BankAccountsListClient({
             );
           })}
         </div>
+      )}
+
+      {/* Error message from action */}
+      {errorMsg && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400">
+          {errorMsg}
+        </div>
+      )}
+
+      {/* Confirmation Dialogs */}
+      {dialogConfig && (
+        <ConfirmDialog
+          open={dialog.type !== 'none'}
+          title={dialogConfig.title}
+          description={dialogConfig.description}
+          confirmLabel={dialogConfig.confirmLabel}
+          confirmDestructive={dialogConfig.confirmDestructive}
+          onConfirm={() => void handleConfirm()}
+          onCancel={handleCancel}
+          loading={actionLoading}
+        />
       )}
 
       {/* Initial Bank Inventory Modal */}

@@ -138,6 +138,16 @@ export async function POST(request: Request) {
     const rawBankAccount = await writer.collection('bank_accounts').getOne(bankAccountId, {
       expand: 'accountId',
     });
+    if (rawBankAccount.isBlocked === true) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: 'BANK_ACCOUNT_BLOCKED',
+          message: 'این حساب بانکی مسدود است و امکان ثبت تراکنش جدید برای آن وجود ندارد.',
+        },
+        { status: 409 },
+      );
+    }
     const bankAccount = mapBankAccount(rawBankAccount);
     const customer = await writer.collection('customers').getOne(customerId);
 
