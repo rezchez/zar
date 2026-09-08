@@ -86,15 +86,16 @@ $$\sum \text{Debit} = \sum \text{Credit}$$
 
 ---
 
-## 6. Idempotency & Retry Strategy
+## 6. Idempotency & Edit Semantics (Model A: Mutable Setup Data)
 
-Opening balance creation is strictly idempotent using deterministic source keys:
+Opening balance creation and editing are strictly idempotent using deterministic source keys:
 
-$$\text{sourceKey} = \text{opening:cash:}\langle\text{currencyRecordId}\rangle$$
+$$\text{sourceKey} = \text{opening:cash:}\langle\text{fundId}\rangle$$
 
-- Retrying an existing opening balance request returns the previously persisted `JournalEntryResult` (`alreadyExists: true`).
-- No duplicate `journal_entries` or `journal_lines` records are created on retry.
-- Posted historical accounting records are **never** silently overwritten.
+- Retrying or editing an existing opening balance request locates the existing operational transaction and corresponding `journal_entries` record.
+- Editing an opening balance updates the `cash_transactions` record, `cash_funds.opening_balance`, `cash_funds.balance`, `journal_entries` record (`totalDebit`, `totalCredit`, `entryDate`, `description`), and child `journal_lines` in place.
+- Operational cash transactions and general ledger journal entries / lines remain 100% consistent after every edit.
+- Zero duplicate `cash_transactions`, `journal_entries`, or `journal_lines` records are accumulated on repeated saves or edits.
 
 ---
 

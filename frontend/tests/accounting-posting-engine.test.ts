@@ -26,6 +26,13 @@ function createMockPocketBase() {
         if (!item) throw new Error('Not found');
         return item;
       },
+      getFullList: async (_params: any = {}) => {
+        const list: any[] = [];
+        for (const val of store.values()) {
+          if (val._collection === name) list.push(val);
+        }
+        return list;
+      },
       create: async (data: any) => {
         const id = `rec_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
         const record = { id, ...data, _collection: name };
@@ -37,6 +44,10 @@ function createMockPocketBase() {
         const updated = { ...existing, ...data };
         store.set(id, updated);
         return updated;
+      },
+      delete: async (id: string) => {
+        store.delete(id);
+        return true;
       },
     }),
   } as any;

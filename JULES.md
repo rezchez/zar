@@ -84,7 +84,7 @@ Located at `frontend/features/accounting/posting/posting-engine.ts`.
    $$\sum \text{Debit} = \sum \text{Credit}$$
    Every journal entry must contain at least 2 lines. Unbalanced entries are rejected before database insertion.
 2. **Non-Negativity Constraint**: Debit and credit line values must be positive integers ($\ge 0$). Simultaneous non-zero debit and credit on a single line is illegal.
-3. **Idempotency Invariant**: Each posting uses a unique, deterministic `sourceKey` (e.g., `opening:cash:<fundId>`, `opening:bank:<bankAccountId>`, `cheque:issue:<chequeId>`). Attempting to post an entry with an existing `sourceKey` returns the existing `journal_entry` without creating duplicate records.
+3. **Idempotency & Update Invariant**: Each posting uses a unique, deterministic `sourceKey` (e.g., `opening:cash:<fundId>`, `opening:bank:<bankAccountId>`, `cheque:issue:<chequeId>`). For mutable setup events (Model A), posting updates existing `journal_entries` and child `journal_lines` in place.
 4. **Normalized Journal Lines**: The primary database source of ledger truth is the dedicated collection `pbc_journal_lines` (`journal_lines`), linked to `journal_entries` via `journal_entry_id` with cascading delete.
 
 ---
@@ -107,41 +107,41 @@ Located at `frontend/features/accounting/posting/posting-engine.ts`.
 
 ---
 
-## 6. Opening Balance Architecture & Invariants
+## 6. Opening Balance Architecture & Invariants (Model A: Mutable Setup Data)
 
 ### Architectural Requirement
-Every opening balance event in Zarfolio must adhere to the single-effect principle:
+Every opening balance event in Zarfolio adheres to Model A (Mutable Setup Data):
 
 $$\text{One Opening Event} \longrightarrow \text{One Source Transaction} \longrightarrow \text{One Double-Entry Accounting Effect}$$
 
-### Operational Invariant
+### Operational Invariants
 - **Strictly One Active Opening Balance Record per Cash Fund / Currency or Bank Account**:
-  Editing an existing opening balance must **UPDATE** the existing opening balance transaction record rather than appending duplicate `opening_balance` records.
+  Editing an existing opening balance updates the original `cash_transactions` record, `cash_funds.opening_balance`, `cash_funds.balance`, `journal_entries` record, and child `journal_lines` records in place.
+- **Zero Duplicate Accumulation**:
+  Repeated saves or edits (amount, date, description) never accumulate duplicate `opening_balance` transactions or duplicate `journal_entries`.
 
-### Current Implementation Audit & Status
+### Implementation Status
 
 #### 1. Cash Opening Balance (`/api/accounting/opening/cash`)
-- **Current Behavior**:
-  - `GET /api/accounting/opening/cash` lists funds and matches opening transactions from `cash_transactions` where `is_opening_balance = true || transaction_type = "opening_balance"`.
-  - `POST` / `PUT` / `PATCH`:
-    - When `fundId` is provided (edit mode), it locates the existing `cash_transactions` record for that fund and **UPDATES** its `amount`, `date`, and `description`.
-    - It does **NOT** append duplicate `cash_transactions` records for the same vault.
-    - If no fund exists for a currency, creating a fund creates one `cash_funds` record and one `cash_transactions` record (`is_opening_balance: true`, `direction: "in"`). Duplicate fund creation for the same currency is rejected.
-- **Accounting Posting Behavior & Known Issue**:
-  - Editing an opening balance invokes `postCashOpeningBalance(..., sourceKey: "opening:cash:<currencyId>")`.
-  - Because `postJournalEntry` enforces idempotency via `sourceKey`, if a `journal_entries` record already exists for `opening:cash:<currencyId>`, `postJournalEntry` returns the existing journal entry without error, but **does not currently update the existing journal entry lines or amount**.
-  - **Status**: *Current Behavior / Known Nuance*. The operational transaction record (`cash_transactions`) is correctly updated without duplicates, but updating historical double-entry `journal_lines` on opening balance edits requires explicit line-update logic in future accounting revisions.
+- **GET /api/accounting/opening/cash**: Retrieves cash funds and audits opening transactions. Returns duplicate detection flags (`hasDuplicates`, `duplicateCount`, `duplicateTxIds`).
+- **POST /api/accounting/opening/cash (Edit Mode)**:
+  - Updates `cash_funds` (`opening_balance`, `balance`).
+  - Updates canonical `cash_transactions` record in place and removes legacy extra duplicates.
+  - Calls `postCashOpeningBalance`, which updates `journal_entries` (`totalDebit`, `totalCredit`, `entryDate`, `description`) and child `journal_lines` in place.
+- **POST /api/accounting/opening/cash (Create Mode)**:
+  - Enforces one cash fund per currency.
+  - Creates `cash_funds` and canonical `cash_transactions`.
+  - Posts double-entry journal entry.
+  - Atomic rollback deletes created records on failure.
 
 #### 2. Bank Opening Balance (`/api/accounting/opening/bank`)
-- **Current Behavior**:
-  - Locates existing `bank_transactions` record where `is_opening_balance = true` and **UPDATES** amount, date, and description.
-  - Updates `bank_accounts.balance` and `bank_accounts.currentBalance`.
-  - Emits `postBankOpeningBalance(..., sourceKey: "opening:bank:<accountId>")`.
+- Locates existing `bank_transactions` record where `is_opening_balance = true` and updates amount, date, and description in place.
+- Updates `bank_accounts.balance` and `bank_accounts.currentBalance`.
+- Posts/updates double-entry journal entry via `postBankOpeningBalance`.
 
 #### 3. Coin Opening Inventory (`/api/accounting/opening/coin`)
-- **Current Behavior**:
-  - Updates existing `coin_inventory` record if `recordId` is supplied; creates a new record if missing.
-  - Generates journal entry via `postCoinOpeningInventory` if monetary valuation is non-zero.
+- Updates existing `coin_inventory` record if `recordId` is supplied; creates a new record if missing.
+- Generates or updates double-entry journal entry via `postCoinOpeningInventory`.
 
 ---
 
@@ -203,6 +203,7 @@ frontend/
 │   ├── layout/           # Sidebar, topbar, navigation shell
 │   ├── forms/            # Shared form elements & date pickers
 │   └── shared/           # Common domain-agnostic helpers
+├── src/                  # Active shared components and utilities
 ├── hooks/                # Custom React hooks (useAuth, useSettings, etc.)
 ├── lib/                  # Infrastructure, utilities, server-side services
 │   ├── pocketbase/       # PocketBase client & service instances
@@ -217,6 +218,9 @@ frontend/
 └── public/               # Static assets & font files
 ```
 
+### Active `frontend/src` Directory Note
+`frontend/src` is an active source directory containing shared components and utilities that are imported by components in `frontend/app` and `frontend/features`.
+
 ### Intended Dependency Direction
 To avoid circular dependencies and tight coupling:
 
@@ -224,7 +228,7 @@ $$\text{app} \longrightarrow \text{features} \longrightarrow \text{lib}$$
 
 - `lib/` must never import from `features/` or `app/`.
 - `features/` must contain domain-specific UI components, hooks, and services.
-- Shared atomic UI belongs in `components/ui/`.
+- Shared atomic UI belongs in `components/ui/` or `components/shared/`.
 
 ---
 
@@ -233,14 +237,13 @@ $$\text{app} \longrightarrow \text{features} \longrightarrow \text{lib}$$
 1. **Server Components by Default**: Pages and layout components in `app/` are React Server Components unless interaction state requires `"use client"`.
 2. **Server/Client Boundaries**: Keep `"use client"` directives as low in the component tree as possible. Do not mark entire page components as client components if only a child button or modal requires client state.
 3. **API Route Handlers**: Endpoint handlers in `app/api/.../route.ts` must validate authentication using `getServerAuthContext()` and verify permissions using `hasPermission()`.
-4. **No Legacy Directory Artifacts**: The legacy `frontend/src/` folder has been completely migrated and removed. All code resides in `frontend/app`, `frontend/features`, `frontend/components`, and `frontend/lib`.
 
 ---
 
 ## 11. PocketBase Backend & Schema Rules
 
 1. **Collection Naming**: Primary collections use clean snake_case (`cash_funds`, `cash_transactions`, `bank_accounts`, `bank_transactions`, `customers`, `currencies`, `coin_types`, `coin_inventory`, `journal_entries`, `journal_lines`, `chart_of_accounts`, `app_settings`, `app_backups`).
-2. **Migrations as Source of Truth**: All PocketBase schema changes and initial seed data are defined as JavaScript migration scripts in `frontend/pb_migrations/`.
+2. **Migrations as Source of Truth**: All PocketBase schema changes and initial seed data are defined as JavaScript migration scripts in both `backend/pb_migrations/` and `frontend/pb_migrations/`.
 3. **No Unintentional Schema Modifications**: Never alter PocketBase collections, fields, or migration scripts unless explicitly requested by the user.
 4. **Resilient Query Execution**: API routes querying PocketBase must handle missing relations gracefully (e.g., fallback lists on expand failures) to prevent page crashes.
 

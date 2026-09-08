@@ -40,6 +40,7 @@ export interface CreateJournalEntryParams {
     | 'manual';
   sourceId: string;
   sourceKey: string;
+  altSourceKey?: string;
   lines: JournalLineInput[];
   status?: 'draft' | 'posted' | 'reversed';
   userId?: string;
@@ -224,49 +225,90 @@ export async function postJournalEntry(
   const entryDate = params.entryDate || jalaliDateToIso(entryDateJalali) || new Date().toISOString().slice(0, 10);
   const entryNumber = `JE-${Date.now().toString(36).toUpperCase()}`;
 
-  // Idempotency Check via sourceKey
-  const existing = await pb.collection('journal_entries').getFirstListItem(
+  // Idempotency / Update Check via sourceKey or altSourceKey
+  let existing: any = await pb.collection('journal_entries').getFirstListItem(
     pb.filter('sourceKey = {:sourceKey}', { sourceKey }),
   ).catch(() => null);
 
+  if (!existing && params.altSourceKey) {
+    existing = await pb.collection('journal_entries').getFirstListItem(
+      pb.filter('sourceKey = {:sourceKey}', { sourceKey: params.altSourceKey }),
+    ).catch(() => null);
+  }
+
   if (existing) {
-    // If idempotent retry on posted event, return existing entry without creating duplicates or modifying lines
-    let existingLines: JournalLineInput[] = [];
+    // Update existing journal entry in place to ensure 100% GL consistency (Model A)
+    let updatedJournal: any = existing;
     try {
-      const lineRecords = await pb.collection('journal_lines').getFullList({
+      updatedJournal = await pb.collection('journal_entries').update(existing.id, {
+        entryDate,
+        entryDateJalali,
+        description,
+        totalDebit,
+        totalCredit,
+        lines: resolvedLines,
+        updatedBy: userId || null,
+      });
+    } catch {
+      updatedJournal = existing;
+    }
+
+    // Replace child lines in `journal_lines` collection for complete accounting integrity
+    try {
+      const oldLineRecords = await pb.collection('journal_lines').getFullList({
         filter: pb.filter('journal_entry_id = {:entryId}', { entryId: existing.id }),
       }).catch(() => []);
 
-      if (lineRecords.length > 0) {
-        existingLines = lineRecords.map((l: any) => ({
-          accountId: String(l.account_id || ''),
-          debit: Number(l.debit || 0),
-          credit: Number(l.credit || 0),
-          description: String(l.description || ''),
-          partyId: l.party_id || null,
-          bankAccountId: l.bank_account_id || null,
-          chequeId: l.cheque_id || null,
-        }));
-      } else {
-        existingLines = Array.isArray(existing.lines) ? existing.lines : resolvedLines;
+      for (const oldLine of oldLineRecords) {
+        await pb.collection('journal_lines').delete(oldLine.id).catch(() => undefined);
       }
-    } catch {
-      existingLines = resolvedLines;
+
+      for (const line of resolvedLines) {
+        const linePayload: Record<string, unknown> = {
+          journal_entry_id: existing.id,
+          account_id: line.accountId,
+          debit: line.debit,
+          credit: line.credit,
+          description: line.description || '',
+        };
+        if (line.partyId && typeof line.partyId === 'string' && line.partyId.trim()) {
+          linePayload.party_id = line.partyId.trim();
+        }
+        if (line.bankAccountId && typeof line.bankAccountId === 'string' && line.bankAccountId.trim()) {
+          linePayload.bank_account_id = line.bankAccountId.trim();
+        }
+        if (line.chequeId && typeof line.chequeId === 'string' && line.chequeId.trim()) {
+          linePayload.cheque_id = line.chequeId.trim();
+        }
+
+        try {
+          await pb.collection('journal_lines').create(linePayload);
+        } catch (lineCreateErr: any) {
+          const respData = lineCreateErr?.response?.data || lineCreateErr?.data;
+          if (respData?.party_id && linePayload.party_id) {
+            const fallbackPayload = { ...linePayload };
+            delete fallbackPayload.party_id;
+            await pb.collection('journal_lines').create(fallbackPayload);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to update child journal lines:', err);
     }
 
     return {
-      id: existing.id,
-      entryNumber: String(existing.entryNumber || entryNumber),
-      entryDate: String(existing.entryDate || entryDate),
-      entryDateJalali: String(existing.entryDateJalali || entryDateJalali),
-      description: String(existing.description || description),
-      sourceType: String(existing.sourceType || sourceType),
-      sourceId: String(existing.sourceId || sourceId),
-      sourceKey: String(existing.sourceKey || sourceKey),
-      status: existing.status as any,
-      totalDebit: Number(existing.totalDebit || totalDebit),
-      totalCredit: Number(existing.totalCredit || totalCredit),
-      lines: existingLines,
+      id: updatedJournal.id,
+      entryNumber: String(updatedJournal.entryNumber || entryNumber),
+      entryDate: String(updatedJournal.entryDate || entryDate),
+      entryDateJalali: String(updatedJournal.entryDateJalali || entryDateJalali),
+      description: String(updatedJournal.description || description),
+      sourceType: String(updatedJournal.sourceType || sourceType),
+      sourceId: String(updatedJournal.sourceId || sourceId),
+      sourceKey: String(updatedJournal.sourceKey || sourceKey),
+      status: updatedJournal.status as any,
+      totalDebit: Number(updatedJournal.totalDebit || totalDebit),
+      totalCredit: Number(updatedJournal.totalCredit || totalCredit),
+      lines: resolvedLines,
       alreadyExists: true,
     };
   }
@@ -582,6 +624,7 @@ export async function postCashOpeningBalance(
   cashFund: {
     id: string;
     name: string;
+    currencyId?: string;
     currencyName?: string;
     accountId?: string | null;
   },
@@ -605,13 +648,17 @@ export async function postCashOpeningBalance(
 
   const desc = description || `موجودی اول دوره ${cashFund.name}`;
 
+  const primarySourceKey = `opening:cash:${cashFund.id}`;
+  const altSourceKey = cashFund.currencyId ? `opening:cash:${cashFund.currencyId}` : undefined;
+
   return postJournalEntry(
     {
       entryDateJalali,
       description: desc,
       sourceType: 'opening_cash',
       sourceId: cashFund.id,
-      sourceKey: `opening:cash:${cashFund.id}`,
+      sourceKey: primarySourceKey,
+      altSourceKey,
       userId,
       lines: [
         {

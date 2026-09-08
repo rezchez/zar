@@ -8,7 +8,7 @@ import { dateToJalaliString } from '@/lib/jalali';
 
 function extractPbErrorMessage(error: unknown, fallback: string): string {
   if (!error) return fallback;
-  if (typeof error === 'object') {
+  if (typeof error === 'object' && error !== null) {
     const errObj = error as any;
     const responseData = errObj?.response?.data || errObj?.data;
     if (responseData && typeof responseData === 'object') {
@@ -53,10 +53,14 @@ export async function GET() {
       filter: 'is_opening_balance = true || transaction_type = "opening_balance"',
     }).catch(() => []);
 
-    const txMap = new Map<string, any>();
+    // Group opening transactions by vault ID for canonical mapping and duplicate detection
+    const txMap = new Map<string, any[]>();
     for (const tx of txs) {
       if (tx.vault) {
-        txMap.set(String(tx.vault), tx);
+        const vaultId = String(tx.vault);
+        const list = txMap.get(vaultId) || [];
+        list.push(tx);
+        txMap.set(vaultId, list);
       }
     }
 
@@ -71,7 +75,8 @@ export async function GET() {
       const fundName = String(f.name || `صندوق ${currencyName}`).trim();
       const accountId = String(f.accountId || f.expand?.accountId?.id || '');
 
-      const tx = txMap.get(f.id);
+      const vaultTxs = txMap.get(f.id) || [];
+      const tx = vaultTxs[0] || null;
       const openingDate = String(tx?.date || (f.created ? dateToJalaliString(new Date(f.created)) : todayJalali));
       const description = String(tx?.description || '');
 
@@ -87,6 +92,9 @@ export async function GET() {
         openingBalanceDate: openingDate,
         description,
         accountId: accountId || undefined,
+        hasDuplicates: vaultTxs.length > 1,
+        duplicateCount: vaultTxs.length,
+        duplicateTxIds: vaultTxs.map((t) => t.id),
         created: f.created,
         updated: f.updated,
       };
@@ -121,7 +129,7 @@ export async function POST(request: Request) {
     }
     const amount = Math.abs(Math.round(rawAmount));
 
-    // MODE 1: EDIT EXISTING FUND OPENING BALANCE
+    // MODE 1: EDIT EXISTING FUND OPENING BALANCE (Idempotent Update)
     if (fundId) {
       let existingFund: any = null;
       try {
@@ -173,22 +181,31 @@ export async function POST(request: Request) {
         return NextResponse.json({ message: extractPbErrorMessage(err, 'ویرایش موجودی اولیه انجام نشد.') }, { status: 400 });
       }
 
-      const existingTx = await context.pb.collection('cash_transactions').getFirstListItem(
-        context.pb.filter('vault = {:vaultId} && (is_opening_balance = true || transaction_type = "opening_balance")', {
+      // Fetch all existing opening transactions for this specific vault to handle duplicates safely
+      const vaultOpeningTxs = await context.pb.collection('cash_transactions').getFullList({
+        filter: context.pb.filter('vault = {:vaultId} && (is_opening_balance = true || transaction_type = "opening_balance")', {
           vaultId: existingFund.id,
         }),
-      ).catch(() => null);
+      }).catch(() => []);
 
-      const dateValue = dateInput || (existingTx?.date ? String(existingTx.date) : dateToJalaliString(new Date()));
+      const canonicalTx = vaultOpeningTxs[0] || null;
+      const dateValue = dateInput || (canonicalTx?.date ? String(canonicalTx.date) : dateToJalaliString(new Date()));
 
       try {
-        if (existingTx) {
-          await context.pb.collection('cash_transactions').update(existingTx.id, {
+        if (canonicalTx) {
+          await context.pb.collection('cash_transactions').update(canonicalTx.id, {
             amount,
             direction: 'in',
             date: dateValue,
             description: description || `موجودی اول دوره صندوق - ${currencySymbol}`,
           });
+
+          // Clean up any historical duplicate opening transactions for this vault to prevent balance corruption
+          if (vaultOpeningTxs.length > 1) {
+            for (let i = 1; i < vaultOpeningTxs.length; i++) {
+              await context.pb.collection('cash_transactions').delete(vaultOpeningTxs[i].id).catch(() => undefined);
+            }
+          }
         } else {
           await context.pb.collection('cash_transactions').create({
             vault: existingFund.id,
@@ -198,7 +215,7 @@ export async function POST(request: Request) {
             currency_symbol: currencySymbol,
             amount,
             direction: 'in',
-            source_key: `opening:cash:${currencyId}`,
+            source_key: `opening:cash:${existingFund.id}`,
             transaction_type: 'opening_balance',
             is_opening_balance: true,
             date: dateValue,
@@ -207,11 +224,12 @@ export async function POST(request: Request) {
           });
         }
 
-        // Generate or update double-entry journal entry
+        // Post or update double-entry journal entry and child lines in place (Model A)
         await postCashOpeningBalance(
           {
             id: updatedFund.id,
             name: fundName,
+            currencyId,
             currencyName,
             accountId: linkedAccountId || updatedFund.accountId,
           },
@@ -278,7 +296,6 @@ export async function POST(request: Request) {
     }
 
     const dateValue = dateInput || dateToJalaliString(new Date());
-    const sourceKey = `opening:cash:${currencyRecord.id}`;
 
     let linkedAccountId: string | null = null;
     try {
@@ -321,6 +338,7 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
+    const sourceKey = `opening:cash:${fund.id}`;
     let createdTx: any = null;
     try {
       createdTx = await context.pb.collection('cash_transactions').create({
@@ -344,6 +362,7 @@ export async function POST(request: Request) {
         {
           id: fund.id,
           name: fundName,
+          currencyId: currencyRecord.id,
           currencyName,
           accountId: linkedAccountId,
         },
