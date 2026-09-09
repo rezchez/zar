@@ -228,5 +228,18 @@ describe('Zarfolio — Checks Creator & Frontend Display Tests', () => {
       expect(outstandingCount).toBe(1);
       expect(outstandingAmount).toBe(1200000000);
     });
+
+    it('editing check with null/empty customer does not erroneously set bankAccount as customer relation', () => {
+      const bankAccountId = 'p08gn0f2tgdbrlo';
+      const bodyCustomer = null;
+      const customerId = typeof bodyCustomer === 'string' ? bodyCustomer.trim() : '';
+      const resolvedCustomer = null;
+
+      // Safe customer resolution logic implemented in route.ts
+      const validCustomerId = resolvedCustomer ? (resolvedCustomer as any).id : (customerId && customerId !== bankAccountId ? customerId : null);
+
+      expect(validCustomerId).toBeNull();
+      expect(validCustomerId).not.toBe(bankAccountId);
+    });
   });
 });

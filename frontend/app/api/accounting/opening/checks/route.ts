@@ -189,7 +189,7 @@ export async function POST(request: Request) {
     // PART 16 — Duplicate Check Number for the same bank account
     const duplicateCheck = await writer.collection('checks').getFirstListItem(
       writer.filter(
-        'bankAccount = {:bankId} && (checkNumber = {:checkNo} || sayadId = {:checkNo})' + (recordId ? ' && id != {:recordId}' : ''),
+        'bankAccount = {:bankId} && (check_number = {:checkNo} || sayadId = {:checkNo})' + (recordId ? ' && id != {:recordId}' : ''),
         { bankId: bankAccount.id, checkNo: normalizedCheckNumber, recordId: recordId || '' },
       ),
     ).catch(() => null);
@@ -211,9 +211,13 @@ export async function POST(request: Request) {
 
     const documentId = text(body?.documentId, 80) || randomUUID();
 
+    // customer relation must only point to valid customer record or be empty string/null
+    const validCustomerId = resolvedCustomer?.id || (customerId && customerId !== bankAccount.id ? customerId : '');
+
     const checkPayload: Record<string, unknown> = {
       bankAccount: bankAccount.id,
-      customer: resolvedCustomer?.id || customerId || bankAccount.id,
+      customer: validCustomerId || null,
+      check_number: normalizedCheckNumber,
       checkNumber: normalizedCheckNumber,
       sayadId: normalizedCheckNumber,
       amount,
@@ -234,6 +238,9 @@ export async function POST(request: Request) {
 
     let checkRecord: Record<string, unknown>;
     if (recordId) {
+      // Preserve original creator immutably on edit
+      delete checkPayload.created_by;
+      delete checkPayload.createdBy;
       checkRecord = await writer.collection('checks').update(recordId, checkPayload);
     } else {
       checkPayload.created_by = context.user.id;
@@ -298,9 +305,14 @@ export async function POST(request: Request) {
       check: mapCheckRecord(fullCheck),
       journalEntryId: journalResult?.id || null,
     }, { status: recordId ? 200 : 201 });
-  } catch (error) {
+  } catch (error: any) {
     console.error('opening_check_save_failed', error);
-    return NextResponse.json({ message: 'ثبت چک افتتاحیه با خطا مواجه شد.' }, { status: 500 });
+    const detailMsg =
+      error?.data?.message ||
+      (error?.data?.data ? Object.values(error.data.data).map((e: any) => e.message || e).join(' - ') : null) ||
+      error?.message ||
+      'ثبت چک افتتاحیه با خطا مواجه شد.';
+    return NextResponse.json({ message: detailMsg }, { status: error?.status || 500 });
   }
 }
 
