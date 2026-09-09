@@ -247,3 +247,5 @@ export function formatPriceWithCommas(cleanVal: string | number): string {
 
   return `${isNeg ? '-' : ''}${intPart}${decimalPart}`;
 }
+
+export const formatNumberWithCommas = formatPriceWithCommas;

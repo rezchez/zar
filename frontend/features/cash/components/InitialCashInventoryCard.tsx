@@ -35,7 +35,7 @@ export default function InitialCashInventoryCard({
     <>
       <article
         dir="rtl"
-        className={`group relative flex flex-col justify-between overflow-hidden rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xs transition-all hover:border-amber-500/40 hover:shadow-xl dark:border-slate-800 dark:bg-slate-900 ${className}`}
+        className={`group relative flex h-full flex-col justify-between overflow-hidden rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xs transition-all hover:border-amber-500/40 hover:shadow-xl dark:border-slate-800 dark:bg-slate-900 ${className}`}
       >
         <div className="relative z-10 space-y-4">
           {/* Top Header: Icon & Badge */}
@@ -54,7 +54,7 @@ export default function InitialCashInventoryCard({
             <h2 className="text-base font-black text-slate-900 dark:text-white">
               موجودی اولیه وجوه نقد صندوق
             </h2>
-            <p className="mt-1 text-xs leading-relaxed font-medium text-slate-500 dark:text-slate-400">
+            <p className="mt-1.5 h-10 text-xs leading-5 font-medium text-slate-500 line-clamp-2 dark:text-slate-400">
               اسکناسهای داخل صندوق شامل تومان و ارز
             </p>
           </div>

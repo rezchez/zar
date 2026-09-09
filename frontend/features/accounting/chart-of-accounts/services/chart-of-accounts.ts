@@ -2391,4 +2391,262 @@ export function enrichAccountsWithCoinsAndMetals(
   return [...cleanAccounts, ...groupNodes, ...itemNodes];
 }
 
+export interface GoodsInventoryEnrichmentInput {
+  id: string;
+  goodsTypeId?: string;
+  goods_type_id?: string;
+  goodsName?: string;
+  goods_name?: string;
+  itemName?: string;
+  item_name?: string;
+  category?: string;
+  quantity?: number;
+  unit?: string;
+  unitPrice?: number;
+  unit_price?: number;
+  totalAmount?: number;
+  total_amount?: number;
+}
+
+/**
+ * Enriches Chart of Accounts with Goods Inventory under 1130 (موجودی کالا و طلا).
+ * - Creates Tafsil 1 group nodes (113040 resin, 113050 gemstones, 113060 workshop, 113070 packaging, 113080 other goods).
+ * - Creates Tafsil 2 item nodes under their corresponding category group.
+ */
+export function enrichAccountsWithGoods(
+  accounts: ChartOfAccountRecord[],
+  goodsItems: GoodsInventoryEnrichmentInput[] = []
+): ChartOfAccountRecord[] {
+  const acc1130 = accounts.find((a) => a.code === '1130' || a.id === 'sys_1130');
+  if (!acc1130) {
+    return accounts;
+  }
+
+  const cleanAccounts = accounts.filter(
+    (a) => !a.id.startsWith('coa_group_goods_') && !a.id.startsWith('coa_goods_')
+  );
+
+  const validGoods = goodsItems || [];
+  if (validGoods.length === 0) {
+    return cleanAccounts;
+  }
+
+  const categoriesConfig: Array<{
+    key: string;
+    suffix: string;
+    id: string;
+    name: string;
+  }> = [
+    { key: 'resin_casting', suffix: '40', id: 'coa_group_goods_resin', name: 'موجودی مواد اولیه و رزین ریخته‌گری' },
+    { key: 'gemstones', suffix: '50', id: 'coa_group_goods_gemstones', name: 'موجودی سنگ، نگین و مروارید' },
+    { key: 'workshop_tools', suffix: '60', id: 'coa_group_goods_workshop', name: 'موجودی ملزومات مصرفی و پرداختکاری' },
+    { key: 'packaging', suffix: '70', id: 'coa_group_goods_packaging', name: 'موجودی جعبه و ملزومات بسته‌بندی' },
+    { key: 'general_goods', suffix: '80', id: 'coa_group_goods_general', name: 'سایر کالاها و ملزومات مصرفی' },
+  ];
+
+  const groupNodes: ChartOfAccountRecord[] = [];
+  const itemNodes: ChartOfAccountRecord[] = [];
+
+  for (const cfg of categoriesConfig) {
+    const itemsForCategory = validGoods.filter((g) => {
+      const cat = g.category || 'general_goods';
+      return cat === cfg.key;
+    });
+
+    if (itemsForCategory.length === 0) continue;
+
+    const groupCode = `${acc1130.code}${cfg.suffix}`; // e.g. 113040
+    const totalValuation = itemsForCategory.reduce((sum, g) => sum + (Number(g.totalAmount ?? g.total_amount) || 0), 0);
+
+    const categoryGroupNode: ChartOfAccountRecord = {
+      id: cfg.id,
+      code: groupCode,
+      name: cfg.name,
+      parentId: acc1130.id,
+      path: `${acc1130.path || '/1000/1100/1130/'}${groupCode}/`,
+      level: 4, // تفضیل ۱
+      accountType: 'asset',
+      normalBalance: 'debit',
+      requiresWeight: false,
+      isMultiCurrency: false,
+      isSystem: true,
+      isActive: true,
+      isPostable: false,
+      sortOrder: (acc1130.sortOrder || 1130) * 100 + Number(cfg.suffix),
+      description: `تفضیل ۱: ${cfg.name} | اقلام: ${itemsForCategory.length} ردیف | ارزش ریالی: ${totalValuation.toLocaleString('fa-IR')} ریال`,
+      tags: [`goods_${cfg.key}`, 'tafsil_1'],
+    };
+    groupNodes.push(categoryGroupNode);
+
+    itemsForCategory.forEach((g, idx) => {
+      const itemSuffix = String(idx + 1).padStart(2, '0');
+      const itemCode = `${groupCode}${itemSuffix}`;
+      const itemId = `coa_goods_${g.id}`;
+      const name = g.goodsName || g.goods_name || g.itemName || g.item_name || 'کالای بدون نام';
+      const qty = Number(g.quantity) || 0;
+      const unit = g.unit || 'عدد';
+      const amount = Number(g.totalAmount ?? g.total_amount) || 0;
+
+      const itemNode: ChartOfAccountRecord = {
+        id: itemId,
+        code: itemCode,
+        name: `${name} (${qty.toLocaleString('fa-IR')} ${unit})`,
+        parentId: categoryGroupNode.id,
+        path: `${categoryGroupNode.path}${itemCode}/`,
+        level: 5, // تفضیل ۲
+        accountType: 'asset',
+        normalBalance: 'debit',
+        requiresWeight: false,
+        isMultiCurrency: false,
+        isSystem: true,
+        isActive: true,
+        isPostable: true,
+        sortOrder: (categoryGroupNode.sortOrder || Number(groupCode)) * 100 + (idx + 1),
+        description: `تفضیل ۲: موجودی اول دوره ${name} | مقدار: ${qty.toLocaleString('fa-IR')} ${unit} | ارزش کل: ${amount.toLocaleString('fa-IR')} ریال`,
+        tags: [`goods_${cfg.key}`, 'tafsil_2', `goods_${g.id}`],
+      };
+      itemNodes.push(itemNode);
+    });
+  }
+
+  return [...cleanAccounts, ...groupNodes, ...itemNodes];
+}
+
+export interface GemstoneInventoryEnrichmentInput {
+  id: string;
+  inventoryCode?: string;
+  inventory_code?: string;
+  category?: string;
+  species?: string;
+  variety?: string;
+  itemName?: string;
+  tradeName?: string;
+  trade_name?: string;
+  inventoryMode?: string;
+  inventory_mode?: string;
+  materialOrigin?: string;
+  material_origin?: string;
+  quantity?: number;
+  weightCt?: number;
+  weight_ct?: number;
+  weightG?: number;
+  weight_g?: number;
+  shape?: string;
+  diamondColorGrade?: string;
+  diamond_color_grade?: string;
+  diamondClarityGrade?: string;
+  diamond_clarity_grade?: string;
+  cutGrade?: string;
+  cut_grade?: string;
+  primaryHue?: string;
+  primary_hue?: string;
+  treatmentStatus?: string;
+  treatment_status?: string;
+  hasCertificate?: boolean;
+  has_certificate?: boolean;
+  certificateLab?: string;
+  certificate_lab?: string;
+  reportNumber?: string;
+  report_number?: string;
+  totalAmount?: number;
+  total_amount?: number;
+}
+
+/**
+ * Enriches Chart of Accounts with Professional Gemstone Inventory under 1130 (موجودی کالا و طلا).
+ * - Creates Tafsil 1 group node (113050 موجودی سنگ‌های قیمتی، رنگی و الماس).
+ * - Creates Tafsil 2 item nodes under 113050 for each gemstone/parcel with full gemological attributes.
+ */
+export function enrichAccountsWithGemstones(
+  accounts: ChartOfAccountRecord[],
+  gemstoneItems: GemstoneInventoryEnrichmentInput[] = []
+): ChartOfAccountRecord[] {
+  const acc1130 = accounts.find((a) => a.code === '1130' || a.id === 'sys_1130');
+  if (!acc1130) {
+    return accounts;
+  }
+
+  const cleanAccounts = accounts.filter(
+    (a) => !a.id.startsWith('coa_group_gemstone_') && !a.id.startsWith('coa_gemstone_')
+  );
+
+  const validGems = gemstoneItems || [];
+  if (validGems.length === 0) {
+    return cleanAccounts;
+  }
+
+  const groupCode = `${acc1130.code}50`; // 113050
+  const groupId = 'coa_group_gemstone_1130';
+  const totalQty = validGems.reduce((sum, g) => sum + (Number(g.quantity) || 1), 0);
+  const totalWeightCt = validGems.reduce((sum, g) => sum + (Number(g.weightCt ?? g.weight_ct) || 0), 0);
+  const totalValuation = validGems.reduce((sum, g) => sum + (Number(g.totalAmount ?? g.total_amount) || 0), 0);
+
+  // Check if 113050 already exists in cleanAccounts (from coa_group_goods_gemstones or base)
+  const existing113050Idx = cleanAccounts.findIndex((a) => a.code === groupCode);
+  const groupNode: ChartOfAccountRecord = {
+    id: groupId,
+    code: groupCode,
+    name: 'موجودی سنگ‌های قیمتی، رنگی و الماس',
+    parentId: acc1130.id,
+    path: `${acc1130.path || '/1000/1100/1130/'}${groupCode}/`,
+    level: 4, // تفضیل ۱
+    accountType: 'asset',
+    normalBalance: 'debit',
+    requiresWeight: true,
+    isMultiCurrency: false,
+    isSystem: true,
+    isActive: true,
+    isPostable: false,
+    sortOrder: (acc1130.sortOrder || 1130) * 100 + 50,
+    description: `تفضیل ۱: موجودی سنگ‌های قیمتی و الماس | اقلام: ${validGems.length} ردیف (${totalQty.toLocaleString('fa-IR')} قطعه) | وزن کل: ${totalWeightCt.toLocaleString('fa-IR')} قیراط | ارزش: ${totalValuation.toLocaleString('fa-IR')} ریال`,
+    tags: ['gemstone_inventory', 'tafsil_1'],
+  };
+
+  if (existing113050Idx !== -1) {
+    cleanAccounts[existing113050Idx] = groupNode;
+  } else {
+    cleanAccounts.push(groupNode);
+  }
+
+  const itemNodes: ChartOfAccountRecord[] = validGems.map((g, idx) => {
+    const itemSuffix = String(idx + 1).padStart(2, '0');
+    const itemCode = `${groupCode}${itemSuffix}`;
+    const itemId = `coa_gemstone_${g.id}`;
+    const invCode = g.inventoryCode || g.inventory_code || `GEM-${idx + 1}`;
+    const category = g.category || 'colored_gemstone';
+    const stoneName = g.variety || g.species || (category === 'diamond' ? 'الماس' : 'سنگ رنگی');
+    const ct = Number(g.weightCt ?? g.weight_ct) || 0;
+    const qty = Number(g.quantity) || 1;
+    const mode = g.inventoryMode || g.inventory_mode || (qty > 1 ? 'parcel' : 'single');
+    const shape = g.shape ? ` (${g.shape})` : '';
+    const certLab = g.certificateLab || g.certificate_lab;
+    const reportNum = g.reportNumber || g.report_number;
+    const certStr = (g.hasCertificate || g.has_certificate) && reportNum ? ` [${certLab || 'Cert'}: ${reportNum}]` : '';
+    const amount = Number(g.totalAmount ?? g.total_amount) || 0;
+
+    const modeLabel = mode === 'parcel' ? `پارسل ${qty.toLocaleString('fa-IR')} عددی` : 'تک‌سنگ';
+
+    return {
+      id: itemId,
+      code: itemCode,
+      name: `${stoneName}${shape} ${invCode} - ${ct.toLocaleString('fa-IR')} ct${certStr}`,
+      parentId: groupNode.id,
+      path: `${groupNode.path}${itemCode}/`,
+      level: 5, // تفضیل ۲
+      accountType: 'asset',
+      normalBalance: 'debit',
+      requiresWeight: true,
+      isMultiCurrency: false,
+      isSystem: true,
+      isActive: true,
+      isPostable: true,
+      sortOrder: (groupNode.sortOrder || Number(groupCode)) * 100 + (idx + 1),
+      description: `تفضیل ۲: موجودی اول دوره ${stoneName} | ${modeLabel} | وزن: ${ct.toLocaleString('fa-IR')} قیراط${certStr} | ارزش: ${amount.toLocaleString('fa-IR')} ریال`,
+      tags: [`gemstone_${category}`, 'tafsil_2', `gem_${g.id}`],
+    };
+  });
+
+  return [...cleanAccounts, ...itemNodes];
+}
+
 

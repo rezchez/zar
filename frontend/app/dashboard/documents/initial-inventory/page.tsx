@@ -6,6 +6,8 @@ import DashboardShell from '@/src/components/dashboard/DashboardShell';
 import InitialBankInventoryCard from '@/src/components/inventory/InitialBankInventoryCard';
 import InitialCashInventoryCard from '@/src/components/inventory/InitialCashInventoryCard';
 import InitialCoinInventoryCard from '@/src/components/inventory/InitialCoinInventoryCard';
+import InitialGemstoneInventoryCard from '@/src/components/inventory/InitialGemstoneInventoryCard';
+import InitialGoodsInventoryCard from '@/src/components/inventory/InitialGoodsInventoryCard';
 import InitialMetalInventoryCard from '@/src/components/inventory/InitialMetalInventoryCard';
 import InitialIssuedChecksCard from '@/features/checks/components/InitialIssuedChecksCard';
 
@@ -28,13 +30,15 @@ export default async function InitialInventoryPage() {
               تعریف موجودی اول دوره
             </h1>
             <p className="max-w-2xl text-xs leading-6 text-slate-500 dark:text-slate-400">
-              ثبت و مدیریت تراز پایه و موجودی اول دوره وجوه نقد، حساب‌های بانکی، طلا، ارز و مسکوکات
+              ثبت و مدیریت تراز پایه و موجودی اول دوره وجوه نقد، حساب‌های بانکی، طلا و فلزات، مسکوکات، سنگ‌های قیمتی و الماس، کالا و رزین، و چک‌های صادرشده
             </p>
           </header>
 
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 sm:gap-6">
             <InitialMetalInventoryCard />
             <InitialCoinInventoryCard />
+            <InitialGemstoneInventoryCard />
+            <InitialGoodsInventoryCard />
             <InitialCashInventoryCard listHref="/dashboard/documents/initial-inventory/cash" />
             <InitialBankInventoryCard listHref="/dashboard/documents/initial-inventory/bank" />
             <InitialIssuedChecksCard />

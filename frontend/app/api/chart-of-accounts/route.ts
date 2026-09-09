@@ -10,6 +10,8 @@ import {
   enrichAccountsWithOpeningChecks,
   enrichAccountsWithBankAndCash,
   enrichAccountsWithCoinsAndMetals,
+  enrichAccountsWithGoods,
+  enrichAccountsWithGemstones,
   type ChartOfAccountRecord,
   type AccountType,
   type NormalBalance,
@@ -18,6 +20,8 @@ import {
   type CashFundEnrichmentInput,
   type CoinInventoryEnrichmentInput,
   type MetalInventoryEnrichmentInput,
+  type GoodsInventoryEnrichmentInput,
+  type GemstoneInventoryEnrichmentInput,
 } from '@/lib/chart-of-accounts';
 
 export async function GET(request: Request) {
@@ -204,6 +208,57 @@ export async function GET(request: Request) {
         }));
 
       accounts = enrichAccountsWithCoinsAndMetals(accounts, mappedCoins, mappedMetals);
+
+      const goodsInventory = await context.pb.collection('goods_inventory').getFullList({
+        filter: 'is_deleted = false && (transaction_type = "opening_balance" || is_opening_balance = true)',
+        expand: 'goods_type',
+      }).catch(() => []);
+
+      const mappedGoods: GoodsInventoryEnrichmentInput[] = (goodsInventory || []).map((g: Record<string, unknown>) => {
+        const expandedType = g.expand && typeof g.expand === 'object' ? (g.expand as Record<string, unknown>).goods_type as Record<string, unknown> : undefined;
+        return {
+          id: String(g.id || ''),
+          goodsTypeId: String(g.goods_type || ''),
+          goodsName: String(g.item_name || expandedType?.name || ''),
+          category: String(g.category || expandedType?.category || 'general_goods'),
+          quantity: typeof g.quantity === 'number' ? g.quantity : Number(g.quantity) || 0,
+          unit: String(g.unit || expandedType?.unit || 'عدد'),
+          unitPrice: typeof g.unit_price === 'number' ? g.unit_price : Number(g.unit_price) || 0,
+          totalAmount: typeof g.total_amount === 'number' ? g.total_amount : Number(g.total_amount) || 0,
+        };
+      });
+
+      accounts = enrichAccountsWithGoods(accounts, mappedGoods);
+
+      const gemstoneInventory = await context.pb.collection('gemstone_inventory').getFullList({
+        filter: 'is_deleted = false && is_opening_balance = true',
+      }).catch(() => []);
+
+      const mappedGemstones: GemstoneInventoryEnrichmentInput[] = (gemstoneInventory || []).map((gem: Record<string, unknown>) => ({
+        id: String(gem.id || ''),
+        inventoryCode: String(gem.inventory_code || ''),
+        category: String(gem.category || 'colored_gemstone'),
+        species: String(gem.species || ''),
+        variety: String(gem.variety || ''),
+        tradeName: String(gem.trade_name || ''),
+        inventoryMode: String(gem.inventory_mode || 'single'),
+        materialOrigin: String(gem.material_origin || 'natural'),
+        quantity: typeof gem.quantity === 'number' ? gem.quantity : Number(gem.quantity) || 1,
+        weightCt: typeof gem.weight_ct === 'number' ? gem.weight_ct : Number(gem.weight_ct) || 0,
+        weightG: typeof gem.weight_g === 'number' ? gem.weight_g : Number(gem.weight_g) || 0,
+        shape: String(gem.shape || ''),
+        diamondColorGrade: String(gem.diamond_color_grade || ''),
+        diamondClarityGrade: String(gem.diamond_clarity_grade || ''),
+        cutGrade: String(gem.cut_grade || ''),
+        primaryHue: String(gem.primary_hue || ''),
+        treatmentStatus: String(gem.treatment_status || ''),
+        hasCertificate: Boolean(gem.has_certificate),
+        certificateLab: String(gem.certificate_lab || ''),
+        reportNumber: String(gem.report_number || ''),
+        totalAmount: typeof gem.total_amount === 'number' ? gem.total_amount : Number(gem.total_amount) || 0,
+      }));
+
+      accounts = enrichAccountsWithGemstones(accounts, mappedGemstones);
     } catch {
       // Non-blocking fallback for opening inventory enrichment
     }

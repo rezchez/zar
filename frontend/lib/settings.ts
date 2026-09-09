@@ -7,6 +7,8 @@ export type AppSettings = {
   fiscalYearStartDateJalali: string;
   baseCurrency: 'IRR' | 'IRT';
   weightDecimalPlaces: 1 | 2 | 3;
+  gemstoneCaratDecimalPlaces?: 2 | 3 | 4;
+  gemstoneGramDecimalPlaces?: 3 | 4;
   goldBaseKarat: number;
   platinumBaseKarat: number;
   silverBaseKarat: number;
@@ -75,6 +77,8 @@ export const defaultSettings: AppSettings = {
   fiscalYearStartDateJalali: '',
   baseCurrency: 'IRR',
   weightDecimalPlaces: 3,
+  gemstoneCaratDecimalPlaces: 2,
+  gemstoneGramDecimalPlaces: 3,
   goldBaseKarat: 750,
   platinumBaseKarat: 800,
   silverBaseKarat: 925,
@@ -180,6 +184,14 @@ export function normalizeSettings(input: Record<string, unknown>): AppSettings {
       .slice(0, 30),
     baseCurrency,
     weightDecimalPlaces,
+    gemstoneCaratDecimalPlaces: (() => {
+      const p = Number(input.gemstoneCaratDecimalPlaces ?? input.gemstone_carat_decimal_places);
+      return p === 2 || p === 3 || p === 4 ? p : 2;
+    })(),
+    gemstoneGramDecimalPlaces: (() => {
+      const p = Number(input.gemstoneGramDecimalPlaces ?? input.gemstone_gram_decimal_places);
+      return p === 3 || p === 4 ? p : 3;
+    })(),
     goldBaseKarat,
     platinumBaseKarat,
     silverBaseKarat,

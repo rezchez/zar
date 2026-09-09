@@ -39,6 +39,8 @@ export interface CreateJournalEntryParams {
     | 'opening_coin'
     | 'opening_metal'
     | 'opening_check'
+    | 'opening_goods'
+    | 'opening_gemstone'
     | 'manual';
   sourceId: string;
   sourceKey: string;
@@ -857,6 +859,128 @@ export async function postMetalOpeningInventory(
           debit: 0,
           credit: roundedAmount,
           description: `طرف مقابل موجودی اولیه ${metalName} (سرمایه اول دوره)`,
+        },
+      ],
+    },
+    pb,
+  );
+}
+
+/**
+ * Goods Opening Inventory Posting (رزین، سنگ و نگین، ملزومات مصرفی کارگاه، جعبه و بسته‌بندی):
+ * Debit: Goods Inventory (1130 موجودی کالا و طلا یا حساب معین/تفضیل مربوطه)
+ * Credit: Opening Capital / Equity (3100 سرمایه اول دوره)
+ */
+export async function postGoodsOpeningInventory(
+  inventoryItem: {
+    id: string;
+    goodsTypeId?: string;
+    goodsName: string;
+    category?: string;
+    quantity: number;
+    unit: string;
+    unitPrice: number;
+    totalAmount: number;
+    accountId?: string | null;
+  },
+  entryDateJalali: string,
+  userId: string,
+  pb: PocketBase,
+  description?: string,
+): Promise<JournalEntryResult> {
+  const roundedAmount = Math.round(Math.abs(inventoryItem.totalAmount));
+  if (roundedAmount === 0) {
+    throw new Error('مبلغ ارزشیابی موجودی اولیه کالا نمی‌تواند صفر باشد.');
+  }
+
+  const inventoryAccountCodeOrId = inventoryItem.accountId || SYSTEM_ACCOUNT_CODES.GOLD_INVENTORY;
+  const counterAccountCodeOrId = SYSTEM_ACCOUNT_CODES.OPENING_EQUITY;
+
+  const desc =
+    description ||
+    `موجودی اول دوره کالا: ${inventoryItem.goodsName} (${inventoryItem.quantity} ${inventoryItem.unit})`;
+
+  return postJournalEntry(
+    {
+      entryDateJalali,
+      description: desc,
+      sourceType: 'opening_goods',
+      sourceId: inventoryItem.id,
+      sourceKey: `opening:goods:${inventoryItem.id}`,
+      userId,
+      lines: [
+        {
+          accountId: inventoryAccountCodeOrId,
+          debit: roundedAmount,
+          credit: 0,
+          description: `موجودی اولیه کالا: ${inventoryItem.goodsName} (${inventoryItem.quantity} ${inventoryItem.unit})`,
+        },
+        {
+          accountId: counterAccountCodeOrId,
+          debit: 0,
+          credit: roundedAmount,
+          description: `طرف مقابل موجودی اولیه کالا (سرمایه اول دوره)`,
+        },
+      ],
+    },
+    pb,
+  );
+}
+
+/**
+ * Gemstone Opening Inventory Posting (الماس، یاقوت، زمرد، اسپینل و سنگ‌های قیمتی/نیمه‌قیمتی):
+ * Debit: Gemstone Inventory (113050 موجودی سنگ و نگین یا 1130 موجودی کالا و طلا)
+ * Credit: Opening Capital / Equity (3100 سرمایه اول دوره)
+ * sourceKey: opening:gemstone:<id>
+ */
+export async function postGemstoneOpeningInventory(
+  gemstoneItem: {
+    id: string;
+    inventoryCode: string;
+    stoneName: string;
+    category?: string;
+    quantity: number;
+    weightCt: number;
+    totalAmount: number;
+    accountId?: string | null;
+  },
+  entryDateJalali: string,
+  userId: string,
+  pb: PocketBase,
+  description?: string,
+): Promise<JournalEntryResult> {
+  const roundedAmount = Math.round(Math.abs(gemstoneItem.totalAmount));
+  if (roundedAmount === 0) {
+    throw new Error('مبلغ ارزشیابی موجودی اولیه سنگ نمی‌تواند صفر باشد.');
+  }
+
+  const inventoryAccountCodeOrId = gemstoneItem.accountId || SYSTEM_ACCOUNT_CODES.GOLD_INVENTORY;
+  const counterAccountCodeOrId = SYSTEM_ACCOUNT_CODES.OPENING_EQUITY;
+
+  const desc =
+    description ||
+    `موجودی اول دوره سنگ: ${gemstoneItem.stoneName} [${gemstoneItem.inventoryCode}] (${gemstoneItem.quantity} عدد - ${gemstoneItem.weightCt} قیراط)`;
+
+  return postJournalEntry(
+    {
+      entryDateJalali,
+      description: desc,
+      sourceType: 'opening_gemstone',
+      sourceId: gemstoneItem.id,
+      sourceKey: `opening:gemstone:${gemstoneItem.id}`,
+      userId,
+      lines: [
+        {
+          accountId: inventoryAccountCodeOrId,
+          debit: roundedAmount,
+          credit: 0,
+          description: `موجودی اولیه سنگ: ${gemstoneItem.stoneName} [${gemstoneItem.inventoryCode}] (${gemstoneItem.quantity} عدد - ${gemstoneItem.weightCt} ct)`,
+        },
+        {
+          accountId: counterAccountCodeOrId,
+          debit: 0,
+          credit: roundedAmount,
+          description: `طرف مقابل موجودی اولیه سنگ (سرمایه اول دوره)`,
         },
       ],
     },
