@@ -37,6 +37,7 @@ export interface CreateJournalEntryParams {
     | 'opening_bank'
     | 'opening_cash'
     | 'opening_coin'
+    | 'opening_metal'
     | 'opening_check'
     | 'manual';
   sourceId: string;
@@ -798,6 +799,71 @@ export async function postCoinOpeningInventory(
     pb,
   );
 }
+
+/**
+ * Metal Opening Inventory Posting (طلا، نقره، پلاتین - آبشده شرطی، آبشده متفرقه، موجودی فلز):
+ * Debit: Gold / Precious Metal Inventory (1130 موجودی کالا و طلا)
+ * Credit: Opening Capital / Equity (3100 سرمایه اول دوره)
+ */
+export async function postMetalOpeningInventory(
+  inventoryItem: {
+    id: string;
+    metal: string;
+    inventoryType: string;
+    weight: number;
+    purity: number;
+    convertedWeight: number;
+    totalAmount: number;
+    accountId?: string | null;
+  },
+  entryDateJalali: string,
+  userId: string,
+  pb: PocketBase,
+  description?: string,
+): Promise<JournalEntryResult> {
+  const roundedAmount = Math.round(Math.abs(inventoryItem.totalAmount));
+  if (roundedAmount === 0) {
+    throw new Error('مبلغ ارزشیابی موجودی اولیه فلزات نمی‌تواند صفر باشد.');
+  }
+
+  const inventoryAccountCodeOrId = inventoryItem.accountId || SYSTEM_ACCOUNT_CODES.GOLD_INVENTORY;
+  const counterAccountCodeOrId = SYSTEM_ACCOUNT_CODES.OPENING_EQUITY;
+
+  const metalLabels: Record<string, string> = {
+    gold: 'طلا',
+    silver: 'نقره',
+    platinum: 'پلاتین',
+  };
+  const metalName = metalLabels[inventoryItem.metal] || inventoryItem.metal;
+  const desc = description || `موجودی اول دوره ${metalName} (وزن: ${inventoryItem.weight} گرم)`;
+
+  return postJournalEntry(
+    {
+      entryDateJalali,
+      description: desc,
+      sourceType: 'opening_metal',
+      sourceId: inventoryItem.id,
+      sourceKey: `opening:metal:${inventoryItem.id}`,
+      userId,
+      lines: [
+        {
+          accountId: inventoryAccountCodeOrId,
+          debit: roundedAmount,
+          credit: 0,
+          description: `موجودی اولیه ${metalName} (وزن: ${inventoryItem.weight} گرم - معادل: ${inventoryItem.convertedWeight} گرم)`,
+        },
+        {
+          accountId: counterAccountCodeOrId,
+          debit: 0,
+          credit: roundedAmount,
+          description: `طرف مقابل موجودی اولیه ${metalName} (سرمایه اول دوره)`,
+        },
+      ],
+    },
+    pb,
+  );
+}
+
 
 /**
  * Step 3 (Payable Cheque Return / برگشت چک پرداختنی):

@@ -120,6 +120,33 @@ export function formatWeight(
 }
 
 /**
+ * Default base karats per precious metal standard.
+ */
+export const DEFAULT_BASE_KARATS = {
+  gold: 750,
+  silver: 999,
+  platinum: 950,
+} as const;
+
+export type PreciousMetalType = keyof typeof DEFAULT_BASE_KARATS;
+
+/**
+ * Calculates converted equivalent weight at given base karat with deterministic precision rounding.
+ * Eliminates IEEE-754 floating point artifacts.
+ */
+export function metalAtBaseKarat(
+  weight: number,
+  purity: number,
+  baseKarat: number,
+  precision: WeightDecimalPlaces = 3,
+): number {
+  if (!Number.isFinite(weight) || !Number.isFinite(purity) || !Number.isFinite(baseKarat) || baseKarat <= 0) {
+    return 0;
+  }
+  return roundWeight((weight * purity) / baseKarat, precision);
+}
+
+/**
  * Calculates 750 carat gold equivalent from weight and carat with precision rounding.
  */
 export function goldAt750(
@@ -127,6 +154,6 @@ export function goldAt750(
   carat: number,
   precision: WeightDecimalPlaces = 3,
 ): number {
-  if (!Number.isFinite(weight) || !Number.isFinite(carat)) return 0;
-  return roundWeight((weight * carat) / 750, precision);
+  return metalAtBaseKarat(weight, carat, DEFAULT_BASE_KARATS.gold, precision);
 }
+

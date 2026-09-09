@@ -80,7 +80,7 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     if (url.searchParams.get('inventory') === 'melted') {
       const records = await context.pb.collection('transactions').getFullList({
-        filter: 'documentSubType = "incoming-molten" || documentSubType = "outgoing-molten"',
+        filter: 'documentSubType = "incoming-molten" || documentSubType = "outgoing-molten" || documentSubType = "conditional-molten" || documentSubType = "misc-molten"',
         sort: 'created',
         expand: 'customer',
       });
@@ -104,7 +104,7 @@ export async function GET(request: Request) {
             remainingWeight: weight,
             purity: Number(details.purity ?? 750) || 750,
             stampNumber: String(details.stampNumber ?? ''),
-            customerName: String(record.expand?.customer?.name ?? record.customerCode ?? ''),
+            customerName: String(record.expand?.customer?.name ?? (record.isOpeningBalance ? 'موجودی اول دوره' : (record.customerCode ?? ''))),
           });
         }
         if (record.documentNature === 'paid' && typeof details.inventorySourceId === 'string') {
@@ -199,7 +199,7 @@ export async function POST(request: Request) {
     const lines = requestedLines.length ? requestedLines : [body];
 
     const inventoryRecords = await context.pb.collection('transactions').getFullList({
-      filter: 'documentSubType = "incoming-molten" || documentSubType = "outgoing-molten"',
+      filter: 'documentSubType = "incoming-molten" || documentSubType = "outgoing-molten" || documentSubType = "conditional-molten" || documentSubType = "misc-molten"',
       sort: 'created',
     });
     const availableMelted = new Map<string, number>();

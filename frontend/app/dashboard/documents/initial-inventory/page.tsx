@@ -6,6 +6,7 @@ import DashboardShell from '@/src/components/dashboard/DashboardShell';
 import InitialBankInventoryCard from '@/src/components/inventory/InitialBankInventoryCard';
 import InitialCashInventoryCard from '@/src/components/inventory/InitialCashInventoryCard';
 import InitialCoinInventoryCard from '@/src/components/inventory/InitialCoinInventoryCard';
+import InitialMetalInventoryCard from '@/src/components/inventory/InitialMetalInventoryCard';
 import InitialIssuedChecksCard from '@/features/checks/components/InitialIssuedChecksCard';
 
 export const dynamic = 'force-dynamic';
@@ -31,10 +32,11 @@ export default async function InitialInventoryPage() {
             </p>
           </header>
 
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+            <InitialMetalInventoryCard />
+            <InitialCoinInventoryCard />
             <InitialCashInventoryCard listHref="/dashboard/documents/initial-inventory/cash" />
             <InitialBankInventoryCard listHref="/dashboard/documents/initial-inventory/bank" />
-            <InitialCoinInventoryCard />
             <InitialIssuedChecksCard />
           </div>
         </div>
