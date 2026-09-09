@@ -9,7 +9,7 @@ export type AccountType =
 
 export type NormalBalance = 'debit' | 'credit' | 'dual';
 
-export type AccountLevel = 1 | 2 | 3 | 4;
+export type AccountLevel = 1 | 2 | 3 | 4 | 5;
 
 export interface ChartOfAccountRecord {
   id: string;
@@ -60,14 +60,16 @@ export const LEVEL_LABELS: Record<AccountLevel, string> = {
   1: 'سطح ۱ - گروه',
   2: 'سطح ۲ - کل',
   3: 'سطح ۳ - معین',
-  4: 'سطح ۴ - تفصیلی',
+  4: 'سطح ۴ - تفضیل ۱',
+  5: 'سطح ۵ - تفضیل ۲',
 };
 
 export const LEVEL_SHORT_LABELS: Record<AccountLevel, string> = {
   1: 'گروه',
   2: 'کل',
   3: 'معین',
-  4: 'تفصیلی',
+  4: 'تفضیل ۱',
+  5: 'تفضیل ۲',
 };
 
 export const DEFAULT_CHART_OF_ACCOUNTS: Omit<ChartOfAccountRecord, 'created' | 'updated'>[] = [
@@ -1896,3 +1898,170 @@ export async function ensureCashFundDetailInChart(
     };
   }
 }
+
+export interface OpeningCheckEnrichmentInput {
+  id: string;
+  checkNumber?: string | null;
+  amount?: number | null;
+  dueDateJalali?: string | null;
+  recipientName?: string | null;
+  bankAccount?: string | null;
+  status?: string | null;
+  type?: string | null;
+  isOpeningBalance?: boolean | null;
+  expand?: {
+    bankAccount?: {
+      id?: string;
+      bankName?: string;
+      branchName?: string;
+      accountNumber?: string;
+      accountCodeZero?: string;
+    };
+  };
+}
+
+export interface BankAccountEnrichmentInput {
+  id: string;
+  bankName: string;
+  branchName?: string;
+  accountNumber: string;
+  accountCodeZero?: string;
+}
+
+/**
+ * Enriches accounts list with issued opening checks connected to Moein account 2110 (اسناد و حساب‌های پرداختنی).
+ * - Banks having at least one issued check are added as Level 4 (تفضیل ۱).
+ * - Banks with NO issued checks are NOT added.
+ * - Under each bank, issued checks are added as Level 5 (تفضیل ۲).
+ */
+export function enrichAccountsWithOpeningChecks(
+  accounts: ChartOfAccountRecord[],
+  openingChecks: OpeningCheckEnrichmentInput[],
+  bankAccounts: BankAccountEnrichmentInput[] = [],
+): ChartOfAccountRecord[] {
+  // 1. Find 2110 account (Moein: اسناد و حساب‌های پرداختنی)
+  const acc2110 = accounts.find((a) => a.code === '2110' || a.id === 'sys_2110');
+  if (!acc2110) {
+    return accounts;
+  }
+
+  // 2. Filter issued checks
+  const validChecks = (openingChecks || []).filter((c) => {
+    const isIssued = !c.type || c.type === 'issued';
+    const hasBank = Boolean(c.bankAccount || c.expand?.bankAccount?.id);
+    return isIssued && hasBank;
+  });
+
+  if (validChecks.length === 0) {
+    return accounts;
+  }
+
+  // 3. Bank accounts map
+  const bankMap = new Map<string, BankAccountEnrichmentInput>();
+  for (const b of bankAccounts) {
+    if (b && b.id) {
+      bankMap.set(b.id, b);
+    }
+  }
+
+  // 4. Group checks by bank ID
+  const checksByBank = new Map<string, OpeningCheckEnrichmentInput[]>();
+  for (const check of validChecks) {
+    const bankId = check.bankAccount || check.expand?.bankAccount?.id;
+    if (!bankId) continue;
+    if (!checksByBank.has(bankId)) {
+      checksByBank.set(bankId, []);
+    }
+    checksByBank.get(bankId)!.push(check);
+  }
+
+  if (checksByBank.size === 0) {
+    return accounts;
+  }
+
+  const bankNodes: ChartOfAccountRecord[] = [];
+  const checkNodes: ChartOfAccountRecord[] = [];
+
+  let bankIndex = 1;
+  for (const [bankId, checks] of checksByBank.entries()) {
+    const bank = bankMap.get(bankId);
+    const bankName = bank?.bankName || checks[0]?.expand?.bankAccount?.bankName || 'بانک نامشخص';
+    const branchName = bank?.branchName || checks[0]?.expand?.bankAccount?.branchName || '';
+    const accNum = bank?.accountNumber || checks[0]?.expand?.bankAccount?.accountNumber || '';
+    const codeSuffix = bank?.accountCodeZero
+      ? bank.accountCodeZero.padStart(2, '0')
+      : String(bankIndex).padStart(2, '0');
+
+    const bankCode = `${acc2110.code}${codeSuffix}`;
+    const bankNodeId = `coa_bank_${bankId}_2110`;
+    const bankDisplayName = [
+      bankName,
+      branchName ? `شعبه ${branchName}` : '',
+      accNum ? `(حساب ${accNum})` : '',
+    ].filter(Boolean).join(' - ');
+
+    const totalBankAmount = checks.reduce((sum, c) => sum + (c.amount || 0), 0);
+
+    const bankNode: ChartOfAccountRecord = {
+      id: bankNodeId,
+      code: bankCode,
+      name: bankDisplayName,
+      parentId: acc2110.id,
+      path: `${acc2110.path || '/2000/2100/2110/'}${bankCode}/`,
+      level: 4, // تفضیل ۱
+      accountType: 'liability',
+      normalBalance: 'credit',
+      requiresWeight: false,
+      isMultiCurrency: false,
+      isSystem: true,
+      isActive: true,
+      isPostable: false,
+      sortOrder: (acc2110.sortOrder || 2110) * 100 + bankIndex,
+      description: `تفضیل ۱: چک‌های صادرشده عهده ${bankName} | تعداد: ${checks.length} فقره | جمع: ${totalBankAmount.toLocaleString('fa-IR')} ریال`,
+      tags: ['bank_payable', 'tafsil_1', `bank_${bankId}`],
+    };
+    bankNodes.push(bankNode);
+
+    // Add checks under this bank as Level 5 (تفضیل ۲)
+    checks.forEach((check, cIdx) => {
+      const checkCodeSuffix = String(cIdx + 1).padStart(2, '0');
+      const checkCode = `${bankCode}${checkCodeSuffix}`;
+      const checkNodeId = `coa_check_${check.id}`;
+
+      const chkNum = check.checkNumber || 'بدون شماره';
+      const dueStr = check.dueDateJalali ? `سررسید: ${check.dueDateJalali}` : '';
+      const recStr = check.recipientName ? `در وجه: ${check.recipientName}` : '';
+      const parts = [`چک ${chkNum}`, dueStr, recStr].filter(Boolean);
+
+      const checkNode: ChartOfAccountRecord = {
+        id: checkNodeId,
+        code: checkCode,
+        name: parts.join(' - '),
+        parentId: bankNode.id,
+        path: `${bankNode.path}${checkCode}/`,
+        level: 5, // تفضیل ۲
+        accountType: 'liability',
+        normalBalance: 'credit',
+        requiresWeight: false,
+        isMultiCurrency: false,
+        isSystem: true,
+        isActive: true,
+        isPostable: true,
+        sortOrder: (bankNode.sortOrder || 211000) * 100 + (cIdx + 1),
+        description: `تفضیل ۲: چک صادره اول دوره | مبلغ: ${(check.amount || 0).toLocaleString('fa-IR')} ریال | ${recStr || 'گیرنده نامشخص'} | وضعیت: ${check.status || 'صادرشده'}`,
+        tags: ['issued_check', 'tafsil_2', `check_${check.id}`],
+      };
+      checkNodes.push(checkNode);
+    });
+
+    bankIndex++;
+  }
+
+  // Filter out any existing coa_bank_ or coa_check_ nodes
+  const cleanAccounts = accounts.filter(
+    (a) => !a.id.startsWith('coa_bank_') && !a.id.startsWith('coa_check_')
+  );
+
+  return [...cleanAccounts, ...bankNodes, ...checkNodes];
+}
+

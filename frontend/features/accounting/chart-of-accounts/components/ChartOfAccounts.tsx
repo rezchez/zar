@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import Link from 'next/link';
 import {
   FolderTree,
   Plus,
@@ -28,6 +29,8 @@ import {
   X,
   FileSpreadsheet,
   FileJson,
+  Building2,
+  ExternalLink,
 } from 'lucide-react';
 import {
   ACCOUNT_TYPE_LABELS,
@@ -112,13 +115,31 @@ export default function ChartOfAccounts() {
       const list: ChartOfAccountRecord[] = data.accounts || [];
       setAccounts(list);
 
-      // Expand level 1 and 2 by default
+      // Expand level 1 and 2 by default, and focus target if specified
       const initialExpanded = new Set<string>();
       for (const a of list) {
         if (a.level === 1 || a.level === 2) {
           initialExpanded.add(a.id);
         }
       }
+
+      if (typeof window !== 'undefined') {
+        const urlParams = new URLSearchParams(window.location.search);
+        const focusParam = urlParams.get('focus') || urlParams.get('code');
+        if (focusParam) {
+          const target = list.find((a) => a.code === focusParam || a.id === focusParam);
+          if (target) {
+            initialExpanded.add(target.id);
+            if (target.parentId) initialExpanded.add(target.parentId);
+            for (const child of list) {
+              if (child.parentId === target.id) {
+                initialExpanded.add(child.id);
+              }
+            }
+          }
+        }
+      }
+
       setExpandedIds(initialExpanded);
     } catch (err: any) {
       setError(err?.message || 'خطا در برقراری ارتباط با سرور.');
@@ -1297,6 +1318,9 @@ function AccountTreeItem({
   const isExpanded = expandedIds.has(node.id);
   const hasChildren = node.children && node.children.length > 0;
   const paddingRight = (level - 1) * 26 + 16;
+  const isTafsil1Bank = Boolean(node.tags?.includes('tafsil_1') || node.tags?.includes('bank_payable'));
+  const isTafsil2Check = Boolean(node.tags?.includes('tafsil_2') || node.tags?.includes('issued_check'));
+  const isOpeningCheckHierarchy = isTafsil1Bank || isTafsil2Check;
 
   // Visual indentation level border color
   const levelBorderColors = [
@@ -1304,8 +1328,9 @@ function AccountTreeItem({
     'border-r-sky-500',
     'border-r-emerald-500',
     'border-r-purple-500',
+    'border-r-indigo-500',
   ];
-  const borderClass = levelBorderColors[Math.min(level - 1, 3)] || 'border-r-slate-600';
+  const borderClass = levelBorderColors[Math.min(level - 1, 4)] || 'border-r-slate-600';
 
   const typeBadgeColors: Record<AccountType, string> = {
     asset: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30',
@@ -1353,15 +1378,30 @@ function AccountTreeItem({
             {node.name}
           </span>
 
+          {/* Bank / Check Specific Badges */}
+          {isTafsil1Bank && (
+            <span className="hidden sm:inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md bg-sky-500/10 text-sky-300 border border-sky-500/30 font-bold shrink-0">
+              <Building2 className="w-3 h-3 text-sky-400" />
+              تفضیل ۱ - بانک
+            </span>
+          )}
+
+          {isTafsil2Check && (
+            <span className="hidden sm:inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 font-bold shrink-0">
+              <FileSpreadsheet className="w-3 h-3 text-emerald-400" />
+              تفضیل ۲ - چک صادره
+            </span>
+          )}
+
           {/* System Lock Badge */}
-          {node.isSystem && (
+          {node.isSystem && !isOpeningCheckHierarchy && (
             <span title="سرفصل سیستمی محافظت‌شده">
               <Lock className="w-3.5 h-3.5 text-amber-500/70 flex-shrink-0" />
             </span>
           )}
 
           {/* Postable indicator */}
-          {node.isPostable && (
+          {node.isPostable && !isTafsil2Check && (
             <span className="text-[10px] px-1.5 py-0.2 bg-teal-500/10 text-teal-300 border border-teal-500/20 rounded" title="مجاز به گردش و ثبت سند">
               گردش
             </span>
@@ -1401,47 +1441,60 @@ function AccountTreeItem({
 
         {/* Actions */}
         <div className="col-span-12 sm:col-span-2 flex items-center justify-end gap-1 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-800">
-          {node.level < 4 && (
-            <button
-              onClick={() => onAddChild(node)}
-              type="button"
-              className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-slate-800 rounded-lg transition-colors"
-              title="افزودن حساب فرزند ذیل این سرفصل"
+          {isOpeningCheckHierarchy ? (
+            <Link
+              href="/dashboard/accounting/opening-balance/checks"
+              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded-lg transition-colors"
+              title="مشاهده و مدیریت در چک‌های صادرشده اول دوره"
             >
-              <Plus className="w-4 h-4" />
-            </button>
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span className="text-[11px]">{isTafsil2Check ? 'مدیریت چک' : 'مشاهده چک‌ها'}</span>
+            </Link>
+          ) : (
+            <>
+              {node.level < 4 && (
+                <button
+                  onClick={() => onAddChild(node)}
+                  type="button"
+                  className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-slate-800 rounded-lg transition-colors"
+                  title="افزودن حساب فرزند ذیل این سرفصل"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              )}
+
+              <button
+                onClick={() => onEdit(node)}
+                type="button"
+                className="p-1.5 text-slate-400 hover:text-sky-400 hover:bg-slate-800 rounded-lg transition-colors"
+                title="ویرایش سرفصل"
+              >
+                <Edit3 className="w-4 h-4" />
+              </button>
+
+              <button
+                onClick={() => onToggleStatus(node)}
+                type="button"
+                className={`p-1.5 rounded-lg transition-colors ${
+                  node.isActive === false
+                    ? 'text-rose-400 hover:bg-slate-800'
+                    : 'text-slate-400 hover:text-emerald-400 hover:bg-slate-800'
+                }`}
+                title={node.isActive === false ? 'فعال‌سازی سرفصل' : 'غیرفعال‌سازی سرفصل'}
+              >
+                {node.isActive === false ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+
+              <button
+                onClick={() => onDelete(node)}
+                type="button"
+                className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors"
+                title="حذف سرفصل"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </>
           )}
-
-          <button
-            onClick={() => onEdit(node)}
-            type="button"
-            className="p-1.5 text-slate-400 hover:text-sky-400 hover:bg-slate-800 rounded-lg transition-colors"
-            title="ویرایش سرفصل"
-          >
-            <Edit3 className="w-4 h-4" />
-          </button>
-
-          <button
-            onClick={() => onToggleStatus(node)}
-            type="button"
-            className={`p-1.5 rounded-lg transition-colors ${
-              node.isActive === false
-                ? 'text-rose-400 hover:bg-slate-800'
-                : 'text-slate-400 hover:text-emerald-400 hover:bg-slate-800'
-            }`}
-            title={node.isActive === false ? 'فعال‌سازی سرفصل' : 'غیرفعال‌سازی سرفصل'}
-          >
-            {node.isActive === false ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-          </button>
-
-          <button
-            onClick={() => onDelete(node)}
-            type="button"
-            className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors"
-            title="حذف سرفصل"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
         </div>
       </div>
 

@@ -6,7 +6,8 @@ import { useEffect, useState } from 'react';
 
 import type { DashboardUser } from '@/src/components/dashboard/DashboardShell';
 import CacheRebuildButton from '@/src/components/dashboard/CacheRebuildButton';
-import { APP_VERSION } from '@/lib/version';
+import { APP_VERSION, APP_VERSION_FA } from '@/lib/version';
+import ChangelogModal from '@/features/changelog/components/ChangelogModal';
 
 // Icon SVG path nodes for Morphicons
 const CHEVRON_DOWN_NODE = [['path', { d: 'm6 9 6 6 6-6' }]] as const;
@@ -209,6 +210,8 @@ export default function DashboardSidebar({
   activeId,
   onSelect,
 }: DashboardSidebarProps) {
+  const [changelogOpen, setChangelogOpen] = useState(false);
+
   return (
     <>
       {/* بک‌دراپ تاریک برای موبایل */}
@@ -300,19 +303,39 @@ export default function DashboardSidebar({
                 </span>
                 <div className="flex items-center gap-1.5">
                   <CacheRebuildButton collapsed={false} />
-                  <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500">
-                    {APP_VERSION}
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setChangelogOpen(true)}
+                    className="font-mono text-[10px] text-slate-400 hover:text-amber-500 dark:text-slate-500 dark:hover:text-amber-400 transition-colors cursor-pointer flex items-center gap-1 group"
+                    title="مشاهده یادداشت‌های انتشار و چنج‌لاگ"
+                  >
+                    <span className="font-sans font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 px-1.5 py-0.5 rounded text-[10px] group-hover:border-amber-500/40 group-hover:bg-amber-500/20 transition-colors">
+                      {APP_VERSION_FA}
+                    </span>
+                  </button>
                 </div>
               </>
             ) : (
               <div className="flex flex-col items-center gap-2 mx-auto">
                 <div className="size-2 rounded-full bg-emerald-500 animate-pulse" title="سامانه برخط" />
                 <CacheRebuildButton collapsed={true} />
+                <button
+                  type="button"
+                  onClick={() => setChangelogOpen(true)}
+                  className="font-sans font-bold text-[9px] bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 px-1.5 py-0.5 rounded hover:bg-amber-500/20 transition-colors cursor-pointer"
+                  title={`مشاهده یادداشت‌های انتشار ${APP_VERSION_FA}`}
+                >
+                  بتا
+                </button>
               </div>
             )}
           </div>
         </div>
+
+        <ChangelogModal
+          isOpen={changelogOpen}
+          onClose={() => setChangelogOpen(false)}
+        />
       </aside>
     </>
   );

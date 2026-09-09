@@ -7,6 +7,7 @@ import {
   validateAccountCode,
   computeAccountPath,
   normalizeAccountCode,
+  enrichAccountsWithOpeningChecks,
   type ChartOfAccountRecord,
   type AccountType,
   type NormalBalance,
@@ -99,6 +100,48 @@ export async function GET(request: Request) {
         created: new Date().toISOString(),
         updated: new Date().toISOString(),
       }));
+    }
+
+    // Enrich accounts with opening issued checks under 2110 (Tafsil 1: Bank, Tafsil 2: Check)
+    try {
+      const [openingChecks, bankAccounts] = await Promise.all([
+        context.pb.collection('checks').getFullList({
+          sort: 'dueDate',
+          expand: 'bankAccount',
+        }).catch(() => []),
+        context.pb.collection('bank_accounts').getFullList().catch(() =>
+          context.pb.collection('banks').getFullList().catch(() => [])
+        ),
+      ]);
+
+      if (openingChecks && openingChecks.length > 0) {
+        const mappedChecks = openingChecks
+          .filter((c: Record<string, unknown>) => c.is_opening_balance === true || c.isOpeningBalance === true)
+          .map((c: Record<string, unknown>) => ({
+            id: String(c.id || ''),
+            checkNumber: typeof c.checkNumber === 'string' ? c.checkNumber : typeof c.check_number === 'string' ? c.check_number : '',
+            amount: typeof c.amount === 'number' ? c.amount : Number(c.amount) || 0,
+            dueDateJalali: typeof c.dueDateJalali === 'string' ? c.dueDateJalali : typeof c.due_date_jalali === 'string' ? c.due_date_jalali : '',
+            recipientName: typeof c.recipientName === 'string' ? c.recipientName : typeof c.recipient_name === 'string' ? c.recipient_name : '',
+            bankAccount: typeof c.bankAccount === 'string' ? c.bankAccount : '',
+            status: typeof c.status === 'string' ? c.status : 'issued',
+            type: typeof c.type === 'string' ? c.type : 'issued',
+            isOpeningBalance: true,
+            expand: c.expand as any,
+          }));
+
+        const mappedBanks = (bankAccounts || []).map((b: Record<string, unknown>) => ({
+          id: String(b.id || ''),
+          bankName: String(b.bankName || b.name || ''),
+          branchName: typeof b.branchName === 'string' ? b.branchName : '',
+          accountNumber: typeof b.accountNumber === 'string' ? b.accountNumber : '',
+          accountCodeZero: typeof b.accountCodeZero === 'string' ? b.accountCodeZero : '',
+        }));
+
+        accounts = enrichAccountsWithOpeningChecks(accounts, mappedChecks, mappedBanks);
+      }
+    } catch {
+      // Non-blocking fallback for check enrichment
     }
 
     // Apply query filters

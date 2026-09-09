@@ -8,6 +8,7 @@ import {
   PinOff,
   Search,
   Settings,
+  Sparkles,
   Sun,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -21,6 +22,8 @@ import DashboardTopbarSearch, {
   type DashboardTopbarSearchItem,
 } from './DashboardTopbarSearch';
 import SidebarToggleButton from './SidebarToggleButton';
+import { APP_VERSION_FA } from '@/lib/version';
+import { openChangelogModal } from '@/features/changelog/components/ChangelogModal';
 
 export type DashboardTopbarUser = {
   id: string;
@@ -236,6 +239,24 @@ function UserMenu({
         <button type="button" onClick={onAccount} role="menuitem">
           <Settings size={16} />
           مدیریت حساب کاربری
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            onClose();
+            openChangelogModal();
+          }}
+          role="menuitem"
+          className="flex items-center justify-between w-full"
+        >
+          <span className="flex items-center gap-2">
+            <Sparkles size={16} className="text-amber-500" />
+            <span>تغییرات نسخه</span>
+          </span>
+          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold">
+            {APP_VERSION_FA}
+          </span>
         </button>
 
         <div className="dashboard-user-dropdown-separator" />

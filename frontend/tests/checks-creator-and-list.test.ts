@@ -231,8 +231,8 @@ describe('Zarfolio — Checks Creator & Frontend Display Tests', () => {
 
     it('editing check with null/empty customer does not erroneously set bankAccount as customer relation', () => {
       const bankAccountId = 'p08gn0f2tgdbrlo';
-      const bodyCustomer = null;
-      const customerId = typeof bodyCustomer === 'string' ? bodyCustomer.trim() : '';
+      const bodyCustomer: unknown = null;
+      const customerId = typeof bodyCustomer === 'string' ? (bodyCustomer as string).trim() : '';
       const resolvedCustomer = null;
 
       // Safe customer resolution logic implemented in route.ts
