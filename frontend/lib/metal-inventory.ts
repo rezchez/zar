@@ -107,10 +107,40 @@ export function calculateMetalInventoryBalances(
   for (const tx of transactions) {
     if (tx.is_deleted) continue;
 
-    const isOpening = Boolean(tx.isOpeningBalance || tx.transactionType === 'opening_balance');
-    const nature = String(tx.documentNature || '').toLowerCase();
+    const isOpening = Boolean(
+      tx.is_opening_balance ||
+      tx.isOpeningBalance ||
+      tx.transaction_type === 'opening_balance' ||
+      tx.transactionType === 'opening_balance'
+    );
+    const direction = String(tx.direction || tx.documentNature || 'in').toLowerCase();
+    const isOut = direction === 'out' || direction === 'paid';
+
     const details = parseMetalDocumentDetails(tx.documentDetails);
 
+    // Check if record is from dedicated metal_inventory collection
+    if (tx.metal && (tx.raw_weight != null || tx.rawWeight != null)) {
+      const metalKey = String(tx.metal).toLowerCase() as PreciousMetalType;
+      if (summary[metalKey]) {
+        const rawWeight = Math.abs(Number(tx.raw_weight ?? tx.rawWeight ?? 0));
+        const purity = Number(tx.purity) || (metalKey === 'gold' ? 750 : metalKey === 'silver' ? 999 : 950);
+        const baseKarat = Number(tx.base_karat ?? tx.baseKarat) || DEFAULT_BASE_KARATS[metalKey];
+        const converted = Number(tx.converted_weight ?? tx.convertedWeight) || metalAtBaseKarat(rawWeight, purity, baseKarat, precision);
+
+        if (isOpening) {
+          summary[metalKey].rawOpening = roundWeight(summary[metalKey].rawOpening + rawWeight, precision);
+          summary[metalKey].convertedOpening = roundWeight(summary[metalKey].convertedOpening + converted, precision);
+          summary[metalKey].openingCount += 1;
+        } else if (isOut) {
+          summary[metalKey].rawOutflow = roundWeight(summary[metalKey].rawOutflow + rawWeight, precision);
+        } else {
+          summary[metalKey].rawInflow = roundWeight(summary[metalKey].rawInflow + rawWeight, precision);
+        }
+      }
+      continue;
+    }
+
+    // Otherwise, parse from legacy transactions fields
     // 1. Gold
     const rawGold = Math.abs(Number(tx.goldAmount || 0));
     if (rawGold > 0) {
@@ -122,7 +152,7 @@ export function calculateMetalInventoryBalances(
         summary.gold.rawOpening = roundWeight(summary.gold.rawOpening + rawGold, precision);
         summary.gold.convertedOpening = roundWeight(summary.gold.convertedOpening + convertedGold, precision);
         summary.gold.openingCount += 1;
-      } else if (nature === 'paid' || Number(tx.goldAmount) < 0) {
+      } else if (isOut || Number(tx.goldAmount) < 0) {
         summary.gold.rawOutflow = roundWeight(summary.gold.rawOutflow + rawGold, precision);
       } else {
         summary.gold.rawInflow = roundWeight(summary.gold.rawInflow + rawGold, precision);
@@ -140,7 +170,7 @@ export function calculateMetalInventoryBalances(
         summary.silver.rawOpening = roundWeight(summary.silver.rawOpening + rawSilver, precision);
         summary.silver.convertedOpening = roundWeight(summary.silver.convertedOpening + convertedSilver, precision);
         summary.silver.openingCount += 1;
-      } else if (nature === 'paid' || Number(tx.silverAmount) < 0) {
+      } else if (isOut || Number(tx.silverAmount) < 0) {
         summary.silver.rawOutflow = roundWeight(summary.silver.rawOutflow + rawSilver, precision);
       } else {
         summary.silver.rawInflow = roundWeight(summary.silver.rawInflow + rawSilver, precision);
@@ -158,7 +188,7 @@ export function calculateMetalInventoryBalances(
         summary.platinum.rawOpening = roundWeight(summary.platinum.rawOpening + rawPlatinum, precision);
         summary.platinum.convertedOpening = roundWeight(summary.platinum.convertedOpening + convertedPlatinum, precision);
         summary.platinum.openingCount += 1;
-      } else if (nature === 'paid' || Number(tx.platinumAmount) < 0) {
+      } else if (isOut || Number(tx.platinumAmount) < 0) {
         summary.platinum.rawOutflow = roundWeight(summary.platinum.rawOutflow + rawPlatinum, precision);
       } else {
         summary.platinum.rawInflow = roundWeight(summary.platinum.rawInflow + rawPlatinum, precision);

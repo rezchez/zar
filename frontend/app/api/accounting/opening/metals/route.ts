@@ -56,11 +56,6 @@ export async function GET() {
   }
 
   try {
-    const records = await context.pb.collection('transactions').getFullList({
-      filter: 'isOpeningBalance = true && (goldAmount != 0 || silverAmount != 0 || platinumAmount != 0 || documentTab = "metals" || documentTab = "raw-gold")',
-      sort: '-created',
-    }).catch(() => []);
-
     let weightPrecision: WeightDecimalPlaces = 3;
     try {
       const settingsRecord = await context.pb.collection('app_settings').getFirstListItem('id != ""').catch(() => null);
@@ -72,9 +67,47 @@ export async function GET() {
       weightPrecision = (defaultSettings.weightDecimalPlaces || 3) as WeightDecimalPlaces;
     }
 
-    const items: MetalOpeningRecord[] = records
-      .filter((r) => !r.is_deleted)
-      .map((r: Record<string, unknown>) => {
+    // 1. Fetch from primary dedicated collection: metal_inventory
+    let metalInvRecords = await context.pb.collection('metal_inventory').getFullList({
+      filter: 'is_deleted = false && (transaction_type = "opening_balance" || is_opening_balance = true)',
+      sort: '-created',
+    }).catch(() => []);
+
+    // 2. Backward compatibility fallback to transactions if metal_inventory is empty
+    let items: MetalOpeningRecord[] = [];
+    if (metalInvRecords.length > 0) {
+      items = metalInvRecords.map((r: Record<string, unknown>) => {
+        const metal = String(r.metal || 'gold').toLowerCase() as PreciousMetalType;
+        const baseKarat = Number(r.base_karat) || DEFAULT_BASE_KARATS[metal];
+        const rawWeight = Math.abs(Number(r.raw_weight || 0));
+        const purity = Number(r.purity) || (metal === 'gold' ? 750 : metal === 'silver' ? 999 : 950);
+        const convertedWeight = Number(r.converted_weight) || metalAtBaseKarat(rawWeight, purity, baseKarat, weightPrecision);
+
+        return {
+          id: String(r.id || ''),
+          metal,
+          inventoryType: (r.inventory_type || 'general_metal') as MetalInventoryType,
+          rawWeight,
+          purity,
+          baseKarat,
+          convertedWeight,
+          labName: String(r.lab_name || ''),
+          stampNumber: String(r.stamp_number || ''),
+          totalAmount: Math.abs(Number(r.total_amount || 0)),
+          date: String(r.date || dateToJalaliString(new Date())),
+          description: String(r.description || ''),
+          createdBy: String(r.created_by || ''),
+          created: String(r.created || ''),
+          updated: String(r.updated || ''),
+        };
+      });
+    } else {
+      const txRecords = await context.pb.collection('transactions').getFullList({
+        filter: 'isOpeningBalance = true && is_deleted = false && (goldAmount != 0 || silverAmount != 0 || platinumAmount != 0 || documentTab = "metals" || documentTab = "raw-gold")',
+        sort: '-created',
+      }).catch(() => []);
+
+      items = txRecords.map((r: Record<string, unknown>) => {
         const details = parseMetalDocumentDetails(r.documentDetails);
         const rawGold = Math.abs(Number(r.goldAmount || 0));
         const rawSilver = Math.abs(Number(r.silverAmount || 0));
@@ -120,13 +153,19 @@ export async function GET() {
           updated: String(r.updated || ''),
         };
       });
+    }
 
-    // Also fetch all active non-opening metal transactions to compute the true live balance
-    const allTransactions = await context.pb.collection('transactions').getFullList({
+    // 3. Compute live summary balances across metal_inventory and transactions
+    const allMetalInventory = await context.pb.collection('metal_inventory').getFullList({
+      filter: 'is_deleted = false',
+    }).catch(() => []);
+
+    const allTx = await context.pb.collection('transactions').getFullList({
       filter: 'is_deleted = false && (goldAmount != 0 || silverAmount != 0 || platinumAmount != 0)',
     }).catch(() => []);
 
-    const summary = calculateMetalInventoryBalances(allTransactions, weightPrecision);
+    const combined = [...allMetalInventory, ...allTx];
+    const summary = calculateMetalInventoryBalances(combined, weightPrecision);
 
     return NextResponse.json({
       items,
@@ -192,7 +231,6 @@ export async function POST(request: Request) {
       weightPrecision = 3;
     }
 
-    // Override baseKarat if explicitly provided in body
     if (body?.baseKarat && Number(body.baseKarat) > 0) {
       baseKarat = Number(body.baseKarat);
     }
@@ -230,17 +268,17 @@ export async function POST(request: Request) {
         return NextResponse.json({ message: 'برای آبشده شرطی، ورود نام ری‌گیری (آزمایشگاه) الزامی است.' }, { status: 400 });
       }
 
-      // Check for duplicate stampNumber when creating a new conditional record
+      // Check for duplicate stampNumber when creating a new conditional record in metal_inventory
       if (!recordId) {
         try {
-          const existingTxs = await context.pb.collection('transactions').getFullList({
-            filter: `isOpeningBalance = true && documentSubType = "conditional-molten"`,
-          });
-          const duplicate = existingTxs.find((t) => {
-            const d = parseMetalDocumentDetails(t.documentDetails);
-            return d.metalType === metalInput && d.stampNumber === stampNumber;
-          });
-          if (duplicate) {
+          const existing = await context.pb.collection('metal_inventory').getFirstListItem(
+            context.pb.filter(
+              'is_deleted = false && (transaction_type = "opening_balance" || is_opening_balance = true) && metal = {:metal} && stamp_number = {:stamp}',
+              { metal: metalInput, stamp: stampNumber },
+            ),
+          ).catch(() => null);
+
+          if (existing) {
             return NextResponse.json({
               message: `موجودی اولیه آبشده شرطی با شماره انگ «${stampNumber}» قبلاً ثبت شده است. لطفاً همان رکورد را ویرایش کنید.`,
             }, { status: 409 });
@@ -260,64 +298,35 @@ export async function POST(request: Request) {
     const convertedWeight = metalAtBaseKarat(roundedRawWeight, purity, baseKarat, weightPrecision);
     const dateValue = dateInput || dateToJalaliString(new Date());
 
-    const documentSubType =
-      inventoryType === 'conditional_melted'
-        ? 'conditional-molten'
-        : inventoryType === 'miscellaneous_melted'
-          ? 'misc-molten'
-          : 'metal-inventory';
-
-    const metalDetails = {
-      metalType: metalInput,
-      inventoryType,
-      rawWeight: roundedRawWeight,
-      purity,
-      baseKarat,
-      convertedWeight,
-      labName: inventoryType === 'conditional_melted' ? labName : undefined,
-      stampNumber: inventoryType === 'conditional_melted' ? stampNumber : undefined,
-      totalAmount: Math.round(totalAmount),
-      notes: description,
-    };
-
-    let generatedSourceKey = `opening:metal:${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    if (recordId) {
-      generatedSourceKey = `opening:metal:${recordId}`;
-    }
-
+    // Prepare payload for dedicated metal_inventory collection
     const payload: Record<string, unknown> = {
-      isOpeningBalance: true,
-      transactionType: 'opening_balance',
-      status: 'posted',
-      documentNature: 'received',
-      documentTab: 'metals',
-      documentSubType,
-      goldAmount: metalInput === 'gold' ? roundedRawWeight : 0,
-      silverAmount: metalInput === 'silver' ? roundedRawWeight : 0,
-      platinumAmount: metalInput === 'platinum' ? roundedRawWeight : 0,
-      rialAmount: Math.round(totalAmount),
-      documentDateJalali: dateValue,
-      transactionDate: new Date().toISOString(),
-      documentDetails: JSON.stringify(metalDetails),
+      metal: metalInput,
+      inventory_type: inventoryType,
+      direction: 'in',
+      transaction_type: 'opening_balance',
+      raw_weight: roundedRawWeight,
+      purity,
+      base_karat: baseKarat,
+      converted_weight: convertedWeight,
+      lab_name: inventoryType === 'conditional_melted' ? labName : '',
+      stamp_number: inventoryType === 'conditional_melted' ? stampNumber : '',
+      unit_price: 0,
+      total_amount: Math.round(totalAmount),
+      date: dateValue,
       description:
         description ||
         `موجودی اولیه ${metalInput === 'gold' ? 'طلا' : metalInput === 'silver' ? 'نقره' : 'پلاتین'}${inventoryType === 'conditional_melted' ? ` (انگ: ${stampNumber})` : ''}`,
-      updatedBy: context.user.id,
+      is_opening_balance: true,
+      is_deleted: false,
+      updated_by: context.user.id,
     };
 
     let resultRecord: Record<string, unknown>;
     if (recordId) {
-      resultRecord = await context.pb.collection('transactions').update(recordId, payload);
+      resultRecord = await context.pb.collection('metal_inventory').update(recordId, payload);
     } else {
-      payload.createdBy = context.user.id;
-      payload.sourceKey = generatedSourceKey;
-      resultRecord = await context.pb.collection('transactions').create(payload);
-      // Ensure sourceKey uses actual record ID
-      if (resultRecord.id && resultRecord.sourceKey !== `opening:metal:${resultRecord.id}`) {
-        await context.pb.collection('transactions').update(String(resultRecord.id), {
-          sourceKey: `opening:metal:${resultRecord.id}`,
-        }).catch(() => null);
-      }
+      payload.created_by = context.user.id;
+      resultRecord = await context.pb.collection('metal_inventory').create(payload);
     }
 
     // 7. Double-entry Journal Entry posting if monetary valuation is provided
@@ -339,9 +348,9 @@ export async function POST(request: Request) {
           description || `موجودی اولیه ${metalInput === 'gold' ? 'طلا' : metalInput === 'silver' ? 'نقره' : 'پلاتین'}: ${roundedRawWeight} گرم (معادل: ${convertedWeight} گرم)`,
         );
       } catch (err) {
-        // Rollback created transaction record if journal creation fails to ensure atomicity
+        // Rollback created metal_inventory record if journal creation fails to ensure atomicity
         if (!recordId && resultRecord.id) {
-          await context.pb.collection('transactions').delete(String(resultRecord.id)).catch(() => undefined);
+          await context.pb.collection('metal_inventory').delete(String(resultRecord.id)).catch(() => undefined);
         }
         return NextResponse.json({
           message: extractPbErrorMessage(err, 'ثبت سند حسابداری موجودی اولیه فلزات با خطا مواجه شد.'),
@@ -396,8 +405,12 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ message: 'شناسه مشخص نشده است.' }, { status: 400 });
     }
 
-    // Delete or soft-delete transaction
-    await context.pb.collection('transactions').delete(id);
+    // Delete record from metal_inventory (or transactions fallback)
+    try {
+      await context.pb.collection('metal_inventory').delete(id);
+    } catch {
+      await context.pb.collection('transactions').delete(id).catch(() => null);
+    }
 
     // Delete corresponding journal entry if exists
     try {

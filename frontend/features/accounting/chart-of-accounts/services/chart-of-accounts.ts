@@ -1926,6 +1926,10 @@ export interface BankAccountEnrichmentInput {
   branchName?: string;
   accountNumber: string;
   accountCodeZero?: string;
+  openingBalance?: number;
+  balance?: number;
+  currencySymbol?: string;
+  isBlocked?: boolean;
 }
 
 /**
@@ -2057,11 +2061,334 @@ export function enrichAccountsWithOpeningChecks(
     bankIndex++;
   }
 
-  // Filter out any existing coa_bank_ or coa_check_ nodes
+  // Filter out any existing coa_bank_.*_2110 or coa_check_ nodes
   const cleanAccounts = accounts.filter(
-    (a) => !a.id.startsWith('coa_bank_') && !a.id.startsWith('coa_check_')
+    (a) => !(a.id.startsWith('coa_bank_') && a.id.endsWith('_2110')) && !a.id.startsWith('coa_check_')
   );
 
   return [...cleanAccounts, ...bankNodes, ...checkNodes];
 }
+
+export interface CashFundEnrichmentInput {
+  id: string;
+  name: string;
+  currencyId?: string;
+  currencyName?: string;
+  currencyCode?: string;
+  currencySymbol?: string;
+  openingBalance?: number;
+  balance?: number;
+  isBlocked?: boolean;
+}
+
+/**
+ * Enriches accounts list with Bank Accounts and Cash Funds connected to Moein account 1110 (موجودی نقد و بانک).
+ * - Bank accounts are added as Level 4 (تفضیل ۱) under 1110.
+ * - Cash funds are added as Level 4 (تفضیل ۱) under 1110.
+ */
+export function enrichAccountsWithBankAndCash(
+  accounts: ChartOfAccountRecord[],
+  bankAccounts: BankAccountEnrichmentInput[] = [],
+  cashFunds: CashFundEnrichmentInput[] = []
+): ChartOfAccountRecord[] {
+  const acc1110 = accounts.find((a) => a.code === '1110' || a.id === 'sys_1110');
+  if (!acc1110) {
+    return accounts;
+  }
+
+  const bankNodes: ChartOfAccountRecord[] = [];
+  const cashNodes: ChartOfAccountRecord[] = [];
+
+  // Filter out any existing coa_bank_.*_1110 and coa_cash_.*_1110 nodes
+  const cleanAccounts = accounts.filter(
+    (a) => !(a.id.startsWith('coa_bank_') && a.id.endsWith('_1110')) && !a.id.startsWith('coa_cash_')
+  );
+
+  let bIndex = 1;
+  for (const bank of bankAccounts) {
+    if (!bank || !bank.id) continue;
+    const bankName = bank.bankName || 'بانک نامشخص';
+    const branchName = bank.branchName ? ` - شعبه ${bank.branchName}` : '';
+    const accNum = bank.accountNumber ? ` (حساب ${bank.accountNumber})` : '';
+    const codeSuffix = bank.accountCodeZero
+      ? bank.accountCodeZero.padStart(2, '0')
+      : String(bIndex).padStart(2, '0');
+
+    const bankCode = `${acc1110.code}${codeSuffix}`;
+    const bankNodeId = `coa_bank_${bank.id}_1110`;
+    const bankDisplayName = `بانک ${bankName}${branchName}${accNum}`;
+
+    const bankNode: ChartOfAccountRecord = {
+      id: bankNodeId,
+      code: bankCode,
+      name: bankDisplayName,
+      parentId: acc1110.id,
+      path: `${acc1110.path || '/1000/1100/1110/'}${bankCode}/`,
+      level: 4, // تفضیل ۱
+      accountType: 'asset',
+      normalBalance: 'debit',
+      requiresWeight: false,
+      isMultiCurrency: false,
+      isSystem: true,
+      isActive: !bank.isBlocked,
+      isPostable: true,
+      sortOrder: (acc1110.sortOrder || 1110) * 100 + bIndex,
+      description: `تفضیل ۱: حساب بانکی ${bankName} | شماره حساب: ${bank.accountNumber || '—'} | موجودی اولیه: ${(bank.openingBalance || 0).toLocaleString('fa-IR')} ${bank.currencySymbol || 'ریال'}`,
+      tags: ['bank_account', 'tafsil_1', `bank_${bank.id}`],
+    };
+    bankNodes.push(bankNode);
+    bIndex++;
+  }
+
+  let cIndex = 1;
+  for (const fund of cashFunds) {
+    if (!fund || !fund.id) continue;
+    const fundName = fund.name || 'صندوق نامشخص';
+    const currency = fund.currencyName || fund.currencyCode || 'ریال';
+    const codeSuffix = String(50 + cIndex).padStart(2, '0');
+
+    const cashCode = `${acc1110.code}${codeSuffix}`;
+    const cashNodeId = `coa_cash_${fund.id}_1110`;
+    const cashDisplayName = `صندوق ${fundName} (${currency})`;
+
+    const cashNode: ChartOfAccountRecord = {
+      id: cashNodeId,
+      code: cashCode,
+      name: cashDisplayName,
+      parentId: acc1110.id,
+      path: `${acc1110.path || '/1000/1100/1110/'}${cashCode}/`,
+      level: 4, // تفضیل ۱
+      accountType: 'asset',
+      normalBalance: 'debit',
+      requiresWeight: false,
+      isMultiCurrency: true,
+      isSystem: true,
+      isActive: !fund.isBlocked,
+      isPostable: true,
+      sortOrder: (acc1110.sortOrder || 1110) * 100 + 50 + cIndex,
+      description: `تفضیل ۱: صندوق وجه نقد ${fundName} | ارز: ${currency} | موجودی اولیه: ${(fund.openingBalance || 0).toLocaleString('fa-IR')} ${fund.currencySymbol || currency}`,
+      tags: ['cash_fund', 'tafsil_1', `fund_${fund.id}`],
+    };
+    cashNodes.push(cashNode);
+    cIndex++;
+  }
+
+  return [...cleanAccounts, ...bankNodes, ...cashNodes];
+}
+
+export interface CoinInventoryEnrichmentInput {
+  id: string;
+  nature?: 'coin' | 'bullion' | string;
+  coin_type?: string;
+  itemName?: string;
+  quantity?: number;
+  weight?: number;
+  purity?: number;
+  unit_price?: number;
+  total_price?: number;
+  is_opening_balance?: boolean;
+}
+
+export interface MetalInventoryEnrichmentInput {
+  id: string;
+  metal?: 'gold' | 'silver' | 'platinum' | string;
+  inventoryType?: 'conditional_melted' | 'miscellaneous_melted' | 'general_metal' | string;
+  rawWeight?: number;
+  raw_weight?: number;
+  purity?: number;
+  convertedWeight?: number;
+  converted_weight?: number;
+  stampNumber?: string;
+  stamp_number?: string;
+  labName?: string;
+  lab_name?: string;
+  totalAmount?: number;
+  total_amount?: number;
+  is_opening_balance?: boolean;
+}
+
+/**
+ * Enriches accounts list with Coins, Bullion, and Metals connected to Moein account 1130 (موجودی کالا و طلا).
+ * - Level 4 (تفضیل ۱):
+ *   - 113001: مسکوکات و شمش
+ *   - 113010: موجودی طلا (Au)
+ *   - 113020: موجودی نقره (Ag)
+ *   - 113030: موجودی پلاتین (Pt)
+ * - Level 5 (تفضیل ۲):
+ *   - Individual coin/bullion items under 113001
+ *   - Individual metal items under 113010, 113020, 113030
+ */
+export function enrichAccountsWithCoinsAndMetals(
+  accounts: ChartOfAccountRecord[],
+  coinItems: CoinInventoryEnrichmentInput[] = [],
+  metalItems: MetalInventoryEnrichmentInput[] = []
+): ChartOfAccountRecord[] {
+  const acc1130 = accounts.find((a) => a.code === '1130' || a.id === 'sys_1130');
+  if (!acc1130) {
+    return accounts;
+  }
+
+  const groupNodes: ChartOfAccountRecord[] = [];
+  const itemNodes: ChartOfAccountRecord[] = [];
+
+  // Filter out any existing coa_group_coins_, coa_coin_, coa_group_gold_, coa_group_silver_, coa_group_platinum_, coa_metal_
+  const cleanAccounts = accounts.filter(
+    (a) =>
+      !a.id.startsWith('coa_group_coins_') &&
+      !a.id.startsWith('coa_coin_') &&
+      !a.id.startsWith('coa_group_gold_') &&
+      !a.id.startsWith('coa_group_silver_') &&
+      !a.id.startsWith('coa_group_platinum_') &&
+      !a.id.startsWith('coa_metal_')
+  );
+
+  // 1. Coins & Bullion
+  const validCoins = coinItems || [];
+  if (validCoins.length > 0) {
+    const coinGroupCode = `${acc1130.code}01`; // 113001
+    const coinGroupId = 'coa_group_coins_1130';
+    const totalCoinQty = validCoins.reduce((sum, c) => sum + (c.quantity || 0), 0);
+    const totalCoinWeight = validCoins.reduce((sum, c) => sum + (c.weight || 0), 0);
+
+    const coinGroupNode: ChartOfAccountRecord = {
+      id: coinGroupId,
+      code: coinGroupCode,
+      name: 'مسکوکات و شمش',
+      parentId: acc1130.id,
+      path: `${acc1130.path || '/1000/1100/1130/'}${coinGroupCode}/`,
+      level: 4, // تفضیل ۱
+      accountType: 'asset',
+      normalBalance: 'debit',
+      requiresWeight: true,
+      isMultiCurrency: false,
+      isSystem: true,
+      isActive: true,
+      isPostable: false,
+      sortOrder: (acc1130.sortOrder || 1130) * 100 + 1,
+      description: `تفضیل ۱: مسکوکات و شمش | اقلام: ${validCoins.length} ردیف | تعداد کل: ${totalCoinQty.toLocaleString('fa-IR')} عدد | وزن کل: ${totalCoinWeight.toLocaleString('fa-IR')} گرم`,
+      tags: ['coins_and_bullion', 'tafsil_1'],
+    };
+    groupNodes.push(coinGroupNode);
+
+    validCoins.forEach((coin, idx) => {
+      const coinSuffix = String(idx + 1).padStart(2, '0');
+      const itemCode = `${coinGroupCode}${coinSuffix}`;
+      const itemId = `coa_coin_${coin.id}`;
+      const natureLabel = coin.nature === 'bullion' ? 'شمش' : 'سکه';
+      const typeLabel = coin.coin_type || coin.itemName || natureLabel;
+      const qtyStr = coin.quantity ? `${coin.quantity.toLocaleString('fa-IR')} عدد` : '';
+      const wtStr = coin.weight ? `${coin.weight.toLocaleString('fa-IR')} گرم` : '';
+      const details = [qtyStr, wtStr].filter(Boolean).join(' - ');
+
+      const itemNode: ChartOfAccountRecord = {
+        id: itemId,
+        code: itemCode,
+        name: `${natureLabel} ${typeLabel}${details ? ` (${details})` : ''}`,
+        parentId: coinGroupNode.id,
+        path: `${coinGroupNode.path}${itemCode}/`,
+        level: 5, // تفضیل ۲
+        accountType: 'asset',
+        normalBalance: 'debit',
+        requiresWeight: true,
+        isMultiCurrency: false,
+        isSystem: true,
+        isActive: true,
+        isPostable: true,
+        sortOrder: (coinGroupNode.sortOrder || 113001) * 100 + (idx + 1),
+        description: `تفضیل ۲: موجودی اول دوره ${natureLabel} ${typeLabel} | تعداد: ${(coin.quantity || 0).toLocaleString('fa-IR')} | وزن: ${(coin.weight || 0).toLocaleString('fa-IR')} گرم | عیار: ${coin.purity || '—'}`,
+        tags: ['coin_inventory', 'tafsil_2', `coin_${coin.id}`],
+      };
+      itemNodes.push(itemNode);
+    });
+  }
+
+  // 2. Metals (Gold, Silver, Platinum)
+  const validMetals = metalItems || [];
+  const metalsConfig: Array<{
+    metal: 'gold' | 'silver' | 'platinum';
+    suffix: string;
+    id: string;
+    name: string;
+    symbol: string;
+  }> = [
+    { metal: 'gold', suffix: '10', id: 'coa_group_gold_1130', name: 'موجودی طلا (Au)', symbol: 'Au' },
+    { metal: 'silver', suffix: '20', id: 'coa_group_silver_1130', name: 'موجودی نقره (Ag)', symbol: 'Ag' },
+    { metal: 'platinum', suffix: '30', id: 'coa_group_platinum_1130', name: 'موجودی پلاتین (Pt)', symbol: 'Pt' },
+  ];
+
+  const inventoryTypeLabels: Record<string, string> = {
+    conditional_melted: 'آبشده شرطی',
+    miscellaneous_melted: 'آبشده متفرقه',
+    general_metal: 'موجودی پایه فلز',
+  };
+
+  for (const cfg of metalsConfig) {
+    const itemsForMetal = validMetals.filter((m) => (m.metal || 'gold').toLowerCase() === cfg.metal);
+    if (itemsForMetal.length === 0) continue;
+
+    const groupCode = `${acc1130.code}${cfg.suffix}`; // 113010, 113020, 113030
+    const totalRaw = itemsForMetal.reduce((sum, m) => sum + (m.rawWeight ?? m.raw_weight ?? 0), 0);
+    const totalConv = itemsForMetal.reduce((sum, m) => sum + (m.convertedWeight ?? m.converted_weight ?? 0), 0);
+
+    const metalGroupNode: ChartOfAccountRecord = {
+      id: cfg.id,
+      code: groupCode,
+      name: cfg.name,
+      parentId: acc1130.id,
+      path: `${acc1130.path || '/1000/1100/1130/'}${groupCode}/`,
+      level: 4, // تفضیل ۱
+      accountType: 'asset',
+      normalBalance: 'debit',
+      requiresWeight: true,
+      isMultiCurrency: false,
+      isSystem: true,
+      isActive: true,
+      isPostable: false,
+      sortOrder: (acc1130.sortOrder || 1130) * 100 + Number(cfg.suffix),
+      description: `تفضیل ۱: ${cfg.name} | تعداد اقلام: ${itemsForMetal.length} ردیف | جمع وزن خام: ${totalRaw.toLocaleString('fa-IR')} گرم | وزن معادل استاندارد: ${totalConv.toLocaleString('fa-IR')} گرم`,
+      tags: [`metal_${cfg.metal}`, 'tafsil_1'],
+    };
+    groupNodes.push(metalGroupNode);
+
+    itemsForMetal.forEach((m, idx) => {
+      const itemSuffix = String(idx + 1).padStart(2, '0');
+      const itemCode = `${groupCode}${itemSuffix}`;
+      const itemId = `coa_metal_${m.id}`;
+      const invType = m.inventoryType || 'general_metal';
+      const invLabel = inventoryTypeLabels[invType] || invType;
+      const stamp = m.stampNumber || m.stamp_number;
+      const lab = m.labName || m.lab_name;
+      const rawW = m.rawWeight ?? m.raw_weight ?? 0;
+      const convW = m.convertedWeight ?? m.converted_weight ?? 0;
+
+      const stampPart = stamp ? `(انگ: ${stamp})` : '';
+      const labPart = lab ? `[${lab}]` : '';
+      const weightPart = `${rawW.toLocaleString('fa-IR')} گرم`;
+      const nameParts = [invLabel, stampPart, labPart, weightPart].filter(Boolean);
+
+      const itemNode: ChartOfAccountRecord = {
+        id: itemId,
+        code: itemCode,
+        name: nameParts.join(' '),
+        parentId: metalGroupNode.id,
+        path: `${metalGroupNode.path}${itemCode}/`,
+        level: 5, // تفضیل ۲
+        accountType: 'asset',
+        normalBalance: 'debit',
+        requiresWeight: true,
+        isMultiCurrency: false,
+        isSystem: true,
+        isActive: true,
+        isPostable: true,
+        sortOrder: (metalGroupNode.sortOrder || Number(groupCode)) * 100 + (idx + 1),
+        description: `تفضیل ۲: موجودی اول دوره ${cfg.name} | ${invLabel} | وزن خام: ${rawW.toLocaleString('fa-IR')} گرم | عیار: ${m.purity || '—'} | وزن معادل: ${convW.toLocaleString('fa-IR')} گرم`,
+        tags: [`metal_${cfg.metal}`, 'tafsil_2', `metal_${m.id}`],
+      };
+      itemNodes.push(itemNode);
+    });
+  }
+
+  return [...cleanAccounts, ...groupNodes, ...itemNodes];
+}
+
 

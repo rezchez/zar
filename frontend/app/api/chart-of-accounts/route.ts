@@ -8,10 +8,16 @@ import {
   computeAccountPath,
   normalizeAccountCode,
   enrichAccountsWithOpeningChecks,
+  enrichAccountsWithBankAndCash,
+  enrichAccountsWithCoinsAndMetals,
   type ChartOfAccountRecord,
   type AccountType,
   type NormalBalance,
   type AccountLevel,
+  type BankAccountEnrichmentInput,
+  type CashFundEnrichmentInput,
+  type CoinInventoryEnrichmentInput,
+  type MetalInventoryEnrichmentInput,
 } from '@/lib/chart-of-accounts';
 
 export async function GET(request: Request) {
@@ -102,9 +108,12 @@ export async function GET(request: Request) {
       }));
     }
 
-    // Enrich accounts with opening issued checks under 2110 (Tafsil 1: Bank, Tafsil 2: Check)
+    // Enrich accounts with opening records:
+    // 1. Issued Checks under 2110 (Tafsil 1: Bank, Tafsil 2: Check)
+    // 2. Bank Accounts & Cash Funds under 1110 (Tafsil 1: Bank/Fund)
+    // 3. Coins, Bullion & Metals under 1130 (Tafsil 1: Category, Tafsil 2: Item)
     try {
-      const [openingChecks, bankAccounts] = await Promise.all([
+      const [openingChecks, bankAccounts, cashFunds, coinInventory, metalInventory] = await Promise.all([
         context.pb.collection('checks').getFullList({
           sort: 'dueDate',
           expand: 'bankAccount',
@@ -112,8 +121,24 @@ export async function GET(request: Request) {
         context.pb.collection('bank_accounts').getFullList().catch(() =>
           context.pb.collection('banks').getFullList().catch(() => [])
         ),
+        context.pb.collection('cash_funds').getFullList().catch(() => []),
+        context.pb.collection('coin_inventory').getFullList().catch(() => []),
+        context.pb.collection('metal_inventory').getFullList().catch(() => []),
       ]);
 
+      const mappedBanks: BankAccountEnrichmentInput[] = (bankAccounts || []).map((b: Record<string, unknown>) => ({
+        id: String(b.id || ''),
+        bankName: String(b.bankName || b.name || ''),
+        branchName: typeof b.branchName === 'string' ? b.branchName : '',
+        accountNumber: typeof b.accountNumber === 'string' ? b.accountNumber : '',
+        accountCodeZero: typeof b.accountCodeZero === 'string' ? b.accountCodeZero : '',
+        openingBalance: typeof b.opening_balance === 'number' ? b.opening_balance : Number(b.opening_balance) || 0,
+        balance: typeof b.balance === 'number' ? b.balance : Number(b.balance) || 0,
+        currencySymbol: typeof b.currencySymbol === 'string' ? b.currencySymbol : 'ریال',
+        isBlocked: Boolean(b.isBlocked || b.is_blocked),
+      }));
+
+      // 1. Enrich checks under 2110
       if (openingChecks && openingChecks.length > 0) {
         const mappedChecks = openingChecks
           .filter((c: Record<string, unknown>) => c.is_opening_balance === true || c.isOpeningBalance === true)
@@ -130,18 +155,57 @@ export async function GET(request: Request) {
             expand: c.expand as any,
           }));
 
-        const mappedBanks = (bankAccounts || []).map((b: Record<string, unknown>) => ({
-          id: String(b.id || ''),
-          bankName: String(b.bankName || b.name || ''),
-          branchName: typeof b.branchName === 'string' ? b.branchName : '',
-          accountNumber: typeof b.accountNumber === 'string' ? b.accountNumber : '',
-          accountCodeZero: typeof b.accountCodeZero === 'string' ? b.accountCodeZero : '',
-        }));
-
         accounts = enrichAccountsWithOpeningChecks(accounts, mappedChecks, mappedBanks);
       }
+
+      // 2. Enrich Bank Accounts and Cash Funds under 1110
+      const mappedCash: CashFundEnrichmentInput[] = (cashFunds || []).map((f: Record<string, unknown>) => ({
+        id: String(f.id || ''),
+        name: String(f.name || ''),
+        currencyName: typeof f.currency_name === 'string' ? f.currency_name : typeof f.currencyName === 'string' ? f.currencyName : 'ریال',
+        currencyCode: typeof f.currency_code === 'string' ? f.currency_code : typeof f.currencyCode === 'string' ? f.currencyCode : 'IRR',
+        currencySymbol: typeof f.currency_symbol === 'string' ? f.currency_symbol : typeof f.currencySymbol === 'string' ? f.currencySymbol : 'ریال',
+        openingBalance: typeof f.opening_balance === 'number' ? f.opening_balance : Number(f.opening_balance) || 0,
+        balance: typeof f.balance === 'number' ? f.balance : Number(f.balance) || 0,
+        isBlocked: Boolean(f.isBlocked || f.is_blocked),
+      }));
+
+      accounts = enrichAccountsWithBankAndCash(accounts, mappedBanks, mappedCash);
+
+      // 3. Enrich Coins, Bullion and Metals under 1130
+      const mappedCoins: CoinInventoryEnrichmentInput[] = (coinInventory || [])
+        .filter((c: Record<string, unknown>) => c.is_opening_balance !== false)
+        .map((c: Record<string, unknown>) => ({
+          id: String(c.id || ''),
+          nature: (c.nature || 'coin') as 'coin' | 'bullion',
+          coin_type: typeof c.coin_type === 'string' ? c.coin_type : typeof c.coinType === 'string' ? c.coinType : '',
+          itemName: typeof c.itemName === 'string' ? c.itemName : typeof c.item_name === 'string' ? c.item_name : '',
+          quantity: typeof c.quantity === 'number' ? c.quantity : Number(c.quantity) || 0,
+          weight: typeof c.weight === 'number' ? c.weight : Number(c.weight) || 0,
+          purity: typeof c.purity === 'number' ? c.purity : Number(c.purity) || 0,
+          unit_price: typeof c.unit_price === 'number' ? c.unit_price : Number(c.unit_price) || 0,
+          total_price: typeof c.total_price === 'number' ? c.total_price : Number(c.total_price) || 0,
+          is_opening_balance: true,
+        }));
+
+      const mappedMetals: MetalInventoryEnrichmentInput[] = (metalInventory || [])
+        .filter((m: Record<string, unknown>) => m.is_opening_balance !== false)
+        .map((m: Record<string, unknown>) => ({
+          id: String(m.id || ''),
+          metal: (m.metal || 'gold') as 'gold' | 'silver' | 'platinum',
+          inventoryType: (m.inventory_type || m.inventoryType || 'general_metal') as any,
+          rawWeight: typeof m.raw_weight === 'number' ? m.raw_weight : Number(m.raw_weight) || 0,
+          purity: typeof m.purity === 'number' ? m.purity : Number(m.purity) || 0,
+          convertedWeight: typeof m.converted_weight === 'number' ? m.converted_weight : Number(m.converted_weight) || 0,
+          stampNumber: typeof m.stamp_number === 'string' ? m.stamp_number : typeof m.stampNumber === 'string' ? m.stampNumber : '',
+          labName: typeof m.lab_name === 'string' ? m.lab_name : typeof m.labName === 'string' ? m.labName : '',
+          totalAmount: typeof m.total_amount === 'number' ? m.total_amount : Number(m.total_amount) || 0,
+          is_opening_balance: true,
+        }));
+
+      accounts = enrichAccountsWithCoinsAndMetals(accounts, mappedCoins, mappedMetals);
     } catch {
-      // Non-blocking fallback for check enrichment
+      // Non-blocking fallback for opening inventory enrichment
     }
 
     // Apply query filters

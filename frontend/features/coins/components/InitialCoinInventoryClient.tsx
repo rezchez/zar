@@ -1,6 +1,6 @@
 'use client';
 
-import { Calendar, ChevronRight, Coins, Edit3, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { Calendar, ChevronRight, Coins, Edit3, FolderTree, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import React, { useCallback, useEffect, useState } from 'react';
 
@@ -111,6 +111,15 @@ export default function InitialCoinInventoryClient({
         </div>
 
         <div className="flex items-center gap-2">
+          <Link
+            href="/dashboard/accounting/chart-of-accounts?focus=1130"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-slate-700 shadow-xs transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 cursor-pointer"
+            title="مشاهده ساختار تفصیلی مسکوکات و شمش در درختواره کدینگ حساب‌ها (۱۱۳۰)"
+          >
+            <FolderTree size={16} className="text-amber-500" />
+            <span className="hidden sm:inline">مشاهده در درختواره (۱۱۳۰)</span>
+          </Link>
+
           {/* Section 4: Refresh Button */}
           <button
             type="button"
@@ -174,7 +183,7 @@ export default function InitialCoinInventoryClient({
                       <h2 className="text-xs font-extrabold text-slate-900 dark:text-white line-clamp-1">
                         {item.itemName}
                       </h2>
-                      <div className="mt-0.5 flex items-center gap-1.5 text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+                      <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px] font-semibold text-slate-500 dark:text-slate-400">
                         <span className="rounded-md bg-slate-100 px-1.5 py-0.5 font-extrabold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
                           {item.nature === 'bullion' ? 'شمش' : 'سکه'}
                         </span>
@@ -182,6 +191,9 @@ export default function InitialCoinInventoryClient({
                         <span>{metalLabels[item.metal] || 'طلا'}</span>
                         <span>•</span>
                         <span>عیار {item.purity}</span>
+                        <span className="rounded bg-sky-500/10 px-1.5 py-0.2 text-[9px] font-bold text-sky-600 dark:text-sky-400">
+                          تفضیل ۲ (۱۱۳۰)
+                        </span>
                       </div>
                     </div>
                   </div>

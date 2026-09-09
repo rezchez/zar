@@ -1,7 +1,6 @@
 'use client';
 
-import { AnimatePresence, motion } from 'framer-motion';
-import { Check, Flame, Plus, X } from 'lucide-react';
+import { Check, Flame, X } from 'lucide-react';
 import React, { useCallback, useEffect, useState } from 'react';
 
 import DatePicker from '@/components/ui/date-picker';
@@ -220,51 +219,58 @@ export default function InitialMetalInventoryModal({
   if (!isOpen) return null;
 
   return (
-    <AnimatePresence>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
+      {/* Backdrop */}
+      <div
+        onClick={onClose}
+        className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs transition-opacity"
+      />
+
+      {/* Modal Dialog Card */}
       <div
         dir="rtl"
-        className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-900/60 p-4 backdrop-blur-xs sm:p-6"
+        className="relative z-10 flex w-full max-w-xl max-h-[90vh] flex-col rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900 overflow-hidden"
       >
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95, y: 10 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95, y: 10 }}
-          className="relative w-full max-w-xl rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900 sm:p-8"
-        >
-          {/* Close button */}
-          <button
-            type="button"
-            onClick={onClose}
-            className="absolute left-6 top-6 rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-          >
-            <X size={20} />
-          </button>
-
-          {/* Header */}
+        {/* Header - Fixed */}
+        <div className="flex items-center justify-between border-b border-slate-100 p-5 dark:border-slate-800 shrink-0">
           <div className="flex items-center gap-3">
-            <div className="flex size-12 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-600 dark:bg-amber-500/25 dark:text-amber-400">
-              <Flame size={24} className="stroke-[2.2]" />
+            <div className="flex size-11 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-600 dark:bg-amber-500/25 dark:text-amber-400">
+              <Flame size={22} className="stroke-[2.2]" />
             </div>
             <div>
-              <h2 className="text-lg font-black text-slate-900 dark:text-white">
-                {editItem ? 'ویرایش موجودی اول دوره فلز' : 'ثبت موجودی اول دوره فلزات و آبشده'}
-              </h2>
+              <h3 className="text-base font-black text-slate-900 dark:text-white">
+                {editItem ? 'ویرایش موجودی اول دوره فلزات و آبشده' : 'ثبت موجودی اول دوره فلزات و آبشده'}
+              </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                طلا، نقره، پلاتین - آبشده شرطی، آبشده متفرقه و موجودی فلز
+                طلا، نقره و پلاتین — آبشده شرطی، آبشده متفرقه و موجودی فلز
               </p>
             </div>
           </div>
 
-          {errorMsg && (
-            <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-3.5 text-xs font-bold text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-300">
-              {errorMsg}
-            </div>
-          )}
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200 cursor-pointer"
+            title="بستن"
+          >
+            <X size={18} />
+          </button>
+        </div>
 
-          <form onSubmit={handleSubmit} className="mt-6 space-y-5">
+        {/* Scrollable Form Body */}
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+          <div className="overflow-y-auto p-5 sm:p-6 space-y-4">
+            {errorMsg && (
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3.5 text-xs font-bold text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-300">
+                {errorMsg}
+              </div>
+            )}
+
             {/* 1. Metal Selector */}
-            <div className="space-y-2">
-              <label className="text-xs font-black text-slate-700 dark:text-slate-300">نوع فلز</label>
+            <div>
+              <label className="mb-1.5 block text-xs font-bold text-slate-700 dark:text-slate-300">
+                نوع فلز <span className="text-rose-500">*</span>
+              </label>
               <div className="grid grid-cols-3 gap-2">
                 {(['gold', 'silver', 'platinum'] as const).map((m) => {
                   const cfg = METALS_CONFIG[m];
@@ -274,14 +280,14 @@ export default function InitialMetalInventoryModal({
                       key={m}
                       type="button"
                       onClick={() => handleMetalChange(m)}
-                      className={`flex flex-col items-center justify-center gap-1 rounded-2xl border p-3 text-xs font-extrabold transition ${
+                      className={`flex items-center justify-center gap-2 rounded-2xl border py-2.5 px-3 text-xs font-black transition cursor-pointer ${
                         isSelected
-                          ? 'border-amber-500 bg-amber-500/10 text-amber-700 dark:border-amber-400 dark:bg-amber-400/15 dark:text-amber-300 shadow-xs'
-                          : 'border-slate-200 bg-slate-50/70 text-slate-600 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-300 dark:hover:bg-slate-800'
+                          ? 'border-amber-500 bg-amber-500 text-slate-950 shadow-sm'
+                          : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
                       }`}
                     >
-                      <span className="text-sm font-black">{cfg.label}</span>
-                      <span className="text-[10px] opacity-70 font-mono">({cfg.symbol})</span>
+                      <span>{cfg.label}</span>
+                      <span className="font-mono text-[10px] opacity-80">({cfg.symbol})</span>
                     </button>
                   );
                 })}
@@ -289,8 +295,10 @@ export default function InitialMetalInventoryModal({
             </div>
 
             {/* 2. Inventory Type Selector */}
-            <div className="space-y-2">
-              <label className="text-xs font-black text-slate-700 dark:text-slate-300">نوع موجودی</label>
+            <div>
+              <label className="mb-1.5 block text-xs font-bold text-slate-700 dark:text-slate-300">
+                نوع موجودی <span className="text-rose-500">*</span>
+              </label>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                 {(['conditional_melted', 'miscellaneous_melted', 'general_metal'] as const).map((t) => {
                   const cfg = INVENTORY_TYPES_CONFIG[t];
@@ -300,14 +308,14 @@ export default function InitialMetalInventoryModal({
                       key={t}
                       type="button"
                       onClick={() => setInventoryType(t)}
-                      className={`flex flex-col items-start gap-1 rounded-2xl border p-3 text-right text-xs transition ${
+                      className={`flex flex-col items-start gap-1 rounded-2xl border p-3 text-right text-xs transition cursor-pointer ${
                         isSelected
-                          ? 'border-amber-500 bg-amber-500/10 text-amber-800 dark:border-amber-400 dark:bg-amber-400/15 dark:text-amber-200 shadow-xs'
-                          : 'border-slate-200 bg-slate-50/70 text-slate-600 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-300 dark:hover:bg-slate-800'
+                          ? 'border-amber-500 bg-amber-500/10 text-amber-900 dark:border-amber-400 dark:bg-amber-400/20 dark:text-amber-200 font-black shadow-xs'
+                          : 'border-slate-200 bg-slate-50/70 text-slate-600 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-300 font-bold'
                       }`}
                     >
-                      <span className="font-black">{cfg.label}</span>
-                      <span className="text-[10px] leading-tight text-slate-500 dark:text-slate-400">
+                      <span className="text-xs font-extrabold">{cfg.label}</span>
+                      <span className="text-[10px] leading-tight text-slate-400 dark:text-slate-400">
                         {cfg.description}
                       </span>
                     </button>
@@ -318,12 +326,7 @@ export default function InitialMetalInventoryModal({
 
             {/* 3. Conditional Melted Fields: Stamp Number & Lab Name */}
             {inventoryType === 'conditional_melted' && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="grid grid-cols-1 gap-3 rounded-2xl border border-amber-200 bg-amber-50/50 p-3.5 dark:border-amber-900/40 dark:bg-amber-950/20 sm:grid-cols-2"
-              >
+              <div className="grid grid-cols-1 gap-3 rounded-2xl border border-amber-300/70 bg-amber-50/60 p-3.5 dark:border-amber-800/60 dark:bg-amber-950/30 sm:grid-cols-2">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
                     شماره انگ (برچسب) <span className="text-rose-500">*</span>
@@ -333,7 +336,7 @@ export default function InitialMetalInventoryModal({
                     value={stampNumber}
                     onChange={(e) => setStampNumber(e.target.value)}
                     placeholder="مثال: ۱۲۳۴۵"
-                    className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-900 focus:border-amber-500 focus:outline-hidden dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-900 focus:border-amber-500 focus:outline-hidden dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                   />
                 </div>
                 <div>
@@ -345,10 +348,10 @@ export default function InitialMetalInventoryModal({
                     value={labName}
                     onChange={(e) => setLabName(e.target.value)}
                     placeholder="مثال: ری‌گیری ملت"
-                    className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-900 focus:border-amber-500 focus:outline-hidden dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-900 focus:border-amber-500 focus:outline-hidden dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                   />
                 </div>
-              </motion.div>
+              </div>
             )}
 
             {/* 4. Weight & Purity */}
@@ -363,7 +366,7 @@ export default function InitialMetalInventoryModal({
                   value={weight}
                   onChange={(e) => setWeight(e.target.value)}
                   placeholder="مثال: ۱۲۵.۴۵۰"
-                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left text-sm font-black text-slate-900 focus:border-amber-500 focus:outline-hidden dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left text-sm font-black text-slate-900 focus:border-amber-500 focus:outline-hidden dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                 />
               </div>
 
@@ -382,7 +385,7 @@ export default function InitialMetalInventoryModal({
                   value={purity}
                   onChange={(e) => setPurity(e.target.value)}
                   placeholder="مثال: ۷۵۰"
-                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left text-sm font-black text-slate-900 focus:border-amber-500 focus:outline-hidden dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left text-sm font-black text-slate-900 focus:border-amber-500 focus:outline-hidden dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                 />
 
                 {/* Preset Purity Buttons */}
@@ -392,7 +395,7 @@ export default function InitialMetalInventoryModal({
                       key={p}
                       type="button"
                       onClick={() => setPurity(String(p))}
-                      className="rounded-lg border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600 hover:bg-amber-100 hover:text-amber-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                      className="rounded-lg border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600 hover:bg-amber-100 hover:text-amber-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 cursor-pointer"
                     >
                       {p}
                     </button>
@@ -407,7 +410,7 @@ export default function InitialMetalInventoryModal({
                 <span className="font-bold text-slate-600 dark:text-slate-400">
                   وزن معادل بر پایه {currentBaseKarat}:
                 </span>
-                <span className="text-sm font-black text-amber-600 dark:text-amber-400">
+                <span className="text-sm font-black text-amber-600 dark:text-amber-400 font-mono">
                   {formatWeight(convertedWeight)} گرم
                 </span>
               </div>
@@ -419,7 +422,7 @@ export default function InitialMetalInventoryModal({
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
                   ارزش‌گذاری ریالی کل (اختیاری)
                 </label>
-                <div className="mt-1">
+                <div className="mt-1.5">
                   <PriceInput
                     value={totalAmount}
                     onValueChange={(_val, rawValue) => setTotalAmount(rawValue)}
@@ -436,8 +439,13 @@ export default function InitialMetalInventoryModal({
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
                   تاریخ موجودی اولیه
                 </label>
-                <div className="mt-1">
-                  <DatePicker value={date} onChange={setDate} placeholder="انتخاب تاریخ" />
+                <div className="mt-1.5">
+                  <DatePicker
+                    value={date}
+                    onValueChange={(_iso, jalali) => setDate(jalali)}
+                    disabled={submitting}
+                    placeholder="انتخاب تاریخ"
+                  />
                 </div>
               </div>
             </div>
@@ -452,32 +460,32 @@ export default function InitialMetalInventoryModal({
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="توضیحات اضافی، محل نگهداری در گاوصندوق، شماره رسید..."
-                className="mt-1 w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs font-medium text-slate-900 focus:border-amber-500 focus:outline-hidden dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs font-medium text-slate-900 focus:border-amber-500 focus:outline-hidden dark:border-slate-700 dark:bg-slate-800 dark:text-white"
               />
             </div>
+          </div>
 
-            {/* Actions */}
-            <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
-              <button
-                type="button"
-                onClick={onClose}
-                disabled={submitting}
-                className="rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-              >
-                انصراف
-              </button>
-              <button
-                type="submit"
-                disabled={submitting}
-                className="inline-flex items-center gap-2 rounded-xl bg-amber-500 px-6 py-2.5 text-xs font-black text-slate-950 shadow-md transition hover:bg-amber-400 disabled:opacity-50"
-              >
-                <Check size={16} />
-                <span>{submitting ? 'در حال ثبت...' : editItem ? 'ذخیره تغییرات' : 'ثبت موجودی اولیه'}</span>
-              </button>
-            </div>
-          </form>
-        </motion.div>
+          {/* Footer - Fixed */}
+          <div className="flex items-center justify-end gap-2.5 border-t border-slate-100 p-4 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 shrink-0">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={submitting}
+              className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 cursor-pointer"
+            >
+              انصراف
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-amber-500 px-5 py-2 text-xs font-black text-slate-950 shadow-sm transition hover:bg-amber-400 disabled:opacity-50 cursor-pointer"
+            >
+              <Check size={16} />
+              <span>{submitting ? 'در حال ثبت...' : editItem ? 'ذخیره تغییرات' : 'ثبت موجودی اولیه'}</span>
+            </button>
+          </div>
+        </form>
       </div>
-    </AnimatePresence>
+    </div>
   );
 }

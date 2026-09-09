@@ -134,6 +134,11 @@ export default function ChartOfAccounts() {
             for (const child of list) {
               if (child.parentId === target.id) {
                 initialExpanded.add(child.id);
+                for (const grandChild of list) {
+                  if (grandChild.parentId === child.id) {
+                    initialExpanded.add(grandChild.id);
+                  }
+                }
               }
             }
           }

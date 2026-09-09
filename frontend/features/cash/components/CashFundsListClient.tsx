@@ -5,6 +5,7 @@ import {
   Calendar,
   ChevronRight,
   Edit3,
+  FolderTree,
   Lock,
   MoreVertical,
   Plus,
@@ -380,6 +381,15 @@ export default function CashFundsListClient({
         </div>
 
         <div className="flex items-center gap-2">
+          <Link
+            href="/dashboard/accounting/chart-of-accounts?focus=1110"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 cursor-pointer"
+            title="مشاهده ساختار تفصیلی صندوق‌ها در درختواره کدینگ حساب‌ها (۱۱۱۰)"
+          >
+            <FolderTree size={16} className="text-amber-500" />
+            <span className="hidden sm:inline">مشاهده در درختواره (۱۱۱۰)</span>
+          </Link>
+
           <button
             type="button"
             onClick={() => void fetchFunds()}
@@ -516,6 +526,9 @@ export default function CashFundsListClient({
                             {fund.currencyName} {currencyLabel ? `(${currencyLabel})` : ''}
                           </p>
                           <StatusBadge isBlocked={fund.isBlocked} />
+                          <span className="rounded bg-sky-500/10 px-1.5 py-0.2 text-[9px] font-bold text-sky-600 dark:text-sky-400">
+                            تفضیل ۱ (۱۱۱۰)
+                          </span>
                         </div>
                       </div>
                     </div>

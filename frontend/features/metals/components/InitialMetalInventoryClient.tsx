@@ -368,8 +368,15 @@ export default function InitialMetalInventoryClient({
                       </td>
 
                       {/* Inventory Type */}
-                      <td className="px-4 py-3 font-bold text-slate-800 dark:text-slate-200">
-                        {inventoryTypeLabels[item.inventoryType] || item.inventoryType}
+                      <td className="px-4 py-3">
+                        <div className="font-bold text-slate-800 dark:text-slate-200">
+                          {inventoryTypeLabels[item.inventoryType] || item.inventoryType}
+                        </div>
+                        <div className="mt-0.5 flex items-center gap-1.5">
+                          <span className="rounded bg-sky-500/10 px-1.5 py-0.2 text-[9px] font-bold text-sky-600 dark:text-sky-400">
+                            تفضیل ۲ (۱۱۳۰)
+                          </span>
+                        </div>
                       </td>
 
                       {/* Lab & Stamp */}
