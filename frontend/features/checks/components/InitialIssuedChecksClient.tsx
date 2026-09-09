@@ -74,9 +74,11 @@ export default function InitialIssuedChecksClient({
         if (data.summary) {
           setSummary(data.summary);
         }
+      } else {
+        setErrorBanner('دریافت فهرست چک‌ها با خطا مواجه شد.');
       }
     } catch {
-      // keep existing checks
+      setErrorBanner('دریافت فهرست چک‌ها با خطا مواجه شد.');
     } finally {
       setLoading(false);
     }
@@ -298,7 +300,7 @@ export default function InitialIssuedChecksClient({
             <CreditCard size={28} />
           </div>
           <h3 className="mt-4 text-sm font-black text-slate-900 dark:text-white">
-            هیچ چک صادرشده اول دوره‌ای ثبت نشده است
+            هنوز چکی ثبت نشده است.
           </h3>
           <p className="mt-1 max-w-md text-xs text-slate-500 dark:text-slate-400">
             در صورتی که قبل از شروع کار با سامانه، چک‌هایی صادر کرده‌اید که هنوز در بانک وصول نشده‌اند، می‌توانید آن‌ها را اینجا ثبت کنید.
@@ -321,6 +323,7 @@ export default function InitialIssuedChecksClient({
                   <th className="py-3.5 pr-4 pl-2">بانک حساب</th>
                   <th className="px-3 py-3.5">شماره چک</th>
                   <th className="px-3 py-3.5">طرف‌حساب / ذینفع</th>
+                  <th className="px-3 py-3.5">ثبت‌کننده</th>
                   <th className="px-3 py-3.5">مبلغ ({currencySuffix})</th>
                   <th className="px-3 py-3.5">تاریخ صدور / افتتاح</th>
                   <th className="px-3 py-3.5">تاریخ سررسید</th>
@@ -332,6 +335,13 @@ export default function InitialIssuedChecksClient({
                 {filteredChecks.map((check) => {
                   const bankRecord = check.expand?.bankAccount as Record<string, unknown> | undefined;
                   const customerRecord = check.expand?.customer as Record<string, unknown> | undefined;
+                  const creatorRecord = (check.expand?.created_by || check.expand?.createdBy) as Record<string, unknown> | undefined;
+                  const creatorDisplayName = String(
+                    creatorRecord?.name ||
+                    creatorRecord?.full_name ||
+                    creatorRecord?.email ||
+                    'نامشخص',
+                  );
                   const statusColors = CHEQUE_STATUS_COLORS[check.status] || {
                     bg: 'bg-slate-100',
                     text: 'text-slate-700',
@@ -369,6 +379,13 @@ export default function InitialIssuedChecksClient({
                       {/* Customer / Payee */}
                       <td className="px-3 py-3.5 text-slate-700 dark:text-slate-300">
                         {String(customerRecord?.name || '—')}
+                      </td>
+
+                      {/* Creator (ثبت‌کننده) */}
+                      <td className="px-3 py-3.5 text-slate-700 dark:text-slate-300">
+                        <span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100/80 dark:bg-slate-800 px-2 py-0.5 text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                          {creatorDisplayName}
+                        </span>
                       </td>
 
                       {/* Amount */}

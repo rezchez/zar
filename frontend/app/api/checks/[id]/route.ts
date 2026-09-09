@@ -48,8 +48,9 @@ export async function GET(
     const service = await getPocketBaseServiceClient().catch(() => null);
     if (service) await ensureChecksCollection(service);
 
-    const record = await context.pb.collection('checks').getOne(id, {
-      expand: 'bankAccount,customer',
+    const client = service || context.pb;
+    const record = await client.collection('checks').getOne(id, {
+      expand: 'bankAccount,customer,created_by',
     });
 
     return NextResponse.json({ check: mapCheckRecord(record) });

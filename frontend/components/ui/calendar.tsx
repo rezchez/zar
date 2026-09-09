@@ -326,7 +326,7 @@ function CalendarCustomDayButton({
       data-selected={isSelected}
       data-holiday={dayHolidays.length > 0}
       className={cn(
-        'relative h-9 w-full rounded-xl flex items-center justify-center text-xs font-bold transition-all select-none cursor-pointer',
+        'relative h-8 sm:h-9 w-full rounded-xl flex items-center justify-center text-xs font-bold transition-all select-none cursor-pointer',
         isToday && !isSelected && 'bg-amber-500/20 dark:bg-amber-500/25 text-amber-900 dark:text-amber-200 ring-2 ring-amber-400 dark:ring-amber-500 font-black shadow-xs',
         isSelected && 'bg-slate-900 text-white dark:bg-amber-500 dark:text-slate-950 font-black shadow-md ring-2 ring-slate-900 dark:ring-amber-400 z-10',
         !isToday && !isSelected && hasOfficialHoliday && 'text-rose-600 dark:text-rose-400 font-black bg-rose-50/70 dark:bg-rose-950/30 hover:bg-rose-100 dark:hover:bg-rose-900/40',

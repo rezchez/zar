@@ -163,6 +163,28 @@ export function DatePicker({
     }
   }, [selectedDate]);
 
+  const [placement, setPlacement] = useState<{ vertical: 'bottom' | 'top'; horizontal: 'right' | 'left' }>({
+    vertical: 'bottom',
+    horizontal: 'right',
+  });
+
+  useEffect(() => {
+    if (!isOpen || !containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+    const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+
+    const spaceBelow = viewportHeight - rect.bottom;
+    const spaceAbove = rect.top;
+    const calendarHeight = 360;
+    const calendarWidth = 320;
+
+    const vertical = spaceBelow < calendarHeight && spaceAbove > spaceBelow ? 'top' : 'bottom';
+    const horizontal = rect.right < calendarWidth && (viewportWidth - rect.left) >= calendarWidth ? 'left' : 'right';
+
+    setPlacement({ vertical, horizontal });
+  }, [isOpen]);
+
   // Handle outside click
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -287,11 +309,15 @@ export function DatePicker({
       <AnimatePresence>
         {isOpen ? (
           <motion.div
-            initial={{ opacity: 0, y: 6, scale: 0.98 }}
+            initial={{ opacity: 0, y: placement.vertical === 'top' ? -6 : 6, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 4, scale: 0.98 }}
+            exit={{ opacity: 0, y: placement.vertical === 'top' ? -4 : 4, scale: 0.98 }}
             transition={{ duration: 0.15, ease: 'easeOut' }}
-            className="absolute top-full right-0 z-50 mt-1.5 w-auto min-w-[300px] max-w-[360px] rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 p-3 shadow-2xl backdrop-blur-xl ring-1 ring-black/5 dark:ring-white/5"
+            className={cn(
+              'absolute z-50 w-auto min-w-[280px] sm:min-w-[300px] max-w-[min(350px,calc(100vw-1.5rem))] max-h-[min(420px,calc(100vh-2rem))] overflow-y-auto rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 p-2.5 sm:p-3 shadow-2xl backdrop-blur-xl ring-1 ring-black/5 dark:ring-white/5',
+              placement.vertical === 'top' ? 'bottom-full mb-1.5' : 'top-full mt-1.5',
+              placement.horizontal === 'left' ? 'left-0' : 'right-0',
+            )}
           >
             <div className="flex items-center justify-between pb-2 mb-1 border-b border-slate-100 dark:border-slate-800">
               <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg">

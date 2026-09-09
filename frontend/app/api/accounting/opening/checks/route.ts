@@ -43,15 +43,16 @@ export async function GET(request: Request) {
     const service = await getPocketBaseServiceClient().catch(() => null);
     if (service) await ensureChecksCollection(service);
 
-    const records = await context.pb.collection('checks').getFullList({
+    const client = service || context.pb;
+    const records = await client.collection('checks').getFullList({
       filter,
       sort: '-dueDate',
-      expand: 'bankAccount,customer',
+      expand: 'bankAccount,customer,created_by',
     }).catch(async () => {
       // Fallback in case is_opening_balance field isn't indexed yet
-      return context.pb.collection('checks').getFullList({
+      return client.collection('checks').getFullList({
         sort: '-dueDate',
-        expand: 'bankAccount,customer',
+        expand: 'bankAccount,customer,created_by',
       }).catch(() => []);
     });
 
@@ -227,6 +228,7 @@ export async function POST(request: Request) {
       is_opening_balance: true,
       opening_balance_date: openingDateIso,
       document: documentId,
+      updated_by: context.user.id,
       updatedBy: context.user.id,
     };
 
@@ -234,6 +236,7 @@ export async function POST(request: Request) {
     if (recordId) {
       checkRecord = await writer.collection('checks').update(recordId, checkPayload);
     } else {
+      checkPayload.created_by = context.user.id;
       checkPayload.createdBy = context.user.id;
       checkRecord = await writer.collection('checks').create(checkPayload);
     }
@@ -286,9 +289,13 @@ export async function POST(request: Request) {
       authenticatedClient: writer,
     });
 
+    const fullCheck = await writer.collection('checks').getOne(String(checkRecord.id), {
+      expand: 'bankAccount,customer,created_by',
+    }).catch(() => checkRecord);
+
     return NextResponse.json({
       success: true,
-      check: mapCheckRecord(checkRecord),
+      check: mapCheckRecord(fullCheck),
       journalEntryId: journalResult?.id || null,
     }, { status: recordId ? 200 : 201 });
   } catch (error) {

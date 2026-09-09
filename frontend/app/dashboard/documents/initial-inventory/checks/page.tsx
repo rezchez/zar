@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { getServerAuthContext } from '@/lib/auth';
 import { hasPermission } from '@/lib/authorization';
 import { mapCheckRecord, type CheckRecord } from '@/lib/check';
+import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
 import DashboardShell from '@/src/components/dashboard/DashboardShell';
 import InitialIssuedChecksClient from '@/features/checks/components/InitialIssuedChecksClient';
 
@@ -17,14 +18,16 @@ export default async function InitialIssuedChecksPage() {
 
   let initialChecks: CheckRecord[] = [];
   try {
-    const records = await context.pb.collection('checks').getFullList({
+    const service = await getPocketBaseServiceClient().catch(() => null);
+    const client = service || context.pb;
+    const records = await client.collection('checks').getFullList({
       filter: 'is_opening_balance = true',
       sort: '-dueDate',
-      expand: 'bankAccount,customer',
+      expand: 'bankAccount,customer,created_by',
     }).catch(async () => {
-      return context.pb.collection('checks').getFullList({
+      return client.collection('checks').getFullList({
         sort: '-dueDate',
-        expand: 'bankAccount,customer',
+        expand: 'bankAccount,customer,created_by',
       }).catch(() => []);
     });
 

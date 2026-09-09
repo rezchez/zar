@@ -55,10 +55,11 @@ export async function GET(request: Request) {
     const service = await getPocketBaseServiceClient().catch(() => null);
     if (service) await ensureChecksCollection(service);
 
-    const records = await context.pb.collection('checks').getFullList({
+    const client = service || context.pb;
+    const records = await client.collection('checks').getFullList({
       filter,
       sort: 'dueDate',
-      expand: 'bankAccount,customer',
+      expand: 'bankAccount,customer,created_by',
     });
 
     return NextResponse.json({ checks: records.map(mapCheckRecord) });
@@ -168,7 +169,9 @@ export async function POST(request: Request) {
       dueDateJalali,
       status: validStatus,
       document: documentId,
+      created_by: context.user.id,
       createdBy: context.user.id,
+      updated_by: context.user.id,
       updatedBy: context.user.id,
     });
 
@@ -280,7 +283,7 @@ export async function POST(request: Request) {
     });
 
     const fullCheck = await writer.collection('checks').getOne(checkRecord.id, {
-      expand: 'bankAccount,customer',
+      expand: 'bankAccount,customer,created_by',
     }).catch(() => checkRecord);
 
     return NextResponse.json({ check: mapCheckRecord(fullCheck) }, { status: 201 });

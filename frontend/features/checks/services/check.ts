@@ -115,6 +115,7 @@ export type CheckRecord = {
   receivableAccountId?: string | null;
   journalEntryId?: string | null;
   document?: string;
+  created_by?: string;
   createdBy?: string;
   created: string;
   updated: string;
@@ -123,6 +124,8 @@ export type CheckRecord = {
     customer?: Record<string, unknown>;
     payableAccountId?: Record<string, unknown>;
     receivableAccountId?: Record<string, unknown>;
+    created_by?: Record<string, unknown>;
+    createdBy?: Record<string, unknown>;
   };
 };
 
@@ -197,15 +200,24 @@ export function mapCheckRecord(record: Record<string, unknown>): CheckRecord {
     receivableAccountId: typeof record.receivableAccountId === 'string' ? record.receivableAccountId : null,
     journalEntryId: typeof record.journalEntryId === 'string' ? record.journalEntryId : null,
     document: typeof record.document === 'string' ? record.document : undefined,
-    createdBy: typeof record.createdBy === 'string'
-      ? record.createdBy
-      : typeof record.created_by === 'string'
-        ? record.created_by
+    created_by: typeof record.created_by === 'string'
+      ? record.created_by
+      : typeof record.createdBy === 'string'
+        ? record.createdBy
+        : undefined,
+    createdBy: typeof record.created_by === 'string'
+      ? record.created_by
+      : typeof record.createdBy === 'string'
+        ? record.createdBy
         : undefined,
     created: typeof record.created === 'string' ? record.created : '',
     updated: typeof record.updated === 'string' ? record.updated : '',
     expand: typeof record.expand === 'object' && record.expand !== null
-      ? (record.expand as CheckRecord['expand'])
+      ? {
+          ...(record.expand as Record<string, unknown>),
+          created_by: (record.expand as Record<string, unknown>).created_by || (record.expand as Record<string, unknown>).createdBy,
+          createdBy: (record.expand as Record<string, unknown>).created_by || (record.expand as Record<string, unknown>).createdBy,
+        } as CheckRecord['expand']
       : undefined,
   };
 }
