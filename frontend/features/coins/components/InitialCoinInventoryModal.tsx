@@ -9,6 +9,7 @@ import { useAppSettings } from '@/src/components/SettingsProvider';
 import { PriceInput } from '@/components/ui/price-input';
 import { dateToJalaliString } from '@/lib/jalali';
 import { parseLocalizedAmount } from '@/lib/money';
+import { roundWeight, validateWeightPrecision, type WeightDecimalPlaces } from '@/lib/weight';
 
 export type CoinTypeMasterItem = {
   id: string;
@@ -47,9 +48,9 @@ export default function InitialCoinInventoryModal({
   editItem?: CoinInventoryEditItem | null;
   onSuccess?: () => void;
 }) {
-  const { settings } = useAppSettings();
+  const { settings, formatWeight } = useAppSettings();
   const baseKarat = Number(settings.goldBaseKarat) || 750;
-  const weightPrecision = Number(settings.weightDecimalPlaces) || 3;
+  const weightPrecision = (Number(settings.weightDecimalPlaces) || 3) as WeightDecimalPlaces;
   const effectiveCurrency = (settings.baseCurrency as 'IRR' | 'IRT') || 'IRR';
   const currencySuffix = effectiveCurrency === 'IRT' ? 'تومان' : 'ریال';
 
@@ -160,9 +161,10 @@ export default function InitialCoinInventoryModal({
   const numPurity = Math.max(0, parseFloat(purity) || 0);
   const numUnitPrice = parseLocalizedAmount(unitPrice);
 
-  const totalWeight = numQty * numWeight;
-  const totalAmount = numQty * numUnitPrice;
-  const convertedWeight = baseKarat > 0 ? (totalWeight * numPurity) / baseKarat : totalWeight;
+  const totalWeight = roundWeight(numQty * numWeight, weightPrecision);
+  const totalAmount = Math.round(numQty * numUnitPrice);
+  const rawConverted = baseKarat > 0 ? (totalWeight * numPurity) / baseKarat : totalWeight;
+  const convertedWeight = roundWeight(rawConverted, weightPrecision);
 
   function handleNatureChange(newNature: 'coin' | 'bullion') {
     setSelectedNature(newNature);
@@ -240,6 +242,11 @@ export default function InitialCoinInventoryModal({
     }
     if (numWeight <= 0) {
       setErrorMsg('وزن واحد باید عددی مثبت باشد.');
+      return;
+    }
+    const precisionCheck = validateWeightPrecision(unitWeight, weightPrecision);
+    if (!precisionCheck.valid) {
+      setErrorMsg(precisionCheck.message || `حداکثر ${weightPrecision} رقم اعشار برای وزن در تنظیمات مجاز است.`);
       return;
     }
     if (numPurity <= 0 || numPurity > 1000) {
@@ -624,7 +631,7 @@ export default function InitialCoinInventoryModal({
                 وزن کل
               </span>
               <span className="mt-0.5 block font-mono text-xs font-black text-amber-900 dark:text-amber-200">
-                {totalWeight.toFixed(weightPrecision)} گرم
+                {formatWeight(totalWeight)} گرم
               </span>
             </div>
 
@@ -633,7 +640,7 @@ export default function InitialCoinInventoryModal({
                 معادل عیار {baseKarat}
               </span>
               <span className="mt-0.5 block font-mono text-xs font-black text-amber-900 dark:text-amber-200">
-                {convertedWeight.toFixed(weightPrecision)} گرم
+                {formatWeight(convertedWeight)} گرم
               </span>
             </div>
           </div>

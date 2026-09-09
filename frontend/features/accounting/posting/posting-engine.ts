@@ -37,6 +37,7 @@ export interface CreateJournalEntryParams {
     | 'opening_bank'
     | 'opening_cash'
     | 'opening_coin'
+    | 'opening_check'
     | 'manual';
   sourceId: string;
   sourceKey: string;
@@ -475,6 +476,69 @@ export async function postPayableChequeIssue(
           credit: amount,
           description: `بستانکار اسناد پرداختنی (چک ${cheque.sayadId})`,
           partyId: customer.id,
+          bankAccountId: bankAccount.id,
+          chequeId: cheque.id,
+        },
+      ],
+    },
+    pb,
+  );
+}
+
+/**
+ * Opening Issued Cheque Accounting Integration:
+ * Debit: Opening Equity / Capital (3100 سرمایه اول دوره)
+ * Credit: Notes Payable (2110 اسناد پرداختنی)
+ *
+ * NOTE: DOES NOT DEDUCT BANK BALANCE! Bank balance deduction happens strictly upon clearing.
+ */
+export async function postOpeningChequeIssue(
+  cheque: {
+    id: string;
+    amount: number;
+    checkNumber: string;
+    description: string;
+    dueDateJalali: string;
+    openingDateJalali?: string;
+    bankAccount: string;
+    customer?: string | null;
+    payableAccountId?: string | null;
+  },
+  customerName: string,
+  bankAccount: BankAccount,
+  userId: string,
+  pb: PocketBase,
+): Promise<JournalEntryResult> {
+  const amount = Math.round(cheque.amount);
+  const payableAccount = cheque.payableAccountId || SYSTEM_ACCOUNT_CODES.NOTES_PAYABLE;
+  const equityAccount = SYSTEM_ACCOUNT_CODES.OPENING_EQUITY;
+
+  const desc = `موجودی اولیه چک صادرشده شماره ${cheque.checkNumber} به سررسید ${cheque.dueDateJalali} — حساب ${bankAccount.bankName}${customerName ? ` — ذینفع: ${customerName}` : ''}`;
+
+  return postJournalEntry(
+    {
+      entryDateJalali: cheque.openingDateJalali,
+      description: desc,
+      sourceType: 'opening_check',
+      sourceId: cheque.id,
+      sourceKey: `opening:check:${cheque.id}`,
+      userId,
+      lines: [
+        {
+          accountId: equityAccount,
+          debit: amount,
+          credit: 0,
+          description: `سرمایه اول دوره (تعهد چک صادره ${cheque.checkNumber})`,
+          partyId: cheque.customer || undefined,
+          bankAccountId: bankAccount.id,
+          chequeId: cheque.id,
+        },
+        {
+          accountId: payableAccount,
+          debit: 0,
+          credit: amount,
+          description: `اسناد پرداختنی اول دوره (چک ${cheque.checkNumber} - ${bankAccount.bankName})`,
+          partyId: cheque.customer || undefined,
           bankAccountId: bankAccount.id,
           chequeId: cheque.id,
         },

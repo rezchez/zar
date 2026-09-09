@@ -96,6 +96,10 @@ export type CheckRecord = {
   amount: number;
   currency: string;
   sayadId: string;
+  checkNumber?: string;
+  isOpeningBalance?: boolean;
+  openingBalanceDate?: string;
+  openingBalanceDateJalali?: string;
   description: string;
   chequeType: ChequeType;
   issueDate?: string;
@@ -158,6 +162,22 @@ export function mapCheckRecord(record: Record<string, unknown>): CheckRecord {
       : typeof record.check_number === 'string'
         ? record.check_number
         : '',
+    checkNumber: typeof record.checkNumber === 'string'
+      ? record.checkNumber
+      : typeof record.check_number === 'string'
+        ? record.check_number
+        : typeof record.sayadId === 'string'
+          ? record.sayadId
+          : '',
+    isOpeningBalance: record.is_opening_balance === true || record.isOpeningBalance === true,
+    openingBalanceDate: typeof record.opening_balance_date === 'string'
+      ? record.opening_balance_date
+      : typeof record.openingBalanceDate === 'string'
+        ? record.openingBalanceDate
+        : undefined,
+    openingBalanceDateJalali: typeof record.openingBalanceDateJalali === 'string'
+      ? record.openingBalanceDateJalali
+      : undefined,
     description: typeof record.description === 'string' ? record.description : '',
     chequeType,
     issueDate: typeof record.issueDate === 'string' ? record.issueDate : undefined,

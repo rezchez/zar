@@ -5,6 +5,8 @@ import Link from 'next/link';
 import React, { useCallback, useEffect, useState } from 'react';
 
 import InitialCoinInventoryModal, { type CoinInventoryEditItem } from './InitialCoinInventoryModal';
+import { useAppSettings } from '@/components/shared/SettingsProvider';
+import { formatQuantity } from '@/lib/weight';
 
 export type CoinInventoryRecordItem = {
   id: string;
@@ -28,6 +30,7 @@ export default function InitialCoinInventoryClient({
 }: {
   initialInventory?: CoinInventoryRecordItem[];
 }) {
+  const { formatWeight } = useAppSettings();
   const [items, setItems] = useState<CoinInventoryRecordItem[]>(initialInventory);
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
@@ -215,7 +218,7 @@ export default function InitialCoinInventoryClient({
                   <div className="rounded-lg bg-slate-50/80 p-2 dark:bg-slate-800/40">
                     <span className="block text-[9px] font-bold text-slate-400">تعداد / وزن کل</span>
                     <span className="mt-0.5 block font-mono text-[11px] font-bold text-slate-800 dark:text-slate-200">
-                      {item.quantity} عدد ({item.totalWeight} گرم)
+                      {formatQuantity(item.quantity)} عدد ({formatWeight(item.totalWeight)} گرم)
                     </span>
                   </div>
 

@@ -4,6 +4,8 @@ import { postCoinOpeningInventory } from '@/lib/accounting-posting-engine';
 import { getServerAuthContext } from '@/lib/auth';
 import { hasPermission } from '@/lib/authorization';
 import { dateToJalaliString } from '@/lib/jalali';
+import { defaultSettings, normalizeSettings } from '@/lib/settings';
+import { roundWeight, validateWeightPrecision, type WeightDecimalPlaces } from '@/lib/weight';
 
 function extractPbErrorMessage(error: unknown, fallback: string): string {
   if (!error) return fallback;
@@ -101,6 +103,18 @@ export async function POST(request: Request) {
     const description = String(body?.description || '').trim();
     const baseKarat = Number(body?.baseKarat || 750);
 
+    // 1. Fetch weight precision from app settings
+    let weightPrecision: WeightDecimalPlaces = 3;
+    try {
+      const settingsRecord = await context.pb.collection('app_settings').getFirstListItem('id != ""').catch(() => null);
+      if (settingsRecord) {
+        const s = normalizeSettings(settingsRecord as Record<string, unknown>);
+        weightPrecision = s.weightDecimalPlaces || 3;
+      }
+    } catch {
+      weightPrecision = defaultSettings.weightDecimalPlaces || 3;
+    }
+
     if (!itemName) {
       return NextResponse.json({ message: 'انتخاب یا ورود نام سکه/شمش الزامی است.' }, { status: 400 });
     }
@@ -110,6 +124,15 @@ export async function POST(request: Request) {
     if (!Number.isFinite(unitWeight) || unitWeight <= 0) {
       return NextResponse.json({ message: 'وزن هر واحد باید عددی مثبت باشد.' }, { status: 400 });
     }
+
+    // 2. Validate weight input precision against app settings
+    const precisionCheck = validateWeightPrecision(String(body?.unitWeight ?? ''), weightPrecision);
+    if (!precisionCheck.valid) {
+      return NextResponse.json({
+        message: precisionCheck.message || `حداکثر ${weightPrecision} رقم اعشار برای وزن در تنظیمات مجاز است.`,
+      }, { status: 400 });
+    }
+
     if (!Number.isFinite(purity) || purity <= 0 || purity > 1000) {
       return NextResponse.json({ message: 'عیار معتبر وارد کنید (بین ۱ تا ۱۰۰۰).' }, { status: 400 });
     }
@@ -117,9 +140,31 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: 'قیمت هر واحد نمی‌تواند منفی باشد.' }, { status: 400 });
     }
 
-    const totalWeight = quantity * unitWeight;
-    const totalAmount = quantity * unitPrice;
-    const convertedWeight = baseKarat > 0 ? (totalWeight * purity) / baseKarat : totalWeight;
+    // 3. Check for Duplicate Opening Balance for same item/nature/metal if creating new
+    if (!recordId) {
+      try {
+        const existingOpening = await context.pb.collection('coin_inventory').getFirstListItem(
+          context.pb.filter(
+            'transaction_type = "opening_balance" && (item_name = {:itemName} || (item_type != null && item_type = {:itemTypeId}))',
+            { itemName, itemTypeId: itemTypeId || '___none___' },
+          ),
+        ).catch(() => null);
+
+        if (existingOpening) {
+          return NextResponse.json({
+            message: `موجودی اولیه برای عنوان «${itemName}» قبلاً ثبت شده است. لطفاً همان رکورد را ویرایش کنید.`,
+          }, { status: 409 });
+        }
+      } catch {
+        // proceed if query throws
+      }
+    }
+
+    // 4. Calculate with deterministic decimal rounding (prevent IEEE-754 floating point artifacts)
+    const totalWeight = roundWeight(quantity * unitWeight, weightPrecision);
+    const totalAmount = Math.round(quantity * unitPrice);
+    const rawConverted = baseKarat > 0 ? (totalWeight * purity) / baseKarat : totalWeight;
+    const convertedWeight = roundWeight(rawConverted, weightPrecision);
     const dateValue = dateInput || dateToJalaliString(new Date());
 
     const payload = {
@@ -135,7 +180,7 @@ export async function POST(request: Request) {
       unit_price: unitPrice,
       total_amount: totalAmount,
       total_weight: totalWeight,
-      converted_weight: Number(convertedWeight.toFixed(3)),
+      converted_weight: convertedWeight,
       date: dateValue,
       description,
     };
@@ -189,7 +234,7 @@ export async function POST(request: Request) {
         unitPrice,
         totalAmount,
         totalWeight,
-        convertedWeight: Number(convertedWeight.toFixed(3)),
+        convertedWeight,
         date: dateValue,
         description,
       },

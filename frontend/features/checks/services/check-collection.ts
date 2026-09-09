@@ -10,7 +10,10 @@ const checkCollectionPayload = {
   fields: [
     { id: 'bank_account_rel', name: 'bankAccount', type: 'relation', collectionId: 'bank_accounts', maxSelect: 1, required: true },
     { id: 'customer_rel', name: 'customer', type: 'relation', collectionId: 'customers', maxSelect: 1, required: true },
-    { id: 'sayad_id', name: 'sayadId', type: 'text', required: true, min: 16, max: 16 },
+    { id: 'sayad_id', name: 'sayadId', type: 'text', required: false, min: 0, max: 80 },
+    { id: 'check_number', name: 'checkNumber', type: 'text', required: false, max: 80 },
+    { id: 'is_opening_balance', name: 'is_opening_balance', type: 'bool', required: false },
+    { id: 'opening_balance_date', name: 'opening_balance_date', type: 'text', required: false, max: 40 },
     { id: 'amount_num', name: 'amount', type: 'number', required: true, min: 0 },
     { id: 'currency_code', name: 'currency', type: 'text', required: true, max: 16 },
     { id: 'cheque_type', name: 'chequeType', type: 'text', required: false, max: 20 },
@@ -41,6 +44,8 @@ const checkCollectionPayload = {
   ],
   indexes: [
     'CREATE UNIQUE INDEX idx_checks_sayad_id ON checks (sayadId)',
+    'CREATE INDEX idx_checks_is_opening_balance ON checks (is_opening_balance)',
+    'CREATE INDEX idx_checks_check_number ON checks (checkNumber)',
   ],
   listRule: '@request.auth.id != ""',
   viewRule: '@request.auth.id != ""',

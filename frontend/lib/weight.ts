@@ -84,8 +84,21 @@ export function milligramsToGramsString(
  */
 export function roundWeight(value: number, precision: WeightDecimalPlaces = 3): number {
   if (!Number.isFinite(value)) return 0;
-  const factor = 10 ** precision;
-  return Math.round((value + Number.EPSILON) * factor) / factor;
+  return Number(Math.round(Number(value + 'e' + precision)) + 'e-' + precision);
+}
+
+/**
+ * Formats quantity for coins/bullion (discrete counts display as clean integers without trailing decimals).
+ */
+export function formatQuantity(quantity: number, isDiscrete = true): string {
+  if (!Number.isFinite(quantity)) return '۰';
+  if (isDiscrete || Number.isInteger(quantity)) {
+    return Math.round(quantity).toLocaleString('fa-IR');
+  }
+  return new Intl.NumberFormat('fa-IR', {
+    maximumFractionDigits: 2,
+    useGrouping: true,
+  }).format(quantity);
 }
 
 /**
