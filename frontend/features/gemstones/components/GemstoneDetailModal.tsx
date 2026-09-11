@@ -222,9 +222,9 @@ export default function GemstoneDetailModal({
                   </div>
                 </div>
                 <div>
-                  <span className="text-[10px] text-slate-500 dark:text-slate-400">تعداد قطعات</span>
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400">تعداد سنگ</span>
                   <div className="font-bold text-slate-800 dark:text-slate-200">
-                    {gemstone.pieces ?? 1} قطعه
+                    {gemstone.pieces ?? 1} عدد
                   </div>
                 </div>
               </div>
@@ -307,7 +307,7 @@ export default function GemstoneDetailModal({
             </div>
 
             <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-3.5 dark:border-slate-800 dark:bg-slate-800/40">
-              <span className="text-[11px] font-medium text-slate-400">تعداد سنگ (قطعه)</span>
+              <span className="text-[11px] font-medium text-slate-400">تعداد سنگ (عدد)</span>
               <div className="mt-1 font-bold text-slate-800 dark:text-slate-200">
                 {gemstone.pieces ?? 1} عدد
               </div>
@@ -533,7 +533,7 @@ export default function GemstoneDetailModal({
                     </span>
                   </div>
                   <div className="flex items-center justify-between rounded-xl bg-white/60 p-2 text-[11px] dark:bg-slate-800/60">
-                    <span className="text-slate-600 dark:text-slate-400 font-bold">میانگین موزون نرخ هر قطعه (WAC/pc):</span>
+                    <span className="text-slate-600 dark:text-slate-400 font-bold">میانگین موزون نرخ هر عدد (WAC/pc):</span>
                     <span className="font-mono font-black text-emerald-700 dark:text-emerald-300">
                       {gemstone.wacPerPiece
                         ? `${formatNumberWithCommas(convertRialToToman(gemstone.wacPerPiece))} تومان`

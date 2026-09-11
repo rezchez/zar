@@ -21,6 +21,13 @@ import {
   type GemstoneOpeningRecord,
 } from '@/lib/gemstone';
 import {
+  buildHierarchicalShapeOrder,
+  getDefaultParentMap,
+  isDescendant,
+  wouldCreateCycle,
+  type ShapeCustomName,
+} from '@/features/gemstones/components/ShapeSettingsModal';
+import {
   calculateValuationTotalCost,
   caratsToGrams,
   formatCaratWeight,
@@ -680,5 +687,59 @@ describe('Zarfolio — Professional Gemstone Opening Inventory Tests', () => {
       const updatedWithCode = { ...existingDbRecord, ...payloadWithCode };
       expect(updatedWithCode.inventory_code).toBe('DIA-CUSTOM-99');
     });
+
+    it('supports customizing shape titles/names (renaming)', () => {
+      const customNames: Record<string, ShapeCustomName> = {
+        round: { nameFa: 'برلیان گرد ممتاز', nameEn: 'Brilliant Round' },
+        baguette: { nameFa: 'باگت کلاسیک', nameEn: 'Classic Baguette' },
+      };
+
+      const shape = GEMSTONE_SHAPES.find((s) => s.id === 'round');
+      expect(shape).toBeDefined();
+
+      const displayNameFa = customNames[shape!.id]?.nameFa || shape!.nameFa;
+      const displayNameEn = customNames[shape!.id]?.nameEn || shape!.nameEn;
+
+      expect(displayNameFa).toBe('برلیان گرد ممتاز');
+      expect(displayNameEn).toBe('Brilliant Round');
+    });
+
+    it('creates sub-groups with drag and drop hierarchy (one mother and multiple children)', () => {
+      // Example: 'triangle' is the mother shape, and 'trilliant' and 'trapezoid' are its children
+      const baseOrder = ['round', 'triangle', 'trilliant', 'trapezoid', 'oval'];
+      const parentMap: Record<string, string | null> = {
+        round: null,
+        triangle: null, // Mother shape
+        trilliant: 'triangle', // Child 1
+        trapezoid: 'triangle', // Child 2
+        oval: null,
+      };
+
+      // Invariant: buildHierarchicalShapeOrder guarantees children immediately follow their mother
+      const hierarchical = buildHierarchicalShapeOrder(baseOrder, parentMap);
+      expect(hierarchical.indexOf('triangle')).toBe(1);
+      expect(hierarchical.indexOf('trilliant')).toBe(2);
+      expect(hierarchical.indexOf('trapezoid')).toBe(3);
+      expect(hierarchical.indexOf('oval')).toBe(4);
+
+      // Verify cycle prevention:
+      // Trying to make 'triangle' (the mother) a child of 'trilliant' (its existing child) creates a cycle
+      expect(wouldCreateCycle('triangle', 'trilliant', parentMap)).toBe(true);
+      // Trying to make 'oval' (independent) a child of 'triangle' is safe and does not create a cycle
+      expect(wouldCreateCycle('oval', 'triangle', parentMap)).toBe(false);
+
+      // Verify dropdown option rendering with parent-child marker
+      const formattedOptions = hierarchical.map((id) => {
+        const s = GEMSTONE_SHAPES.find((sh) => sh.id === id)!;
+        const isChild = Boolean(parentMap[id]);
+        return `${isChild ? '↳ ' : ''}${s.nameFa}`;
+      });
+
+      expect(formattedOptions[1]).not.toContain('↳'); // Mother
+      expect(formattedOptions[2]).toContain('↳'); // Child 1
+      expect(formattedOptions[3]).toContain('↳'); // Child 2
+      expect(formattedOptions[4]).not.toContain('↳'); // Top-level
+    });
   });
 });
+

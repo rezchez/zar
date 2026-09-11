@@ -7,6 +7,7 @@ import {
   Eye,
   FolderTree,
   Gem,
+  Layers,
   Package,
   Plus,
   RefreshCw,
@@ -20,6 +21,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
 import GemstoneDetailModal from './GemstoneDetailModal';
 import InitialGemstoneInventoryModal from './InitialGemstoneInventoryModal';
+import MergeParcelsModal from './MergeParcelsModal';
 import {
   CLARITY_GRADES,
   CUT_GRADES,
@@ -66,6 +68,15 @@ export default function InitialGemstoneInventoryClient({
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<GemstoneOpeningRecord | null>(null);
   const [selectedGemstoneForDetail, setSelectedGemstoneForDetail] = useState<GemstoneOpeningRecord | null>(null);
+
+  // Parcel merging state
+  const [selectedParcelIds, setSelectedParcelIds] = useState<string[]>([]);
+  const [mergeModalOpen, setMergeModalOpen] = useState(false);
+
+  const selectedParcels = useMemo(
+    () => items.filter((it) => selectedParcelIds.includes(it.id)),
+    [items, selectedParcelIds]
+  );
 
   const fetchInventory = useCallback(async () => {
     setLoading(true);
@@ -215,6 +226,17 @@ export default function InitialGemstoneInventoryClient({
             <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
           </button>
 
+          {selectedParcels.length >= 2 && (
+            <button
+              type="button"
+              onClick={() => setMergeModalOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-purple-600 px-3.5 py-2 text-xs font-bold text-white shadow-sm hover:bg-purple-700 dark:bg-purple-500 dark:hover:bg-purple-600 transition-all animate-pulse"
+            >
+              <Layers size={16} />
+              <span>ترکیب بارخانه‌های انتخابی ({selectedParcels.length.toLocaleString('fa-IR')} بسته)</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={handleOpenCreate}
@@ -330,12 +352,52 @@ export default function InitialGemstoneInventoryClient({
         </div>
       </div>
 
+      {/* Selection Banner for Parcel Merging */}
+      {selectedParcels.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-purple-200 bg-purple-50/80 p-3.5 px-4 dark:border-purple-900/60 dark:bg-purple-950/40">
+          <div className="flex items-center gap-2.5">
+            <div className="flex size-7 items-center justify-center rounded-lg bg-purple-600 text-white">
+              <Layers size={15} />
+            </div>
+            <div>
+              <span className="text-xs font-bold text-purple-950 dark:text-purple-200">
+                {selectedParcels.length.toLocaleString('fa-IR')} بارخانه جهت ادغام و یکپارچه‌سازی انتخاب شده است
+              </span>
+              <p className="text-[11px] text-purple-700 dark:text-purple-300">
+                {selectedParcels.length >= 2
+                  ? 'جهت بررسی همگنی و محاسبه میانگین موزون (WAC)، دکمه زیر را انتخاب کنید.'
+                  : 'حداقل ۱ بارخانه دیگر را جهت ادغام انتخاب کنید.'}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSelectedParcelIds([])}
+              className="rounded-xl px-3 py-1.5 text-xs font-bold text-slate-500 hover:bg-slate-200/60 dark:text-slate-400 dark:hover:bg-slate-800"
+            >
+              انصراف
+            </button>
+            <button
+              type="button"
+              onClick={() => setMergeModalOpen(true)}
+              disabled={selectedParcels.length < 2}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-purple-600 px-3.5 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-purple-700 disabled:opacity-50"
+            >
+              <Layers size={14} />
+              <span>ادغام بارخانه‌ها (WAC)</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Gemstone Data Table */}
       <div className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900">
         <div className="overflow-x-auto">
           <table className="w-full text-right text-xs">
             <thead className="border-b border-slate-100 bg-slate-50/70 text-[11px] font-black text-slate-400 dark:border-slate-800 dark:bg-slate-800/40">
               <tr>
+                <th className="w-10 px-3 py-3.5 text-center">انتخاب</th>
                 <th className="px-5 py-3.5">عنوان و کد گوهر</th>
                 <th className="px-4 py-3.5">گونه و دسته‌بندی</th>
                 <th className="px-4 py-3.5">درجه‌بندی رنگ و پاکی</th>
@@ -349,7 +411,7 @@ export default function InitialGemstoneInventoryClient({
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {filteredItems.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-5 py-12 text-center text-slate-500">
+                  <td colSpan={9} className="px-5 py-12 text-center text-slate-500">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <Gem size={32} className="text-slate-300 dark:text-slate-600" />
                       <span className="font-bold">هیچ سنگ قیمتی در این بخش ثبت نشده است</span>
@@ -370,6 +432,27 @@ export default function InitialGemstoneInventoryClient({
                       key={item.id}
                       className="transition-colors hover:bg-slate-50/50 dark:hover:bg-slate-800/30"
                     >
+                      {/* Checkbox for parcel merge */}
+                      <td className="px-3 py-4 text-center">
+                        {item.mode === 'parcel' ? (
+                          <input
+                            type="checkbox"
+                            checked={selectedParcelIds.includes(item.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedParcelIds((prev) => [...prev, item.id]);
+                              } else {
+                                setSelectedParcelIds((prev) => prev.filter((id) => id !== item.id));
+                              }
+                            }}
+                            className="size-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500 dark:border-slate-700"
+                            title="انتخاب جهت ادغام بارخانه"
+                          />
+                        ) : (
+                          <span className="text-slate-300 dark:text-slate-700">—</span>
+                        )}
+                      </td>
+
                       {/* Code & Title */}
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-2">
@@ -410,7 +493,7 @@ export default function InitialGemstoneInventoryClient({
                               )}
                               {item.mode === 'parcel' && (
                                 <span className="rounded-md bg-purple-500/10 px-1.5 py-0.2 text-[10px] font-bold text-purple-700 dark:bg-purple-500/20 dark:text-purple-300">
-                                  بسته‌ای ({item.pieces ?? 1} قطعه)
+                                  بسته‌ای ({item.pieces ?? 1} عدد)
                                 </span>
                               )}
                             </div>
@@ -435,9 +518,18 @@ export default function InitialGemstoneInventoryClient({
                         {item.variety && (
                           <div className="text-[11px] text-slate-400">{item.variety}</div>
                         )}
-                        {item.mode === 'parcel' && item.sizeMin !== undefined && item.sizeMax !== undefined && (
-                          <div className="font-mono text-[10px] text-indigo-600 dark:text-indigo-400">
-                            سایز: {item.sizeMin}–{item.sizeMax} {item.sizeUnit || 'ct'}
+                        {item.mode === 'parcel' && (
+                          <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                            {item.sieveSize && (
+                              <span className="rounded bg-indigo-50 px-1.5 py-0.2 font-mono text-[10px] font-bold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/60">
+                                الک: {item.sieveSize}
+                              </span>
+                            )}
+                            {item.sizeMin !== undefined && item.sizeMax !== undefined && (
+                              <span className="font-mono text-[10px] text-indigo-600 dark:text-indigo-400">
+                                سایز: {item.sizeMin}–{item.sizeMax} {item.sizeUnit || 'ct'}
+                              </span>
+                            )}
                           </div>
                         )}
                       </td>
@@ -495,7 +587,7 @@ export default function InitialGemstoneInventoryClient({
                           {formatGramWeight(item.weightG)} g
                           {item.pieces !== undefined && item.pieces > 1 && (
                             <span className="mr-1.5 font-sans font-bold text-slate-600 dark:text-slate-300">
-                              ({item.pieces} قطعه)
+                              ({item.pieces} عدد)
                             </span>
                           )}
                         </div>
@@ -589,6 +681,19 @@ export default function InitialGemstoneInventoryClient({
         onClose={() => setModalOpen(false)}
         onSuccess={() => void fetchInventory()}
         editingItem={editingItem}
+        existingParcels={items.filter((it) => it.mode === 'parcel')}
+      />
+
+      {/* Merge Parcels Modal */}
+      <MergeParcelsModal
+        isOpen={mergeModalOpen}
+        onClose={() => setMergeModalOpen(false)}
+        onSuccess={() => {
+          setSelectedParcelIds([]);
+          setMergeModalOpen(false);
+          void fetchInventory();
+        }}
+        selectedParcels={selectedParcels}
       />
 
       {/* Detailed View Modal */}

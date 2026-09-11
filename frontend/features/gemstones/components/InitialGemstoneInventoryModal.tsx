@@ -7,13 +7,18 @@ import {
   Gem,
   Info,
   Layers,
+  Plus,
   Scale,
   Settings,
   Sparkles,
   X,
 } from 'lucide-react';
-import React, { useEffect, useState } from 'react';
-import ShapeSettingsModal, { loadShapePreferences } from './ShapeSettingsModal';
+import React, { useEffect, useMemo, useState } from 'react';
+import ShapeSettingsModal, {
+  loadShapePreferences,
+  buildHierarchicalShapeOrder,
+  type ShapePreferences,
+} from './ShapeSettingsModal';
 
 import {
   CLARITY_GRADES,
@@ -41,6 +46,11 @@ import {
   validateColorRange,
   validateClarityRange,
   generatePoolIdentityKey,
+  areParcelsHomogeneous,
+  DIAMOND_SIEVE_CHART,
+  findSieveBySize,
+  estimatePiecesFromCarats,
+  estimateCaratsFromPieces,
   type GemstoneCategory,
   type GemstoneOpeningRecord,
   type GemstoneTypeRecord,
@@ -57,6 +67,8 @@ import {
   gramsToCarats,
   parseWeight,
 } from '@/lib/gemstone-weight';
+import type { Currency } from '@/lib/currencies';
+import type { StorageLocationItem } from '@/app/api/storage-locations/route';
 import { dateToJalaliString } from '@/lib/jalali';
 import { convertRialToToman, formatNumberWithCommas } from '@/lib/money';
 
@@ -65,6 +77,7 @@ export type InitialGemstoneInventoryModalProps = {
   onClose: () => void;
   onSuccess?: () => void;
   editingItem?: GemstoneOpeningRecord | null;
+  existingParcels?: GemstoneOpeningRecord[];
 };
 
 export default function InitialGemstoneInventoryModal({
@@ -72,6 +85,7 @@ export default function InitialGemstoneInventoryModal({
   onClose,
   onSuccess,
   editingItem,
+  existingParcels = [],
 }: InitialGemstoneInventoryModalProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -112,9 +126,11 @@ export default function InitialGemstoneInventoryModal({
   // Common geometry & certificate
   const [shape, setShape] = useState<string>('round');
   const [isShapeSettingsOpen, setIsShapeSettingsOpen] = useState(false);
-  const [shapePrefs, setShapePrefs] = useState<{ order: string[]; hidden: string[] }>({
+  const [shapePrefs, setShapePrefs] = useState<ShapePreferences>({
     order: GEMSTONE_SHAPES.map((s) => s.id),
     hidden: [],
+    customNames: {},
+    parentMap: {},
   });
 
   useEffect(() => {
@@ -157,38 +173,118 @@ export default function InitialGemstoneInventoryModal({
   const [sizeMin, setSizeMin] = useState<string>('');
   const [sizeMax, setSizeMax] = useState<string>('');
   const [sizeUnit, setSizeUnit] = useState<'ct' | 'mm' | 'sieve'>('ct');
+  const [sieveSize, setSieveSize] = useState<string>('+1.5-2');
+  const [mergeWithExistingId, setMergeWithExistingId] = useState<string | null>(null);
   const [colorMin, setColorMin] = useState<string>('G');
   const [colorMax, setColorMax] = useState<string>('H');
   const [clarityMin, setClarityMin] = useState<string>('VS1');
   const [clarityMax, setClarityMax] = useState<string>('VS2');
   const [lotNumber, setLotNumber] = useState<string>('');
 
+  // Auto-detect homogeneous existing parcel
+  const matchingParcel = useMemo(() => {
+    if (mode !== 'parcel' || editingItem || !existingParcels || existingParcels.length === 0) return null;
+    const currentForm: Partial<GemstoneOpeningRecord> = {
+      mode: 'parcel',
+      rootCategory,
+      category,
+      species,
+      shape,
+      sizeUnit,
+      sizeMin: sizeMin ? Number(sizeMin) : undefined,
+      sizeMax: sizeMax ? Number(sizeMax) : undefined,
+      sieveSize: sizeUnit === 'sieve' ? sieveSize : undefined,
+      colorRangeLabel: validateColorRange(colorMin, colorMax).label,
+      clarityRangeLabel: validateClarityRange(clarityMin, clarityMax).label,
+    };
+    return existingParcels.find((p) => p.id && areParcelsHomogeneous(currentForm, p)) || null;
+  }, [
+    mode,
+    editingItem,
+    existingParcels,
+    rootCategory,
+    category,
+    species,
+    shape,
+    sizeUnit,
+    sizeMin,
+    sizeMax,
+    sieveSize,
+    colorMin,
+    colorMax,
+    clarityMin,
+    clarityMax,
+  ]);
+
   // Storage & notes
-  const [storageLocation, setStorageLocation] = useState<string>('گاوصندوق اصلی');
+  const [storageLocation, setStorageLocation] = useState<string>('گاوصندوق دفتر');
+  const [storageLocations, setStorageLocations] = useState<StorageLocationItem[]>([]);
+  const [showAddLocationModal, setShowAddLocationModal] = useState(false);
+  const [newLocationName, setNewLocationName] = useState('');
+  const [isSubmittingLocation, setIsSubmittingLocation] = useState(false);
   const [internalCode, setInternalCode] = useState<string>('');
   const [acquisitionDate, setAcquisitionDate] = useState<string>(dateToJalaliString(new Date()));
   const [description, setDescription] = useState<string>('');
+
+  // Currencies state
+  const [currenciesList, setCurrenciesList] = useState<Currency[]>([]);
+  const [selectedCurrency, setSelectedCurrency] = useState<string>('IRT');
 
   // Preset types from server
   const [gemstoneTypes, setGemstoneTypes] = useState<GemstoneTypeRecord[]>([]);
 
   useEffect(() => {
     if (!isOpen) return;
-    async function loadTypes() {
+    async function loadAuxData() {
       try {
-        const res = await fetch('/api/gemstone-types', { cache: 'no-store' });
-        if (res.ok) {
-          const data = await res.json();
-          if (Array.isArray(data.items)) {
-            setGemstoneTypes(data.items);
+        const [typesRes, locsRes, currRes] = await Promise.allSettled([
+          fetch('/api/gemstone-types', { cache: 'no-store' }),
+          fetch('/api/storage-locations', { cache: 'no-store' }),
+          fetch('/api/currencies', { cache: 'no-store' }),
+        ]);
+
+        if (typesRes.status === 'fulfilled' && typesRes.value.ok) {
+          const data = await typesRes.value.json();
+          if (Array.isArray(data.items)) setGemstoneTypes(data.items);
+        }
+        if (locsRes.status === 'fulfilled' && locsRes.value.ok) {
+          const data = await locsRes.value.json();
+          if (Array.isArray(data.items) && data.items.length > 0) {
+            setStorageLocations(data.items);
+            if (!editingItem && !storageLocation) {
+              setStorageLocation(data.items[0].name);
+            }
+          }
+        }
+        if (currRes.status === 'fulfilled' && currRes.value.ok) {
+          const data = await currRes.value.json();
+          if (Array.isArray(data.currencies)) {
+            setCurrenciesList(data.currencies);
           }
         }
       } catch {
         // non-blocking
       }
     }
-    void loadTypes();
-  }, [isOpen]);
+    void loadAuxData();
+  }, [isOpen, editingItem]);
+
+  const availableCurrencies = React.useMemo(() => {
+    const base = [
+      { code: 'IRT', name: 'تومان', symbol: 'تومان' },
+      { code: 'IRR', name: 'ریال', symbol: 'ریال' },
+    ];
+    const foreign = (currenciesList || []).filter(
+      (c) => c.code !== 'IRT' && c.code !== 'IRR' && c.code !== 'TOMAN' && c.code !== 'RIAL'
+    );
+    return [...base, ...foreign];
+  }, [currenciesList]);
+
+  const activeCurrencyObj = React.useMemo(() => {
+    return availableCurrencies.find((c) => c.code === selectedCurrency) || availableCurrencies[0];
+  }, [availableCurrencies, selectedCurrency]);
+
+  const currLabel = activeCurrencyObj?.symbol || activeCurrencyObj?.name || selectedCurrency;
 
   // Sync editing item or reset
   useEffect(() => {
@@ -325,6 +421,8 @@ export default function InitialGemstoneInventoryModal({
       setSizeMin(editingItem.sizeMin !== undefined ? String(editingItem.sizeMin) : '');
       setSizeMax(editingItem.sizeMax !== undefined ? String(editingItem.sizeMax) : '');
       setSizeUnit(editingItem.sizeUnit || 'ct');
+      setSieveSize(editingItem.sieveSize || editingItem.parcelReportNumber || '+1.5-2');
+      setMergeWithExistingId(null);
       setColorMin(editingItem.colorMin || 'G');
       setColorMax(editingItem.colorMax || 'H');
       setClarityMin(editingItem.clarityMin || 'VS1');
@@ -350,6 +448,8 @@ export default function InitialGemstoneInventoryModal({
       setSizeMin('');
       setSizeMax('');
       setSizeUnit('ct');
+      setSieveSize('+1.5-2');
+      setMergeWithExistingId(null);
       setColorMin('G');
       setColorMax('H');
       setClarityMin('VS1');
@@ -498,22 +598,24 @@ export default function InitialGemstoneInventoryModal({
   };
 
   // Compute total cost dynamically
-  const calculatedTotalCostRial = React.useMemo(() => {
+  // Compute total cost dynamically based on selected currency
+  const calculatedTotalInCurrency = React.useMemo(() => {
     const numWeightCt = parseWeight(weightCt);
     const numWeightG = parseWeight(weightG);
-    const unitToman = parseFloat(String(unitCostToman).replace(/,/g, '')) || 0;
-    const unitRial = Math.round(unitToman * 10);
-    const manualToman = parseFloat(String(totalCostTomanManual).replace(/,/g, '')) || 0;
-    const manualRial = Math.round(manualToman * 10);
+    const unitVal = parseFloat(String(unitCostToman).replace(/,/g, '')) || 0;
+    const manualVal = parseFloat(String(totalCostTomanManual).replace(/,/g, '')) || 0;
 
-    return calculateValuationTotalCost({
-      valuationMethod,
-      weightCt: numWeightCt,
-      weightG: numWeightG,
-      unitCostRial: unitRial,
-      totalCostManualRial: manualRial,
-    });
+    if (valuationMethod === 'total_amount') return Math.round(manualVal);
+    if (valuationMethod === 'per_carat') return Math.round(unitVal * numWeightCt);
+    if (valuationMethod === 'per_gram') return Math.round(unitVal * numWeightG);
+    return 0;
   }, [valuationMethod, weightCt, weightG, unitCostToman, totalCostTomanManual]);
+
+  const calculatedTotalCostRial = React.useMemo(() => {
+    if (selectedCurrency === 'IRT') return Math.round(calculatedTotalInCurrency * 10);
+    if (selectedCurrency === 'IRR') return calculatedTotalInCurrency;
+    return calculatedTotalInCurrency;
+  }, [selectedCurrency, calculatedTotalInCurrency]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -536,12 +638,12 @@ export default function InitialGemstoneInventoryModal({
       return;
     }
 
-    const unitToman = parseFloat(String(unitCostToman).replace(/,/g, '')) || 0;
-    const unitRial = Math.round(unitToman * 10);
+    const unitVal = parseFloat(String(unitCostToman).replace(/,/g, '')) || 0;
+    const unitPriceRial = selectedCurrency === 'IRT' ? Math.round(unitVal * 10) : Math.round(unitVal);
 
-    const costPerCarat = valuationMethod === 'per_carat' ? unitRial : numWeightCt > 0 ? Math.round(calculatedTotal / numWeightCt) : 0;
+    const costPerCarat = valuationMethod === 'per_carat' ? unitPriceRial : numWeightCt > 0 ? Math.round(calculatedTotal / numWeightCt) : 0;
     const numWeightG = parseWeight(weightG);
-    const costPerGram = valuationMethod === 'per_gram' ? unitRial : numWeightG > 0 ? Math.round(calculatedTotal / numWeightG) : 0;
+    const costPerGram = valuationMethod === 'per_gram' ? unitPriceRial : numWeightG > 0 ? Math.round(calculatedTotal / numWeightG) : 0;
 
     const numPieces = Math.max(1, parseInt(pieces, 10) || 1);
     const unitPrice =
@@ -563,22 +665,22 @@ export default function InitialGemstoneInventoryModal({
             ? 'laboratory_grown'
             : 'natural'
           : undefined,
-      colorMode: category === 'diamond' ? colorMode : undefined,
+      colorMode: category === 'diamond' && mode !== 'parcel' ? colorMode : undefined,
       diamondColorSystem:
-        category === 'diamond' ? (colorMode === 'fancy' ? 'fancy_color' : 'd_to_z') : undefined,
-      colorGrade: category === 'diamond' && colorMode === 'd_z' ? colorGrade : undefined,
-      diamondColorGrade: category === 'diamond' && colorMode === 'd_z' ? colorGrade : undefined,
-      fancyColorIntensity: category === 'diamond' && colorMode === 'fancy' ? fancyIntensity : undefined,
-      fancyColorHue: category === 'diamond' && colorMode === 'fancy' ? fancyHue : undefined,
-      fancyColorOvertone: category === 'diamond' && colorMode === 'fancy' ? fancyOvertone.trim() || undefined : undefined,
-      fancyColorOrigin: category === 'diamond' && colorMode === 'fancy' ? fancyOrigin : undefined,
-      clarityGrade: category === 'diamond' ? clarityGrade : undefined,
-      diamondClarityGrade: category === 'diamond' ? clarityGrade : undefined,
-      cutGrade: category === 'diamond' ? cutGrade : undefined,
-      polish: category === 'diamond' ? polish : undefined,
-      symmetry: category === 'diamond' ? symmetry : undefined,
-      fluorescence: category === 'diamond' ? fluorescence : undefined,
-      fluorescenceColor: category === 'diamond' ? fluorescenceColor.trim() || undefined : undefined,
+        category === 'diamond' && mode !== 'parcel' ? (colorMode === 'fancy' ? 'fancy_color' : 'd_to_z') : undefined,
+      colorGrade: category === 'diamond' && mode !== 'parcel' && colorMode === 'd_z' ? colorGrade : undefined,
+      diamondColorGrade: category === 'diamond' && mode !== 'parcel' && colorMode === 'd_z' ? colorGrade : undefined,
+      fancyColorIntensity: category === 'diamond' && mode !== 'parcel' && colorMode === 'fancy' ? fancyIntensity : undefined,
+      fancyColorHue: category === 'diamond' && mode !== 'parcel' && colorMode === 'fancy' ? fancyHue : undefined,
+      fancyColorOvertone: category === 'diamond' && mode !== 'parcel' && colorMode === 'fancy' ? fancyOvertone.trim() || undefined : undefined,
+      fancyColorOrigin: category === 'diamond' && mode !== 'parcel' && colorMode === 'fancy' ? fancyOrigin : undefined,
+      clarityGrade: category === 'diamond' && mode !== 'parcel' ? clarityGrade : undefined,
+      diamondClarityGrade: category === 'diamond' && mode !== 'parcel' ? clarityGrade : undefined,
+      cutGrade: category === 'diamond' && mode !== 'parcel' ? cutGrade : undefined,
+      polish: category === 'diamond' && mode !== 'parcel' ? polish : undefined,
+      symmetry: category === 'diamond' && mode !== 'parcel' ? symmetry : undefined,
+      fluorescence: category === 'diamond' && mode !== 'parcel' ? fluorescence : undefined,
+      fluorescenceColor: category === 'diamond' && mode !== 'parcel' ? fluorescenceColor.trim() || undefined : undefined,
 
       colorHue: category === 'colored_gemstone' ? colorHue.trim() || undefined : undefined,
       tone: category === 'colored_gemstone' ? tone : undefined,
@@ -605,6 +707,8 @@ export default function InitialGemstoneInventoryModal({
       sizeMin: mode === 'parcel' && sizeMin ? parseFloat(sizeMin) : undefined,
       sizeMax: mode === 'parcel' && sizeMax ? parseFloat(sizeMax) : undefined,
       sizeUnit: mode === 'parcel' ? sizeUnit : undefined,
+      sieveSize: mode === 'parcel' && sizeUnit === 'sieve' ? sieveSize : undefined,
+      mergeWithId: mode === 'parcel' && mergeWithExistingId ? mergeWithExistingId : undefined,
       colorMin: mode === 'parcel' ? colorMin : undefined,
       colorMax: mode === 'parcel' ? colorMax : undefined,
       clarityMin: mode === 'parcel' ? clarityMin : undefined,
@@ -630,12 +734,13 @@ export default function InitialGemstoneInventoryModal({
       pieces: numPieces,
       quantity: numPieces,
 
+      currency: selectedCurrency,
       valuationMethod,
       unitPrice,
       totalAmount: calculatedTotal,
       costPerCarat: costPerCarat || undefined,
       costPerGram: costPerGram || undefined,
-      totalCost: calculatedTotal,
+      totalCost: calculatedTotalInCurrency,
 
       storageLocation: storageLocation.trim() || undefined,
       inventoryCode: internalCode.trim() || editingItem?.inventoryCode || editingItem?.internalCode || undefined,
@@ -820,7 +925,7 @@ export default function InitialGemstoneInventoryModal({
               {mode === 'single_stone' && (
                 <div>
                   <label className="mb-1.5 block font-bold text-slate-700 dark:text-slate-300">
-                    تعداد سنگ (قطعه)
+                    تعداد سنگ (عدد)
                   </label>
                   <input
                     type="number"
@@ -854,16 +959,24 @@ export default function InitialGemstoneInventoryModal({
                   className="w-full rounded-2xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-medium text-slate-800 focus:border-cyan-500 focus:outline-hidden dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
                 >
                   {(() => {
-                    const activeShapes = shapePrefs.order
-                      .filter((id) => !shapePrefs.hidden.includes(id) || id === shape)
+                    const { order, hidden, customNames = {}, parentMap = {} } = shapePrefs;
+                    const hierarchicalOrder = buildHierarchicalShapeOrder(order, parentMap);
+                    const activeShapes = hierarchicalOrder
+                      .filter((id) => !hidden.includes(id) || id === shape)
                       .map((id) => GEMSTONE_SHAPES.find((s) => s.id === id))
                       .filter((s): s is GemstoneShapeItem => Boolean(s));
 
-                    return activeShapes.map((sh) => (
-                      <option key={sh.id} value={sh.id}>
-                        {sh.parentId === 'baguette' ? `↳ ${sh.nameFa}` : sh.nameFa} ({sh.nameEn})
-                      </option>
-                    ));
+                    return activeShapes.map((sh) => {
+                      const isChild = Boolean(parentMap[sh.id]);
+                      const displayNameFa = customNames[sh.id]?.nameFa || sh.nameFa;
+                      const displayNameEn = customNames[sh.id]?.nameEn || sh.nameEn;
+
+                      return (
+                        <option key={sh.id} value={sh.id}>
+                          {isChild ? `↳ ${displayNameFa}` : displayNameFa} ({displayNameEn})
+                        </option>
+                      );
+                    });
                   })()}
                 </select>
               </div>
@@ -984,40 +1097,123 @@ export default function InitialGemstoneInventoryModal({
                       </span>
                     </div>
 
+                    {/* Auto-detected homogeneous parcel banner */}
+                    {matchingParcel && !editingItem && (
+                      <div className="rounded-2xl border border-cyan-300 bg-cyan-50/90 p-3.5 text-xs text-cyan-900 shadow-xs dark:border-cyan-800 dark:bg-cyan-950/50 dark:text-cyan-200">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-1.5 font-black text-cyan-950 dark:text-cyan-100">
+                              <Sparkles size={16} className="text-cyan-600 dark:text-cyan-400" />
+                              <span>بارخانه همگن در انبار موجود است!</span>
+                            </div>
+                            <p className="text-[11px] text-cyan-800 dark:text-cyan-300">
+                              بسته مشابه با کد <strong className="font-mono font-black">{matchingParcel.inventoryCode}</strong> و موجودی{' '}
+                              <strong className="font-mono">{matchingParcel.weightCt} ct</strong> ({matchingParcel.pieces || matchingParcel.quantity} عدد) در گاوصندوق موجود است.
+                            </p>
+                          </div>
+                          <label className="flex cursor-pointer items-center gap-2 rounded-xl bg-white px-3 py-1.5 font-bold shadow-xs transition-colors hover:bg-cyan-100 dark:bg-slate-800 dark:hover:bg-slate-700">
+                            <input
+                              type="checkbox"
+                              checked={mergeWithExistingId === matchingParcel.id}
+                              onChange={(e) => setMergeWithExistingId(e.target.checked ? matchingParcel.id : null)}
+                              className="size-4 text-cyan-600 focus:ring-cyan-500"
+                            />
+                            <span className="text-xs">ترکیب با این بسته (WAC)</span>
+                          </label>
+                        </div>
+                        {mergeWithExistingId === matchingParcel.id && (
+                          <div className="mt-2 border-t border-cyan-200 pt-1.5 text-[11px] font-medium text-emerald-800 dark:border-cyan-800/60 dark:text-emerald-300">
+                            ✓ این موجودی مستقیماً به بسته {matchingParcel.inventoryCode} افزوده شده و بهای تمام‌شده با میانگین موزون به‌روزرسانی می‌شود.
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                       {/* Sieve / Size Range */}
-                      <div>
-                        <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300 text-[11px]">
-                          محدوده اندازه / الک (Size / Sieve Range)
-                        </label>
-                        <div className="flex items-center gap-1">
-                          <input
-                            type="number"
-                            step="0.001"
-                            value={sizeMin}
-                            onChange={(e) => setSizeMin(e.target.value)}
-                            placeholder="از"
-                            className="w-20 rounded-xl border border-slate-200 bg-white p-2 text-center text-xs font-mono dark:border-slate-700 dark:bg-slate-800"
-                          />
-                          <span className="text-slate-400">تا</span>
-                          <input
-                            type="number"
-                            step="0.001"
-                            value={sizeMax}
-                            onChange={(e) => setSizeMax(e.target.value)}
-                            placeholder="تا"
-                            className="w-20 rounded-xl border border-slate-200 bg-white p-2 text-center text-xs font-mono dark:border-slate-700 dark:bg-slate-800"
-                          />
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <label className="block font-bold text-slate-700 dark:text-slate-300 text-[11px]">
+                            محدوده اندازه / الک (Size / Sieve)
+                          </label>
                           <select
                             value={sizeUnit}
-                            onChange={(e) => setSizeUnit(e.target.value as 'ct' | 'mm' | 'sieve')}
-                            className="rounded-xl border border-slate-200 bg-white p-2 text-xs font-bold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                            onChange={(e) => {
+                              const newUnit = e.target.value as 'ct' | 'mm' | 'sieve';
+                              setSizeUnit(newUnit);
+                              if (newUnit === 'sieve' && !sieveSize) {
+                                setSieveSize('+1.5-2');
+                                const sRec = findSieveBySize('+1.5-2');
+                                if (sRec) {
+                                  setSizeMin(String(sRec.mmSize));
+                                  setSizeMax(String(sRec.mmSize));
+                                }
+                              }
+                            }}
+                            className="rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-bold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
                           >
+                            <option value="sieve">شماره الک (Sieve)</option>
                             <option value="ct">قیراط (ct)</option>
                             <option value="mm">میلی‌متر (mm)</option>
-                            <option value="sieve">شماره الک (Sieve)</option>
                           </select>
                         </div>
+
+                        {sizeUnit === 'sieve' ? (
+                          <div>
+                            <select
+                              value={sieveSize}
+                              onChange={(e) => {
+                                const selected = e.target.value;
+                                setSieveSize(selected);
+                                const sRec = findSieveBySize(selected);
+                                if (sRec) {
+                                  setSizeMin(String(sRec.mmSize));
+                                  setSizeMax(String(sRec.mmSize));
+                                }
+                              }}
+                              className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                            >
+                              {DIAMOND_SIEVE_CHART.map((s) => (
+                                <option key={s.sieveSize} value={s.sieveSize}>
+                                  الک {s.sieveSize} ({s.mmSize} mm — {s.piecesPerCarat} pc/ct{s.princessMmLabel ? ` | پرنسس: ${s.princessMmLabel}` : ''})
+                                </option>
+                              ))}
+                            </select>
+                            {findSieveBySize(sieveSize) && (
+                              <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400">
+                                <span className="rounded bg-cyan-50 px-1.5 py-0.5 font-mono font-bold text-cyan-700 dark:bg-cyan-950/60 dark:text-cyan-300">
+                                  قطر: {findSieveBySize(sieveSize)?.mmSize} mm
+                                </span>
+                                <span className="rounded bg-indigo-50 px-1.5 py-0.5 font-mono font-bold text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300">
+                                  {findSieveBySize(sieveSize)?.piecesPerCarat} عدد/قیراط
+                                </span>
+                                <span className="rounded bg-amber-50 px-1.5 py-0.5 font-mono text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                                  هر عدد: {findSieveBySize(sieveSize)?.caratsWeightPerPiece} ct
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="number"
+                              step="0.001"
+                              value={sizeMin}
+                              onChange={(e) => setSizeMin(e.target.value)}
+                              placeholder="از"
+                              className="w-full rounded-xl border border-slate-200 bg-white p-2 text-center text-xs font-mono dark:border-slate-700 dark:bg-slate-800"
+                            />
+                            <span className="text-slate-400">تا</span>
+                            <input
+                              type="number"
+                              step="0.001"
+                              value={sizeMax}
+                              onChange={(e) => setSizeMax(e.target.value)}
+                              placeholder="تا"
+                              className="w-full rounded-xl border border-slate-200 bg-white p-2 text-center text-xs font-mono dark:border-slate-700 dark:bg-slate-800"
+                            />
+                          </div>
+                        )}
                       </div>
 
                       {/* Color Range Min/Max with Live Range Display */}
@@ -1125,212 +1321,213 @@ export default function InitialGemstoneInventoryModal({
                   </div>
                 )}
 
-                {/* Color Mode Selector */}
-                <div className="flex items-center gap-4 border-t border-cyan-100/60 pt-3 dark:border-cyan-900/40">
-                  <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">سیستم رنگ:</span>
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="colorMode"
-                      checked={colorMode === 'd_z'}
-                      onChange={() => setColorMode('d_z')}
-                      className="text-cyan-600 focus:ring-cyan-500"
-                    />
-                    طیف بی‌رنگ (D to Z)
-                  </label>
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="colorMode"
-                      checked={colorMode === 'fancy'}
-                      onChange={() => setColorMode('fancy')}
-                      className="text-cyan-600 focus:ring-cyan-500"
-                    />
-                    الماس رنگی خاص (Fancy Color Diamond)
-                  </label>
-                </div>
-
-                {/* Color & Clarity Controls */}
-                {colorMode === 'd_z' ? (
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                    <div>
-                      <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">
-                        درجه رنگ (Color)
+                {/* Single Stone 4C Quality Controls (Only for single stone, hidden in parcel mode) */}
+                {mode !== 'parcel' && (
+                  <>
+                    {/* Color Mode Selector */}
+                    <div className="flex items-center gap-4 border-t border-cyan-100/60 pt-3 dark:border-cyan-900/40">
+                      <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">سیستم رنگ:</span>
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="colorMode"
+                          checked={colorMode === 'd_z'}
+                          onChange={() => setColorMode('d_z')}
+                          className="text-cyan-600 focus:ring-cyan-500"
+                        />
+                        طیف بی‌رنگ (D to Z)
                       </label>
-                      <select
-                        value={colorGrade}
-                        onChange={(e) => setColorGrade(e.target.value)}
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                      >
-                        {D_Z_COLORS.map((c) => (
-                          <option key={c} value={c}>
-                            {c}
-                          </option>
-                        ))}
-                      </select>
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="colorMode"
+                          checked={colorMode === 'fancy'}
+                          onChange={() => setColorMode('fancy')}
+                          className="text-cyan-600 focus:ring-cyan-500"
+                        />
+                        الماس رنگی خاص (Fancy Color Diamond)
+                      </label>
                     </div>
 
-                    <div>
-                      <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">
-                        درجه پاکی (Clarity)
-                      </label>
-                      <select
-                        value={clarityGrade}
-                        onChange={(e) => setClarityGrade(e.target.value)}
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                      >
-                        {CLARITY_GRADES.map((cl) => (
-                          <option key={cl} value={cl}>
-                            {cl}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                    {/* Color & Clarity Controls */}
+                    {colorMode === 'd_z' ? (
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                        <div>
+                          <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">
+                            درجه رنگ (Color)
+                          </label>
+                          <select
+                            value={colorGrade}
+                            onChange={(e) => setColorGrade(e.target.value)}
+                            className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                          >
+                            {D_Z_COLORS.map((c) => (
+                              <option key={c} value={c}>
+                                {c}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
 
-                    <div>
-                      <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">
-                        کیفیت تراش (Cut Grade)
-                      </label>
-                      <select
-                        value={cutGrade}
-                        onChange={(e) => setCutGrade(e.target.value)}
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                      >
-                        {CUT_GRADES.map((ct) => (
-                          <option key={ct.id} value={ct.id}>
-                            {ct.nameFa}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                        <div>
+                          <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">
+                            درجه پاکی (Clarity)
+                          </label>
+                          <select
+                            value={clarityGrade}
+                            onChange={(e) => setClarityGrade(e.target.value)}
+                            className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                          >
+                            {CLARITY_GRADES.map((cl) => (
+                              <option key={cl} value={cl}>
+                                {cl}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
 
-                    <div>
-                      <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">
-                        فلورسانس (Fluorescence)
-                      </label>
-                      <select
-                        value={fluorescence}
-                        onChange={(e) => setFluorescence(e.target.value)}
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                      >
-                        {FLUORESCENCE_GRADES.map((fl) => (
-                          <option key={fl.id} value={fl.id}>
-                            {fl.nameFa}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                    <div>
-                      <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">
-                        شدت رنگ (Intensity)
-                      </label>
-                      <select
-                        value={fancyIntensity}
-                        onChange={(e) => setFancyIntensity(e.target.value)}
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                      >
-                        {FANCY_INTENSITIES.map((fi) => (
-                          <option key={fi.id} value={fi.id}>
-                            {fi.nameFa} ({fi.nameEn})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                        <div>
+                          <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">
+                            کیفیت تراش (Cut Grade)
+                          </label>
+                          <select
+                            value={cutGrade}
+                            onChange={(e) => setCutGrade(e.target.value)}
+                            className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                          >
+                            {CUT_GRADES.map((ct) => (
+                              <option key={ct.id} value={ct.id}>
+                                {ct.nameFa}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
 
-                    <div>
-                      <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">
-                        فام رنگی (Hue)
-                      </label>
-                      <select
-                        value={fancyHue}
-                        onChange={(e) => setFancyHue(e.target.value)}
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                      >
-                        {COLORED_HUES.map((h) => (
-                          <option key={h.id} value={h.id}>
-                            {h.nameFa} ({h.nameEn})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                        <div>
+                          <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">
+                            فلورسانس (Fluorescence)
+                          </label>
+                          <select
+                            value={fluorescence}
+                            onChange={(e) => setFluorescence(e.target.value)}
+                            className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                          >
+                            {FLUORESCENCE_GRADES.map((fl) => (
+                              <option key={fl.id} value={fl.id}>
+                                {fl.nameFa}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                        <div>
+                          <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">
+                            شدت رنگ (Intensity)
+                          </label>
+                          <select
+                            value={fancyIntensity}
+                            onChange={(e) => setFancyIntensity(e.target.value)}
+                            className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                          >
+                            {FANCY_INTENSITIES.map((fi) => (
+                              <option key={fi.id} value={fi.id}>
+                                {fi.nameFa} ({fi.nameEn})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
 
-                    <div>
-                      <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">
-                        منشا رنگ (Color Origin)
-                      </label>
-                      <select
-                        value={fancyOrigin}
-                        onChange={(e) => setFancyOrigin(e.target.value)}
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                      >
-                        {COLOR_ORIGINS.map((co) => (
-                          <option key={co.id} value={co.id}>
-                            {co.nameFa}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                        <div>
+                          <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">
+                            فام رنگی (Hue)
+                          </label>
+                          <select
+                            value={fancyHue}
+                            onChange={(e) => setFancyHue(e.target.value)}
+                            className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                          >
+                            {COLORED_HUES.map((h) => (
+                              <option key={h.id} value={h.id}>
+                                {h.nameFa} ({h.nameEn})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
 
-                    <div>
-                      <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">
-                        درجه پاکی (Clarity)
-                      </label>
-                      <select
-                        value={clarityGrade}
-                        onChange={(e) => setClarityGrade(e.target.value)}
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                      >
-                        {CLARITY_GRADES.map((cl) => (
-                          <option key={cl} value={cl}>
-                            {cl}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                )}
+                        <div>
+                          <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">
+                            منشا رنگ (Color Origin)
+                          </label>
+                          <select
+                            value={fancyOrigin}
+                            onChange={(e) => setFancyOrigin(e.target.value)}
+                            className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                          >
+                            {COLOR_ORIGINS.map((co) => (
+                              <option key={co.id} value={co.id}>
+                                {co.nameFa}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
 
-                {/* Polish, Symmetry, Measurements */}
-                <div className={`grid grid-cols-2 gap-3 ${mode !== 'parcel' ? 'sm:grid-cols-4' : 'sm:grid-cols-2'} border-t border-cyan-100/60 pt-3 dark:border-cyan-900/40`}>
-                  <div>
-                    <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">
-                      پولیش (Polish)
-                    </label>
-                    <select
-                      value={polish}
-                      onChange={(e) => setPolish(e.target.value)}
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                    >
-                      {POLISH_SYMMETRY_GRADES.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.nameFa}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                        <div>
+                          <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">
+                            درجه پاکی (Clarity)
+                          </label>
+                          <select
+                            value={clarityGrade}
+                            onChange={(e) => setClarityGrade(e.target.value)}
+                            className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                          >
+                            {CLARITY_GRADES.map((cl) => (
+                              <option key={cl} value={cl}>
+                                {cl}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    )}
 
-                  <div>
-                    <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">
-                      تقارن (Symmetry)
-                    </label>
-                    <select
-                      value={symmetry}
-                      onChange={(e) => setSymmetry(e.target.value)}
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                    >
-                      {POLISH_SYMMETRY_GRADES.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.nameFa}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                    {/* Polish, Symmetry, Measurements */}
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 border-t border-cyan-100/60 pt-3 dark:border-cyan-900/40">
+                      <div>
+                        <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">
+                          پولیش (Polish)
+                        </label>
+                        <select
+                          value={polish}
+                          onChange={(e) => setPolish(e.target.value)}
+                          className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                        >
+                          {POLISH_SYMMETRY_GRADES.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.nameFa}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
 
-                  {mode !== 'parcel' && (
-                    <>
+                      <div>
+                        <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">
+                          تقارن (Symmetry)
+                        </label>
+                        <select
+                          value={symmetry}
+                          onChange={(e) => setSymmetry(e.target.value)}
+                          className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                        >
+                          {POLISH_SYMMETRY_GRADES.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.nameFa}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
                       <div>
                         <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">
                           ابعاد (طول × عرض mm)
@@ -1369,9 +1566,9 @@ export default function InitialGemstoneInventoryModal({
                           className="w-full rounded-2xl border border-slate-200 bg-white p-2 text-center text-xs font-mono dark:border-slate-700 dark:bg-slate-800"
                         />
                       </div>
-                    </>
-                  )}
-                </div>
+                    </div>
+                  </>
+                )}
               </div>
             ) : (
               <div className="rounded-3xl border border-purple-100 bg-purple-50/30 p-4 space-y-4 dark:border-purple-900/50 dark:bg-purple-950/10">
@@ -1616,9 +1813,25 @@ export default function InitialGemstoneInventoryModal({
 
                 {mode === 'parcel' && (
                   <div>
-                    <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">
-                      تعداد قطعات موجود در بسته (قطعه)
-                    </label>
+                    <div className="mb-1 flex items-center justify-between">
+                      <label className="block font-bold text-slate-700 dark:text-slate-300">
+                        تعداد قطعات موجود در بسته (عدد)
+                      </label>
+                      {sizeUnit === 'sieve' && sieveSize && Number(weightCt) > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const est = estimatePiecesFromCarats(sieveSize, Number(weightCt));
+                            if (est > 0) setPieces(String(est));
+                          }}
+                          className="inline-flex items-center gap-1 text-[11px] font-bold text-cyan-600 hover:text-cyan-700 dark:text-cyan-400"
+                          title="محاسبه تخمینی تعداد بر اساس الک انتخابی"
+                        >
+                          <Sparkles size={13} />
+                          <span>تخمین با الک ({estimatePiecesFromCarats(sieveSize, Number(weightCt))} عدد)</span>
+                        </button>
+                      )}
+                    </div>
                     <input
                       type="number"
                       min="1"
@@ -1701,7 +1914,26 @@ export default function InitialGemstoneInventoryModal({
                 ارزش‌گذاری پایه و حسابداری (ثبت بدهکار سرفصل ۱۱۳۰۵۰ - سرمایه ۳۱۰۰)
               </span>
 
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+                {/* Currency selector */}
+                <div>
+                  <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">
+                    واحد ارزی (Currency)
+                  </label>
+                  <select
+                    value={selectedCurrency}
+                    onChange={(e) => setSelectedCurrency(e.target.value)}
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                  >
+                    {availableCurrencies.map((c) => (
+                      <option key={c.code} value={c.code}>
+                        {c.name} ({c.symbol || c.code})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Valuation method */}
                 <div>
                   <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">
                     مبنای محاسبه نرخ
@@ -1711,37 +1943,37 @@ export default function InitialGemstoneInventoryModal({
                     onChange={(e) => setValuationMethod(e.target.value as any)}
                     className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
                   >
-                    <option value="per_carat">نرخ هر قیراط (تومان)</option>
-                    <option value="per_gram">نرخ هر گرم (تومان)</option>
-                    <option value="total_amount">مبلغ کل مقطوع (تومان)</option>
+                    <option value="per_carat">نرخ هر قیراط ({currLabel})</option>
+                    <option value="per_gram">نرخ هر گرم ({currLabel})</option>
+                    <option value="total_amount">مبلغ کل مقطوع ({currLabel})</option>
                   </select>
                 </div>
 
                 {valuationMethod !== 'total_amount' ? (
                   <div>
                     <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">
-                      {valuationMethod === 'per_carat' ? 'نرخ هر قیراط (تومان)' : 'نرخ هر گرم (تومان)'}
+                      {valuationMethod === 'per_carat' ? `نرخ هر قیراط (${currLabel})` : `نرخ هر گرم (${currLabel})`}
                     </label>
                     <input
                       type="text"
                       inputMode="numeric"
                       value={unitCostToman ? formatNumberWithCommas(unitCostToman) : ''}
                       onChange={(e) => setUnitCostToman(e.target.value.replace(/,/g, ''))}
-                      placeholder="مثال: ۴۵,۰۰۰,۰۰۰"
+                      placeholder={selectedCurrency === 'USD' ? 'مثال: 450' : 'مثال: ۴۵,۰۰۰,۰۰۰'}
                       className="w-full rounded-2xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-mono font-bold text-slate-800 focus:border-emerald-500 focus:outline-hidden dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
                     />
                   </div>
                 ) : (
                   <div>
                     <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">
-                      مبلغ کل دفتری (تومان)
+                      مبلغ کل دفتری ({currLabel})
                     </label>
                     <input
                       type="text"
                       inputMode="numeric"
                       value={totalCostTomanManual ? formatNumberWithCommas(totalCostTomanManual) : ''}
                       onChange={(e) => setTotalCostTomanManual(e.target.value.replace(/,/g, ''))}
-                      placeholder="مثال: ۱۲۰,۰۰۰,۰۰۰"
+                      placeholder={selectedCurrency === 'USD' ? 'مثال: 1,200' : 'مثال: ۱۲۰,۰۰۰,۰۰۰'}
                       className="w-full rounded-2xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-mono font-bold text-slate-800 focus:border-emerald-500 focus:outline-hidden dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
                     />
                   </div>
@@ -1752,31 +1984,31 @@ export default function InitialGemstoneInventoryModal({
                     بهای تمام‌شده کل محاسبه‌شده
                   </label>
                   <div className="flex h-9 items-center justify-between rounded-2xl border border-emerald-200 bg-emerald-100/50 px-3 font-mono text-xs font-black text-emerald-800 dark:border-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">
-                    <span>{formatNumberWithCommas(convertRialToToman(calculatedTotalCostRial))}</span>
-                    <span className="text-[10px] font-normal">تومان</span>
+                    <span>{formatNumberWithCommas(calculatedTotalInCurrency)}</span>
+                    <span className="text-[10px] font-normal">{currLabel}</span>
                   </div>
                 </div>
 
                 {mode === 'parcel' && (
-                  <div className="sm:col-span-3 grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-emerald-200/60 dark:border-emerald-900/40">
+                  <div className="sm:col-span-4 grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-emerald-200/60 dark:border-emerald-900/40">
                     <div className="flex items-center justify-between rounded-xl bg-emerald-500/10 px-3 py-2 text-xs">
                       <span className="font-bold text-emerald-900 dark:text-emerald-300">
                         میانگین موزون بهای هر قیراط (WAC / ct):
                       </span>
                       <span className="font-mono font-black text-emerald-800 dark:text-emerald-200">
                         {parseFloat(weightCt) > 0
-                          ? `${formatNumberWithCommas(convertRialToToman(Math.round(calculatedTotalCostRial / parseFloat(weightCt))))} تومان`
+                          ? `${formatNumberWithCommas(Math.round(calculatedTotalInCurrency / parseFloat(weightCt)))} ${currLabel}`
                           : '—'}
                       </span>
                     </div>
 
                     <div className="flex items-center justify-between rounded-xl bg-emerald-500/10 px-3 py-2 text-xs">
                       <span className="font-bold text-emerald-900 dark:text-emerald-300">
-                        میانگین موزون بهای هر قطعه (WAC / pc):
+                        میانگین موزون بهای هر عدد (WAC / pc):
                       </span>
                       <span className="font-mono font-black text-emerald-800 dark:text-emerald-200">
                         {parseInt(pieces || '1', 10) > 0
-                          ? `${formatNumberWithCommas(convertRialToToman(Math.round(calculatedTotalCostRial / parseInt(pieces || '1', 10))))} تومان`
+                          ? `${formatNumberWithCommas(Math.round(calculatedTotalInCurrency / parseInt(pieces || '1', 10)))} ${currLabel}`
                           : '—'}
                       </span>
                     </div>
@@ -1788,16 +2020,43 @@ export default function InitialGemstoneInventoryModal({
             {/* Storage, Code & Notes */}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div>
-                <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300">
-                  محل فیزیکی نگهداری
-                </label>
-                <input
-                  type="text"
-                  value={storageLocation}
-                  onChange={(e) => setStorageLocation(e.target.value)}
-                  placeholder="مثال: گاوصندوق ۱ - سینی الماس"
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-medium text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                />
+                <div className="mb-1 flex items-center justify-between">
+                  <label className="block font-bold text-slate-700 dark:text-slate-300">
+                    محل فیزیکی نگهداری
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddLocationModal(true)}
+                    className="inline-flex items-center gap-1 text-[11px] font-bold text-cyan-600 hover:text-cyan-700 dark:text-cyan-400"
+                  >
+                    <Plus size={13} />
+                    <span>محل جدید</span>
+                  </button>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <select
+                    value={storageLocation}
+                    onChange={(e) => setStorageLocation(e.target.value)}
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                  >
+                    {storageLocations.map((loc) => (
+                      <option key={loc.id} value={loc.name}>
+                        {loc.name} {loc.code ? `(${loc.code})` : ''}
+                      </option>
+                    ))}
+                    {storageLocation && !storageLocations.some((l) => l.name === storageLocation) && (
+                      <option value={storageLocation}>{storageLocation}</option>
+                    )}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddLocationModal(true)}
+                    className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-cyan-50 text-cyan-700 hover:bg-cyan-100 dark:bg-slate-800 dark:text-cyan-400 dark:hover:bg-slate-700"
+                    title="افزودن محل نگهداری جدید"
+                  >
+                    <Plus size={16} />
+                  </button>
+                </div>
               </div>
 
               <div>
@@ -1868,11 +2127,110 @@ export default function InitialGemstoneInventoryModal({
         </form>
       </div>
 
+      {/* Modal for adding new storage location */}
+      {showAddLocationModal && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div
+            dir="rtl"
+            className="w-full max-w-sm rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-slate-800 dark:bg-slate-900"
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3 dark:border-slate-800">
+              <span className="font-black text-sm text-slate-900 dark:text-white">
+                افزودن محل نگهداری جدید
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAddLocationModal(false);
+                  setNewLocationName('');
+                }}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              <div>
+                <label className="mb-1 block text-xs font-bold text-slate-700 dark:text-slate-300">
+                  نام محل نگهداری <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={newLocationName}
+                  onChange={(e) => setNewLocationName(e.target.value)}
+                  placeholder="مثال: گاوصندوق دفتر، گاوصندوق کارگاه..."
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-800 focus:border-cyan-500 focus:outline-hidden dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                  autoFocus
+                />
+              </div>
+            </div>
+
+            <div className="mt-5 flex items-center justify-end gap-2 border-t border-slate-100 pt-3 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAddLocationModal(false);
+                  setNewLocationName('');
+                }}
+                className="rounded-xl border border-slate-200 px-3.5 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+              >
+                انصراف
+              </button>
+              <button
+                type="button"
+                disabled={!newLocationName.trim() || isSubmittingLocation}
+                onClick={async () => {
+                  if (!newLocationName.trim()) return;
+                  setIsSubmittingLocation(true);
+                  try {
+                    const res = await fetch('/api/storage-locations', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ name: newLocationName.trim() }),
+                    });
+                    if (res.ok) {
+                      const data = await res.json();
+                      if (data?.item) {
+                        setStorageLocations((prev) => [...prev, data.item]);
+                        setStorageLocation(data.item.name);
+                      }
+                    } else {
+                      const fallbackItem = { id: `loc_${Date.now()}`, name: newLocationName.trim() };
+                      setStorageLocations((prev) => [...prev, fallbackItem]);
+                      setStorageLocation(fallbackItem.name);
+                    }
+                    setShowAddLocationModal(false);
+                    setNewLocationName('');
+                  } catch {
+                    const fallbackItem = { id: `loc_${Date.now()}`, name: newLocationName.trim() };
+                    setStorageLocations((prev) => [...prev, fallbackItem]);
+                    setStorageLocation(fallbackItem.name);
+                    setShowAddLocationModal(false);
+                    setNewLocationName('');
+                  } finally {
+                    setIsSubmittingLocation(false);
+                  }
+                }}
+                className="rounded-xl bg-cyan-600 px-4 py-1.5 text-xs font-bold text-white hover:bg-cyan-700 disabled:opacity-50 dark:bg-cyan-500 dark:hover:bg-cyan-600"
+              >
+                ذخیره و انتخاب
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <ShapeSettingsModal
         isOpen={isShapeSettingsOpen}
         onClose={() => setIsShapeSettingsOpen(false)}
-        onPreferencesChange={(order, hidden) => {
-          setShapePrefs({ order, hidden });
+        onPreferencesChange={(order, hidden, customNames, parentMap) => {
+          setShapePrefs({
+            order,
+            hidden,
+            customNames: customNames || {},
+            parentMap: parentMap || {},
+          });
         }}
       />
     </div>

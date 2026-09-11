@@ -4,6 +4,7 @@ import {
   formatGemGram,
   type ValuationMethod,
 } from './gemstone-weight';
+import { normalizeSieveKey } from './gemstone-sieve';
 
 export type GemstoneCategory = 'diamond' | 'colored_gemstone' | 'other_gemstone';
 export type InventoryMode = 'single' | 'parcel' | 'single_stone';
@@ -796,9 +797,9 @@ export const GEMSTONE_SHAPES: readonly GemstoneShapeItem[] = [
   { id: 'asscher', nameFa: 'اشر (Asscher)', nameEn: 'Asscher' },
   { id: 'heart', nameFa: 'قلب (Heart)', nameEn: 'Heart' },
   // Baguette Family
+  { id: 'baguette', nameFa: 'باگت (عمومی)', nameEn: 'Baguette' },
   { id: 'baguette_calibre', nameFa: 'باگت کالیبر (Straight Baguette)', nameEn: 'Calibre Baguette', parentId: 'baguette' },
   { id: 'baguette_taper', nameFa: 'باگت تیپر (Tapered Baguette)', nameEn: 'Tapered Baguette', parentId: 'baguette' },
-  { id: 'baguette', nameFa: 'باگت (عمومی)', nameEn: 'Baguette', parentId: 'baguette' },
   { id: 'triangle', nameFa: 'مثلثی / ترای‌انگل (Triangle / Trilliant)', nameEn: 'Triangle' },
   { id: 'trilliant', nameFa: 'تریلیانت (Trilliant)', nameEn: 'Trilliant' },
   { id: 'trapezoid', nameFa: 'ذوزنقه‌ای / تراپز (Trapezoid / Trapeze)', nameEn: 'Trapezoid' },
@@ -1058,6 +1059,7 @@ export interface GemstoneOpeningRecord {
   sizeMin?: number;
   sizeMax?: number;
   sizeUnit?: 'ct' | 'mm' | 'sieve';
+  sieveSize?: string;
   colorMin?: string;
   colorMax?: string;
   colorRangeLabel?: string;
@@ -1305,8 +1307,13 @@ export interface PoolIdentityInput {
   sizeMin?: number;
   sizeMax?: number;
   sizeUnit?: string;
+  sieveSize?: string;
   colorRangeLabel?: string;
   clarityRangeLabel?: string;
+  colorMin?: string;
+  colorMax?: string;
+  clarityMin?: string;
+  clarityMax?: string;
   cutGrade?: string;
   polish?: string;
   symmetry?: string;
@@ -1321,14 +1328,16 @@ export function generatePoolIdentityKey(input: PoolIdentityInput): string {
   const sMin = input.sizeMin !== undefined && input.sizeMin !== null ? Number(input.sizeMin).toFixed(3) : '0';
   const sMax = input.sizeMax !== undefined && input.sizeMax !== null ? Number(input.sizeMax).toFixed(3) : '0';
   const unit = (input.sizeUnit || 'ct').toLowerCase().trim();
-  const color = (input.colorRangeLabel || 'any').toUpperCase().trim();
-  const clarity = (input.clarityRangeLabel || 'any').toUpperCase().trim();
+  const sieve = (input.sieveSize || '').trim();
+  const sizePart = sieve ? `sieve-${normalizeSieveKey(sieve)}` : `${sMin}-${sMax}-${unit}`;
+  const color = (input.colorRangeLabel || (input.colorMin && input.colorMax ? `${input.colorMin}-${input.colorMax}` : 'any')).toUpperCase().trim();
+  const clarity = (input.clarityRangeLabel || (input.clarityMin && input.clarityMax ? `${input.clarityMin}-${input.clarityMax}` : 'any')).toUpperCase().trim();
   const cut = (input.cutGrade || 'any').toLowerCase().trim();
   const polish = (input.polish || 'any').toLowerCase().trim();
   const sym = (input.symmetry || 'any').toLowerCase().trim();
   const fluor = (input.fluorescence || 'any').toLowerCase().trim();
 
-  return `pool::${root}::${growth}::${species}::${shape}::${sMin}-${sMax}-${unit}::col-${color}::cla-${clarity}::cut-${cut}-${polish}-${sym}-${fluor}`;
+  return `pool::${root}::${growth}::${species}::${shape}::${sizePart}::col-${color}::cla-${clarity}::cut-${cut}-${polish}-${sym}-${fluor}`;
 }
 
 export interface WACResult {
@@ -1404,4 +1413,58 @@ export function isLondonBlueTopaz(species?: string, variety?: string, tradeName?
     (v.includes('london') || t.includes('london') || v.includes('لندن') || t.includes('لندن'))
   );
 }
+
+export * from './gemstone-sieve';
+
+/**
+ * Checks whether two gemstone parcel records have matching physical classifications
+ * (category, species, shape, size/sieve, color range, clarity range) so they can be merged.
+ */
+export function areParcelsHomogeneous(
+  p1: Partial<GemstoneOpeningRecord>,
+  p2: Partial<GemstoneOpeningRecord>
+): boolean {
+  if (p1.mode !== 'parcel' || p2.mode !== 'parcel') return false;
+
+  const root1 = (p1.rootCategory || p1.materialOrigin || 'natural').toLowerCase().trim();
+  const root2 = (p2.rootCategory || p2.materialOrigin || 'natural').toLowerCase().trim();
+  if (root1 !== root2) return false;
+
+  const spec1 = (p1.species || p1.category || 'diamond').toLowerCase().trim();
+  const spec2 = (p2.species || p2.category || 'diamond').toLowerCase().trim();
+  if (spec1 !== spec2) return false;
+
+  const shape1 = (p1.shape || 'round').toLowerCase().trim();
+  const shape2 = (p2.shape || 'round').toLowerCase().trim();
+  if (shape1 !== shape2) return false;
+
+  const sUnit1 = (p1.sizeUnit || 'ct').toLowerCase().trim();
+  const sUnit2 = (p2.sizeUnit || 'ct').toLowerCase().trim();
+  if (sUnit1 !== sUnit2) return false;
+
+  const sieve1 = (p1.sieveSize || '').trim();
+  const sieve2 = (p2.sieveSize || '').trim();
+  if (sieve1 || sieve2) {
+    if (normalizeSieveKey(sieve1) !== normalizeSieveKey(sieve2)) return false;
+  }
+
+  const sMin1 = Number(p1.sizeMin || 0).toFixed(3);
+  const sMin2 = Number(p2.sizeMin || 0).toFixed(3);
+  if (sMin1 !== sMin2) return false;
+
+  const sMax1 = Number(p1.sizeMax || 0).toFixed(3);
+  const sMax2 = Number(p2.sizeMax || 0).toFixed(3);
+  if (sMax1 !== sMax2) return false;
+
+  const col1 = (p1.colorRangeLabel || (p1.colorMin && p1.colorMax ? `${p1.colorMin}-${p1.colorMax}` : '')).toUpperCase().trim();
+  const col2 = (p2.colorRangeLabel || (p2.colorMin && p2.colorMax ? `${p2.colorMin}-${p2.colorMax}` : '')).toUpperCase().trim();
+  if (col1 !== col2) return false;
+
+  const cla1 = (p1.clarityRangeLabel || (p1.clarityMin && p1.clarityMax ? `${p1.clarityMin}-${p1.clarityMax}` : '')).toUpperCase().trim();
+  const cla2 = (p2.clarityRangeLabel || (p2.clarityMin && p2.clarityMax ? `${p2.clarityMin}-${p2.clarityMax}` : '')).toUpperCase().trim();
+  if (cla1 !== cla2) return false;
+
+  return true;
+}
+
 

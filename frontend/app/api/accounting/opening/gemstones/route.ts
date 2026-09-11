@@ -5,6 +5,8 @@ import { getServerAuthContext } from '@/lib/auth';
 import { hasPermission } from '@/lib/authorization';
 import {
   calculateGemstoneSummary,
+  calculateWeightedAverageCost,
+  findSieveBySize,
   generatePoolIdentityKey,
   isLondonBlueTopaz,
   validateClarityRange,
@@ -235,6 +237,7 @@ export async function GET() {
         sizeMin: r.size_min !== undefined && r.size_min !== null ? Number(r.size_min) : undefined,
         sizeMax: r.size_max !== undefined && r.size_max !== null ? Number(r.size_max) : undefined,
         sizeUnit: (r.size_unit as any) || 'ct',
+        sieveSize: String(r.sieve_size || (r.size_unit === 'sieve' ? r.parcel_report_number : '') || ''),
         colorMin: String(r.color_min || ''),
         colorMax: String(r.color_max || ''),
         colorRangeLabel: String(r.color_range_label || ''),
@@ -477,9 +480,19 @@ export async function POST(request: Request) {
     }
 
     // 6. Bar-Khaneh / Parcel Pool Range Validation & Identity Key
-    const sizeMin = body?.sizeMin !== undefined && body?.sizeMin !== null ? Number(body.sizeMin) : undefined;
-    const sizeMax = body?.sizeMax !== undefined && body?.sizeMax !== null ? Number(body.sizeMax) : undefined;
-    const sizeUnit = (body?.sizeUnit || 'ct') as 'ct' | 'mm';
+    let sizeMin = body?.sizeMin !== undefined && body?.sizeMin !== null ? Number(body.sizeMin) : undefined;
+    let sizeMax = body?.sizeMax !== undefined && body?.sizeMax !== null ? Number(body.sizeMax) : undefined;
+    const sizeUnit = (body?.sizeUnit || 'ct') as 'ct' | 'mm' | 'sieve';
+    const sieveSize = String(body?.sieveSize || body?.sieve_size || '').trim();
+
+    if (sizeUnit === 'sieve' && sieveSize) {
+      const sRec = findSieveBySize(sieveSize);
+      if (sRec) {
+        if (sizeMin === undefined) sizeMin = sRec.mmSize;
+        if (sizeMax === undefined) sizeMax = sRec.mmSize;
+      }
+    }
+
     const colorMin = String(body?.colorMin || body?.color_min || '').trim();
     const colorMax = String(body?.colorMax || body?.color_max || '').trim();
     const clarityMin = String(body?.clarityMin || body?.clarity_min || '').trim();
@@ -519,6 +532,7 @@ export async function POST(request: Request) {
       sizeMin,
       sizeMax,
       sizeUnit,
+      sieveSize,
       colorRangeLabel,
       clarityRangeLabel,
       cutGrade: body?.cutGrade,
@@ -590,6 +604,86 @@ export async function POST(request: Request) {
         ? `${lengthMm} × ${widthMm} × ${depthMm} mm`
         : String(body?.measurementsText || '').trim();
 
+    // Check for direct merge into an existing parcel
+    const mergeWithId = String(body?.mergeWithId || '').trim();
+    if (!recordId && mergeWithId) {
+      const existingParcel = await context.pb.collection('gemstone_inventory').getOne(mergeWithId).catch(() => null);
+      if (!existingParcel || existingParcel.is_deleted) {
+        return NextResponse.json({ message: 'بارخانه مبنا برای ادغام یافت نشد یا حذف شده است.' }, { status: 404 });
+      }
+
+      const currentCt = Number(existingParcel.weight_ct || 0);
+      const currentPieces = Number(existingParcel.pieces || existingParcel.quantity || 0);
+      const currentCost = Math.round(Number(existingParcel.total_amount || existingParcel.total_cost || 0));
+
+      const wac = calculateWeightedAverageCost(
+        currentCt,
+        currentCost,
+        weightCt,
+        totalAmount,
+        currentPieces,
+        quantity
+      );
+
+      const updatedCarats = wac.totalCt;
+      const updatedPieces = wac.totalPieces || (currentPieces + quantity);
+      const updatedCost = wac.totalCost;
+      const updatedWacPerCt = wac.wacPerCt;
+      const updatedWacPerPiece = wac.wacPerPiece || (updatedPieces > 0 ? Math.round(updatedCost / updatedPieces) : 0);
+      const updatedWeightG = Number(caratsToGrams(updatedCarats).toFixed(4));
+
+      const prevDesc = String(existingParcel.description || '');
+      const addNote = `[افزایش موجودی و ادغام: +${weightCt} ct (${quantity} عدد) در تاریخ ${new Date().toISOString().slice(0, 10)}]`;
+      const mergedDesc = prevDesc ? `${prevDesc}\n${addNote}` : addNote;
+
+      await context.pb.collection('gemstone_inventory').update(mergeWithId, {
+        weight_ct: updatedCarats,
+        weight_g: updatedWeightG,
+        quantity: updatedPieces,
+        pieces: updatedPieces,
+        total_amount: updatedCost,
+        total_cost: updatedCost,
+        unit_price: updatedWacPerCt,
+        cost_per_carat: updatedWacPerCt,
+        weighted_avg_cost_per_ct: updatedWacPerCt,
+        weighted_avg_cost_per_piece: updatedWacPerPiece,
+        description: mergedDesc,
+      });
+
+      if (totalAmount > 0) {
+        try {
+          await postGemstoneOpeningInventory(
+            {
+              id: mergeWithId,
+              inventoryCode: String(existingParcel.inventory_code || ''),
+              stoneName: String(existingParcel.trade_name || existingParcel.item_name || 'بارخانه الماس'),
+              category,
+              quantity,
+              weightCt,
+              totalAmount,
+              accountId: null,
+            },
+            dateValue,
+            context.user.id,
+            context.pb,
+            `افزایش موجودی بارخانه ${existingParcel.inventory_code}: ${weightCt} ct (${quantity} عدد)`,
+          );
+        } catch (postErr) {
+          console.error('[Gemstone Opening API] Merge Journal Posting Error:', postErr);
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: `موجودی جدید با موفقیت به بارخانه ${existingParcel.inventory_code} افزوده و میانگین قیمت محاسبه شد.`,
+        recordId: mergeWithId,
+        updatedCarats,
+        updatedPieces,
+        updatedWacPerCt,
+        updatedCost,
+      });
+    }
+
     const payload: Record<string, unknown> = {
       ...(inventoryCode ? { inventory_code: inventoryCode } : {}),
       gemstone_type: gemstoneTypeId || null,
@@ -632,28 +726,28 @@ export async function POST(request: Request) {
       weighted_avg_cost_per_ct: weightedAvgCostPerCt,
       weighted_avg_cost_per_piece: weightedAvgCostPerPiece,
       parent_pool_id: String(body?.parentPoolId || body?.parent_pool_id || '').trim(),
-      parcel_report_number: String(body?.parcelReportNumber || body?.parcel_report_number || '').trim(),
+      parcel_report_number: sieveSize || String(body?.parcelReportNumber || body?.parcel_report_number || '').trim(),
 
       // Diamond
       diamond_origin_type: category === 'diamond' ? diamondOriginType : '',
-      diamond_color_system: category === 'diamond' ? diamondColorSystem : '',
-      diamond_color_grade: category === 'diamond' && diamondColorSystem === 'd_to_z' ? diamondColorGrade : '',
-      fancy_color_hue: category === 'diamond' && diamondColorSystem === 'fancy_color' ? fancyColorHue : '',
-      fancy_color_modifier: category === 'diamond' && diamondColorSystem === 'fancy_color' ? fancyColorModifier : '',
-      fancy_color_grade: category === 'diamond' && diamondColorSystem === 'fancy_color' ? fancyColorGrade : '',
-      fancy_color_origin: category === 'diamond' && diamondColorSystem === 'fancy_color' ? fancyColorOrigin : '',
-      diamond_clarity_grade: category === 'diamond' ? diamondClarityGrade : '',
-      grading_source: String(body?.gradingSource || 'unknown'),
+      diamond_color_system: category === 'diamond' && inventoryMode !== 'parcel' ? diamondColorSystem : '',
+      diamond_color_grade: category === 'diamond' && inventoryMode !== 'parcel' && diamondColorSystem === 'd_to_z' ? diamondColorGrade : '',
+      fancy_color_hue: category === 'diamond' && inventoryMode !== 'parcel' && diamondColorSystem === 'fancy_color' ? fancyColorHue : '',
+      fancy_color_modifier: category === 'diamond' && inventoryMode !== 'parcel' && diamondColorSystem === 'fancy_color' ? fancyColorModifier : '',
+      fancy_color_grade: category === 'diamond' && inventoryMode !== 'parcel' && diamondColorSystem === 'fancy_color' ? fancyColorGrade : '',
+      fancy_color_origin: category === 'diamond' && inventoryMode !== 'parcel' && diamondColorSystem === 'fancy_color' ? fancyColorOrigin : '',
+      diamond_clarity_grade: category === 'diamond' && inventoryMode !== 'parcel' ? diamondClarityGrade : '',
+      grading_source: inventoryMode === 'parcel' ? '' : String(body?.gradingSource || 'unknown'),
       shape,
-      cut_grade: shape === 'Round' ? cutGrade : (body?.cutGrade || 'Not Applicable'),
-      polish: String(body?.polish || ''),
-      symmetry: String(body?.symmetry || ''),
-      fluorescence_strength: String(body?.fluorescenceStrength || 'None'),
-      fluorescence_color: String(body?.fluorescenceColor || ''),
-      length_mm: lengthMm,
-      width_mm: widthMm,
-      depth_mm: depthMm,
-      measurements_text: measurementsText,
+      cut_grade: inventoryMode === 'parcel' ? '' : shape === 'Round' ? cutGrade : (body?.cutGrade || 'Not Applicable'),
+      polish: inventoryMode === 'parcel' ? '' : String(body?.polish || ''),
+      symmetry: inventoryMode === 'parcel' ? '' : String(body?.symmetry || ''),
+      fluorescence_strength: inventoryMode === 'parcel' ? '' : String(body?.fluorescenceStrength || 'None'),
+      fluorescence_color: inventoryMode === 'parcel' ? '' : String(body?.fluorescenceColor || ''),
+      length_mm: inventoryMode === 'parcel' ? undefined : lengthMm,
+      width_mm: inventoryMode === 'parcel' ? undefined : widthMm,
+      depth_mm: inventoryMode === 'parcel' ? undefined : depthMm,
+      measurements_text: inventoryMode === 'parcel' ? '' : measurementsText,
       table_percent: body?.tablePercent ? Number(body.tablePercent) : undefined,
       depth_percent: body?.depthPercent ? Number(body.depthPercent) : undefined,
       girdle: String(body?.girdle || ''),
