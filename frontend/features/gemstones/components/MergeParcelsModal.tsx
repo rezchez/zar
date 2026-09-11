@@ -98,12 +98,14 @@ export default function MergeParcelsModal({
       const chosenTargetId = targetId || selectedParcels[0].id;
       const sourceIds = selectedParcels.filter((p) => p.id !== chosenTargetId).map((p) => p.id);
 
+      const sourceKey = `merge:parcel:${chosenTargetId}:${Date.now()}`;
       const res = await fetch('/api/accounting/opening/gemstones/merge', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           targetId: chosenTargetId,
           sourceIds,
+          sourceKey,
         }),
       });
 

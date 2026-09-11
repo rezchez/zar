@@ -62,10 +62,13 @@ export function normalizeSieveKey(input: string): string {
 /**
  * Finds a sieve record by sieve size string
  */
-export function findSieveBySize(sieveSize: string): DiamondSieveRecord | undefined {
+export function findSieveBySize(
+  sieveSize: string,
+  chart: DiamondSieveRecord[] = DIAMOND_SIEVE_CHART
+): DiamondSieveRecord | undefined {
   if (!sieveSize) return undefined;
   const normalized = normalizeSieveKey(sieveSize);
-  return DIAMOND_SIEVE_CHART.find(
+  return chart.find(
     (item) => normalizeSieveKey(item.sieveSize) === normalized || item.sieveSize === sieveSize
   );
 }
@@ -73,11 +76,14 @@ export function findSieveBySize(sieveSize: string): DiamondSieveRecord | undefin
 /**
  * Finds the closest matching sieve record by mm diameter
  */
-export function findSieveByMm(mm: number): DiamondSieveRecord | undefined {
+export function findSieveByMm(
+  mm: number,
+  chart: DiamondSieveRecord[] = DIAMOND_SIEVE_CHART
+): DiamondSieveRecord | undefined {
   if (!mm || mm <= 0) return undefined;
   let closest: DiamondSieveRecord | undefined;
   let minDiff = Infinity;
-  for (const item of DIAMOND_SIEVE_CHART) {
+  for (const item of chart) {
     const diff = Math.abs(item.mmSize - mm);
     if (diff < minDiff) {
       minDiff = diff;
@@ -90,9 +96,13 @@ export function findSieveByMm(mm: number): DiamondSieveRecord | undefined {
 /**
  * Estimates number of pieces based on carat weight and selected sieve
  */
-export function estimatePiecesFromCarats(sieveSize: string, carats: number): number {
+export function estimatePiecesFromCarats(
+  sieveSize: string,
+  carats: number,
+  chart: DiamondSieveRecord[] = DIAMOND_SIEVE_CHART
+): number {
   if (!carats || carats <= 0) return 0;
-  const sieve = findSieveBySize(sieveSize);
+  const sieve = findSieveBySize(sieveSize, chart);
   if (!sieve) return 0;
   return Math.round(carats * sieve.piecesPerCarat);
 }
@@ -100,9 +110,13 @@ export function estimatePiecesFromCarats(sieveSize: string, carats: number): num
 /**
  * Estimates carat weight based on number of pieces and selected sieve
  */
-export function estimateCaratsFromPieces(sieveSize: string, pieces: number): number {
+export function estimateCaratsFromPieces(
+  sieveSize: string,
+  pieces: number,
+  chart: DiamondSieveRecord[] = DIAMOND_SIEVE_CHART
+): number {
   if (!pieces || pieces <= 0) return 0;
-  const sieve = findSieveBySize(sieveSize);
+  const sieve = findSieveBySize(sieveSize, chart);
   if (!sieve) return 0;
   return Number((pieces * sieve.caratsWeightPerPiece).toFixed(4));
 }

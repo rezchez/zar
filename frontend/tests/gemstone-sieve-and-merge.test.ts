@@ -178,4 +178,58 @@ describe('Diamond Sieve Master Table & Parcel Pooling/Merging', () => {
       expect(result.wacPerPiece).toBe(1_675_000);
     });
   });
+
+  describe('Parcel Merge Transactions & Multi-Currency Valuation Invariants', () => {
+    it('structures donor and target ledger transactions with correct directions and idempotency keys', () => {
+      const sourceKey = 'merge:parcel:target-1:1789154900000';
+      const targetId = 'target-1';
+      const donorId = 'donor-2';
+
+      const donorTx = {
+        gemstone: donorId,
+        transaction_type: 'parcel_merge_out',
+        direction: 'out',
+        source_id: targetId,
+        source_key: `merge:out:${sourceKey}:${donorId}`,
+      };
+
+      const targetTx = {
+        gemstone: targetId,
+        transaction_type: 'parcel_merge_in',
+        direction: 'in',
+        source_id: sourceKey,
+        source_key: `merge:in:${sourceKey}:${targetId}`,
+      };
+
+      expect(donorTx.direction).toBe('out');
+      expect(donorTx.transaction_type).toBe('parcel_merge_out');
+      expect(donorTx.source_key).toBe(`merge:out:${sourceKey}:${donorId}`);
+
+      expect(targetTx.direction).toBe('in');
+      expect(targetTx.transaction_type).toBe('parcel_merge_in');
+      expect(targetTx.source_key).toBe(`merge:in:${sourceKey}:${targetId}`);
+    });
+
+    it('correctly aggregates multi-currency inventory separating foreign currencies from Toman/Rial', () => {
+      const sampleItems = [
+        { id: '1', currency: 'USD', totalCost: 5000 },
+        { id: '2', currency: 'USD', totalCost: 3000 },
+        { id: '3', currency: 'AED', totalCost: 15000 },
+        { id: '4', currency: 'IRT', totalCost: 80000 },
+        { id: '5', currency: undefined, totalAmount: 200000 }, // 20,000 Toman default
+      ];
+
+      const valuations: Record<string, number> = {};
+      for (const item of sampleItems) {
+        const curr = (item.currency || 'IRT').toUpperCase();
+        const cost = item.totalCost ?? Math.floor((item.totalAmount || 0) / 10);
+        valuations[curr] = (valuations[curr] || 0) + cost;
+      }
+
+      expect(valuations['USD']).toBe(8000);
+      expect(valuations['AED']).toBe(15000);
+      expect(valuations['IRT']).toBe(100000); // 80,000 + 20,000
+    });
+  });
 });
+

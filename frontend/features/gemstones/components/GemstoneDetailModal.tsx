@@ -40,7 +40,11 @@ import {
   type GemstoneOpeningRecord,
 } from '@/lib/gemstone';
 import { formatCaratWeight, formatGramWeight } from '@/lib/gemstone-weight';
-import { convertRialToToman, formatNumberWithCommas } from '@/lib/money';
+import {
+  convertRialToToman,
+  formatNumberWithCommas,
+  SUPPORTED_CURRENCIES,
+} from '@/lib/money';
 
 export type GemstoneDetailModalProps = {
   isOpen: boolean;
@@ -494,7 +498,9 @@ export default function GemstoneDetailModal({
                 <div className="space-y-0.5">
                   <span className="text-[10px] text-slate-500 dark:text-slate-400">نرخ هر قیراط</span>
                   <div className="font-mono font-bold text-slate-800 dark:text-slate-200">
-                    {formatNumberWithCommas(convertRialToToman(gemstone.costPerCarat))} تومان
+                    {gemstone.currency && gemstone.currency !== 'IRT' && gemstone.currency !== 'IRR'
+                      ? `${formatNumberWithCommas(gemstone.costPerCarat)} ${SUPPORTED_CURRENCIES[gemstone.currency]?.symbol || gemstone.currency}`
+                      : `${formatNumberWithCommas(convertRialToToman(gemstone.costPerCarat))} تومان`}
                   </div>
                 </div>
               ) : null}
@@ -503,20 +509,28 @@ export default function GemstoneDetailModal({
                 <div className="space-y-0.5">
                   <span className="text-[10px] text-slate-500 dark:text-slate-400">نرخ هر گرم</span>
                   <div className="font-mono font-bold text-slate-800 dark:text-slate-200">
-                    {formatNumberWithCommas(convertRialToToman(gemstone.costPerGram))} تومان
+                    {gemstone.currency && gemstone.currency !== 'IRT' && gemstone.currency !== 'IRR'
+                      ? `${formatNumberWithCommas(gemstone.costPerGram)} ${SUPPORTED_CURRENCIES[gemstone.currency]?.symbol || gemstone.currency}`
+                      : `${formatNumberWithCommas(convertRialToToman(gemstone.costPerGram))} تومان`}
                   </div>
                 </div>
               ) : null}
 
               <div className="col-span-2 space-y-0.5 sm:col-span-3">
-                <span className="text-[10px] text-slate-500 dark:text-slate-400">بهای تمام‌شده کل (ثبت در حساب ۱۱۳۰۵۰)</span>
+                <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                  بهای تمام‌شده کل {gemstone.currency ? `(${SUPPORTED_CURRENCIES[gemstone.currency]?.faName || gemstone.currency})` : '(ثبت در حساب ۱۱۳۰۵۰)'}
+                </span>
                 <div className="flex items-baseline gap-2">
                   <span className="text-lg font-black text-emerald-700 dark:text-emerald-300">
-                    {formatNumberWithCommas(convertRialToToman(gemstone.totalCost ?? gemstone.totalAmount ?? 0))} تومان
+                    {gemstone.currency && gemstone.currency !== 'IRT' && gemstone.currency !== 'IRR'
+                      ? `${formatNumberWithCommas(gemstone.totalCost ?? gemstone.totalAmount ?? 0)} ${SUPPORTED_CURRENCIES[gemstone.currency]?.symbol || gemstone.currency}`
+                      : `${formatNumberWithCommas(convertRialToToman(gemstone.totalCost ?? gemstone.totalAmount ?? 0))} تومان`}
                   </span>
-                  <span className="text-[11px] font-mono text-slate-400">
-                    ({formatNumberWithCommas(gemstone.totalCost ?? gemstone.totalAmount ?? 0)} ریال)
-                  </span>
+                  {(!gemstone.currency || gemstone.currency === 'IRT' || gemstone.currency === 'IRR') && (
+                    <span className="text-[11px] font-mono text-slate-400">
+                      ({formatNumberWithCommas(gemstone.totalCost ? gemstone.totalCost * 10 : gemstone.totalAmount ?? 0)} ریال)
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -525,21 +539,39 @@ export default function GemstoneDetailModal({
                   <div className="flex items-center justify-between rounded-xl bg-white/60 p-2 text-[11px] dark:bg-slate-800/60">
                     <span className="text-slate-600 dark:text-slate-400 font-bold">میانگین موزون نرخ هر قیراط (WAC/ct):</span>
                     <span className="font-mono font-black text-emerald-700 dark:text-emerald-300">
-                      {gemstone.wacPerCarat
-                        ? `${formatNumberWithCommas(convertRialToToman(gemstone.wacPerCarat))} تومان`
-                        : gemstone.weightCt > 0
-                        ? `${formatNumberWithCommas(convertRialToToman(Math.round((gemstone.totalCost ?? gemstone.totalAmount ?? 0) / gemstone.weightCt)))} تومان`
-                        : '—'}
+                      {(() => {
+                        const isForeign = gemstone.currency && gemstone.currency !== 'IRT' && gemstone.currency !== 'IRR';
+                        const currSymbol = isForeign ? (SUPPORTED_CURRENCIES[gemstone.currency!]?.symbol || gemstone.currency) : 'تومان';
+                        if (gemstone.wacPerCarat) {
+                          return `${formatNumberWithCommas(isForeign ? gemstone.wacPerCarat : convertRialToToman(gemstone.wacPerCarat))} ${currSymbol}`;
+                        }
+                        if (gemstone.weightCt > 0) {
+                          const totalVal = isForeign
+                            ? (gemstone.totalCost ?? gemstone.totalAmount ?? 0)
+                            : convertRialToToman(gemstone.totalCost ? gemstone.totalCost * 10 : gemstone.totalAmount ?? 0);
+                          return `${formatNumberWithCommas(Math.round(totalVal / gemstone.weightCt))} ${currSymbol}`;
+                        }
+                        return '—';
+                      })()}
                     </span>
                   </div>
                   <div className="flex items-center justify-between rounded-xl bg-white/60 p-2 text-[11px] dark:bg-slate-800/60">
                     <span className="text-slate-600 dark:text-slate-400 font-bold">میانگین موزون نرخ هر عدد (WAC/pc):</span>
                     <span className="font-mono font-black text-emerald-700 dark:text-emerald-300">
-                      {gemstone.wacPerPiece
-                        ? `${formatNumberWithCommas(convertRialToToman(gemstone.wacPerPiece))} تومان`
-                        : gemstone.pieces && gemstone.pieces > 0
-                        ? `${formatNumberWithCommas(convertRialToToman(Math.round((gemstone.totalCost ?? gemstone.totalAmount ?? 0) / gemstone.pieces)))} تومان`
-                        : '—'}
+                      {(() => {
+                        const isForeign = gemstone.currency && gemstone.currency !== 'IRT' && gemstone.currency !== 'IRR';
+                        const currSymbol = isForeign ? (SUPPORTED_CURRENCIES[gemstone.currency!]?.symbol || gemstone.currency) : 'تومان';
+                        if (gemstone.wacPerPiece) {
+                          return `${formatNumberWithCommas(isForeign ? gemstone.wacPerPiece : convertRialToToman(gemstone.wacPerPiece))} ${currSymbol}`;
+                        }
+                        if (gemstone.pieces && gemstone.pieces > 0) {
+                          const totalVal = isForeign
+                            ? (gemstone.totalCost ?? gemstone.totalAmount ?? 0)
+                            : convertRialToToman(gemstone.totalCost ? gemstone.totalCost * 10 : gemstone.totalAmount ?? 0);
+                          return `${formatNumberWithCommas(Math.round(totalVal / gemstone.pieces))} ${currSymbol}`;
+                        }
+                        return '—';
+                      })()}
                     </span>
                   </div>
                 </div>

@@ -20,6 +20,7 @@ import Link from 'next/link';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
 import GemstoneDetailModal from './GemstoneDetailModal';
+import GemstoneShapeIcon from './GemstoneShapeIcon';
 import InitialGemstoneInventoryModal from './InitialGemstoneInventoryModal';
 import MergeParcelsModal from './MergeParcelsModal';
 import {
@@ -32,7 +33,11 @@ import {
   type GemstoneOpeningRecord,
 } from '@/lib/gemstone';
 import { formatCaratWeight, formatGramWeight } from '@/lib/gemstone-weight';
-import { convertRialToToman, formatNumberWithCommas } from '@/lib/money';
+import {
+  convertRialToToman,
+  formatNumberWithCommas,
+  SUPPORTED_CURRENCIES,
+} from '@/lib/money';
 
 export type InitialGemstoneInventoryClientProps = {
   initialItems?: GemstoneOpeningRecord[];
@@ -78,17 +83,84 @@ export default function InitialGemstoneInventoryClient({
     [items, selectedParcelIds]
   );
 
+  // Multi-currency valuation aggregation
+  const valuationsByCurrency = useMemo(() => {
+    const map: Record<string, { totalAmount: number; count: number; totalWeightCt: number }> = {};
+    for (const item of items) {
+      const curr = (item.currency || 'IRT').toUpperCase();
+      if (!map[curr]) {
+        map[curr] = { totalAmount: 0, count: 0, totalWeightCt: 0 };
+      }
+      let val = 0;
+      if (curr === 'IRT') {
+        val = item.totalCost !== undefined && item.totalCost !== null
+          ? item.totalCost
+          : convertRialToToman(item.totalAmount || 0);
+      } else {
+        val = item.totalCost ?? item.totalAmount ?? 0;
+      }
+      map[curr].totalAmount += Number(val) || 0;
+      map[curr].count += 1;
+      map[curr].totalWeightCt += Number(item.weightCt) || 0;
+    }
+    return map;
+  }, [items]);
+
+  // Foreign currencies with positive valuation
+  const foreignValuations = useMemo(() => {
+    return Object.entries(valuationsByCurrency)
+      .filter(([code, data]) => code !== 'IRT' && code !== 'IRR' && data.totalAmount > 0)
+      .map(([code, data]) => ({
+        code,
+        total: data.totalAmount,
+        count: data.count,
+        info: SUPPORTED_CURRENCIES[code] || { symbol: code, faName: code },
+      }));
+  }, [valuationsByCurrency]);
+
+  const tomanValuation = useMemo(() => {
+    const irt = valuationsByCurrency['IRT']?.totalAmount || 0;
+    const irr = valuationsByCurrency['IRR']?.totalAmount
+      ? convertRialToToman(valuationsByCurrency['IRR'].totalAmount)
+      : 0;
+    return irt + irr;
+  }, [valuationsByCurrency]);
+
+  const hasForeignCurrency = foreignValuations.length > 0;
+
+  const [backendSpecies, setBackendSpecies] = useState<any[]>([]);
+  const [backendShapes, setBackendShapes] = useState<any[]>([]);
+
   const fetchInventory = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/accounting/opening/gemstones', { cache: 'no-store' });
-      if (res.ok) {
-        const data = await res.json();
+      const [invRes, typesRes, shapesRes] = await Promise.allSettled([
+        fetch('/api/accounting/opening/gemstones', { cache: 'no-store' }),
+        fetch('/api/gemstone-types', { cache: 'no-store' }),
+        fetch('/api/gemstone-shapes', { cache: 'no-store' }),
+      ]);
+
+      if (invRes.status === 'fulfilled' && invRes.value.ok) {
+        const data = await invRes.value.json();
         if (Array.isArray(data.items)) {
           setItems(data.items);
         }
         if (data.summary) {
           setSummary(data.summary);
+        }
+      }
+
+      if (typesRes.status === 'fulfilled' && typesRes.value.ok) {
+        const data = await typesRes.value.json();
+        if (Array.isArray(data.items)) {
+          setBackendSpecies(data.items);
+        }
+      }
+
+      if (shapesRes.status === 'fulfilled' && shapesRes.value.ok) {
+        const data = await shapesRes.value.json();
+        if (Array.isArray(data.items)) {
+          setBackendShapes(data.items);
         }
       }
     } catch {
@@ -292,21 +364,60 @@ export default function InitialGemstoneInventoryClient({
           <p className="mt-1 text-[11px] text-slate-400">محاسبه بر اساس ۱ct = ۰.۲g</p>
         </div>
 
-        {/* Total Valuation Card */}
-        <div className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">ارزش کل ریالی</span>
-            <div className="flex size-9 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400">
-              <Sparkles size={18} />
+        {/* Multi-Currency Total Valuation Card (Direct Display without Dropdown) */}
+        <div className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-500 dark:text-slate-400">ارزش کل موجودی</span>
+              <div className="flex size-9 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400">
+                <Sparkles size={18} />
+              </div>
+            </div>
+
+            <div className="mt-3 space-y-1.5">
+              {hasForeignCurrency ? (
+                foreignValuations.map(({ code, total, info }) => (
+                  <div key={code} className="flex items-baseline gap-1.5 text-2xl font-black text-emerald-600 dark:text-emerald-400">
+                    <span className="font-mono">{formatNumberWithCommas(total)}</span>
+                    <span className="text-xs font-normal text-slate-500 font-sans">
+                      {info.symbol || info.faName || code}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <div className="flex items-baseline gap-1.5 text-2xl font-black text-emerald-600 dark:text-emerald-400">
+                  <span className="font-mono">{formatNumberWithCommas(tomanValuation)}</span>
+                  <span className="text-xs font-normal text-slate-500 font-sans">تومان</span>
+                </div>
+              )}
             </div>
           </div>
-          <div className="mt-3 text-2xl font-black text-emerald-600 dark:text-emerald-400">
-            {formatNumberWithCommas(convertRialToToman(summary.totalValuation))}{' '}
-            <span className="text-xs font-normal text-slate-400">تومان</span>
+
+          <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800">
+            {hasForeignCurrency ? (
+              tomanValuation > 0 ? (
+                <div>
+                  <div className="flex items-baseline justify-between text-xs font-medium text-slate-500 dark:text-slate-400">
+                    <span>ارزش تومانی موجودی:</span>
+                    <span className="font-bold font-mono text-slate-700 dark:text-slate-300">
+                      {formatNumberWithCommas(tomanValuation)} تومان
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 font-mono mt-0.5">
+                    {formatNumberWithCommas(tomanValuation * 10)} ریال (کد ۱۱۳۰۵۰)
+                  </p>
+                </div>
+              ) : (
+                <p className="text-[11px] text-slate-400 font-mono">
+                  ارزش‌گذاری بر پایه ارز خارجی ثبت شده است
+                </p>
+              )
+            ) : (
+              <p className="text-[11px] text-slate-400 font-mono">
+                {formatNumberWithCommas(tomanValuation * 10)} ریال (کد ۱۱۳۰۵۰)
+              </p>
+            )}
           </div>
-          <p className="mt-1 text-[11px] text-slate-400">
-            {formatNumberWithCommas(summary.totalValuation)} ریال (کد ۱۱۳۰۵۰)
-          </p>
         </div>
       </div>
 
@@ -424,8 +535,12 @@ export default function InitialGemstoneInventoryClient({
               ) : (
                 filteredItems.map((item) => {
                   const isDiamond = item.category === 'diamond';
-                  const speciesObj = GEMSTONE_SPECIES.find((s) => s.id === item.species);
-                  const shapeObj = GEMSTONE_SHAPES.find((sh) => sh.id === item.shape);
+                  const speciesObj = (backendSpecies.length > 0 ? backendSpecies : GEMSTONE_SPECIES).find(
+                    (s: any) => s.id === item.species || s.code === item.species || s.species === item.species
+                  );
+                  const shapeObj = (backendShapes.length > 0 ? backendShapes : GEMSTONE_SHAPES).find(
+                    (sh: any) => sh.id === item.shape || sh.code === item.shape
+                  );
 
                   return (
                     <tr
@@ -568,14 +683,21 @@ export default function InitialGemstoneInventoryClient({
 
                       {/* Shape */}
                       <td className="px-4 py-4">
-                        <div className="font-bold text-slate-800 dark:text-slate-200">
-                          {shapeObj?.nameFa || item.shape || 'نامشخص'}
-                        </div>
-                        {item.measurementsLength && item.measurementsWidth && (
-                          <div className="font-mono text-[10px] text-slate-400">
-                            {item.measurementsLength}×{item.measurementsWidth}mm
+                        <div className="flex items-center gap-2">
+                          <div className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-cyan-100 bg-cyan-50/70 p-1 text-cyan-600 shadow-2xs dark:border-cyan-900/60 dark:bg-cyan-950/40 dark:text-cyan-400">
+                            <GemstoneShapeIcon shapeCode={item.shape} svgIcon={shapeObj?.svgIcon} className="size-full" />
                           </div>
-                        )}
+                          <div>
+                            <div className="font-bold text-slate-800 dark:text-slate-200">
+                              {shapeObj?.nameFa || item.shape || 'نامشخص'}
+                            </div>
+                            {item.measurementsLength && item.measurementsWidth && (
+                              <div className="font-mono text-[10px] text-slate-400">
+                                {item.measurementsLength}×{item.measurementsWidth}mm
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       </td>
 
                       {/* Weights & Count */}
@@ -618,11 +740,38 @@ export default function InitialGemstoneInventoryClient({
                       {/* Valuation */}
                       <td className="px-4 py-4">
                         <div className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                          {formatNumberWithCommas(convertRialToToman(item.totalCost || item.totalAmount || 0))} تومان
+                          {item.currency && item.currency !== 'IRT' && item.currency !== 'IRR' ? (
+                            <span>
+                              {formatNumberWithCommas(item.totalCost ?? item.totalAmount ?? 0)}{' '}
+                              <span className="text-xs font-normal">
+                                {SUPPORTED_CURRENCIES[item.currency]?.symbol || item.currency}
+                              </span>
+                            </span>
+                          ) : (
+                            <span>
+                              {formatNumberWithCommas(
+                                item.currency === 'IRR'
+                                  ? (item.totalCost ?? item.totalAmount ?? 0)
+                                  : (item.totalCost ?? convertRialToToman(item.totalAmount || 0))
+                              )}{' '}
+                              <span className="text-xs font-normal">تومان</span>
+                            </span>
+                          )}
                         </div>
                         {item.mode === 'parcel' ? (
                           <div className="text-[10px] text-slate-500 font-mono">
-                            WAC: {item.weightCt > 0 ? formatNumberWithCommas(convertRialToToman(Math.round((item.totalCost || item.totalAmount || 0) / item.weightCt))) : '—'} ت/ct
+                            {(() => {
+                              const isForeign = Boolean(item.currency && item.currency !== 'IRT' && item.currency !== 'IRR');
+                              const currKey = item.currency as string;
+                              const currSymbol = isForeign
+                                ? `${(SUPPORTED_CURRENCIES as any)[currKey]?.symbol || currKey}/ct`
+                                : 'ت/ct';
+                              const totalVal = isForeign
+                                ? (item.totalCost ?? item.totalAmount ?? 0)
+                                : (item.totalCost ?? convertRialToToman(item.totalAmount || 0));
+                              const ratePerCt = item.weightCt > 0 ? Math.round(totalVal / item.weightCt) : 0;
+                              return `WAC: ${ratePerCt > 0 ? formatNumberWithCommas(ratePerCt) : '—'} ${currSymbol}`;
+                            })()}
                           </div>
                         ) : (
                           <div className="text-[10px] text-slate-400">

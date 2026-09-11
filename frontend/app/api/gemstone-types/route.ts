@@ -2,7 +2,16 @@ import { NextResponse } from 'next/server';
 
 import { getServerAuthContext } from '@/lib/auth';
 import { hasPermission } from '@/lib/authorization';
-import type { GemstoneCategory, GemstoneTypeRecord } from '@/lib/gemstone';
+import {
+  GEMSTONE_SPECIES_BY_ROOT,
+  type GemstoneCategory,
+  type GemstoneSpeciesItem,
+  type RootCategory,
+} from '@/lib/gemstone';
+
+const ALL_SPECIES: GemstoneSpeciesItem[] = (
+  Object.keys(GEMSTONE_SPECIES_BY_ROOT) as RootCategory[]
+).flatMap((root) => GEMSTONE_SPECIES_BY_ROOT[root]);
 
 export async function GET(request: Request) {
   const context = await getServerAuthContext();
@@ -13,34 +22,110 @@ export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
     const category = url.searchParams.get('category');
+    const rootCategory = url.searchParams.get('rootCategory');
 
     let filter = 'is_active = true';
     if (category) {
       filter += ` && category = "${category}"`;
     }
+    if (rootCategory) {
+      filter += ` && root_category = "${rootCategory}"`;
+    }
 
-    const records = await context.pb.collection('gemstone_types').getFullList({
+    let records: Record<string, unknown>[] = await context.pb.collection('gemstone_types').getFullList({
       filter,
       sort: 'sort_order,name_fa',
     }).catch(() => []);
 
-    const items: GemstoneTypeRecord[] = records.map((r: Record<string, unknown>) => ({
-      id: String(r.id || ''),
-      nameFa: String(r.name_fa || ''),
-      nameEn: String(r.name_en || ''),
-      species: String(r.species || ''),
-      variety: String(r.variety || ''),
-      category: (r.category || 'colored_gemstone') as GemstoneCategory,
-      defaultWeightUnit: (r.default_weight_unit || 'ct') as 'ct' | 'g',
-      supportsGia: Boolean(r.supports_gia),
-      supportsOrigin: Boolean(r.supports_origin),
-      supportsTreatment: Boolean(r.supports_treatment),
-      supportsDiamondGrading: Boolean(r.supports_diamond_grading),
-      isActive: Boolean(r.is_active),
-      sortOrder: Number(r.sort_order || 0),
-      created: String(r.created || ''),
-      updated: String(r.updated || ''),
-    }));
+    // Auto-seed from authoritative GEMSTONE_SPECIES_BY_ROOT if empty
+    if (records.length === 0 && !category && !rootCategory) {
+      try {
+        let order = 1;
+        for (const sp of ALL_SPECIES) {
+          const rec = await context.pb.collection('gemstone_types').create({
+            name_fa: sp.nameFa,
+            name_en: sp.nameEn,
+            species: sp.id,
+            variety: sp.nameFa,
+            category: sp.category,
+            root_category: sp.rootCategory,
+            diamond_type: sp.diamondType || null,
+            growth_method: sp.growthMethod || null,
+            synthetic_method: sp.syntheticMethod || null,
+            chemical_basis: sp.chemicalBasis || null,
+            treatments: sp.treatments || null,
+            treatment_method: sp.treatmentMethod || null,
+            default_weight_unit: 'ct',
+            supports_gia: sp.category === 'diamond',
+            supports_origin: true,
+            supports_treatment: Boolean(sp.treatments),
+            supports_diamond_grading: sp.category === 'diamond',
+            sort_order: order++,
+            is_active: true,
+          }).catch(() => null);
+
+          if (rec) {
+            records.push(rec as unknown as Record<string, unknown>);
+          }
+        }
+      } catch {
+        // non-blocking
+      }
+    }
+
+    const items = records.length > 0
+      ? records.map((r: Record<string, unknown>) => ({
+          id: String(r.id || ''),
+          code: String(r.species || r.id || ''),
+          nameFa: String(r.name_fa || ''),
+          nameEn: String(r.name_en || ''),
+          species: String(r.species || ''),
+          variety: String(r.variety || ''),
+          category: (r.category || 'colored_gemstone') as GemstoneCategory,
+          rootCategory: (r.root_category || 'natural') as RootCategory,
+          diamondType: r.diamond_type as 'natural' | 'lab_grown' | undefined,
+          growthMethod: r.growth_method as any,
+          syntheticMethod: r.synthetic_method ? String(r.synthetic_method) : undefined,
+          chemicalBasis: r.chemical_basis ? String(r.chemical_basis) : undefined,
+          treatments: r.treatments ? String(r.treatments) : undefined,
+          treatmentMethod: r.treatment_method ? String(r.treatment_method) : undefined,
+          defaultWeightUnit: (r.default_weight_unit || 'ct') as 'ct' | 'g',
+          supportsGia: Boolean(r.supports_gia),
+          supportsOrigin: Boolean(r.supports_origin),
+          supportsTreatment: Boolean(r.supports_treatment),
+          supportsDiamondGrading: Boolean(r.supports_diamond_grading),
+          isActive: Boolean(r.is_active),
+          sortOrder: Number(r.sort_order || 0),
+          created: String(r.created || ''),
+          updated: String(r.updated || ''),
+        }))
+      : ALL_SPECIES.filter((sp) => {
+          if (category && sp.category !== category) return false;
+          if (rootCategory && sp.rootCategory !== rootCategory) return false;
+          return true;
+        }).map((sp, idx) => ({
+          id: sp.id,
+          code: sp.id,
+          nameFa: sp.nameFa,
+          nameEn: sp.nameEn,
+          species: sp.id,
+          variety: sp.nameFa,
+          category: sp.category,
+          rootCategory: sp.rootCategory,
+          diamondType: sp.diamondType,
+          growthMethod: sp.growthMethod,
+          syntheticMethod: sp.syntheticMethod,
+          chemicalBasis: sp.chemicalBasis,
+          treatments: sp.treatments,
+          treatmentMethod: sp.treatmentMethod,
+          defaultWeightUnit: 'ct' as const,
+          supportsGia: sp.category === 'diamond',
+          supportsOrigin: true,
+          supportsTreatment: Boolean(sp.treatments),
+          supportsDiamondGrading: sp.category === 'diamond',
+          isActive: true,
+          sortOrder: idx + 1,
+        }));
 
     return NextResponse.json({ items });
   } catch (error) {

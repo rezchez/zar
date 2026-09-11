@@ -4,6 +4,7 @@ import {
   AlertCircle,
   Award,
   Check,
+  ChevronDown,
   Gem,
   Info,
   Layers,
@@ -13,12 +14,13 @@ import {
   Sparkles,
   X,
 } from 'lucide-react';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import ShapeSettingsModal, {
   loadShapePreferences,
   buildHierarchicalShapeOrder,
   type ShapePreferences,
 } from './ShapeSettingsModal';
+import GemstoneShapeIcon from './GemstoneShapeIcon';
 
 import {
   CLARITY_GRADES,
@@ -125,6 +127,8 @@ export default function InitialGemstoneInventoryModal({
 
   // Common geometry & certificate
   const [shape, setShape] = useState<string>('round');
+  const [isShapeDropdownOpen, setIsShapeDropdownOpen] = useState(false);
+  const shapeDropdownRef = useRef<HTMLDivElement>(null);
   const [isShapeSettingsOpen, setIsShapeSettingsOpen] = useState(false);
   const [shapePrefs, setShapePrefs] = useState<ShapePreferences>({
     order: GEMSTONE_SHAPES.map((s) => s.id),
@@ -136,6 +140,18 @@ export default function InitialGemstoneInventoryModal({
   useEffect(() => {
     setShapePrefs(loadShapePreferences());
   }, []);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (shapeDropdownRef.current && !shapeDropdownRef.current.contains(event.target as Node)) {
+        setIsShapeDropdownOpen(false);
+      }
+    }
+    if (isShapeDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [isShapeDropdownOpen]);
   const [measurementsLength, setMeasurementsLength] = useState<string>('');
   const [measurementsWidth, setMeasurementsWidth] = useState<string>('');
   const [measurementsDepth, setMeasurementsDepth] = useState<string>('');
@@ -230,17 +246,21 @@ export default function InitialGemstoneInventoryModal({
   const [currenciesList, setCurrenciesList] = useState<Currency[]>([]);
   const [selectedCurrency, setSelectedCurrency] = useState<string>('IRT');
 
-  // Preset types from server
+  // Master data from backend collections
   const [gemstoneTypes, setGemstoneTypes] = useState<GemstoneTypeRecord[]>([]);
+  const [shapesList, setShapesList] = useState<any[]>([]);
+  const [sievesList, setSievesList] = useState<any[]>([]);
 
   useEffect(() => {
     if (!isOpen) return;
     async function loadAuxData() {
       try {
-        const [typesRes, locsRes, currRes] = await Promise.allSettled([
+        const [typesRes, locsRes, currRes, shapesRes, sievesRes] = await Promise.allSettled([
           fetch('/api/gemstone-types', { cache: 'no-store' }),
           fetch('/api/storage-locations', { cache: 'no-store' }),
           fetch('/api/currencies', { cache: 'no-store' }),
+          fetch('/api/gemstone-shapes', { cache: 'no-store' }),
+          fetch('/api/gemstone-sieves', { cache: 'no-store' }),
         ]);
 
         if (typesRes.status === 'fulfilled' && typesRes.value.ok) {
@@ -260,6 +280,36 @@ export default function InitialGemstoneInventoryModal({
           const data = await currRes.value.json();
           if (Array.isArray(data.currencies)) {
             setCurrenciesList(data.currencies);
+          }
+        }
+        if (shapesRes.status === 'fulfilled' && shapesRes.value.ok) {
+          const data = await shapesRes.value.json();
+          if (Array.isArray(data.items) && data.items.length > 0) {
+            setShapesList(data.items);
+            const backendOrder = data.items.map((it: any) => it.code);
+            const backendParents: Record<string, string | null> = {};
+            const backendCustomNames: Record<string, { nameFa?: string; nameEn?: string }> = {};
+            for (const it of data.items) {
+              if (it.parentCode) backendParents[it.code] = it.parentCode;
+              if (it.customNameFa || it.customNameEn) {
+                backendCustomNames[it.code] = {
+                  nameFa: it.customNameFa,
+                  nameEn: it.customNameEn,
+                };
+              }
+            }
+            setShapePrefs((prev) => ({
+              ...prev,
+              order: backendOrder,
+              parentMap: { ...prev.parentMap, ...backendParents },
+              customNames: { ...prev.customNames, ...backendCustomNames },
+            }));
+          }
+        }
+        if (sievesRes.status === 'fulfilled' && sievesRes.value.ok) {
+          const data = await sievesRes.value.json();
+          if (Array.isArray(data.items) && data.items.length > 0) {
+            setSievesList(data.items);
           }
         }
       } catch {
@@ -580,14 +630,39 @@ export default function InitialGemstoneInventoryModal({
     }
   };
 
+  // Dynamic species list filtered by rootCategory from backend collection with fallback
+  const availableSpeciesForRoot = useMemo(() => {
+    if (gemstoneTypes.length > 0) {
+      const fromBackend = gemstoneTypes.filter((t) => (t as any).rootCategory === rootCategory);
+      if (fromBackend.length > 0) {
+        return fromBackend.map((t) => ({
+          id: (t as any).code || t.species || t.id,
+          nameFa: t.nameFa,
+          nameEn: t.nameEn,
+          category: t.category,
+          rootCategory: (t as any).rootCategory || rootCategory,
+          diamondType: (t as any).diamondType,
+          growthMethod: (t as any).growthMethod,
+          syntheticMethod: (t as any).syntheticMethod,
+          chemicalBasis: (t as any).chemicalBasis,
+          treatments: (t as any).treatments,
+          treatmentMethod: (t as any).treatmentMethod,
+        }));
+      }
+    }
+    return getSpeciesForRootCategory(rootCategory);
+  }, [gemstoneTypes, rootCategory]);
+
   // Root Category selection change with dynamic cascading stone update
   const handleRootCategoryChange = (newRoot: RootCategory) => {
     setRootCategory(newRoot);
-    const available = getSpeciesForRootCategory(newRoot);
-    const currentBelongs = available.some((s) => s.id === species);
+    const available = gemstoneTypes.length > 0
+      ? gemstoneTypes.filter((t) => (t as any).rootCategory === newRoot)
+      : getSpeciesForRootCategory(newRoot);
+    const currentBelongs = available.some((s) => (s as any).id === species || (s as any).species === species);
 
     if (!currentBelongs && available.length > 0) {
-      applySpeciesSelection(available[0]);
+      applySpeciesSelection(available[0] as any);
     } else {
       if (newRoot === 'laboratory_grown' && (category === 'diamond' || species.includes('diamond'))) {
         setDiamondType('lab_grown');
@@ -885,7 +960,7 @@ export default function InitialGemstoneInventoryModal({
                     گونه / سنگ ({ROOT_CATEGORIES.find((r) => r.id === rootCategory)?.labelFa.split(' ')[0] || 'سنگ'})
                   </label>
                   <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                    {getSpeciesForRootCategory(rootCategory).length} گونه معتبر
+                    {availableSpeciesForRoot.length} گونه معتبر
                   </span>
                 </div>
                 <select
@@ -893,13 +968,13 @@ export default function InitialGemstoneInventoryModal({
                   onChange={(e) => handleSpeciesChange(e.target.value)}
                   className="w-full rounded-2xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-medium text-slate-800 focus:border-cyan-500 focus:outline-hidden dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
                 >
-                  {getSpeciesForRootCategory(rootCategory).map((s) => (
+                  {availableSpeciesForRoot.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.nameFa} ({s.nameEn})
                     </option>
                   ))}
                   {/* Keep legacy/custom species visible if editing an item not currently in active list */}
-                  {!getSpeciesForRootCategory(rootCategory).some((s) => s.id === species) && species && (
+                  {!availableSpeciesForRoot.some((s) => s.id === species) && species && (
                     <option value={species}>
                       {species} (ثبت‌شده پیشین)
                     </option>
@@ -953,32 +1028,119 @@ export default function InitialGemstoneInventoryModal({
                     <span>شخصی‌سازی</span>
                   </button>
                 </div>
-                <select
-                  value={shape}
-                  onChange={(e) => setShape(e.target.value)}
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-medium text-slate-800 focus:border-cyan-500 focus:outline-hidden dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                >
-                  {(() => {
-                    const { order, hidden, customNames = {}, parentMap = {} } = shapePrefs;
-                    const hierarchicalOrder = buildHierarchicalShapeOrder(order, parentMap);
-                    const activeShapes = hierarchicalOrder
-                      .filter((id) => !hidden.includes(id) || id === shape)
-                      .map((id) => GEMSTONE_SHAPES.find((s) => s.id === id))
-                      .filter((s): s is GemstoneShapeItem => Boolean(s));
+                {(() => {
+                  const { order, hidden, customNames = {}, parentMap = {} } = shapePrefs;
+                  const hierarchicalOrder = buildHierarchicalShapeOrder(order, parentMap);
+                  const shapesPool = shapesList.length > 0
+                    ? shapesList.map((s: any) => ({
+                        id: s.code || s.id,
+                        nameFa: s.nameFa,
+                        nameEn: s.nameEn,
+                        svgIcon: s.svgIcon,
+                      }))
+                    : GEMSTONE_SHAPES;
 
-                    return activeShapes.map((sh) => {
-                      const isChild = Boolean(parentMap[sh.id]);
-                      const displayNameFa = customNames[sh.id]?.nameFa || sh.nameFa;
-                      const displayNameEn = customNames[sh.id]?.nameEn || sh.nameEn;
+                  const activeShapes = hierarchicalOrder
+                    .filter((id) => !hidden.includes(id) || id === shape)
+                    .map((id) => shapesPool.find((s) => s.id === id))
+                    .filter((s): s is { id: string; nameFa: string; nameEn: string; svgIcon?: string } => Boolean(s));
 
-                      return (
-                        <option key={sh.id} value={sh.id}>
-                          {isChild ? `↳ ${displayNameFa}` : displayNameFa} ({displayNameEn})
-                        </option>
-                      );
-                    });
-                  })()}
-                </select>
+                  const currentShapeItem = activeShapes.find((s) => s.id === shape);
+                  const currentDisplayNameFa = customNames[shape]?.nameFa || currentShapeItem?.nameFa || '';
+                  const currentDisplayNameEn = customNames[shape]?.nameEn || currentShapeItem?.nameEn || '';
+                  const isCurrentChild = Boolean(parentMap[shape]);
+
+                  return (
+                    <div className="relative" ref={shapeDropdownRef}>
+                      {/* Trigger Button */}
+                      <button
+                        type="button"
+                        onClick={() => setIsShapeDropdownOpen((prev) => !prev)}
+                        className={`flex w-full items-center justify-between gap-2.5 rounded-2xl border bg-white px-3 py-2 text-xs font-medium text-slate-800 transition-all focus:outline-hidden dark:bg-slate-800 dark:text-slate-200 ${
+                          isShapeDropdownOpen
+                            ? 'border-cyan-500 ring-2 ring-cyan-500/20 dark:border-cyan-500'
+                            : 'border-slate-200 hover:border-slate-300 dark:border-slate-700 dark:hover:border-slate-600'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-cyan-100 bg-cyan-50/70 p-1 text-cyan-600 shadow-2xs dark:border-cyan-900/60 dark:bg-cyan-950/40 dark:text-cyan-400">
+                            <GemstoneShapeIcon shapeCode={shape} svgIcon={currentShapeItem?.svgIcon} className="size-full" />
+                          </div>
+                          <div className="flex items-baseline gap-1.5 truncate">
+                            <span className="font-bold text-slate-900 dark:text-slate-100">
+                              {isCurrentChild ? `↳ ${currentDisplayNameFa}` : currentDisplayNameFa}
+                            </span>
+                            {currentDisplayNameEn && (
+                              <span className="text-[11px] text-slate-400 dark:text-slate-500 truncate">
+                                ({currentDisplayNameEn})
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <ChevronDown
+                          size={16}
+                          className={`shrink-0 text-slate-400 transition-transform duration-200 ${
+                            isShapeDropdownOpen ? 'rotate-180 text-cyan-600 dark:text-cyan-400' : ''
+                          }`}
+                        />
+                      </button>
+
+                      {/* Dropdown Popover */}
+                      {isShapeDropdownOpen && (
+                        <div className="absolute left-0 right-0 top-full z-50 mt-1.5 max-h-64 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl transition-all dark:border-slate-700 dark:bg-slate-800">
+                          <div className="space-y-1">
+                            {activeShapes.map((sh) => {
+                              const isSelected = shape === sh.id;
+                              const isChild = Boolean(parentMap[sh.id]);
+                              const displayNameFa = customNames[sh.id]?.nameFa || sh.nameFa;
+                              const displayNameEn = customNames[sh.id]?.nameEn || sh.nameEn;
+
+                              return (
+                                <button
+                                  key={sh.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setShape(sh.id);
+                                    setIsShapeDropdownOpen(false);
+                                  }}
+                                  className={`flex w-full items-center justify-between gap-2.5 rounded-xl px-2.5 py-2 text-right text-xs transition-colors ${
+                                    isChild ? 'mr-3 w-[calc(100%-0.75rem)] border-r-2 border-r-indigo-400' : ''
+                                  } ${
+                                    isSelected
+                                      ? 'bg-cyan-50 font-bold text-cyan-800 dark:bg-cyan-950/60 dark:text-cyan-200'
+                                      : 'text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700/50'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2.5 min-w-0">
+                                    <div
+                                      className={`flex size-7 shrink-0 items-center justify-center rounded-lg border p-1 shadow-2xs ${
+                                        isSelected
+                                          ? 'border-cyan-300 bg-white text-cyan-600 dark:border-cyan-700 dark:bg-slate-900 dark:text-cyan-300'
+                                          : 'border-slate-200/80 bg-slate-50/80 text-slate-600 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-400'
+                                      }`}
+                                    >
+                                      <GemstoneShapeIcon shapeCode={sh.id} svgIcon={sh.svgIcon} className="size-full" />
+                                    </div>
+                                    <div className="flex items-baseline gap-1.5 truncate">
+                                      {isChild && <span className="font-bold text-indigo-500 text-xs shrink-0">↳</span>}
+                                      <span className={isSelected ? 'font-black' : 'font-semibold'}>{displayNameFa}</span>
+                                      {displayNameEn && (
+                                        <span className="text-[10px] text-slate-400 dark:text-slate-500 truncate">
+                                          ({displayNameEn})
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  {isSelected && <Check size={14} className="shrink-0 text-cyan-600 dark:text-cyan-400" />}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
 
@@ -1142,8 +1304,9 @@ export default function InitialGemstoneInventoryModal({
                               const newUnit = e.target.value as 'ct' | 'mm' | 'sieve';
                               setSizeUnit(newUnit);
                               if (newUnit === 'sieve' && !sieveSize) {
+                                const effectiveSieves = sievesList.length > 0 ? sievesList : DIAMOND_SIEVE_CHART;
                                 setSieveSize('+1.5-2');
-                                const sRec = findSieveBySize('+1.5-2');
+                                const sRec = findSieveBySize('+1.5-2', effectiveSieves);
                                 if (sRec) {
                                   setSizeMin(String(sRec.mmSize));
                                   setSizeMax(String(sRec.mmSize));
@@ -1160,38 +1323,47 @@ export default function InitialGemstoneInventoryModal({
 
                         {sizeUnit === 'sieve' ? (
                           <div>
-                            <select
-                              value={sieveSize}
-                              onChange={(e) => {
-                                const selected = e.target.value;
-                                setSieveSize(selected);
-                                const sRec = findSieveBySize(selected);
-                                if (sRec) {
-                                  setSizeMin(String(sRec.mmSize));
-                                  setSizeMax(String(sRec.mmSize));
-                                }
-                              }}
-                              className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                            >
-                              {DIAMOND_SIEVE_CHART.map((s) => (
-                                <option key={s.sieveSize} value={s.sieveSize}>
-                                  الک {s.sieveSize} ({s.mmSize} mm — {s.piecesPerCarat} pc/ct{s.princessMmLabel ? ` | پرنسس: ${s.princessMmLabel}` : ''})
-                                </option>
-                              ))}
-                            </select>
-                            {findSieveBySize(sieveSize) && (
-                              <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400">
-                                <span className="rounded bg-cyan-50 px-1.5 py-0.5 font-mono font-bold text-cyan-700 dark:bg-cyan-950/60 dark:text-cyan-300">
-                                  قطر: {findSieveBySize(sieveSize)?.mmSize} mm
-                                </span>
-                                <span className="rounded bg-indigo-50 px-1.5 py-0.5 font-mono font-bold text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300">
-                                  {findSieveBySize(sieveSize)?.piecesPerCarat} عدد/قیراط
-                                </span>
-                                <span className="rounded bg-amber-50 px-1.5 py-0.5 font-mono text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
-                                  هر عدد: {findSieveBySize(sieveSize)?.caratsWeightPerPiece} ct
-                                </span>
-                              </div>
-                            )}
+                            {(() => {
+                              const effectiveSieves = sievesList.length > 0 ? sievesList : DIAMOND_SIEVE_CHART;
+                              const currentSieveRec = findSieveBySize(sieveSize, effectiveSieves);
+
+                              return (
+                                <>
+                                  <select
+                                    value={sieveSize}
+                                    onChange={(e) => {
+                                      const selected = e.target.value;
+                                      setSieveSize(selected);
+                                      const sRec = findSieveBySize(selected, effectiveSieves);
+                                      if (sRec) {
+                                        setSizeMin(String(sRec.mmSize));
+                                        setSizeMax(String(sRec.mmSize));
+                                      }
+                                    }}
+                                    className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                                  >
+                                    {effectiveSieves.map((s) => (
+                                      <option key={s.sieveSize} value={s.sieveSize}>
+                                        الک {s.sieveSize} ({s.mmSize} mm — {s.piecesPerCarat} pc/ct{s.princessMmLabel ? ` | پرنسس: ${s.princessMmLabel}` : ''})
+                                      </option>
+                                    ))}
+                                  </select>
+                                  {currentSieveRec && (
+                                    <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400">
+                                      <span className="rounded bg-cyan-50 px-1.5 py-0.5 font-mono font-bold text-cyan-700 dark:bg-cyan-950/60 dark:text-cyan-300">
+                                        قطر: {currentSieveRec.mmSize} mm
+                                      </span>
+                                      <span className="rounded bg-indigo-50 px-1.5 py-0.5 font-mono font-bold text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300">
+                                        {currentSieveRec.piecesPerCarat} عدد/قیراط
+                                      </span>
+                                      <span className="rounded bg-amber-50 px-1.5 py-0.5 font-mono text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                                        هر عدد: {currentSieveRec.caratsWeightPerPiece} ct
+                                      </span>
+                                    </div>
+                                  )}
+                                </>
+                              );
+                            })()}
                           </div>
                         ) : (
                           <div className="flex items-center gap-1">

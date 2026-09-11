@@ -18,6 +18,7 @@ import {
   CornerDownLeft,
 } from 'lucide-react';
 import { GEMSTONE_SHAPES, type GemstoneShapeItem } from '@/lib/gemstone';
+import GemstoneShapeIcon from './GemstoneShapeIcon';
 
 export const SHAPES_STORAGE_KEY_ORDER = 'zar_gemstone_shapes_order';
 export const SHAPES_STORAGE_KEY_HIDDEN = 'zar_gemstone_shapes_hidden';
@@ -222,6 +223,31 @@ export default function ShapeSettingsModal({
       setHiddenShapes(new Set(prefs.hidden));
       setCustomNames(prefs.customNames || {});
       setParentMap(prefs.parentMap || getDefaultParentMap());
+
+      // Async sync from backend collection gemstone_shapes
+      void fetch('/api/gemstone-shapes')
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data && Array.isArray(data.items) && data.items.length > 0) {
+            const dbOrder: string[] = data.items.map((it: { code: string }) => it.code);
+            const dbParents: Record<string, string | null> = {};
+            const dbCustomNames: Record<string, ShapeCustomName> = {};
+            for (const it of data.items) {
+              if (it.parentCode) dbParents[it.code] = it.parentCode;
+              if (it.customNameFa || it.customNameEn) {
+                dbCustomNames[it.code] = {
+                  nameFa: it.customNameFa,
+                  nameEn: it.customNameEn,
+                };
+              }
+            }
+            setShapesOrder(dbOrder);
+            setParentMap((prev) => ({ ...prev, ...dbParents }));
+            setCustomNames((prev) => ({ ...prev, ...dbCustomNames }));
+          }
+        })
+        .catch(() => undefined);
+
       setSearchQuery('');
       setDraggedId(null);
       setDragOverId(null);
@@ -427,6 +453,21 @@ export default function ShapeSettingsModal({
       // Ignore local storage write errors
     }
 
+    // Persist directly to backend database collection gemstone_shapes
+    const shapesPayload = finalOrder.map((code, idx) => ({
+      code,
+      sortOrder: idx + 1,
+      customNameFa: customNames[code]?.nameFa || '',
+      customNameEn: customNames[code]?.nameEn || '',
+      parentCode: parentMap[code] || '',
+    }));
+
+    void fetch('/api/gemstone-shapes', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ shapes: shapesPayload }),
+    }).catch(() => undefined);
+
     if (onPreferencesChange) {
       onPreferencesChange(finalOrder, Array.from(hiddenShapes), customNames, parentMap);
     }
@@ -599,6 +640,11 @@ export default function ShapeSettingsModal({
                         ↳
                       </span>
                     )}
+
+                    {/* Diamond Cut Facet Wireframe SVG */}
+                    <div className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-cyan-100 bg-cyan-50/70 p-1 text-cyan-600 shadow-2xs dark:border-cyan-900/60 dark:bg-cyan-950/40 dark:text-cyan-400">
+                      <GemstoneShapeIcon shapeCode={id} className="size-full" />
+                    </div>
 
                     {/* Content / Inline Edit Form */}
                     {isEditing ? (

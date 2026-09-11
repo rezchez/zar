@@ -80,7 +80,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ message: 'ابتدا وارد حساب شوید.' }, { status: 401 });
   }
 
-  if (!hasPermission(context.user, 'manage_inventory') && !hasPermission(context.user, 'manage_settings')) {
+  const canManage =
+    hasPermission(context.user, 'document.create') ||
+    hasPermission(context.user, 'document.manage') ||
+    hasPermission(context.user, 'settings.edit') ||
+    hasPermission(context.user, 'cash.manage');
+
+  if (!canManage) {
     return NextResponse.json({ message: 'دسترسی لازم برای افزودن محل نگهداری وجود ندارد.' }, { status: 403 });
   }
 

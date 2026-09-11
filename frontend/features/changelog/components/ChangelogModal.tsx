@@ -29,7 +29,7 @@ type ChangelogModalProps = {
 
 export default function ChangelogModal({ isOpen: controlledIsOpen, onClose }: ChangelogModalProps) {
   const [internalIsOpen, setInternalIsOpen] = useState(false);
-  const [selectedVersion, setSelectedVersion] = useState<string>(CHANGELOG_RELEASES[0]?.version || '0.0.3-beta');
+  const [selectedVersion, setSelectedVersion] = useState<string>(CHANGELOG_RELEASES[0]?.version || '0.0.8-beta');
 
   const isModalOpen = controlledIsOpen !== undefined ? controlledIsOpen : internalIsOpen;
 
