@@ -753,7 +753,7 @@ export async function POST(request: Request) {
             quantity,
             weightCt,
             totalAmount,
-            accountId: '113050',
+            accountId: null,
           },
           dateValue,
           context.user.id,

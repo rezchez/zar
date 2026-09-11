@@ -282,7 +282,7 @@ export default function InitialGemstoneInventoryModal({
         (editingItem.valuationMethod as string) === 'per_piece'
           ? 'total_amount'
           : editingItem.valuationMethod || 'per_carat';
-      setValuationMethod(vm as ValuationMethod);
+      setValuationMethod(vm as any);
 
       const resolvedUnitPrice =
         editingItem.unitPrice || editingItem.costPerCarat || editingItem.costPerGram || 0;
@@ -653,7 +653,7 @@ export default function InitialGemstoneInventoryModal({
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'خطا در ثبت موجودی اول دوره سنگ');
+        throw new Error(data.message || data.error || 'خطا در ثبت موجودی اول دوره سنگ');
       }
 
       onSuccess?.();

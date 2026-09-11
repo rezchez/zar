@@ -954,7 +954,21 @@ export async function postGemstoneOpeningInventory(
     throw new Error('مبلغ ارزشیابی موجودی اولیه سنگ نمی‌تواند صفر باشد.');
   }
 
-  const inventoryAccountCodeOrId = gemstoneItem.accountId || SYSTEM_ACCOUNT_CODES.GOLD_INVENTORY;
+  let inventoryAccountCodeOrId = gemstoneItem.accountId || SYSTEM_ACCOUNT_CODES.GOLD_INVENTORY;
+  try {
+    const acc = await resolveAccount(pb, inventoryAccountCodeOrId, false);
+    const dbCheck = await pb.collection('chart_of_accounts').getOne(acc.id).catch(() => null);
+    if (!dbCheck) {
+      const codeCheck = await pb.collection('chart_of_accounts').getFirstListItem(
+        pb.filter('code = {:code}', { code: acc.code })
+      ).catch(() => null);
+      if (!codeCheck) {
+        inventoryAccountCodeOrId = SYSTEM_ACCOUNT_CODES.GOLD_INVENTORY;
+      }
+    }
+  } catch {
+    inventoryAccountCodeOrId = SYSTEM_ACCOUNT_CODES.GOLD_INVENTORY;
+  }
   const counterAccountCodeOrId = SYSTEM_ACCOUNT_CODES.OPENING_EQUITY;
 
   const desc =

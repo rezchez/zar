@@ -1078,6 +1078,7 @@ export interface GemstoneOpeningRecord {
 
   // Financial Valuation & Opening Balance
   isOpeningBalance?: boolean;
+  openingBalanceDate?: string;
   valuationMethod?: 'per_carat' | 'per_gram' | 'per_piece' | 'total_amount' | 'total_value';
   unitPrice?: number;
   costPerCarat?: number;
