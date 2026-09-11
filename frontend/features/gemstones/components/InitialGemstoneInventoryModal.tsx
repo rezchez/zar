@@ -638,6 +638,7 @@ export default function InitialGemstoneInventoryModal({
       totalCost: calculatedTotal,
 
       storageLocation: storageLocation.trim() || undefined,
+      inventoryCode: internalCode.trim() || editingItem?.inventoryCode || editingItem?.internalCode || undefined,
       internalCode: internalCode.trim() || undefined,
       acquisitionDate: acquisitionDate || undefined,
       description: description.trim() || undefined,

@@ -563,8 +563,11 @@ export async function POST(request: Request) {
 
     const dateValue = String(body?.date || body?.openingBalanceDate || dateToJalaliString(new Date())).trim();
 
-    // Generate internal inventory_code if new
-    let inventoryCode = String(body?.inventoryCode || '').trim();
+    // Resolve internal inventory_code
+    let inventoryCode = String(
+      body?.inventoryCode || body?.internalCode || body?.inventory_code || body?.lotNumber || ''
+    ).trim();
+
     if (!recordId && !inventoryCode) {
       const prefix = category === 'diamond' ? 'DIA' : 'GEM';
       const count = await context.pb.collection('gemstone_inventory').getList(1, 1, {
@@ -572,6 +575,10 @@ export async function POST(request: Request) {
       }).catch(() => ({ totalItems: 0 }));
       const nextNum = (count.totalItems || 0) + 1;
       inventoryCode = `${prefix}-${String(nextNum).padStart(6, '0')}`;
+    }
+    if (!recordId && !inventoryCode) {
+      const prefix = category === 'diamond' ? 'DIA' : 'GEM';
+      inventoryCode = `${prefix}-${Date.now().toString().slice(-6)}`;
     }
 
     // Measurements representation
@@ -584,7 +591,7 @@ export async function POST(request: Request) {
         : String(body?.measurementsText || '').trim();
 
     const payload: Record<string, unknown> = {
-      inventory_code: inventoryCode,
+      ...(inventoryCode ? { inventory_code: inventoryCode } : {}),
       gemstone_type: gemstoneTypeId || null,
       category,
       species: species || (category === 'diamond' ? 'Diamond' : ''),
@@ -707,6 +714,8 @@ export async function POST(request: Request) {
       resultRecord = await context.pb.collection('gemstone_inventory').create(payload);
     }
 
+    const effectiveInventoryCode = String(resultRecord.inventory_code || inventoryCode || '').trim();
+
     // Record ledger transaction in gemstone_inventory_transactions
     try {
       const txPayload = {
@@ -721,9 +730,9 @@ export async function POST(request: Request) {
         date: dateValue,
         source_id: resultRecord.id,
         source_key: `opening:gemstone:${resultRecord.id}`,
-        lot_number: String(body?.lotNumber || body?.lot_number || inventoryCode).trim(),
+        lot_number: String(body?.lotNumber || body?.lot_number || effectiveInventoryCode).trim(),
         weighted_avg_cost_at_tx: weightedAvgCostPerCt,
-        notes: `موجودی اولیه ${category === 'diamond' ? 'الماس' : 'سنگ'} [${inventoryCode}]`,
+        notes: `موجودی اولیه ${category === 'diamond' ? 'الماس' : 'سنگ'} [${effectiveInventoryCode}]`,
         created_by: context.user.id,
       };
 
@@ -747,7 +756,7 @@ export async function POST(request: Request) {
         await postGemstoneOpeningInventory(
           {
             id: String(resultRecord.id || ''),
-            inventoryCode,
+            inventoryCode: effectiveInventoryCode,
             stoneName: stoneDisplayName,
             category,
             quantity,
@@ -758,7 +767,7 @@ export async function POST(request: Request) {
           dateValue,
           context.user.id,
           context.pb,
-          `موجودی اولیه ${category === 'diamond' ? 'الماس' : 'سنگ'} ${stoneDisplayName} [${inventoryCode}] (${quantity} عدد - ${weightCt} ct)`,
+          `موجودی اولیه ${category === 'diamond' ? 'الماس' : 'سنگ'} ${stoneDisplayName} [${effectiveInventoryCode}] (${quantity} عدد - ${weightCt} ct)`,
         );
       } catch (err) {
         // Rollback created record if journal posting fails on creation

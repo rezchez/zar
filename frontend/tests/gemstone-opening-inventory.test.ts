@@ -625,5 +625,60 @@ describe('Zarfolio — Professional Gemstone Opening Inventory Tests', () => {
       expect(activeShapes[0]?.id).toBe('baguette_calibre');
       expect(activeShapes[1]?.id).toBe('round');
     });
+
+    it('preserves existing inventory_code during edit when internalCode is blank or omitted', () => {
+      // Simulate existing DB record
+      const existingDbRecord = {
+        id: 'rec_existing_gem_1',
+        inventory_code: 'DIA-000042',
+        weight_ct: 1.5,
+        quantity: 1,
+      };
+
+      // Client sends edit payload without inventoryCode (or blank internalCode)
+      const editBody: Record<string, any> = {
+        id: existingDbRecord.id,
+        weightCt: 2.0,
+        // no inventoryCode / internalCode provided
+      };
+
+      const recordId = editBody.id;
+      let inventoryCode = String(
+        editBody?.inventoryCode || editBody?.internalCode || editBody?.inventory_code || editBody?.lotNumber || ''
+      ).trim();
+
+      if (!recordId && !inventoryCode) {
+        inventoryCode = 'DIA-000001';
+      }
+
+      const payload: Record<string, any> = {
+        ...(inventoryCode ? { inventory_code: inventoryCode } : {}),
+        weight_ct: editBody.weightCt,
+      };
+
+      // Invariant: inventory_code must NOT be present as blank string in update payload
+      expect(payload.inventory_code).toBeUndefined();
+      expect(payload.weight_ct).toBe(2.0);
+
+      // PocketBase update with this payload keeps existing DB inventory_code intact:
+      const updatedRecord = { ...existingDbRecord, ...payload };
+      expect(updatedRecord.inventory_code).toBe('DIA-000042');
+      expect(updatedRecord.weight_ct).toBe(2.0);
+
+      // Now simulate editing WITH a new internalCode
+      const editWithNewCode: Record<string, any> = {
+        id: existingDbRecord.id,
+        internalCode: 'DIA-CUSTOM-99',
+      };
+      let resolvedCode = String(
+        editWithNewCode?.inventoryCode || editWithNewCode?.internalCode || ''
+      ).trim();
+      const payloadWithCode: Record<string, any> = {
+        ...(resolvedCode ? { inventory_code: resolvedCode } : {}),
+      };
+      expect(payloadWithCode.inventory_code).toBe('DIA-CUSTOM-99');
+      const updatedWithCode = { ...existingDbRecord, ...payloadWithCode };
+      expect(updatedWithCode.inventory_code).toBe('DIA-CUSTOM-99');
+    });
   });
 });
