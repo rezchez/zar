@@ -6,6 +6,7 @@ import { hasPermission } from '@/lib/authorization';
 import {
   calculateGoodsInventorySummary,
   GOODS_CATEGORIES,
+  ALL_GOODS_CATEGORIES,
   type GoodsCategory,
   type GoodsOpeningRecord,
 } from '@/lib/goods-inventory';
@@ -130,9 +131,9 @@ export async function POST(request: Request) {
     const recordId = String(body?.id || '').trim();
     const goodsTypeId = String(body?.goodsTypeId || body?.goods_type || '').trim();
     const itemNameInput = String(body?.itemName || body?.item_name || '').trim();
-    const categoryInput = String(body?.category || 'general_goods').trim() as GoodsCategory;
+    const categoryInput = String(body?.category || 'resin_casting').trim() as GoodsCategory;
     const quantity = Number(String(body?.quantity ?? '').replace(/,/g, ''));
-    const unitInput = String(body?.unit || 'عدد').trim();
+    const unitInput = String(body?.unit || 'لیتر').trim();
     const unitPrice = Number(String(body?.unitPrice ?? body?.unit_price ?? 0).replace(/,/g, ''));
     const dateInput = String(body?.date || '').trim();
     const storageLocation = String(body?.storageLocation || body?.storage_location || '').trim();
@@ -144,8 +145,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: 'نام کالا نمی‌تواند خالی باشد.' }, { status: 400 });
     }
 
-    if (!GOODS_CATEGORIES[categoryInput]) {
-      return NextResponse.json({ message: 'دسته‌بندی کالای انتخاب شده نامعتبر است.' }, { status: 400 });
+    if (!GOODS_CATEGORIES[categoryInput as 'resin_casting']) {
+      return NextResponse.json({ message: 'تنها ثبت مواد اولیه و رزین ریخته‌گری در این بخش مجاز است. سنگ‌ها و فلزات را در بخش‌های مربوطه ثبت کنید.' }, { status: 400 });
     }
 
     if (!Number.isFinite(quantity) || quantity <= 0) {
@@ -195,7 +196,7 @@ export async function POST(request: Request) {
     // 3. Double-entry Journal Entry posting if valuation is set
     if (totalAmount > 0) {
       try {
-        const categoryMeta = GOODS_CATEGORIES[categoryInput];
+        const categoryMeta = ALL_GOODS_CATEGORIES[categoryInput] || ALL_GOODS_CATEGORIES.resin_casting;
         await postGoodsOpeningInventory(
           {
             id: String(resultRecord.id || ''),

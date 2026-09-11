@@ -35,6 +35,8 @@ import {
   SATURATIONS,
   TONES,
   TRANSPARENCIES,
+  ROOT_CATEGORIES,
+  isLondonBlueTopaz,
   type GemstoneOpeningRecord,
 } from '@/lib/gemstone';
 import { formatCaratWeight, formatGramWeight } from '@/lib/gemstone-weight';
@@ -71,6 +73,8 @@ export default function GemstoneDetailModal({
   const toneObj = TONES.find((t) => t.id === gemstone.tone);
   const satObj = SATURATIONS.find((s) => s.id === gemstone.saturation);
 
+  const rootCategoryObj = ROOT_CATEGORIES.find((rc) => rc.id === gemstone.rootCategory);
+
   const handleCopyReportNumber = () => {
     if (gemstone.certificateReportNumber) {
       void navigator.clipboard.writeText(gemstone.certificateReportNumber);
@@ -101,11 +105,30 @@ export default function GemstoneDetailModal({
                     {gemstone.internalCode}
                   </span>
                 )}
+                {/* Root Category Badge */}
+                {rootCategoryObj && (
+                  <span
+                    className={`rounded-lg px-2 py-0.5 text-[10px] font-black ${
+                      gemstone.rootCategory === 'laboratory_grown'
+                        ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300'
+                        : gemstone.rootCategory === 'simulant'
+                        ? 'bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-300'
+                        : gemstone.rootCategory === 'synthetic'
+                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'
+                        : gemstone.rootCategory === 'treated_natural'
+                        ? 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300'
+                        : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
+                    }`}
+                  >
+                    {rootCategoryObj.labelFa}
+                    {gemstone.growthMethod && ` (${gemstone.growthMethod})`}
+                  </span>
+                )}
               </div>
               <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
                 {isDiamond
-                  ? gemstone.diamondType === 'lab_grown'
-                    ? 'الماس سنتتیک (آزمایشگاهی - Lab-Grown)'
+                  ? gemstone.diamondType === 'lab_grown' || gemstone.rootCategory === 'laboratory_grown'
+                    ? `الماس آزمایشگاهی (${gemstone.growthMethod || 'CVD / HPHT'})`
                     : 'الماس طبیعی (Natural Diamond)'
                   : `${speciesObj?.nameFa || ''} ${gemstone.variety ? `— ${gemstone.variety}` : ''}`}
               </p>
@@ -128,6 +151,94 @@ export default function GemstoneDetailModal({
 
         {/* Scrollable Body */}
         <div className="flex-1 space-y-5 overflow-y-auto p-6 text-xs">
+
+          {/* Lab-Grown Diamond Dossier */}
+          {(gemstone.rootCategory === 'laboratory_grown' || gemstone.diamondType === 'lab_grown') && (
+            <div className="rounded-2xl border border-purple-200 bg-purple-50/60 p-3.5 space-y-2 dark:border-purple-900/60 dark:bg-purple-950/20">
+              <span className="flex items-center gap-1.5 text-xs font-black text-purple-900 dark:text-purple-300">
+                <SparklesIcon className="size-4 text-purple-600" />
+                مشخصات تخصصی الماس آزمایشگاهی (Lab-Grown Diamond Dossier)
+              </span>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                <div>
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400">روش سنتز (Growth Method)</span>
+                  <div className="font-bold text-purple-950 dark:text-purple-200">
+                    {gemstone.growthMethod || 'CVD'}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400">بهسازی پس از رشد</span>
+                  <div className="font-bold text-slate-800 dark:text-slate-200">
+                    {gemstone.postGrowthTreatment === 'none_detected'
+                      ? 'بدون بهسازی (None Detected)'
+                      : gemstone.postGrowthTreatment === 'detected'
+                      ? 'دارای بهسازی (Detected)'
+                      : 'نامشخص'}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400">حکاکی لیزری شناسه</span>
+                  <div className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                    {gemstone.laserInscription || 'ثبت نشده'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Melee Diamond Bar-Khaneh Parcel Pool Dossier */}
+          {isParcel && (
+            <div className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-3.5 space-y-2 dark:border-indigo-900/60 dark:bg-indigo-950/20">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-xs font-black text-indigo-950 dark:text-indigo-200">
+                  <Tag size={14} className="text-indigo-600 dark:text-indigo-400" />
+                  مشخصات بارخانه الماس و حوضچه همگن (Parcel Pool Dossier)
+                </span>
+                {gemstone.lotNumber && (
+                  <span className="rounded-md bg-indigo-100 px-2 py-0.5 font-mono text-[10px] font-bold text-indigo-800 dark:bg-indigo-900/50 dark:text-indigo-200">
+                    بچ: {gemstone.lotNumber}
+                  </span>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div>
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400">محدوده سایز / الک</span>
+                  <div className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                    {gemstone.sizeMin !== undefined && gemstone.sizeMax !== undefined
+                      ? `${gemstone.sizeMin} – ${gemstone.sizeMax} ${gemstone.sizeUnit || 'ct'}`
+                      : '—'}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400">محدوده رنگی (Color Range)</span>
+                  <div className="font-mono font-black text-cyan-700 dark:text-cyan-300">
+                    {gemstone.colorRangeDisplay || (gemstone.colorMin && gemstone.colorMax ? `${gemstone.colorMin}–${gemstone.colorMax}` : '—')}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400">محدوده پاکی (Clarity Range)</span>
+                  <div className="font-mono font-black text-indigo-700 dark:text-indigo-300">
+                    {gemstone.clarityRangeDisplay || (gemstone.clarityMin && gemstone.clarityMax ? `${gemstone.clarityMin}–${gemstone.clarityMax}` : '—')}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400">تعداد قطعات</span>
+                  <div className="font-bold text-slate-800 dark:text-slate-200">
+                    {gemstone.pieces ?? 1} قطعه
+                  </div>
+                </div>
+              </div>
+
+              {gemstone.poolIdentityKey && (
+                <div className="pt-1 border-t border-indigo-100 dark:border-indigo-900/40">
+                  <span className="text-[10px] text-slate-400">کلید هویتی حوضچه (Pool Identity Key): </span>
+                  <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[10px] text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                    {gemstone.poolIdentityKey}
+                  </code>
+                </div>
+              )}
+            </div>
+          )}
           {/* Certificate Banner (if applicable) */}
           {gemstone.certificateLab && gemstone.certificateLab !== 'none' && (
             <div className="flex items-center justify-between rounded-2xl border border-cyan-100 bg-cyan-50/50 p-4 dark:border-cyan-900/50 dark:bg-cyan-950/20">
@@ -196,23 +307,23 @@ export default function GemstoneDetailModal({
             </div>
 
             <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-3.5 dark:border-slate-800 dark:bg-slate-800/40">
-              <span className="text-[11px] font-medium text-slate-400">
-                {isParcel ? 'تعداد قطعات (سنگ)' : 'ابعاد (طول × عرض × عمق)'}
-              </span>
+              <span className="text-[11px] font-medium text-slate-400">تعداد سنگ (قطعه)</span>
               <div className="mt-1 font-bold text-slate-800 dark:text-slate-200">
-                {isParcel ? (
-                  `${gemstone.pieces ?? 1} عدد`
-                ) : gemstone.measurementsLength && gemstone.measurementsWidth ? (
-                  <span className="font-mono text-[11px]">
-                    {gemstone.measurementsLength} × {gemstone.measurementsWidth}
-                    {gemstone.measurementsDepth ? ` × ${gemstone.measurementsDepth}` : ''} mm
-                  </span>
-                ) : (
-                  '—'
-                )}
+                {gemstone.pieces ?? 1} عدد
               </div>
             </div>
           </div>
+
+          {/* Measurements if present */}
+          {gemstone.measurementsLength && gemstone.measurementsWidth && (
+            <div className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50/50 px-4 py-2.5 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-800/30 dark:text-slate-300">
+              <span className="font-medium">ابعاد هندسی سنگ (طول × عرض × عمق):</span>
+              <span className="font-mono font-bold text-slate-900 dark:text-white">
+                {gemstone.measurementsLength} × {gemstone.measurementsWidth}
+                {gemstone.measurementsDepth ? ` × ${gemstone.measurementsDepth}` : ''} mm
+              </span>
+            </div>
+          )}
 
           {/* Detailed Gemological Quality Breakdown */}
           {isDiamond ? (
@@ -301,12 +412,14 @@ export default function GemstoneDetailModal({
                   </div>
                 </div>
 
-                <div className="space-y-0.5">
-                  <span className="text-[10px] text-slate-400">واریته</span>
-                  <div className="font-bold text-slate-800 dark:text-slate-200">
-                    {gemstone.variety || '—'}
+                {gemstone.variety && (
+                  <div className="space-y-0.5">
+                    <span className="text-[10px] text-slate-400">واریته</span>
+                    <div className="font-bold text-slate-800 dark:text-slate-200">
+                      {gemstone.variety}
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <div className="space-y-0.5">
                   <span className="text-[10px] text-slate-400">رنگ و فام (Hue)</span>
@@ -406,6 +519,31 @@ export default function GemstoneDetailModal({
                   </span>
                 </div>
               </div>
+
+              {isParcel && (
+                <div className="col-span-2 sm:col-span-3 grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-emerald-200/60 dark:border-emerald-900/40">
+                  <div className="flex items-center justify-between rounded-xl bg-white/60 p-2 text-[11px] dark:bg-slate-800/60">
+                    <span className="text-slate-600 dark:text-slate-400 font-bold">میانگین موزون نرخ هر قیراط (WAC/ct):</span>
+                    <span className="font-mono font-black text-emerald-700 dark:text-emerald-300">
+                      {gemstone.wacPerCarat
+                        ? `${formatNumberWithCommas(convertRialToToman(gemstone.wacPerCarat))} تومان`
+                        : gemstone.weightCt > 0
+                        ? `${formatNumberWithCommas(convertRialToToman(Math.round((gemstone.totalCost ?? gemstone.totalAmount ?? 0) / gemstone.weightCt)))} تومان`
+                        : '—'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between rounded-xl bg-white/60 p-2 text-[11px] dark:bg-slate-800/60">
+                    <span className="text-slate-600 dark:text-slate-400 font-bold">میانگین موزون نرخ هر قطعه (WAC/pc):</span>
+                    <span className="font-mono font-black text-emerald-700 dark:text-emerald-300">
+                      {gemstone.wacPerPiece
+                        ? `${formatNumberWithCommas(convertRialToToman(gemstone.wacPerPiece))} تومان`
+                        : gemstone.pieces && gemstone.pieces > 0
+                        ? `${formatNumberWithCommas(convertRialToToman(Math.round((gemstone.totalCost ?? gemstone.totalAmount ?? 0) / gemstone.pieces)))} تومان`
+                        : '—'}
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

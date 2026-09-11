@@ -19,6 +19,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import InitialGoodsInventoryModal from './InitialGoodsInventoryModal';
 import {
   GOODS_CATEGORIES,
+  ALL_GOODS_CATEGORIES,
   type GoodsCategory,
   type GoodsInventorySummary,
   type GoodsOpeningRecord,
@@ -134,14 +135,14 @@ export default function InitialGoodsInventoryClient({
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-black text-slate-900 dark:text-white sm:text-2xl">
-                موجودی اول دوره کالا و ملزومات
+                موجودی اول دوره رزین ریخته‌گری
               </h1>
               <span className="rounded-full bg-purple-500/10 px-2.5 py-0.5 text-xs font-black text-purple-700 dark:bg-purple-500/20 dark:text-purple-300">
-                رزین، سنگ و ابزار
+                رزین و قالب‌گیری
               </span>
             </div>
             <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-              ثبت و مدیریت تراز پایه انواع رزین‌های ریخته‌گری، نگین‌های اتمی، سنگ‌های قیمتی و ملزومات کارگاهی
+              ثبت و مدیریت تراز پایه انواع رزین‌های سه‌بعدی ریخته‌گری طلا و نقره، موم و مواد قالب‌گیری کارگاه (حساب ۱۱۳۰۴۰)
             </p>
           </div>
         </div>
@@ -152,7 +153,7 @@ export default function InitialGoodsInventoryClient({
             className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
           >
             <FolderTree size={16} className="text-purple-600 dark:text-purple-400" />
-            <span>مشاهده در درختواره (۱۱۳۰)</span>
+            <span>مشاهده در درختواره (۱۱۳۰۴۰)</span>
           </Link>
 
           <button
@@ -171,17 +172,17 @@ export default function InitialGoodsInventoryClient({
             className="inline-flex items-center gap-1.5 rounded-xl bg-purple-600 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-purple-700 dark:bg-purple-500 dark:hover:bg-purple-600"
           >
             <Plus size={16} />
-            <span>ثبت موجودی اولیه کالا</span>
+            <span>ثبت موجودی اولیه رزین</span>
           </button>
         </div>
       </div>
 
       {/* Summary KPI Cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {/* Total Items Card */}
         <div className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">تعداد کل اقلام</span>
+            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">تعداد کل اقلام رزین</span>
             <div className="flex size-9 items-center justify-center rounded-xl bg-purple-500/10 text-purple-600 dark:bg-purple-500/20 dark:text-purple-400">
               <Package size={18} />
             </div>
@@ -211,7 +212,7 @@ export default function InitialGoodsInventoryClient({
         {/* Resin & Casting Summary */}
         <div className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">مواد و رزین ریخته‌گری</span>
+            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">مواد و رزین ریخته‌گری (۱۱۳۰۴۰)</span>
             <div className="flex size-9 items-center justify-center rounded-xl bg-purple-500/10 text-purple-600 dark:bg-purple-500/20 dark:text-purple-400">
               <Boxes size={18} />
             </div>
@@ -221,22 +222,6 @@ export default function InitialGoodsInventoryClient({
           </div>
           <p className="mt-1 text-[11px] text-slate-400">
             ارزش: {formatNumberWithCommas(convertRialToToman(summary.byCategory.resin_casting?.totalAmount || 0))} تومان
-          </p>
-        </div>
-
-        {/* Gemstones & Tools */}
-        <div className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">سنگ، نگین و ابزار</span>
-            <div className="flex size-9 items-center justify-center rounded-xl bg-blue-500/10 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400">
-              <Package size={18} />
-            </div>
-          </div>
-          <div className="mt-3 text-lg font-black text-slate-900 dark:text-white">
-            {((summary.byCategory.gemstones?.itemCount || 0) + (summary.byCategory.workshop_tools?.itemCount || 0)).toLocaleString('fa-IR')} <span className="text-xs font-normal text-slate-400">قلم</span>
-          </div>
-          <p className="mt-1 text-[11px] text-slate-400">
-            ارزش: {formatNumberWithCommas(convertRialToToman((summary.byCategory.gemstones?.totalAmount || 0) + (summary.byCategory.workshop_tools?.totalAmount || 0)))} تومان
           </p>
         </div>
       </div>
@@ -291,10 +276,10 @@ export default function InitialGoodsInventoryClient({
               <Package size={28} />
             </div>
             <h3 className="mt-4 text-sm font-bold text-slate-800 dark:text-slate-200">
-              موجودی اولیه کالایی یافت نشد
+              موجودی اولیه رزینی یافت نشد
             </h3>
             <p className="mt-1 max-w-sm text-xs text-slate-500 dark:text-slate-400">
-              برای ثبت رزین‌های ریخته‌گری، نگین‌های اتمی، سنگ‌های قیمتی یا ملزومات مصرفی روی دکمه «ثبت موجودی اولیه کالا» کلیک کنید.
+              برای ثبت رزین‌های ریخته‌گری سه‌بعدی و مواد قالب‌گیری روی دکمه «ثبت موجودی اولیه رزین» کلیک کنید.
             </p>
             <button
               type="button"
@@ -302,7 +287,7 @@ export default function InitialGoodsInventoryClient({
               className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-purple-600 px-4 py-2 text-xs font-bold text-white hover:bg-purple-700 dark:bg-purple-500"
             >
               <Plus size={16} />
-              <span>ثبت موجودی اولیه کالا</span>
+              <span>ثبت موجودی اولیه رزین</span>
             </button>
           </div>
         ) : (
@@ -323,7 +308,7 @@ export default function InitialGoodsInventoryClient({
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
                 {filteredItems.map((item, idx) => {
-                  const catMeta = GOODS_CATEGORIES[item.category] || GOODS_CATEGORIES.general_goods;
+                  const catMeta = ALL_GOODS_CATEGORIES[item.category] || ALL_GOODS_CATEGORIES.resin_casting;
                   const totalToman = convertRialToToman(item.totalAmount);
                   const unitToman = convertRialToToman(item.unitPrice);
 

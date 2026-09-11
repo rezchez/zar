@@ -14,20 +14,31 @@ export interface GoodsCategoryMeta {
   badgeColor: string;
 }
 
-export const GOODS_CATEGORIES: Record<GoodsCategory, GoodsCategoryMeta> = {
+/**
+ * Active Goods Categories — Exclusively restricted to Resin Casting (113040).
+ * Gemstones and Diamonds are strictly managed in the Gemstone Inventory (113050).
+ */
+export const GOODS_CATEGORIES: Record<'resin_casting', GoodsCategoryMeta> = {
   resin_casting: {
     key: 'resin_casting',
     name: 'مواد اولیه و رزین ریخته‌گری',
     codePrefix: '113040',
-    description: 'رزین‌های سه‌بعدی، موم و گچ ریخته‌گری',
+    description: 'رزین‌های سه‌بعدی ریخته‌گری طلا و نقره، موم و مواد قالب‌گیری کارگاهی',
     accountCode: '113040',
     badgeColor: 'bg-purple-100 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300 border-purple-200 dark:border-purple-800',
   },
+};
+
+/**
+ * Comprehensive dictionary for historical / backward-compatible record lookup.
+ */
+export const ALL_GOODS_CATEGORIES: Record<GoodsCategory, GoodsCategoryMeta> = {
+  ...GOODS_CATEGORIES,
   gemstones: {
     key: 'gemstones',
-    name: 'سنگ، نگین و مروارید',
+    name: 'سنگ و نگین (انتقال‌یافته به موجودی سنگ)',
     codePrefix: '113050',
-    description: 'نگین‌های اتمی، سنگ‌های قیمتی، نیمه‌قیمتی و مروارید',
+    description: 'نگین‌های اتمی، سنگ‌های قیمتی و مروارید (ثبت در بخش موجودی سنگ)',
     accountCode: '113050',
     badgeColor: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
   },
@@ -58,17 +69,14 @@ export const GOODS_CATEGORIES: Record<GoodsCategory, GoodsCategoryMeta> = {
 };
 
 export const COMMON_GOODS_UNITS = [
-  'عدد',
   'لیتر',
   'کیلوگرم',
   'گرم',
-  'قیراط',
-  'بسته',
-  'قالب',
-  'جین',
-  'رشته',
-  'متر',
   'قوطی',
+  'بسته',
+  'عدد',
+  'قالب',
+  'متر',
 ] as const;
 
 export type GoodsUnit = typeof COMMON_GOODS_UNITS[number] | string;
@@ -127,13 +135,13 @@ export function calculateGoodsTotalAmount(quantity: number, unitPrice: number): 
 }
 
 export function calculateGoodsInventorySummary(items: GoodsOpeningRecord[]): GoodsInventorySummary {
-  const categories = Object.keys(GOODS_CATEGORIES) as GoodsCategory[];
+  const categories = Object.keys(ALL_GOODS_CATEGORIES) as GoodsCategory[];
   const byCategory: Record<GoodsCategory, GoodsSummaryByCategory> = {} as any;
 
   for (const cat of categories) {
     byCategory[cat] = {
       category: cat,
-      categoryName: GOODS_CATEGORIES[cat].name,
+      categoryName: ALL_GOODS_CATEGORIES[cat].name,
       itemCount: 0,
       totalQuantity: 0,
       totalAmount: 0,
@@ -144,11 +152,11 @@ export function calculateGoodsInventorySummary(items: GoodsOpeningRecord[]): Goo
   let totalValuation = 0;
 
   for (const item of items) {
-    const cat = (item.category || 'general_goods') as GoodsCategory;
+    const cat = (item.category || 'resin_casting') as GoodsCategory;
     if (!byCategory[cat]) {
       byCategory[cat] = {
         category: cat,
-        categoryName: GOODS_CATEGORIES[cat]?.name || cat,
+        categoryName: ALL_GOODS_CATEGORIES[cat]?.name || cat,
         itemCount: 0,
         totalQuantity: 0,
         totalAmount: 0,

@@ -21,22 +21,22 @@ export default function InitialGoodsInventoryCard({
       <div className="relative z-10 space-y-4">
         {/* Top Header: Icon & Badge */}
         <div className="flex items-center justify-between">
-          <div className="flex size-12 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-600 transition-transform group-hover:scale-105 dark:bg-amber-500/25 dark:text-amber-400">
+          <div className="flex size-12 items-center justify-center rounded-2xl bg-purple-500/15 text-purple-600 transition-transform group-hover:scale-105 dark:bg-purple-500/25 dark:text-purple-400">
             <Package size={24} className="stroke-[2.2]" />
           </div>
 
           <span className="inline-flex items-center rounded-full bg-purple-500/10 px-3 py-1 text-[11px] font-extrabold text-purple-700 dark:bg-purple-500/20 dark:text-purple-300">
-            رزین، سنگ و ملزومات
+            رزین و مواد اولیه
           </span>
         </div>
 
         {/* Title & Description */}
         <div>
           <h2 className="text-base font-black text-slate-900 dark:text-white">
-            موجودی اول دوره کالا و ملزومات
+            موجودی اول دوره رزین ریخته‌گری
           </h2>
           <p className="mt-1.5 h-10 text-xs leading-5 font-medium text-slate-500 line-clamp-2 dark:text-slate-400">
-            رزین‌های ریخته‌گری، نگین‌های اتمی، برلیان، ملزومات پرداختکاری و بسته‌بندی کارگاه
+            انواع رزین‌های سه‌بعدی ریخته‌گری طلا و نقره، موم و مواد قالب‌گیری کارگاه طلا و جواهرسازی
           </p>
         </div>
       </div>
@@ -45,9 +45,9 @@ export default function InitialGoodsInventoryCard({
       <div className="relative z-10 mt-6 border-t border-slate-100 pt-4 dark:border-slate-800">
         <Link
           href={listHref}
-          className="inline-flex w-full items-center justify-between rounded-2xl bg-slate-50 px-4 py-2.5 text-xs font-black text-slate-700 transition hover:bg-amber-500 hover:text-slate-950 dark:bg-slate-800/80 dark:text-slate-200 dark:hover:bg-amber-400 dark:hover:text-slate-950"
+          className="inline-flex w-full items-center justify-between rounded-2xl bg-slate-50 px-4 py-2.5 text-xs font-black text-slate-700 transition hover:bg-purple-600 hover:text-white dark:bg-slate-800/80 dark:text-slate-200 dark:hover:bg-purple-500 dark:hover:text-white"
         >
-          <span>ورود به مدیریت موجودی اول دوره کالا</span>
+          <span>ورود به مدیریت موجودی اول دوره رزین</span>
           <ArrowLeft size={16} className="transition-transform group-hover:-translate-x-1" />
         </Link>
       </div>

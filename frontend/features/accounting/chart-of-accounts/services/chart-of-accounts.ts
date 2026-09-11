@@ -2438,7 +2438,7 @@ export function enrichAccountsWithGoods(
     name: string;
   }> = [
     { key: 'resin_casting', suffix: '40', id: 'coa_group_goods_resin', name: 'موجودی مواد اولیه و رزین ریخته‌گری' },
-    { key: 'gemstones', suffix: '50', id: 'coa_group_goods_gemstones', name: 'موجودی سنگ، نگین و مروارید' },
+    { key: 'gemstones', suffix: '50', id: 'coa_group_goods_gemstones', name: 'موجودی سنگ‌های قیمتی و نیمه‌قیمتی' },
     { key: 'workshop_tools', suffix: '60', id: 'coa_group_goods_workshop', name: 'موجودی ملزومات مصرفی و پرداختکاری' },
     { key: 'packaging', suffix: '70', id: 'coa_group_goods_packaging', name: 'موجودی جعبه و ملزومات بسته‌بندی' },
     { key: 'general_goods', suffix: '80', id: 'coa_group_goods_general', name: 'سایر کالاها و ملزومات مصرفی' },
@@ -2548,6 +2548,8 @@ export interface GemstoneInventoryEnrichmentInput {
   certificate_lab?: string;
   reportNumber?: string;
   report_number?: string;
+  certificateReportNumber?: string;
+  certificate_report_number?: string;
   totalAmount?: number;
   total_amount?: number;
 }

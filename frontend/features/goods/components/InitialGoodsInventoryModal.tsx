@@ -7,6 +7,7 @@ import {
   calculateGoodsTotalAmount,
   COMMON_GOODS_UNITS,
   GOODS_CATEGORIES,
+  ALL_GOODS_CATEGORIES,
   type GoodsCategory,
   type GoodsOpeningRecord,
   type GoodsTypeRecord,
@@ -188,10 +189,10 @@ export default function InitialGoodsInventoryModal({
             </div>
             <div>
               <h3 className="text-base font-black text-slate-900 dark:text-white sm:text-lg">
-                {editingItem ? 'ویرایش موجودی اولیه کالا و ملزومات' : 'ثبت موجودی اولیه کالا و ملزومات'}
+                {editingItem ? 'ویرایش موجودی اولیه رزین ریخته‌گری' : 'ثبت موجودی اولیه رزین ریخته‌گری'}
               </h3>
               <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                رزین، سنگ و نگین، ملزومات کارگاهی و بسته‌بندی طلاسازی
+                انواع رزین‌های سه‌بعدی ریخته‌گری، موم و مواد قالب‌گیری کارگاه طلاسازی (حساب ۱۱۳۰۴۰)
               </p>
             </div>
           </div>
@@ -227,7 +228,7 @@ export default function InitialGoodsInventoryModal({
                 <option value="">-- کالای سفارشی / وارد کردن نام دلخواه --</option>
                 {goodsTypes.map((t) => (
                   <option key={t.id} value={t.id}>
-                    {t.name} ({GOODS_CATEGORIES[t.category]?.name || t.category})
+                    {t.name} ({ALL_GOODS_CATEGORIES[t.category]?.name || t.category})
                   </option>
                 ))}
               </select>

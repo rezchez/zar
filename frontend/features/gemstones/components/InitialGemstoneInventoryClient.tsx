@@ -25,6 +25,7 @@ import {
   CUT_GRADES,
   GEMSTONE_SHAPES,
   GEMSTONE_SPECIES,
+  ROOT_CATEGORIES,
   type GemstoneInventorySummary,
   type GemstoneOpeningRecord,
 } from '@/lib/gemstone';
@@ -123,12 +124,23 @@ export default function InitialGemstoneInventoryClient({
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
       // Tab filter
-      if (selectedTab === 'diamonds' && item.category !== 'diamond') return false;
-      if (selectedTab === 'sapphires' && item.species !== 'corundum_sapphire') return false;
-      if (selectedTab === 'rubies' && item.species !== 'corundum_ruby') return false;
-      if (selectedTab === 'emeralds' && item.species !== 'beryl_emerald') return false;
-      if (selectedTab === 'colored' && item.category !== 'colored_gemstone') return false;
+      if (selectedTab === 'natural_diamonds') {
+        if (item.category !== 'diamond' || item.diamondType === 'lab_grown' || item.rootCategory === 'laboratory_grown') return false;
+      }
+      if (selectedTab === 'lab_diamonds') {
+        if (item.category !== 'diamond' || (item.diamondType !== 'lab_grown' && item.rootCategory !== 'laboratory_grown')) return false;
+      }
       if (selectedTab === 'parcels' && item.mode !== 'parcel') return false;
+      if (selectedTab === 'rubies_sapphires') {
+        if (item.species !== 'corundum_ruby' && item.species !== 'corundum_sapphire') return false;
+      }
+      if (selectedTab === 'emeralds' && item.species !== 'beryl_emerald') return false;
+      if (selectedTab === 'colored') {
+        if (item.category !== 'colored_gemstone' && item.category !== 'other_gemstone') return false;
+      }
+      if (selectedTab === 'simulants') {
+        if (item.rootCategory !== 'simulant' && !item.variety?.toLowerCase().includes('cz')) return false;
+      }
 
       // Text search
       if (searchQuery.trim()) {
@@ -282,12 +294,13 @@ export default function InitialGemstoneInventoryClient({
         <div className="flex flex-wrap gap-1.5 rounded-2xl border border-slate-200 bg-white p-1.5 dark:border-slate-800 dark:bg-slate-900">
           {[
             { id: 'all', label: 'همه اقلام' },
-            { id: 'diamonds', label: 'الماس‌ها' },
-            { id: 'sapphires', label: 'یاقوت کبود' },
-            { id: 'rubies', label: 'یاقوت سرخ' },
+            { id: 'natural_diamonds', label: 'الماس طبیعی' },
+            { id: 'lab_diamonds', label: 'الماس آزمایشگاهی (CVD/HPHT)' },
+            { id: 'parcels', label: 'بارخانه‌های ریز (Parcels)' },
+            { id: 'rubies_sapphires', label: 'یاقوت سرخ و کبود' },
             { id: 'emeralds', label: 'زمرد' },
             { id: 'colored', label: 'سایر سنگ‌های رنگی' },
-            { id: 'parcels', label: 'بسته‌ای / بار سنگ' },
+            { id: 'simulants', label: 'بدل / اتمی (CZ)' },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -321,22 +334,22 @@ export default function InitialGemstoneInventoryClient({
       <div className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900">
         <div className="overflow-x-auto">
           <table className="w-full text-right text-xs">
-            <thead>
-              <tr className="border-b border-slate-100 bg-slate-50/75 text-slate-500 dark:border-slate-800 dark:bg-slate-800/50 dark:text-slate-400">
-                <th className="px-5 py-3.5 font-bold">کد و عنوان گوهر</th>
-                <th className="px-4 py-3.5 font-bold">طبقه‌بندی و گونه</th>
-                <th className="px-4 py-3.5 font-bold">مشخصات درجه‌بندی</th>
-                <th className="px-4 py-3.5 font-bold">تراش و شکل</th>
-                <th className="px-4 py-3.5 font-bold">وزن (قیراط / گرم)</th>
-                <th className="px-4 py-3.5 font-bold">شناسنامه / آزمایشگاه</th>
-                <th className="px-4 py-3.5 font-bold">ارزش دفتری</th>
-                <th className="px-5 py-3.5 text-center font-bold">عملیات</th>
+            <thead className="border-b border-slate-100 bg-slate-50/70 text-[11px] font-black text-slate-400 dark:border-slate-800 dark:bg-slate-800/40">
+              <tr>
+                <th className="px-5 py-3.5">عنوان و کد گوهر</th>
+                <th className="px-4 py-3.5">گونه و دسته‌بندی</th>
+                <th className="px-4 py-3.5">درجه‌بندی رنگ و پاکی</th>
+                <th className="px-4 py-3.5">تراش و فرم</th>
+                <th className="px-4 py-3.5">وزن (ct / g)</th>
+                <th className="px-4 py-3.5">شناسنامه و اصالت</th>
+                <th className="px-4 py-3.5">بهای تمام‌شده و WAC</th>
+                <th className="px-5 py-3.5 text-center">عملیات</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {filteredItems.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-12 text-center text-slate-400">
+                  <td colSpan={8} className="px-5 py-12 text-center text-slate-500">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <Gem size={32} className="text-slate-300 dark:text-slate-600" />
                       <span className="font-bold">هیچ سنگ قیمتی در این بخش ثبت نشده است</span>
@@ -364,10 +377,35 @@ export default function InitialGemstoneInventoryClient({
                             <div className="font-black text-slate-900 dark:text-white">
                               {item.itemName || speciesObj?.nameFa || 'سنگ بدون نام'}
                             </div>
-                            <div className="flex items-center gap-1.5 mt-0.5">
+                            <div className="flex flex-wrap items-center gap-1.5 mt-1">
                               {item.internalCode && (
                                 <span className="rounded-md bg-slate-100 px-1.5 py-0.2 font-mono text-[10px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                                   {item.internalCode}
+                                </span>
+                              )}
+                              {item.rootCategory && (
+                                <span
+                                  className={`rounded px-1.5 py-0.2 text-[9px] font-black ${
+                                    item.rootCategory === 'laboratory_grown'
+                                      ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300'
+                                      : item.rootCategory === 'simulant'
+                                      ? 'bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-300'
+                                      : item.rootCategory === 'synthetic'
+                                      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'
+                                      : item.rootCategory === 'treated_natural'
+                                      ? 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300'
+                                      : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
+                                  }`}
+                                >
+                                  {item.rootCategory === 'laboratory_grown'
+                                    ? `آزمایشگاهی (${item.growthMethod || 'CVD'})`
+                                    : item.rootCategory === 'simulant'
+                                    ? 'بدل / اتمی (CZ)'
+                                    : item.rootCategory === 'synthetic'
+                                    ? 'سنتتیک'
+                                    : item.rootCategory === 'treated_natural'
+                                    ? 'بهسازی‌شده'
+                                    : 'طبیعی'}
                                 </span>
                               )}
                               {item.mode === 'parcel' && (
@@ -386,7 +424,9 @@ export default function InitialGemstoneInventoryClient({
                           {isDiamond ? (
                             <span className="inline-flex items-center gap-1 text-cyan-700 dark:text-cyan-300">
                               <Sparkles size={12} />
-                              {item.diamondType === 'lab_grown' ? 'الماس آزمایشگاهی' : 'الماس طبیعی'}
+                              {item.diamondType === 'lab_grown' || item.rootCategory === 'laboratory_grown'
+                                ? `الماس آزمایشگاهی (${item.growthMethod || 'CVD'})`
+                                : 'الماس طبیعی'}
                             </span>
                           ) : (
                             <span>{speciesObj?.nameFa || item.species}</span>
@@ -395,11 +435,25 @@ export default function InitialGemstoneInventoryClient({
                         {item.variety && (
                           <div className="text-[11px] text-slate-400">{item.variety}</div>
                         )}
+                        {item.mode === 'parcel' && item.sizeMin !== undefined && item.sizeMax !== undefined && (
+                          <div className="font-mono text-[10px] text-indigo-600 dark:text-indigo-400">
+                            سایز: {item.sizeMin}–{item.sizeMax} {item.sizeUnit || 'ct'}
+                          </div>
+                        )}
                       </td>
 
                       {/* Grading / Color */}
                       <td className="px-4 py-4">
-                        {isDiamond ? (
+                        {item.mode === 'parcel' ? (
+                          <div className="space-y-0.5">
+                            <span className="font-mono font-bold text-cyan-700 dark:text-cyan-300">
+                              رنگ: {item.colorRangeDisplay || (item.colorMin && item.colorMax ? `${item.colorMin}–${item.colorMax}` : '—')}
+                            </span>
+                            <div className="font-mono text-[11px] text-indigo-600 dark:text-indigo-400">
+                              پاکی: {item.clarityRangeDisplay || (item.clarityMin && item.clarityMax ? `${item.clarityMin}–${item.clarityMax}` : '—')}
+                            </div>
+                          </div>
+                        ) : isDiamond ? (
                           <div className="space-y-0.5">
                             <span className="font-bold text-slate-800 dark:text-slate-200">
                               رنگ: {item.colorMode === 'fancy' ? `Fancy ${item.fancyColorHue || ''}` : item.colorGrade || '—'}
@@ -432,13 +486,18 @@ export default function InitialGemstoneInventoryClient({
                         )}
                       </td>
 
-                      {/* Weights */}
+                      {/* Weights & Count */}
                       <td className="px-4 py-4">
                         <div className="font-mono font-black text-cyan-600 dark:text-cyan-400">
                           {formatCaratWeight(item.weightCt)} ct
                         </div>
                         <div className="font-mono text-[11px] text-slate-400">
                           {formatGramWeight(item.weightG)} g
+                          {item.pieces !== undefined && item.pieces > 1 && (
+                            <span className="mr-1.5 font-sans font-bold text-slate-600 dark:text-slate-300">
+                              ({item.pieces} قطعه)
+                            </span>
+                          )}
                         </div>
                       </td>
 
@@ -467,15 +526,21 @@ export default function InitialGemstoneInventoryClient({
                       {/* Valuation */}
                       <td className="px-4 py-4">
                         <div className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                          {formatNumberWithCommas(convertRialToToman(item.totalCost))} تومان
+                          {formatNumberWithCommas(convertRialToToman(item.totalCost || item.totalAmount || 0))} تومان
                         </div>
-                        <div className="text-[10px] text-slate-400">
-                          {item.valuationMethod === 'per_carat'
-                            ? 'بر مبنای قیراط'
-                            : item.valuationMethod === 'per_gram'
-                            ? 'بر مبنای گرم'
-                            : 'مبلغ مقطوع'}
-                        </div>
+                        {item.mode === 'parcel' ? (
+                          <div className="text-[10px] text-slate-500 font-mono">
+                            WAC: {item.weightCt > 0 ? formatNumberWithCommas(convertRialToToman(Math.round((item.totalCost || item.totalAmount || 0) / item.weightCt))) : '—'} ت/ct
+                          </div>
+                        ) : (
+                          <div className="text-[10px] text-slate-400">
+                            {item.valuationMethod === 'per_carat'
+                              ? 'بر مبنای قیراط'
+                              : item.valuationMethod === 'per_gram'
+                              ? 'بر مبنای گرم'
+                              : 'مبلغ مقطوع'}
+                          </div>
+                        )}
                       </td>
 
                       {/* Actions */}

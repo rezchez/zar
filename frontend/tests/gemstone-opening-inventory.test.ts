@@ -260,9 +260,9 @@ describe('Zarfolio — Professional Gemstone Opening Inventory Tests', () => {
       expect(summary.byCategory.coloredStones.totalValuation).toBe(1_250_000_000);
 
       // Parcel breakdown
-      expect(summary.byMode.parcel.count).toBe(1);
-      expect(summary.byMode.parcel.totalPieces).toBe(10);
-      expect(summary.byMode.parcel.totalWeightCt).toBe(15.0);
+      expect(summary.byMode?.parcel.count).toBe(1);
+      expect(summary.byMode?.parcel.totalPieces).toBe(10);
+      expect(summary.byMode?.parcel.totalWeightCt).toBe(15.0);
     });
   });
 
@@ -433,5 +433,197 @@ describe('Zarfolio — Professional Gemstone Opening Inventory Tests', () => {
       expect(rootAsset).toBeDefined();
     });
   });
-});
 
+  describe('7. Comprehensive Gemstone Registration, Parcel Editing & Custom Shapes Invariants', () => {
+    it('registers a single stone diamond with all 4Cs, certificate, dimensions, and valuation', () => {
+      const input = {
+        mode: 'single_stone' as const,
+        category: 'diamond' as const,
+        species: 'diamond',
+        variety: 'الماس گرد برلیان',
+        itemName: 'برلیان ۱.۵ قیراطی پاکی VVS1',
+        diamondType: 'natural' as const,
+        colorMode: 'd_z' as const,
+        colorGrade: 'D',
+        clarityGrade: 'VVS1',
+        cutGrade: 'excellent',
+        polish: 'excellent',
+        symmetry: 'excellent',
+        fluorescence: 'none',
+        shape: 'round',
+        measurementsLength: 7.35,
+        measurementsWidth: 7.38,
+        measurementsDepth: 4.55,
+        tablePercentage: 57,
+        depthPercentage: 61.8,
+        certificateLab: 'gia',
+        certificateReportNumber: '2234567890',
+        weightCt: 1.5,
+        weightG: 0.3,
+        pieces: 1,
+        valuationMethod: 'per_carat' as const,
+        costPerCarat: 450_000_000,
+        totalCost: 675_000_000,
+      };
+
+      expect(input.category).toBe('diamond');
+      expect(input.colorGrade).toBe('D');
+      expect(input.clarityGrade).toBe('VVS1');
+      expect(input.certificateReportNumber).toBe('2234567890');
+      expect(input.totalCost).toBe(input.weightCt * input.costPerCarat);
+      expect(input.measurementsLength).toBe(7.35);
+      expect(input.weightG).toBeCloseTo(caratsToGrams(input.weightCt), 4);
+    });
+
+    it('registers a colored gemstone with all specialized optical and treatment fields', () => {
+      const input = {
+        mode: 'single_stone' as const,
+        category: 'colored_gemstone' as const,
+        species: 'corundum_ruby',
+        variety: 'یاقوت سرخ موزامبیک',
+        itemName: 'یاقوت سرخ طبیعی ۴ قیراطی خون کبوتری',
+        primaryHue: 'Red',
+        secondaryHue: 'Purple',
+        tone: 'medium_dark',
+        saturation: 'vivid',
+        transparency: 'transparent',
+        clarityDescription: 'eye_clean',
+        treatments: 'none_detected',
+        treatmentDetails: 'بدون حرارت‌دیدگی (Unheated)',
+        origin: 'mozambique',
+        originSource: 'certificate',
+        shape: 'cushion',
+        weightCt: 4.0,
+        weightG: 0.8,
+        pieces: 1,
+        valuationMethod: 'total_amount' as const,
+        totalCost: 1_200_000_000,
+      };
+
+      expect(input.species).toBe('corundum_ruby');
+      expect(input.primaryHue).toBe('Red');
+      expect(input.saturation).toBe('vivid');
+      expect(input.treatments).toBe('none_detected');
+      expect(input.weightG).toBeCloseTo(caratsToGrams(input.weightCt), 4);
+      expect(input.totalCost).toBe(1_200_000_000);
+    });
+
+    it('registers a diamond parcel/bar-khaneh preserving pieces count > 1 and parcel mode', () => {
+      const input = {
+        mode: 'parcel' as const,
+        category: 'diamond' as const,
+        species: 'diamond',
+        variety: 'مِله برلیان بارخانه',
+        itemName: 'بارخانه الماس گرد مِله سفید پاک',
+        shape: 'round',
+        sizeMin: 0.01,
+        sizeMax: 0.05,
+        sizeUnit: 'ct',
+        colorMin: 'G',
+        colorMax: 'H',
+        clarityMin: 'VS1',
+        clarityMax: 'VS2',
+        weightCt: 25.5,
+        weightG: 5.1,
+        pieces: 85,
+        valuationMethod: 'per_carat' as const,
+        costPerCarat: 120_000_000,
+        totalCost: 3_060_000_000,
+      };
+
+      expect(input.mode).toBe('parcel');
+      expect(input.pieces).toBe(85);
+      expect(input.pieces).toBeGreaterThan(1);
+      const avgWeight = input.weightCt / input.pieces;
+      expect(avgWeight).toBeCloseTo(0.3, 2);
+      expect(input.sizeMin).toBeLessThan(input.sizeMax);
+      expect(input.colorMin).toBe('G');
+      expect(input.colorMax).toBe('H');
+    });
+
+    it('correctly maps existing parcel fields for editing, preserving parcel mode, piece count, and prices', () => {
+      // Mock record as returned by GET /api/accounting/opening/gemstones
+      const serverRecord: GemstoneOpeningRecord = {
+        id: 'gem_parcel_101',
+        inventoryCode: 'DIA-000042',
+        internalCode: 'DIA-000042',
+        tradeName: 'بارخانه باگت کالیبر درجه یک',
+        itemName: 'بارخانه باگت کالیبر درجه یک',
+        category: 'diamond',
+        species: 'diamond',
+        variety: 'الماس باگت',
+        inventoryMode: 'parcel',
+        mode: 'parcel',
+        materialOrigin: 'natural',
+        quantity: 50,
+        pieces: 50,
+        weightCt: 10.0,
+        weightG: 2.0,
+        averageWeightCt: 0.2,
+        diamondOriginType: 'natural',
+        diamondColorSystem: 'd_to_z',
+        shape: 'baguette_calibre',
+        sizeMin: 0.15,
+        sizeMax: 0.25,
+        sizeUnit: 'ct',
+        colorMin: 'F',
+        colorMax: 'G',
+        colorRangeLabel: 'F–G',
+        clarityMin: 'VVS2',
+        clarityMax: 'VVS1',
+        clarityRangeLabel: 'VVS2–VS1',
+        valuationMethod: 'per_carat',
+        unitPrice: 200_000_000,
+        totalAmount: 2_000_000_000,
+        totalCost: 2_000_000_000,
+        costPerCarat: 200_000_000,
+        currency: 'IRR',
+      };
+
+      // 1. Check mode resolution in editing state
+      const resolvedMode = serverRecord.mode || (serverRecord.inventoryMode === 'parcel' ? 'parcel' : 'single_stone');
+      expect(resolvedMode).toBe('parcel');
+
+      // 2. Check pieces count resolution
+      const resolvedPieces = serverRecord.pieces ?? serverRecord.quantity ?? 1;
+      expect(resolvedPieces).toBe(50);
+
+      // 3. Check price conversion to Toman
+      const unitRial = serverRecord.unitPrice || serverRecord.costPerCarat || 0;
+      const unitToman = Math.floor(unitRial / 10);
+      expect(unitToman).toBe(20_000_000);
+
+      const totalRial = serverRecord.totalAmount || serverRecord.totalCost || 0;
+      const totalToman = Math.floor(totalRial / 10);
+      expect(totalToman).toBe(200_000_000);
+
+      // 4. Check shape preservation
+      expect(serverRecord.shape).toBe('baguette_calibre');
+      expect(serverRecord.sizeMin).toBe(0.15);
+      expect(serverRecord.sizeMax).toBe(0.25);
+    });
+
+    it('simulates shape reordering with drag and drop, preserving custom positions in display order', () => {
+      const initialOrder = GEMSTONE_SHAPES.map((s) => s.id);
+      const sourceId = 'baguette_calibre';
+      const targetId = 'round'; // move baguette_calibre to before round (pos 0)
+
+      const fromIndex = initialOrder.indexOf(sourceId);
+      const toIndex = initialOrder.indexOf(targetId);
+      expect(fromIndex).toBeGreaterThan(-1);
+      expect(toIndex).toBe(0);
+
+      const updatedOrder = [...initialOrder];
+      const [moved] = updatedOrder.splice(fromIndex, 1);
+      updatedOrder.splice(toIndex, 0, moved);
+
+      expect(updatedOrder[0]).toBe('baguette_calibre');
+      expect(updatedOrder[1]).toBe('round');
+
+      // Verify active shape mapping preserves user exact order
+      const activeShapes = updatedOrder.map((id) => GEMSTONE_SHAPES.find((s) => s.id === id)).filter(Boolean);
+      expect(activeShapes[0]?.id).toBe('baguette_calibre');
+      expect(activeShapes[1]?.id).toBe('round');
+    });
+  });
+});

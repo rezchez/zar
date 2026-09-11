@@ -5,10 +5,17 @@ import { getServerAuthContext } from '@/lib/auth';
 import { hasPermission } from '@/lib/authorization';
 import {
   calculateGemstoneSummary,
+  generatePoolIdentityKey,
+  isLondonBlueTopaz,
+  validateClarityRange,
+  validateColorRange,
   type GemstoneCategory,
   type GemstoneOpeningRecord,
   type InventoryMode,
   type MaterialOrigin,
+  type RootCategory,
+  type LabGrowthMethod,
+  type PostGrowthTreatment,
 } from '@/lib/gemstone';
 import {
   calculateAverageWeight,
@@ -116,35 +123,49 @@ export async function GET() {
         species: String(r.species || expandedType?.species || ''),
         variety: String(r.variety || expandedType?.variety || ''),
         tradeName: String(r.trade_name || ''),
+        itemName: String(r.trade_name || ''),
         inventoryMode: (r.inventory_mode || 'single') as InventoryMode,
+        mode: (r.inventory_mode === 'parcel' ? 'parcel' : 'single_stone') as 'single_stone' | 'parcel',
         materialOrigin: (r.material_origin || 'natural') as MaterialOrigin,
         quantity: Number(r.quantity || 1),
+        pieces: Number(r.quantity || 1),
+        internalCode: String(r.inventory_code || ''),
         weightCt,
         weightG,
         averageWeightCt: Number(r.average_weight_ct || 0),
 
         // Diamond attributes
         diamondOriginType: r.diamond_origin_type as any,
+        diamondType: ((r.diamond_origin_type === 'laboratory_grown' || r.root_category === 'laboratory_grown') ? 'lab_grown' : 'natural') as any,
         diamondColorSystem: r.diamond_color_system as any,
+        colorMode: (r.diamond_color_system === 'fancy_color' ? 'fancy' : 'd_z') as any,
         diamondColorGrade: r.diamond_color_grade as any,
+        colorGrade: String(r.diamond_color_grade || ''),
         fancyColorHue: String(r.fancy_color_hue || ''),
         fancyColorModifier: String(r.fancy_color_modifier || ''),
         fancyColorGrade: r.fancy_color_grade as any,
         fancyColorOrigin: String(r.fancy_color_origin || ''),
         diamondClarityGrade: r.diamond_clarity_grade as any,
+        clarityGrade: String(r.diamond_clarity_grade || ''),
         gradingSource: r.grading_source as any,
         shape: String(r.shape || ''),
         cutGrade: r.cut_grade as any,
         polish: String(r.polish || ''),
         symmetry: String(r.symmetry || ''),
+        fluorescence: String(r.fluorescence_strength || 'none'),
         fluorescenceStrength: String(r.fluorescence_strength || ''),
         fluorescenceColor: String(r.fluorescence_color || ''),
         lengthMm: r.length_mm ? Number(r.length_mm) : undefined,
         widthMm: r.width_mm ? Number(r.width_mm) : undefined,
         depthMm: r.depth_mm ? Number(r.depth_mm) : undefined,
+        measurementsLength: r.length_mm ? Number(r.length_mm) : undefined,
+        measurementsWidth: r.width_mm ? Number(r.width_mm) : undefined,
+        measurementsDepth: r.depth_mm ? Number(r.depth_mm) : undefined,
         measurementsText: String(r.measurements_text || ''),
         tablePercent: r.table_percent ? Number(r.table_percent) : undefined,
+        tablePercentage: r.table_percent ? Number(r.table_percent) : undefined,
         depthPercent: r.depth_percent ? Number(r.depth_percent) : undefined,
+        depthPercentage: r.depth_percent ? Number(r.depth_percent) : undefined,
         girdle: String(r.girdle || ''),
         culet: String(r.culet || ''),
 
@@ -171,10 +192,13 @@ export async function GET() {
         hasCertificate: Boolean(r.has_certificate),
         certificateLab: String(r.certificate_lab || ''),
         reportNumber: String(r.report_number || ''),
+        certificateReportNumber: String(r.report_number || ''),
         reportDate: String(r.report_date || ''),
+        certificateDate: String(r.report_date || ''),
         reportType: String(r.report_type || ''),
         reportUrl: String(r.report_url || ''),
         certificateVerificationStatus: r.certificate_verification_status as any,
+        verificationStatus: String(r.certificate_verification_status || 'not_checked'),
         certificateVerifiedAt: String(r.certificate_verified_at || ''),
         certificateFile: String(r.certificate_file || ''),
         stoneImage: String(r.stone_image || ''),
@@ -190,7 +214,42 @@ export async function GET() {
         valuationMethod: (r.valuation_method || 'total_value') as ValuationMethod,
         unitPrice: Number(r.unit_price || 0),
         totalAmount: Number(r.total_amount || 0),
+        totalCost: Number(r.total_amount || 0),
+        costPerCarat: r.valuation_method === 'per_carat' ? Number(r.unit_price || 0) : undefined,
+        costPerGram: r.valuation_method === 'per_gram' ? Number(r.unit_price || 0) : undefined,
         currency: String(r.currency || 'IRR'),
+        lotNumber: String(r.inventory_code || ''),
+
+        // Professional Classification & Parcels
+        rootCategory: (r.root_category || (r.material_origin === 'laboratory_grown' ? 'laboratory_grown' : r.material_origin === 'synthetic' ? 'synthetic' : r.material_origin === 'imitation' ? 'simulant' : 'natural')) as any,
+        growthMethod: (r.growth_method as any) || undefined,
+        postGrowthTreatment: (r.post_growth_treatment as any) || undefined,
+        laserInscription: String(r.laser_inscription || ''),
+        chemicalBasis: String(r.chemical_basis || ''),
+        syntheticMethod: String(r.synthetic_method || ''),
+        commercialName: String(r.commercial_name || ''),
+        originCountry: String(r.origin_country || ''),
+        locality: String(r.locality || ''),
+        mine: String(r.mine || ''),
+        treatmentMethod: String(r.treatment_method || ''),
+        sizeMin: r.size_min !== undefined && r.size_min !== null ? Number(r.size_min) : undefined,
+        sizeMax: r.size_max !== undefined && r.size_max !== null ? Number(r.size_max) : undefined,
+        sizeUnit: (r.size_unit as any) || 'ct',
+        colorMin: String(r.color_min || ''),
+        colorMax: String(r.color_max || ''),
+        colorRangeLabel: String(r.color_range_label || ''),
+        colorRangeDisplay: String(r.color_range_label || ''),
+        clarityMin: String(r.clarity_min || ''),
+        clarityMax: String(r.clarity_max || ''),
+        clarityRangeLabel: String(r.clarity_range_label || ''),
+        clarityRangeDisplay: String(r.clarity_range_label || ''),
+        poolIdentityKey: String(r.pool_identity_key || ''),
+        parentPoolId: String(r.parent_pool_id || ''),
+        parcelReportNumber: String(r.parcel_report_number || ''),
+        costMethod: String(r.cost_method || 'weighted_average'),
+        weightedAvgCostPerCt: r.weighted_avg_cost_per_ct ? Number(r.weighted_avg_cost_per_ct) : undefined,
+        weightedAvgCostPerPiece: r.weighted_avg_cost_per_piece ? Number(r.weighted_avg_cost_per_piece) : undefined,
+
         createdBy: String(r.created_by || ''),
         created: String(r.created || ''),
         updated: String(r.updated || ''),
@@ -237,12 +296,14 @@ export async function POST(request: Request) {
     const gemstoneTypeId = String(body?.gemstoneTypeId || body?.gemstone_type || '').trim();
     const species = String(body?.species || '').trim();
     const variety = String(body?.variety || '').trim();
-    const tradeName = String(body?.tradeName || '').trim();
-    const inventoryMode = String(body?.inventoryMode || 'single').trim() as InventoryMode;
+    const tradeName = String(body?.tradeName || body?.itemName || '').trim();
+    const inventoryMode = String(
+      body?.inventoryMode || (body?.mode === 'single_stone' ? 'single' : body?.mode) || 'single'
+    ).trim() as InventoryMode;
     const materialOrigin = String(body?.materialOrigin || 'natural').trim() as MaterialOrigin;
 
     // Mode & Quantity
-    let quantity = Math.max(1, Math.round(Number(body?.quantity) || 1));
+    let quantity = Math.max(1, Math.round(Number(body?.quantity ?? body?.pieces ?? 1)));
     if (inventoryMode === 'single') {
       quantity = 1;
     }
@@ -277,10 +338,17 @@ export async function POST(request: Request) {
     const averageWeightCt = inventoryMode === 'parcel' ? calculateAverageWeight(weightCt, quantity) : weightCt;
 
     // Certificate Validation & Uniqueness Check
-    const hasCertificate = Boolean(body?.hasCertificate ?? body?.has_certificate);
+    const hasCertificate = Boolean(
+      body?.hasCertificate ??
+      body?.has_certificate ??
+      (body?.certificateLab && body.certificateLab !== 'none')
+    );
     const certificateLab = String(body?.certificateLab || body?.certificate_lab || '').trim();
-    const rawReportNumber = String(body?.reportNumber || body?.report_number || '').trim();
+    const rawReportNumber = String(
+      body?.reportNumber || body?.report_number || body?.certificateReportNumber || ''
+    ).trim();
     const reportNumber = rawReportNumber.replace(/\s+/g, '');
+    const reportDate = String(body?.reportDate || body?.report_date || body?.certificateDate || '').trim();
 
     if (hasCertificate) {
       if (!certificateLab) {
@@ -307,26 +375,191 @@ export async function POST(request: Request) {
       }
     }
 
+    // Professional Root Category & Classification
+    let rootCategory = String(body?.rootCategory || body?.root_category || '').trim() as RootCategory;
+    let growthMethod = String(body?.growthMethod || body?.growth_method || '').trim();
+    const postGrowthTreatment = String(body?.postGrowthTreatment || body?.post_growth_treatment || 'none_detected').trim();
+    const laserInscription = String(body?.laserInscription || body?.laser_inscription || '').trim();
+    let chemicalBasis = String(body?.chemicalBasis || body?.chemical_basis || '').trim();
+    let syntheticMethod = String(body?.syntheticMethod || body?.synthetic_method || '').trim();
+    let commercialName = String(body?.commercialName || body?.commercial_name || '').trim();
+    let originCountry = String(body?.originCountry || body?.origin_country || '').trim();
+    let locality = String(body?.locality || '').trim();
+    const mine = String(body?.mine || '').trim();
+    let treatmentMethod = String(body?.treatmentMethod || body?.treatment_method || '').trim();
+
+    // Default rootCategory
+    if (!rootCategory) {
+      if (materialOrigin === 'laboratory_grown' || body?.diamondType === 'lab_grown') rootCategory = 'laboratory_grown';
+      else if (materialOrigin === 'synthetic') rootCategory = 'synthetic';
+      else if (materialOrigin === 'imitation') rootCategory = 'simulant';
+      else rootCategory = 'natural';
+    }
+
+    // 1. Cubic Zirconia (CZ) Validation
+    const isCz =
+      species.toLowerCase().includes('cubic') ||
+      variety.toLowerCase().includes('cubic') ||
+      tradeName.toLowerCase().includes('cubic') ||
+      variety.toLowerCase() === 'cz' ||
+      tradeName.toLowerCase() === 'cz' ||
+      chemicalBasis.toLowerCase().includes('zirconium') ||
+      variety.includes('اتمی');
+
+    if (isCz) {
+      if (category === 'diamond' || rootCategory === 'laboratory_grown' || (body?.diamondType === 'natural')) {
+        return NextResponse.json({
+          message: 'کیوبیک زیرکونیا (CZ / نگین اتمی) شبیه‌ساز (Simulant) است و نباید به عنوان الماس طبیعی یا الماس آزمایشگاهی ثبت شود.',
+        }, { status: 400 });
+      }
+      rootCategory = 'simulant';
+      chemicalBasis = 'zirconium_dioxide';
+    }
+
+    // 2. Laboratory-Grown Diamond (CVD / HPHT) Validation
+    if (category === 'diamond' && (rootCategory === 'laboratory_grown' || body?.diamondType === 'lab_grown')) {
+      rootCategory = 'laboratory_grown';
+      if (growthMethod && !['CVD', 'HPHT', 'unknown'].includes(growthMethod)) {
+        return NextResponse.json({
+          message: 'روش رشد معتبر برای الماس آزمایشگاهی شامل CVD یا HPHT می‌باشد.',
+        }, { status: 400 });
+      }
+      if (!growthMethod) {
+        growthMethod = 'unknown';
+      }
+    }
+
+    if (growthMethod === 'CVD' || growthMethod === 'HPHT') {
+      if (rootCategory === 'simulant' || (body?.rootCategory === 'simulant')) {
+        return NextResponse.json({
+          message: 'الماس آزمایشگاهی (CVD/HPHT) هرگز نباید به عنوان شبیه‌ساز (Simulant) ثبت شود.',
+        }, { status: 400 });
+      }
+      rootCategory = 'laboratory_grown';
+    }
+
+    // 3. London Blue Topaz Validation
+    if (isLondonBlueTopaz(species, variety, tradeName)) {
+      if (rootCategory === 'laboratory_grown' || rootCategory === 'synthetic') {
+        return NextResponse.json({
+          message: 'توپاز لندن بلو (London Blue Topaz) گوهر طبیعی پرتودیده (Irradiated) است و گونه معدنی مستقل یا سنگ آزمایشگاهی نمی‌باشد.',
+        }, { status: 400 });
+      }
+      rootCategory = 'treated_natural';
+      commercialName = 'London Blue';
+      treatmentMethod = 'irradiation';
+    }
+
+    // 4. Songea Corundum Validation
+    if (locality.toLowerCase() === 'songea' || locality.includes('سونژا') || locality.includes('سونگی')) {
+      if (rootCategory === 'synthetic' || rootCategory === 'laboratory_grown') {
+        return NextResponse.json({
+          message: 'سونگی (Songea) یک خاستگاه جغرافیایی در کشور تانزانیا است و گوهر آن سنگ سنتتیک یا آزمایشگاهی نیست.',
+        }, { status: 400 });
+      }
+      locality = 'Songea';
+      originCountry = originCountry || 'Tanzania';
+    }
+
+    // 5. Gilson Synthetic Opal Validation
+    const isGilsonOpal =
+      (species.toLowerCase().includes('opal') || species.includes('اوپال')) &&
+      (syntheticMethod.toLowerCase() === 'gilson' || variety.toLowerCase().includes('gilson') || tradeName.toLowerCase().includes('gilson'));
+
+    if (isGilsonOpal) {
+      if (rootCategory === 'natural' && body?.rootCategory === 'natural') {
+        return NextResponse.json({
+          message: 'اوپال ژیلسون (Gilson Opal) یک گوهر سنتتیک با روش ساخت ژیلسون است و گوهر طبیعی محسوب نمی‌شود.',
+        }, { status: 400 });
+      }
+      rootCategory = 'synthetic';
+      syntheticMethod = 'Gilson';
+    }
+
+    // 6. Bar-Khaneh / Parcel Pool Range Validation & Identity Key
+    const sizeMin = body?.sizeMin !== undefined && body?.sizeMin !== null ? Number(body.sizeMin) : undefined;
+    const sizeMax = body?.sizeMax !== undefined && body?.sizeMax !== null ? Number(body.sizeMax) : undefined;
+    const sizeUnit = (body?.sizeUnit || 'ct') as 'ct' | 'mm';
+    const colorMin = String(body?.colorMin || body?.color_min || '').trim();
+    const colorMax = String(body?.colorMax || body?.color_max || '').trim();
+    const clarityMin = String(body?.clarityMin || body?.clarity_min || '').trim();
+    const clarityMax = String(body?.clarityMax || body?.clarity_max || '').trim();
+
+    let colorRangeLabel = String(body?.colorRangeLabel || body?.color_range_label || '').trim();
+    let clarityRangeLabel = String(body?.clarityRangeLabel || body?.clarity_range_label || '').trim();
+
+    if (sizeMin !== undefined && sizeMax !== undefined && sizeMin > sizeMax) {
+      return NextResponse.json({ message: 'حداقل سایز نمی‌تواند بزرگتر از حداکثر سایز باشد.' }, { status: 400 });
+    }
+
+    if (colorMin || colorMax) {
+      const colorCheck = validateColorRange(colorMin, colorMax);
+      if (!colorCheck.valid) {
+        return NextResponse.json({ message: colorCheck.error }, { status: 400 });
+      }
+      colorRangeLabel = colorCheck.label;
+    }
+
+    if (clarityMin || clarityMax) {
+      const clarityCheck = validateClarityRange(clarityMin, clarityMax);
+      if (!clarityCheck.valid) {
+        return NextResponse.json({ message: clarityCheck.error }, { status: 400 });
+      }
+      clarityRangeLabel = clarityCheck.label;
+    }
+
+    // Generate pool_identity_key
+    const poolIdentityKey = generatePoolIdentityKey({
+      rootCategory,
+      materialOrigin,
+      growthMethod,
+      category,
+      species,
+      shape: body?.shape || 'Round',
+      sizeMin,
+      sizeMax,
+      sizeUnit,
+      colorRangeLabel,
+      clarityRangeLabel,
+      cutGrade: body?.cutGrade,
+      polish: body?.polish,
+      symmetry: body?.symmetry,
+      fluorescence: body?.fluorescenceStrength || body?.fluorescence,
+    });
+
     // Diamond Specific Validations
-    const diamondOriginType = String(body?.diamondOriginType || 'natural').trim();
-    const diamondColorSystem = String(body?.diamondColorSystem || 'd_to_z').trim();
-    const diamondColorGrade = String(body?.diamondColorGrade || '').trim();
+    const diamondOriginType = String(
+      body?.diamondOriginType || (body?.diamondType === 'lab_grown' ? 'laboratory_grown' : rootCategory === 'laboratory_grown' ? 'laboratory_grown' : 'natural')
+    ).trim();
+    const diamondColorSystem = String(
+      body?.diamondColorSystem || (body?.colorMode === 'fancy' ? 'fancy_color' : 'd_to_z')
+    ).trim();
+    const diamondColorGrade = String(body?.diamondColorGrade || body?.colorGrade || '').trim();
     const fancyColorHue = String(body?.fancyColorHue || '').trim();
     const fancyColorModifier = String(body?.fancyColorModifier || '').trim();
     const fancyColorGrade = String(body?.fancyColorGrade || '').trim();
     const fancyColorOrigin = String(body?.fancyColorOrigin || '').trim();
-    const diamondClarityGrade = String(body?.diamondClarityGrade || '').trim();
-    const shape = String(body?.shape || 'Round').trim();
-    const cutGrade = String(body?.cutGrade || 'Excellent').trim();
+    const diamondClarityGrade = String(body?.diamondClarityGrade || body?.clarityGrade || '').trim();
+    const shape = String(body?.shape || 'round').trim();
+    const cutGrade = String(body?.cutGrade || 'excellent').trim();
 
     // Financial Valuation
     const valuationMethod = (body?.valuationMethod || 'total_value') as ValuationMethod;
-    const unitPrice = Math.max(0, Math.round(Number(String(body?.unitPrice ?? 0).replace(/,/g, ''))));
-    let totalAmount = Math.max(0, Math.round(Number(String(body?.totalAmount ?? 0).replace(/,/g, ''))));
+    const unitPrice = Math.max(
+      0,
+      Math.round(Number(String(body?.unitPrice ?? body?.costPerCarat ?? body?.costPerGram ?? 0).replace(/,/g, '')))
+    );
+    let totalAmount = Math.max(
+      0,
+      Math.round(Number(String(body?.totalAmount ?? body?.totalCost ?? 0).replace(/,/g, '')))
+    );
 
     if (unitPrice > 0 && totalAmount === 0) {
       totalAmount = calculateGemstoneValuation(valuationMethod, quantity, weightCt, weightG, unitPrice);
     }
+
+    const weightedAvgCostPerCt = weightCt > 0 ? Math.round(totalAmount / weightCt) : 0;
+    const weightedAvgCostPerPiece = quantity > 0 ? Math.round(totalAmount / quantity) : 0;
 
     const dateValue = String(body?.date || body?.openingBalanceDate || dateToJalaliString(new Date())).trim();
 
@@ -363,6 +596,36 @@ export async function POST(request: Request) {
       weight_ct: weightCt,
       weight_g: weightG,
       average_weight_ct: averageWeightCt,
+
+      // Classification
+      root_category: rootCategory,
+      growth_method: growthMethod || null,
+      post_growth_treatment: postGrowthTreatment || null,
+      laser_inscription: laserInscription,
+      chemical_basis: chemicalBasis,
+      synthetic_method: syntheticMethod,
+      commercial_name: commercialName,
+      origin_country: originCountry,
+      locality,
+      mine,
+      treatment_method: treatmentMethod,
+
+      // Parcel attributes
+      size_min: sizeMin,
+      size_max: sizeMax,
+      size_unit: sizeUnit,
+      color_min: colorMin,
+      color_max: colorMax,
+      color_range_label: colorRangeLabel,
+      clarity_min: clarityMin,
+      clarity_max: clarityMax,
+      clarity_range_label: clarityRangeLabel,
+      pool_identity_key: poolIdentityKey,
+      cost_method: 'weighted_average',
+      weighted_avg_cost_per_ct: weightedAvgCostPerCt,
+      weighted_avg_cost_per_piece: weightedAvgCostPerPiece,
+      parent_pool_id: String(body?.parentPoolId || body?.parent_pool_id || '').trim(),
+      parcel_report_number: String(body?.parcelReportNumber || body?.parcel_report_number || '').trim(),
 
       // Diamond
       diamond_origin_type: category === 'diamond' ? diamondOriginType : '',
@@ -404,7 +667,7 @@ export async function POST(request: Request) {
       treatment_status: String(body?.treatmentStatus || 'none_detected'),
       treatments: body?.treatments || [],
       treatment_notes: String(body?.treatmentNotes || ''),
-      geographic_origin: String(body?.geographicOrigin || ''),
+      geographic_origin: String(body?.geographicOrigin || originCountry || ''),
       origin_source: String(body?.originSource || ''),
       optical_phenomena: body?.opticalPhenomena || [],
 
@@ -412,7 +675,7 @@ export async function POST(request: Request) {
       has_certificate: hasCertificate,
       certificate_lab: hasCertificate ? certificateLab : '',
       report_number: hasCertificate ? reportNumber : '',
-      report_date: String(body?.reportDate || ''),
+      report_date: reportDate,
       report_type: String(body?.reportType || ''),
       report_url: String(body?.reportUrl || ''),
       certificate_verification_status: String(body?.certificateVerificationStatus || 'not_checked'),
@@ -458,6 +721,8 @@ export async function POST(request: Request) {
         date: dateValue,
         source_id: resultRecord.id,
         source_key: `opening:gemstone:${resultRecord.id}`,
+        lot_number: String(body?.lotNumber || body?.lot_number || inventoryCode).trim(),
+        weighted_avg_cost_at_tx: weightedAvgCostPerCt,
         notes: `موجودی اولیه ${category === 'diamond' ? 'الماس' : 'سنگ'} [${inventoryCode}]`,
         created_by: context.user.id,
       };
@@ -515,6 +780,29 @@ export async function POST(request: Request) {
         id: resultRecord.id,
         inventoryCode,
         category,
+        rootCategory,
+        growthMethod,
+        postGrowthTreatment,
+        laserInscription,
+        chemicalBasis,
+        syntheticMethod,
+        commercialName,
+        originCountry,
+        locality,
+        mine,
+        treatmentMethod,
+        sizeMin,
+        sizeMax,
+        sizeUnit,
+        colorMin,
+        colorMax,
+        colorRangeLabel,
+        clarityMin,
+        clarityMax,
+        clarityRangeLabel,
+        poolIdentityKey,
+        weightedAvgCostPerCt,
+        weightedAvgCostPerPiece,
         quantity,
         weightCt,
         weightG,
