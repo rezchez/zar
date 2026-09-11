@@ -255,7 +255,7 @@ export default function InitialGemstoneInventoryClient({
   return (
     <div dir="rtl" className="mx-auto max-w-7xl space-y-6">
       {/* Page Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-center gap-3">
           <Link
             href="/dashboard/documents/initial-inventory"
@@ -279,44 +279,46 @@ export default function InitialGemstoneInventoryClient({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
+        <div className="flex shrink-0 items-center gap-2">
           <Link
             href="/dashboard/accounting/chart-of-accounts?focus=1130"
-            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-slate-700 shadow-xs transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 cursor-pointer whitespace-nowrap"
+            title="مشاهده ساختار تفصیلی سنگ‌های قیمتی در درختواره کدینگ حساب‌ها (۱۱۳۰)"
           >
             <FolderTree size={16} className="text-cyan-600 dark:text-cyan-400" />
-            <span>مشاهده در درختواره (۱۱۳۰)</span>
+            <span className="hidden md:inline">مشاهده در درختواره (۱۱۳۰)</span>
           </Link>
 
           <button
             type="button"
             onClick={() => void fetchInventory()}
             disabled={loading}
-            className="rounded-xl border border-slate-200 bg-white p-2 text-slate-500 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 disabled:opacity-50"
-            title="به‌روزرسانی"
+            className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 shadow-xs transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 cursor-pointer whitespace-nowrap"
+            title="به‌روزرسانی لیست"
           >
-            <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
+            <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
+            <span className="hidden md:inline">به‌روزرسانی</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleOpenCreate}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-cyan-600 px-4 text-xs font-black text-white shadow-md shadow-cyan-600/20 transition hover:bg-cyan-500 dark:bg-cyan-500 dark:hover:bg-cyan-400 cursor-pointer whitespace-nowrap"
+          >
+            <Plus size={16} strokeWidth={2.5} />
+            <span>ثبت سنگ جدید</span>
           </button>
 
           {selectedParcels.length >= 2 && (
             <button
               type="button"
               onClick={() => setMergeModalOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-purple-600 px-3.5 py-2 text-xs font-bold text-white shadow-sm hover:bg-purple-700 dark:bg-purple-500 dark:hover:bg-purple-600 transition-all animate-pulse"
+              className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl bg-purple-600 px-3.5 text-xs font-bold text-white shadow-sm hover:bg-purple-700 dark:bg-purple-500 dark:hover:bg-purple-600 transition-all animate-pulse cursor-pointer whitespace-nowrap"
             >
               <Layers size={16} />
-              <span>ترکیب بارخانه‌های انتخابی ({selectedParcels.length.toLocaleString('fa-IR')} بسته)</span>
+              <span>ترکیب بارخانه‌ها ({selectedParcels.length.toLocaleString('fa-IR')} بسته)</span>
             </button>
           )}
-
-          <button
-            type="button"
-            onClick={handleOpenCreate}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-cyan-600 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-cyan-700 dark:bg-cyan-500 dark:hover:bg-cyan-600"
-          >
-            <Plus size={16} />
-            <span>ثبت سنگ جدید</span>
-          </button>
         </div>
       </div>
 
@@ -523,12 +525,24 @@ export default function InitialGemstoneInventoryClient({
               {filteredItems.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="px-5 py-12 text-center text-slate-500">
-                    <div className="flex flex-col items-center justify-center gap-2">
-                      <Gem size={32} className="text-slate-300 dark:text-slate-600" />
-                      <span className="font-bold">هیچ سنگ قیمتی در این بخش ثبت نشده است</span>
-                      <p className="text-[11px] text-slate-400">
-                        برای ثبت اولین موجودی اولیه گوهر، دکمه «ثبت سنگ جدید» را انتخاب کنید.
+                    <div className="flex flex-col items-center justify-center gap-3">
+                      <div className="flex size-14 items-center justify-center rounded-2xl bg-cyan-500/10 text-cyan-600 dark:bg-cyan-500/20 dark:text-cyan-400">
+                        <Gem size={28} className="stroke-[2.2]" />
+                      </div>
+                      <span className="text-base font-bold text-slate-800 dark:text-slate-200">
+                        هیچ سنگ قیمتی در این بخش ثبت نشده است
+                      </span>
+                      <p className="max-w-sm text-xs text-slate-500 dark:text-slate-400">
+                        با انتخاب دکمه زیر می‌توانید اولین موجودی اولیه سنگ یا الماس خود را ثبت کنید.
                       </p>
+                      <button
+                        type="button"
+                        onClick={handleOpenCreate}
+                        className="mt-1 inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-cyan-600 px-5 text-xs font-black text-white shadow-md shadow-cyan-600/20 transition hover:bg-cyan-500 dark:bg-cyan-500 dark:hover:bg-cyan-400 cursor-pointer"
+                      >
+                        <Plus size={16} strokeWidth={2.5} />
+                        <span>ثبت اولین سنگ قیمتی</span>
+                      </button>
                     </div>
                   </td>
                 </tr>
