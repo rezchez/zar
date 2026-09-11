@@ -13,6 +13,33 @@ const ALL_SPECIES: GemstoneSpeciesItem[] = (
   Object.keys(GEMSTONE_SPECIES_BY_ROOT) as RootCategory[]
 ).flatMap((root) => GEMSTONE_SPECIES_BY_ROOT[root]);
 
+function resolveGemstoneCode(r: Record<string, unknown>): string {
+  if (r.code && typeof r.code === 'string' && r.code.trim()) {
+    return r.code.trim();
+  }
+  const nameEn = String(r.name_en || '').toLowerCase().trim();
+  const variety = String(r.variety || '').toLowerCase().trim();
+  if (nameEn === 'ruby' || variety === 'ruby') return 'corundum_ruby';
+  if (nameEn.includes('blue sapphire') || variety.includes('blue sapphire')) return 'corundum_sapphire';
+  if (nameEn.includes('yellow sapphire') || variety.includes('yellow sapphire')) return 'corundum_yellow_sapphire';
+  if (nameEn === 'emerald' || variety === 'emerald') return 'beryl_emerald';
+  if (nameEn === 'aquamarine' || variety === 'aquamarine') return 'beryl_aquamarine';
+  if (nameEn === 'morganite' || variety === 'morganite') return 'beryl_morganite';
+  if (nameEn.includes('diamond')) return 'diamond';
+  if (nameEn.includes('spinel')) return 'spinel';
+  if (nameEn.includes('tourmaline')) return 'tourmaline';
+  if (nameEn.includes('topaz')) return 'topaz';
+  if (nameEn.includes('garnet')) return 'garnet';
+  if (nameEn.includes('amethyst')) return 'quartz_amethyst';
+  if (nameEn.includes('opal')) return 'opal';
+  if (nameEn.includes('turquoise')) return 'turquoise';
+  if (nameEn.includes('peridot')) return 'peridot';
+  if (nameEn.includes('tanzanite')) return 'tanzanite';
+  if (nameEn.includes('zircon')) return 'natural_zircon';
+  if (nameEn.includes('other')) return 'other';
+  return String(r.id || '');
+}
+
 export async function GET(request: Request) {
   const context = await getServerAuthContext();
   if (!context) {
@@ -76,7 +103,7 @@ export async function GET(request: Request) {
     const items = records.length > 0
       ? records.map((r: Record<string, unknown>) => ({
           id: String(r.id || ''),
-          code: String(r.species || r.id || ''),
+          code: resolveGemstoneCode(r),
           nameFa: String(r.name_fa || ''),
           nameEn: String(r.name_en || ''),
           species: String(r.species || ''),

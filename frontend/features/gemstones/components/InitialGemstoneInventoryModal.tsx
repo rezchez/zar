@@ -635,19 +635,41 @@ export default function InitialGemstoneInventoryModal({
     if (gemstoneTypes.length > 0) {
       const fromBackend = gemstoneTypes.filter((t) => (t as any).rootCategory === rootCategory);
       if (fromBackend.length > 0) {
-        return fromBackend.map((t) => ({
-          id: (t as any).code || t.species || t.id,
-          nameFa: t.nameFa,
-          nameEn: t.nameEn,
-          category: t.category,
-          rootCategory: (t as any).rootCategory || rootCategory,
-          diamondType: (t as any).diamondType,
-          growthMethod: (t as any).growthMethod,
-          syntheticMethod: (t as any).syntheticMethod,
-          chemicalBasis: (t as any).chemicalBasis,
-          treatments: (t as any).treatments,
-          treatmentMethod: (t as any).treatmentMethod,
-        }));
+        const seen = new Set<string>();
+        const list: Array<{
+          id: string;
+          nameFa: string;
+          nameEn: string;
+          category: GemstoneCategory;
+          rootCategory: RootCategory;
+          diamondType?: 'natural' | 'lab_grown';
+          growthMethod?: LabGrowthMethod;
+          syntheticMethod?: string;
+          chemicalBasis?: string;
+          treatments?: string;
+          treatmentMethod?: string;
+        }> = [];
+
+        for (const t of fromBackend) {
+          const resolvedId = (t as any).code || t.id;
+          if (!seen.has(resolvedId)) {
+            seen.add(resolvedId);
+            list.push({
+              id: resolvedId,
+              nameFa: t.nameFa || t.name || '',
+              nameEn: t.nameEn || '',
+              category: t.category,
+              rootCategory: (t as any).rootCategory || rootCategory,
+              diamondType: (t as any).diamondType,
+              growthMethod: (t as any).growthMethod,
+              syntheticMethod: (t as any).syntheticMethod,
+              chemicalBasis: (t as any).chemicalBasis,
+              treatments: (t as any).treatments,
+              treatmentMethod: (t as any).treatmentMethod,
+            });
+          }
+        }
+        if (list.length > 0) return list;
       }
     }
     return getSpeciesForRootCategory(rootCategory);
@@ -968,14 +990,14 @@ export default function InitialGemstoneInventoryModal({
                   onChange={(e) => handleSpeciesChange(e.target.value)}
                   className="w-full rounded-2xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-medium text-slate-800 focus:border-cyan-500 focus:outline-hidden dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
                 >
-                  {availableSpeciesForRoot.map((s) => (
-                    <option key={s.id} value={s.id}>
+                  {availableSpeciesForRoot.map((s, idx) => (
+                    <option key={s.id || `species-${idx}`} value={s.id}>
                       {s.nameFa} ({s.nameEn})
                     </option>
                   ))}
                   {/* Keep legacy/custom species visible if editing an item not currently in active list */}
                   {!availableSpeciesForRoot.some((s) => s.id === species) && species && (
-                    <option value={species}>
+                    <option key={`custom-species-${species}`} value={species}>
                       {species} (ثبت‌شده پیشین)
                     </option>
                   )}
