@@ -137,6 +137,7 @@ export async function GET(request: Request) {
         bankName: String(b.bankName || b.name || ''),
         branchName: typeof b.branchName === 'string' ? b.branchName : '',
         accountNumber: typeof b.accountNumber === 'string' ? b.accountNumber : '',
+        accountId: typeof b.accountId === 'string' ? b.accountId : typeof b.account_id === 'string' ? b.account_id : '',
         accountCodeZero: typeof b.accountCodeZero === 'string' ? b.accountCodeZero : '',
         openingBalance: typeof b.opening_balance === 'number' ? b.opening_balance : Number(b.opening_balance) || 0,
         balance: typeof b.balance === 'number' ? b.balance : Number(b.balance) || 0,
@@ -168,6 +169,7 @@ export async function GET(request: Request) {
       const mappedCash: CashFundEnrichmentInput[] = (cashFunds || []).map((f: Record<string, unknown>) => ({
         id: String(f.id || ''),
         name: String(f.name || ''),
+        accountId: typeof f.accountId === 'string' ? f.accountId : typeof f.account_id === 'string' ? f.account_id : '',
         currencyName: typeof f.currency_name === 'string' ? f.currency_name : typeof f.currencyName === 'string' ? f.currencyName : 'ریال',
         currencyCode: typeof f.currency_code === 'string' ? f.currency_code : typeof f.currencyCode === 'string' ? f.currencyCode : 'IRR',
         currencySymbol: typeof f.currency_symbol === 'string' ? f.currency_symbol : typeof f.currencySymbol === 'string' ? f.currencySymbol : 'ریال',
@@ -212,7 +214,7 @@ export async function GET(request: Request) {
       accounts = enrichAccountsWithCoinsAndMetals(accounts, mappedCoins, mappedMetals);
 
       const goodsInventory = await context.pb.collection('goods_inventory').getFullList({
-        filter: 'is_deleted = false && (transaction_type = "opening_balance" || is_opening_balance = true)',
+        filter: 'is_deleted = false && is_opening_balance = true',
         expand: 'goods_type',
       }).catch(() => []);
 

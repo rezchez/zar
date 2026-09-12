@@ -1,11 +1,13 @@
 'use client';
 
 import {
+  AlertTriangle,
   Boxes,
   Calendar,
   ChevronRight,
   Edit3,
   FolderTree,
+  Loader2,
   Package,
   Plus,
   RefreshCw,
@@ -15,6 +17,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import InitialGoodsInventoryModal from './InitialGoodsInventoryModal';
 import {
@@ -43,6 +46,17 @@ const EMPTY_SUMMARY: GoodsInventorySummary = {
   },
 };
 
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: '$',
+  EUR: '€',
+  AED: 'د.إ',
+  TRY: '₺',
+  GBP: '£',
+  CNY: '¥',
+  IRT: 'تومان',
+  IRR: 'ریال',
+};
+
 export default function InitialGoodsInventoryClient({
   initialItems = [],
   initialSummary = null,
@@ -55,6 +69,16 @@ export default function InitialGoodsInventoryClient({
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<GoodsOpeningRecord | null>(null);
+
+  // Delete Confirmation Alert states
+  const [deletingItem, setDeletingItem] = useState<GoodsOpeningRecord | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const fetchInventory = useCallback(async () => {
     setLoading(true);
@@ -90,18 +114,31 @@ export default function InitialGoodsInventoryClient({
     setModalOpen(true);
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('آیا از حذف این موجودی اولیه کالا اطمینان دارید؟')) return;
+  const handleRequestDelete = (item: GoodsOpeningRecord) => {
+    setDeleteError('');
+    setDeletingItem(item);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deletingItem) return;
+    setDeleteLoading(true);
+    setDeleteError('');
 
     try {
-      const res = await fetch(`/api/accounting/opening/goods?id=${encodeURIComponent(id)}`, {
+      const res = await fetch(`/api/accounting/opening/goods?id=${encodeURIComponent(deletingItem.id)}`, {
         method: 'DELETE',
       });
       if (res.ok) {
+        setDeletingItem(null);
         void fetchInventory();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setDeleteError(data.message || 'خطا در حذف موجودی اولیه کالا.');
       }
     } catch {
-      //
+      setDeleteError('خطای ارتباط با سرور در حذف موجودی.');
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -235,7 +272,7 @@ export default function InitialGoodsInventoryClient({
             placeholder="جستجوی نام کالا، کد یا قفسه..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full rounded-xl border border-slate-200 bg-slate-50/70 py-2 pr-9 pl-3 text-xs text-slate-900 transition focus:border-purple-500 focus:bg-white focus:outline-hidden dark:border-slate-800 dark:bg-slate-800/70 dark:text-slate-100"
+            className="w-full rounded-xl border border-slate-200 bg-white py-2 pr-9 pl-3 text-xs font-bold text-slate-900 shadow-2xs placeholder:text-slate-400 transition-all focus:border-purple-500 focus:bg-white focus:text-slate-900 focus:outline-none focus:ring-2 focus:ring-purple-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-purple-400 dark:focus:bg-slate-800 dark:focus:text-white dark:focus:ring-purple-400/20"
           />
         </div>
 
@@ -311,6 +348,8 @@ export default function InitialGoodsInventoryClient({
                   const catMeta = ALL_GOODS_CATEGORIES[item.category] || ALL_GOODS_CATEGORIES.resin_casting;
                   const totalToman = convertRialToToman(item.totalAmount);
                   const unitToman = convertRialToToman(item.unitPrice);
+                  const isForeign = Boolean(item.currency && item.currency !== 'IRT' && item.currency !== 'IRR');
+                  const currSymbol = (item.currency && CURRENCY_SYMBOLS[item.currency.toUpperCase()]) || item.currency || '';
 
                   return (
                     <tr key={item.id} className="transition hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
@@ -319,6 +358,11 @@ export default function InitialGoodsInventoryClient({
                       <td className="px-3 py-3.5 font-bold text-slate-900 dark:text-white">
                         <div className="flex items-center gap-2">
                           <span>{item.itemName}</span>
+                          {isForeign && (
+                            <span className="rounded-md bg-purple-50 px-1.5 py-0.5 text-[10px] font-bold text-purple-700 dark:bg-purple-950/40 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                              {item.currency}
+                            </span>
+                          )}
                           {item.sku && (
                             <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-mono text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                               {item.sku}
@@ -343,7 +387,16 @@ export default function InitialGoodsInventoryClient({
                       </td>
 
                       <td className="px-3 py-3.5 text-slate-600 dark:text-slate-300">
-                        {item.unitPrice > 0 ? (
+                        {isForeign && item.foreignUnitPrice ? (
+                          <div>
+                            <div className="font-bold text-slate-900 dark:text-white">
+                              {item.foreignUnitPrice.toLocaleString('fa-IR')} <span className="text-[11px] font-normal text-slate-500">{currSymbol}</span>
+                            </div>
+                            <div className="text-[10px] text-slate-400">
+                              معادل {formatNumberWithCommas(unitToman)} تومان
+                            </div>
+                          </div>
+                        ) : item.unitPrice > 0 ? (
                           <>
                             <span className="font-semibold">{formatNumberWithCommas(unitToman)}</span> <span className="text-[10px] text-slate-400">تومان</span>
                           </>
@@ -353,7 +406,16 @@ export default function InitialGoodsInventoryClient({
                       </td>
 
                       <td className="px-3 py-3.5 font-bold text-emerald-600 dark:text-emerald-400">
-                        {item.totalAmount > 0 ? (
+                        {isForeign && item.foreignTotalAmount ? (
+                          <div>
+                            <div>
+                              {item.foreignTotalAmount.toLocaleString('fa-IR')} <span className="text-[11px] font-normal">{currSymbol}</span>
+                            </div>
+                            <div className="text-[10px] font-normal text-slate-400">
+                              معادل {formatNumberWithCommas(totalToman)} تومان
+                            </div>
+                          </div>
+                        ) : item.totalAmount > 0 ? (
                           <>
                             <span>{formatNumberWithCommas(totalToman)}</span> <span className="text-[10px] text-slate-400">تومان</span>
                           </>
@@ -385,7 +447,7 @@ export default function InitialGoodsInventoryClient({
                           </button>
                           <button
                             type="button"
-                            onClick={() => void handleDelete(item.id)}
+                            onClick={() => handleRequestDelete(item)}
                             className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400"
                             title="حذف"
                           >
@@ -409,6 +471,109 @@ export default function InitialGoodsInventoryClient({
         onSuccess={() => void fetchInventory()}
         editingItem={editingItem}
       />
+
+      {/* Delete Confirmation Alert Modal */}
+      {deletingItem && mounted && createPortal(
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-150"
+          role="dialog"
+          aria-modal="true"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !deleteLoading) {
+              setDeletingItem(null);
+              setDeleteError('');
+            }
+          }}
+        >
+          <div
+            dir="rtl"
+            className="relative w-full max-w-md rounded-3xl border border-red-100 bg-white p-6 shadow-2xl dark:border-red-900/40 dark:bg-slate-900 animate-in zoom-in-95 duration-150 text-right"
+          >
+            <div className="flex items-center gap-3.5 mb-4">
+              <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-red-500/10 text-red-600 dark:bg-red-500/20 dark:text-red-400">
+                <AlertTriangle size={24} className="stroke-[2.2]" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-slate-900 dark:text-white">
+                  هشدار تایید حذف موجودی اولیه
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  این عملیات غیرقابل بازگشت است
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-100 bg-slate-50/80 p-4 dark:border-slate-800 dark:bg-slate-800/50 space-y-2 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 dark:text-slate-400">نام کالا یا رزین:</span>
+                <span className="font-bold text-slate-900 dark:text-white">{deletingItem.itemName}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 dark:text-slate-400">مقدار موجودی:</span>
+                <span className="font-bold text-slate-900 dark:text-white">{deletingItem.quantity.toLocaleString('fa-IR')} {deletingItem.unit}</span>
+              </div>
+              {deletingItem.totalAmount > 0 && (
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500 dark:text-slate-400">ارزش کل:</span>
+                  <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                    {formatNumberWithCommas(convertRialToToman(deletingItem.totalAmount))} تومان
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <p className="mt-4 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+              آیا از حذف موجودی اولیه «<strong className="text-red-600 dark:text-red-400">{deletingItem.itemName}</strong>» اطمینان دارید؟
+              <br />
+              <span className="text-slate-500 dark:text-slate-400 text-[11px] mt-1 block">
+                با تایید این درخواست، ردیف گردش انبار اول دوره و سند حسابداری دوبل متناظر با آن به‌صورت خودکار حذف خواهد شد.
+              </span>
+            </p>
+
+            {deleteError && (
+              <div className="mt-3 rounded-xl bg-red-50 border border-red-200 p-3 text-xs font-bold text-red-700 dark:bg-red-950/40 dark:border-red-800 dark:text-red-300">
+                {deleteError}
+              </div>
+            )}
+
+            <div className="mt-6 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!deleteLoading) {
+                    setDeletingItem(null);
+                    setDeleteError('');
+                  }
+                }}
+                disabled={deleteLoading}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 disabled:opacity-50 cursor-pointer"
+              >
+                انصراف
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void handleConfirmDelete()}
+                disabled={deleteLoading}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-red-600 px-4 py-2 text-xs font-bold text-white hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-600 disabled:opacity-50 shadow-sm cursor-pointer"
+              >
+                {deleteLoading ? (
+                  <>
+                    <Loader2 size={15} className="animate-spin" />
+                    <span>در حال حذف...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 size={15} />
+                    <span>تایید و حذف موجودی</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }

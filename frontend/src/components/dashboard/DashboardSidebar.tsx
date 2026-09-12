@@ -331,12 +331,12 @@ export default function DashboardSidebar({
             )}
           </div>
         </div>
-
-        <ChangelogModal
-          isOpen={changelogOpen}
-          onClose={() => setChangelogOpen(false)}
-        />
       </aside>
+
+      <ChangelogModal
+        isOpen={changelogOpen}
+        onClose={() => setChangelogOpen(false)}
+      />
     </>
   );
 }

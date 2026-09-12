@@ -194,6 +194,36 @@ describe('Zarfolio — Goods Opening Inventory & Accounting Tests', () => {
       expect(entries.length).toBe(1);
     });
 
+    it('creates balanced journal entry for foreign currency inventory (USD)', async () => {
+      const pb = new MockPocketBase();
+
+      const item = {
+        id: 'goods_resin_usd_1',
+        goodsName: 'رزین ریخته‌گری فوتون دلاری',
+        category: 'resin_casting',
+        quantity: 10,
+        unit: 'لیتر',
+        unitPrice: 42_750_000, // 45 USD * 950,000 IRR
+        totalAmount: 427_500_000, // 10 * 42,750,000
+      };
+
+      const result = await postGoodsOpeningInventory(
+        item,
+        '۱۴۰۳/۰۱/۰۱',
+        'user_admin',
+        pb as any,
+        'موجودی اولیه رزین ریخته‌گری فوتون دلاری (10 لیتر @ 45 USD، نرخ: 950000 ریال)',
+      );
+
+      expect(result).toBeDefined();
+      expect(result.sourceKey).toBe('opening:goods:goods_resin_usd_1');
+      expect(result.status).toBe('posted');
+      const debitLine = result.lines.find((l) => l.debit === 427_500_000);
+      const creditLine = result.lines.find((l) => l.credit === 427_500_000);
+      expect(debitLine).toBeDefined();
+      expect(creditLine).toBeDefined();
+    });
+
     it('rejects zero valuation with Persian error message', async () => {
       const pb = new MockPocketBase();
 

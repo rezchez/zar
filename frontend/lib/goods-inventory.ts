@@ -105,6 +105,11 @@ export interface GoodsOpeningRecord {
   unit: string;
   unitPrice: number;
   totalAmount: number;
+  currency?: string;
+  currencyId?: string;
+  currencyRate?: number;
+  foreignUnitPrice?: number;
+  foreignTotalAmount?: number;
   date: string;
   storageLocation?: string;
   sku?: string;

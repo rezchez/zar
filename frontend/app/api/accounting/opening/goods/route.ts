@@ -46,7 +46,7 @@ export async function GET() {
 
   try {
     const records = await context.pb.collection('goods_inventory').getFullList({
-      filter: 'is_deleted = false && (transaction_type = "opening_balance" || is_opening_balance = true)',
+      filter: 'is_deleted = false && is_opening_balance = true',
       sort: '-created',
       expand: 'goods_type',
     }).catch(() => []);
@@ -80,6 +80,11 @@ export async function GET() {
         unit: String(r.unit || expandedType?.unit || 'عدد'),
         unitPrice: typeof r.unit_price === 'number' ? r.unit_price : Number(r.unit_price) || 0,
         totalAmount: typeof r.total_amount === 'number' ? r.total_amount : Number(r.total_amount) || 0,
+        currency: String(r.currency || 'IRT'),
+        currencyId: String(r.currency_id || ''),
+        currencyRate: typeof r.currency_rate === 'number' ? r.currency_rate : Number(r.currency_rate) || undefined,
+        foreignUnitPrice: typeof r.foreign_unit_price === 'number' ? r.foreign_unit_price : Number(r.foreign_unit_price) || undefined,
+        foreignTotalAmount: typeof r.foreign_total_amount === 'number' ? r.foreign_total_amount : Number(r.foreign_total_amount) || undefined,
         date: String(r.date || dateToJalaliString(new Date())),
         storageLocation: String(r.storage_location || ''),
         sku: String(r.sku || ''),
@@ -139,6 +144,11 @@ export async function POST(request: Request) {
     const storageLocation = String(body?.storageLocation || body?.storage_location || '').trim();
     const sku = String(body?.sku || '').trim();
     const description = String(body?.description || '').trim();
+    const currency = String(body?.currency || 'IRT').trim().toUpperCase();
+    const currencyId = String(body?.currencyId || body?.currency_id || '').trim();
+    const currencyRate = Number(String(body?.currencyRate ?? body?.currency_rate ?? 0).replace(/,/g, ''));
+    const foreignUnitPrice = Number(String(body?.foreignUnitPrice ?? body?.foreign_unit_price ?? 0).replace(/,/g, ''));
+    const foreignTotalAmount = Number(String(body?.foreignTotalAmount ?? body?.foreign_total_amount ?? 0).replace(/,/g, ''));
 
     // 1. Validation
     if (!itemNameInput) {
@@ -161,8 +171,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: 'قیمت واحد نمی‌تواند منفی باشد.' }, { status: 400 });
     }
 
-    const roundedUnitPrice = Math.round(unitPrice);
-    const totalAmount = Math.round(quantity * roundedUnitPrice);
+    let roundedUnitPrice = Math.round(unitPrice);
+    let totalAmount = Math.round(quantity * roundedUnitPrice);
+
+    if (foreignUnitPrice > 0 && currencyRate > 0 && currency !== 'IRT' && currency !== 'IRR') {
+      roundedUnitPrice = Math.round(foreignUnitPrice * currencyRate);
+      totalAmount = Math.round(quantity * roundedUnitPrice);
+    } else if (body?.totalAmount !== undefined && Number(body.totalAmount) > 0) {
+      totalAmount = Math.round(Number(body.totalAmount));
+    }
+
     const dateValue = dateInput || dateToJalaliString(new Date());
 
     // 2. Prepare payload for goods_inventory
@@ -170,12 +188,15 @@ export async function POST(request: Request) {
       item_name: itemNameInput,
       goods_type: goodsTypeId || null,
       category: categoryInput,
-      direction: 'in',
-      transaction_type: 'opening_balance',
       quantity,
       unit: unitInput,
       unit_price: roundedUnitPrice,
       total_amount: totalAmount,
+      currency: currency || 'IRT',
+      currency_id: currencyId || null,
+      currency_rate: currencyRate > 0 ? currencyRate : null,
+      foreign_unit_price: foreignUnitPrice > 0 ? foreignUnitPrice : null,
+      foreign_total_amount: foreignTotalAmount > 0 ? foreignTotalAmount : null,
       date: dateValue,
       storage_location: storageLocation,
       sku,
@@ -197,6 +218,25 @@ export async function POST(request: Request) {
     if (totalAmount > 0) {
       try {
         const categoryMeta = ALL_GOODS_CATEGORIES[categoryInput] || ALL_GOODS_CATEGORIES.resin_casting;
+        const currNote = (currency !== 'IRT' && currency !== 'IRR' && foreignUnitPrice > 0)
+          ? ` (${quantity} ${unitInput} - هر ${unitInput} ${foreignUnitPrice} ${currency})`
+          : ` (${quantity} ${unitInput})`;
+        let targetAccountId: string | null = null;
+        if (categoryMeta?.accountCode) {
+          const matchedAcc = await context.pb.collection('chart_of_accounts')
+            .getFirstListItem(context.pb.filter('code = {:code}', { code: categoryMeta.accountCode }))
+            .catch(() => null);
+          if (matchedAcc?.id) {
+            targetAccountId = matchedAcc.id;
+          }
+        }
+        if (!targetAccountId) {
+          const base1130 = await context.pb.collection('chart_of_accounts')
+            .getFirstListItem(context.pb.filter('code = {:code}', { code: '1130' }))
+            .catch(() => null);
+          targetAccountId = base1130?.id || '1130';
+        }
+
         await postGoodsOpeningInventory(
           {
             id: String(resultRecord.id || ''),
@@ -207,12 +247,12 @@ export async function POST(request: Request) {
             unit: unitInput,
             unitPrice: roundedUnitPrice,
             totalAmount,
-            accountId: categoryMeta?.accountCode || null,
+            accountId: targetAccountId,
           },
           dateValue,
           context.user.id,
           context.pb,
-          description || `موجودی اولیه ${itemNameInput} (${quantity} ${unitInput})`,
+          description || `موجودی اولیه ${itemNameInput}${currNote}`,
         );
       } catch (err) {
         // Rollback created record if journal posting fails
@@ -236,6 +276,11 @@ export async function POST(request: Request) {
         unit: unitInput,
         unitPrice: roundedUnitPrice,
         totalAmount,
+        currency,
+        currencyId: currencyId || undefined,
+        currencyRate: currencyRate > 0 ? currencyRate : undefined,
+        foreignUnitPrice: foreignUnitPrice > 0 ? foreignUnitPrice : undefined,
+        foreignTotalAmount: foreignTotalAmount > 0 ? foreignTotalAmount : undefined,
         date: dateValue,
         storageLocation,
         sku,

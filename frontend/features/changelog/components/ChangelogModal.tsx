@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Sparkles,
@@ -29,7 +30,12 @@ type ChangelogModalProps = {
 
 export default function ChangelogModal({ isOpen: controlledIsOpen, onClose }: ChangelogModalProps) {
   const [internalIsOpen, setInternalIsOpen] = useState(false);
-  const [selectedVersion, setSelectedVersion] = useState<string>(CHANGELOG_RELEASES[0]?.version || '0.0.8-beta');
+  const [mounted, setMounted] = useState(false);
+  const [selectedVersion, setSelectedVersion] = useState<string>(CHANGELOG_RELEASES[0]?.version || '0.1.0-beta');
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const isModalOpen = controlledIsOpen !== undefined ? controlledIsOpen : internalIsOpen;
 
@@ -92,26 +98,26 @@ export default function ChangelogModal({ isOpen: controlledIsOpen, onClose }: Ch
     }
   };
 
-  return (
+  const modalContent = (
     <AnimatePresence>
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
           {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={handleClose}
-            className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm transition-opacity"
+            className="fixed inset-0 bg-slate-950/75 backdrop-blur-md transition-opacity"
           />
 
           {/* Modal Container */}
           <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 15 }}
+            initial={{ opacity: 0, scale: 0.96, y: 15 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 15 }}
+            exit={{ opacity: 0, scale: 0.96, y: 15 }}
             transition={{ type: 'spring', duration: 0.35, bounce: 0 }}
-            className="relative w-full max-w-3xl rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden z-10 flex flex-col max-h-[88vh]"
+            className="relative w-full max-w-5xl h-[90vh] max-h-[92vh] rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden z-10 flex flex-col"
           >
             {/* Header */}
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 px-6 py-4 bg-slate-50/50 dark:bg-slate-800/30">
@@ -258,4 +264,7 @@ export default function ChangelogModal({ isOpen: controlledIsOpen, onClose }: Ch
       )}
     </AnimatePresence>
   );
+
+  if (!mounted) return null;
+  return createPortal(modalContent, document.body);
 }

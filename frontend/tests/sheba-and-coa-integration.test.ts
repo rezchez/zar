@@ -46,9 +46,9 @@ describe('Sheba Validation & Chart of Accounts Integration Tests', () => {
       currencyName: 'تومان',
     });
 
-    expect(result.code).toBe('111003');
+    expect(result.code).toBe('111051');
     expect(result.name).toBe('صندوق اصلی تومان');
-    expect(result.path).toContain('/111003/');
+    expect(result.path).toContain('/111051/');
   });
 
   it('ensureBankAccountDetailInChart maps bank account under 1110 idempotently', async () => {
@@ -75,5 +75,49 @@ describe('Sheba Validation & Chart of Accounts Integration Tests', () => {
 
     expect(result.code).toBe('111002');
     expect(result.name).toBe('بانک ملت - بازار (987654321)');
+  });
+
+  it('enrichAccountsWithBankAndCash sorts banks consecutively first and cash funds consecutively second', () => {
+    const { enrichAccountsWithBankAndCash, buildAccountTree } = require('@/lib/chart-of-accounts');
+    const baseAccounts = [
+      {
+        id: 'acc_1110',
+        code: '1110',
+        name: 'موجودی نقد و بانک',
+        parentId: null,
+        level: 3,
+        accountType: 'asset',
+        normalBalance: 'debit',
+        sortOrder: 1110,
+      },
+    ];
+
+    const bankInputs = [
+      { id: 'b1', bankName: 'پاسارگاد', accountNumber: '11977320' },
+      { id: 'b2', bankName: 'بلوبانک', accountNumber: '11850523' },
+    ];
+
+    const cashInputs = [
+      { id: 'c1', name: 'صندوق یورو', currencyName: 'یورو' },
+      { id: 'c2', name: 'صندوق پوند', currencyName: 'پوند' },
+    ];
+
+    const enriched = enrichAccountsWithBankAndCash(baseAccounts, bankInputs, cashInputs);
+    const tree = buildAccountTree(enriched);
+    const root1110 = tree.find((t: any) => t.code === '1110');
+    expect(root1110).toBeDefined();
+    expect(root1110.children.length).toBe(4);
+
+    // Banks must be consecutive first (111001, 111002)
+    expect(root1110.children[0].code).toBe('111001');
+    expect(root1110.children[0].name).toContain('پاسارگاد');
+    expect(root1110.children[1].code).toBe('111002');
+    expect(root1110.children[1].name).toContain('بلوبانک');
+
+    // Cash funds must be consecutive second (111051, 111052)
+    expect(root1110.children[2].code).toBe('111051');
+    expect(root1110.children[2].name).toContain('یورو');
+    expect(root1110.children[3].code).toBe('111052');
+    expect(root1110.children[3].name).toContain('پوند');
   });
 });

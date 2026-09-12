@@ -1641,32 +1641,33 @@ export function canEditAccount(account: ChartOfAccountRecord): {
 export function getNextDetailAccountCode(
   parentCode: string,
   existingCodes: string[],
+  options?: { min?: number; max?: number },
 ): string {
+  const min = options?.min ?? 1;
+  const max = options?.max ?? 99;
   const normParent = normalizeAccountCode(parentCode);
   const prefix = normParent;
-  const existingDetailNumbers: number[] = [];
+  const existingDetailNumbers = new Set<number>();
 
   for (const c of existingCodes) {
     const norm = normalizeAccountCode(c);
     if (norm.startsWith(prefix) && norm.length === prefix.length + 2) {
       const subNum = parseInt(norm.slice(prefix.length), 10);
       if (!isNaN(subNum) && subNum > 0) {
-        existingDetailNumbers.push(subNum);
+        existingDetailNumbers.add(subNum);
       }
     }
   }
 
-  existingDetailNumbers.sort((a, b) => a - b);
-  let nextSub = 1;
-  for (const num of existingDetailNumbers) {
-    if (num === nextSub) {
-      nextSub++;
-    } else if (num > nextSub) {
-      break;
+  let nextSub = min;
+  while (nextSub <= max) {
+    if (!existingDetailNumbers.has(nextSub)) {
+      return `${prefix}${String(nextSub).padStart(2, '0')}`;
     }
+    nextSub++;
   }
 
-  return `${prefix}${String(nextSub).padStart(2, '0')}`;
+  return `${prefix}${String(min).padStart(2, '0')}`;
 }
 
 async function ensureParentCashAndBank(pb: any) {
@@ -1775,7 +1776,7 @@ export async function ensureBankAccountDetailInChart(
     //
   }
 
-  const newCode = getNextDetailAccountCode('1110', existingCodes);
+  const newCode = getNextDetailAccountCode('1110', existingCodes, { min: 1, max: 49 });
   const accountName = `بانک ${params.bankName}${params.branchName ? ' - ' + params.branchName : ''} (${params.accountNumber})`;
   const description = `حساب بانکی تفصیلی مربوط به ${params.bankName} شماره حساب ${params.accountNumber}`;
 
@@ -1795,6 +1796,7 @@ export async function ensureBankAccountDetailInChart(
       isPostable: true,
       sortOrder: Number(newCode) || 111001,
       description: description,
+      tags: ['bank_account', 'tafsil_1'],
       createdBy: params.userId || null,
       updatedBy: params.userId || null,
     });
@@ -1859,7 +1861,7 @@ export async function ensureCashFundDetailInChart(
     //
   }
 
-  const newCode = getNextDetailAccountCode('1110', existingCodes);
+  const newCode = getNextDetailAccountCode('1110', existingCodes, { min: 51, max: 99 });
   const accountName = params.fundName || `صندوق ${params.currencyName || ''}`.trim();
   const description = `حساب تفصیلی سطح ۴ مربوط به ${accountName}`;
 
@@ -1877,8 +1879,9 @@ export async function ensureCashFundDetailInChart(
       isSystem: false,
       isActive: true,
       isPostable: true,
-      sortOrder: Number(newCode) || 111001,
+      sortOrder: Number(newCode) || 111051,
       description: description,
+      tags: ['cash_fund', 'tafsil_1'],
       createdBy: params.userId || null,
       updatedBy: params.userId || null,
     });
@@ -1925,6 +1928,7 @@ export interface BankAccountEnrichmentInput {
   bankName: string;
   branchName?: string;
   accountNumber: string;
+  accountId?: string;
   accountCodeZero?: string;
   openingBalance?: number;
   balance?: number;
@@ -2072,6 +2076,7 @@ export function enrichAccountsWithOpeningChecks(
 export interface CashFundEnrichmentInput {
   id: string;
   name: string;
+  accountId?: string;
   currencyId?: string;
   currencyName?: string;
   currencyCode?: string;
@@ -2083,8 +2088,10 @@ export interface CashFundEnrichmentInput {
 
 /**
  * Enriches accounts list with Bank Accounts and Cash Funds connected to Moein account 1110 (موجودی نقد و بانک).
- * - Bank accounts are added as Level 4 (تفضیل ۱) under 1110.
- * - Cash funds are added as Level 4 (تفضیل ۱) under 1110.
+ * - Bank accounts are strictly partitioned and sorted first consecutively (111001..111049).
+ * - Cash funds are strictly partitioned and sorted second consecutively (111051..111099).
+ * - Existing accounts in chart_of_accounts matching by accountId or name are enriched in place
+ *   so no duplicate virtual nodes are created.
  */
 export function enrichAccountsWithBankAndCash(
   accounts: ChartOfAccountRecord[],
@@ -2096,81 +2103,169 @@ export function enrichAccountsWithBankAndCash(
     return accounts;
   }
 
+  // Filter out any existing temporary virtual coa_bank_.*_1110 and coa_cash_.* nodes
+  const cleanAccounts: ChartOfAccountRecord[] = accounts
+    .filter(
+      (a) =>
+        !(a.id.startsWith('coa_bank_') && a.id.endsWith('_1110')) &&
+        !a.id.startsWith('coa_cash_')
+    )
+    .map((a) => ({ ...a }));
+
+  const matchedAccountIds = new Set<string>();
   const bankNodes: ChartOfAccountRecord[] = [];
   const cashNodes: ChartOfAccountRecord[] = [];
 
-  // Filter out any existing coa_bank_.*_1110 and coa_cash_.*_1110 nodes
-  const cleanAccounts = accounts.filter(
-    (a) => !(a.id.startsWith('coa_bank_') && a.id.endsWith('_1110')) && !a.id.startsWith('coa_cash_')
-  );
-
+  // 1. Process Bank Accounts (Range 01..49)
   let bIndex = 1;
   for (const bank of bankAccounts) {
     if (!bank || !bank.id) continue;
     const bankName = bank.bankName || 'بانک نامشخص';
     const branchName = bank.branchName ? ` - شعبه ${bank.branchName}` : '';
     const accNum = bank.accountNumber ? ` (حساب ${bank.accountNumber})` : '';
-    const codeSuffix = bank.accountCodeZero
-      ? bank.accountCodeZero.padStart(2, '0')
-      : String(bIndex).padStart(2, '0');
 
-    const bankCode = `${acc1110.code}${codeSuffix}`;
-    const bankNodeId = `coa_bank_${bank.id}_1110`;
-    const bankDisplayName = `بانک ${bankName}${branchName}${accNum}`;
+    // Find if an account already exists for this bank
+    let existingAcc: ChartOfAccountRecord | undefined;
+    if (bank.accountId) {
+      existingAcc = cleanAccounts.find((a) => a.id === bank.accountId);
+    }
+    if (!existingAcc) {
+      existingAcc = cleanAccounts.find(
+        (a) =>
+          !matchedAccountIds.has(a.id) &&
+          (a.parentId === acc1110.id || (a.code.startsWith(acc1110.code) && a.code.length === 6)) &&
+          ((bank.bankName && a.name.includes(bank.bankName)) ||
+            (bank.accountNumber && (a.name.includes(bank.accountNumber) || a.description?.includes(bank.accountNumber))))
+      );
+    }
 
-    const bankNode: ChartOfAccountRecord = {
-      id: bankNodeId,
-      code: bankCode,
-      name: bankDisplayName,
-      parentId: acc1110.id,
-      path: `${acc1110.path || '/1000/1100/1110/'}${bankCode}/`,
-      level: 4, // تفضیل ۱
-      accountType: 'asset',
-      normalBalance: 'debit',
-      requiresWeight: false,
-      isMultiCurrency: false,
-      isSystem: true,
-      isActive: !bank.isBlocked,
-      isPostable: true,
-      sortOrder: (acc1110.sortOrder || 1110) * 100 + bIndex,
-      description: `تفضیل ۱: حساب بانکی ${bankName} | شماره حساب: ${bank.accountNumber || '—'} | موجودی اولیه: ${(bank.openingBalance || 0).toLocaleString('fa-IR')} ${bank.currencySymbol || 'ریال'}`,
-      tags: ['bank_account', 'tafsil_1', `bank_${bank.id}`],
-    };
-    bankNodes.push(bankNode);
+    const bankSortOrder = (acc1110.sortOrder || 1110) * 100 + bIndex;
+    const bankTags = ['bank_account', 'tafsil_1', `bank_${bank.id}`];
+    const bankDesc = `تفضیل ۱: حساب بانکی ${bankName} | شماره حساب: ${bank.accountNumber || '—'} | موجودی اولیه: ${(bank.openingBalance || 0).toLocaleString('fa-IR')} ${bank.currencySymbol || 'ریال'}`;
+
+    if (existingAcc) {
+      matchedAccountIds.add(existingAcc.id);
+      existingAcc.sortOrder = bankSortOrder;
+      const curTags = Array.isArray(existingAcc.tags) ? existingAcc.tags : [];
+      existingAcc.tags = Array.from(new Set([...curTags, ...bankTags]));
+      if (!existingAcc.description || existingAcc.description.startsWith('تفضیل ۱: حساب بانکی')) {
+        existingAcc.description = bankDesc;
+      }
+    } else {
+      const codeSuffix = String(bIndex).padStart(2, '0');
+      const bankCode = `${acc1110.code}${codeSuffix}`;
+      const bankNodeId = `coa_bank_${bank.id}_1110`;
+      const bankDisplayName = `بانک ${bankName}${branchName}${accNum}`;
+
+      const bankNode: ChartOfAccountRecord = {
+        id: bankNodeId,
+        code: bankCode,
+        name: bankDisplayName,
+        parentId: acc1110.id,
+        path: `${acc1110.path || '/1000/1100/1110/'}${bankCode}/`,
+        level: 4,
+        accountType: 'asset',
+        normalBalance: 'debit',
+        requiresWeight: false,
+        isMultiCurrency: false,
+        isSystem: false,
+        isActive: !bank.isBlocked,
+        isPostable: true,
+        sortOrder: bankSortOrder,
+        description: bankDesc,
+        tags: bankTags,
+      };
+      bankNodes.push(bankNode);
+    }
     bIndex++;
   }
 
+  // 2. Process Cash Funds (Range 51..99)
   let cIndex = 1;
   for (const fund of cashFunds) {
     if (!fund || !fund.id) continue;
     const fundName = fund.name || 'صندوق نامشخص';
     const currency = fund.currencyName || fund.currencyCode || 'ریال';
-    const codeSuffix = String(50 + cIndex).padStart(2, '0');
 
-    const cashCode = `${acc1110.code}${codeSuffix}`;
-    const cashNodeId = `coa_cash_${fund.id}_1110`;
-    const cashDisplayName = `صندوق ${fundName} (${currency})`;
+    // Find if an account already exists for this fund
+    let existingAcc: ChartOfAccountRecord | undefined;
+    if (fund.accountId) {
+      existingAcc = cleanAccounts.find((a) => a.id === fund.accountId);
+    }
+    if (!existingAcc) {
+      existingAcc = cleanAccounts.find(
+        (a) =>
+          !matchedAccountIds.has(a.id) &&
+          (a.parentId === acc1110.id || (a.code.startsWith(acc1110.code) && a.code.length === 6)) &&
+          ((fundName && a.name.includes(fundName)) || (currency && a.name.includes(currency)))
+      );
+    }
 
-    const cashNode: ChartOfAccountRecord = {
-      id: cashNodeId,
-      code: cashCode,
-      name: cashDisplayName,
-      parentId: acc1110.id,
-      path: `${acc1110.path || '/1000/1100/1110/'}${cashCode}/`,
-      level: 4, // تفضیل ۱
-      accountType: 'asset',
-      normalBalance: 'debit',
-      requiresWeight: false,
-      isMultiCurrency: true,
-      isSystem: true,
-      isActive: !fund.isBlocked,
-      isPostable: true,
-      sortOrder: (acc1110.sortOrder || 1110) * 100 + 50 + cIndex,
-      description: `تفضیل ۱: صندوق وجه نقد ${fundName} | ارز: ${currency} | موجودی اولیه: ${(fund.openingBalance || 0).toLocaleString('fa-IR')} ${fund.currencySymbol || currency}`,
-      tags: ['cash_fund', 'tafsil_1', `fund_${fund.id}`],
-    };
-    cashNodes.push(cashNode);
+    const fundSortOrder = (acc1110.sortOrder || 1110) * 100 + 50 + cIndex;
+    const fundTags = ['cash_fund', 'tafsil_1', `fund_${fund.id}`];
+    const fundDesc = `تفضیل ۱: صندوق وجه نقد ${fundName} | ارز: ${currency} | موجودی اولیه: ${(fund.openingBalance || 0).toLocaleString('fa-IR')} ${fund.currencySymbol || currency}`;
+
+    if (existingAcc) {
+      matchedAccountIds.add(existingAcc.id);
+      existingAcc.sortOrder = fundSortOrder;
+      const curTags = Array.isArray(existingAcc.tags) ? existingAcc.tags : [];
+      existingAcc.tags = Array.from(new Set([...curTags, ...fundTags]));
+      if (!existingAcc.description || existingAcc.description.startsWith('تفضیل ۱: صندوق وجه نقد')) {
+        existingAcc.description = fundDesc;
+      }
+    } else {
+      const codeSuffix = String(50 + cIndex).padStart(2, '0');
+      const cashCode = `${acc1110.code}${codeSuffix}`;
+      const cashNodeId = `coa_cash_${fund.id}_1110`;
+      const cashDisplayName = `صندوق ${fundName} (${currency})`;
+
+      const cashNode: ChartOfAccountRecord = {
+        id: cashNodeId,
+        code: cashCode,
+        name: cashDisplayName,
+        parentId: acc1110.id,
+        path: `${acc1110.path || '/1000/1100/1110/'}${cashCode}/`,
+        level: 4,
+        accountType: 'asset',
+        normalBalance: 'debit',
+        requiresWeight: false,
+        isMultiCurrency: true,
+        isSystem: false,
+        isActive: !fund.isBlocked,
+        isPostable: true,
+        sortOrder: fundSortOrder,
+        description: fundDesc,
+        tags: fundTags,
+      };
+      cashNodes.push(cashNode);
+    }
     cIndex++;
+  }
+
+  // 3. Ensure any other existing Level 4 detail accounts under 1110 maintain consecutive grouping
+  for (const a of cleanAccounts) {
+    if (
+      !matchedAccountIds.has(a.id) &&
+      (a.parentId === acc1110.id || (a.code.startsWith(acc1110.code) && a.code.length === 6))
+    ) {
+      const sub = parseInt(a.code.slice(acc1110.code.length), 10);
+      const isFund = a.tags?.includes('cash_fund') || a.name.includes('صندوق') || (!isNaN(sub) && sub >= 50);
+      if (isFund) {
+        if (!a.tags) a.tags = [];
+        if (!a.tags.includes('cash_fund')) a.tags.push('cash_fund');
+        if (!a.tags.includes('tafsil_1')) a.tags.push('tafsil_1');
+        if (a.sortOrder === undefined || a.sortOrder < (acc1110.sortOrder || 1110) * 100 + 50) {
+          a.sortOrder = (acc1110.sortOrder || 1110) * 100 + 50 + (!isNaN(sub) && sub >= 50 ? sub - 50 : cIndex++);
+        }
+      } else {
+        if (!a.tags) a.tags = [];
+        if (!a.tags.includes('bank_account')) a.tags.push('bank_account');
+        if (!a.tags.includes('tafsil_1')) a.tags.push('tafsil_1');
+        if (a.sortOrder === undefined || a.sortOrder >= (acc1110.sortOrder || 1110) * 100 + 50) {
+          a.sortOrder = (acc1110.sortOrder || 1110) * 100 + (!isNaN(sub) && sub < 50 ? sub : bIndex++);
+        }
+      }
+    }
   }
 
   return [...cleanAccounts, ...bankNodes, ...cashNodes];

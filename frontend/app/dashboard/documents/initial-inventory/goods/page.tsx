@@ -30,7 +30,7 @@ export default async function InitialGoodsInventoryPage() {
 
   try {
     const records = await context.pb.collection('goods_inventory').getFullList({
-      filter: 'is_deleted = false && (transaction_type = "opening_balance" || is_opening_balance = true)',
+      filter: 'is_deleted = false && is_opening_balance = true',
       sort: '-created',
       expand: 'goods_type',
     }).catch(() => []);
@@ -64,6 +64,11 @@ export default async function InitialGoodsInventoryPage() {
         unit: String(r.unit || expandedType?.unit || 'عدد'),
         unitPrice: typeof r.unit_price === 'number' ? r.unit_price : Number(r.unit_price) || 0,
         totalAmount: typeof r.total_amount === 'number' ? r.total_amount : Number(r.total_amount) || 0,
+        currency: String(r.currency || 'IRT'),
+        currencyId: String(r.currency_id || ''),
+        currencyRate: typeof r.currency_rate === 'number' ? r.currency_rate : Number(r.currency_rate) || undefined,
+        foreignUnitPrice: typeof r.foreign_unit_price === 'number' ? r.foreign_unit_price : Number(r.foreign_unit_price) || undefined,
+        foreignTotalAmount: typeof r.foreign_total_amount === 'number' ? r.foreign_total_amount : Number(r.foreign_total_amount) || undefined,
         date: String(r.date || dateToJalaliString(new Date())),
         storageLocation: String(r.storage_location || ''),
         sku: String(r.sku || ''),
