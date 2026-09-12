@@ -2651,4 +2651,115 @@ export function enrichAccountsWithGemstones(
   return [...cleanAccounts, ...itemNodes];
 }
 
+export interface WorkmanshipInventoryEnrichmentInput {
+  id: string;
+  code?: string;
+  name?: string;
+  metal?: string;
+  quantity?: number;
+  rawWeight?: number;
+  raw_weight?: number;
+  purity?: number;
+  convertedWeight?: number;
+  converted_weight?: number;
+  wage?: number;
+  wageMode?: string;
+  wage_mode?: string;
+  totalWage?: number;
+  total_wage?: number;
+  totalAmount?: number;
+  total_amount?: number;
+}
+
+/**
+ * Enriches Chart of Accounts with Manufactured Jewelry (Workmanship / کارساخته) under 1130.
+ * - Creates Tafsil 1 group node (113060 موجودی کارساخته و مصنوعات طلا و جواهر).
+ * - Creates Tafsil 2 item nodes under 113060 for each manufactured jewelry piece.
+ */
+export function enrichAccountsWithWorkmanship(
+  accounts: ChartOfAccountRecord[],
+  workmanshipItems: WorkmanshipInventoryEnrichmentInput[] = []
+): ChartOfAccountRecord[] {
+  const acc1130 = accounts.find((a) => a.code === '1130' || a.id === 'sys_1130');
+  if (!acc1130) {
+    return accounts;
+  }
+
+  const cleanAccounts = accounts.filter(
+    (a) => !a.id.startsWith('coa_group_workmanship_') && !a.id.startsWith('coa_workmanship_')
+  );
+
+  const validItems = workmanshipItems || [];
+  if (validItems.length === 0) {
+    return cleanAccounts;
+  }
+
+  const groupCode = `${acc1130.code}60`; // 113060
+  const groupId = 'coa_group_workmanship_1130';
+  const totalPieces = validItems.reduce((sum, w) => sum + (Number(w.quantity) || 1), 0);
+  const totalRawWeight = validItems.reduce((sum, w) => sum + (Number(w.rawWeight ?? w.raw_weight) || 0), 0);
+  const totalConverted = validItems.reduce((sum, w) => sum + (Number(w.convertedWeight ?? w.converted_weight) || 0), 0);
+  const totalValuation = validItems.reduce((sum, w) => sum + (Number(w.totalAmount ?? w.total_amount) || 0), 0);
+
+  const existingIdx = cleanAccounts.findIndex((a) => a.code === groupCode);
+  const groupNode: ChartOfAccountRecord = {
+    id: groupId,
+    code: groupCode,
+    name: 'موجودی کارساخته (مصنوعات طلا و جواهر)',
+    parentId: acc1130.id,
+    path: `${acc1130.path || '/1000/1100/1130/'}${groupCode}/`,
+    level: 4, // تفضیل ۱
+    accountType: 'asset',
+    normalBalance: 'debit',
+    requiresWeight: true,
+    isMultiCurrency: false,
+    isSystem: true,
+    isActive: true,
+    isPostable: false,
+    sortOrder: (acc1130.sortOrder || 1130) * 100 + 60,
+    description: `تفضیل ۱: موجودی کارساخته و مصنوعات طلا | اقلام: ${validItems.length} ردیف (${totalPieces.toLocaleString('fa-IR')} قطعه) | وزن خام: ${totalRawWeight.toLocaleString('fa-IR')} گرم | معادل: ${totalConverted.toLocaleString('fa-IR')} گرم | ارزش: ${totalValuation.toLocaleString('fa-IR')} ریال`,
+    tags: ['workmanship_inventory', 'tafsil_1'],
+  };
+
+  if (existingIdx !== -1) {
+    cleanAccounts[existingIdx] = groupNode;
+  } else {
+    cleanAccounts.push(groupNode);
+  }
+
+  const itemNodes: ChartOfAccountRecord[] = validItems.map((w, idx) => {
+    const itemSuffix = String(idx + 1).padStart(2, '0');
+    const itemCode = `${groupCode}${itemSuffix}`;
+    const itemId = `coa_workmanship_${w.id}`;
+    const codeStr = w.code ? `[${w.code}] ` : '';
+    const nameStr = w.name || 'مصنوع بدون نام';
+    const rawW = Number(w.rawWeight ?? w.raw_weight) || 0;
+    const convW = Number(w.convertedWeight ?? w.converted_weight) || 0;
+    const qty = Number(w.quantity) || 1;
+    const totalAmt = Number(w.totalAmount ?? w.total_amount) || 0;
+
+    return {
+      id: itemId,
+      code: itemCode,
+      name: `${codeStr}${nameStr} (${qty.toLocaleString('fa-IR')} عدد - ${rawW.toLocaleString('fa-IR')} گرم)`,
+      parentId: groupNode.id,
+      path: `${groupNode.path}${itemCode}/`,
+      level: 5, // تفضیل ۲
+      accountType: 'asset',
+      normalBalance: 'debit',
+      requiresWeight: true,
+      isMultiCurrency: false,
+      isSystem: true,
+      isActive: true,
+      isPostable: true,
+      sortOrder: (groupNode.sortOrder || Number(groupCode)) * 100 + (idx + 1),
+      description: `تفضیل ۲: موجودی اول دوره ${nameStr} | تعداد: ${qty.toLocaleString('fa-IR')} عدد | وزن خام: ${rawW.toLocaleString('fa-IR')} گرم | معادل: ${convW.toLocaleString('fa-IR')} گرم | ارزش: ${totalAmt.toLocaleString('fa-IR')} ریال`,
+      tags: ['workmanship_inventory', 'tafsil_2', `wrk_${w.id}`],
+    };
+  });
+
+  return [...cleanAccounts, ...itemNodes];
+}
+
+
 

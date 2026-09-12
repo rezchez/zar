@@ -12,6 +12,7 @@ import {
   enrichAccountsWithCoinsAndMetals,
   enrichAccountsWithGoods,
   enrichAccountsWithGemstones,
+  enrichAccountsWithWorkmanship,
   type ChartOfAccountRecord,
   type AccountType,
   type NormalBalance,
@@ -22,6 +23,7 @@ import {
   type MetalInventoryEnrichmentInput,
   type GoodsInventoryEnrichmentInput,
   type GemstoneInventoryEnrichmentInput,
+  type WorkmanshipInventoryEnrichmentInput,
 } from '@/lib/chart-of-accounts';
 
 export async function GET(request: Request) {
@@ -259,6 +261,27 @@ export async function GET(request: Request) {
       }));
 
       accounts = enrichAccountsWithGemstones(accounts, mappedGemstones);
+
+      const workmanshipInventory = await context.pb.collection('workmanship_inventory').getFullList({
+        filter: 'is_deleted = false && is_opening_balance = true',
+      }).catch(() => []);
+
+      const mappedWorkmanship: WorkmanshipInventoryEnrichmentInput[] = (workmanshipInventory || []).map((w: Record<string, unknown>) => ({
+        id: String(w.id || ''),
+        code: String(w.code || ''),
+        name: String(w.name || ''),
+        metal: String(w.metal || 'gold'),
+        quantity: typeof w.quantity === 'number' ? w.quantity : Number(w.quantity) || 1,
+        rawWeight: typeof w.raw_weight === 'number' ? w.raw_weight : Number(w.raw_weight) || 0,
+        purity: typeof w.purity === 'number' ? w.purity : Number(w.purity) || 750,
+        convertedWeight: typeof w.converted_weight === 'number' ? w.converted_weight : Number(w.converted_weight) || 0,
+        wage: typeof w.wage === 'number' ? w.wage : Number(w.wage) || 0,
+        wageMode: String(w.wage_mode || 'per_gram'),
+        totalWage: typeof w.total_wage === 'number' ? w.total_wage : Number(w.total_wage) || 0,
+        totalAmount: typeof w.total_amount === 'number' ? w.total_amount : Number(w.total_amount) || 0,
+      }));
+
+      accounts = enrichAccountsWithWorkmanship(accounts, mappedWorkmanship);
     } catch {
       // Non-blocking fallback for opening inventory enrichment
     }

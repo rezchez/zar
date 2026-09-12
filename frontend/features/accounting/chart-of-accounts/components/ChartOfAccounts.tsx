@@ -31,6 +31,11 @@ import {
   FileJson,
   Building2,
   ExternalLink,
+  Flame,
+  Landmark,
+  ShoppingBag,
+  Sparkles,
+  Users,
 } from 'lucide-react';
 import {
   ACCOUNT_TYPE_LABELS,
@@ -1300,7 +1305,223 @@ export default function ChartOfAccounts() {
   );
 }
 
-// Tree Node Item Row Component
+export interface TafsilActionConfig {
+  badgeLabel: string;
+  badgeClass: string;
+  BadgeIcon: React.ElementType;
+  actionHref: string;
+  actionLabel: string;
+  actionTitle: string;
+  actionColorClass: string;
+}
+
+export function getTafsilActionConfig(node: AccountTreeNode): TafsilActionConfig | null {
+  const tags = node.tags || [];
+  const id = node.id || '';
+
+  // 1. Issued Check (Tafsil 2) under 2110
+  if (tags.includes('issued_check') || id.startsWith('coa_check_')) {
+    return {
+      badgeLabel: 'تفضیل ۲ - چک صادره',
+      badgeClass: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
+      BadgeIcon: FileSpreadsheet,
+      actionHref: '/dashboard/documents/initial-inventory/checks',
+      actionLabel: 'مدیریت چک',
+      actionTitle: 'مشاهده و مدیریت در چک‌های صادرشده اول دوره',
+      actionColorClass: 'text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/30',
+    };
+  }
+
+  // 2. Bank Payable (Tafsil 1) under 2110
+  if (tags.includes('bank_payable') || (id.startsWith('coa_bank_') && id.endsWith('_2110'))) {
+    return {
+      badgeLabel: 'تفضیل ۱ - بانک عهده چک',
+      badgeClass: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
+      BadgeIcon: Building2,
+      actionHref: '/dashboard/documents/initial-inventory/checks',
+      actionLabel: 'مشاهده چک‌ها',
+      actionTitle: 'مشاهده چک‌های صادرشده عهده این بانک',
+      actionColorClass: 'text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/30',
+    };
+  }
+
+  // 3. Bank Account (Tafsil 1) under 1110
+  if (tags.includes('bank_account') || (id.startsWith('coa_bank_') && id.endsWith('_1110'))) {
+    return {
+      badgeLabel: 'تفضیل ۱ - حساب بانکی',
+      badgeClass: 'bg-sky-500/10 text-sky-300 border-sky-500/30',
+      BadgeIcon: Landmark,
+      actionHref: '/dashboard/documents/initial-inventory/bank',
+      actionLabel: 'مدیریت حساب بانکی',
+      actionTitle: 'مشاهده و مدیریت حساب بانکی در موجودی اول دوره',
+      actionColorClass: 'text-sky-400 hover:text-sky-300 bg-sky-500/10 hover:bg-sky-500/20 border-sky-500/30',
+    };
+  }
+
+  // 4. Cash Fund (Tafsil 1) under 1110
+  if (tags.includes('cash_fund') || id.startsWith('coa_cash_')) {
+    return {
+      badgeLabel: 'تفضیل ۱ - صندوق نقد',
+      badgeClass: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30',
+      BadgeIcon: Coins,
+      actionHref: '/dashboard/documents/initial-inventory/cash',
+      actionLabel: 'مدیریت صندوق',
+      actionTitle: 'مشاهده و مدیریت صندوق وجه نقد در موجودی اول دوره',
+      actionColorClass: 'text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/30',
+    };
+  }
+
+  // 5. Coin Inventory Item (Tafsil 2) under 113001
+  if (tags.includes('coin_inventory') || id.startsWith('coa_coin_')) {
+    return {
+      badgeLabel: 'تفضیل ۲ - سکه و شمش',
+      badgeClass: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
+      BadgeIcon: Coins,
+      actionHref: '/dashboard/documents/initial-inventory/coin',
+      actionLabel: 'مدیریت سکه و شمش',
+      actionTitle: 'مشاهده و مدیریت در موجودی اول دوره مسکوکات',
+      actionColorClass: 'text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/30',
+    };
+  }
+
+  // 6. Coins & Bullion Group (Tafsil 1) under 1130 -> 113001
+  if (tags.includes('coins_and_bullion') || id.startsWith('coa_group_coins_')) {
+    return {
+      badgeLabel: 'تفضیل ۱ - مسکوکات و شمش',
+      badgeClass: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
+      BadgeIcon: Coins,
+      actionHref: '/dashboard/documents/initial-inventory/coin',
+      actionLabel: 'مشاهده مسکوکات',
+      actionTitle: 'مشاهده فهرست مسکوکات و شمش اول دوره',
+      actionColorClass: 'text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/30',
+    };
+  }
+
+  // 7. Metal Item (Tafsil 2) under 1130
+  if (id.startsWith('coa_metal_') || (tags.includes('tafsil_2') && tags.some((t) => t.startsWith('metal_')))) {
+    return {
+      badgeLabel: 'تفضیل ۲ - قطعه فلز/آبشده',
+      badgeClass: 'bg-orange-500/10 text-orange-300 border-orange-500/30',
+      BadgeIcon: Flame,
+      actionHref: '/dashboard/documents/initial-inventory/metals',
+      actionLabel: 'مدیریت فلزات و آبشده',
+      actionTitle: 'مشاهده و مدیریت در موجودی اول دوره فلزات',
+      actionColorClass: 'text-orange-400 hover:text-orange-300 bg-orange-500/10 hover:bg-orange-500/20 border-orange-500/30',
+    };
+  }
+
+  // 8. Metal Group (Tafsil 1) under 1130
+  if (
+    id.startsWith('coa_group_gold_') ||
+    id.startsWith('coa_group_silver_') ||
+    id.startsWith('coa_group_platinum_') ||
+    (tags.includes('tafsil_1') && tags.some((t) => t.startsWith('metal_')))
+  ) {
+    return {
+      badgeLabel: 'تفضیل ۱ - موجودی فلزات',
+      badgeClass: 'bg-orange-500/10 text-orange-300 border-orange-500/30',
+      BadgeIcon: Scale,
+      actionHref: '/dashboard/documents/initial-inventory/metals',
+      actionLabel: 'مشاهده فلزات',
+      actionTitle: 'مشاهده فهرست فلزات و آبشده اول دوره',
+      actionColorClass: 'text-orange-400 hover:text-orange-300 bg-orange-500/10 hover:bg-orange-500/20 border-orange-500/30',
+    };
+  }
+
+  // 9. Workmanship Item (Tafsil 2) under 1130
+  if (id.startsWith('coa_workmanship_') || (tags.includes('tafsil_2') && tags.some((t) => t.startsWith('workmanship_')))) {
+    return {
+      badgeLabel: 'تفضیل ۲ - کارساخته',
+      badgeClass: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
+      BadgeIcon: Sparkles,
+      actionHref: '/dashboard/documents/initial-inventory/workmanship',
+      actionLabel: 'مدیریت کارساخته',
+      actionTitle: 'مشاهده و مدیریت ردیف موجودی اولیه کارساخته',
+      actionColorClass: 'text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/30',
+    };
+  }
+
+  // 10. Workmanship Group (Tafsil 1) under 1130
+  if (id.startsWith('coa_group_workmanship_') || tags.includes('workmanship_inventory')) {
+    return {
+      badgeLabel: 'تفضیل ۱ - کارساخته',
+      badgeClass: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
+      BadgeIcon: Sparkles,
+      actionHref: '/dashboard/documents/initial-inventory/workmanship',
+      actionLabel: 'مشاهده کارساخته‌ها',
+      actionTitle: 'مشاهده اقلام کارساخته اول دوره',
+      actionColorClass: 'text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/30',
+    };
+  }
+
+  // 11. Gemstone Item (Tafsil 2) under 113050
+  if (id.startsWith('coa_gemstone_') || (tags.includes('tafsil_2') && tags.some((t) => t.startsWith('gemstone_')))) {
+    return {
+      badgeLabel: 'تفضیل ۲ - سنگ و الماس',
+      badgeClass: 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30',
+      BadgeIcon: Sparkles,
+      actionHref: '/dashboard/documents/initial-inventory/gemstones',
+      actionLabel: 'مدیریت سنگ و جواهر',
+      actionTitle: 'مشاهده و مدیریت در موجودی اول دوره سنگ‌ها',
+      actionColorClass: 'text-cyan-400 hover:text-cyan-300 bg-cyan-500/10 hover:bg-cyan-500/20 border-cyan-500/30',
+    };
+  }
+
+  // 12. Gemstone Group (Tafsil 1) under 113050
+  if (id.startsWith('coa_group_gemstone_') || tags.includes('gemstone_inventory')) {
+    return {
+      badgeLabel: 'تفضیل ۱ - سنگ‌های قیمتی',
+      badgeClass: 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30',
+      BadgeIcon: Sparkles,
+      actionHref: '/dashboard/documents/initial-inventory/gemstones',
+      actionLabel: 'مشاهده سنگ‌ها',
+      actionTitle: 'مشاهده فهرست سنگ‌های قیمتی و الماس اول دوره',
+      actionColorClass: 'text-cyan-400 hover:text-cyan-300 bg-cyan-500/10 hover:bg-cyan-500/20 border-cyan-500/30',
+    };
+  }
+
+  // 13. Goods Item (Tafsil 2) under 113040
+  if (id.startsWith('coa_goods_') || (tags.includes('tafsil_2') && tags.some((t) => t.startsWith('goods_')))) {
+    return {
+      badgeLabel: 'تفضیل ۲ - قلم کالا',
+      badgeClass: 'bg-purple-500/10 text-purple-300 border-purple-500/30',
+      BadgeIcon: ShoppingBag,
+      actionHref: '/dashboard/documents/initial-inventory/goods',
+      actionLabel: 'مدیریت کالا',
+      actionTitle: 'مشاهده و مدیریت در موجودی اول دوره کالاها',
+      actionColorClass: 'text-purple-400 hover:text-purple-300 bg-purple-500/10 hover:bg-purple-500/20 border-purple-500/30',
+    };
+  }
+
+  // 14. Goods Group (Tafsil 1) under 113040
+  if (id.startsWith('coa_group_goods_') || (tags.includes('tafsil_1') && tags.some((t) => t.startsWith('goods_')))) {
+    return {
+      badgeLabel: 'تفضیل ۱ - کالا و ملزومات',
+      badgeClass: 'bg-purple-500/10 text-purple-300 border-purple-500/30',
+      BadgeIcon: ShoppingBag,
+      actionHref: '/dashboard/documents/initial-inventory/goods',
+      actionLabel: 'مشاهده کالاها',
+      actionTitle: 'مشاهده فهرست کالاهای اول دوره',
+      actionColorClass: 'text-purple-400 hover:text-purple-300 bg-purple-500/10 hover:bg-purple-500/20 border-purple-500/30',
+    };
+  }
+
+  // 15. Customer / Partner
+  if (tags.includes('customer') || tags.includes('person') || id.startsWith('coa_customer_')) {
+    return {
+      badgeLabel: node.level === 5 ? 'تفضیل ۲ - شخص' : 'تفضیل ۱ - طرف‌حساب',
+      badgeClass: 'bg-blue-500/10 text-blue-300 border-blue-500/30',
+      BadgeIcon: Users,
+      actionHref: '/dashboard/customers',
+      actionLabel: 'مدیریت طرف‌حساب',
+      actionTitle: 'مشاهده و مدیریت در بخش طرف‌حساب‌ها',
+      actionColorClass: 'text-blue-400 hover:text-blue-300 bg-blue-500/10 hover:bg-blue-500/20 border-blue-500/30',
+    };
+  }
+
+  return null;
+}
+
 function AccountTreeItem({
   node,
   level,
@@ -1323,9 +1544,7 @@ function AccountTreeItem({
   const isExpanded = expandedIds.has(node.id);
   const hasChildren = node.children && node.children.length > 0;
   const paddingRight = (level - 1) * 26 + 16;
-  const isTafsil1Bank = Boolean(node.tags?.includes('tafsil_1') || node.tags?.includes('bank_payable'));
-  const isTafsil2Check = Boolean(node.tags?.includes('tafsil_2') || node.tags?.includes('issued_check'));
-  const isOpeningCheckHierarchy = isTafsil1Bank || isTafsil2Check;
+  const tafsilConfig = getTafsilActionConfig(node);
 
   // Visual indentation level border color
   const levelBorderColors = [
@@ -1383,30 +1602,25 @@ function AccountTreeItem({
             {node.name}
           </span>
 
-          {/* Bank / Check Specific Badges */}
-          {isTafsil1Bank && (
-            <span className="hidden sm:inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md bg-sky-500/10 text-sky-300 border border-sky-500/30 font-bold shrink-0">
-              <Building2 className="w-3 h-3 text-sky-400" />
-              تفضیل ۱ - بانک
-            </span>
-          )}
-
-          {isTafsil2Check && (
-            <span className="hidden sm:inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 font-bold shrink-0">
-              <FileSpreadsheet className="w-3 h-3 text-emerald-400" />
-              تفضیل ۲ - چک صادره
+          {/* Dedicated Tafsil Badge */}
+          {tafsilConfig && (
+            <span
+              className={`hidden sm:inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md border font-bold shrink-0 ${tafsilConfig.badgeClass}`}
+            >
+              <tafsilConfig.BadgeIcon className="w-3 h-3" />
+              {tafsilConfig.badgeLabel}
             </span>
           )}
 
           {/* System Lock Badge */}
-          {node.isSystem && !isOpeningCheckHierarchy && (
+          {node.isSystem && !tafsilConfig && (
             <span title="سرفصل سیستمی محافظت‌شده">
               <Lock className="w-3.5 h-3.5 text-amber-500/70 flex-shrink-0" />
             </span>
           )}
 
           {/* Postable indicator */}
-          {node.isPostable && !isTafsil2Check && (
+          {node.isPostable && (!tafsilConfig || node.level < 5) && (
             <span className="text-[10px] px-1.5 py-0.2 bg-teal-500/10 text-teal-300 border border-teal-500/20 rounded" title="مجاز به گردش و ثبت سند">
               گردش
             </span>
@@ -1446,14 +1660,14 @@ function AccountTreeItem({
 
         {/* Actions */}
         <div className="col-span-12 sm:col-span-2 flex items-center justify-end gap-1 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-800">
-          {isOpeningCheckHierarchy ? (
+          {tafsilConfig ? (
             <Link
-              href="/dashboard/accounting/opening-balance/checks"
-              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded-lg transition-colors"
-              title="مشاهده و مدیریت در چک‌های صادرشده اول دوره"
+              href={tafsilConfig.actionHref}
+              className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-lg border transition-colors ${tafsilConfig.actionColorClass}`}
+              title={tafsilConfig.actionTitle}
             >
               <ExternalLink className="w-3.5 h-3.5" />
-              <span className="text-[11px]">{isTafsil2Check ? 'مدیریت چک' : 'مشاهده چک‌ها'}</span>
+              <span className="text-[11px]">{tafsilConfig.actionLabel}</span>
             </Link>
           ) : (
             <>

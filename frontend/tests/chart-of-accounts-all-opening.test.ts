@@ -5,12 +5,15 @@ import {
   enrichAccountsWithOpeningChecks,
   enrichAccountsWithBankAndCash,
   enrichAccountsWithCoinsAndMetals,
+  enrichAccountsWithWorkmanship,
   type ChartOfAccountRecord,
   type BankAccountEnrichmentInput,
   type CashFundEnrichmentInput,
   type CoinInventoryEnrichmentInput,
   type MetalInventoryEnrichmentInput,
+  type WorkmanshipInventoryEnrichmentInput,
 } from '@/features/accounting/chart-of-accounts/services/chart-of-accounts';
+import { getTafsilActionConfig } from '@/features/accounting/chart-of-accounts/components/ChartOfAccounts';
 
 describe('Zarfolio — All Opening Inventories to Chart of Accounts Hierarchy Tests', () => {
   const baseAccounts: ChartOfAccountRecord[] = DEFAULT_CHART_OF_ACCOUNTS.map((a) => ({
@@ -340,6 +343,221 @@ describe('Zarfolio — All Opening Inventories to Chart of Accounts Hierarchy Te
         ?.children.find((n) => n.code === '2110');
       expect(node2110?.childrenCount).toBe(1); // Bank b1
       expect(node2110?.children[0]?.childrenCount).toBe(1); // Check chk1
+    });
+  });
+
+  describe('113060 (موجودی کارساخته) — Workmanship Jewelry Pieces Enrichment', () => {
+    const mockWorkmanship: WorkmanshipInventoryEnrichmentInput[] = [
+      {
+        id: 'wrk_ring_01',
+        code: 'R101',
+        name: 'انگشتر تک تاش برلیان',
+        quantity: 2,
+        rawWeight: 8.5,
+        convertedWeight: 8.5,
+        totalAmount: 95_000_000,
+      },
+      {
+        id: 'wrk_necklace_02',
+        code: 'N202',
+        name: 'گردنبند کارتیه ۱۸ عیار',
+        quantity: 1,
+        rawWeight: 22.3,
+        convertedWeight: 22.3,
+        totalAmount: 240_000_000,
+      },
+    ];
+
+    it('enriches 1130 with workmanship group (113060) and item pieces (Level 5)', () => {
+      const enriched = enrichAccountsWithWorkmanship(baseAccounts, mockWorkmanship);
+
+      const groupNode = enriched.find((a) => a.id === 'coa_group_workmanship_1130');
+      expect(groupNode).toBeDefined();
+      expect(groupNode?.code).toBe('113060');
+      expect(groupNode?.level).toBe(4);
+      expect(groupNode?.tags).toContain('workmanship_inventory');
+      expect(groupNode?.tags).toContain('tafsil_1');
+
+      const ringNode = enriched.find((a) => a.id === 'coa_workmanship_wrk_ring_01');
+      expect(ringNode).toBeDefined();
+      expect(ringNode?.code).toBe('11306001');
+      expect(ringNode?.level).toBe(5);
+      expect(ringNode?.parentId).toBe('coa_group_workmanship_1130');
+      expect(ringNode?.tags).toContain('workmanship_inventory');
+      expect(ringNode?.tags).toContain('tafsil_2');
+
+      const neckNode = enriched.find((a) => a.id === 'coa_workmanship_wrk_necklace_02');
+      expect(neckNode).toBeDefined();
+      expect(neckNode?.code).toBe('11306002');
+      expect(neckNode?.level).toBe(5);
+    });
+  });
+
+  describe('getTafsilActionConfig — Dedicated Buttons & Badges Isolation', () => {
+    it('only assigns check management actions to actual checks and check banks under 2110', () => {
+      const checkNode = {
+        id: 'coa_check_123',
+        code: '21100101',
+        name: 'چک ۹۹۸۸۷۷',
+        level: 5 as const,
+        tags: ['issued_check', 'tafsil_2'],
+        children: [],
+        childrenCount: 0,
+        accountType: 'liability' as const,
+        normalBalance: 'credit' as const,
+        path: '/2000/2100/2110/211001/21100101/',
+      };
+      const checkBankNode = {
+        id: 'coa_bank_pasargad_2110',
+        code: '211001',
+        name: 'بانک پاسارگاد (چک)',
+        level: 4 as const,
+        tags: ['bank_payable', 'tafsil_1'],
+        children: [],
+        childrenCount: 1,
+        accountType: 'liability' as const,
+        normalBalance: 'credit' as const,
+        path: '/2000/2100/2110/211001/',
+      };
+
+      const checkConfig = getTafsilActionConfig(checkNode);
+      expect(checkConfig).not.toBeNull();
+      expect(checkConfig?.actionLabel).toBe('مدیریت چک');
+      expect(checkConfig?.actionHref).toBe('/dashboard/documents/initial-inventory/checks');
+
+      const bankPayableConfig = getTafsilActionConfig(checkBankNode);
+      expect(bankPayableConfig).not.toBeNull();
+      expect(bankPayableConfig?.actionLabel).toBe('مشاهده چک‌ها');
+      expect(bankPayableConfig?.actionHref).toBe('/dashboard/documents/initial-inventory/checks');
+    });
+
+    it('assigns dedicated "مدیریت حساب بانکی" to bank accounts under 1110 (NOT checks!)', () => {
+      const bankNode = {
+        id: 'coa_bank_mellat_1110',
+        code: '111001',
+        name: 'بانک ملت شعبه ونک',
+        level: 4 as const,
+        tags: ['bank_account', 'tafsil_1'],
+        children: [],
+        childrenCount: 0,
+        accountType: 'asset' as const,
+        normalBalance: 'debit' as const,
+        path: '/1000/1100/1110/111001/',
+      };
+
+      const config = getTafsilActionConfig(bankNode);
+      expect(config).not.toBeNull();
+      expect(config?.actionLabel).toBe('مدیریت حساب بانکی');
+      expect(config?.actionHref).toBe('/dashboard/documents/initial-inventory/bank');
+      expect(config?.badgeLabel).toBe('تفضیل ۱ - حساب بانکی');
+    });
+
+    it('assigns dedicated "مدیریت صندوق" to cash funds under 1110 (NOT checks!)', () => {
+      const cashNode = {
+        id: 'coa_cash_fund_main_1110',
+        code: '111051',
+        name: 'صندوق اصلی مغازه',
+        level: 4 as const,
+        tags: ['cash_fund', 'tafsil_1'],
+        children: [],
+        childrenCount: 0,
+        accountType: 'asset' as const,
+        normalBalance: 'debit' as const,
+        path: '/1000/1100/1110/111051/',
+      };
+
+      const config = getTafsilActionConfig(cashNode);
+      expect(config).not.toBeNull();
+      expect(config?.actionLabel).toBe('مدیریت صندوق');
+      expect(config?.actionHref).toBe('/dashboard/documents/initial-inventory/cash');
+      expect(config?.badgeLabel).toBe('تفضیل ۱ - صندوق نقد');
+    });
+
+    it('assigns dedicated "مدیریت سکه و شمش" and "مشاهده مسکوکات" to coins (NOT checks!)', () => {
+      const coinGroup = {
+        id: 'coa_group_coins_1130',
+        code: '113001',
+        name: 'مسکوکات و شمش',
+        level: 4 as const,
+        tags: ['coins_and_bullion', 'tafsil_1'],
+        children: [],
+        childrenCount: 1,
+        accountType: 'asset' as const,
+        normalBalance: 'debit' as const,
+        path: '/1000/1100/1130/113001/',
+      };
+      const coinItem = {
+        id: 'coa_coin_c1',
+        code: '11300101',
+        name: 'تمام بهار آزادی',
+        level: 5 as const,
+        tags: ['coin_inventory', 'tafsil_2'],
+        children: [],
+        childrenCount: 0,
+        accountType: 'asset' as const,
+        normalBalance: 'debit' as const,
+        path: '/1000/1100/1130/113001/11300101/',
+      };
+
+      const groupCfg = getTafsilActionConfig(coinGroup);
+      expect(groupCfg?.actionLabel).toBe('مشاهده مسکوکات');
+      expect(groupCfg?.actionHref).toBe('/dashboard/documents/initial-inventory/coin');
+
+      const itemCfg = getTafsilActionConfig(coinItem);
+      expect(itemCfg?.actionLabel).toBe('مدیریت سکه و شمش');
+      expect(itemCfg?.actionHref).toBe('/dashboard/documents/initial-inventory/coin');
+    });
+
+    it('assigns dedicated "مدیریت کارساخته" to workmanship manufactured jewelry', () => {
+      const workGroup = {
+        id: 'coa_group_workmanship_1130',
+        code: '113060',
+        name: 'موجودی کارساخته',
+        level: 4 as const,
+        tags: ['workmanship_inventory', 'tafsil_1'],
+        children: [],
+        childrenCount: 1,
+        accountType: 'asset' as const,
+        normalBalance: 'debit' as const,
+        path: '/1000/1100/1130/113060/',
+      };
+      const workItem = {
+        id: 'coa_workmanship_w1',
+        code: '11306001',
+        name: 'النگو دامله',
+        level: 5 as const,
+        tags: ['workmanship_inventory', 'tafsil_2'],
+        children: [],
+        childrenCount: 0,
+        accountType: 'asset' as const,
+        normalBalance: 'debit' as const,
+        path: '/1000/1100/1130/113060/11306001/',
+      };
+
+      const groupCfg = getTafsilActionConfig(workGroup);
+      expect(groupCfg?.actionLabel).toBe('مشاهده کارساخته‌ها');
+      expect(groupCfg?.actionHref).toBe('/dashboard/documents/initial-inventory/workmanship');
+
+      const itemCfg = getTafsilActionConfig(workItem);
+      expect(itemCfg?.actionLabel).toBe('مدیریت کارساخته');
+      expect(itemCfg?.actionHref).toBe('/dashboard/documents/initial-inventory/workmanship');
+    });
+
+    it('returns null for standard general ledger / subsidiary accounts (allowing standard CRUD)', () => {
+      const normalNode = {
+        id: 'sys_1110',
+        code: '1110',
+        name: 'موجودی نقد و بانک',
+        level: 3 as const,
+        tags: ['cash_and_bank'],
+        children: [],
+        childrenCount: 0,
+        accountType: 'asset' as const,
+        normalBalance: 'debit' as const,
+        path: '/1000/1100/1110/',
+      };
+
+      expect(getTafsilActionConfig(normalNode)).toBeNull();
     });
   });
 });
