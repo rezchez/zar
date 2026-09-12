@@ -198,9 +198,12 @@ export default function InitialGemstoneInventoryClient({
       });
       if (res.ok) {
         void fetchInventory();
+      } else {
+        const data = await res.json().catch(() => null);
+        alert(data?.message || 'خطا در حذف موجودی اولیه سنگ.');
       }
     } catch {
-      //
+      alert('خطا در برقراری ارتباط با سرور.');
     }
   };
 

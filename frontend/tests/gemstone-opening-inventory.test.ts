@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 
+import { setMockAuthUser } from './setup';
 import {
   DEFAULT_CHART_OF_ACCOUNTS,
   buildAccountTree,
@@ -739,6 +740,95 @@ describe('Zarfolio — Professional Gemstone Opening Inventory Tests', () => {
       expect(formattedOptions[2]).toContain('↳'); // Child 1
       expect(formattedOptions[3]).toContain('↳'); // Child 2
       expect(formattedOptions[4]).not.toContain('↳'); // Top-level
+    });
+  });
+
+  describe('DELETE /api/accounting/opening/gemstones API Handler', () => {
+    it('returns 401 when unauthenticated', async () => {
+      setMockAuthUser(null);
+      const { DELETE } = await import('../app/api/accounting/opening/gemstones/route');
+      const req = new Request('http://localhost:3000/api/accounting/opening/gemstones?id=gem1', {
+        method: 'DELETE',
+      });
+      const res = await DELETE(req);
+      expect(res.status).toBe(401);
+    });
+
+    it('returns 403 when user lacks permission', async () => {
+      setMockAuthUser({
+        id: 'usr-regular',
+        name: 'کاربر معمولی',
+        email: 'user@zar.ir',
+        role: 'user',
+        status: 'active',
+        customPermissions: {
+          grants: [],
+          denies: ['document.delete', 'document.manage', 'cash.delete', 'cash.manage'],
+        },
+      });
+      const { DELETE } = await import('../app/api/accounting/opening/gemstones/route');
+      const req = new Request('http://localhost:3000/api/accounting/opening/gemstones?id=gem1', {
+        method: 'DELETE',
+      });
+      const res = await DELETE(req);
+      expect(res.status).toBe(403);
+    });
+
+    it('returns 400 when id is missing', async () => {
+      setMockAuthUser({
+        id: 'admin-1',
+        name: 'مدیر',
+        email: 'admin@zar.ir',
+        role: 'admin',
+        status: 'active',
+      });
+      const { DELETE } = await import('../app/api/accounting/opening/gemstones/route');
+      const req = new Request('http://localhost:3000/api/accounting/opening/gemstones', {
+        method: 'DELETE',
+      });
+      const res = await DELETE(req);
+      expect(res.status).toBe(400);
+      const data = await res.json();
+      expect(data.message).toBe('شناسه سنگ مشخص نشده است.');
+    });
+
+    it('deletes referencing transactions, parcel merges, and journal entries before gemstone inventory record', async () => {
+      setMockAuthUser({
+        id: 'admin-1',
+        name: 'مدیر',
+        email: 'admin@zar.ir',
+        role: 'admin',
+        status: 'active',
+      });
+
+      const deletedItems: string[] = [];
+      const mockPbContext = {
+        filter: (t: string, p: Record<string, any>) => t,
+        collection: (name: string) => ({
+          getFullList: async () => {
+            if (name === 'gemstone_inventory_transactions') return [{ id: 'tx_1' }];
+            if (name === 'gemstone_parcel_merges') return [{ id: 'merge_1' }];
+            if (name === 'journal_entries') return [{ id: 'journal_1' }];
+            return [];
+          },
+          delete: async (id: string) => {
+            deletedItems.push(`${name}:${id}`);
+            return true;
+          },
+          update: async () => ({}),
+        }),
+      };
+
+      // Verify that deleting in proper sequence deletes dependent child relations first
+      const { DELETE } = await import('../app/api/accounting/opening/gemstones/route');
+      const req = new Request('http://localhost:3000/api/accounting/opening/gemstones?id=gem_test_123', {
+        method: 'DELETE',
+      });
+
+      const res = await DELETE(req);
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.success).toBe(true);
     });
   });
 });

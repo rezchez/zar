@@ -866,10 +866,21 @@ export async function POST(request: Request) {
       } catch (err) {
         // Rollback created record if journal posting fails on creation
         if (!recordId && resultRecord.id) {
-          await context.pb.collection('gemstone_inventory').delete(String(resultRecord.id)).catch(() => undefined);
-          await context.pb.collection('gemstone_inventory_transactions').delete(
-            context.pb.filter('source_key = {:key}', { key: `opening:gemstone:${resultRecord.id}` }),
-          ).catch(() => undefined);
+          const recId = String(resultRecord.id);
+          try {
+            const txs = await context.pb.collection('gemstone_inventory_transactions').getFullList({
+              filter: context.pb.filter('gemstone = {:id} || source_id = {:id} || source_key = {:key}', {
+                id: recId,
+                key: `opening:gemstone:${recId}`,
+              }),
+            }).catch(() => []);
+            for (const tx of txs) {
+              await context.pb.collection('gemstone_inventory_transactions').delete(tx.id).catch(() => undefined);
+            }
+          } catch {
+            // non-blocking
+          }
+          await context.pb.collection('gemstone_inventory').delete(recId).catch(() => undefined);
         }
         return NextResponse.json({
           message: extractPbErrorMessage(err, 'ثبت سند حسابداری موجودی اولیه سنگ با خطا مواجه شد.'),
@@ -945,13 +956,13 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ message: 'شناسه سنگ مشخص نشده است.' }, { status: 400 });
     }
 
-    // Delete record from gemstone_inventory
-    await context.pb.collection('gemstone_inventory').delete(id);
-
-    // Delete linked transactions
+    // 1. Delete linked transactions first (FK constraint cascade order)
     try {
       const txs = await context.pb.collection('gemstone_inventory_transactions').getFullList({
-        filter: context.pb.filter('gemstone = {:id}', { id }),
+        filter: context.pb.filter('gemstone = {:id} || source_id = {:id} || source_key = {:key}', {
+          id,
+          key: `opening:gemstone:${id}`,
+        }),
       }).catch(() => []);
       for (const tx of txs) {
         await context.pb.collection('gemstone_inventory_transactions').delete(tx.id).catch(() => undefined);
@@ -960,16 +971,43 @@ export async function DELETE(request: Request) {
       // non-blocking
     }
 
-    // Delete linked journal entry if exists
+    // 2. Delete linked parcel merges if target_gemstone is this gemstone
     try {
-      const journal = await context.pb.collection('journal_entries').getFirstListItem(
-        context.pb.filter('sourceKey = {:key}', { key: `opening:gemstone:${id}` }),
-      ).catch(() => null);
-      if (journal) {
+      const merges = await context.pb.collection('gemstone_parcel_merges').getFullList({
+        filter: context.pb.filter('target_gemstone = {:id}', { id }),
+      }).catch(() => []);
+      for (const m of merges) {
+        await context.pb.collection('gemstone_parcel_merges').delete(m.id).catch(() => undefined);
+      }
+    } catch {
+      // non-blocking
+    }
+
+    // 3. Delete linked journal entries and lines if exist
+    try {
+      const journals = await context.pb.collection('journal_entries').getFullList({
+        filter: context.pb.filter('sourceKey = {:key} || (sourceType = {:sourceType} && sourceId = {:id})', {
+          key: `opening:gemstone:${id}`,
+          sourceType: 'opening_gemstone',
+          id,
+        }),
+      }).catch(() => []);
+      for (const journal of journals) {
         await context.pb.collection('journal_entries').delete(journal.id).catch(() => null);
       }
     } catch {
       // non-blocking
+    }
+
+    // 4. Delete record from gemstone_inventory with soft-delete fallback
+    try {
+      await context.pb.collection('gemstone_inventory').delete(id);
+    } catch {
+      await context.pb.collection('gemstone_inventory').update(id, {
+        is_deleted: true,
+        deleted_at: new Date().toISOString(),
+        deleted_by: context.user.id,
+      });
     }
 
     return NextResponse.json({ success: true });
