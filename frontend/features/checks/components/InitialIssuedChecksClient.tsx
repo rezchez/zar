@@ -22,6 +22,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAppSettings } from '@/components/shared/SettingsProvider';
 import { CHEQUE_STATUS_COLORS, CHEQUE_STATUS_LABELS, type CheckRecord } from '@/lib/check';
 import InitialIssuedCheckModal from './InitialIssuedCheckModal';
+import PaginationControls from '@/components/shared/PaginationControls';
 
 type ChecksSummary = {
   totalCount: number;
@@ -60,6 +61,8 @@ export default function InitialIssuedChecksClient({
   const [editingItem, setEditingItem] = useState<CheckRecord | null>(null);
   const [selectedBankFilter, setSelectedBankFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
 
   const fetchChecks = useCallback(async () => {
@@ -119,6 +122,13 @@ export default function InitialIssuedChecksClient({
       return true;
     });
   }, [checks, selectedBankFilter, searchQuery]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredChecks.length / pageSize));
+  const paginatedChecks = useMemo(() => {
+    const safePage = Math.min(page, totalPages);
+    const start = (safePage - 1) * pageSize;
+    return filteredChecks.slice(start, start + pageSize);
+  }, [filteredChecks, page, pageSize, totalPages]);
 
   const handleOpenCreate = () => {
     setEditingItem(null);
@@ -269,7 +279,10 @@ export default function InitialIssuedChecksClient({
           <div className="relative min-w-[200px]">
             <select
               value={selectedBankFilter}
-              onChange={(e) => setSelectedBankFilter(e.target.value)}
+              onChange={(e) => {
+                setSelectedBankFilter(e.target.value);
+                setPage(1);
+              }}
               className="h-10 w-full appearance-none rounded-2xl border border-slate-200 bg-white px-3 pr-9 text-xs font-bold text-slate-800 focus:border-amber-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
             >
               <option value="all">همه حساب‌های بانکی ({checks.length})</option>
@@ -288,7 +301,10 @@ export default function InitialIssuedChecksClient({
             <input
               type="text"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setPage(1);
+              }}
               placeholder="جستجو در شماره چک، طرف‌حساب..."
               className="h-10 w-full rounded-2xl border border-slate-200 bg-white pr-9 pl-3 text-xs font-bold text-slate-800 placeholder:text-slate-400 focus:border-amber-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
             />
@@ -299,7 +315,7 @@ export default function InitialIssuedChecksClient({
         </div>
 
         <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
-          نمایش {filteredChecks.length.toLocaleString('fa-IR')} از {checks.length.toLocaleString('fa-IR')} چک
+          نمایش {filteredChecks.length.toLocaleString('fa-IR')} از {checks.length.toLocaleString('fa-IR')} چک (صفحه {page.toLocaleString('fa-IR')} از {totalPages.toLocaleString('fa-IR')})
         </div>
       </div>
 
@@ -330,7 +346,8 @@ export default function InitialIssuedChecksClient({
             <table className="w-full text-right text-xs">
               <thead className="border-b border-slate-100 bg-slate-50/75 text-[11px] font-black text-slate-500 dark:border-slate-800 dark:bg-slate-800/50 dark:text-slate-400">
                 <tr>
-                  <th className="py-3.5 pr-4 pl-2">بانک حساب</th>
+                  <th className="py-3.5 pr-4 pl-2 font-bold">#</th>
+                  <th className="px-3 py-3.5">بانک حساب</th>
                   <th className="px-3 py-3.5">شماره چک</th>
                   <th className="px-3 py-3.5">طرف‌حساب / ذینفع</th>
                   <th className="px-3 py-3.5">ثبت‌کننده</th>
@@ -342,7 +359,7 @@ export default function InitialIssuedChecksClient({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80 font-medium">
-                {filteredChecks.map((check) => {
+                {paginatedChecks.map((check, idx) => {
                   const bankRecord = check.expand?.bankAccount as Record<string, unknown> | undefined;
                   const customerRecord = check.expand?.customer as Record<string, unknown> | undefined;
                   const creatorRecord = (check.expand?.created_by || check.expand?.createdBy) as Record<string, unknown> | undefined;
@@ -364,8 +381,13 @@ export default function InitialIssuedChecksClient({
                       key={check.id}
                       className="transition-colors hover:bg-slate-50/60 dark:hover:bg-slate-800/40"
                     >
+                      {/* # */}
+                      <td className="py-3.5 pr-4 pl-2 font-semibold text-slate-400">
+                        {(page - 1) * pageSize + idx + 1}
+                      </td>
+
                       {/* Bank */}
-                      <td className="py-3.5 pr-4 pl-2">
+                      <td className="px-3 py-3.5">
                         <div className="flex items-center gap-2">
                           <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                             <Landmark size={14} />
@@ -460,6 +482,20 @@ export default function InitialIssuedChecksClient({
               </tbody>
             </table>
           </div>
+
+          <PaginationControls
+            currentPage={page}
+            totalPages={totalPages}
+            totalItems={filteredChecks.length}
+            pageSize={pageSize}
+            pageSizeOptions={[15, 25, 50, 100]}
+            onPageChange={setPage}
+            onPageSizeChange={(newSize) => {
+              setPageSize(newSize);
+              setPage(1);
+            }}
+            itemLabel="فقره چک"
+          />
         </div>
       )}
 

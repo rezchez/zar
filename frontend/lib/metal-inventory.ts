@@ -73,6 +73,7 @@ export function parseMetalDocumentDetails(raw: unknown): Partial<MetalDocumentDe
 export function calculateMetalInventoryBalances(
   transactions: Record<string, unknown>[],
   precision: WeightDecimalPlaces = 3,
+  customBaseKarats?: Partial<Record<PreciousMetalType, number>>,
 ): MultiMetalSummary {
   const summary: MultiMetalSummary = {
     gold: {
@@ -123,8 +124,9 @@ export function calculateMetalInventoryBalances(
       const metalKey = String(tx.metal).toLowerCase() as PreciousMetalType;
       if (summary[metalKey]) {
         const rawWeight = Math.abs(Number(tx.raw_weight ?? tx.rawWeight ?? 0));
-        const purity = Number(tx.purity) || (metalKey === 'gold' ? 750 : metalKey === 'silver' ? 999 : 950);
-        const baseKarat = Number(tx.base_karat ?? tx.baseKarat) || DEFAULT_BASE_KARATS[metalKey];
+        const defaultBase = customBaseKarats?.[metalKey] || DEFAULT_BASE_KARATS[metalKey];
+        const purity = Number(tx.purity) || defaultBase;
+        const baseKarat = Number(tx.base_karat ?? tx.baseKarat) || defaultBase;
         const converted = Number(tx.converted_weight ?? tx.convertedWeight) || metalAtBaseKarat(rawWeight, purity, baseKarat, precision);
 
         if (isOpening) {
@@ -144,8 +146,9 @@ export function calculateMetalInventoryBalances(
     // 1. Gold
     const rawGold = Math.abs(Number(tx.goldAmount || 0));
     if (rawGold > 0) {
-      const purity = Number(details.purity) || 750;
-      const baseKarat = Number(details.baseKarat) || DEFAULT_BASE_KARATS.gold;
+      const defaultGoldBase = customBaseKarats?.gold || DEFAULT_BASE_KARATS.gold;
+      const purity = Number(details.purity) || defaultGoldBase;
+      const baseKarat = Number(details.baseKarat) || defaultGoldBase;
       const convertedGold = metalAtBaseKarat(rawGold, purity, baseKarat, precision);
 
       if (isOpening) {
@@ -162,8 +165,9 @@ export function calculateMetalInventoryBalances(
     // 2. Silver
     const rawSilver = Math.abs(Number(tx.silverAmount || 0));
     if (rawSilver > 0) {
-      const purity = Number(details.purity) || 999;
-      const baseKarat = Number(details.baseKarat) || DEFAULT_BASE_KARATS.silver;
+      const defaultSilverBase = customBaseKarats?.silver || DEFAULT_BASE_KARATS.silver;
+      const purity = Number(details.purity) || defaultSilverBase;
+      const baseKarat = Number(details.baseKarat) || defaultSilverBase;
       const convertedSilver = metalAtBaseKarat(rawSilver, purity, baseKarat, precision);
 
       if (isOpening) {
@@ -180,8 +184,9 @@ export function calculateMetalInventoryBalances(
     // 3. Platinum
     const rawPlatinum = Math.abs(Number(tx.platinumAmount || 0));
     if (rawPlatinum > 0) {
-      const purity = Number(details.purity) || 950;
-      const baseKarat = Number(details.baseKarat) || DEFAULT_BASE_KARATS.platinum;
+      const defaultPlatinumBase = customBaseKarats?.platinum || DEFAULT_BASE_KARATS.platinum;
+      const purity = Number(details.purity) || defaultPlatinumBase;
+      const baseKarat = Number(details.baseKarat) || defaultPlatinumBase;
       const convertedPlatinum = metalAtBaseKarat(rawPlatinum, purity, baseKarat, precision);
 
       if (isOpening) {

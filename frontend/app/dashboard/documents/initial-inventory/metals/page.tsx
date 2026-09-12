@@ -37,24 +37,64 @@ export default async function InitialMetalInventoryPage() {
 
   try {
     let weightPrecision: WeightDecimalPlaces = 3;
+    let customBaseKarats: Record<PreciousMetalType, number> = {
+      gold: DEFAULT_BASE_KARATS.gold,
+      silver: DEFAULT_BASE_KARATS.silver,
+      platinum: DEFAULT_BASE_KARATS.platinum,
+    };
     try {
       const settingsRecord = await context.pb.collection('app_settings').getFirstListItem('id != ""').catch(() => null);
       if (settingsRecord) {
         const s = normalizeSettings(settingsRecord as Record<string, unknown>);
         weightPrecision = (s.weightDecimalPlaces || 3) as WeightDecimalPlaces;
+        if (s.goldBaseKarat) customBaseKarats.gold = Number(s.goldBaseKarat);
+        if (s.silverBaseKarat) customBaseKarats.silver = Number(s.silverBaseKarat);
+        if (s.platinumBaseKarat) customBaseKarats.platinum = Number(s.platinumBaseKarat);
       }
     } catch {
       weightPrecision = 3;
     }
 
-    const records = await context.pb.collection('transactions').getFullList({
-      filter: 'isOpeningBalance = true && (goldAmount != 0 || silverAmount != 0 || platinumAmount != 0 || documentTab = "metals" || documentTab = "raw-gold")',
+    // 1. Fetch from primary dedicated collection: metal_inventory
+    const metalInvRecords = await context.pb.collection('metal_inventory').getFullList({
+      filter: 'is_deleted = false && (transaction_type = "opening_balance" || is_opening_balance = true)',
       sort: '-created',
     }).catch(() => []);
 
-    initialItems = records
-      .filter((r) => !r.is_deleted)
-      .map((r: Record<string, unknown>) => {
+    if (metalInvRecords.length > 0) {
+      initialItems = metalInvRecords.map((r: Record<string, unknown>) => {
+        const metal = String(r.metal || 'gold').toLowerCase() as PreciousMetalType;
+        const defaultBase = customBaseKarats[metal] || DEFAULT_BASE_KARATS[metal];
+        const baseKarat = Number(r.base_karat) || defaultBase;
+        const rawWeight = Math.abs(Number(r.raw_weight || 0));
+        const purity = Number(r.purity) || defaultBase;
+        const convertedWeight = Number(r.converted_weight) || metalAtBaseKarat(rawWeight, purity, baseKarat, weightPrecision);
+
+        return {
+          id: String(r.id || ''),
+          metal,
+          inventoryType: (r.inventory_type || 'general_metal') as MetalInventoryType,
+          rawWeight,
+          purity,
+          baseKarat,
+          convertedWeight,
+          labName: String(r.lab_name || ''),
+          stampNumber: String(r.stamp_number || ''),
+          totalAmount: Math.abs(Number(r.total_amount || 0)),
+          date: String(r.date || ''),
+          description: String(r.description || ''),
+          createdBy: String(r.created_by || ''),
+          created: String(r.created || ''),
+          updated: String(r.updated || ''),
+        };
+      });
+    } else {
+      const records = await context.pb.collection('transactions').getFullList({
+        filter: 'isOpeningBalance = true && is_deleted = false && (goldAmount != 0 || silverAmount != 0 || platinumAmount != 0 || documentTab = "metals" || documentTab = "raw-gold")',
+        sort: '-created',
+      }).catch(() => []);
+
+      initialItems = records.map((r: Record<string, unknown>) => {
         const details = parseMetalDocumentDetails(r.documentDetails);
         const rawGold = Math.abs(Number(r.goldAmount || 0));
         const rawSilver = Math.abs(Number(r.silverAmount || 0));
@@ -70,8 +110,9 @@ export default async function InitialMetalInventoryPage() {
           weight = rawPlatinum;
         }
 
-        const baseKarat = Number(details.baseKarat) || DEFAULT_BASE_KARATS[metal];
-        const purity = Number(details.purity) || (metal === 'gold' ? 750 : metal === 'silver' ? 999 : 950);
+        const defaultBase = customBaseKarats[metal] || DEFAULT_BASE_KARATS[metal];
+        const baseKarat = Number(details.baseKarat) || defaultBase;
+        const purity = Number(details.purity) || defaultBase;
         const convertedWeight = Number(details.convertedWeight) || metalAtBaseKarat(weight, purity, baseKarat, weightPrecision);
 
         let inventoryType: MetalInventoryType = 'general_metal';
@@ -100,12 +141,18 @@ export default async function InitialMetalInventoryPage() {
           updated: String(r.updated || ''),
         };
       });
+    }
+
+    const allMetalInventory = await context.pb.collection('metal_inventory').getFullList({
+      filter: 'is_deleted = false',
+    }).catch(() => []);
 
     const allTransactions = await context.pb.collection('transactions').getFullList({
       filter: 'is_deleted = false && (goldAmount != 0 || silverAmount != 0 || platinumAmount != 0)',
     }).catch(() => []);
 
-    summary = calculateMetalInventoryBalances(allTransactions, weightPrecision);
+    const combined = [...allMetalInventory, ...allTransactions];
+    summary = calculateMetalInventoryBalances(combined, weightPrecision, customBaseKarats);
   } catch {
     initialItems = [];
     summary = null;

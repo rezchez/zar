@@ -10,14 +10,16 @@ import {
   MoreVertical,
   Plus,
   RefreshCw,
+  Search,
   Trash2,
   Unlock,
 } from 'lucide-react';
 import Link from 'next/link';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import BankLogo from '@/src/components/documents/BankLogo';
 import InitialBankInventoryModal, { type BankAccountEditItem } from './InitialBankInventoryModal';
+import PaginationControls from '@/components/shared/PaginationControls';
 
 export type BankAccountItem = {
   id: string;
@@ -229,15 +231,35 @@ export default function BankAccountsListClient({
   const [actionLoading, setActionLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [filterTab, setFilterTab] = useState<FilterTab>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPerPage] = useState(24);
 
   const activeCount = accounts.filter((a) => !a.isBlocked).length;
   const blockedCount = accounts.filter((a) => a.isBlocked).length;
 
-  const displayedAccounts = accounts.filter((a) => {
-    if (filterTab === 'active') return !a.isBlocked;
-    if (filterTab === 'blocked') return a.isBlocked;
-    return true;
-  });
+  const displayedAccounts = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return accounts.filter((a) => {
+      if (filterTab === 'active' && a.isBlocked) return false;
+      if (filterTab === 'blocked' && !a.isBlocked) return false;
+      if (q) {
+        const matchBank = a.bankName.toLowerCase().includes(q);
+        const matchBranch = (a.branchName || '').toLowerCase().includes(q);
+        const matchNum = (a.accountNumber || '').toLowerCase().includes(q);
+        const matchDesc = (a.description || '').toLowerCase().includes(q);
+        if (!matchBank && !matchBranch && !matchNum && !matchDesc) return false;
+      }
+      return true;
+    });
+  }, [accounts, filterTab, searchQuery]);
+
+  const totalPages = Math.max(1, Math.ceil(displayedAccounts.length / pageSize));
+  const paginatedAccounts = useMemo(() => {
+    const safePage = Math.min(page, totalPages);
+    const start = (safePage - 1) * pageSize;
+    return displayedAccounts.slice(start, start + pageSize);
+  }, [displayedAccounts, page, pageSize, totalPages]);
 
   const fetchAccounts = useCallback(async () => {
     setLoading(true);
@@ -404,57 +426,82 @@ export default function BankAccountsListClient({
         </div>
       </div>
 
-      {/* Filter Tabs */}
+      {/* Filter Tabs & Search Bar */}
       {accounts.length > 0 && (
-        <div className="flex items-center gap-1.5 rounded-2xl border border-slate-200/80 bg-white p-1.5 shadow-sm dark:border-slate-800 dark:bg-slate-900 w-fit">
-          <button
-            type="button"
-            onClick={() => setFilterTab('all')}
-            className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition ${
-              filterTab === 'all'
-                ? 'bg-amber-500 text-slate-950 shadow-sm'
-                : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
-            }`}
-          >
-            <span>همه</span>
-            <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-black ${
-              filterTab === 'all' ? 'bg-amber-600/30 text-slate-950' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
-            }`}>
-              {accounts.length}
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setFilterTab('active')}
-            className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition ${
-              filterTab === 'active'
-                ? 'bg-amber-500 text-slate-950 shadow-sm'
-                : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
-            }`}
-          >
-            <span>فعال</span>
-            <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-black ${
-              filterTab === 'active' ? 'bg-amber-600/30 text-slate-950' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
-            }`}>
-              {activeCount}
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setFilterTab('blocked')}
-            className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition ${
-              filterTab === 'blocked'
-                ? 'bg-amber-500 text-slate-950 shadow-sm'
-                : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
-            }`}
-          >
-            <span>مسدود</span>
-            <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-black ${
-              filterTab === 'blocked' ? 'bg-amber-600/30 text-slate-950' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
-            }`}>
-              {blockedCount}
-            </span>
-          </button>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-1.5 rounded-2xl border border-slate-200/80 bg-white p-1.5 shadow-sm dark:border-slate-800 dark:bg-slate-900 w-fit">
+            <button
+              type="button"
+              onClick={() => {
+                setFilterTab('all');
+                setPage(1);
+              }}
+              className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition ${
+                filterTab === 'all'
+                  ? 'bg-amber-500 text-slate-950 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+              }`}
+            >
+              <span>همه</span>
+              <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-black ${
+                filterTab === 'all' ? 'bg-amber-600/30 text-slate-950' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+              }`}>
+                {accounts.length}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setFilterTab('active');
+                setPage(1);
+              }}
+              className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition ${
+                filterTab === 'active'
+                  ? 'bg-amber-500 text-slate-950 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+              }`}
+            >
+              <span>فعال</span>
+              <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-black ${
+                filterTab === 'active' ? 'bg-amber-600/30 text-slate-950' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+              }`}>
+                {activeCount}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setFilterTab('blocked');
+                setPage(1);
+              }}
+              className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition ${
+                filterTab === 'blocked'
+                  ? 'bg-amber-500 text-slate-950 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+              }`}
+            >
+              <span>مسدود</span>
+              <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-black ${
+                filterTab === 'blocked' ? 'bg-amber-600/30 text-slate-950' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+              }`}>
+                {blockedCount}
+              </span>
+            </button>
+          </div>
+
+          <div className="relative min-w-[240px] flex-1 max-w-xs">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setPage(1);
+              }}
+              placeholder="جستجو در نام بانک، شعبه، شماره حساب..."
+              className="w-full rounded-xl border border-slate-200 bg-white py-1.5 pr-8 pl-3 text-xs text-slate-800 placeholder-slate-400 shadow-sm transition focus:border-amber-500 focus:outline-hidden dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
+            />
+            <Search size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+          </div>
         </div>
       )}
 
@@ -484,76 +531,92 @@ export default function BankAccountsListClient({
           حساب بانکی با وضعیت انتخابی یافت نشد.
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {displayedAccounts.map((acc) => {
-            const currencyLabel = [acc.currencySymbol, acc.currencyCode].filter(Boolean).join(' · ');
-            return (
-              <article
-                key={acc.id}
-                className={`group relative flex flex-col justify-between overflow-hidden rounded-2xl border bg-white p-5 shadow-sm transition-all hover:shadow-md dark:bg-slate-900 ${
-                  acc.isBlocked
-                    ? 'border-red-200/80 hover:border-red-300/60 dark:border-red-800/60'
-                    : 'border-slate-200/80 hover:border-amber-500/40 dark:border-slate-800'
-                }`}
-              >
-                <div>
-                  {/* Top Header: Bank Name, Account Number & Action */}
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <BankLogo bankName={acc.bankName} size={42} />
-                      <div>
-                        {/* 1. نام بانک + وضعیت */}
-                        <h2 className="text-sm font-extrabold text-slate-900 dark:text-white">
-                          {acc.bankName} {acc.branchName ? `(${acc.branchName})` : ''}
-                        </h2>
-                        <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
-                          {/* 2. شماره حساب */}
-                          <p className="font-mono text-[11px] font-semibold text-slate-500 dark:text-slate-400" dir="ltr">
-                            {acc.accountNumber}
-                          </p>
-                          <StatusBadge isBlocked={acc.isBlocked} />
-                          <span className="rounded bg-sky-500/10 px-1.5 py-0.2 text-[9px] font-bold text-sky-600 dark:text-sky-400">
-                            تفضیل ۱ (۱۱۱۰)
-                          </span>
+        <div className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {paginatedAccounts.map((acc) => {
+              const currencyLabel = [acc.currencySymbol, acc.currencyCode].filter(Boolean).join(' · ');
+              return (
+                <article
+                  key={acc.id}
+                  className={`group relative flex flex-col justify-between overflow-hidden rounded-2xl border bg-white p-5 shadow-sm transition-all hover:shadow-md dark:bg-slate-900 ${
+                    acc.isBlocked
+                      ? 'border-red-200/80 hover:border-red-300/60 dark:border-red-800/60'
+                      : 'border-slate-200/80 hover:border-amber-500/40 dark:border-slate-800'
+                  }`}
+                >
+                  <div>
+                    {/* Top Header: Bank Name, Account Number & Action */}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <BankLogo bankName={acc.bankName} size={42} />
+                        <div>
+                          {/* 1. نام بانک + وضعیت */}
+                          <h2 className="text-sm font-extrabold text-slate-900 dark:text-white">
+                            {acc.bankName} {acc.branchName ? `(${acc.branchName})` : ''}
+                          </h2>
+                          <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                            {/* 2. شماره حساب */}
+                            <p className="font-mono text-[11px] font-semibold text-slate-500 dark:text-slate-400" dir="ltr">
+                              {acc.accountNumber}
+                            </p>
+                            <StatusBadge isBlocked={acc.isBlocked} />
+                            <span className="rounded bg-sky-500/10 px-1.5 py-0.2 text-[9px] font-bold text-sky-600 dark:text-sky-400">
+                              تفضیل ۱ (۱۱۱۰)
+                            </span>
+                          </div>
                         </div>
                       </div>
+
+                      <BankActionMenu account={acc} onAction={handleAction} />
                     </div>
 
-                    <BankActionMenu account={acc} onAction={handleAction} />
+                    {/* Date & Currency Section */}
+                    <div className="mt-4 flex items-center justify-between rounded-xl bg-slate-50 px-3 py-1.5 text-[11px] font-bold text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">
+                      <div className="flex items-center gap-1.5">
+                        <Calendar size={13} className="text-slate-400" />
+                        <span>تاریخ موجودی:</span>
+                        <span className="font-mono dir-ltr">{acc.openingBalanceDate || 'ثبت نشده'}</span>
+                      </div>
+                      <span className="text-[10px] text-slate-400">{currencyLabel}</span>
+                    </div>
+
+                    {/* Balances Grid */}
+                    <div className="mt-4 grid grid-cols-2 gap-2 border-t border-slate-100 pt-3 dark:border-slate-800">
+                      {/* 3. موجودی اولیه */}
+                      <div className="rounded-xl bg-slate-50/80 p-2.5 dark:bg-slate-800/40">
+                        <span className="block text-[10px] font-bold text-slate-400">موجودی اولیه</span>
+                        <span className="mt-0.5 block font-mono text-xs font-bold text-slate-800 dark:text-slate-200">
+                          {Number(acc.openingBalance || 0).toLocaleString('fa-IR')} {acc.currencySymbol || acc.currencyCode}
+                        </span>
+                      </div>
+
+                      {/* 4. موجودی فعلی */}
+                      <div className={`rounded-xl p-2.5 ${acc.isBlocked ? 'bg-red-50 dark:bg-red-500/10' : 'bg-amber-500/10 dark:bg-amber-500/15'}`}>
+                        <span className={`block text-[10px] font-bold ${acc.isBlocked ? 'text-red-700 dark:text-red-300' : 'text-amber-700 dark:text-amber-300'}`}>موجودی فعلی</span>
+                        <span className={`mt-0.5 block font-mono text-sm font-black ${acc.isBlocked ? 'text-red-900 dark:text-red-200' : 'text-amber-900 dark:text-amber-200'}`}>
+                          {Number(acc.balance || 0).toLocaleString('fa-IR')} {acc.currencySymbol || acc.currencyCode}
+                        </span>
+                      </div>
+                    </div>
                   </div>
+                </article>
+              );
+            })}
+          </div>
 
-                  {/* Date & Currency Section */}
-                  <div className="mt-4 flex items-center justify-between rounded-xl bg-slate-50 px-3 py-1.5 text-[11px] font-bold text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">
-                    <div className="flex items-center gap-1.5">
-                      <Calendar size={13} className="text-slate-400" />
-                      <span>تاریخ موجودی:</span>
-                      <span className="font-mono dir-ltr">{acc.openingBalanceDate || 'ثبت نشده'}</span>
-                    </div>
-                    <span className="text-[10px] text-slate-400">{currencyLabel}</span>
-                  </div>
-
-                  {/* Balances Grid */}
-                  <div className="mt-4 grid grid-cols-2 gap-2 border-t border-slate-100 pt-3 dark:border-slate-800">
-                    {/* 3. موجودی اولیه */}
-                    <div className="rounded-xl bg-slate-50/80 p-2.5 dark:bg-slate-800/40">
-                      <span className="block text-[10px] font-bold text-slate-400">موجودی اولیه</span>
-                      <span className="mt-0.5 block font-mono text-xs font-bold text-slate-800 dark:text-slate-200">
-                        {Number(acc.openingBalance || 0).toLocaleString('fa-IR')} {acc.currencySymbol || acc.currencyCode}
-                      </span>
-                    </div>
-
-                    {/* 4. موجودی فعلی */}
-                    <div className={`rounded-xl p-2.5 ${acc.isBlocked ? 'bg-red-50 dark:bg-red-500/10' : 'bg-amber-500/10 dark:bg-amber-500/15'}`}>
-                      <span className={`block text-[10px] font-bold ${acc.isBlocked ? 'text-red-700 dark:text-red-300' : 'text-amber-700 dark:text-amber-300'}`}>موجودی فعلی</span>
-                      <span className={`mt-0.5 block font-mono text-sm font-black ${acc.isBlocked ? 'text-red-900 dark:text-red-200' : 'text-amber-900 dark:text-amber-200'}`}>
-                        {Number(acc.balance || 0).toLocaleString('fa-IR')} {acc.currencySymbol || acc.currencyCode}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </article>
-            );
-          })}
+          {/* Pagination Controls */}
+          <div className="rounded-2xl border border-slate-200/80 bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900 overflow-hidden">
+            <PaginationControls
+              currentPage={page}
+              totalPages={totalPages}
+              totalItems={displayedAccounts.length}
+              pageSize={pageSize}
+              pageSizeOptions={[12, 24, 48, 96]}
+              onPageChange={setPage}
+              onPageSizeChange={setPerPage}
+              itemLabel="حساب بانکی"
+            />
+          </div>
         </div>
       )}
 

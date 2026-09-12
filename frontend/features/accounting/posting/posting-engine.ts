@@ -41,6 +41,7 @@ export interface CreateJournalEntryParams {
     | 'opening_check'
     | 'opening_goods'
     | 'opening_gemstone'
+    | 'opening_workmanship'
     | 'manual';
   sourceId: string;
   sourceKey: string;
@@ -1082,6 +1083,90 @@ export async function postGemstoneOpeningInventory(
     pb,
   );
 }
+
+/**
+ * Workmanship Opening Inventory Posting (کارساخته / مصنوعات طلا، نقره و پلاتین):
+ * Debit: Workmanship Inventory (113060 موجودی کارساخته یا 1130 موجودی کالا و طلا)
+ * Credit: Opening Capital / Equity (3100 سرمایه اول دوره)
+ * sourceKey: opening:workmanship:<id>
+ */
+export async function postWorkmanshipOpeningInventory(
+  item: {
+    id: string;
+    code?: string;
+    name: string;
+    metal: string;
+    quantity: number;
+    rawWeight: number;
+    purity: number;
+    convertedWeight: number;
+    totalAmount: number;
+    accountId?: string | null;
+  },
+  entryDateJalali: string,
+  userId: string,
+  pb: PocketBase,
+  description?: string,
+): Promise<JournalEntryResult> {
+  const roundedAmount = Math.round(Math.abs(item.totalAmount));
+  if (roundedAmount === 0) {
+    throw new Error('مبلغ ارزشیابی موجودی اولیه کار ساخته نمی‌تواند صفر باشد.');
+  }
+
+  let inventoryAccountCodeOrId = item.accountId || '113060';
+  try {
+    const acc = await resolveAccount(pb, inventoryAccountCodeOrId, false);
+    const dbCheck = await pb.collection('chart_of_accounts').getOne(acc.id).catch(() => null);
+    if (!dbCheck) {
+      const codeCheck = await pb.collection('chart_of_accounts').getFirstListItem(
+        pb.filter('code = {:code}', { code: acc.code }),
+      ).catch(() => null);
+      if (!codeCheck) {
+        inventoryAccountCodeOrId = SYSTEM_ACCOUNT_CODES.GOLD_INVENTORY;
+      }
+    }
+  } catch {
+    inventoryAccountCodeOrId = SYSTEM_ACCOUNT_CODES.GOLD_INVENTORY;
+  }
+  const counterAccountCodeOrId = SYSTEM_ACCOUNT_CODES.OPENING_EQUITY;
+
+  const metalLabels: Record<string, string> = {
+    gold: 'طلا',
+    silver: 'نقره',
+    platinum: 'پلاتین',
+  };
+  const metalName = metalLabels[item.metal] || item.metal;
+  const desc =
+    description ||
+    `موجودی اول دوره کارساخته ${metalName}: ${item.name} [${item.code || item.id}] (${item.quantity} عدد - ${item.rawWeight} گرم)`;
+
+  return postJournalEntry(
+    {
+      entryDateJalali,
+      description: desc,
+      sourceType: 'opening_workmanship',
+      sourceId: item.id,
+      sourceKey: `opening:workmanship:${item.id}`,
+      userId,
+      lines: [
+        {
+          accountId: inventoryAccountCodeOrId,
+          debit: roundedAmount,
+          credit: 0,
+          description: `موجودی اولیه کارساخته: ${item.name} (${item.quantity} عدد - وزن: ${item.rawWeight} گرم - معادل: ${item.convertedWeight} گرم)`,
+        },
+        {
+          accountId: counterAccountCodeOrId,
+          debit: 0,
+          credit: roundedAmount,
+          description: `طرف مقابل موجودی اولیه کارساخته (سرمایه اول دوره)`,
+        },
+      ],
+    },
+    pb,
+  );
+}
+
 
 
 /**

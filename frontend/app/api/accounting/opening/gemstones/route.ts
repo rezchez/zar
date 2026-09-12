@@ -956,16 +956,19 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ message: 'شناسه سنگ مشخص نشده است.' }, { status: 400 });
     }
 
-    // 1. Delete linked transactions first (FK constraint cascade order)
+    // 1. Check for downstream/dependent transactions (non-opening transactions)
     try {
-      const txs = await context.pb.collection('gemstone_inventory_transactions').getFullList({
-        filter: context.pb.filter('gemstone = {:id} || source_id = {:id} || source_key = {:key}', {
-          id,
-          key: `opening:gemstone:${id}`,
-        }),
+      const allLinkedTxs = await context.pb.collection('gemstone_inventory_transactions').getFullList({
+        filter: context.pb.filter('gemstone = {:id}', { id }),
       }).catch(() => []);
-      for (const tx of txs) {
-        await context.pb.collection('gemstone_inventory_transactions').delete(tx.id).catch(() => undefined);
+
+      const hasDownstream = allLinkedTxs.some(
+        (tx: any) => tx.transaction_type && tx.transaction_type !== 'opening_balance'
+      );
+      if (hasDownstream) {
+        return NextResponse.json({
+          message: 'امکان حذف این موجودی اولیه سنگ وجود ندارد زیرا دارای تراکنش‌های وابسته (فروش، مصرف یا انتقال) است.',
+        }, { status: 409 });
       }
     } catch {
       // non-blocking
@@ -978,6 +981,21 @@ export async function DELETE(request: Request) {
       }).catch(() => []);
       for (const m of merges) {
         await context.pb.collection('gemstone_parcel_merges').delete(m.id).catch(() => undefined);
+      }
+    } catch {
+      // non-blocking
+    }
+
+    // 3. Delete opening transactions for this gemstone
+    try {
+      const openingTxs = await context.pb.collection('gemstone_inventory_transactions').getFullList({
+        filter: context.pb.filter('gemstone = {:id} || source_id = {:id} || source_key = {:key}', {
+          id,
+          key: `opening:gemstone:${id}`,
+        }),
+      }).catch(() => []);
+      for (const tx of openingTxs) {
+        await context.pb.collection('gemstone_inventory_transactions').delete(tx.id).catch(() => undefined);
       }
     } catch {
       // non-blocking

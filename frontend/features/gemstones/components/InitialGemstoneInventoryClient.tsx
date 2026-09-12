@@ -23,6 +23,7 @@ import GemstoneDetailModal from './GemstoneDetailModal';
 import GemstoneShapeIcon from './GemstoneShapeIcon';
 import InitialGemstoneInventoryModal from './InitialGemstoneInventoryModal';
 import MergeParcelsModal from './MergeParcelsModal';
+import PaginationControls from '@/components/shared/PaginationControls';
 import {
   CLARITY_GRADES,
   CUT_GRADES,
@@ -68,6 +69,8 @@ export default function InitialGemstoneInventoryClient({
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTab, setSelectedTab] = useState<string>('all');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPerPage] = useState(50);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
@@ -254,6 +257,13 @@ export default function InitialGemstoneInventoryClient({
       return true;
     });
   }, [items, selectedTab, searchQuery]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / pageSize));
+  const paginatedItems = useMemo(() => {
+    const safePage = Math.min(page, totalPages);
+    const start = (safePage - 1) * pageSize;
+    return filteredItems.slice(start, start + pageSize);
+  }, [filteredItems, page, pageSize, totalPages]);
 
   return (
     <div dir="rtl" className="mx-auto max-w-7xl space-y-6">
@@ -443,7 +453,10 @@ export default function InitialGemstoneInventoryClient({
             <button
               key={tab.id}
               type="button"
-              onClick={() => setSelectedTab(tab.id)}
+              onClick={() => {
+                setSelectedTab(tab.id);
+                setPage(1);
+              }}
               className={`rounded-xl px-3 py-1.5 text-xs font-bold transition-all ${
                 selectedTab === tab.id
                   ? 'bg-cyan-500 text-white shadow-xs dark:bg-cyan-600'
@@ -461,7 +474,10 @@ export default function InitialGemstoneInventoryClient({
           <input
             type="text"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setPage(1);
+            }}
             placeholder="جستجو بر اساس شماره شناسنامه، کد، نام..."
             className="w-full rounded-2xl border border-slate-200 bg-white py-2 pr-10 pl-4 text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:border-cyan-500 focus:outline-hidden dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
           />
@@ -550,7 +566,7 @@ export default function InitialGemstoneInventoryClient({
                   </td>
                 </tr>
               ) : (
-                filteredItems.map((item) => {
+                paginatedItems.map((item) => {
                   const isDiamond = item.category === 'diamond';
                   const speciesObj = (backendSpecies.length > 0 ? backendSpecies : GEMSTONE_SPECIES).find(
                     (s: any) => s.id === item.species || s.code === item.species || s.species === item.species
@@ -839,6 +855,17 @@ export default function InitialGemstoneInventoryClient({
             </tbody>
           </table>
         </div>
+
+        {/* Pagination Controls */}
+        <PaginationControls
+          currentPage={page}
+          totalPages={totalPages}
+          totalItems={filteredItems.length}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPerPage}
+          itemLabel="قلم سنگ و بارخانه"
+        />
       </div>
 
       {/* Creation & Edit Modal */}

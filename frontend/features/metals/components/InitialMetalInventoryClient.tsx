@@ -9,18 +9,21 @@ import {
   Plus,
   RefreshCw,
   Scale,
+  Search,
   Trash2,
 } from 'lucide-react';
 import Link from 'next/link';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
 import InitialMetalInventoryModal from './InitialMetalInventoryModal';
+import PaginationControls from '@/components/shared/PaginationControls';
 import { useAppSettings } from '@/src/components/SettingsProvider';
 import {
   type MetalOpeningRecord,
   type MultiMetalSummary,
 } from '@/lib/metal-inventory';
 import { convertRialToToman } from '@/lib/money';
+import { DEFAULT_BASE_KARATS } from '@/lib/weight';
 
 export type InitialMetalInventoryClientProps = {
   initialItems?: MetalOpeningRecord[];
@@ -41,11 +44,18 @@ export default function InitialMetalInventoryClient({
   const effectiveCurrency = (settings.baseCurrency as 'IRR' | 'IRT') || 'IRR';
   const currencySuffix = effectiveCurrency === 'IRT' ? 'تومان' : 'ریال';
 
+  const goldBaseKarat = Number(settings.goldBaseKarat) || DEFAULT_BASE_KARATS.gold;
+  const silverBaseKarat = Number(settings.silverBaseKarat) || DEFAULT_BASE_KARATS.silver;
+  const platinumBaseKarat = Number(settings.platinumBaseKarat) || DEFAULT_BASE_KARATS.platinum;
+
   const [items, setItems] = useState<MetalOpeningRecord[]>(initialItems);
   const [summary, setSummary] = useState<MultiMetalSummary>(initialSummary || EMPTY_SUMMARY);
   const [loading, setLoading] = useState(false);
   const [filterMetal, setFilterMetal] = useState<string>('all');
   const [filterType, setFilterType] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPerPage] = useState(50);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<MetalOpeningRecord | null>(null);
@@ -100,12 +110,26 @@ export default function InitialMetalInventoryClient({
   };
 
   const filteredItems = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
     return items.filter((item) => {
       if (filterMetal !== 'all' && item.metal !== filterMetal) return false;
       if (filterType !== 'all' && item.inventoryType !== filterType) return false;
+      if (q) {
+        const matchLab = (item.labName || '').toLowerCase().includes(q);
+        const matchStamp = (item.stampNumber || '').toLowerCase().includes(q);
+        const matchDesc = (item.description || '').toLowerCase().includes(q);
+        if (!matchLab && !matchStamp && !matchDesc) return false;
+      }
       return true;
     });
-  }, [items, filterMetal, filterType]);
+  }, [items, filterMetal, filterType, searchQuery]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / pageSize));
+  const paginatedItems = useMemo(() => {
+    const safePage = Math.min(page, totalPages);
+    const start = (safePage - 1) * pageSize;
+    return filteredItems.slice(start, start + pageSize);
+  }, [filteredItems, page, pageSize, totalPages]);
 
   const metalLabels: Record<string, { label: string; symbol: string; badgeClass: string }> = {
     gold: {
@@ -209,7 +233,7 @@ export default function InitialMetalInventoryClient({
               </span>
             </div>
             <div className="flex items-baseline justify-between text-xs border-t border-amber-100 pt-2 dark:border-amber-900/30">
-              <span className="text-slate-500 dark:text-slate-400 font-medium">معادل پایه ۷۵۰:</span>
+              <span className="text-slate-500 dark:text-slate-400 font-medium">معادل پایه {goldBaseKarat.toLocaleString('fa-IR')}:</span>
               <span className="font-black text-sm text-amber-600 dark:text-amber-400">
                 {formatWeight(summary.gold.convertedOpening)} گرم
               </span>
@@ -236,7 +260,7 @@ export default function InitialMetalInventoryClient({
               </span>
             </div>
             <div className="flex items-baseline justify-between text-xs border-t border-slate-100 pt-2 dark:border-slate-800">
-              <span className="text-slate-500 dark:text-slate-400 font-medium">معادل پایه ۹۹۹:</span>
+              <span className="text-slate-500 dark:text-slate-400 font-medium">معادل پایه {silverBaseKarat.toLocaleString('fa-IR')}:</span>
               <span className="font-black text-sm text-slate-700 dark:text-slate-200">
                 {formatWeight(summary.silver.convertedOpening)} گرم
               </span>
@@ -263,7 +287,7 @@ export default function InitialMetalInventoryClient({
               </span>
             </div>
             <div className="flex items-baseline justify-between text-xs border-t border-cyan-100 pt-2 dark:border-cyan-900/30">
-              <span className="text-slate-500 dark:text-slate-400 font-medium">معادل پایه ۹۵۰:</span>
+              <span className="text-slate-500 dark:text-slate-400 font-medium">معادل پایه {platinumBaseKarat.toLocaleString('fa-IR')}:</span>
               <span className="font-black text-sm text-cyan-600 dark:text-cyan-400">
                 {formatWeight(summary.platinum.convertedOpening)} گرم
               </span>
@@ -272,8 +296,8 @@ export default function InitialMetalInventoryClient({
         </div>
       </div>
 
-      {/* Filters Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
+      {/* Filters & Search Bar */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
         <div className="flex flex-wrap items-center gap-1.5 text-xs">
           <span className="px-2 text-xs font-bold text-slate-500 dark:text-slate-400">فیلتر فلز:</span>
           {[
@@ -285,7 +309,10 @@ export default function InitialMetalInventoryClient({
             <button
               key={tab.id}
               type="button"
-              onClick={() => setFilterMetal(tab.id)}
+              onClick={() => {
+                setFilterMetal(tab.id);
+                setPage(1);
+              }}
               className={`rounded-xl px-3 py-1.5 font-bold transition ${
                 filterMetal === tab.id
                   ? 'bg-amber-500 text-slate-950 shadow-xs'
@@ -297,27 +324,45 @@ export default function InitialMetalInventoryClient({
           ))}
         </div>
 
-        <div className="flex items-center gap-1.5 text-xs">
-          <span className="px-2 text-xs font-bold text-slate-500 dark:text-slate-400">نوع موجودی:</span>
-          {[
-            { id: 'all', label: 'همه' },
-            { id: 'conditional_melted', label: 'آبشده شرطی' },
-            { id: 'miscellaneous_melted', label: 'آبشده متفرقه' },
-            { id: 'general_metal', label: 'موجودی فلز' },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setFilterType(tab.id)}
-              className={`rounded-xl px-2.5 py-1 text-[11px] font-bold transition ${
-                filterType === tab.id
-                  ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
-                  : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <div className="relative">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setPage(1);
+              }}
+              placeholder="جستجو در مشخصات، انگ یا آزمایشگاه..."
+              className="w-56 rounded-xl border border-slate-200 bg-slate-50/50 py-1.5 pr-8 pl-3 text-xs text-slate-800 placeholder-slate-400 transition focus:border-amber-500 focus:bg-white focus:outline-hidden dark:border-slate-800 dark:bg-slate-800/50 dark:text-slate-200"
+            />
+            <Search size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+          </div>
+
+          <div className="flex items-center gap-1">
+            {[
+              { id: 'all', label: 'همه انواع' },
+              { id: 'conditional_melted', label: 'آبشده شرطی' },
+              { id: 'miscellaneous_melted', label: 'متفرقه' },
+              { id: 'general_metal', label: 'پایه فلز' },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => {
+                  setFilterType(tab.id);
+                  setPage(1);
+                }}
+                className={`rounded-xl px-2.5 py-1 text-[11px] font-bold transition ${
+                  filterType === tab.id
+                    ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
+                    : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -350,7 +395,7 @@ export default function InitialMetalInventoryClient({
                   </td>
                 </tr>
               ) : (
-                filteredItems.map((item) => {
+                paginatedItems.map((item) => {
                   const metalCfg = metalLabels[item.metal] || metalLabels.gold;
                   return (
                     <tr
@@ -407,7 +452,10 @@ export default function InitialMetalInventoryClient({
 
                       {/* Converted Weight */}
                       <td className="px-4 py-3 font-black text-amber-600 dark:text-amber-400">
-                        {formatWeight(item.convertedWeight)}
+                        <div>{formatWeight(item.convertedWeight)}</div>
+                        <div className="text-[10px] font-normal text-slate-400 dark:text-slate-500">
+                          پایه {Number(item.baseKarat || (item.metal === 'gold' ? goldBaseKarat : item.metal === 'silver' ? silverBaseKarat : platinumBaseKarat)).toLocaleString('fa-IR')}
+                        </div>
                       </td>
 
                       {/* Valuation */}
@@ -465,6 +513,17 @@ export default function InitialMetalInventoryClient({
             </tbody>
           </table>
         </div>
+
+        {/* Pagination Controls */}
+        <PaginationControls
+          currentPage={page}
+          totalPages={totalPages}
+          totalItems={filteredItems.length}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPerPage}
+          itemLabel="قلم موجودی فلز"
+        />
       </div>
 
       {/* Modal */}

@@ -20,6 +20,7 @@ import Link from 'next/link';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
 import InitialWorkmanshipInventoryModal from './InitialWorkmanshipInventoryModal';
+import PaginationControls from '@/components/shared/PaginationControls';
 import { useAppSettings } from '@/src/components/SettingsProvider';
 import { convertRialToToman, formatMoney } from '@/lib/money';
 import {
@@ -59,6 +60,8 @@ export default function InitialWorkmanshipInventoryClient({
   const [searchQuery, setSearchQuery] = useState('');
   const [filterMetal, setFilterMetal] = useState<string>('all');
   const [filterWageMode, setFilterWageMode] = useState<string>('all');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPerPage] = useState(50);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<WorkmanshipOpeningRecord | null>(null);
@@ -133,6 +136,13 @@ export default function InitialWorkmanshipInventoryClient({
       return true;
     });
   }, [items, filterMetal, filterWageMode, searchQuery]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / pageSize));
+  const paginatedItems = useMemo(() => {
+    const safePage = Math.min(page, totalPages);
+    const start = (safePage - 1) * pageSize;
+    return filteredItems.slice(start, start + pageSize);
+  }, [filteredItems, page, pageSize, totalPages]);
 
   const metalLabels: Record<
     string,
@@ -374,7 +384,10 @@ export default function InitialWorkmanshipInventoryClient({
           <input
             type="text"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setPage(1);
+            }}
             placeholder="جستجو در نام کالا، کد یا محل نگهداری..."
             className="w-full rounded-xl border border-slate-200 bg-white py-2 pr-9 pl-3 text-xs font-bold text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder:text-slate-500 dark:focus:border-amber-400 dark:focus:bg-slate-800"
           />
@@ -396,7 +409,10 @@ export default function InitialWorkmanshipInventoryClient({
             <button
               key={tab.id}
               type="button"
-              onClick={() => setFilterMetal(tab.id)}
+              onClick={() => {
+                setFilterMetal(tab.id);
+                setPage(1);
+              }}
               className={`rounded-xl px-3 py-1.5 font-bold transition ${
                 filterMetal === tab.id
                   ? 'bg-amber-500 text-slate-950 shadow-xs'
@@ -420,7 +436,10 @@ export default function InitialWorkmanshipInventoryClient({
             <button
               key={tab.id}
               type="button"
-              onClick={() => setFilterWageMode(tab.id)}
+              onClick={() => {
+                setFilterWageMode(tab.id);
+                setPage(1);
+              }}
               className={`rounded-xl px-2.5 py-1 text-[11px] font-bold transition ${
                 filterWageMode === tab.id
                   ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
@@ -465,7 +484,7 @@ export default function InitialWorkmanshipInventoryClient({
                   </td>
                 </tr>
               ) : (
-                filteredItems.map((item) => {
+                paginatedItems.map((item) => {
                   const metalCfg = metalLabels[item.metal] || metalLabels.gold;
                   return (
                     <tr
@@ -641,6 +660,17 @@ export default function InitialWorkmanshipInventoryClient({
             </tbody>
           </table>
         </div>
+
+        {/* Pagination Controls */}
+        <PaginationControls
+          currentPage={page}
+          totalPages={totalPages}
+          totalItems={filteredItems.length}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPerPage}
+          itemLabel="قلم کارساخته"
+        />
       </div>
 
       {/* Modal for Create/Edit */}

@@ -10,13 +10,15 @@ import {
   MoreVertical,
   Plus,
   RefreshCw,
+  Search,
   Trash2,
   Unlock,
   Wallet,
 } from 'lucide-react';
 import Link from 'next/link';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import PaginationControls from '@/components/shared/PaginationControls';
 import InitialCashInventoryModal, { type CashFundEditItem } from './InitialCashInventoryModal';
 
 export type CashFundItem = {
@@ -227,15 +229,36 @@ export default function CashFundsListClient({
   const [actionLoading, setActionLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [filterTab, setFilterTab] = useState<FilterTab>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(12);
 
   const activeCount = funds.filter((f) => !f.isBlocked).length;
   const blockedCount = funds.filter((f) => f.isBlocked).length;
 
-  const displayedFunds = funds.filter((f) => {
-    if (filterTab === 'active') return !f.isBlocked;
-    if (filterTab === 'blocked') return f.isBlocked;
-    return true;
-  });
+  const filteredFunds = useMemo(() => {
+    return funds.filter((f) => {
+      if (filterTab === 'active' && f.isBlocked) return false;
+      if (filterTab === 'blocked' && !f.isBlocked) return false;
+      if (searchQuery.trim()) {
+        const q = searchQuery.trim().toLowerCase();
+        const name = (f.name || '').toLowerCase();
+        const curr = (f.currencyName || '').toLowerCase();
+        const code = (f.currencyCode || '').toLowerCase();
+        if (!name.includes(q) && !curr.includes(q) && !code.includes(q)) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [funds, filterTab, searchQuery]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredFunds.length / pageSize));
+  const paginatedFunds = useMemo(() => {
+    const safePage = Math.min(page, totalPages);
+    const start = (safePage - 1) * pageSize;
+    return filteredFunds.slice(start, start + pageSize);
+  }, [filteredFunds, page, pageSize, totalPages]);
 
   const fetchFunds = useCallback(async () => {
     setLoading(true);
@@ -412,57 +435,84 @@ export default function CashFundsListClient({
         </div>
       </div>
 
-      {/* Filter Tabs */}
+      {/* Filter Tabs & Search */}
       {funds.length > 0 && (
-        <div className="flex items-center gap-1.5 rounded-2xl border border-slate-200/80 bg-white p-1.5 shadow-sm dark:border-slate-800 dark:bg-slate-900 w-fit">
-          <button
-            type="button"
-            onClick={() => setFilterTab('all')}
-            className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition ${
-              filterTab === 'all'
-                ? 'bg-amber-500 text-slate-950 shadow-sm'
-                : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
-            }`}
-          >
-            <span>همه</span>
-            <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-black ${
-              filterTab === 'all' ? 'bg-amber-600/30 text-slate-950' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
-            }`}>
-              {funds.length}
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setFilterTab('active')}
-            className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition ${
-              filterTab === 'active'
-                ? 'bg-amber-500 text-slate-950 shadow-sm'
-                : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
-            }`}
-          >
-            <span>فعال</span>
-            <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-black ${
-              filterTab === 'active' ? 'bg-amber-600/30 text-slate-950' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
-            }`}>
-              {activeCount}
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setFilterTab('blocked')}
-            className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition ${
-              filterTab === 'blocked'
-                ? 'bg-amber-500 text-slate-950 shadow-sm'
-                : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
-            }`}
-          >
-            <span>مسدود</span>
-            <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-black ${
-              filterTab === 'blocked' ? 'bg-amber-600/30 text-slate-950' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
-            }`}>
-              {blockedCount}
-            </span>
-          </button>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-1.5 rounded-2xl border border-slate-200/80 bg-white p-1.5 shadow-sm dark:border-slate-800 dark:bg-slate-900 w-fit">
+            <button
+              type="button"
+              onClick={() => {
+                setFilterTab('all');
+                setPage(1);
+              }}
+              className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition ${
+                filterTab === 'all'
+                  ? 'bg-amber-500 text-slate-950 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+              }`}
+            >
+              <span>همه</span>
+              <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-black ${
+                filterTab === 'all' ? 'bg-amber-600/30 text-slate-950' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+              }`}>
+                {funds.length}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setFilterTab('active');
+                setPage(1);
+              }}
+              className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition ${
+                filterTab === 'active'
+                  ? 'bg-amber-500 text-slate-950 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+              }`}
+            >
+              <span>فعال</span>
+              <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-black ${
+                filterTab === 'active' ? 'bg-amber-600/30 text-slate-950' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+              }`}>
+                {activeCount}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setFilterTab('blocked');
+                setPage(1);
+              }}
+              className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition ${
+                filterTab === 'blocked'
+                  ? 'bg-amber-500 text-slate-950 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+              }`}
+            >
+              <span>مسدود</span>
+              <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-black ${
+                filterTab === 'blocked' ? 'bg-amber-600/30 text-slate-950' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+              }`}>
+                {blockedCount}
+              </span>
+            </button>
+          </div>
+
+          <div className="relative min-w-[240px]">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setPage(1);
+              }}
+              placeholder="جستجو در نام صندوق یا ارز..."
+              className="h-10 w-full rounded-2xl border border-slate-200/80 bg-white pr-9 pl-3 text-xs font-bold text-slate-800 placeholder:text-slate-400 focus:border-amber-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
+            />
+            <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+              <Search size={14} />
+            </div>
+          </div>
         </div>
       )}
 
@@ -487,13 +537,13 @@ export default function CashFundsListClient({
             <span>ایجاد اولین صندوق</span>
           </button>
         </div>
-      ) : displayedFunds.length === 0 ? (
+      ) : filteredFunds.length === 0 ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-xs text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
-          صندوقی با وضعیت انتخابی یافت نشد.
+          صندوقی با مشخصات یا وضعیت انتخابی یافت نشد.
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {displayedFunds.map((fund) => {
+          {paginatedFunds.map((fund) => {
             const currencyLabel = [fund.currencySymbol, fund.currencyCode].filter(Boolean).join(' · ');
             return (
               <article
@@ -565,6 +615,24 @@ export default function CashFundsListClient({
               </article>
             );
           })}
+        </div>
+      )}
+
+      {filteredFunds.length > 0 && (
+        <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900">
+          <PaginationControls
+            currentPage={page}
+            totalPages={totalPages}
+            totalItems={filteredFunds.length}
+            pageSize={pageSize}
+            pageSizeOptions={[6, 12, 24, 48]}
+            onPageChange={setPage}
+            onPageSizeChange={(newSize) => {
+              setPageSize(newSize);
+              setPage(1);
+            }}
+            itemLabel="صندوق"
+          />
         </div>
       )}
 

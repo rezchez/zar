@@ -20,6 +20,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import InitialGoodsInventoryModal from './InitialGoodsInventoryModal';
+import PaginationControls from '@/components/shared/PaginationControls';
 import {
   GOODS_CATEGORIES,
   ALL_GOODS_CATEGORIES,
@@ -66,6 +67,8 @@ export default function InitialGoodsInventoryClient({
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPerPage] = useState(50);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<GoodsOpeningRecord | null>(null);
@@ -156,6 +159,13 @@ export default function InitialGoodsInventoryClient({
       return true;
     });
   }, [items, selectedCategory, searchQuery]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / pageSize));
+  const paginatedItems = useMemo(() => {
+    const safePage = Math.min(page, totalPages);
+    const start = (safePage - 1) * pageSize;
+    return filteredItems.slice(start, start + pageSize);
+  }, [filteredItems, page, pageSize, totalPages]);
 
   return (
     <div dir="rtl" className="mx-auto max-w-6xl space-y-6">
@@ -271,7 +281,10 @@ export default function InitialGoodsInventoryClient({
             type="text"
             placeholder="جستجوی نام کالا، کد یا قفسه..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setPage(1);
+            }}
             className="w-full rounded-xl border border-slate-200 bg-white py-2 pr-9 pl-3 text-xs font-bold text-slate-900 shadow-2xs placeholder:text-slate-400 transition-all focus:border-purple-500 focus:bg-white focus:text-slate-900 focus:outline-none focus:ring-2 focus:ring-purple-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-purple-400 dark:focus:bg-slate-800 dark:focus:text-white dark:focus:ring-purple-400/20"
           />
         </div>
@@ -279,7 +292,10 @@ export default function InitialGoodsInventoryClient({
         <div className="flex flex-wrap items-center gap-1.5">
           <button
             type="button"
-            onClick={() => setSelectedCategory('all')}
+            onClick={() => {
+              setSelectedCategory('all');
+              setPage(1);
+            }}
             className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${
               selectedCategory === 'all'
                 ? 'bg-purple-600 text-white dark:bg-purple-500'
@@ -292,7 +308,10 @@ export default function InitialGoodsInventoryClient({
             <button
               key={catKey}
               type="button"
-              onClick={() => setSelectedCategory(catKey)}
+              onClick={() => {
+                setSelectedCategory(catKey);
+                setPage(1);
+              }}
               className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${
                 selectedCategory === catKey
                   ? 'bg-purple-600 text-white dark:bg-purple-500'
@@ -328,7 +347,8 @@ export default function InitialGoodsInventoryClient({
             </button>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+            <div className="overflow-x-auto">
             <table className="w-full text-right text-xs">
               <thead className="border-b border-slate-100 bg-slate-50/75 text-slate-500 dark:border-slate-800 dark:bg-slate-800/50 dark:text-slate-400">
                 <tr>
@@ -344,7 +364,7 @@ export default function InitialGoodsInventoryClient({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-                {filteredItems.map((item, idx) => {
+                {paginatedItems.map((item, idx) => {
                   const catMeta = ALL_GOODS_CATEGORIES[item.category] || ALL_GOODS_CATEGORIES.resin_casting;
                   const totalToman = convertRialToToman(item.totalAmount);
                   const unitToman = convertRialToToman(item.unitPrice);
@@ -353,7 +373,7 @@ export default function InitialGoodsInventoryClient({
 
                   return (
                     <tr key={item.id} className="transition hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
-                      <td className="py-3.5 pr-6 pl-3 font-semibold text-slate-400">{idx + 1}</td>
+                      <td className="py-3.5 pr-6 pl-3 font-semibold text-slate-400">{(page - 1) * pageSize + idx + 1}</td>
 
                       <td className="px-3 py-3.5 font-bold text-slate-900 dark:text-white">
                         <div className="flex items-center gap-2">
@@ -461,6 +481,19 @@ export default function InitialGoodsInventoryClient({
               </tbody>
             </table>
           </div>
+
+          {/* Pagination Controls */}
+            <PaginationControls
+              currentPage={page}
+              totalPages={totalPages}
+              totalItems={filteredItems.length}
+              pageSize={pageSize}
+              pageSizeOptions={[25, 50, 100, 200]}
+              onPageChange={setPage}
+              onPageSizeChange={setPerPage}
+              itemLabel="قلم کالا و رزین"
+            />
+          </>
         )}
       </div>
 

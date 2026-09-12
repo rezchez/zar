@@ -67,6 +67,24 @@ export async function GET() {
       weightPrecision = (defaultSettings.weightDecimalPlaces || 3) as WeightDecimalPlaces;
     }
 
+    // 0. Load base karats from app_settings
+    let customBaseKarats: Record<PreciousMetalType, number> = {
+      gold: DEFAULT_BASE_KARATS.gold,
+      silver: DEFAULT_BASE_KARATS.silver,
+      platinum: DEFAULT_BASE_KARATS.platinum,
+    };
+    try {
+      const settingsRecords = await context.pb.collection('app_settings').getFullList();
+      if (settingsRecords.length > 0) {
+        const s = settingsRecords[0];
+        if (s.goldBaseKarat) customBaseKarats.gold = Number(s.goldBaseKarat);
+        if (s.silverBaseKarat) customBaseKarats.silver = Number(s.silverBaseKarat);
+        if (s.platinumBaseKarat) customBaseKarats.platinum = Number(s.platinumBaseKarat);
+      }
+    } catch {
+      // fallback to default
+    }
+
     // 1. Fetch from primary dedicated collection: metal_inventory
     let metalInvRecords = await context.pb.collection('metal_inventory').getFullList({
       filter: 'is_deleted = false && (transaction_type = "opening_balance" || is_opening_balance = true)',
@@ -78,9 +96,10 @@ export async function GET() {
     if (metalInvRecords.length > 0) {
       items = metalInvRecords.map((r: Record<string, unknown>) => {
         const metal = String(r.metal || 'gold').toLowerCase() as PreciousMetalType;
-        const baseKarat = Number(r.base_karat) || DEFAULT_BASE_KARATS[metal];
+        const defaultBase = customBaseKarats[metal] || DEFAULT_BASE_KARATS[metal];
+        const baseKarat = Number(r.base_karat) || defaultBase;
         const rawWeight = Math.abs(Number(r.raw_weight || 0));
-        const purity = Number(r.purity) || (metal === 'gold' ? 750 : metal === 'silver' ? 999 : 950);
+        const purity = Number(r.purity) || defaultBase;
         const convertedWeight = Number(r.converted_weight) || metalAtBaseKarat(rawWeight, purity, baseKarat, weightPrecision);
 
         return {
@@ -123,8 +142,9 @@ export async function GET() {
           weight = rawPlatinum;
         }
 
-        const baseKarat = Number(details.baseKarat) || DEFAULT_BASE_KARATS[metal];
-        const purity = Number(details.purity) || (metal === 'gold' ? 750 : metal === 'silver' ? 999 : 950);
+        const defaultBase = customBaseKarats[metal] || DEFAULT_BASE_KARATS[metal];
+        const baseKarat = Number(details.baseKarat) || defaultBase;
+        const purity = Number(details.purity) || defaultBase;
         const convertedWeight = Number(details.convertedWeight) || metalAtBaseKarat(weight, purity, baseKarat, weightPrecision);
 
         let inventoryType: MetalInventoryType = 'general_metal';
@@ -146,7 +166,7 @@ export async function GET() {
           labName: details.labName || '',
           stampNumber: details.stampNumber || '',
           totalAmount: Math.abs(Number(r.rialAmount || details.totalAmount || 0)),
-          date: String(r.documentDateJalali || r.transactionDate || dateToJalaliString(new Date())),
+          date: String(r.documentDateJalali || r.transactionDate || ''),
           description: String(r.description || ''),
           createdBy: String(r.createdBy || ''),
           created: String(r.created || ''),
@@ -165,7 +185,7 @@ export async function GET() {
     }).catch(() => []);
 
     const combined = [...allMetalInventory, ...allTx];
-    const summary = calculateMetalInventoryBalances(combined, weightPrecision);
+    const summary = calculateMetalInventoryBalances(combined, weightPrecision, customBaseKarats);
 
     return NextResponse.json({
       items,
@@ -403,6 +423,22 @@ export async function DELETE(request: Request) {
     const id = url.searchParams.get('id');
     if (!id) {
       return NextResponse.json({ message: 'شناسه مشخص نشده است.' }, { status: 400 });
+    }
+
+    const existingMetal = await context.pb.collection('metal_inventory').getOne(id).catch(() => null);
+    if (existingMetal) {
+      const stamp = String(existingMetal.stamp_number || '');
+      if (stamp) {
+        const downstream = await context.pb.collection('metal_inventory').getList(1, 1, {
+          filter: context.pb.filter('is_deleted = false && stamp_number = {:stamp} && transaction_type != "opening_balance" && is_opening_balance != true', { stamp }),
+        }).catch(() => ({ totalItems: 0 }));
+
+        if (downstream.totalItems > 0) {
+          return NextResponse.json({
+            message: 'امکان حذف این موجودی اولیه آبشده وجود ندارد زیرا دارای تراکنش‌های وابسته (فروش، ذوب یا انتقال) است.',
+          }, { status: 409 });
+        }
+      }
     }
 
     // Delete record from metal_inventory (or transactions fallback)

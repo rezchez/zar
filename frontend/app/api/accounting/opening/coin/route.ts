@@ -260,6 +260,44 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ message: 'شناسه مشخص نشده است.' }, { status: 400 });
     }
 
+    const existing = await context.pb.collection('coin_inventory').getOne(id).catch(() => null);
+    if (!existing) {
+      return NextResponse.json({ message: 'رکورد موجودی اولیه مسکوکات یافت نشد.' }, { status: 404 });
+    }
+
+    // 1. Check for downstream/dependent transactions
+    const itemTypeId = String(existing.item_type || '');
+    const itemName = String(existing.item_name || '');
+    if (itemTypeId || itemName) {
+      const downstreamFilter = itemTypeId
+        ? 'transaction_type != "opening_balance" && item_type = {:itemTypeId}'
+        : 'transaction_type != "opening_balance" && item_name = {:itemName}';
+      const downstreamParams = itemTypeId ? { itemTypeId } : { itemName };
+
+      const downstreamTxs = await context.pb.collection('coin_inventory').getList(1, 1, {
+        filter: context.pb.filter(downstreamFilter, downstreamParams),
+      }).catch(() => ({ totalItems: 0 }));
+
+      if (downstreamTxs.totalItems > 0) {
+        return NextResponse.json({
+          message: 'امکان حذف این موجودی اولیه مسکوکات وجود ندارد زیرا دارای تراکنش‌های وابسته (فروش، معامله یا تحویل) است.',
+        }, { status: 409 });
+      }
+    }
+
+    // 2. Delete linked journal entry if exists
+    try {
+      const journal = await context.pb.collection('journal_entries').getFirstListItem(
+        context.pb.filter('sourceKey = {:key}', { key: `opening:coin:${id}` }),
+      ).catch(() => null);
+      if (journal) {
+        await context.pb.collection('journal_entries').delete(journal.id).catch(() => null);
+      }
+    } catch {
+      // non-blocking
+    }
+
+    // 3. Delete record from coin_inventory
     await context.pb.collection('coin_inventory').delete(id);
     return NextResponse.json({ success: true });
   } catch (error) {

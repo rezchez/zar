@@ -317,6 +317,31 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ message: 'شناسه کالا مشخص نشده است.' }, { status: 400 });
     }
 
+    const existing = await context.pb.collection('goods_inventory').getOne(id).catch(() => null);
+    if (!existing) {
+      return NextResponse.json({ message: 'رکورد موجودی اولیه کالا یافت نشد.' }, { status: 404 });
+    }
+
+    // Check for downstream transactions
+    const goodsTypeId = String(existing.goods_type || '');
+    const sku = String(existing.sku || '');
+    if (goodsTypeId || sku) {
+      const downstreamFilter = goodsTypeId
+        ? 'is_deleted = false && goods_type = {:goodsTypeId} && is_opening_balance != true'
+        : 'is_deleted = false && sku = {:sku} && is_opening_balance != true';
+      const downstreamParams = goodsTypeId ? { goodsTypeId } : { sku };
+
+      const downstream = await context.pb.collection('goods_inventory').getList(1, 1, {
+        filter: context.pb.filter(downstreamFilter, downstreamParams),
+      }).catch(() => ({ totalItems: 0 }));
+
+      if (downstream.totalItems > 0) {
+        return NextResponse.json({
+          message: 'امکان حذف این موجودی کالا وجود ندارد زیرا دارای تراکنش‌های وابسته (مصرف یا خروج انبار) است.',
+        }, { status: 409 });
+      }
+    }
+
     // Delete record from goods_inventory
     await context.pb.collection('goods_inventory').delete(id);
 

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { postWorkmanshipOpeningInventory } from '@/lib/accounting-posting-engine';
 import { getServerAuthContext } from '@/lib/auth';
 import { hasPermission } from '@/lib/authorization';
 import { dateToJalaliString } from '@/lib/jalali';
@@ -367,6 +368,37 @@ export async function POST(request: Request) {
       resultRecord = await context.pb.collection('workmanship_inventory').create(payload);
     }
 
+    // Double-entry Journal Entry posting if monetary valuation is provided
+    if (totalAmount > 0) {
+      try {
+        await postWorkmanshipOpeningInventory(
+          {
+            id: String(resultRecord.id || ''),
+            code: finalCode,
+            name,
+            metal: metalInput,
+            quantity,
+            rawWeight: roundedRawWeight,
+            purity,
+            convertedWeight,
+            totalAmount: Math.round(totalAmount),
+          },
+          dateValue,
+          context.user.id,
+          context.pb,
+          description || `موجودی اولیه کارساخته ${name} (${quantity} عدد - ${roundedRawWeight} گرم)`,
+        );
+      } catch (err) {
+        // Rollback created record if journal creation fails to ensure atomicity
+        if (!recordId && resultRecord.id) {
+          await context.pb.collection('workmanship_inventory').delete(String(resultRecord.id)).catch(() => undefined);
+        }
+        return NextResponse.json({
+          message: extractPbErrorMessage(err, 'ثبت سند حسابداری موجودی اولیه کار ساخته با خطا مواجه شد.'),
+        }, { status: 400 });
+      }
+    }
+
     return NextResponse.json({
       success: true,
       item: {
@@ -427,7 +459,39 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ message: 'شناسه کار ساخته مشخص نشده است.' }, { status: 400 });
     }
 
-    // Hard delete with resilient soft-delete fallback
+    // 1. Fetch item to verify downstream usage before deleting
+    const existingItem = await context.pb.collection('workmanship_inventory').getOne(id).catch(() => null);
+    if (!existingItem) {
+      return NextResponse.json({ message: 'رکورد موجودی کار ساخته یافت نشد.' }, { status: 404 });
+    }
+
+    // Check for downstream transactions
+    const itemCode = String(existingItem.code || '');
+    if (itemCode) {
+      const downstreamWorkmanship = await context.pb.collection('workmanship_inventory').getList(1, 1, {
+        filter: context.pb.filter('is_deleted = false && code = {:code} && transaction_type != "opening_balance" && is_opening_balance != true', { code: itemCode }),
+      }).catch(() => ({ totalItems: 0 }));
+
+      if (downstreamWorkmanship.totalItems > 0) {
+        return NextResponse.json({
+          message: 'امکان حذف این موجودی کارساخته وجود ندارد زیرا دارای تراکنش‌های وابسته (فروش، تحویل یا مصرف) است.',
+        }, { status: 409 });
+      }
+    }
+
+    // 2. Delete linked journal entry if exists
+    try {
+      const journal = await context.pb.collection('journal_entries').getFirstListItem(
+        context.pb.filter('sourceKey = {:key}', { key: `opening:workmanship:${id}` }),
+      ).catch(() => null);
+      if (journal) {
+        await context.pb.collection('journal_entries').delete(journal.id).catch(() => null);
+      }
+    } catch {
+      // journal may not exist if totalAmount was 0
+    }
+
+    // 3. Hard delete with resilient soft-delete fallback
     try {
       await context.pb.collection('workmanship_inventory').delete(id);
     } catch {
