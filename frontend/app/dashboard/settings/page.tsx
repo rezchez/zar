@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation';
+import { Suspense } from 'react';
 
 import { getServerAuthContext } from '@/lib/auth';
 import DashboardShell from '@/src/components/dashboard/DashboardShell';
@@ -15,7 +16,9 @@ export default async function SettingsPage() {
 
   return (
     <DashboardShell user={context.user}>
-      <ProgramSettings />
+      <Suspense fallback={<div className="p-8 text-center text-sm text-slate-500">در حال بارگذاری تنظیمات...</div>}>
+        <ProgramSettings />
+      </Suspense>
     </DashboardShell>
   );
 }

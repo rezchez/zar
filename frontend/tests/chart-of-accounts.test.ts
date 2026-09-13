@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from 'bun:test';
-import { setMockAuthUser } from './setup';
+import { setMockAuthUser, sharedMockPb } from './setup';
 import {
   DEFAULT_CHART_OF_ACCOUNTS,
   normalizeAccountCode,
@@ -21,7 +21,7 @@ import { GET as getCoaOne, PATCH as updateCoaAccount, DELETE as deleteCoaAccount
 import { POST as suggestCodeRoute } from '@/app/api/chart-of-accounts/suggest-code/route';
 import { GET as exportCoaRoute } from '@/app/api/chart-of-accounts/export/route';
 import { POST as importCoaRoute } from '@/app/api/chart-of-accounts/import/route';
-import { POST as resetDefaultRoute } from '@/app/api/chart-of-accounts/reset-default/route';
+import { GET as getResetDefaultRoute, POST as resetDefaultRoute } from '@/app/api/chart-of-accounts/reset-default/route';
 
 describe('Chart of Accounts - Data Tree & Path Utilities', () => {
   it('contains 66 standard default accounts covering all 8 major groups', () => {
@@ -389,5 +389,123 @@ describe('Chart of Accounts - API Route Handlers', () => {
     });
     const res = await resetDefaultRoute();
     expect(res.status).toBe(403);
+  });
+
+  it('POST /api/chart-of-accounts/reset-default is allowed for manager when zero transactions exist', async () => {
+    setMockAuthUser({
+      id: 'mgr_1',
+      name: 'مدیر فروشگاه',
+      email: 'manager@zarfolio.local',
+      role: 'manager',
+      status: 'active',
+      customPermissions: {
+        grants: ['settings.manage'],
+        denies: [],
+      },
+    });
+    // With zero transactions in mock PB:
+    const res = await resetDefaultRoute();
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.success).toBe(true);
+  });
+
+  it('POST /api/chart-of-accounts/reset-default is LOCKED for manager when transactions exist', async () => {
+    setMockAuthUser({
+      id: 'mgr_1',
+      name: 'مدیر فروشگاه',
+      email: 'manager@zarfolio.local',
+      role: 'manager',
+      status: 'active',
+      customPermissions: {
+        grants: ['settings.manage'],
+        denies: [],
+      },
+    });
+
+    // Mock existing transactions
+    const originalCollection = sharedMockPb.collection.bind(sharedMockPb);
+    (sharedMockPb as any).collection = (name: string) => {
+      if (name === 'transactions') {
+        return {
+          ...originalCollection(name),
+          getList: async () => ({ items: [{ id: 'tx_1' }], totalItems: 1 }),
+        };
+      }
+      return originalCollection(name);
+    };
+
+    try {
+      const res = await resetDefaultRoute();
+      expect(res.status).toBe(403);
+      const data = await res.json();
+      expect(data.locked).toBe(true);
+      expect(data.message).toContain('قفل است');
+    } finally {
+      (sharedMockPb as any).collection = originalCollection;
+    }
+  });
+
+  it('POST /api/chart-of-accounts/reset-default is permitted for ADMIN even when transactions exist', async () => {
+    setMockAuthUser({
+      id: 'admin_1',
+      name: 'مدیر ارشد',
+      email: 'admin@zarfolio.local',
+      role: 'admin',
+      status: 'active',
+    });
+
+    // Mock existing transactions
+    const originalCollection = sharedMockPb.collection.bind(sharedMockPb);
+    (sharedMockPb as any).collection = (name: string) => {
+      if (name === 'transactions') {
+        return {
+          ...originalCollection(name),
+          getList: async () => ({ items: [{ id: 'tx_1' }], totalItems: 1 }),
+        };
+      }
+      return originalCollection(name);
+    };
+
+    try {
+      const res = await resetDefaultRoute();
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.success).toBe(true);
+    } finally {
+      (sharedMockPb as any).collection = originalCollection;
+    }
+  });
+
+  it('GET /api/chart-of-accounts/reset-default returns lock metadata correctly', async () => {
+    setMockAuthUser({
+      id: 'mgr_1',
+      name: 'مدیر فروشگاه',
+      email: 'manager@zarfolio.local',
+      role: 'manager',
+      status: 'active',
+    });
+
+    const originalCollection = sharedMockPb.collection.bind(sharedMockPb);
+    (sharedMockPb as any).collection = (name: string) => {
+      if (name === 'transactions') {
+        return {
+          ...originalCollection(name),
+          getList: async () => ({ items: [{ id: 'tx_1' }], totalItems: 1 }),
+        };
+      }
+      return originalCollection(name);
+    };
+
+    try {
+      const res = await getResetDefaultRoute();
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.canReset).toBe(false);
+      expect(data.hasTransactions).toBe(true);
+      expect(data.lockReason).toContain('قفل است');
+    } finally {
+      (sharedMockPb as any).collection = originalCollection;
+    }
   });
 });

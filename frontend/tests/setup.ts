@@ -7,6 +7,20 @@ mock.module('next/cache', () => ({
   revalidateTag: () => {},
 }));
 
+mock.module('next/navigation', () => ({
+  useRouter: () => ({
+    push: () => {},
+    replace: () => {},
+    prefetch: () => {},
+    back: () => {},
+    forward: () => {},
+    refresh: () => {},
+  }),
+  usePathname: () => '/dashboard/settings',
+  useSearchParams: () => new URLSearchParams(),
+  redirect: () => {},
+}));
+
 class MockNextResponse {
   body: any;
   status: number;
@@ -67,9 +81,10 @@ class MockPocketBase {
     save: () => {},
     clear: () => {},
   };
-  collection() {
+  collection(_name?: string) {
     return {
       authWithPassword: async () => ({ token: 'mock_token', record: {} }),
+      getList: async () => ({ items: [], totalItems: 0, page: 1, perPage: 30, totalPages: 0 }),
       getFullList: async () => [],
       getFirstListItem: async () => null,
       getOne: async () => ({}),
@@ -114,7 +129,7 @@ export function setMockAuthUser(user: MockAuthUser) {
   currentMockUser = user;
 }
 
-const sharedMockPb = new MockPocketBase();
+export const sharedMockPb = new MockPocketBase();
 
 mock.module('@/lib/auth', () => ({
   getServerAuthContext: async () => {

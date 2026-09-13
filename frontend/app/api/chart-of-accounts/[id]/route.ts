@@ -14,6 +14,7 @@ import {
   type NormalBalance,
   type AccountLevel,
 } from '@/lib/chart-of-accounts';
+import { clearChartOfAccountsCache } from '@/lib/chart-of-accounts-cache';
 
 export async function GET(
   request: Request,
@@ -246,6 +247,7 @@ export async function PATCH(
     updatePayload.updatedBy = context.user.id;
 
     const updatedRecord = await context.pb.collection('chart_of_accounts').update(id, updatePayload);
+    clearChartOfAccountsCache();
 
     // If path changed, cascade update to all child accounts in background
     if (updatePayload.path && updatePayload.path !== currentAccount.path) {
@@ -370,6 +372,7 @@ export async function DELETE(
     }
 
     await context.pb.collection('chart_of_accounts').delete(id);
+    clearChartOfAccountsCache();
 
     return NextResponse.json({
       success: true,

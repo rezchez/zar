@@ -5,6 +5,7 @@ import path from 'path';
 
 import { getServerAuthContext } from '@/lib/auth';
 import { recordAuditEvent } from '@/lib/audit';
+import { clearChartOfAccountsCache } from '@/lib/chart-of-accounts-cache';
 
 export async function POST(request: Request) {
   try {
@@ -28,7 +29,10 @@ export async function POST(request: Request) {
       // Ignore if cache directory is inaccessible or missing
     }
 
-    // 3. Record audit event
+    // 3. Clear in-memory chart of accounts cache
+    clearChartOfAccountsCache();
+
+    // 4. Record audit event
     await recordAuditEvent({
       userId: context.user.id,
       event: 'cache_rebuilt',

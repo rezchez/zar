@@ -10,6 +10,9 @@ import {
   Search,
   ChevronRight,
   ChevronDown,
+  ChevronsDown,
+  ChevronsUp,
+  Layers,
   Lock,
   Scale,
   Coins,
@@ -78,6 +81,12 @@ export default function ChartOfAccounts() {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
 
+  // Lock status for Reset Defaults
+  const [canResetDefaults, setCanResetDefaults] = useState(true);
+  const [resetDefaultsLockReason, setResetDefaultsLockReason] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [hasTransactions, setHasTransactions] = useState(false);
+
   // Selected accounts for actions
   const [selectedParent, setSelectedParent] = useState<ChartOfAccountRecord | null>(null);
   const [editingAccount, setEditingAccount] = useState<ChartOfAccountRecord | null>(null);
@@ -120,13 +129,16 @@ export default function ChartOfAccounts() {
       const list: ChartOfAccountRecord[] = data.accounts || [];
       setAccounts(list);
 
-      // Expand level 1 and 2 by default, and focus target if specified
-      const initialExpanded = new Set<string>();
-      for (const a of list) {
-        if (a.level === 1 || a.level === 2) {
-          initialExpanded.add(a.id);
-        }
+      if (typeof data.canResetDefaults === 'boolean') {
+        setCanResetDefaults(data.canResetDefaults);
       }
+      setResetDefaultsLockReason(data.resetDefaultsLockReason || null);
+      setIsAdmin(Boolean(data.isAdmin));
+      setHasTransactions(Boolean(data.hasTransactions));
+
+      // All subgroups are collapsed/closed by default for maximum performance.
+      // Subgroups are rendered on-demand when the user clicks to expand.
+      const initialExpanded = new Set<string>();
 
       if (typeof window !== 'undefined') {
         const urlParams = new URLSearchParams(window.location.search);
@@ -174,6 +186,18 @@ export default function ChartOfAccounts() {
 
   const handleCollapseAll = () => {
     setExpandedIds(new Set());
+  };
+
+  const handleResetToGroupsOnly = () => {
+    // Closes all subgroups, displaying only level 1 groups
+    setExpandedIds(new Set());
+  };
+
+  const handleClearFilters = () => {
+    setSearchQuery('');
+    setSelectedType('all');
+    setSelectedLevel('all');
+    setSelectedStatus('all');
   };
 
   const toggleExpand = (id: string) => {
@@ -263,6 +287,24 @@ export default function ChartOfAccounts() {
 
     return filtered;
   }, [fullTree, searchQuery, selectedType, selectedLevel, selectedStatus]);
+
+  // Total count of matching nodes in filtered tree
+  const filteredCount = useMemo(() => {
+    function countNodes(nodes: AccountTreeNode[]): number {
+      let count = 0;
+      for (const node of nodes) {
+        count += 1 + countNodes(node.children);
+      }
+      return count;
+    }
+    return countNodes(filteredTree);
+  }, [filteredTree]);
+
+  const isFilterActive =
+    searchQuery.trim().length > 0 ||
+    selectedType !== 'all' ||
+    selectedLevel !== 'all' ||
+    selectedStatus !== 'all';
 
   // Open Add Modal
   const openAddChildModal = (parent?: ChartOfAccountRecord) => {
@@ -630,11 +672,28 @@ export default function ChartOfAccounts() {
             <button
               onClick={() => setIsResetModalOpen(true)}
               type="button"
-              className="flex items-center gap-1.5 px-3 py-2.5 bg-slate-800 hover:bg-rose-950/40 border border-slate-700 hover:border-rose-800 rounded-xl text-slate-300 hover:text-rose-300 text-sm transition-all"
-              title="بازنشانی به ساختار ۴۴ حساب استاندارد اولیه"
+              className={`flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-sm transition-all border ${
+                !canResetDefaults
+                  ? 'bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-300 hover:border-slate-700'
+                  : 'bg-slate-800 hover:bg-rose-950/40 border-slate-700 hover:border-rose-800 text-slate-300 hover:text-rose-300'
+              }`}
+              title={
+                !canResetDefaults
+                  ? (resetDefaultsLockReason || 'بازنشانی سرفصل‌های پیش‌فرض قفل است.')
+                  : 'بازنشانی به ساختار استاندارد اولیه'
+              }
             >
-              <RotateCcw className="w-4 h-4 text-rose-400" />
-              سرفصل‌های پیش‌فرض
+              {!canResetDefaults ? (
+                <Lock className="w-4 h-4 text-amber-400" />
+              ) : (
+                <RotateCcw className="w-4 h-4 text-rose-400" />
+              )}
+              <span>سرفصل‌های پیش‌فرض</span>
+              {!canResetDefaults && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                  قفل
+                </span>
+              )}
             </button>
           </div>
         </div>
@@ -656,91 +715,167 @@ export default function ChartOfAccounts() {
         )}
 
         {/* Filter and Search Bar */}
-        <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 pt-4 border-t border-slate-800">
-          {/* Search Box */}
-          <div className="lg:col-span-4 relative">
-            <Search className="w-4 h-4 text-slate-400 absolute right-3 top-3.5" />
-            <input
-              type="text"
-              placeholder="جستجو در کد، عنوان یا توضیحات سرفصل..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-3 pr-9 py-2.5 bg-slate-950/70 border border-slate-700/80 focus:border-amber-500 rounded-xl text-slate-100 placeholder-slate-500 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 transition-all"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="absolute left-3 top-3 text-slate-400 hover:text-slate-200"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
+        <div className="mt-5 pt-4 border-t border-slate-800 space-y-3">
+          {/* Row 1: Search, Dropdowns, Clear Filter */}
+          <div className="flex flex-col md:flex-row gap-3">
+            {/* Search Box */}
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-slate-400 absolute right-3 top-3.5 pointer-events-none" />
+              <input
+                type="text"
+                placeholder="جستجو در کد، عنوان یا توضیحات سرفصل..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-9 py-2.5 bg-slate-950/70 border border-slate-700/80 focus:border-amber-500 rounded-xl text-slate-100 placeholder-slate-500 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 transition-all"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute left-3 top-3 text-slate-400 hover:text-slate-200"
+                  title="پاک کردن متن جستجو"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            {/* Dropdowns & Reset Action */}
+            <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
+              {/* Type Filter */}
+              <div className="w-full sm:w-44">
+                <select
+                  value={selectedType}
+                  onChange={(e) => setSelectedType(e.target.value)}
+                  className="w-full px-3 py-2.5 bg-slate-950/70 border border-slate-700/80 focus:border-amber-500 rounded-xl text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
+                >
+                  <option value="all">همه ماهیت‌ها</option>
+                  <option value="asset">دارایی‌ها (Asset)</option>
+                  <option value="liability">بدهی‌ها (Liability)</option>
+                  <option value="equity">حقوق مالکانه (Equity)</option>
+                  <option value="revenue">درآمدها (Revenue)</option>
+                  <option value="cost_of_sales">بهای تمام‌شده (Cost of Sales)</option>
+                  <option value="expense">هزینه‌ها (Expense)</option>
+                  <option value="memorandum">حساب‌های انتظامی (Memorandum)</option>
+                </select>
+              </div>
+
+              {/* Level Filter */}
+              <div className="w-full sm:w-36">
+                <select
+                  value={selectedLevel}
+                  onChange={(e) => setSelectedLevel(e.target.value)}
+                  className="w-full px-3 py-2.5 bg-slate-950/70 border border-slate-700/80 focus:border-amber-500 rounded-xl text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
+                >
+                  <option value="all">همه سطوح</option>
+                  <option value="1">سطح ۱ - گروه</option>
+                  <option value="2">سطح ۲ - کل</option>
+                  <option value="3">سطح ۳ - معین</option>
+                  <option value="4">سطح ۴ - تفصیلی</option>
+                </select>
+              </div>
+
+              {/* Status Filter */}
+              <div className="w-full sm:w-36">
+                <select
+                  value={selectedStatus}
+                  onChange={(e) => setSelectedStatus(e.target.value)}
+                  className="w-full px-3 py-2.5 bg-slate-950/70 border border-slate-700/80 focus:border-amber-500 rounded-xl text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
+                >
+                  <option value="all">همه وضعیت‌ها</option>
+                  <option value="active">فقط حساب‌های فعال</option>
+                  <option value="inactive">فقط غیرفعال‌ها</option>
+                </select>
+              </div>
+
+              {/* Clear Filters Button (when any filter is active) */}
+              {isFilterActive && (
+                <button
+                  type="button"
+                  onClick={handleClearFilters}
+                  className="flex items-center gap-1.5 px-3 py-2.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-xl text-sm transition-all whitespace-nowrap"
+                  title="حذف تمام فیلترها و جستجو"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>حذف فیلترها</span>
+                </button>
+              )}
+            </div>
           </div>
 
-          {/* Type Filter */}
-          <div className="lg:col-span-3">
-            <select
-              value={selectedType}
-              onChange={(e) => setSelectedType(e.target.value)}
-              className="w-full px-3 py-2.5 bg-slate-950/70 border border-slate-700/80 focus:border-amber-500 rounded-xl text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-            >
-              <option value="all">همه ماهیت‌های حسابداری</option>
-              <option value="asset">دارایی‌ها (Asset)</option>
-              <option value="liability">بدهی‌ها (Liability)</option>
-              <option value="equity">حقوق مالکانه (Equity)</option>
-              <option value="revenue">درآمدها (Revenue)</option>
-              <option value="cost_of_sales">بهای تمام‌شده (Cost of Sales)</option>
-              <option value="expense">هزینه‌ها (Expense)</option>
-              <option value="memorandum">حساب‌های انتظامی (Memorandum)</option>
-            </select>
-          </div>
+          {/* Row 2: Nature Chips & Tree Controls & Results Counter */}
+          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3 pt-1">
+            {/* Quick Nature Filter Chips */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-xs text-slate-400 ml-1">ماهیت:</span>
+              {[
+                { id: 'all', label: 'همه' },
+                { id: 'asset', label: 'دارایی' },
+                { id: 'liability', label: 'بدهی' },
+                { id: 'equity', label: 'حقوق مالکانه' },
+                { id: 'revenue', label: 'درآمد' },
+                { id: 'cost_of_sales', label: 'بهای تمام‌شده' },
+                { id: 'expense', label: 'هزینه' },
+                { id: 'memorandum', label: 'انتظامی' },
+              ].map((chip) => {
+                const isActive = selectedType === chip.id;
+                return (
+                  <button
+                    key={chip.id}
+                    type="button"
+                    onClick={() => setSelectedType(chip.id)}
+                    className={`px-2.5 py-1 text-xs rounded-lg border transition-all ${
+                      isActive
+                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 font-medium shadow-sm'
+                        : 'bg-slate-800/60 text-slate-400 hover:text-slate-200 border-slate-700/60 hover:bg-slate-800'
+                    }`}
+                  >
+                    {chip.label}
+                  </button>
+                );
+              })}
+            </div>
 
-          {/* Level Filter */}
-          <div className="lg:col-span-2">
-            <select
-              value={selectedLevel}
-              onChange={(e) => setSelectedLevel(e.target.value)}
-              className="w-full px-3 py-2.5 bg-slate-950/70 border border-slate-700/80 focus:border-amber-500 rounded-xl text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-            >
-              <option value="all">همه سطوح درخت</option>
-              <option value="1">سطح ۱ - گروه</option>
-              <option value="2">سطح ۲ - کل</option>
-              <option value="3">سطح ۳ - معین</option>
-              <option value="4">سطح ۴ - تفصیلی</option>
-            </select>
-          </div>
+            {/* Tree Controls & Counter Badge */}
+            <div className="flex flex-wrap items-center gap-2 self-end lg:self-auto">
+              {/* Tree Expansion Buttons */}
+              <div className="flex items-center gap-1 bg-slate-950/60 p-1 rounded-xl border border-slate-800">
+                <button
+                  type="button"
+                  onClick={handleResetToGroupsOnly}
+                  className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300 hover:text-white transition-all text-xs"
+                  title="نمایش فقط سرفصل‌های گروه (سطح ۱)"
+                >
+                  <Layers className="w-3.5 h-3.5 text-amber-400" />
+                  <span>فقط گروه‌ها</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExpandAll}
+                  className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300 hover:text-white transition-all text-xs"
+                  title="باز کردن تمام شاخه‌ها"
+                >
+                  <ChevronsDown className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>گسترش همه</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCollapseAll}
+                  className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300 hover:text-white transition-all text-xs"
+                  title="بستن تمام شاخه‌ها"
+                >
+                  <ChevronsUp className="w-3.5 h-3.5 text-rose-400" />
+                  <span>بستن همه</span>
+                </button>
+              </div>
 
-          {/* Status Filter */}
-          <div className="lg:col-span-2">
-            <select
-              value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
-              className="w-full px-3 py-2.5 bg-slate-950/70 border border-slate-700/80 focus:border-amber-500 rounded-xl text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-            >
-              <option value="all">همه وضعیت‌ها</option>
-              <option value="active">فقط حساب‌های فعال</option>
-              <option value="inactive">فقط غیرفعال‌ها</option>
-            </select>
-          </div>
-
-          {/* Expand / Collapse Controls */}
-          <div className="lg:col-span-1 flex items-center justify-end gap-1">
-            <button
-              onClick={handleExpandAll}
-              type="button"
-              className="p-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-slate-300 hover:text-white transition-all text-xs"
-              title="باز کردن تمام شاخه‌ها"
-            >
-              <ChevronDown className="w-4 h-4" />
-            </button>
-            <button
-              onClick={handleCollapseAll}
-              type="button"
-              className="p-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-slate-300 hover:text-white transition-all text-xs"
-              title="بستن تمام شاخه‌ها"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
+              {/* Counter Badge */}
+              <div className="text-xs text-slate-400 bg-slate-950/80 px-3 py-1.5 rounded-xl border border-slate-800 flex items-center gap-1.5">
+                <span>نمایش:</span>
+                <span className="font-bold text-amber-400">{filteredCount}</span>
+                <span className="text-slate-500">از {accounts.length} حساب</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -1269,35 +1404,77 @@ export default function ChartOfAccounts() {
       {isResetModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md shadow-2xl p-6 text-right">
-            <div className="flex items-center gap-3 text-amber-400 mb-3">
-              <div className="p-2.5 bg-amber-500/10 border border-amber-500/30 rounded-xl">
-                <RotateCcw className="w-6 h-6" />
-              </div>
-              <h3 className="text-lg font-bold text-slate-100">بازنشانی به سرفصل‌های پیش‌فرض</h3>
-            </div>
+            {!canResetDefaults ? (
+              <>
+                <div className="flex items-center gap-3 text-rose-400 mb-3">
+                  <div className="p-2.5 bg-rose-500/10 border border-rose-500/30 rounded-xl">
+                    <Lock className="w-6 h-6 text-rose-400" />
+                  </div>
+                  <h3 className="text-lg font-bold text-slate-100">سرفصل‌های پیش‌فرض قفل است</h3>
+                </div>
 
-            <p className="text-sm text-slate-300 mb-4">
-              آیا مایلید تمام ۴۴ سرفصل استاندارد طلا و جواهر (دارایی‌ها، بدهی‌ها، سرمایه، درآمدها و هزینه‌ها) به حالت اولیه سیستم همگام‌سازی شوند؟
-            </p>
+                <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-300 text-xs leading-relaxed mb-4">
+                  {resetDefaultsLockReason ||
+                    'عملیات بازنشانی سرفصل‌های پیش‌فرض به دلیل وجود تراکنش‌های مالی در سامانه قفل شده است.'}
+                </div>
 
-            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
-              <button
-                type="button"
-                onClick={() => setIsResetModalOpen(false)}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm"
-              >
-                انصراف
-              </button>
-              <button
-                type="button"
-                disabled={isSubmitting}
-                onClick={handleResetDefaults}
-                className="flex items-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-sm disabled:opacity-50"
-              >
-                {isSubmitting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
-                تایید بازنشانی
-              </button>
-            </div>
+                <p className="text-xs text-slate-400 mb-5 leading-relaxed">
+                  جهت جلوگیری از بروز خطا و ناهماهنگی در اسناد و حساب‌های مالی، بازنشانی سرفصل‌های پیش‌فرض تنها در صورتی مجاز است که:
+                  <br />
+                  ۱) یا کلیه تراکنش‌های مالی و اسناد پاک شده باشند.
+                  <br />
+                  ۲) یا کاربر دارای سطح دسترسی مدیر ارشد (Admin) باشد.
+                </p>
+
+                <div className="flex items-center justify-end pt-3 border-t border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setIsResetModalOpen(false)}
+                    className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-sm"
+                  >
+                    متوجه شدم
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-3 text-amber-400 mb-3">
+                  <div className="p-2.5 bg-amber-500/10 border border-amber-500/30 rounded-xl">
+                    <RotateCcw className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-lg font-bold text-slate-100">بازنشانی به سرفصل‌های پیش‌فرض</h3>
+                </div>
+
+                {isAdmin && hasTransactions && (
+                  <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-300 text-xs mb-4 leading-relaxed">
+                    <strong>توجه دسترسی مدیر ارشد (Admin):</strong> در سامانه تراکنش‌های مالی ثبت شده است. همگام‌سازی ساختار پیش‌فرض ممکن است سرفصل‌ها را بازنویسی کند. لطفاً با احتیاط اقدام فرمایید.
+                  </div>
+                )}
+
+                <p className="text-sm text-slate-300 mb-4 leading-relaxed">
+                  آیا مایلید سرفصل‌های استاندارد طلا و جواهر به ساختار اولیه سیستم همگام‌سازی شوند؟
+                </p>
+
+                <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setIsResetModalOpen(false)}
+                    className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm"
+                  >
+                    انصراف
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isSubmitting}
+                    onClick={handleResetDefaults}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-sm disabled:opacity-50"
+                  >
+                    {isSubmitting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
+                    تایید بازنشانی
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -1581,9 +1758,10 @@ function AccountTreeItem({
               onClick={() => toggleExpand(node.id)}
               type="button"
               className="p-1 text-slate-400 hover:text-amber-400 transition-transform"
+              title={isExpanded ? 'بستن زیرگروه‌ها' : 'کلیک برای باز شدن زیرگروه‌ها'}
             >
               {isExpanded ? (
-                <ChevronDown className="w-4 h-4" />
+                <ChevronDown className="w-4 h-4 text-amber-400" />
               ) : (
                 <ChevronRight className="w-4 h-4" />
               )}
@@ -1593,14 +1771,38 @@ function AccountTreeItem({
           )}
 
           {/* Account Code */}
-          <span className="font-mono font-bold text-xs sm:text-sm px-2 py-0.5 rounded-lg bg-slate-950 border border-slate-700/80 text-amber-300 flex-shrink-0">
+          <span
+            onClick={hasChildren ? () => toggleExpand(node.id) : undefined}
+            className={`font-mono font-bold text-xs sm:text-sm px-2 py-0.5 rounded-lg bg-slate-950 border border-slate-700/80 text-amber-300 flex-shrink-0 ${
+              hasChildren ? 'cursor-pointer hover:border-amber-500/60 hover:bg-slate-900 transition-all' : ''
+            }`}
+            title={hasChildren ? (isExpanded ? 'کلیک برای بستن زیرگروه‌ها' : 'کلیک برای باز شدن زیرگروه‌ها') : undefined}
+          >
             {node.code}
           </span>
 
           {/* Account Name */}
-          <span className="font-medium text-sm text-slate-100 truncate" title={node.description || node.name}>
+          <span
+            onClick={hasChildren ? () => toggleExpand(node.id) : undefined}
+            className={`font-medium text-sm text-slate-100 truncate ${
+              hasChildren ? 'cursor-pointer hover:text-amber-300 transition-colors' : ''
+            }`}
+            title={hasChildren ? `${node.description || node.name} (کلیک برای ${isExpanded ? 'بستن' : 'باز شدن زیرگروه‌ها'})` : (node.description || node.name)}
+          >
             {node.name}
           </span>
+
+          {/* Children count pill when collapsed */}
+          {hasChildren && !isExpanded && (
+            <button
+              type="button"
+              onClick={() => toggleExpand(node.id)}
+              className="hidden sm:inline-flex text-[10px] px-1.5 py-0.5 rounded bg-slate-800/80 hover:bg-amber-500/20 text-slate-400 hover:text-amber-300 border border-slate-700/60 hover:border-amber-500/40 transition-colors shrink-0"
+              title={`دارای ${node.children.length} زیرحساب (کلیک برای لود و نمایش)`}
+            >
+              +{node.children.length} زیرگروه
+            </button>
+          )}
 
           {/* Dedicated Tafsil Badge */}
           {tafsilConfig && (
@@ -1717,9 +1919,9 @@ function AccountTreeItem({
         </div>
       </div>
 
-      {/* Render Children Recursively */}
+      {/* Render Children Recursively - Loaded on-demand only when expanded */}
       {hasChildren && isExpanded && (
-        <div className="w-full">
+        <div className="w-full animate-in fade-in duration-150">
           {node.children.map((child) => (
             <AccountTreeItem
               key={child.id}

@@ -8,6 +8,7 @@ import {
   type NormalBalance,
   type AccountLevel,
 } from '@/lib/chart-of-accounts';
+import { clearChartOfAccountsCache } from '@/lib/chart-of-accounts-cache';
 
 export async function POST(request: Request) {
   const context = await getServerAuthContext();
@@ -92,6 +93,8 @@ export async function POST(request: Request) {
         }
       }
     }
+
+    clearChartOfAccountsCache();
 
     return NextResponse.json({
       success: true,

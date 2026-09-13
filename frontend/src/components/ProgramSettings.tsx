@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import {
   Settings2,
   Save,
@@ -151,6 +152,22 @@ const SETTINGS_TABS = [
   },
 ] as const;
 
+const VALID_TABS = [
+  'general',
+  'database_backup',
+  'accounting_chart',
+  'print_customization',
+  'manager_notifications',
+  'price_api',
+  'appearance',
+  'pwa_settings',
+] as const;
+
+type SettingsTab = (typeof VALID_TABS)[number];
+
+const VALID_PRINT_SUB_TABS = ['reports', 'invoices', 'logo', 'store_info'] as const;
+type PrintSubTab = (typeof VALID_PRINT_SUB_TABS)[number];
+
 export default function ProgramSettings() {
   const {
     settings,
@@ -159,16 +176,67 @@ export default function ProgramSettings() {
     updateSettings,
   } = useAppSettings();
 
-  const [activeTab, setActiveTab] = useState<
-    | 'general'
-    | 'database_backup'
-    | 'appearance'
-    | 'price_api'
-    | 'print_customization'
-    | 'manager_notifications'
-    | 'pwa_settings'
-    | 'accounting_chart'
-  >('general');
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const tabParam = searchParams.get('tab') as SettingsTab | null;
+  const initialTab: SettingsTab =
+    tabParam && (VALID_TABS as readonly string[]).includes(tabParam)
+      ? tabParam
+      : 'general';
+
+  const [activeTab, setActiveTabState] = useState<SettingsTab>(initialTab);
+
+  // Sync state if URL changes (e.g. browser back/forward buttons or direct navigation)
+  useEffect(() => {
+    const currentTab = searchParams.get('tab') as SettingsTab | null;
+    if (currentTab && (VALID_TABS as readonly string[]).includes(currentTab)) {
+      setActiveTabState(currentTab);
+    } else if (!currentTab) {
+      setActiveTabState('general');
+    }
+  }, [searchParams]);
+
+  const setActiveTab = (newTab: SettingsTab) => {
+    setActiveTabState(newTab);
+    const params = new URLSearchParams(searchParams.toString());
+    if (newTab === 'general') {
+      params.delete('tab');
+    } else {
+      params.set('tab', newTab);
+    }
+    if (newTab !== 'print_customization') {
+      params.delete('subTab');
+    }
+    const query = params.toString();
+    const targetUrl = query ? `${pathname}?${query}` : pathname;
+    router.replace(targetUrl, { scroll: false });
+  };
+
+  const subTabParam = searchParams.get('subTab') as PrintSubTab | null;
+  const initialPrintSubTab: PrintSubTab =
+    subTabParam && (VALID_PRINT_SUB_TABS as readonly string[]).includes(subTabParam)
+      ? subTabParam
+      : 'reports';
+
+  const [printSubTab, setPrintSubTabState] = useState<PrintSubTab>(initialPrintSubTab);
+
+  useEffect(() => {
+    const currentSub = searchParams.get('subTab') as PrintSubTab | null;
+    if (currentSub && (VALID_PRINT_SUB_TABS as readonly string[]).includes(currentSub)) {
+      setPrintSubTabState(currentSub);
+    }
+  }, [searchParams]);
+
+  const setPrintSubTab = (subTab: PrintSubTab) => {
+    setPrintSubTabState(subTab);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('tab', 'print_customization');
+    params.set('subTab', subTab);
+    const query = params.toString();
+    router.replace(`${pathname}?${query}`, { scroll: false });
+  };
 
   // Form State initialized directly from settings
   const [form, setForm] = useState(() => ({ ...settings }));
@@ -206,7 +274,6 @@ export default function ProgramSettings() {
   // Manager Recipient modal state
   const [isManagerModalOpen, setIsManagerModalOpen] = useState(false);
   const [editingManagerIndex, setEditingManagerIndex] = useState<number | null>(null);
-  const [printSubTab, setPrintSubTab] = useState<'reports' | 'invoices' | 'logo' | 'store_info'>('reports');
   const [managerForm, setManagerForm] = useState<{
     name: string;
     role: string;
