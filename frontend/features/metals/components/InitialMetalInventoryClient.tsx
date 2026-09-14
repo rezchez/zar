@@ -338,9 +338,9 @@ export default function InitialMetalInventoryClient({
                 setPage(1);
               }}
               placeholder="جستجو در مشخصات، انگ یا آزمایشگاه..."
-              className="w-56 rounded-xl border border-slate-200 bg-slate-50/50 py-1.5 pr-8 pl-3 text-xs text-slate-800 placeholder-slate-400 transition focus:border-amber-500 focus:bg-white focus:outline-hidden dark:border-slate-800 dark:bg-slate-800/50 dark:text-slate-200"
+              className="w-60 rounded-xl border border-slate-300 bg-white py-2 pr-9 pl-3 text-xs font-bold text-slate-900 placeholder:text-slate-500 shadow-xs transition focus:border-amber-500 focus:bg-white focus:text-slate-950 focus:ring-2 focus:ring-amber-500/25 focus:outline-hidden dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder:text-slate-400 dark:focus:border-amber-400"
             />
-            <Search size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400" />
           </div>
 
           <div className="flex items-center gap-1">
@@ -373,26 +373,24 @@ export default function InitialMetalInventoryClient({
 
       {/* Records Table */}
       <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900">
-        <div className="overflow-x-auto">
+        <div className="w-full">
           <table className="w-full text-right text-xs">
             <thead className="border-b border-slate-200 bg-slate-50/75 text-slate-500 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-400">
               <tr>
-                <th className="px-4 py-3.5 font-black">فلز</th>
-                <th className="px-4 py-3.5 font-black">نوع موجودی</th>
-                <th className="px-4 py-3.5 font-black">مشخصات ری‌گیری / انگ</th>
-                <th className="px-4 py-3.5 font-black">وزن خام (گرم)</th>
-                <th className="px-4 py-3.5 font-black">عیار</th>
-                <th className="px-4 py-3.5 font-black">وزن معادل (پایه)</th>
-                <th className="px-4 py-3.5 font-black">ارزش‌گذاری ریالی</th>
-                <th className="px-4 py-3.5 font-black">تاریخ ثبت</th>
-                <th className="px-4 py-3.5 font-black">توضیحات</th>
-                <th className="px-4 py-3.5 text-center font-black">عملیات</th>
+                <th className="px-3 py-3 font-black">نوع و فلز</th>
+                <th className="px-3 py-3 font-black">مشخصات ری‌گیری / انگ</th>
+                <th className="px-3 py-3 font-black">وزن خام (گرم)</th>
+                <th className="px-3 py-3 font-black">عیار</th>
+                <th className="px-3 py-3 font-black">معادل (پایه)</th>
+                <th className="px-3 py-3 font-black">ارزش‌گذاری ریالی</th>
+                <th className="px-3 py-3 font-black">تاریخ ثبت</th>
+                <th className="px-3 py-3 text-center font-black">عملیات</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium dark:divide-slate-800/60">
               {filteredItems.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="py-12 text-center text-slate-400 dark:text-slate-500">
+                  <td colSpan={8} className="py-12 text-center text-slate-400 dark:text-slate-500">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <Flame size={32} className="stroke-1 text-slate-300 dark:text-slate-600" />
                       <p className="text-xs font-bold">هیچ رکوردی برای موجودی اولیه فلزات یافت نشد.</p>
@@ -407,30 +405,31 @@ export default function InitialMetalInventoryClient({
                       key={item.id}
                       className="transition-colors hover:bg-slate-50/70 dark:hover:bg-slate-800/30"
                     >
-                      {/* Metal */}
-                      <td className="px-4 py-3">
-                        <span
-                          className={`inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[11px] font-black ${metalCfg.badgeClass}`}
-                        >
-                          <span>{metalCfg.label}</span>
-                          <span className="font-mono text-[9px] opacity-75">({metalCfg.symbol})</span>
-                        </span>
-                      </td>
-
-                      {/* Inventory Type */}
-                      <td className="px-4 py-3">
-                        <div className="font-bold text-slate-800 dark:text-slate-200">
-                          {inventoryTypeLabels[item.inventoryType] || item.inventoryType}
-                        </div>
-                        <div className="mt-0.5 flex items-center gap-1.5">
+                      {/* Metal & Inventory Type */}
+                      <td className="px-3 py-3">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span
+                            className={`inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[11px] font-black ${metalCfg.badgeClass}`}
+                          >
+                            <span>{metalCfg.label}</span>
+                            <span className="font-mono text-[9px] opacity-75">({metalCfg.symbol})</span>
+                          </span>
+                          <span className="font-bold text-slate-800 dark:text-slate-200">
+                            {inventoryTypeLabels[item.inventoryType] || item.inventoryType}
+                          </span>
                           <span className="rounded bg-sky-500/10 px-1.5 py-0.2 text-[9px] font-bold text-sky-600 dark:text-sky-400">
-                            تفضیل ۲ (۱۱۳۰)
+                            (۱۱۳۰)
                           </span>
                         </div>
+                        {item.description && (
+                          <div className="mt-1 text-[10px] text-slate-400 dark:text-slate-500 truncate max-w-[220px]" title={item.description}>
+                            {item.description}
+                          </div>
+                        )}
                       </td>
 
                       {/* Lab & Stamp */}
-                      <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
+                      <td className="px-3 py-3 text-slate-600 dark:text-slate-300">
                         {item.stampNumber || item.labName ? (
                           <div className="flex flex-col text-[11px]">
                             {item.stampNumber && (
@@ -450,17 +449,17 @@ export default function InitialMetalInventoryClient({
                       </td>
 
                       {/* Raw Weight */}
-                      <td className="px-4 py-3 font-black text-slate-900 dark:text-white">
+                      <td className="px-3 py-3 font-black text-slate-900 dark:text-white whitespace-nowrap">
                         {formatWeight(item.rawWeight)}
                       </td>
 
                       {/* Purity */}
-                      <td className="px-4 py-3 font-bold text-slate-700 dark:text-slate-300">
+                      <td className="px-3 py-3 font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">
                         {item.purity.toLocaleString('fa-IR')}
                       </td>
 
                       {/* Converted Weight */}
-                      <td className="px-4 py-3 font-black text-amber-600 dark:text-amber-400">
+                      <td className="px-3 py-3 font-black text-amber-600 dark:text-amber-400 whitespace-nowrap">
                         <div>{formatWeight(item.convertedWeight)}</div>
                         <div className="text-[10px] font-normal text-slate-400 dark:text-slate-500">
                           پایه {Number(item.baseKarat || (item.metal === 'gold' ? goldBaseKarat : item.metal === 'silver' ? silverBaseKarat : platinumBaseKarat)).toLocaleString('fa-IR')}
@@ -468,7 +467,7 @@ export default function InitialMetalInventoryClient({
                       </td>
 
                       {/* Valuation */}
-                      <td className="px-4 py-3 text-slate-700 dark:text-slate-300">
+                      <td className="px-3 py-3 text-slate-700 dark:text-slate-300 whitespace-nowrap">
                         {item.totalAmount > 0 ? (
                           <span className="font-bold">
                             {effectiveCurrency === 'IRT'
@@ -482,25 +481,20 @@ export default function InitialMetalInventoryClient({
                       </td>
 
                       {/* Date */}
-                      <td className="px-4 py-3 text-slate-500 dark:text-slate-400">
+                      <td className="px-3 py-3 text-slate-500 dark:text-slate-400 whitespace-nowrap">
                         <div className="flex items-center gap-1">
                           <Calendar size={13} className="text-slate-400" />
                           <span>{item.date}</span>
                         </div>
                       </td>
 
-                      {/* Description */}
-                      <td className="max-w-xs truncate px-4 py-3 text-slate-500 dark:text-slate-400" title={item.description}>
-                        {item.description || '—'}
-                      </td>
-
                       {/* Actions */}
-                      <td className="px-4 py-3 text-center">
+                      <td className="px-3 py-3 text-center whitespace-nowrap">
                         <div className="flex items-center justify-center gap-1">
                           <button
                             type="button"
                             onClick={() => handleOpenEdit(item)}
-                            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-amber-600 dark:hover:bg-slate-800 dark:hover:text-amber-400"
+                            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-amber-600 dark:hover:bg-slate-800 dark:hover:text-amber-400 cursor-pointer"
                             title="ویرایش"
                           >
                             <Edit3 size={15} />
@@ -508,7 +502,7 @@ export default function InitialMetalInventoryClient({
                           <button
                             type="button"
                             onClick={() => handleDelete(item.id)}
-                            className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/30 dark:hover:text-rose-400"
+                            className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/30 dark:hover:text-rose-400 cursor-pointer"
                             title="حذف"
                           >
                             <Trash2 size={15} />

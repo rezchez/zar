@@ -5,11 +5,11 @@ import { hasPermission } from '@/lib/authorization';
 import { mapCheckRecord, type CheckRecord } from '@/lib/check';
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
 import DashboardShell from '@/src/components/dashboard/DashboardShell';
-import InitialIssuedChecksClient from '@/features/checks/components/InitialIssuedChecksClient';
+import InitialReceivedChecksClient from '@/features/checks/components/InitialReceivedChecksClient';
 
 export const dynamic = 'force-dynamic';
 
-export default async function InitialIssuedChecksPage() {
+export default async function InitialReceivedChecksPage() {
   const context = await getServerAuthContext();
   if (!context) redirect('/');
   if (!hasPermission(context.user, 'bank.view') && !hasPermission(context.user, 'bank.manage')) {
@@ -21,7 +21,7 @@ export default async function InitialIssuedChecksPage() {
     const service = await getPocketBaseServiceClient().catch(() => null);
     const client = service || context.pb;
     const records = await client.collection('checks').getFullList({
-      filter: 'is_opening_balance = true && chequeType != "receivable"',
+      filter: 'is_opening_balance = true && chequeType = "receivable"',
       sort: '-dueDate',
       expand: 'bankAccount,customer,created_by',
     }).catch(async () => {
@@ -32,7 +32,7 @@ export default async function InitialIssuedChecksPage() {
     });
 
     initialChecks = records
-      .filter((r: Record<string, unknown>) => (r.is_opening_balance === true || r.isOpeningBalance === true) && r.chequeType !== 'receivable')
+      .filter((r: Record<string, unknown>) => (r.is_opening_balance === true || r.isOpeningBalance === true) && r.chequeType === 'receivable')
       .map(mapCheckRecord);
   } catch {
     initialChecks = [];
@@ -41,7 +41,7 @@ export default async function InitialIssuedChecksPage() {
   return (
     <DashboardShell user={context.user}>
       <main dir="rtl" className="min-h-full px-4 py-8 text-slate-900 dark:text-slate-100 sm:px-6 lg:px-10">
-        <InitialIssuedChecksClient initialChecks={initialChecks} />
+        <InitialReceivedChecksClient initialChecks={initialChecks} />
       </main>
     </DashboardShell>
   );

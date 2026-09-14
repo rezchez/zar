@@ -158,6 +158,32 @@ export default function InitialMetalInventoryModal({
     }
   };
 
+  const handlePurityChange = (val: string) => {
+    const clean = val
+      .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 1776))
+      .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 1632))
+      .replace('٫', '.')
+      .replace(/,/g, '')
+      .trim();
+
+    if (clean === '') {
+      setPurity('');
+      return;
+    }
+
+    if (/^\d+\.?\d*$/.test(clean)) {
+      const decimalParts = clean.split('.');
+      if (decimalParts.length > 1 && decimalParts[1].length > 1) {
+        return;
+      }
+      const num = parseFloat(clean);
+      if (!isNaN(num) && num > 999.9) {
+        return;
+      }
+      setPurity(clean);
+    }
+  };
+
   // Live converted weight calculation
   const parsedWeight = Number(weight.replace(/,/g, ''));
   const effectivePurity = isConditional ? 750 : Number(purity.replace(/,/g, ''));
@@ -181,8 +207,8 @@ export default function InitialMetalInventoryModal({
       return;
     }
 
-    if (!isConditional && (!Number.isFinite(effectivePurity) || effectivePurity <= 0 || effectivePurity > 1000)) {
-      setErrorMsg('عیار باید عددی بین ۱ تا ۱۰۰۰ باشد.');
+    if (!isConditional && (!Number.isFinite(effectivePurity) || effectivePurity <= 0 || effectivePurity > 999.9)) {
+      setErrorMsg('عیار باید عددی مثبت تا حداکثر ۹۹۹.۹ باشد.');
       return;
     }
 
@@ -248,7 +274,7 @@ export default function InitialMetalInventoryModal({
       {/* Modal Dialog Card */}
       <div
         dir="rtl"
-        className="relative z-10 flex w-full max-w-xl max-h-[90vh] flex-col rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900 overflow-hidden"
+        className="relative z-10 flex w-full max-w-3xl max-h-[90vh] flex-col rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900 overflow-hidden"
       >
         {/* Header - Fixed */}
         <div className="flex items-center justify-between border-b border-slate-100 p-5 dark:border-slate-800 shrink-0">
@@ -401,7 +427,7 @@ export default function InitialMetalInventoryModal({
               <div>
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                    عیار (بر پایه ۱۰۰۰) <span className="text-rose-500">*</span>
+                    عیار (بر پایه ۱۰۰۰) <span className="text-rose-500">* (حداکثر ۹۹۹.۹)</span>
                   </label>
                   {isConditional ? (
                     <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-black text-amber-700 dark:bg-amber-500/25 dark:text-amber-300">
@@ -419,8 +445,8 @@ export default function InitialMetalInventoryModal({
                   disabled={isConditional}
                   readOnly={isConditional}
                   value={isConditional ? '750' : purity}
-                  onChange={(e) => setPurity(e.target.value)}
-                  placeholder="مثال: ۷۵۰"
+                  onChange={(e) => handlePurityChange(e.target.value)}
+                  placeholder="مثال: ۷۵۰ یا ۹۹۹.۹"
                   className={`mt-1.5 w-full rounded-xl border px-3 py-2.5 text-left text-sm font-black focus:outline-hidden ${
                     isConditional
                       ? 'border-dashed border-amber-300 bg-amber-50/70 text-amber-950 font-black cursor-not-allowed opacity-90 dark:border-amber-700/60 dark:bg-amber-950/30 dark:text-amber-200'

@@ -292,8 +292,8 @@ export async function POST(request: Request) {
     const isConditional = inventoryType === 'conditional' || inventoryType === 'conditional_melted';
     const effectivePurity = isConditional ? (metalInput === 'gold' ? 750 : baseKarat) : purity;
 
-    if (!isConditional && (!Number.isFinite(effectivePurity) || effectivePurity <= 0 || effectivePurity > 1000)) {
-      return NextResponse.json({ message: 'عیار معتبر وارد کنید (بین ۱ تا ۱۰۰۰).' }, { status: 400 });
+    if (!isConditional && (!Number.isFinite(effectivePurity) || effectivePurity <= 0 || effectivePurity > 999.9)) {
+      return NextResponse.json({ message: 'عیار معتبر وارد کنید (بین ۱ تا ۹۹۹.۹).' }, { status: 400 });
     }
 
     // 5. Melted and Conditional Metal Validations: labName and stampNumber are mandatory

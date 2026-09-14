@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { NextResponse } from 'next/server';
 
-import { postOpeningChequeIssue } from '@/lib/accounting-posting-engine';
+import { postOpeningChequeIssue, postOpeningChequeReceipt } from '@/lib/accounting-posting-engine';
 import { recordAuditEvent } from '@/lib/audit';
 import { getServerAuthContext } from '@/lib/auth';
 import { hasPermission } from '@/lib/authorization';
@@ -33,8 +33,16 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const bankAccountId = text(url.searchParams.get('bankAccountId'), 40);
+  const typeParam = text(url.searchParams.get('type') || url.searchParams.get('chequeType'), 20);
+  const isReceivable = typeParam === 'receivable';
 
   let filter = 'is_opening_balance = true';
+  if (isReceivable) {
+    filter += ' && chequeType = "receivable"';
+  } else if (typeParam === 'payable' || !typeParam) {
+    filter += ' && chequeType != "receivable"';
+  }
+
   if (bankAccountId) {
     filter += ` && bankAccount = "${bankAccountId}"`;
   }
@@ -57,7 +65,12 @@ export async function GET(request: Request) {
     });
 
     const mapped = records
-      .filter((r: Record<string, unknown>) => r.is_opening_balance === true || r.isOpeningBalance === true)
+      .filter((r: Record<string, unknown>) => {
+        const isOpening = r.is_opening_balance === true || r.isOpeningBalance === true;
+        if (!isOpening) return false;
+        if (isReceivable) return r.chequeType === 'receivable';
+        return r.chequeType !== 'receivable';
+      })
       .map(mapCheckRecord);
 
     // Calculate Summary Stats
@@ -69,18 +82,19 @@ export async function GET(request: Request) {
     const outstandingCount = outstandingChecks.length;
     const outstandingAmount = outstandingChecks.reduce((sum, c) => sum + (c.amount || 0), 0);
 
-    // Breakdown by bank account
-    const byBank: Record<string, { count: number; amount: number; outstandingCount: number; outstandingAmount: number }> = {};
+    // Breakdown by bank account / drawee bank
+    const byBank: Record<string, { count: number; amount: number; outstandingCount: number; outstandingAmount: number; name?: string }> = {};
     for (const c of mapped) {
-      const bId = c.bankAccount || 'unknown';
-      if (!byBank[bId]) {
-        byBank[bId] = { count: 0, amount: 0, outstandingCount: 0, outstandingAmount: 0 };
+      const bKey = c.bankAccount || c.bankName || 'unknown';
+      if (!byBank[bKey]) {
+        const bName = c.bankName || ((c.expand?.bankAccount as Record<string, unknown> | undefined)?.bankName as string) || bKey;
+        byBank[bKey] = { count: 0, amount: 0, outstandingCount: 0, outstandingAmount: 0, name: bName };
       }
-      byBank[bId].count += 1;
-      byBank[bId].amount += c.amount || 0;
+      byBank[bKey].count += 1;
+      byBank[bKey].amount += c.amount || 0;
       if (outstandingStatuses.includes(c.status)) {
-        byBank[bId].outstandingCount += 1;
-        byBank[bId].outstandingAmount += c.amount || 0;
+        byBank[bKey].outstandingCount += 1;
+        byBank[bKey].outstandingAmount += c.amount || 0;
       }
     }
 
@@ -112,7 +126,13 @@ export async function POST(request: Request) {
 
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
   const recordId = text(body?.id, 40);
+  const chequeType: 'payable' | 'receivable' =
+    body?.chequeType === 'receivable' || body?.type === 'receivable' ? 'receivable' : 'payable';
+  const isReceivable = chequeType === 'receivable';
+
   const bankAccountId = text(body?.bankAccount || body?.bankAccountId, 40);
+  const bankName = text(body?.bankName, 120);
+  const branchName = text(body?.branchName, 120);
   const customerId = text(body?.customer || body?.customerId, 40);
   const rawCheckNumber = text(body?.checkNumber || body?.check_number, 80);
   const rawSayadId = text(body?.sayadId, 80);
@@ -124,31 +144,42 @@ export async function POST(request: Request) {
   const openingDateJalali = text(body?.openingBalanceDateJalali, 20) || text(body?.openingBalanceDate, 20) || text(body?.issueDateJalali, 20) || formatJalaliDate();
   const rawAmount = String(body?.amount ?? 0);
   const amount = parseLocalizedAmount(rawAmount);
-  const rawStatus = text(body?.status, 20) || 'issued';
+  const rawStatus = text(body?.status, 20);
 
-  // PART 11 — Status must strictly be 'issued' at opening registration
-  if (rawStatus !== 'issued') {
-    return NextResponse.json({
-      message: 'وضعیت چک افتتاحیه در زمان ثبت فقط می‌تواند «صادرشده» (issued) باشد.',
-    }, { status: 400 });
+  if (isReceivable) {
+    if (rawStatus && rawStatus !== 'pending' && rawStatus !== 'draft' && rawStatus !== 'issued') {
+      return NextResponse.json({
+        message: 'وضعیت چک دریافتی افتتاحیه در زمان ثبت فقط می‌تواند «در انتظار سررسید» (pending) باشد.',
+      }, { status: 400 });
+    }
+    if (!customerId) {
+      return NextResponse.json({ message: 'انتخاب طرف‌حساب واگذارکننده چک الزامی است.' }, { status: 400 });
+    }
+    if (!effectiveCheckNumber) {
+      return NextResponse.json({ message: 'شماره چک یا شناسه صیاد الزامی است.' }, { status: 400 });
+    }
+    if (amount <= 0) {
+      return NextResponse.json({ message: 'مبلغ چک باید بیشتر از صفر باشد.' }, { status: 400 });
+    }
+  } else {
+    // Payable check validations
+    if (rawStatus && rawStatus !== 'issued') {
+      return NextResponse.json({
+        message: 'وضعیت چک افتتاحیه در زمان ثبت فقط می‌تواند «صادرشده» (issued) باشد.',
+      }, { status: 400 });
+    }
+    if (!bankAccountId) {
+      return NextResponse.json({ message: 'انتخاب حساب بانکی الزامی است.' }, { status: 400 });
+    }
+    if (!effectiveCheckNumber) {
+      return NextResponse.json({ message: 'شماره چک الزامی است.' }, { status: 400 });
+    }
+    if (amount <= 0) {
+      return NextResponse.json({ message: 'مبلغ چک باید بیشتر از صفر باشد.' }, { status: 400 });
+    }
   }
 
-  // PART 12 — Bank Account is strictly required
-  if (!bankAccountId) {
-    return NextResponse.json({ message: 'انتخاب حساب بانکی الزامی است.' }, { status: 400 });
-  }
-
-  // PART 16 — Check Number is strictly required
-  if (!effectiveCheckNumber) {
-    return NextResponse.json({ message: 'شماره چک الزامی است.' }, { status: 400 });
-  }
-
-  // PART 15 — Amount must be greater than zero
-  if (amount <= 0) {
-    return NextResponse.json({ message: 'مبلغ چک باید بیشتر از صفر باشد.' }, { status: 400 });
-  }
-
-  // PART 17 — Due date validation
+  // Due date validation
   const dueDateIso = jalaliDateToIso(dueDateJalali);
   if (!dueDateIso) {
     return NextResponse.json({ message: 'تاریخ سررسید چک معتبر نیست.' }, { status: 400 });
@@ -164,43 +195,64 @@ export async function POST(request: Request) {
   try {
     await ensureChecksCollection(writer);
 
-    // PART 13 — Blocked Bank Account validation
-    const rawBankAccount = await writer.collection('bank_accounts').getOne(bankAccountId, {
-      expand: 'accountId,currency',
-    }).catch(() => null);
+    let bankAccount: any = null;
+    let currency = 'IRR';
 
-    if (!rawBankAccount) {
-      return NextResponse.json({ message: 'حساب بانکی انتخاب‌شده معتبر نیست.' }, { status: 404 });
+    if (bankAccountId) {
+      const rawBankAccount = await writer.collection('bank_accounts').getOne(bankAccountId, {
+        expand: 'accountId,currency',
+      }).catch(() => null);
+
+      if (!rawBankAccount) {
+        return NextResponse.json({ message: 'حساب بانکی انتخاب‌شده معتبر نیست.' }, { status: 404 });
+      }
+
+      if (rawBankAccount.isBlocked === true) {
+        return NextResponse.json(
+          {
+            success: false,
+            code: 'BANK_ACCOUNT_BLOCKED',
+            message: 'این حساب بانکی مسدود است و امکان ثبت چک جدید برای آن وجود ندارد.',
+          },
+          { status: 409 },
+        );
+      }
+
+      bankAccount = mapBankAccount(rawBankAccount);
+      currency = bankAccount.currency || (typeof rawBankAccount.currency === 'string' ? rawBankAccount.currency : 'IRR');
+    } else if (!isReceivable) {
+      return NextResponse.json({ message: 'انتخاب حساب بانکی الزامی است.' }, { status: 400 });
     }
 
-    if (rawBankAccount.isBlocked === true) {
-      return NextResponse.json(
-        {
-          success: false,
-          code: 'BANK_ACCOUNT_BLOCKED',
-          message: 'این حساب بانکی مسدود است و امکان ثبت چک جدید برای آن وجود ندارد.',
-        },
-        { status: 409 },
-      );
-    }
+    // Duplicate Check Number validation
+    if (isReceivable) {
+      if (normalizedSayadId && normalizedSayadId.length === 16) {
+        const duplicateCheck = await writer.collection('checks').getFirstListItem(
+          writer.filter(
+            'sayadId = {:sayadId}' + (recordId ? ' && id != {:recordId}' : ''),
+            { sayadId: normalizedSayadId, recordId: recordId || '' },
+          ),
+        ).catch(() => null);
 
-    const bankAccount = mapBankAccount(rawBankAccount);
+        if (duplicateCheck) {
+          return NextResponse.json({
+            message: 'چک دیگری با این شناسه صیاد قبلاً در سامانه ثبت شده است.',
+          }, { status: 409 });
+        }
+      }
+    } else {
+      const duplicateCheck = await writer.collection('checks').getFirstListItem(
+        writer.filter(
+          'bankAccount = {:bankId} && (check_number = {:checkNo} || checkNumber = {:checkNo})' + (recordId ? ' && id != {:recordId}' : ''),
+          { bankId: bankAccount.id, checkNo: effectiveCheckNumber, recordId: recordId || '' },
+        ),
+      ).catch(() => null);
 
-    // PART 14 — Currency synchronized with bank account
-    const currency = bankAccount.currency || (typeof rawBankAccount.currency === 'string' ? rawBankAccount.currency : 'IRR');
-
-    // PART 16 — Duplicate Check Number for the same bank account
-    const duplicateCheck = await writer.collection('checks').getFirstListItem(
-      writer.filter(
-        'bankAccount = {:bankId} && (check_number = {:checkNo} || checkNumber = {:checkNo})' + (recordId ? ' && id != {:recordId}' : ''),
-        { bankId: bankAccount.id, checkNo: effectiveCheckNumber, recordId: recordId || '' },
-      ),
-    ).catch(() => null);
-
-    if (duplicateCheck) {
-      return NextResponse.json({
-        message: 'این شماره چک قبلاً برای این حساب بانکی ثبت شده است.',
-      }, { status: 409 });
+      if (duplicateCheck) {
+        return NextResponse.json({
+          message: 'این شماره چک قبلاً برای این حساب بانکی ثبت شده است.',
+        }, { status: 409 });
+      }
     }
 
     // Resolve customer or party
@@ -212,26 +264,35 @@ export async function POST(request: Request) {
       }
     }
 
+    if (isReceivable && !resolvedCustomer) {
+      return NextResponse.json({ message: 'طرف‌حساب انتخاب‌شده معتبر نیست.' }, { status: 404 });
+    }
+
     const documentId = text(body?.documentId, 80) || randomUUID();
 
-    // customer relation must only point to valid customer record or be empty string/null
-    const validCustomerId = resolvedCustomer?.id || (customerId && customerId !== bankAccount.id ? customerId : '');
+    const validCustomerId = resolvedCustomer?.id || (customerId && (!bankAccount || customerId !== bankAccount.id) ? customerId : '');
+
+    const effectiveDesc = description || (isReceivable
+      ? `موجودی اولیه چک دریافتی شماره ${effectiveCheckNumber}${bankName ? ` — بانک ${bankName}` : ''}${resolvedCustomer ? ` — واگذارکننده: ${resolvedCustomer.name}` : ''}`
+      : `موجودی اولیه چک صادرشده شماره ${effectiveCheckNumber}`);
 
     const checkPayload: Record<string, unknown> = {
-      bankAccount: bankAccount.id,
+      bankAccount: bankAccount?.id || null,
       customer: validCustomerId || null,
       check_number: effectiveCheckNumber,
       checkNumber: effectiveCheckNumber,
       sayadId: normalizedSayadId || (normalizedCheckNumber.length === 16 ? normalizedCheckNumber : ''),
+      bankName: bankName || undefined,
+      branchName: branchName || undefined,
       amount,
       currency,
-      description: description || `موجودی اولیه چک صادرشده شماره ${effectiveCheckNumber}`,
-      chequeType: 'payable',
+      description: effectiveDesc,
+      chequeType,
       issueDate: openingDateIso,
       issueDateJalali: openingDateJalali,
       dueDate: dueDateIso,
       dueDateJalali,
-      status: 'issued',
+      status: isReceivable ? 'pending' : 'issued',
       is_opening_balance: true,
       opening_balance_date: openingDateIso,
       document: documentId,
@@ -241,7 +302,6 @@ export async function POST(request: Request) {
 
     let checkRecord: Record<string, unknown>;
     if (recordId) {
-      // Preserve original creator immutably on edit
       delete checkPayload.created_by;
       delete checkPayload.createdBy;
       checkRecord = await writer.collection('checks').update(recordId, checkPayload);
@@ -251,27 +311,44 @@ export async function POST(request: Request) {
       checkRecord = await writer.collection('checks').create(checkPayload);
     }
 
-    // PART 19 & 36 & 37 — Double-entry Opening Journal Integration
-    // Debit 3100 (Opening Capital), Credit 2110 (Notes Payable)
-    // NOTE: Does NOT create bank_transactions or deduct bank balance!
+    // Double-entry Opening Journal Integration
     let journalResult = null;
     try {
-      journalResult = await postOpeningChequeIssue(
-        {
-          id: String(checkRecord.id),
-          amount,
-          checkNumber: normalizedCheckNumber,
-          description: description || `موجودی اولیه چک صادرشده شماره ${normalizedCheckNumber}`,
-          dueDateJalali,
-          openingDateJalali,
-          bankAccount: bankAccount.id,
-          customer: resolvedCustomer?.id || null,
-        },
-        resolvedCustomer?.name || 'ذینفع اولیه',
-        bankAccount,
-        context.user.id,
-        writer,
-      );
+      if (isReceivable) {
+        journalResult = await postOpeningChequeReceipt(
+          {
+            id: String(checkRecord.id),
+            amount,
+            checkNumber: normalizedCheckNumber,
+            sayadId: normalizedSayadId,
+            description: effectiveDesc,
+            dueDateJalali,
+            openingDateJalali,
+            bankName: bankName || (bankAccount?.bankName ?? undefined),
+            customer: resolvedCustomer?.id || null,
+          },
+          resolvedCustomer?.name || 'طرف‌حساب اولیه',
+          context.user.id,
+          writer,
+        );
+      } else {
+        journalResult = await postOpeningChequeIssue(
+          {
+            id: String(checkRecord.id),
+            amount,
+            checkNumber: normalizedCheckNumber,
+            description: effectiveDesc,
+            dueDateJalali,
+            openingDateJalali,
+            bankAccount: bankAccount.id,
+            customer: resolvedCustomer?.id || null,
+          },
+          resolvedCustomer?.name || 'ذینفع اولیه',
+          bankAccount,
+          context.user.id,
+          writer,
+        );
+      }
 
       if (journalResult?.id) {
         await writer.collection('checks').update(String(checkRecord.id), {
@@ -280,7 +357,6 @@ export async function POST(request: Request) {
       }
     } catch (journalErr) {
       console.warn('opening_check_journal_warning', journalErr);
-      // Non-fatal if chart of accounts is in baseline setup
     }
 
     await recordAuditEvent({
@@ -289,8 +365,12 @@ export async function POST(request: Request) {
       entityType: 'checks',
       entityId: String(checkRecord.id),
       changes: {
-        action: recordId ? 'check.opening_updated' : 'check.opening_created',
-        bankAccountId: bankAccount.id,
+        action: isReceivable
+          ? (recordId ? 'check.opening_receivable_updated' : 'check.opening_receivable_created')
+          : (recordId ? 'check.opening_updated' : 'check.opening_created'),
+        chequeType,
+        bankAccountId: bankAccount?.id || null,
+        bankName: bankName || undefined,
         checkNumber: normalizedCheckNumber,
         amount,
         currency,
@@ -346,8 +426,9 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ message: 'چک یافت نشد.' }, { status: 404 });
     }
 
-    // PART 26 & 27 — Cannot delete if check has transitioned past 'issued' (e.g. cleared or returned)
-    if (check.status !== 'issued' && check.status !== 'draft') {
+    // Cannot delete if check has transitioned past opening state (e.g. cleared or returned)
+    const allowedDeleteStatuses = ['issued', 'pending', 'draft', 'delivered'];
+    if (!allowedDeleteStatuses.includes(check.status)) {
       return NextResponse.json({
         message: 'امکان حذف چک افتتاحیه وجود ندارد زیرا وارد چرخه تسویه مالی شده است (وضعیت فعلی: ' + check.status + ').',
       }, { status: 400 });

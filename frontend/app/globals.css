@@ -2789,27 +2789,46 @@ select:-webkit-autofill:active {
 
 .assay-lab-search-input,
 .account-field .assay-lab-search-input {
-  background-color: #f8fafc;
-  color: #0f172a;
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+.assay-lab-search-input::placeholder,
+.account-field .assay-lab-search-input::placeholder {
+  color: #64748b !important;
+  opacity: 1 !important;
 }
 .assay-lab-search-input:focus,
 .account-field .assay-lab-search-input:focus {
   background-color: #ffffff !important;
   color: #020617 !important;
   border-color: #f59e0b !important;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.25) !important;
 }
 
 [data-theme="dark"] .assay-lab-search-input,
 .dark .assay-lab-search-input,
 [data-theme="dark"] .account-field .assay-lab-search-input,
-.dark .account-field .assay-lab-search-input,
+.dark .account-field .assay-lab-search-input {
+  background-color: #0f172a !important;
+  color: #f8fafc !important;
+  border-color: #475569 !important;
+}
+[data-theme="dark"] .assay-lab-search-input::placeholder,
+.dark .assay-lab-search-input::placeholder,
+[data-theme="dark"] .account-field .assay-lab-search-input::placeholder,
+.dark .account-field .assay-lab-search-input::placeholder {
+  color: #94a3b8 !important;
+  opacity: 1 !important;
+}
 [data-theme="dark"] .assay-lab-search-input:focus,
 .dark .assay-lab-search-input:focus,
 [data-theme="dark"] .account-field .assay-lab-search-input:focus,
 .dark .account-field .assay-lab-search-input:focus {
-  background-color: #1e293b !important;
+  background-color: #0f172a !important;
   color: #ffffff !important;
   border-color: #f59e0b !important;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.35) !important;
 }
 
 [data-theme="dark"] .dashboard-search-dialog,

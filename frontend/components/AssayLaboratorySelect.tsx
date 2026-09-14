@@ -74,9 +74,28 @@ export function AssayLaboratorySelect({
     };
   }, []);
 
-  // Close dropdown on click outside or Escape
+  // Helper to check if a click occurred on a scrollbar
+  const isClickOnScrollbar = (e: MouseEvent): boolean => {
+    const target = e.target as HTMLElement | null;
+    if (!target) return false;
+    if (target.scrollHeight > target.clientHeight) {
+      const rect = target.getBoundingClientRect();
+      const isRtl = typeof window !== 'undefined' ? getComputedStyle(target).direction === 'rtl' : true;
+      if (isRtl && e.clientX >= rect.left && e.clientX <= rect.left + 24) return true;
+      if (!isRtl && e.clientX >= rect.right - 24 && e.clientX <= rect.right) return true;
+    }
+    if (typeof window !== 'undefined' && window.innerWidth > document.documentElement.clientWidth) {
+      if (e.clientX >= document.documentElement.clientWidth) return true;
+    }
+    return false;
+  };
+
+  // Close dropdown only when clicking outside or pressing Escape (not on scroll)
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
+      if (isClickOnScrollbar(event)) {
+        return;
+      }
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
         setIsOpen(false);
       }
@@ -87,12 +106,12 @@ export function AssayLaboratorySelect({
       }
     }
     if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('click', handleClickOutside);
       document.addEventListener('keydown', handleKeyDown);
       setTimeout(() => searchInputRef.current?.focus(), 50);
     }
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('click', handleClickOutside);
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [isOpen]);
@@ -245,6 +264,7 @@ export function AssayLaboratorySelect({
             title={currentLab ? `${currentLab.name} - ${currentLab.province} (${currentLab.phone || 'بدون تلفن'})` : undefined}
             onChange={(e) => onChange(e.target.value)}
             onFocus={() => !disabled && setIsOpen(true)}
+            onClick={() => !disabled && setIsOpen(true)}
             onKeyDown={onKeyDown}
             className={`assay-lab-input w-full rounded-xl border px-3 py-2 pl-7 text-xs font-semibold transition-colors focus:outline-hidden bg-white text-slate-900 focus:bg-white focus:text-slate-950 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 dark:bg-slate-800 dark:text-white dark:focus:bg-slate-800 dark:focus:text-white dark:focus:border-amber-400 dark:focus:ring-2 dark:focus:ring-amber-400/20 ${
               error ? 'border-rose-500' : 'border-slate-200 dark:border-slate-700'
@@ -294,26 +314,26 @@ export function AssayLaboratorySelect({
       {isOpen && (
         <div
           dir="rtl"
-          className="absolute right-0 top-full z-50 mt-1 w-full min-w-[280px] max-w-[340px] rounded-xl border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-700 dark:bg-slate-900"
+          className="absolute right-0 top-full z-50 mt-1 w-full min-w-[280px] rounded-xl border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-700 dark:bg-slate-900"
         >
           {/* Search Bar */}
-          <div className="relative mb-1.5">
-            <Search size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+          <div className="relative mb-2">
+            <Search size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400" />
             <input
               ref={searchInputRef}
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="جستجوی نام، تلفن یا شهر..."
-              className="assay-lab-search-input w-full rounded-lg border border-slate-200 bg-slate-50 py-1.5 pr-7 pl-6 text-xs font-semibold text-slate-900 placeholder:text-slate-400 focus:border-amber-500 focus:bg-white focus:text-slate-950 focus:ring-2 focus:ring-amber-500/20 focus:outline-hidden dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder:text-slate-400 dark:focus:bg-slate-800 dark:focus:text-white dark:focus:border-amber-400 dark:focus:ring-2 dark:focus:ring-amber-400/20"
+              className="assay-lab-search-input w-full rounded-xl border border-slate-300 bg-white py-2 pr-8 pl-7 text-xs font-bold text-slate-900 placeholder:text-slate-500 focus:border-amber-500 focus:bg-white focus:text-slate-950 focus:ring-2 focus:ring-amber-500/25 focus:outline-hidden dark:border-slate-600 dark:bg-slate-900 dark:text-white dark:placeholder:text-slate-400 dark:focus:border-amber-400"
             />
             {searchQuery && (
               <button
                 type="button"
                 onClick={() => setSearchQuery('')}
-                className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
               >
-                <X size={12} />
+                <X size={13} />
               </button>
             )}
           </div>
@@ -356,7 +376,7 @@ export function AssayLaboratorySelect({
           </div>
 
           {/* Scrollable Items List */}
-          <div className="max-h-48 overflow-y-auto space-y-2 pr-0.5 scrollbar-thin">
+          <div className="max-h-48 overflow-y-auto space-y-2 pr-0.5 scrollbar-thin overscroll-contain">
             {groupedLabs.length === 0 ? (
               <div className="py-4 text-center">
                 <p className="text-xs text-slate-500 dark:text-slate-400">ری‌گیری یافت نشد.</p>
@@ -457,7 +477,7 @@ export function AssayLaboratorySelect({
                     افزودن ری‌گیری (آزمایشگاه) جدید
                   </h3>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    مشخصات ری‌گیری را وارد کنید تا به کالکشن سیستم اضافه شود.
+                    مشخصات ریگیری را وارد کنید
                   </p>
                 </div>
               </div>

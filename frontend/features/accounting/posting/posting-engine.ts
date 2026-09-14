@@ -612,6 +612,75 @@ export async function postOpeningChequeIssue(
 }
 
 /**
+ * Opening Received Cheque Accounting Integration:
+ * Debit: Notes Receivable (1120 اسناد دریافتنی)
+ * Credit: Opening Equity / Capital (3100 سرمایه اول دوره)
+ *
+ * NOTE: DOES NOT AFFECT INTERNAL BANK BALANCE! (Check is received in vault / receivable notes).
+ */
+export async function postOpeningChequeReceipt(
+  cheque: {
+    id: string;
+    amount: number;
+    checkNumber?: string;
+    sayadId?: string;
+    description?: string;
+    dueDateJalali?: string;
+    openingDateJalali?: string;
+    bankName?: string;
+    customer?: string | null;
+    receivableAccountId?: string | null;
+  },
+  customerName: string,
+  userId: string,
+  pb: PocketBase,
+): Promise<JournalEntryResult> {
+  const amount = Math.round(cheque.amount);
+  const receivableAccount = cheque.receivableAccountId || SYSTEM_ACCOUNT_CODES.NOTES_RECEIVABLE;
+  const equityAccount = SYSTEM_ACCOUNT_CODES.OPENING_EQUITY;
+
+  const chequeLabel = cheque.checkNumber
+    ? `شماره ${cheque.checkNumber}`
+    : cheque.sayadId
+    ? `صیادی ${cheque.sayadId}`
+    : cheque.id;
+  const bankInfo = cheque.bankName ? ` — بانک ${cheque.bankName}` : '';
+  const customerInfo = customerName ? ` — واگذارکننده: ${customerName}` : '';
+
+  const desc = `موجودی اولیه چک دریافتی ${chequeLabel}${cheque.dueDateJalali ? ` به سررسید ${cheque.dueDateJalali}` : ''}${bankInfo}${customerInfo}`;
+
+  return postJournalEntry(
+    {
+      entryDateJalali: cheque.openingDateJalali,
+      description: desc,
+      sourceType: 'opening_check',
+      sourceId: cheque.id,
+      sourceKey: `opening:receivable_check:${cheque.id}`,
+      userId,
+      lines: [
+        {
+          accountId: receivableAccount,
+          debit: amount,
+          credit: 0,
+          description: `اسناد دریافتنی اول دوره (چک ${chequeLabel}${bankInfo})`,
+          partyId: cheque.customer || undefined,
+          chequeId: cheque.id,
+        },
+        {
+          accountId: equityAccount,
+          debit: 0,
+          credit: amount,
+          description: `سرمایه اول دوره (وصول آتی چک دریافتی ${chequeLabel})`,
+          partyId: cheque.customer || undefined,
+          chequeId: cheque.id,
+        },
+      ],
+    },
+    pb,
+  );
+}
+
+/**
  * Step 2 (Payable Cheque Clearing / وصول چک پرداختنی توسط بانک):
  * Debit: Notes Payable (2110 اسناد پرداختنی)
  * Credit: Bank Account (Bank Account coding ID / 1110 موجودی نقد و بانک)

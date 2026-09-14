@@ -386,4 +386,36 @@ describe('Zarfolio — Opening Metal Inventory (Multi-Metal & Types)', () => {
       expect(resolveMetalTypeId('')).toBe('');
     });
   });
+
+  describe('Layer 6: Purity Constraints & Upper Limit Validation (Max 999.9)', () => {
+    function isValidOpeningPurity(purity: number, isConditional: boolean): boolean {
+      const effectivePurity = isConditional ? 750 : purity;
+      return Number.isFinite(effectivePurity) && effectivePurity > 0 && effectivePurity <= 999.9;
+    }
+
+    it('accepts valid purity values up to and including 999.9', () => {
+      expect(isValidOpeningPurity(750, false)).toBe(true);
+      expect(isValidOpeningPurity(900, false)).toBe(true);
+      expect(isValidOpeningPurity(995, false)).toBe(true);
+      expect(isValidOpeningPurity(999, false)).toBe(true);
+      expect(isValidOpeningPurity(999.9, false)).toBe(true);
+      expect(isValidOpeningPurity(1, false)).toBe(true);
+      expect(isValidOpeningPurity(750, true)).toBe(true);
+    });
+
+    it('strictly prohibits purity values higher than 999.9 (e.g. 1000, 1000.1, 1050)', () => {
+      expect(isValidOpeningPurity(1000, false)).toBe(false);
+      expect(isValidOpeningPurity(999.91, false)).toBe(false);
+      expect(isValidOpeningPurity(1000.5, false)).toBe(false);
+      expect(isValidOpeningPurity(1200, false)).toBe(false);
+      expect(isValidOpeningPurity(0, false)).toBe(false);
+      expect(isValidOpeningPurity(-10, false)).toBe(false);
+    });
+
+    it('accurately calculates converted weight for fine metals at 999.9 purity', () => {
+      // 100g of 999.9 gold at base 750 -> (100 * 999.9) / 750 = 133.32g
+      const converted = metalAtBaseKarat(100, 999.9, 750, 3);
+      expect(converted).toBe(133.32);
+    });
+  });
 });

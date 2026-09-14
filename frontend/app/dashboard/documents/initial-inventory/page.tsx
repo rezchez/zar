@@ -11,6 +11,7 @@ import InitialGoodsInventoryCard from '@/src/components/inventory/InitialGoodsIn
 import InitialMetalInventoryCard from '@/src/components/inventory/InitialMetalInventoryCard';
 import InitialWorkmanshipInventoryCard from '@/src/components/inventory/InitialWorkmanshipInventoryCard';
 import InitialIssuedChecksCard from '@/features/checks/components/InitialIssuedChecksCard';
+import InitialReceivedChecksCard from '@/features/checks/components/InitialReceivedChecksCard';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,7 +32,7 @@ export default async function InitialInventoryPage() {
               تعریف موجودی اول دوره
             </h1>
             <p className="max-w-2xl text-xs leading-6 text-slate-500 dark:text-slate-400">
-              ثبت و مدیریت تراز پایه و موجودی اول دوره وجوه نقد، حساب‌های بانکی، طلا و فلزات، کار ساخته، مسکوکات، سنگ‌های قیمتی و الماس، کالا و رزین، و چک‌های صادرشده
+              ثبت و مدیریت تراز پایه و موجودی اول دوره وجوه نقد، حساب‌های بانکی، طلا و فلزات، کار ساخته، مسکوکات، سنگ‌های قیمتی و الماس، کالا و رزین، و چک‌های صادرشده و دریافتی
             </p>
           </header>
 
@@ -44,6 +45,7 @@ export default async function InitialInventoryPage() {
             <InitialCashInventoryCard listHref="/dashboard/documents/initial-inventory/cash" />
             <InitialBankInventoryCard listHref="/dashboard/documents/initial-inventory/bank" />
             <InitialIssuedChecksCard />
+            <InitialReceivedChecksCard />
           </div>
         </div>
       </main>
