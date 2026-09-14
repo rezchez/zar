@@ -40,19 +40,23 @@ export function generateGroupSlug(name: string): string {
 }
 
 export function isRefinerCustomer(
-  customerOrGroup: string | Record<string, any> | { groupName?: string } | null | undefined,
+  customerOrGroup: string | Record<string, any> | null | undefined,
 ): boolean {
   if (!customerOrGroup) return false;
-  const nameOrSlug =
-    typeof customerOrGroup === 'string'
-      ? customerOrGroup.trim()
-      : String(customerOrGroup.groupName || customerOrGroup.group_name || '').trim();
+  if (typeof customerOrGroup === 'string') {
+    const clean = customerOrGroup.trim();
+    const lower = clean.toLowerCase();
+    return clean === 'ریگیر' || clean === 'ریگیری' || lower === 'refiner' || lower === 'refining';
+  }
 
-  const clean = nameOrSlug.toLowerCase();
+  const obj = customerOrGroup as Record<string, any>;
+  const nameOrSlug = String(obj.groupName || obj.group_name || obj.group || obj.name || '').trim();
+  const cleanLower = nameOrSlug.toLowerCase();
+
   return (
     nameOrSlug === 'ریگیر' ||
     nameOrSlug === 'ریگیری' ||
-    clean === 'refiner' ||
-    clean === 'refining'
+    cleanLower === 'refiner' ||
+    cleanLower === 'refining'
   );
 }
