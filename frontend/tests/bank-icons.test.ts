@@ -109,4 +109,19 @@ describe('Iranian Banks Registry & Icon Mapping', () => {
     expect(findBank('بانک مریخ ناشناخته')).toBeUndefined();
     expect(findBank('')).toBeUndefined();
   });
+
+  test('banks collection items correctly map iconKey and logo properties', () => {
+    const sampleRecord = {
+      id: 'zj7ambe9s7r0nby',
+      code: '017',
+      name: 'بانک ملی ایران',
+      icon_key: 'bank-melli',
+      is_active: true,
+    };
+
+    const bankDef = findBank(sampleRecord.name);
+    expect(bankDef).toBeDefined();
+    expect(bankDef?.iconKey).toBe(sampleRecord.icon_key);
+    expect(bankDef?.code).toBe(sampleRecord.code);
+  });
 });

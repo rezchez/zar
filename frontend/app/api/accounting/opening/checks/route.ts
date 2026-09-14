@@ -272,8 +272,9 @@ export async function POST(request: Request) {
 
     const validCustomerId = resolvedCustomer?.id || (customerId && (!bankAccount || customerId !== bankAccount.id) ? customerId : '');
 
+    const bankNameDisplay = bankName ? (bankName.startsWith('بانک') ? bankName : `بانک ${bankName}`) : '';
     const effectiveDesc = description || (isReceivable
-      ? `موجودی اولیه چک دریافتی شماره ${effectiveCheckNumber}${bankName ? ` — بانک ${bankName}` : ''}${resolvedCustomer ? ` — واگذارکننده: ${resolvedCustomer.name}` : ''}`
+      ? `موجودی اولیه چک دریافتی شماره ${effectiveCheckNumber}${bankNameDisplay ? ` — ${bankNameDisplay}` : ''}${resolvedCustomer ? ` — واگذارکننده: ${resolvedCustomer.name}` : ''}`
       : `موجودی اولیه چک صادرشده شماره ${effectiveCheckNumber}`);
 
     const checkPayload: Record<string, unknown> = {
@@ -282,8 +283,8 @@ export async function POST(request: Request) {
       check_number: effectiveCheckNumber,
       checkNumber: effectiveCheckNumber,
       sayadId: normalizedSayadId || (normalizedCheckNumber.length === 16 ? normalizedCheckNumber : ''),
-      bankName: bankName || undefined,
-      branchName: branchName || undefined,
+      bankName: bankName || '',
+      branchName: branchName || '',
       amount,
       currency,
       description: effectiveDesc,

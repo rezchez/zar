@@ -20,6 +20,7 @@ import Link from 'next/link';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { useAppSettings } from '@/components/shared/SettingsProvider';
+import BankLogo from '@/features/banks/components/BankLogo';
 import { CHEQUE_STATUS_COLORS, CHEQUE_STATUS_LABELS, type CheckRecord } from '@/lib/check';
 import InitialIssuedCheckModal from './InitialIssuedCheckModal';
 import PaginationControls from '@/components/shared/PaginationControls';
@@ -60,6 +61,16 @@ export default function InitialIssuedChecksClient({
     effectiveCurrency === 'IRT' ? Math.floor(summary.totalAmount / 10) : summary.totalAmount;
   const displayOutstandingAmount =
     effectiveCurrency === 'IRT' ? Math.floor(summary.outstandingAmount / 10) : summary.outstandingAmount;
+
+  const formattedTotalDigits = displayTotalAmount.toLocaleString('fa-IR');
+  const totalAmountFontSize =
+    formattedTotalDigits.length > 20
+      ? 'text-sm sm:text-base'
+      : formattedTotalDigits.length > 15
+        ? 'text-base sm:text-lg'
+        : formattedTotalDigits.length > 10
+          ? 'text-lg sm:text-xl'
+          : 'text-xl sm:text-2xl';
 
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
@@ -254,44 +265,51 @@ export default function InitialIssuedChecksClient({
 
       {/* Summary KPI Cards */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <div className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">تعداد کل چک‌های اول دوره</span>
-            <div className="flex size-8 items-center justify-center rounded-xl bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+        <div className="flex min-w-0 flex-col justify-between overflow-hidden rounded-3xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+          <div className="flex items-center justify-between gap-2">
+            <span className="truncate text-xs font-bold text-slate-500 dark:text-slate-400">تعداد کل چک‌های اول دوره</span>
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
               <CreditCard size={16} />
             </div>
           </div>
-          <p className="mt-2 font-mono text-2xl font-black text-slate-900 dark:text-white">
+          <p className="mt-2 truncate font-mono text-2xl font-black text-slate-900 dark:text-white">
             {summary.totalCount.toLocaleString('fa-IR')} <span className="text-xs font-bold">فقره</span>
           </p>
         </div>
 
-        <div className="rounded-3xl border border-amber-200/60 bg-amber-50/40 p-5 shadow-xs dark:border-amber-900/40 dark:bg-amber-950/20">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-amber-800 dark:text-amber-300">چک‌های در جریان وصول (تعهدات)</span>
-            <div className="flex size-8 items-center justify-center rounded-xl bg-amber-500/20 text-amber-700 dark:text-amber-400">
+        <div className="flex min-w-0 flex-col justify-between overflow-hidden rounded-3xl border border-amber-200/60 bg-amber-50/40 p-5 shadow-xs dark:border-amber-900/40 dark:bg-amber-950/20">
+          <div className="flex items-center justify-between gap-2">
+            <span className="truncate text-xs font-bold text-amber-800 dark:text-amber-300">چک‌های در جریان وصول (تعهدات)</span>
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-amber-500/20 text-amber-700 dark:text-amber-400">
               <Clock size={16} />
             </div>
           </div>
-          <p className="mt-2 font-mono text-2xl font-black text-amber-950 dark:text-amber-200">
+          <p className="mt-2 truncate font-mono text-2xl font-black text-amber-950 dark:text-amber-200">
             {summary.outstandingCount.toLocaleString('fa-IR')} <span className="text-xs font-bold">فقره</span>
           </p>
-          <p className="mt-1 font-mono text-xs font-bold text-amber-800 dark:text-amber-300">
+          <p className="mt-1 font-mono text-xs font-bold text-amber-800 dark:text-amber-300 break-all">
             {displayOutstandingAmount.toLocaleString('fa-IR')} {currencySuffix}
           </p>
         </div>
 
-        <div className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">مجموع ارزش چک‌های صادرشده</span>
-            <div className="flex size-8 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-600 dark:bg-emerald-500/25 dark:text-emerald-400">
+        <div className="flex min-w-0 flex-col justify-between overflow-hidden rounded-3xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+          <div className="flex items-center justify-between gap-2">
+            <span className="truncate text-xs font-bold text-slate-500 dark:text-slate-400">مجموع ارزش چک‌های صادرشده</span>
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-600 dark:bg-emerald-500/25 dark:text-emerald-400">
               <CheckCircle2 size={16} />
             </div>
           </div>
-          <p className="mt-2 font-mono text-2xl font-black text-slate-900 dark:text-white">
-            {displayTotalAmount.toLocaleString('fa-IR')}{' '}
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">{currencySuffix}</span>
-          </p>
+          <div className="mt-2 flex flex-wrap items-baseline gap-1.5 min-w-0 overflow-hidden">
+            <span
+              className={`font-mono font-black text-slate-900 dark:text-white tracking-tight break-all ${totalAmountFontSize}`}
+              title={`${formattedTotalDigits} ${currencySuffix}`}
+            >
+              {formattedTotalDigits}
+            </span>
+            <span className="shrink-0 text-xs font-bold text-slate-500 dark:text-slate-400">
+              {currencySuffix}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -305,16 +323,16 @@ export default function InitialIssuedChecksClient({
                 setSelectedBankFilter(e.target.value);
                 setPage(1);
               }}
-              className="h-10 w-full appearance-none rounded-2xl border border-slate-200 bg-white px-3 pr-9 text-xs font-bold text-slate-800 focus:border-amber-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
+              className="h-10 w-full appearance-none rounded-2xl border border-slate-200 bg-white px-3 pr-9 text-xs font-bold text-slate-900 shadow-2xs transition-all focus:border-amber-500 focus:bg-white focus:text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-amber-400 dark:focus:bg-slate-800 dark:focus:text-white dark:focus:ring-amber-400/20"
             >
-              <option value="all">همه حساب‌های بانکی ({checks.length})</option>
+              <option value="all" className="bg-white text-slate-900 dark:bg-slate-800 dark:text-slate-100">همه حساب‌های بانکی ({checks.length})</option>
               {bankOptions.map((b) => (
-                <option key={b.id} value={b.id}>
+                <option key={b.id} value={b.id} className="bg-white text-slate-900 dark:bg-slate-800 dark:text-slate-100">
                   {b.name}
                 </option>
               ))}
             </select>
-            <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+            <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-400">
               <Filter size={14} />
             </div>
           </div>
@@ -328,9 +346,9 @@ export default function InitialIssuedChecksClient({
                 setPage(1);
               }}
               placeholder="جستجو در شماره چک، طرف‌حساب..."
-              className="h-10 w-full rounded-2xl border border-slate-200 bg-white pr-9 pl-3 text-xs font-bold text-slate-800 placeholder:text-slate-400 focus:border-amber-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
+              className="h-10 w-full rounded-2xl border border-slate-200 bg-white pr-9 pl-3 text-xs font-bold text-slate-900 shadow-2xs placeholder:text-slate-400 transition-all focus:border-amber-500 focus:bg-white focus:text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-amber-400 dark:focus:bg-slate-800 dark:focus:text-white dark:focus:ring-amber-400/20"
             />
-            <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+            <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-400">
               <Search size={14} />
             </div>
           </div>
@@ -411,9 +429,7 @@ export default function InitialIssuedChecksClient({
                       {/* Bank */}
                       <td className="px-3 py-3.5">
                         <div className="flex items-center gap-2">
-                          <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                            <Landmark size={14} />
-                          </div>
+                          <BankLogo bankName={String(bankRecord?.bankName || '')} size={28} />
                           <div>
                             <div className="font-extrabold text-slate-900 dark:text-white">
                               {String(bankRecord?.bankName || 'حساب بانکی')}

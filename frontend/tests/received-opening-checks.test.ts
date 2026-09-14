@@ -320,5 +320,29 @@ describe('Zarfolio — Opening Balance Received Checks Architecture (اسناد 
       expect(isDeletable('cleared')).toBe(false);
       expect(isDeletable('returned')).toBe(false);
     });
+
+    it('correctly maps bankName and branchName from direct fields', () => {
+      const mapped = mapCheckRecord({
+        id: 'chk_1',
+        chequeType: 'receivable',
+        bankName: 'بانک ملت',
+        branchName: 'شعبه ونک',
+        amount: 10000000,
+      });
+
+      expect(mapped.bankName).toBe('بانک ملت');
+      expect(mapped.branchName).toBe('شعبه ونک');
+    });
+
+    it('extracts bankName from description as fallback if bankName is missing', () => {
+      const mapped = mapCheckRecord({
+        id: 'chk_2',
+        chequeType: 'receivable',
+        description: 'موجودی اولیه چک دریافتی شماره 1232132 — بانک اقتصاد نوین — واگذارکننده: اشکان قاسمی',
+        amount: 25000000,
+      });
+
+      expect(mapped.bankName).toBe('بانک اقتصاد نوین');
+    });
   });
 });

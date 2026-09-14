@@ -338,7 +338,7 @@ export default function InitialMetalInventoryClient({
                 setPage(1);
               }}
               placeholder="جستجو در مشخصات، انگ یا آزمایشگاه..."
-              className="w-60 rounded-xl border border-slate-300 bg-white py-2 pr-9 pl-3 text-xs font-bold text-slate-900 placeholder:text-slate-500 shadow-xs transition focus:border-amber-500 focus:bg-white focus:text-slate-950 focus:ring-2 focus:ring-amber-500/25 focus:outline-hidden dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder:text-slate-400 dark:focus:border-amber-400"
+              className="w-60 rounded-xl border border-slate-300 bg-white py-2 pr-9 pl-3 text-xs font-bold text-slate-900 placeholder:text-slate-500 shadow-xs transition focus:border-amber-500 focus:bg-white focus:text-slate-950 focus:ring-2 focus:ring-amber-500/25 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder:text-slate-400 dark:focus:border-amber-400 dark:focus:bg-slate-800 dark:focus:text-white dark:focus:ring-amber-400/20"
             />
             <Search size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400" />
           </div>

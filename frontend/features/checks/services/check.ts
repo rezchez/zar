@@ -170,11 +170,22 @@ export function mapCheckRecord(record: Record<string, unknown>): CheckRecord {
       : typeof record.checkNumber === 'string' && record.checkNumber
         ? record.checkNumber
         : (typeof record.sayadId === 'string' ? record.sayadId : ''),
-    bankName: typeof record.bankName === 'string' && record.bankName
-      ? record.bankName
-      : typeof record.bank_name === 'string' && record.bank_name
-        ? record.bank_name
-        : undefined,
+    bankName: (() => {
+      const direct = typeof record.bankName === 'string' && record.bankName
+        ? record.bankName
+        : typeof record.bank_name === 'string' && record.bank_name
+          ? record.bank_name
+          : undefined;
+      if (direct) return direct;
+      if (chequeType === 'receivable' && typeof record.description === 'string') {
+        const match = record.description.match(/—\s*بانک\s+(?:بانک\s+)?(.*?)(?:\s*—|$)/);
+        if (match && match[1]) {
+          const raw = match[1].trim();
+          return raw.startsWith('بانک') ? raw : `بانک ${raw}`;
+        }
+      }
+      return undefined;
+    })(),
     branchName: typeof record.branchName === 'string' && record.branchName
       ? record.branchName
       : typeof record.branch_name === 'string' && record.branch_name

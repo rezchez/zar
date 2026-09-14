@@ -20,6 +20,7 @@ import Link from 'next/link';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { useAppSettings } from '@/components/shared/SettingsProvider';
+import BankLogo from '@/features/banks/components/BankLogo';
 import { CHEQUE_STATUS_COLORS, CHEQUE_STATUS_LABELS, type CheckRecord } from '@/lib/check';
 import InitialReceivedCheckModal from './InitialReceivedCheckModal';
 import PaginationControls from '@/components/shared/PaginationControls';
@@ -65,6 +66,21 @@ export default function InitialReceivedChecksClient({
   const [pageSize, setPageSize] = useState(25);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
 
+  const displayTotalAmount =
+    effectiveCurrency === 'IRT'
+      ? Math.floor((summary?.totalAmount || 0) / 10)
+      : (summary?.totalAmount || 0);
+  const formattedTotalDigits = displayTotalAmount.toLocaleString('fa-IR');
+
+  const totalAmountFontSize =
+    formattedTotalDigits.length > 20
+      ? 'text-sm sm:text-base'
+      : formattedTotalDigits.length > 15
+        ? 'text-base sm:text-lg'
+        : formattedTotalDigits.length > 10
+          ? 'text-lg sm:text-xl'
+          : 'text-xl sm:text-2xl';
+
   // Delete state
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
@@ -92,19 +108,30 @@ export default function InitialReceivedChecksClient({
     }
   }, []);
 
+  const [registeredBanks, setRegisteredBanks] = useState<{ id: string; name: string; iconKey: string }[]>([]);
+
   useEffect(() => {
     void fetchChecks();
+    fetch('/api/banks/list', { cache: 'no-store' })
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data.banks)) setRegisteredBanks(data.banks);
+      })
+      .catch(() => {});
   }, [fetchChecks]);
 
-  // Unique bank options from checks
+  // Unique bank options from checks and collection
   const bankOptions = useMemo(() => {
     const set = new Set<string>();
     for (const c of checks) {
       const bName = c.bankName || (c.expand?.bankAccount as Record<string, unknown> | undefined)?.bankName as string;
       if (bName) set.add(bName);
     }
-    return Array.from(set);
-  }, [checks]);
+    for (const b of registeredBanks) {
+      if (b.name) set.add(b.name);
+    }
+    return Array.from(set).sort();
+  }, [checks, registeredBanks]);
 
   // Filtered checks
   const filteredChecks = useMemo(() => {
@@ -253,40 +280,48 @@ export default function InitialReceivedChecksClient({
 
       {/* Summary KPI Cards */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <div className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">تعداد کل چک‌های دریافتی</span>
-            <div className="flex size-8 items-center justify-center rounded-xl bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+        <div className="flex min-w-0 flex-col justify-between overflow-hidden rounded-3xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+          <div className="flex items-center justify-between gap-2">
+            <span className="truncate text-xs font-bold text-slate-500 dark:text-slate-400">تعداد کل چک‌های دریافتی</span>
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
               <CreditCard size={16} />
             </div>
           </div>
-          <p className="mt-2 font-mono text-2xl font-black text-slate-900 dark:text-white">
+          <p className="mt-2 truncate font-mono text-2xl font-black text-slate-900 dark:text-white">
             {summary.totalCount.toLocaleString('fa-IR')} <span className="text-xs font-bold">فقره</span>
           </p>
         </div>
 
-        <div className="rounded-3xl border border-emerald-200/60 bg-emerald-50/40 p-5 shadow-xs dark:border-emerald-900/40 dark:bg-emerald-950/20">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300">چک‌های در انتظار وصول</span>
-            <div className="flex size-8 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-700 dark:text-emerald-400">
+        <div className="flex min-w-0 flex-col justify-between overflow-hidden rounded-3xl border border-emerald-200/60 bg-emerald-50/40 p-5 shadow-xs dark:border-emerald-900/40 dark:bg-emerald-950/20">
+          <div className="flex items-center justify-between gap-2">
+            <span className="truncate text-xs font-bold text-emerald-800 dark:text-emerald-300">چک‌های در انتظار وصول</span>
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-700 dark:text-emerald-400">
               <Clock size={16} />
             </div>
           </div>
-          <p className="mt-2 font-mono text-2xl font-black text-emerald-700 dark:text-emerald-400">
+          <p className="mt-2 truncate font-mono text-2xl font-black text-emerald-700 dark:text-emerald-400">
             {summary.outstandingCount.toLocaleString('fa-IR')} <span className="text-xs font-bold">فقره</span>
           </p>
         </div>
 
-        <div className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">جمع ارزش اسناد دریافتنی</span>
-            <div className="flex size-8 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400">
+        <div className="flex min-w-0 flex-col justify-between overflow-hidden rounded-3xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+          <div className="flex items-center justify-between gap-2">
+            <span className="truncate text-xs font-bold text-slate-500 dark:text-slate-400">جمع ارزش اسناد دریافتنی</span>
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400">
               <CheckCircle2 size={16} />
             </div>
           </div>
-          <p className="mt-2 font-mono text-xl font-black text-slate-900 dark:text-white sm:text-2xl">
-            {formatMoney(summary.totalAmount)}
-          </p>
+          <div className="mt-2 flex flex-wrap items-baseline gap-1.5 min-w-0 overflow-hidden">
+            <span
+              className={`font-mono font-black text-slate-900 dark:text-white tracking-tight break-all ${totalAmountFontSize}`}
+              title={`${formattedTotalDigits} ${currencySuffix}`}
+            >
+              {formattedTotalDigits}
+            </span>
+            <span className="shrink-0 text-xs font-bold text-slate-500 dark:text-slate-400">
+              {currencySuffix}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -301,16 +336,16 @@ export default function InitialReceivedChecksClient({
                 setSelectedBankFilter(e.target.value);
                 setPage(1);
               }}
-              className="h-10 w-full appearance-none rounded-2xl border border-slate-200 bg-slate-50 pr-8 pl-3 text-xs font-bold text-slate-800 focus:border-emerald-500 focus:outline-hidden dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
+              className="h-10 w-full appearance-none rounded-2xl border border-slate-200 bg-white pr-8 pl-3 text-xs font-bold text-slate-900 shadow-2xs transition-all focus:border-emerald-500 focus:bg-white focus:text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-emerald-400 dark:focus:bg-slate-800 dark:focus:text-white dark:focus:ring-emerald-400/20"
             >
-              <option value="all">همه بانک‌های صادرکننده</option>
+              <option value="all" className="bg-white text-slate-900 dark:bg-slate-800 dark:text-slate-100">همه بانک‌های صادرکننده</option>
               {bankOptions.map((b) => (
-                <option key={b} value={b}>
+                <option key={b} value={b} className="bg-white text-slate-900 dark:bg-slate-800 dark:text-slate-100">
                   {b}
                 </option>
               ))}
             </select>
-            <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+            <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-400">
               <Filter size={14} />
             </div>
           </div>
@@ -325,9 +360,9 @@ export default function InitialReceivedChecksClient({
                 setPage(1);
               }}
               placeholder="جستجو در سریال، صیاد، طرف‌حساب، بانک..."
-              className="h-10 w-full rounded-2xl border border-slate-200 bg-slate-50 pr-9 pl-3 text-xs font-bold text-slate-800 placeholder:text-slate-400 focus:border-emerald-500 focus:bg-white focus:outline-hidden dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
+              className="h-10 w-full rounded-2xl border border-slate-200 bg-white pr-9 pl-3 text-xs font-bold text-slate-900 shadow-2xs placeholder:text-slate-400 transition-all focus:border-emerald-500 focus:bg-white focus:text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-emerald-400 dark:focus:bg-slate-800 dark:focus:text-white dark:focus:ring-emerald-400/20"
             />
-            <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+            <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-400">
               <Search size={14} />
             </div>
           </div>
@@ -424,15 +459,19 @@ export default function InitialReceivedChecksClient({
 
                       {/* Drawee Bank & Branch */}
                       <td className="px-3 py-3.5">
-                        <div className="flex items-center gap-1.5 text-slate-800 dark:text-slate-200 font-bold">
-                          <Landmark size={13} className="shrink-0 text-slate-400" />
-                          <span>{check.bankName || 'سایر بانک‌ها'}</span>
-                        </div>
-                        {check.branchName ? (
-                          <div className="text-[10px] text-slate-400 mt-0.5">
-                            {check.branchName}
+                        <div className="flex items-center gap-2">
+                          <BankLogo bankName={check.bankName} size={28} />
+                          <div>
+                            <div className="font-extrabold text-slate-900 dark:text-white">
+                              {check.bankName || 'سایر بانک‌ها'}
+                            </div>
+                            {check.branchName ? (
+                              <div className="text-[10px] text-slate-400 font-medium mt-0.5">
+                                {check.branchName}
+                              </div>
+                            ) : null}
                           </div>
-                        ) : null}
+                        </div>
                       </td>
 
                       {/* Due Date */}

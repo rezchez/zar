@@ -195,6 +195,8 @@ export type BankLogoProps = {
   bankName?: string;
   bankId?: string;
   bankCode?: string;
+  iconKey?: string;
+  logoUrl?: string | null;
   size?: number;
   variant?: 'color' | 'mono';
   className?: string;
@@ -204,6 +206,8 @@ export default function BankLogo({
   bankName,
   bankId,
   bankCode,
+  iconKey: explicitIconKey,
+  logoUrl,
   size = 36,
   variant = 'color',
   className = '',
@@ -213,7 +217,7 @@ export default function BankLogo({
     (bankCode ? getBankByCode(bankCode) : undefined) ??
     (bankName ? findBank(bankName) : undefined);
 
-  const iconKey = bank?.iconKey;
+  const iconKey = explicitIconKey || bank?.iconKey;
   const IconComponent = iconKey
     ? variant === 'mono'
       ? BANK_MONO_ICONS[iconKey]
@@ -222,6 +226,29 @@ export default function BankLogo({
 
   const displayName = bank?.name || bankName || 'بانک';
   const innerSize = Math.max(14, Math.round(size * 0.72));
+
+  if (logoUrl) {
+    return (
+      <span
+        className={`inline-flex shrink-0 items-center justify-center rounded-xl bg-white p-0.5 shadow-xs transition-colors dark:bg-slate-800/90 dark:border dark:border-slate-700/60 ${className}`}
+        style={{ width: size, height: size, minWidth: size, minHeight: size }}
+        title={`لوگوی ${displayName}`}
+        role="img"
+        aria-label={`لوگوی ${displayName}`}
+      >
+        <img
+          src={logoUrl}
+          alt={`لوگوی ${displayName}`}
+          width={innerSize}
+          height={innerSize}
+          className="shrink-0 max-h-full max-w-full object-contain"
+          onError={(e) => {
+            e.currentTarget.style.display = 'none';
+          }}
+        />
+      </span>
+    );
+  }
 
   if (IconComponent) {
     return (

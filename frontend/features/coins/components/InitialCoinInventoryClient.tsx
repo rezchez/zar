@@ -312,7 +312,7 @@ export default function InitialCoinInventoryClient({
                 setPage(1);
               }}
               placeholder="جستجو در عنوان، شرح یا فلز..."
-              className="w-full rounded-xl border border-slate-200 bg-slate-50/50 py-1.5 pr-8 pl-3 text-xs text-slate-800 placeholder-slate-400 transition focus:border-amber-500 focus:bg-white focus:outline-hidden dark:border-slate-800 dark:bg-slate-800/50 dark:text-slate-200"
+              className="w-full rounded-xl border border-slate-200 bg-white py-1.5 pr-8 pl-3 text-xs font-bold text-slate-900 placeholder-slate-400 transition focus:border-amber-500 focus:bg-white focus:text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder-slate-500 dark:focus:border-amber-400 dark:focus:bg-slate-800 dark:focus:text-white dark:focus:ring-amber-400/20"
             />
             <Search size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
           </div>

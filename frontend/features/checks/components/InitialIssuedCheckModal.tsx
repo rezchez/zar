@@ -8,6 +8,7 @@ import DatePicker from '@/components/ui/date-picker';
 import { PriceInput } from '@/components/ui/price-input';
 import SayadInput from '@/components/ui/sayad-input';
 import { useAppSettings } from '@/components/shared/SettingsProvider';
+import BankLogo from '@/features/banks/components/BankLogo';
 import { type CheckRecord } from '@/lib/check';
 import { dateToJalaliString, normalizeDigits } from '@/lib/jalali';
 import { parseLocalizedAmount } from '@/lib/money';
@@ -256,24 +257,29 @@ export default function InitialIssuedCheckModal({
             <label className="mb-1 block text-xs font-extrabold text-slate-700 dark:text-slate-300">
               حساب بانکی <span className="text-rose-500">*</span>
             </label>
-            <div className="relative">
-              <select
-                value={selectedBankId}
-                onChange={(e) => setSelectedBankId(e.target.value)}
-                disabled={loading || submitting}
-                required
-                className="h-10 w-full appearance-none rounded-2xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-900 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-              >
-                <option value="">-- انتخاب حساب بانکی --</option>
-                {banks.map((b) => (
-                  <option key={b.id} value={b.id} disabled={b.isBlocked === true}>
-                    {b.bankName} {b.branchName ? `(${b.branchName})` : ''} - {b.accountNumber}
-                    {b.isBlocked ? ' ⛔ [مسدود]' : ''}
-                  </option>
-                ))}
-              </select>
-              <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                <Landmark size={16} />
+            <div className="flex items-center gap-2">
+              <div className="flex size-10 shrink-0 items-center justify-center">
+                <BankLogo bankName={selectedBank?.bankName} size={36} />
+              </div>
+              <div className="relative flex-1">
+                <select
+                  value={selectedBankId}
+                  onChange={(e) => setSelectedBankId(e.target.value)}
+                  disabled={loading || submitting}
+                  required
+                  className="h-10 w-full appearance-none rounded-2xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-900 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                >
+                  <option value="">-- انتخاب حساب بانکی --</option>
+                  {banks.map((b) => (
+                    <option key={b.id} value={b.id} disabled={b.isBlocked === true}>
+                      {b.bankName} {b.branchName ? `(${b.branchName})` : ''} - {b.accountNumber}
+                      {b.isBlocked ? ' ⛔ [مسدود]' : ''}
+                    </option>
+                  ))}
+                </select>
+                <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                  <Landmark size={16} />
+                </div>
               </div>
             </div>
             {isSelectedBankBlocked && (

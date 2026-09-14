@@ -37,6 +37,8 @@ const checkCollectionPayload = {
     { id: 'payable_account_rel', name: 'payableAccountId', type: 'relation', collectionId: 'chart_of_accounts', maxSelect: 1, required: false },
     { id: 'receivable_account_rel', name: 'receivableAccountId', type: 'relation', collectionId: 'chart_of_accounts', maxSelect: 1, required: false },
     { id: 'journal_entry_id', name: 'journalEntryId', type: 'text', required: false, max: 80 },
+    { id: 'bank_name_field', name: 'bankName', type: 'text', required: false, max: 120 },
+    { id: 'branch_name_field', name: 'branchName', type: 'text', required: false, max: 120 },
     { id: 'document_id', name: 'document', type: 'text', required: false, max: 80 },
     { id: 'created_by_rel', name: 'createdBy', type: 'text', max: 80 },
     { id: 'updated_by_rel', name: 'updatedBy', type: 'text', max: 80 },
@@ -65,12 +67,45 @@ export async function ensureChecksCollection(pb: PocketBase) {
       }
 
       if (existing) {
+        let needsUpdate = false;
         if (!existing.listRule || !existing.viewRule || !existing.createRule || !existing.updateRule) {
           existing.listRule = '@request.auth.id != ""';
           existing.viewRule = '@request.auth.id != ""';
           existing.createRule = '@request.auth.id != ""';
           existing.updateRule = '@request.auth.id != ""';
           existing.deleteRule = '@request.auth.id != ""';
+          needsUpdate = true;
+        }
+
+        const existingFieldNames = new Set((existing.fields || []).map((f: any) => f.name));
+        if (!existingFieldNames.has('bankName')) {
+          (existing.fields as any[]).push({
+            id: 'bank_name_field',
+            name: 'bankName',
+            type: 'text',
+            required: false,
+            max: 120,
+            system: false,
+            hidden: false,
+            presentable: false,
+          });
+          needsUpdate = true;
+        }
+        if (!existingFieldNames.has('branchName')) {
+          (existing.fields as any[]).push({
+            id: 'branch_name_field',
+            name: 'branchName',
+            type: 'text',
+            required: false,
+            max: 120,
+            system: false,
+            hidden: false,
+            presentable: false,
+          });
+          needsUpdate = true;
+        }
+
+        if (needsUpdate) {
           await pb.collections.update(existing.id, existing).catch(() => null);
         }
       }
