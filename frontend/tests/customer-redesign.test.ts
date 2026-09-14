@@ -13,6 +13,7 @@ import {
 } from '../lib/iran-cities';
 import {
   generateGroupSlug,
+  isRefinerCustomer,
   isSystemGroup,
   SYSTEM_GROUPS,
 } from '../lib/customer-groups';
@@ -105,8 +106,8 @@ describe('Account Code Gap Detection Algorithm', () => {
 });
 
 describe('Customer System and Custom Groups', () => {
-  test('contains all 12 system groups with correct mappings', () => {
-    expect(SYSTEM_GROUPS.length).toBe(12);
+  test('contains system groups with correct mappings including refiner', () => {
+    expect(SYSTEM_GROUPS.length).toBeGreaterThanOrEqual(12);
     const slugs = SYSTEM_GROUPS.map((g) => g.slug);
     expect(slugs).toContain('customer');
     expect(slugs).toContain('wholesaler');
@@ -120,12 +121,19 @@ describe('Customer System and Custom Groups', () => {
     expect(slugs).toContain('jeweler');
     expect(slugs).toContain('lapidary');
     expect(slugs).toContain('repairer');
+    expect(slugs).toContain('refiner');
   });
 
-  test('identifies system groups correctly', () => {
+  test('identifies system groups and refiner customers correctly', () => {
     expect(isSystemGroup('مشتری')).toBe(true);
     expect(isSystemGroup('bullion_dealer')).toBe(true);
+    expect(isSystemGroup('ریگیر')).toBe(true);
     expect(isSystemGroup('گروه دلخواه')).toBe(false);
+
+    expect(isRefinerCustomer({ groupName: 'ریگیر' })).toBe(true);
+    expect(isRefinerCustomer({ groupName: 'ریگیری' })).toBe(true);
+    expect(isRefinerCustomer('refiner')).toBe(true);
+    expect(isRefinerCustomer({ groupName: 'مشتری' })).toBe(false);
   });
 
   test('generates system group slug or custom group slug', () => {

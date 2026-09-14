@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import * as path from 'path';
+import * as fs from 'fs';
 
 describe('Zarfolio — Deterministic Stress Test & Invariants Verification', () => {
   const dbPath = path.resolve(process.cwd(), '../backend/pb_data/data.db');
@@ -30,7 +31,10 @@ describe('Zarfolio — Deterministic Stress Test & Invariants Verification', () 
   });
 
   test('verifies database schema integrity for initial inventory collections in data.db', () => {
-    const db = new Database(dbPath);
+    if (!fs.existsSync(dbPath)) {
+      fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+    }
+    const db = new Database(dbPath, { create: true });
     const tables = db.query("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[];
     const tableNames = new Set(tables.map(t => t.name));
 
