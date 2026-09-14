@@ -141,6 +141,7 @@ export async function POST(request: Request) {
     const unitInput = String(body?.unit || 'لیتر').trim();
     const unitPrice = Number(String(body?.unitPrice ?? body?.unit_price ?? 0).replace(/,/g, ''));
     const dateInput = String(body?.date || '').trim();
+    const dateValue = dateInput || dateToJalaliString(new Date());
     const storageLocation = String(body?.storageLocation || body?.storage_location || '').trim();
     const sku = String(body?.sku || '').trim();
     const description = String(body?.description || '').trim();
@@ -181,12 +182,51 @@ export async function POST(request: Request) {
       totalAmount = Math.round(Number(body.totalAmount));
     }
 
-    const dateValue = dateInput || dateToJalaliString(new Date());
+    // 2. Resolve or auto-create goods_type relation for goods_inventory
+    let resolvedGoodsTypeId = goodsTypeId;
+    if (!resolvedGoodsTypeId) {
+      try {
+        const matched = await context.pb.collection('goods_types').getFirstListItem(
+          context.pb.filter('name = {:name} || code = {:code}', {
+            name: itemNameInput,
+            code: sku || itemNameInput,
+          }),
+        ).catch(() => null);
 
-    // 2. Prepare payload for goods_inventory
+        if (matched?.id) {
+          resolvedGoodsTypeId = matched.id;
+        } else {
+          // Auto-create goods_type in goods_types collection so the relation is always populated and presentable in PB
+          const createdType = await context.pb.collection('goods_types').create({
+            name: itemNameInput,
+            code: sku || `GT-${Date.now().toString(36).toUpperCase()}`,
+            category: categoryInput,
+            unit: unitInput,
+            default_unit_price: roundedUnitPrice,
+            is_active: true,
+          }).catch(() => null);
+
+          if (createdType?.id) {
+            resolvedGoodsTypeId = createdType.id;
+          } else {
+            // Fallback to category standard record
+            const catMatch = await context.pb.collection('goods_types').getFirstListItem(
+              context.pb.filter('category = {:cat}', { cat: categoryInput }),
+            ).catch(() => null);
+            if (catMatch?.id) {
+              resolvedGoodsTypeId = catMatch.id;
+            }
+          }
+        }
+      } catch {
+        // fallback
+      }
+    }
+
+    // 3. Prepare payload for goods_inventory
     const payload: Record<string, unknown> = {
       item_name: itemNameInput,
-      goods_type: goodsTypeId || null,
+      goods_type: resolvedGoodsTypeId || null,
       category: categoryInput,
       quantity,
       unit: unitInput,
@@ -269,7 +309,7 @@ export async function POST(request: Request) {
       success: true,
       item: {
         id: resultRecord.id,
-        goodsTypeId,
+        goodsTypeId: resolvedGoodsTypeId || undefined,
         itemName: itemNameInput,
         category: categoryInput,
         quantity,

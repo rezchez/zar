@@ -19,6 +19,7 @@ import InitialMetalInventoryModal from './InitialMetalInventoryModal';
 import PaginationControls from '@/components/shared/PaginationControls';
 import { useAppSettings } from '@/src/components/SettingsProvider';
 import {
+  INVENTORY_TYPE_LABELS,
   type MetalOpeningRecord,
   type MultiMetalSummary,
 } from '@/lib/metal-inventory';
@@ -113,7 +114,12 @@ export default function InitialMetalInventoryClient({
     const q = searchQuery.trim().toLowerCase();
     return items.filter((item) => {
       if (filterMetal !== 'all' && item.metal !== filterMetal) return false;
-      if (filterType !== 'all' && item.inventoryType !== filterType) return false;
+      if (filterType !== 'all') {
+        if (filterType === 'melted' && item.inventoryType !== 'melted') return false;
+        if (filterType === 'conditional' && item.inventoryType !== 'conditional' && item.inventoryType !== 'conditional_melted') return false;
+        if (filterType === 'miscellaneous' && item.inventoryType !== 'miscellaneous' && item.inventoryType !== 'miscellaneous_melted' && item.inventoryType !== 'general_metal') return false;
+        if (filterType === 'sowaleh' && item.inventoryType !== 'sowaleh') return false;
+      }
       if (q) {
         const matchLab = (item.labName || '').toLowerCase().includes(q);
         const matchStamp = (item.stampNumber || '').toLowerCase().includes(q);
@@ -150,9 +156,7 @@ export default function InitialMetalInventoryClient({
   };
 
   const inventoryTypeLabels: Record<string, string> = {
-    conditional_melted: 'آبشده شرطی',
-    miscellaneous_melted: 'آبشده متفرقه',
-    general_metal: 'موجودی فلز',
+    ...INVENTORY_TYPE_LABELS,
   };
 
   return (
@@ -177,7 +181,7 @@ export default function InitialMetalInventoryClient({
               </span>
             </div>
             <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-              ثبت و مدیریت تراز پایه آبشده شرطی، آبشده متفرقه و موجودی پایه فلزات
+              ثبت و مدیریت تراز پایه آبشده، شرطی، متفرقه و سواله
             </p>
           </div>
         </div>
@@ -342,9 +346,10 @@ export default function InitialMetalInventoryClient({
           <div className="flex items-center gap-1">
             {[
               { id: 'all', label: 'همه انواع' },
-              { id: 'conditional_melted', label: 'آبشده شرطی' },
-              { id: 'miscellaneous_melted', label: 'متفرقه' },
-              { id: 'general_metal', label: 'پایه فلز' },
+              { id: 'melted', label: 'آبشده' },
+              { id: 'conditional', label: 'شرطی' },
+              { id: 'miscellaneous', label: 'متفرقه' },
+              { id: 'sowaleh', label: 'سواله' },
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -426,14 +431,18 @@ export default function InitialMetalInventoryClient({
 
                       {/* Lab & Stamp */}
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
-                        {item.inventoryType === 'conditional_melted' ? (
+                        {item.stampNumber || item.labName ? (
                           <div className="flex flex-col text-[11px]">
-                            <span className="font-black text-slate-900 dark:text-white">
-                              انگ: {item.stampNumber || '—'}
-                            </span>
-                            <span className="text-[10px] text-slate-400 dark:text-slate-500">
-                              {item.labName || 'نامشخص'}
-                            </span>
+                            {item.stampNumber && (
+                              <span className="font-black text-slate-900 dark:text-white">
+                                انگ: {item.stampNumber}
+                              </span>
+                            )}
+                            {item.labName && (
+                              <span className="text-[10px] text-slate-400 dark:text-slate-500">
+                                {item.labName}
+                              </span>
+                            )}
                           </div>
                         ) : (
                           <span className="text-slate-400">—</span>

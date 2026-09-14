@@ -5,6 +5,7 @@ import type React from 'react';
 
 import Field from '@/src/components/documents/Field';
 import { RawMetalOperationTypeSelector } from '@/src/components/documents/DocumentOperationTypeSelector';
+import { AssayLaboratorySelect } from '@/components/AssayLaboratorySelect';
 
 export type RawOperationKind = 'molten' | 'misc' | 'conditional' | 'question' | 'unsettled';
 
@@ -208,12 +209,13 @@ export default function RawGoldTab({
           {draftLine.details.rawKind !== 'misc' ? (
             <>
               <Field label="نام آزمایشگاه ری‌گیری" required={isRequired} error={errors.labName}>
-                <input
-                  ref={labInputRef}
+                <AssayLaboratorySelect
+                  inputRef={labInputRef}
                   value={draftLine.details.labName}
-                  onChange={(event) => updateDraftDetail('labName', event.target.value)}
+                  onChange={(val) => updateDraftDetail('labName', val)}
                   onKeyDown={handleKeyDownEnter}
-                  placeholder="نام آزمایشگاه"
+                  placeholder="انتخاب یا جستجوی ری‌گیری..."
+                  error={errors.labName}
                 />
               </Field>
               <Field label="شماره پاکت / انگ" required={isRequired} error={errors.stampNumber}>

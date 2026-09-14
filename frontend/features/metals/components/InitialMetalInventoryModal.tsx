@@ -5,9 +5,12 @@ import React, { useCallback, useEffect, useState } from 'react';
 
 import DatePicker from '@/components/ui/date-picker';
 import { PriceInput } from '@/components/ui/price-input';
+import { AssayLaboratorySelect } from '@/components/AssayLaboratorySelect';
 import { useAppSettings } from '@/src/components/SettingsProvider';
 import { dateToJalaliString } from '@/lib/jalali';
 import {
+  INVENTORY_TYPE_LABELS,
+  isLabAndStampRequired,
   type MetalInventoryType,
   type MetalOpeningRecord,
 } from '@/lib/metal-inventory';
@@ -52,20 +55,24 @@ const METALS_CONFIG: Record<
 };
 
 const INVENTORY_TYPES_CONFIG: Record<
-  MetalInventoryType,
+  'melted' | 'conditional' | 'miscellaneous' | 'sowaleh',
   { label: string; description: string }
 > = {
-  conditional_melted: {
-    label: 'آبشده شرطی',
-    description: 'طلای آبشده معتبر با شماره انگ و برگه ری‌گیری رسمی',
+  melted: {
+    label: 'آبشده',
+    description: 'طلای آبشده قالبی با شماره انگ و برگه ری‌گیری معتبر',
   },
-  miscellaneous_melted: {
-    label: 'آبشده متفرقه',
-    description: 'طلای آبشده و متفرقه بدون شرط ری‌گیری',
+  conditional: {
+    label: 'شرطی',
+    description: 'عیار نامشخص (ثبت موقت ۷۵۰) دارای شماره انگ و برگه ری‌گیری',
   },
-  general_metal: {
-    label: 'موجودی فلز',
-    description: 'موجودی مستقیم فلز خام یا شمش پایه',
+  miscellaneous: {
+    label: 'متفرقه',
+    description: 'طلای متفرقه، مستعمل و قراضه کارگاهی بدون شرط ری‌گیری',
+  },
+  sowaleh: {
+    label: 'سواله',
+    description: 'براده، خاک و سواله کارگاهی اره‌کاری و پرداخت طلا',
   },
 };
 
@@ -81,7 +88,7 @@ export default function InitialMetalInventoryModal({
   const currencySuffix = effectiveCurrency === 'IRT' ? 'تومان' : 'ریال';
 
   const [metal, setMetal] = useState<PreciousMetalType>('gold');
-  const [inventoryType, setInventoryType] = useState<MetalInventoryType>('conditional_melted');
+  const [inventoryType, setInventoryType] = useState<MetalInventoryType>('melted');
   const [weight, setWeight] = useState<string>('');
   const [purity, setPurity] = useState<string>('750');
   const [labName, setLabName] = useState<string>('');
@@ -105,15 +112,18 @@ export default function InitialMetalInventoryModal({
 
   const currentBaseKarat = getBaseKarat(metal);
 
+  const isConditional = inventoryType === 'conditional' || inventoryType === 'conditional_melted';
+
   // Sync form state on edit or open
   useEffect(() => {
     if (!isOpen) return;
 
     if (editItem) {
+      const isCond = editItem.inventoryType === 'conditional' || editItem.inventoryType === 'conditional_melted';
       setMetal(editItem.metal);
       setInventoryType(editItem.inventoryType);
       setWeight(String(editItem.rawWeight || ''));
-      setPurity(String(editItem.purity || '750'));
+      setPurity(isCond ? '750' : String(editItem.purity || '750'));
       setLabName(editItem.labName || '');
       setStampNumber(editItem.stampNumber || '');
       setTotalAmount(editItem.totalAmount ? String(editItem.totalAmount) : '');
@@ -121,7 +131,7 @@ export default function InitialMetalInventoryModal({
       setDescription(editItem.description || '');
     } else {
       setMetal('gold');
-      setInventoryType('conditional_melted');
+      setInventoryType('melted');
       setWeight('');
       setPurity(String(METALS_CONFIG.gold.defaultPurity));
       setLabName('');
@@ -136,17 +146,24 @@ export default function InitialMetalInventoryModal({
   // Update default purity when metal changes in create mode
   const handleMetalChange = (newMetal: PreciousMetalType) => {
     setMetal(newMetal);
-    if (!editItem) {
+    if (!editItem && !isConditional) {
       setPurity(String(METALS_CONFIG[newMetal].defaultPurity));
+    }
+  };
+
+  const handleInventoryTypeChange = (t: MetalInventoryType) => {
+    setInventoryType(t);
+    if (t === 'conditional' || t === 'conditional_melted') {
+      setPurity('750');
     }
   };
 
   // Live converted weight calculation
   const parsedWeight = Number(weight.replace(/,/g, ''));
-  const parsedPurity = Number(purity.replace(/,/g, ''));
+  const effectivePurity = isConditional ? 750 : Number(purity.replace(/,/g, ''));
   const convertedWeight =
-    Number.isFinite(parsedWeight) && parsedWeight > 0 && Number.isFinite(parsedPurity) && parsedPurity > 0
-      ? metalAtBaseKarat(parsedWeight, parsedPurity, currentBaseKarat, weightPrecision)
+    Number.isFinite(parsedWeight) && parsedWeight > 0 && Number.isFinite(effectivePurity) && effectivePurity > 0
+      ? metalAtBaseKarat(parsedWeight, effectivePurity, currentBaseKarat, weightPrecision)
       : 0;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -164,18 +181,20 @@ export default function InitialMetalInventoryModal({
       return;
     }
 
-    if (!Number.isFinite(parsedPurity) || parsedPurity <= 0 || parsedPurity > 1000) {
+    if (!isConditional && (!Number.isFinite(effectivePurity) || effectivePurity <= 0 || effectivePurity > 1000)) {
       setErrorMsg('عیار باید عددی بین ۱ تا ۱۰۰۰ باشد.');
       return;
     }
 
-    if (inventoryType === 'conditional_melted') {
+    const requiresLabAndStamp = isLabAndStampRequired(inventoryType);
+    if (requiresLabAndStamp) {
+      const typeLabel = INVENTORY_TYPE_LABELS[inventoryType] || 'آبشده';
       if (!stampNumber.trim()) {
-        setErrorMsg('ورود شماره انگ برای آبشده شرطی الزامی است.');
+        setErrorMsg(`ورود شماره انگ برای طلای ${typeLabel} الزامی است.`);
         return;
       }
       if (!labName.trim()) {
-        setErrorMsg('ورود نام ری‌گیری برای آبشده شرطی الزامی است.');
+        setErrorMsg(`ورود نام ری‌گیری برای طلای ${typeLabel} الزامی است.`);
         return;
       }
     }
@@ -187,10 +206,10 @@ export default function InitialMetalInventoryModal({
         metal,
         inventoryType,
         weight: parsedWeight,
-        purity: parsedPurity,
+        purity: effectivePurity,
         baseKarat: currentBaseKarat,
-        labName: inventoryType === 'conditional_melted' ? labName.trim() : undefined,
-        stampNumber: inventoryType === 'conditional_melted' ? stampNumber.trim() : undefined,
+        labName: requiresLabAndStamp ? labName.trim() : (labName.trim() || undefined),
+        stampNumber: requiresLabAndStamp ? stampNumber.trim() : (stampNumber.trim() || undefined),
         totalAmount: totalAmount ? Number(totalAmount.replace(/,/g, '')) : 0,
         date,
         description: description.trim(),
@@ -242,7 +261,7 @@ export default function InitialMetalInventoryModal({
                 {editItem ? 'ویرایش موجودی اول دوره فلزات و آبشده' : 'ثبت موجودی اول دوره فلزات و آبشده'}
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                طلا، نقره و پلاتین — آبشده شرطی، آبشده متفرقه و موجودی فلز
+                طلا، نقره و پلاتین — آبشده، شرطی، متفرقه و سواله
               </p>
             </div>
           </div>
@@ -297,24 +316,35 @@ export default function InitialMetalInventoryModal({
             {/* 2. Inventory Type Selector */}
             <div>
               <label className="mb-1.5 block text-xs font-bold text-slate-700 dark:text-slate-300">
-                نوع موجودی <span className="text-rose-500">*</span>
+                نوع موجودی فلز <span className="text-rose-500">*</span>
               </label>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                {(['conditional_melted', 'miscellaneous_melted', 'general_metal'] as const).map((t) => {
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {(['melted', 'conditional', 'miscellaneous', 'sowaleh'] as const).map((t) => {
                   const cfg = INVENTORY_TYPES_CONFIG[t];
-                  const isSelected = inventoryType === t;
+                  const isSelected =
+                    inventoryType === t ||
+                    (t === 'conditional' && inventoryType === 'conditional_melted') ||
+                    (t === 'miscellaneous' && (inventoryType === 'miscellaneous_melted' || inventoryType === 'general_metal'));
+                  const requiresStamp = t === 'melted' || t === 'conditional';
                   return (
                     <button
                       key={t}
                       type="button"
-                      onClick={() => setInventoryType(t)}
+                      onClick={() => handleInventoryTypeChange(t)}
                       className={`flex flex-col items-start gap-1 rounded-2xl border p-3 text-right text-xs transition cursor-pointer ${
                         isSelected
-                          ? 'border-amber-500 bg-amber-500/10 text-amber-900 dark:border-amber-400 dark:bg-amber-400/20 dark:text-amber-200 font-black shadow-xs'
+                          ? 'border-amber-500 bg-amber-500/10 text-amber-900 dark:border-amber-400 dark:bg-amber-400/20 dark:text-amber-200 font-black shadow-xs ring-1 ring-amber-500/30'
                           : 'border-slate-200 bg-slate-50/70 text-slate-600 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-300 font-bold'
                       }`}
                     >
-                      <span className="text-xs font-extrabold">{cfg.label}</span>
+                      <div className="flex items-center justify-between w-full">
+                        <span className="text-xs font-extrabold">{cfg.label}</span>
+                        {requiresStamp && (
+                          <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-black text-amber-700 dark:bg-amber-500/25 dark:text-amber-300">
+                            انگ و ری‌گیری
+                          </span>
+                        )}
+                      </div>
                       <span className="text-[10px] leading-tight text-slate-400 dark:text-slate-400">
                         {cfg.description}
                       </span>
@@ -324,12 +354,12 @@ export default function InitialMetalInventoryModal({
               </div>
             </div>
 
-            {/* 3. Conditional Melted Fields: Stamp Number & Lab Name */}
-            {inventoryType === 'conditional_melted' && (
-              <div className="grid grid-cols-1 gap-3 rounded-2xl border border-amber-300/70 bg-amber-50/60 p-3.5 dark:border-amber-800/60 dark:bg-amber-950/30 sm:grid-cols-2">
+            {/* 3. Melted & Conditional Fields: Stamp Number & Lab Name (Mandatory) */}
+            {isLabAndStampRequired(inventoryType) && (
+              <div className="grid grid-cols-1 gap-3 rounded-2xl border border-amber-300/80 bg-amber-50/70 p-3.5 dark:border-amber-800/70 dark:bg-amber-950/40 sm:grid-cols-2">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                    شماره انگ (برچسب) <span className="text-rose-500">*</span>
+                    شماره انگ (برچسب) <span className="text-rose-500">* (اجباری)</span>
                   </label>
                   <input
                     type="text"
@@ -340,15 +370,13 @@ export default function InitialMetalInventoryModal({
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                    نام ری‌گیری (آزمایشگاه) <span className="text-rose-500">*</span>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                    نام ری‌گیری (آزمایشگاه) <span className="text-rose-500">* (اجباری)</span>
                   </label>
-                  <input
-                    type="text"
+                  <AssayLaboratorySelect
                     value={labName}
-                    onChange={(e) => setLabName(e.target.value)}
-                    placeholder="مثال: ری‌گیری ملت"
-                    className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-900 focus:border-amber-500 focus:outline-hidden dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    onChange={(val) => setLabName(val)}
+                    placeholder="انتخاب یا جستجوی ری‌گیری..."
                   />
                 </div>
               </div>
@@ -375,32 +403,50 @@ export default function InitialMetalInventoryModal({
                   <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
                     عیار (بر پایه ۱۰۰۰) <span className="text-rose-500">*</span>
                   </label>
-                  <span className="text-[10px] text-slate-500 dark:text-slate-400">
-                    پایه: {currentBaseKarat}
-                  </span>
+                  {isConditional ? (
+                    <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-black text-amber-700 dark:bg-amber-500/25 dark:text-amber-300">
+                      عیار موقت ۷۵۰ (نامشخص - شرطی)
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                      پایه: {currentBaseKarat}
+                    </span>
+                  )}
                 </div>
                 <input
                   type="text"
                   dir="ltr"
-                  value={purity}
+                  disabled={isConditional}
+                  readOnly={isConditional}
+                  value={isConditional ? '750' : purity}
                   onChange={(e) => setPurity(e.target.value)}
                   placeholder="مثال: ۷۵۰"
-                  className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left text-sm font-black text-slate-900 focus:border-amber-500 focus:outline-hidden dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  className={`mt-1.5 w-full rounded-xl border px-3 py-2.5 text-left text-sm font-black focus:outline-hidden ${
+                    isConditional
+                      ? 'border-dashed border-amber-300 bg-amber-50/70 text-amber-950 font-black cursor-not-allowed opacity-90 dark:border-amber-700/60 dark:bg-amber-950/30 dark:text-amber-200'
+                      : 'border-slate-200 bg-white text-slate-900 focus:border-amber-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white'
+                  }`}
                 />
 
-                {/* Preset Purity Buttons */}
-                <div className="mt-1.5 flex flex-wrap gap-1">
-                  {METALS_CONFIG[metal].presets.map((p) => (
-                    <button
-                      key={p}
-                      type="button"
-                      onClick={() => setPurity(String(p))}
-                      className="rounded-lg border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600 hover:bg-amber-100 hover:text-amber-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 cursor-pointer"
-                    >
-                      {p}
-                    </button>
-                  ))}
-                </div>
+                {/* Preset Purity Buttons or Conditional Note */}
+                {!isConditional ? (
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {METALS_CONFIG[metal].presets.map((p) => (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => setPurity(String(p))}
+                        className="rounded-lg border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600 hover:bg-amber-100 hover:text-amber-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 cursor-pointer"
+                      >
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-1.5 text-[11px] font-bold text-amber-700 dark:text-amber-400">
+                    * عیار طلای شرطی نامشخص است و تا زمان اعلام نتیجه ری‌گیری موقتاً ۷۵۰ ثبت می‌شود.
+                  </p>
+                )}
               </div>
             </div>
 

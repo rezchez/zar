@@ -6,6 +6,7 @@ import { hasPermission } from '@/lib/authorization';
 import {
   calculateMetalInventoryBalances,
   parseMetalDocumentDetails,
+  resolveMetalTypeId,
   type MetalInventoryType,
   type MetalOpeningRecord,
 } from '@/lib/metal-inventory';
@@ -73,6 +74,7 @@ export default async function InitialMetalInventoryPage() {
         return {
           id: String(r.id || ''),
           metal,
+          metalType: String(r.metal_type || resolveMetalTypeId(metal)),
           inventoryType: (r.inventory_type || 'general_metal') as MetalInventoryType,
           rawWeight,
           purity,
@@ -115,17 +117,22 @@ export default async function InitialMetalInventoryPage() {
         const purity = Number(details.purity) || defaultBase;
         const convertedWeight = Number(details.convertedWeight) || metalAtBaseKarat(weight, purity, baseKarat, weightPrecision);
 
-        let inventoryType: MetalInventoryType = 'general_metal';
+        let inventoryType: MetalInventoryType = (details.inventoryType as MetalInventoryType) || 'melted';
         const subType = String(r.documentSubType || '');
-        if (subType === 'conditional-molten' || details.inventoryType === 'conditional_melted') {
-          inventoryType = 'conditional_melted';
-        } else if (subType === 'misc-molten' || details.inventoryType === 'miscellaneous_melted') {
-          inventoryType = 'miscellaneous_melted';
+        if (subType === 'conditional-molten' || details.inventoryType === 'conditional' || details.inventoryType === 'conditional_melted') {
+          inventoryType = 'conditional';
+        } else if (subType === 'misc-molten' || details.inventoryType === 'miscellaneous' || details.inventoryType === 'miscellaneous_melted') {
+          inventoryType = 'miscellaneous';
+        } else if (details.inventoryType === 'melted') {
+          inventoryType = 'melted';
+        } else if (details.inventoryType === 'sowaleh') {
+          inventoryType = 'sowaleh';
         }
 
         return {
           id: String(r.id || ''),
           metal,
+          metalType: resolveMetalTypeId(metal),
           inventoryType,
           rawWeight: weight,
           purity,

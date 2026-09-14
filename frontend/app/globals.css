@@ -2756,6 +2756,62 @@ select:-webkit-autofill:active {
   box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.35);
 }
 
+/* ری‌گیری - استایل‌های فوکوس و کنتراست فیلد و جستجو */
+.assay-lab-input,
+.account-field .assay-lab-input {
+  background-color: #ffffff;
+  color: #0f172a;
+}
+.assay-lab-input:focus,
+.account-field .assay-lab-input:focus {
+  background-color: #ffffff;
+  color: #020617;
+  border-color: #f59e0b;
+}
+
+[data-theme="dark"] .assay-lab-input,
+.dark .assay-lab-input,
+[data-theme="dark"] .account-field .assay-lab-input,
+.dark .account-field .assay-lab-input {
+  background-color: #1e293b !important;
+  color: #ffffff !important;
+  border-color: #334155 !important;
+}
+[data-theme="dark"] .assay-lab-input:focus,
+.dark .assay-lab-input:focus,
+[data-theme="dark"] .account-field .assay-lab-input:focus,
+.dark .account-field .assay-lab-input:focus {
+  background-color: #1e293b !important;
+  color: #ffffff !important;
+  border-color: #f59e0b !important;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.35) !important;
+}
+
+.assay-lab-search-input,
+.account-field .assay-lab-search-input {
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+.assay-lab-search-input:focus,
+.account-field .assay-lab-search-input:focus {
+  background-color: #ffffff !important;
+  color: #020617 !important;
+  border-color: #f59e0b !important;
+}
+
+[data-theme="dark"] .assay-lab-search-input,
+.dark .assay-lab-search-input,
+[data-theme="dark"] .account-field .assay-lab-search-input,
+.dark .account-field .assay-lab-search-input,
+[data-theme="dark"] .assay-lab-search-input:focus,
+.dark .assay-lab-search-input:focus,
+[data-theme="dark"] .account-field .assay-lab-search-input:focus,
+.dark .account-field .assay-lab-search-input:focus {
+  background-color: #1e293b !important;
+  color: #ffffff !important;
+  border-color: #f59e0b !important;
+}
+
 [data-theme="dark"] .dashboard-search-dialog,
 .dark .dashboard-search-dialog {
   border-color: #3b4d68;

@@ -8,6 +8,7 @@ import DocumentOperationTypeSelector from '@/src/components/documents/DocumentOp
 import Field from '@/src/components/documents/Field';
 import MoneyInputField from '@/src/components/documents/MoneyInputField';
 import SlidingToggle from '@/src/components/documents/SlidingToggle';
+import { AssayLaboratorySelect } from '@/components/AssayLaboratorySelect';
 import { useAppSettings } from '@/src/components/SettingsProvider';
 import type { DetailState, DocumentLine, MeltedInventoryItem, RawOperationKind } from '@/src/components/documents/RawGoldTab';
 import {
@@ -358,12 +359,13 @@ export default function GoldSaleTab({
             {!isMisc && isMoltenOrConditional ? (
               <>
                 <Field label="نام آزمایشگاه ری‌گیری" required={isAssayRequired} error={errors.labName}>
-                  <input
-                    ref={labInputRef}
+                  <AssayLaboratorySelect
+                    inputRef={labInputRef}
                     value={draftLine.details.labName}
-                    onChange={(event) => updateDraftDetail('labName', event.target.value)}
+                    onChange={(val) => updateDraftDetail('labName', val)}
                     onKeyDown={handleKeyDownEnter}
-                    placeholder="نام آزمایشگاه"
+                    placeholder="انتخاب یا جستجوی ری‌گیری..."
+                    error={errors.labName}
                   />
                 </Field>
                 <Field label="شماره پاکت / انگ" required={isAssayRequired} error={errors.stampNumber}>

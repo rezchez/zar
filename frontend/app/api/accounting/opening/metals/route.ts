@@ -6,7 +6,11 @@ import { hasPermission } from '@/lib/authorization';
 import { dateToJalaliString } from '@/lib/jalali';
 import {
   calculateMetalInventoryBalances,
+  DEFAULT_METAL_TYPE_IDS,
+  INVENTORY_TYPE_LABELS,
+  isLabAndStampRequired,
   parseMetalDocumentDetails,
+  resolveMetalTypeId,
   type MetalInventoryType,
   type MetalOpeningRecord,
 } from '@/lib/metal-inventory';
@@ -47,7 +51,15 @@ function extractPbErrorMessage(error: unknown, fallback: string): string {
 }
 
 const VALID_METALS: PreciousMetalType[] = ['gold', 'silver', 'platinum'];
-const VALID_INVENTORY_TYPES: MetalInventoryType[] = ['conditional_melted', 'miscellaneous_melted', 'general_metal'];
+const VALID_INVENTORY_TYPES: MetalInventoryType[] = [
+  'melted',
+  'conditional',
+  'miscellaneous',
+  'sowaleh',
+  'conditional_melted',
+  'miscellaneous_melted',
+  'general_metal',
+];
 
 export async function GET() {
   const context = await getServerAuthContext();
@@ -105,6 +117,7 @@ export async function GET() {
         return {
           id: String(r.id || ''),
           metal,
+          metalType: String(r.metal_type || resolveMetalTypeId(metal)),
           inventoryType: (r.inventory_type || 'general_metal') as MetalInventoryType,
           rawWeight,
           purity,
@@ -158,6 +171,7 @@ export async function GET() {
         return {
           id: String(r.id || ''),
           metal,
+          metalType: resolveMetalTypeId(metal),
           inventoryType,
           rawWeight: weight,
           purity,
@@ -274,21 +288,26 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
-    // 4. Validate Purity
-    if (!Number.isFinite(purity) || purity <= 0 || purity > 1000) {
+    // 4. Validate Purity (For conditional gold, purity is provisionally set to 750)
+    const isConditional = inventoryType === 'conditional' || inventoryType === 'conditional_melted';
+    const effectivePurity = isConditional ? (metalInput === 'gold' ? 750 : baseKarat) : purity;
+
+    if (!isConditional && (!Number.isFinite(effectivePurity) || effectivePurity <= 0 || effectivePurity > 1000)) {
       return NextResponse.json({ message: 'عیار معتبر وارد کنید (بین ۱ تا ۱۰۰۰).' }, { status: 400 });
     }
 
-    // 5. Conditional Melted Metal Specific Validations: labName and stampNumber are required
-    if (inventoryType === 'conditional_melted') {
+    // 5. Melted and Conditional Metal Validations: labName and stampNumber are mandatory
+    const requiresLabAndStamp = isLabAndStampRequired(inventoryType);
+    if (requiresLabAndStamp) {
+      const typeLabel = INVENTORY_TYPE_LABELS[inventoryType] || 'آبشده';
       if (!stampNumber) {
-        return NextResponse.json({ message: 'برای آبشده شرطی، ورود شماره انگ الزامی است.' }, { status: 400 });
+        return NextResponse.json({ message: `برای ${typeLabel}، ورود شماره انگ الزامی است.` }, { status: 400 });
       }
       if (!labName) {
-        return NextResponse.json({ message: 'برای آبشده شرطی، ورود نام ری‌گیری (آزمایشگاه) الزامی است.' }, { status: 400 });
+        return NextResponse.json({ message: `برای ${typeLabel}، ورود نام ری‌گیری (آزمایشگاه) الزامی است.` }, { status: 400 });
       }
 
-      // Check for duplicate stampNumber when creating a new conditional record in metal_inventory
+      // Check for duplicate stampNumber when creating a new record in metal_inventory
       if (!recordId) {
         try {
           const existing = await context.pb.collection('metal_inventory').getFirstListItem(
@@ -300,7 +319,7 @@ export async function POST(request: Request) {
 
           if (existing) {
             return NextResponse.json({
-              message: `موجودی اولیه آبشده شرطی با شماره انگ «${stampNumber}» قبلاً ثبت شده است. لطفاً همان رکورد را ویرایش کنید.`,
+              message: `موجودی اولیه با شماره انگ «${stampNumber}» قبلاً ثبت شده است. لطفاً همان رکورد را ویرایش کنید.`,
             }, { status: 409 });
           }
         } catch {
@@ -315,27 +334,44 @@ export async function POST(request: Request) {
 
     // 6. Calculate converted weight at base karat with deterministic precision rounding
     const roundedRawWeight = roundWeight(weight, weightPrecision);
-    const convertedWeight = metalAtBaseKarat(roundedRawWeight, purity, baseKarat, weightPrecision);
+    const convertedWeight = metalAtBaseKarat(roundedRawWeight, effectivePurity, baseKarat, weightPrecision);
     const dateValue = dateInput || dateToJalaliString(new Date());
+
+    const metalName = metalInput === 'gold' ? 'طلا' : metalInput === 'silver' ? 'نقره' : 'پلاتین';
+    const typeLabel = INVENTORY_TYPE_LABELS[inventoryType] || inventoryType;
+
+    // Resolve metal_type relation ID from metal_types collection based on metalInput
+    let metalTypeId = resolveMetalTypeId(metalInput);
+    try {
+      const metalTypeRecord = await context.pb.collection('metal_types').getFirstListItem(
+        context.pb.filter('code = {:metal} || id = {:metal} || symbol = {:metal}', { metal: metalInput }),
+      ).catch(() => null);
+      if (metalTypeRecord?.id) {
+        metalTypeId = metalTypeRecord.id;
+      }
+    } catch {
+      // fallback to resolveMetalTypeId
+    }
 
     // Prepare payload for dedicated metal_inventory collection
     const payload: Record<string, unknown> = {
       metal: metalInput,
+      metal_type: metalTypeId,
       inventory_type: inventoryType,
       direction: 'in',
       transaction_type: 'opening_balance',
       raw_weight: roundedRawWeight,
-      purity,
+      purity: effectivePurity,
       base_karat: baseKarat,
       converted_weight: convertedWeight,
-      lab_name: inventoryType === 'conditional_melted' ? labName : '',
-      stamp_number: inventoryType === 'conditional_melted' ? stampNumber : '',
+      lab_name: requiresLabAndStamp ? labName : (labName || ''),
+      stamp_number: requiresLabAndStamp ? stampNumber : (stampNumber || ''),
       unit_price: 0,
       total_amount: Math.round(totalAmount),
       date: dateValue,
       description:
         description ||
-        `موجودی اولیه ${metalInput === 'gold' ? 'طلا' : metalInput === 'silver' ? 'نقره' : 'پلاتین'}${inventoryType === 'conditional_melted' ? ` (انگ: ${stampNumber})` : ''}`,
+        `موجودی اولیه ${metalName} ${typeLabel}${requiresLabAndStamp ? ` (انگ: ${stampNumber})` : ''}${isConditional ? ' [عیار موقت ۷۵۰]' : ''}`,
       is_opening_balance: true,
       is_deleted: false,
       updated_by: context.user.id,
@@ -358,14 +394,14 @@ export async function POST(request: Request) {
             metal: metalInput,
             inventoryType,
             weight: roundedRawWeight,
-            purity,
+            purity: effectivePurity,
             convertedWeight,
             totalAmount: Math.round(totalAmount),
           },
           dateValue,
           context.user.id,
           context.pb,
-          description || `موجودی اولیه ${metalInput === 'gold' ? 'طلا' : metalInput === 'silver' ? 'نقره' : 'پلاتین'}: ${roundedRawWeight} گرم (معادل: ${convertedWeight} گرم)`,
+          description || `موجودی اولیه ${metalName} ${typeLabel}: ${roundedRawWeight} گرم (معادل: ${convertedWeight} گرم)`,
         );
       } catch (err) {
         // Rollback created metal_inventory record if journal creation fails to ensure atomicity
@@ -383,13 +419,14 @@ export async function POST(request: Request) {
       item: {
         id: resultRecord.id,
         metal: metalInput,
+        metalType: metalTypeId,
         inventoryType,
         rawWeight: roundedRawWeight,
-        purity,
+        purity: effectivePurity,
         baseKarat,
         convertedWeight,
-        labName: inventoryType === 'conditional_melted' ? labName : undefined,
-        stampNumber: inventoryType === 'conditional_melted' ? stampNumber : undefined,
+        labName: requiresLabAndStamp ? labName : (labName || undefined),
+        stampNumber: requiresLabAndStamp ? stampNumber : (stampNumber || undefined),
         totalAmount: Math.round(totalAmount),
         date: dateValue,
         description,

@@ -2287,7 +2287,15 @@ export interface CoinInventoryEnrichmentInput {
 export interface MetalInventoryEnrichmentInput {
   id: string;
   metal?: 'gold' | 'silver' | 'platinum' | string;
-  inventoryType?: 'conditional_melted' | 'miscellaneous_melted' | 'general_metal' | string;
+  inventoryType?:
+    | 'melted'
+    | 'conditional'
+    | 'miscellaneous'
+    | 'sowaleh'
+    | 'conditional_melted'
+    | 'miscellaneous_melted'
+    | 'general_metal'
+    | string;
   rawWeight?: number;
   raw_weight?: number;
   purity?: number;
@@ -2412,6 +2420,10 @@ export function enrichAccountsWithCoinsAndMetals(
   ];
 
   const inventoryTypeLabels: Record<string, string> = {
+    melted: 'آبشده',
+    conditional: 'شرطی',
+    miscellaneous: 'متفرقه',
+    sowaleh: 'سواله',
     conditional_melted: 'آبشده شرطی',
     miscellaneous_melted: 'آبشده متفرقه',
     general_metal: 'موجودی پایه فلز',

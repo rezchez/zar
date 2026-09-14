@@ -2,7 +2,11 @@ import { describe, expect, it } from 'bun:test';
 
 import {
   calculateMetalInventoryBalances,
+  DEFAULT_METAL_TYPE_IDS,
+  INVENTORY_TYPE_LABELS,
+  isLabAndStampRequired,
   parseMetalDocumentDetails,
+  resolveMetalTypeId,
   type MetalInventoryType,
 } from '@/lib/metal-inventory';
 import {
@@ -69,9 +73,9 @@ describe('Zarfolio — Opening Metal Inventory (Multi-Metal & Types)', () => {
     });
   });
 
-  describe('Layer 2: 9 Combinations Coverage (3 Metals x 3 Inventory Types)', () => {
+  describe('Layer 2: Initial Metal Inventory Types (آبشده، شرطی، متفرقه، سواله)', () => {
     const metals: PreciousMetalType[] = ['gold', 'silver', 'platinum'];
-    const types: MetalInventoryType[] = ['conditional_melted', 'miscellaneous_melted', 'general_metal'];
+    const types: MetalInventoryType[] = ['melted', 'conditional', 'miscellaneous', 'sowaleh'];
 
     for (const m of metals) {
       for (const t of types) {
@@ -80,6 +84,7 @@ describe('Zarfolio — Opening Metal Inventory (Multi-Metal & Types)', () => {
           const purity = m === 'gold' ? 750 : m === 'silver' ? 999 : 950;
           const baseKarat = DEFAULT_BASE_KARATS[m];
           const convertedWeight = metalAtBaseKarat(rawWeight, purity, baseKarat, 3);
+          const requiresAngAndLab = isLabAndStampRequired(t);
 
           const details = {
             metalType: m,
@@ -88,8 +93,8 @@ describe('Zarfolio — Opening Metal Inventory (Multi-Metal & Types)', () => {
             purity,
             baseKarat,
             convertedWeight,
-            labName: t === 'conditional_melted' ? 'ری‌گیری مرکزی' : undefined,
-            stampNumber: t === 'conditional_melted' ? '98765' : undefined,
+            labName: requiresAngAndLab ? 'ری‌گیری اعتماد' : undefined,
+            stampNumber: requiresAngAndLab ? '98765' : undefined,
           };
 
           const parsed = parseMetalDocumentDetails(JSON.stringify(details));
@@ -98,15 +103,43 @@ describe('Zarfolio — Opening Metal Inventory (Multi-Metal & Types)', () => {
           expect(parsed.rawWeight).toBe(rawWeight);
           expect(parsed.convertedWeight).toBe(convertedWeight);
 
-          if (t === 'conditional_melted') {
+          if (requiresAngAndLab) {
             expect(parsed.stampNumber).toBe('98765');
-            expect(parsed.labName).toBe('ری‌گیری مرکزی');
+            expect(parsed.labName).toBe('ری‌گیری اعتماد');
           } else {
             expect(parsed.stampNumber).toBeUndefined();
           }
         });
       }
     }
+
+    it('enforces mandatory labName and stampNumber for melted (آبشده) and conditional (شرطی)', () => {
+      expect(isLabAndStampRequired('melted')).toBe(true);
+      expect(isLabAndStampRequired('conditional')).toBe(true);
+      expect(isLabAndStampRequired('conditional_melted')).toBe(true);
+    });
+
+    it('confirms that miscellaneous (متفرقه) and sowaleh (سواله) do not require labName and stampNumber', () => {
+      expect(isLabAndStampRequired('miscellaneous')).toBe(false);
+      expect(isLabAndStampRequired('sowaleh')).toBe(false);
+      expect(isLabAndStampRequired('miscellaneous_melted')).toBe(false);
+      expect(isLabAndStampRequired('general_metal')).toBe(false);
+    });
+
+    it('provides correct Persian labels for all inventory types', () => {
+      expect(INVENTORY_TYPE_LABELS['melted']).toBe('آبشده');
+      expect(INVENTORY_TYPE_LABELS['conditional']).toBe('شرطی');
+      expect(INVENTORY_TYPE_LABELS['miscellaneous']).toBe('متفرقه');
+      expect(INVENTORY_TYPE_LABELS['sowaleh']).toBe('سواله');
+    });
+
+    it('sets provisional purity of 750 for conditional gold until assay lab result is known', () => {
+      const rawWeight = 100;
+      const conditionalPurity = 750;
+      const baseKarat = 750;
+      const convertedWeight = metalAtBaseKarat(rawWeight, conditionalPurity, baseKarat, 3);
+      expect(convertedWeight).toBe(100);
+    });
   });
 
   describe('Layer 3: Inventory Balances Derivation & Metal Isolation', () => {
@@ -322,6 +355,35 @@ describe('Zarfolio — Opening Metal Inventory (Multi-Metal & Types)', () => {
           mockPb,
         ),
       ).rejects.toThrow('مبلغ ارزشیابی موجودی اولیه فلزات نمی‌تواند صفر باشد.');
+    });
+  });
+
+  describe('Layer 5: Metal Type Relation (metal_type) Resolution', () => {
+    it('resolves correct default metal_type ID for gold, silver, and platinum', () => {
+      expect(resolveMetalTypeId('gold')).toBe(DEFAULT_METAL_TYPE_IDS.gold);
+      expect(resolveMetalTypeId('gold')).toBe('metal_gold_0001');
+
+      expect(resolveMetalTypeId('silver')).toBe(DEFAULT_METAL_TYPE_IDS.silver);
+      expect(resolveMetalTypeId('silver')).toBe('metal_silver_001');
+
+      expect(resolveMetalTypeId('platinum')).toBe(DEFAULT_METAL_TYPE_IDS.platinum);
+      expect(resolveMetalTypeId('platinum')).toBe('metal_plat_0001');
+    });
+
+    it('resolves metal_type ID from Persian names or chemical symbols', () => {
+      expect(resolveMetalTypeId('طلا')).toBe('metal_gold_0001');
+      expect(resolveMetalTypeId('Au')).toBe('metal_gold_0001');
+
+      expect(resolveMetalTypeId('نقره')).toBe('metal_silver_001');
+      expect(resolveMetalTypeId('Ag')).toBe('metal_silver_001');
+
+      expect(resolveMetalTypeId('پلاتین')).toBe('metal_plat_0001');
+      expect(resolveMetalTypeId('Pt')).toBe('metal_plat_0001');
+    });
+
+    it('returns empty string for unrecognized metal strings', () => {
+      expect(resolveMetalTypeId('copper')).toBe('');
+      expect(resolveMetalTypeId('')).toBe('');
     });
   });
 });

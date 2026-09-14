@@ -465,31 +465,6 @@ export default function InitialGoodsInventoryModal({
               </div>
             )}
 
-            {/* Quick Type Selection Preset */}
-            <div>
-              <label className="mb-1.5 block text-xs font-bold text-slate-700 dark:text-slate-300">
-                انتخاب از الگوهای پیش‌فرض صنف طلا
-              </label>
-              <select
-                value={selectedGoodsTypeId}
-                onChange={(e) => handleSelectGoodsType(e.target.value)}
-                className="w-full rounded-2xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-900 shadow-2xs transition-all focus:border-purple-500 focus:bg-white focus:text-slate-900 focus:outline-none focus:ring-2 focus:ring-purple-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-purple-400 dark:focus:bg-slate-800 dark:focus:text-white dark:focus:ring-purple-400/20"
-              >
-                <option value="" className="bg-white text-slate-900 dark:bg-slate-800 dark:text-slate-100">
-                  -- کالای سفارشی / وارد کردن نام دلخواه --
-                </option>
-                {goodsTypes.map((t) => (
-                  <option
-                    key={t.id}
-                    value={t.id}
-                    className="bg-white text-slate-900 dark:bg-slate-800 dark:text-slate-100"
-                  >
-                    {t.name} ({ALL_GOODS_CATEGORIES[t.category]?.name || t.category})
-                  </option>
-                ))}
-              </select>
-            </div>
-
             {/* Item Name & Category */}
             <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
               <div>

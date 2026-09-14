@@ -170,7 +170,7 @@ export default function InitialGoodsInventoryClient({
   return (
     <div dir="rtl" className="mx-auto max-w-6xl space-y-6">
       {/* Page Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-center gap-3">
           <Link
             href="/dashboard/documents/initial-inventory"
@@ -194,32 +194,33 @@ export default function InitialGoodsInventoryClient({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
+        <div className="flex items-center gap-2 shrink-0">
           <Link
             href="/dashboard/accounting/chart-of-accounts?focus=1130"
-            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-slate-700 shadow-xs transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 cursor-pointer"
+            title="مشاهده در درختواره حساب‌ها (۱۱۳۰۴۰)"
           >
             <FolderTree size={16} className="text-purple-600 dark:text-purple-400" />
-            <span>مشاهده در درختواره (۱۱۳۰۴۰)</span>
+            <span className="hidden sm:inline">مشاهده در درختواره (۱۱۳۰۴۰)</span>
           </Link>
 
           <button
             type="button"
             onClick={() => void fetchInventory()}
             disabled={loading}
-            className="rounded-xl border border-slate-200 bg-white p-2 text-slate-500 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 disabled:opacity-50"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 shadow-xs transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 cursor-pointer"
             title="به‌روزرسانی"
           >
-            <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
+            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
           </button>
 
           <button
             type="button"
             onClick={handleOpenCreate}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-purple-600 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-purple-700 dark:bg-purple-500 dark:hover:bg-purple-600"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-purple-600 px-4 text-xs font-bold text-white shadow-sm transition hover:bg-purple-700 dark:bg-purple-500 dark:hover:bg-purple-600 cursor-pointer"
           >
-            <Plus size={16} />
-            <span>ثبت موجودی اولیه رزین</span>
+            <Plus size={16} strokeWidth={2.5} />
+            <span>ثبت موجودی اولیه رزین و کالا</span>
           </button>
         </div>
       </div>
@@ -343,7 +344,7 @@ export default function InitialGoodsInventoryClient({
               className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-purple-600 px-4 py-2 text-xs font-bold text-white hover:bg-purple-700 dark:bg-purple-500"
             >
               <Plus size={16} />
-              <span>ثبت موجودی اولیه رزین</span>
+              <span>ثبت موجودی اولیه رزین و کالا</span>
             </button>
           </div>
         ) : (
@@ -397,9 +398,16 @@ export default function InitialGoodsInventoryClient({
                       </td>
 
                       <td className="px-3 py-3.5">
-                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold border ${catMeta.badgeColor}`}>
-                          {catMeta.name} ({catMeta.accountCode})
-                        </span>
+                        <div className="flex flex-col gap-1">
+                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold border w-fit ${catMeta.badgeColor}`}>
+                            {catMeta.name} ({catMeta.accountCode})
+                          </span>
+                          {item.goodsType?.name && item.goodsType.name !== catMeta.name && (
+                            <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                              نوع کالا: {item.goodsType.name}
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       <td className="px-3 py-3.5 font-bold text-slate-900 dark:text-white">

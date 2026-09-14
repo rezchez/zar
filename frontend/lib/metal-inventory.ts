@@ -1,6 +1,58 @@
 import { DEFAULT_BASE_KARATS, metalAtBaseKarat, roundWeight, type PreciousMetalType, type WeightDecimalPlaces } from './weight';
 
-export type MetalInventoryType = 'conditional_melted' | 'miscellaneous_melted' | 'general_metal';
+export type MetalInventoryType =
+  | 'melted'
+  | 'conditional'
+  | 'miscellaneous'
+  | 'sowaleh'
+  | 'conditional_melted'
+  | 'miscellaneous_melted'
+  | 'general_metal';
+
+export const INVENTORY_TYPE_LABELS: Record<string, string> = {
+  melted: 'آبشده',
+  conditional: 'شرطی',
+  miscellaneous: 'متفرقه',
+  sowaleh: 'سواله',
+  // Backward compatibility:
+  conditional_melted: 'آبشده شرطی',
+  miscellaneous_melted: 'آبشده متفرقه',
+  general_metal: 'موجودی فلز',
+};
+
+/**
+ * Both 'melted' (آبشده) and 'conditional' (شرطی) strictly require
+ * Assay Laboratory Name (نام ری‌گیری) and Ang / Stamp Number (شماره انگ).
+ */
+export function isLabAndStampRequired(type: MetalInventoryType | string): boolean {
+  return type === 'melted' || type === 'conditional' || type === 'conditional_melted';
+}
+
+/**
+ * Default PocketBase record IDs for the metal_types collection.
+ */
+export const DEFAULT_METAL_TYPE_IDS: Record<PreciousMetalType, string> = {
+  gold: 'metal_gold_0001',
+  silver: 'metal_silver_001',
+  platinum: 'metal_plat_0001',
+};
+
+/**
+ * Resolves the metal_types collection record ID based on metal name or code.
+ */
+export function resolveMetalTypeId(metal: PreciousMetalType | string): string {
+  const normalized = String(metal || '').toLowerCase().trim();
+  if (normalized === 'gold' || normalized === 'au' || normalized === 'طلا') {
+    return DEFAULT_METAL_TYPE_IDS.gold;
+  }
+  if (normalized === 'silver' || normalized === 'ag' || normalized === 'نقره') {
+    return DEFAULT_METAL_TYPE_IDS.silver;
+  }
+  if (normalized === 'platinum' || normalized === 'pt' || normalized === 'پلاتین') {
+    return DEFAULT_METAL_TYPE_IDS.platinum;
+  }
+  return '';
+}
 
 export interface MetalDocumentDetails {
   metalType: PreciousMetalType;
@@ -18,6 +70,7 @@ export interface MetalDocumentDetails {
 export interface MetalOpeningRecord {
   id: string;
   metal: PreciousMetalType;
+  metalType?: string;
   inventoryType: MetalInventoryType;
   rawWeight: number;
   purity: number;

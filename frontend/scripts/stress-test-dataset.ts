@@ -221,74 +221,76 @@ for (let i = 1; i <= 100; i++) {
   const totalAmount = Math.round(convertedWeight * unitPrice);
   const id = `met_${generateId().slice(4)}`;
 
-  db.run(`
-    INSERT INTO metal_inventory (id, metal, inventory_type, metal_type, purity, base_karat, raw_weight, converted_weight, unit_price, total_amount, lab_name, stamp_number, direction, transaction_type, is_opening_balance, date, description, created_by, updated_by, created, updated)
-    VALUES (?, ?, 'raw', 'scrap', ?, ?, ?, ?, ?, ?, '', '', 'in', 'opening_balance', 1, '1404/01/01', ?, ?, ?, ?, ?)
-  `, [
-    id,
-    metal,
-    purity,
-    baseKarat,
-    rawWeight,
-    convertedWeight,
-    unitPrice,
-    totalAmount,
-    `موجودی اولیه فلز ${metal} عیار ${purity}`,
-    USER_ID,
-    USER_ID,
-    TEST_RUN_TIMESTAMP,
-    TEST_RUN_TIMESTAMP
-  ]);
+    const metalTypeId = metal === 'gold' ? 'metal_gold_0001' : metal === 'silver' ? 'metal_silver_001' : 'metal_plat_0001';
+    db.run(`
+      INSERT INTO metal_inventory (id, metal, inventory_type, metal_type, purity, base_karat, raw_weight, converted_weight, unit_price, total_amount, lab_name, stamp_number, direction, transaction_type, is_opening_balance, date, description, created_by, updated_by, created, updated)
+      VALUES (?, ?, 'miscellaneous', ?, ?, ?, ?, ?, ?, ?, '', '', 'in', 'opening_balance', 1, '1404/01/01', ?, ?, ?, ?, ?)
+    `, [
+      id,
+      metal,
+      metalTypeId,
+      purity,
+      baseKarat,
+      rawWeight,
+      convertedWeight,
+      unitPrice,
+      totalAmount,
+      `موجودی اولیه فلز ${metal} عیار ${purity}`,
+      USER_ID,
+      USER_ID,
+      TEST_RUN_TIMESTAMP,
+      TEST_RUN_TIMESTAMP
+    ]);
 
-  // Post journal entry for metal
-  const jId = generateId();
-  db.run(`
-    INSERT INTO journal_entries (id, entryNumber, entryDate, entryDateJalali, description, sourceType, sourceId, sourceKey, status, totalDebit, totalCredit, createdBy, updatedBy, created, updated)
-    VALUES (?, ?, '2026-03-21', '1404/01/01', ?, 'opening_metal', ?, ?, 'posted', ?, ?, ?, ?, ?, ?)
-  `, [
-    jId,
-    `JRN-MET-${i}`,
-    `سند افتتاحیه فلزات - ${metal} - وزن ${rawWeight}g`,
-    id,
-    `opening:metal:${id}`,
-    totalAmount,
-    totalAmount,
-    USER_ID,
-    USER_ID,
-    TEST_RUN_TIMESTAMP,
-    TEST_RUN_TIMESTAMP
-  ]);
+    // Post journal entry for metal
+    const jId = generateId();
+    db.run(`
+      INSERT INTO journal_entries (id, entryNumber, entryDate, entryDateJalali, description, sourceType, sourceId, sourceKey, status, totalDebit, totalCredit, createdBy, updatedBy, created, updated)
+      VALUES (?, ?, '2026-03-21', '1404/01/01', ?, 'opening_metal', ?, ?, 'posted', ?, ?, ?, ?, ?, ?)
+    `, [
+      jId,
+      `JRN-MET-${i}`,
+      `سند افتتاحیه فلزات - ${metal} - وزن ${rawWeight}g`,
+      id,
+      `opening:metal:${id}`,
+      totalAmount,
+      totalAmount,
+      USER_ID,
+      USER_ID,
+      TEST_RUN_TIMESTAMP,
+      TEST_RUN_TIMESTAMP
+    ]);
 
-  db.run(`
-    INSERT INTO journal_lines (id, journal_entry_id, account_id, debit, credit, description, created, updated)
-    VALUES (?, ?, '1130', ?, 0, 'موجودی طلای خام و فلزات', ?, ?)
-  `, [generateId(), jId, totalAmount, TEST_RUN_TIMESTAMP, TEST_RUN_TIMESTAMP]);
+    db.run(`
+      INSERT INTO journal_lines (id, journal_entry_id, account_id, debit, credit, description, created, updated)
+      VALUES (?, ?, '1130', ?, 0, 'موجودی طلای خام و فلزات', ?, ?)
+    `, [generateId(), jId, totalAmount, TEST_RUN_TIMESTAMP, TEST_RUN_TIMESTAMP]);
 
-  db.run(`
-    INSERT INTO journal_lines (id, journal_entry_id, account_id, debit, credit, description, created, updated)
-    VALUES (?, ?, '3100', 0, ?, 'سرمایه اولیه', ?, ?)
-  `, [generateId(), jId, totalAmount, TEST_RUN_TIMESTAMP, TEST_RUN_TIMESTAMP]);
+    db.run(`
+      INSERT INTO journal_lines (id, journal_entry_id, account_id, debit, credit, description, created, updated)
+      VALUES (?, ?, '3100', 0, ?, 'سرمایه اولیه', ?, ?)
+    `, [generateId(), jId, totalAmount, TEST_RUN_TIMESTAMP, TEST_RUN_TIMESTAMP]);
 
-  metalRecords.push({ id, metal, purity, rawWeight, convertedWeight, totalAmount });
-}
+    metalRecords.push({ id, metal, purity, rawWeight, convertedWeight, totalAmount });
+  }
 
-// 1.3 Melted Gold (100 records)
-const meltedRecords: any[] = [];
-const labNames = ['ری‌گیری زرین', 'عیارسنجی طهران', 'آزمایشگاه عیار دقیق', 'ری‌گیری اعتماد', 'ری‌گیری فردوسی'];
-for (let i = 1; i <= 100; i++) {
-  const lab = labNames[i % labNames.length];
-  const stamp = `ENG-${10000 + (i % 80)}`; // 20 intentionally repeated stamps to test duplicate handling
-  const purity = 740 + (i % 21); // 740 to 760
-  const rawWeight = Math.round((25 + (i * 2.5)) * 1000) / 1000;
-  const convertedWeight = Math.round(((rawWeight * purity) / 750) * 1000) / 1000;
-  const unitPrice = 46000000;
-  const totalAmount = Math.round(convertedWeight * unitPrice);
-  const id = `mlt_${generateId().slice(4)}`;
+  // 1.3 Melted Gold (100 records)
+  const meltedRecords: any[] = [];
+  const labNames = ['ری‌گیری زرین', 'عیارسنجی طهران', 'آزمایشگاه عیار دقیق', 'ری‌گیری اعتماد', 'ری‌گیری فردوسی'];
+  for (let i = 1; i <= 100; i++) {
+    const lab = labNames[i % labNames.length];
+    const stamp = `ENG-${10000 + (i % 80)}`; // 20 intentionally repeated stamps to test duplicate handling
+    const purity = 740 + (i % 21); // 740 to 760
+    const rawWeight = Math.round((25 + (i * 2.5)) * 1000) / 1000;
+    const convertedWeight = Math.round(((rawWeight * purity) / 750) * 1000) / 1000;
+    const unitPrice = 46000000;
+    const totalAmount = Math.round(convertedWeight * unitPrice);
+    const id = `mlt_${generateId().slice(4)}`;
 
-  db.run(`
-    INSERT INTO metal_inventory (id, metal, inventory_type, metal_type, purity, base_karat, raw_weight, converted_weight, unit_price, total_amount, lab_name, stamp_number, direction, transaction_type, is_opening_balance, date, description, created_by, updated_by, created, updated)
-    VALUES (?, 'gold', 'melted', 'melted_bar', ?, 750, ?, ?, ?, ?, ?, ?, 'in', 'opening_balance', 1, '1404/01/01', ?, ?, ?, ?, ?)
-  `, [
+    db.run(`
+      INSERT INTO metal_inventory (id, metal, inventory_type, metal_type, purity, base_karat, raw_weight, converted_weight, unit_price, total_amount, lab_name, stamp_number, direction, transaction_type, is_opening_balance, date, description, created_by, updated_by, created, updated)
+      VALUES (?, 'gold', 'melted', 'metal_gold_0001', ?, 750, ?, ?, ?, ?, ?, ?, 'in', 'opening_balance', 1, '1404/01/01', ?, ?, ?, ?, ?)
+    `, [
     id,
     purity,
     rawWeight,

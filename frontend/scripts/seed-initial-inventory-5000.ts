@@ -324,11 +324,12 @@ db.transaction(() => {
     const totalAmount = Math.round(convertedWeight * unitPrice);
     const id = `met_${generateId().slice(4)}`;
 
+    const metalTypeId = metal === 'gold' ? 'metal_gold_0001' : metal === 'silver' ? 'metal_silver_001' : 'metal_plat_0001';
     insertMetal.run(
       id,
       metal,
-      'raw',
-      'scrap',
+      'miscellaneous',
+      metalTypeId,
       purity,
       baseKarat,
       rawWeight,
@@ -377,8 +378,8 @@ db.transaction(() => {
     insertMetal.run(
       id,
       'gold',
-      'conditional_melted',
-      'melted_bar',
+      'conditional',
+      'metal_gold_0001',
       purity,
       750,
       rawWeight,
