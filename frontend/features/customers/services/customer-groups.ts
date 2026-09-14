@@ -43,20 +43,25 @@ export function isRefinerCustomer(
   customerOrGroup: string | Record<string, any> | null | undefined,
 ): boolean {
   if (!customerOrGroup) return false;
-  if (typeof customerOrGroup === 'string') {
-    const clean = customerOrGroup.trim();
-    const lower = clean.toLowerCase();
-    return clean === 'ریگیر' || clean === 'ریگیری' || lower === 'refiner' || lower === 'refining';
-  }
+  const rawStr =
+    typeof customerOrGroup === 'string'
+      ? customerOrGroup
+      : String(
+          customerOrGroup.groupName ||
+          customerOrGroup.group_name ||
+          customerOrGroup.group ||
+          customerOrGroup.name ||
+          ''
+        );
 
-  const obj = customerOrGroup as Record<string, any>;
-  const nameOrSlug = String(obj.groupName || obj.group_name || obj.group || obj.name || '').trim();
-  const cleanLower = nameOrSlug.toLowerCase();
+  const clean = rawStr.trim();
+  // Strip ZWNJ (\u200c), zero-width spaces (\u200b), and spaces for resilient Persian matching
+  const normalized = clean.replace(/[\u200c\u200b\s]/g, '').toLowerCase();
 
   return (
-    nameOrSlug === 'ریگیر' ||
-    nameOrSlug === 'ریگیری' ||
-    cleanLower === 'refiner' ||
-    cleanLower === 'refining'
+    normalized === 'ریگیر' ||
+    normalized === 'ریگیری' ||
+    normalized === 'refiner' ||
+    normalized === 'refining'
   );
 }

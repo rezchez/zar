@@ -127,6 +127,18 @@ export function mapCustomer(
     (result as Record<string, unknown>)[field] =
       typeof record[field] === 'string' ? record[field] : '';
   }
+
+  // Ensure groupName is populated if recorded under group or group_name
+  const resolvedGroup = typeof record.groupName === 'string' && record.groupName.trim()
+    ? record.groupName.trim()
+    : typeof record.group === 'string' && record.group.trim()
+      ? record.group.trim()
+      : typeof record.group_name === 'string' && record.group_name.trim()
+        ? record.group_name.trim()
+        : result.groupName || '';
+
+  result.groupName = resolvedGroup;
+
   for (const field of customerDateFields) {
     (result as Record<string, unknown>)[field] =
       typeof record[field] === 'string' ? record[field] : '';

@@ -4,11 +4,15 @@ import { roundWeight, metalAtBaseKarat } from '../lib/weight';
 
 describe('Refining Module - Business Rules & Invariants', () => {
   describe('Layer 1: Refiner Group Identification', () => {
-    test('identifies refiner group customers correctly by Persian and English group names', () => {
+    test('identifies refiner group customers correctly by Persian (with/without ZWNJ) and English group names', () => {
       expect(isRefinerCustomer({ groupName: 'ریگیر' })).toBe(true);
       expect(isRefinerCustomer({ groupName: 'ریگیری' })).toBe(true);
+      expect(isRefinerCustomer({ groupName: 'ری‌گیر' })).toBe(true); // with ZWNJ \u200c
+      expect(isRefinerCustomer({ groupName: 'ری‌گیری' })).toBe(true); // with ZWNJ \u200c
+      expect(isRefinerCustomer({ group_name: 'ری‌گیری' })).toBe(true); // snake_case fallback
       expect(isRefinerCustomer('refiner')).toBe(true);
       expect(isRefinerCustomer('refining')).toBe(true);
+      expect(isRefinerCustomer('Refiner')).toBe(true);
 
       expect(isRefinerCustomer({ groupName: 'مشتری' })).toBe(false);
       expect(isRefinerCustomer({ groupName: 'بنکدار' })).toBe(false);
