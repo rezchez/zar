@@ -6,6 +6,7 @@ import {
   FileSpreadsheet,
   History,
   LayoutDashboard,
+  Package,
   ShieldCheck,
   SlidersHorizontal,
   UserPlus,
@@ -79,6 +80,12 @@ const navGroupsBase: NavGroupData[] = [
             href: '/dashboard/documents/initial-inventory',
           },
         ],
+      },
+      {
+        id: 'refining-packets',
+        title: 'پاکت‌های نزد ریگیری',
+        icon: Package,
+        href: '/dashboard/refining-packets',
       },
       {
         id: 'reports',
@@ -238,17 +245,19 @@ export default function DashboardShell({
         ? 'program-settings'
         : pathname === '/dashboard/reports'
           ? 'reports'
-          : pathname === '/dashboard/documents/new'
-            ? 'document-new'
-            : pathname === '/dashboard/documents/initial-inventory' || pathname === '/dashboard/documents/opening-balance'
-              ? 'document-initial-inventory'
-              : pathname === '/dashboard/customers'
-                ? 'customer-list'
-                : pathname === '/dashboard/customers/new'
-                  ? 'customer-new'
-                  : pathname.startsWith('/dashboard/customers/')
-                    ? 'customer-list'
-                    : selectedItem;
+          : pathname === '/dashboard/refining-packets'
+            ? 'refining-packets'
+            : pathname === '/dashboard/documents/new'
+              ? 'document-new'
+              : pathname === '/dashboard/documents/initial-inventory' || pathname === '/dashboard/documents/opening-balance'
+                ? 'document-initial-inventory'
+                : pathname === '/dashboard/customers'
+                  ? 'customer-list'
+                  : pathname === '/dashboard/customers/new'
+                    ? 'customer-new'
+                    : pathname.startsWith('/dashboard/customers/')
+                      ? 'customer-list'
+                      : selectedItem;
 
   function handleSelect(item: NavItemData) {
     setSelectedItem(item.id);

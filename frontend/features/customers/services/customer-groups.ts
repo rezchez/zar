@@ -22,6 +22,7 @@ export const SYSTEM_GROUPS: Array<{ name: string; slug: string; englishName: str
   { name: 'جواهر ساز', slug: 'jeweler', englishName: 'Jeweler' },
   { name: 'تراشکار', slug: 'lapidary', englishName: 'Lapidary' },
   { name: 'تعمیرکار', slug: 'repairer', englishName: 'Repairer' },
+  { name: 'ریگیر', slug: 'refiner', englishName: 'Refiner' },
 ];
 
 export function isSystemGroup(slugOrName: string): boolean {
@@ -36,4 +37,19 @@ export function generateGroupSlug(name: string): string {
   const systemMatch = SYSTEM_GROUPS.find((g) => g.name === clean);
   if (systemMatch) return systemMatch.slug;
   return `custom_${clean.toLowerCase().replace(/\s+/g, '_')}_${Date.now()}`;
+}
+
+export function isRefinerCustomer(customerOrGroup: string | { groupName?: string } | null | undefined): boolean {
+  if (!customerOrGroup) return false;
+  const nameOrSlug = typeof customerOrGroup === 'string'
+    ? customerOrGroup.trim()
+    : (customerOrGroup.groupName || '').trim();
+
+  const clean = nameOrSlug.toLowerCase();
+  return (
+    nameOrSlug === 'ریگیر' ||
+    nameOrSlug === 'ریگیری' ||
+    clean === 'refiner' ||
+    clean === 'refining'
+  );
 }
