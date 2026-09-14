@@ -241,5 +241,35 @@ describe('Zarfolio — Checks Creator & Frontend Display Tests', () => {
       expect(validCustomerId).toBeNull();
       expect(validCustomerId).not.toBe(bankAccountId);
     });
+
+    it('correctly maps distinct checkNumber and sayadId from collection fields', () => {
+      const checkRaw = {
+        id: 'chk_separate_fields_1',
+        check_number: '987654321',
+        sayadId: '1234567890123456',
+        amount: 50000000,
+        currency: 'IRR',
+        status: 'issued',
+        is_opening_balance: true,
+      };
+
+      const mapped = mapCheckRecord(checkRaw);
+      expect(mapped.checkNumber).toBe('987654321');
+      expect(mapped.sayadId).toBe('1234567890123456');
+    });
+
+    it('falls back checkNumber from checkNumber property or sayadId when check_number is absent', () => {
+      const legacyRaw = {
+        id: 'chk_legacy_fallback',
+        sayadId: '1122334455667788',
+        amount: 10000000,
+        currency: 'IRR',
+      };
+
+      const mapped = mapCheckRecord(legacyRaw);
+      expect(mapped.sayadId).toBe('1122334455667788');
+      expect(mapped.checkNumber).toBe('1122334455667788');
+    });
   });
 });
+

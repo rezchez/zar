@@ -32,6 +32,7 @@ import Field from '@/src/components/documents/Field';
 import AccountTreeSelector from '@/src/components/accounting/AccountTreeSelector';
 import DatePicker from '@/components/ui/date-picker';
 import { PriceInput } from '@/components/ui/price-input';
+import SayadInput from '@/components/ui/sayad-input';
 import type { DetailState, DocumentLine } from '@/src/components/documents/RawGoldTab';
 
 type BankOperationKind =
@@ -94,6 +95,7 @@ export default function BankTab({
   const [newAccountId, setNewAccountId] = useState<string | null>(null);
 
   // Check Issuance States
+  const [checkNumber, setCheckNumber] = useState('');
   const [sayadId, setSayadId] = useState('');
   const [dueDateJalali, setDueDateJalali] = useState(() => formatJalaliDate());
 
@@ -245,6 +247,23 @@ export default function BankTab({
       }
     }
 
+    if (kind === 'check-payment') {
+      if (!checkNumber.trim()) {
+        setNotice({
+          tone: 'error',
+          text: 'شماره چک الزامی است.',
+        });
+        return;
+      }
+      if (!isSayadValid) {
+        setNotice({
+          tone: 'error',
+          text: 'شناسه صیاد باید ۱۶ رقم باشد.',
+        });
+        return;
+      }
+    }
+
     const opLabel = operationOptions.find((o) => o.value === kind)?.label || 'عملیات بانکی';
 
     setDraftLine((current) => ({
@@ -262,6 +281,7 @@ export default function BankTab({
         bankName: selectedSourceAccount?.bankName || '',
         bankBranch: selectedSourceAccount?.branchName || '',
         accountNumber: selectedSourceAccount?.accountNumber || '',
+        checkNumber: checkNumber.trim(),
         sayadId: normalizedSayad,
         dueDateJalali,
         bankOperationKind: kind,
@@ -376,13 +396,27 @@ export default function BankTab({
               />
             </Field>
 
-            <Field label="شناسه ۱۶ رقمی صیاد">
+            <Field label="شماره چک">
               <input
-                value={sayadId}
-                onChange={(e) => setSayadId(e.target.value)}
-                maxLength={20}
-                placeholder="۱۲۳۴۵۶۷۸۹۰۱۲۳۴۵۶"
+                value={checkNumber}
+                onChange={(e) => {
+                  setCheckNumber(e.target.value);
+                  updateDraftDetail?.('checkNumber', e.target.value);
+                }}
+                placeholder="۱۲۳۴۵۶"
                 className="h-10 text-xs font-mono"
+              />
+            </Field>
+
+            <Field label="شناسه ۱۶ رقمی صیاد">
+              <SayadInput
+                value={sayadId}
+                onChange={(e) => {
+                  setSayadId(e.target.value);
+                  updateDraftDetail?.('sayadId', e.target.value);
+                }}
+                placeholder="۱۲۳۴ ۵۶۷۸ ۹۰۱۲ ۳۴۵۶"
+                className="h-10"
               />
             </Field>
 

@@ -6,6 +6,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 
 import DatePicker from '@/components/ui/date-picker';
 import { PriceInput } from '@/components/ui/price-input';
+import SayadInput from '@/components/ui/sayad-input';
 import { useAppSettings } from '@/components/shared/SettingsProvider';
 import { type CheckRecord } from '@/lib/check';
 import { dateToJalaliString, normalizeDigits } from '@/lib/jalali';
@@ -47,6 +48,7 @@ export default function InitialIssuedCheckModal({
   const [selectedBankId, setSelectedBankId] = useState('');
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [checkNumber, setCheckNumber] = useState('');
+  const [sayadId, setSayadId] = useState('');
   const [amount, setAmount] = useState('');
   const [issueDate, setIssueDate] = useState(dateToJalaliString(new Date()));
   const [dueDate, setDueDate] = useState('');
@@ -99,7 +101,8 @@ export default function InitialIssuedCheckModal({
     if (editItem) {
       setSelectedBankId(editItem.bankAccount || '');
       setSelectedCustomerId(editItem.customer || '');
-      setCheckNumber(editItem.checkNumber || editItem.sayadId || '');
+      setCheckNumber(editItem.checkNumber || '');
+      setSayadId(editItem.sayadId || '');
       setAmount(editItem.amount ? String(editItem.amount) : '');
       setIssueDate(editItem.issueDateJalali || editItem.openingBalanceDateJalali || dateToJalaliString(new Date()));
       setDueDate(editItem.dueDateJalali || '');
@@ -109,6 +112,7 @@ export default function InitialIssuedCheckModal({
       setSelectedBankId('');
       setSelectedCustomerId('');
       setCheckNumber('');
+      setSayadId('');
       setAmount('');
       setIssueDate(dateToJalaliString(new Date()));
       setDueDate('');
@@ -141,6 +145,12 @@ export default function InitialIssuedCheckModal({
       return;
     }
 
+    const normalizedSayad = normalizeDigits(sayadId).replace(/\D/g, '').trim();
+    if (normalizedSayad && normalizedSayad.length !== 16) {
+      setErrorMsg(`شناسه صیاد در صورت ورود باید دقیقاً ۱۶ رقم باشد (${normalizedSayad.length} رقم وارد شده).`);
+      return;
+    }
+
     const parsedAmount = parseLocalizedAmount(amount);
     if (parsedAmount <= 0) {
       setErrorMsg('مبلغ چک باید بیشتر از صفر باشد.');
@@ -164,6 +174,7 @@ export default function InitialIssuedCheckModal({
           bankAccount: selectedBankId,
           customer: selectedCustomerId || null,
           checkNumber: normalizedNo,
+          sayadId: normalizedSayad,
           amount: parsedAmount,
           dueDateJalali: dueDate,
           openingBalanceDateJalali: issueDate,
@@ -276,19 +287,35 @@ export default function InitialIssuedCheckModal({
             {/* Check Number */}
             <div>
               <label className="mb-1 block text-xs font-extrabold text-slate-700 dark:text-slate-300">
-                شماره چک / شناسه صیاد <span className="text-rose-500">*</span>
+                شماره چک <span className="text-rose-500">*</span>
               </label>
               <input
                 type="text"
                 value={checkNumber}
                 onChange={(e) => setCheckNumber(e.target.value)}
-                placeholder="مثال: ۱۲۳۴۵۶ یا شناسه ۱۶ رقمی"
+                placeholder="مثال: ۱۲۳۴۵۶"
                 required
                 disabled={submitting}
                 className="h-10 w-full rounded-2xl border border-slate-200 bg-white px-3 font-mono text-xs font-bold text-slate-900 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
               />
             </div>
 
+            {/* Sayad ID */}
+            <div>
+              <label className="mb-1 block text-xs font-extrabold text-slate-700 dark:text-slate-300">
+                شناسه صیاد (۱۶ رقم)
+              </label>
+              <SayadInput
+                value={sayadId}
+                onChange={(e) => setSayadId(e.target.value)}
+                disabled={submitting}
+                placeholder="۱۲۳۴ ۵۶۷۸ ۹۰۱۲ ۳۴۵۶"
+                className="rounded-2xl border-slate-200 dark:border-slate-700 dark:bg-slate-800"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {/* Customer / Payee */}
             <div>
               <label className="mb-1 block text-xs font-extrabold text-slate-700 dark:text-slate-300">
@@ -308,22 +335,22 @@ export default function InitialIssuedCheckModal({
                 ))}
               </select>
             </div>
-          </div>
 
-          {/* Amount */}
-          <div>
-            <label className="mb-1 block text-xs font-extrabold text-slate-700 dark:text-slate-300">
-              مبلغ چک ({currencySuffix}) <span className="text-rose-500">*</span>
-            </label>
-            <PriceInput
-              value={amount}
-              onValueChange={(_parsed, raw) => setAmount(raw)}
-              placeholder="۰"
-              baseCurrency={effectiveCurrency}
-              currencySuffix={currencySuffix}
-              showWords={true}
-              disabled={submitting}
-            />
+            {/* Amount */}
+            <div>
+              <label className="mb-1 block text-xs font-extrabold text-slate-700 dark:text-slate-300">
+                مبلغ چک ({currencySuffix}) <span className="text-rose-500">*</span>
+              </label>
+              <PriceInput
+                value={amount}
+                onValueChange={(_parsed, raw) => setAmount(raw)}
+                placeholder="۰"
+                baseCurrency={effectiveCurrency}
+                currencySuffix={currencySuffix}
+                showWords={true}
+                disabled={submitting}
+              />
+            </div>
           </div>
 
           {/* Dates */}

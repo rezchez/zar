@@ -114,8 +114,11 @@ export async function POST(request: Request) {
   const recordId = text(body?.id, 40);
   const bankAccountId = text(body?.bankAccount || body?.bankAccountId, 40);
   const customerId = text(body?.customer || body?.customerId, 40);
-  const rawCheckNumber = text(body?.checkNumber || body?.sayadId, 80);
+  const rawCheckNumber = text(body?.checkNumber || body?.check_number, 80);
+  const rawSayadId = text(body?.sayadId, 80);
   const normalizedCheckNumber = normalizeDigits(rawCheckNumber).trim();
+  const normalizedSayadId = normalizeDigits(rawSayadId).replace(/\D/g, '').trim();
+  const effectiveCheckNumber = normalizedCheckNumber || normalizedSayadId;
   const description = text(body?.description || body?.babat, 500);
   const dueDateJalali = text(body?.dueDateJalali, 20) || text(body?.dueDate, 20);
   const openingDateJalali = text(body?.openingBalanceDateJalali, 20) || text(body?.openingBalanceDate, 20) || text(body?.issueDateJalali, 20) || formatJalaliDate();
@@ -136,7 +139,7 @@ export async function POST(request: Request) {
   }
 
   // PART 16 — Check Number is strictly required
-  if (!normalizedCheckNumber) {
+  if (!effectiveCheckNumber) {
     return NextResponse.json({ message: 'شماره چک الزامی است.' }, { status: 400 });
   }
 
@@ -189,8 +192,8 @@ export async function POST(request: Request) {
     // PART 16 — Duplicate Check Number for the same bank account
     const duplicateCheck = await writer.collection('checks').getFirstListItem(
       writer.filter(
-        'bankAccount = {:bankId} && (check_number = {:checkNo} || sayadId = {:checkNo})' + (recordId ? ' && id != {:recordId}' : ''),
-        { bankId: bankAccount.id, checkNo: normalizedCheckNumber, recordId: recordId || '' },
+        'bankAccount = {:bankId} && (check_number = {:checkNo} || checkNumber = {:checkNo})' + (recordId ? ' && id != {:recordId}' : ''),
+        { bankId: bankAccount.id, checkNo: effectiveCheckNumber, recordId: recordId || '' },
       ),
     ).catch(() => null);
 
@@ -217,12 +220,12 @@ export async function POST(request: Request) {
     const checkPayload: Record<string, unknown> = {
       bankAccount: bankAccount.id,
       customer: validCustomerId || null,
-      check_number: normalizedCheckNumber,
-      checkNumber: normalizedCheckNumber,
-      sayadId: normalizedCheckNumber,
+      check_number: effectiveCheckNumber,
+      checkNumber: effectiveCheckNumber,
+      sayadId: normalizedSayadId || (normalizedCheckNumber.length === 16 ? normalizedCheckNumber : ''),
       amount,
       currency,
-      description: description || `موجودی اولیه چک صادرشده شماره ${normalizedCheckNumber}`,
+      description: description || `موجودی اولیه چک صادرشده شماره ${effectiveCheckNumber}`,
       chequeType: 'payable',
       issueDate: openingDateIso,
       issueDateJalali: openingDateJalali,

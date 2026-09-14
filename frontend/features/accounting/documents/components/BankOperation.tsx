@@ -31,6 +31,7 @@ import BankLogo from '@/src/components/documents/BankLogo';
 import AccountTreeSelector from '@/src/components/accounting/AccountTreeSelector';
 import DatePicker from '@/components/ui/date-picker';
 import { PriceInput } from '@/components/ui/price-input';
+import SayadInput from '@/components/ui/sayad-input';
 
 type BankOperationProps = {
   accountCodeZero?: string;
@@ -81,6 +82,7 @@ export default function BankOperation({
   const [newAccountId, setNewAccountId] = useState<string | null>(null);
 
   // Check Issuance States
+  const [checkNumber, setCheckNumber] = useState('');
   const [sayadId, setSayadId] = useState('');
   const [dueDateJalali, setDueDateJalali] = useState(() => formatJalaliDate());
 
@@ -234,6 +236,9 @@ export default function BankOperation({
       if (numericAmount <= 0) {
         throw new Error('مبلغ چک را وارد کنید.');
       }
+      if (!checkNumber.trim()) {
+        throw new Error('شماره چک را وارد کنید.');
+      }
       if (!isSayadValid) {
         throw new Error('شناسه صیاد باید دقیقاً ۱۶ رقم باشد.');
       }
@@ -252,6 +257,7 @@ export default function BankOperation({
           customer: selectedCustomer.id,
           amount: numericAmount,
           currency: selectedSourceAccount?.currency || 'IRR',
+          checkNumber: checkNumber.trim(),
           sayadId: normalizedSayad,
           description: description.trim(),
           dueDateJalali,
@@ -264,6 +270,7 @@ export default function BankOperation({
 
       await loadBanks();
       setAmount('');
+      setCheckNumber('');
       setSayadId('');
       setDescription('');
       setNotice({ tone: 'success', text: 'صدور چک صیادی با ثبت سند اسناد پرداختنی با موفقیت انجام شد.' });
@@ -560,19 +567,25 @@ export default function BankOperation({
               />
             </div>
 
+            {/* Check Number */}
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-600 dark:text-slate-300">شماره چک *</label>
+              <input
+                value={checkNumber}
+                onChange={(e) => setCheckNumber(e.target.value)}
+                placeholder="مثال: ۱۲۳۴۵۶"
+                className="h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-mono tracking-wider dark:border-slate-700 dark:bg-slate-900"
+              />
+            </div>
+
             {/* 3. Sayad ID */}
             <div className="space-y-1">
               <label className="text-xs font-bold text-slate-600 dark:text-slate-300">شناسه ۱۶ رقمی صیاد *</label>
-              <input
+              <SayadInput
                 value={sayadId}
                 onChange={(e) => setSayadId(e.target.value)}
-                maxLength={20}
-                placeholder="۱۲۳۴۵۶۷۸۹۰۱۲۳۴۵۶"
-                className={`h-12 w-full rounded-xl border px-3 text-sm font-mono tracking-wider dark:bg-slate-900 ${
-                  sayadId && !isSayadValid
-                    ? 'border-rose-400 bg-rose-50 dark:bg-rose-950/20'
-                    : 'border-slate-200 bg-white dark:border-slate-700'
-                }`}
+                placeholder="۱۲۳۴ ۵۶۷۸ ۹۰۱۲ ۳۴۵۶"
+                className="h-12 rounded-xl"
               />
               {sayadId && !isSayadValid ? (
                 <p className="text-xs text-rose-600 font-medium">شناسه صیاد باید دقیقاً ۱۶ رقم باشد ({normalizedSayad.length} وارد شده).</p>

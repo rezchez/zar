@@ -162,16 +162,12 @@ export function mapCheckRecord(record: Record<string, unknown>): CheckRecord {
     currency: typeof record.currency === 'string' && record.currency ? record.currency : 'IRR',
     sayadId: typeof record.sayadId === 'string'
       ? record.sayadId
-      : typeof record.check_number === 'string'
-        ? record.check_number
-        : '',
-    checkNumber: typeof record.checkNumber === 'string'
-      ? record.checkNumber
-      : typeof record.check_number === 'string'
-        ? record.check_number
-        : typeof record.sayadId === 'string'
-          ? record.sayadId
-          : '',
+      : '',
+    checkNumber: typeof record.check_number === 'string' && record.check_number
+      ? record.check_number
+      : typeof record.checkNumber === 'string' && record.checkNumber
+        ? record.checkNumber
+        : (typeof record.sayadId === 'string' ? record.sayadId : ''),
     isOpeningBalance: record.is_opening_balance === true || record.isOpeningBalance === true,
     openingBalanceDate: typeof record.opening_balance_date === 'string'
       ? record.opening_balance_date

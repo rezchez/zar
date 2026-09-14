@@ -56,6 +56,11 @@ export default function InitialIssuedChecksClient({
     },
   );
 
+  const displayTotalAmount =
+    effectiveCurrency === 'IRT' ? Math.floor(summary.totalAmount / 10) : summary.totalAmount;
+  const displayOutstandingAmount =
+    effectiveCurrency === 'IRT' ? Math.floor(summary.outstandingAmount / 10) : summary.outstandingAmount;
+
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<CheckRecord | null>(null);
@@ -112,10 +117,11 @@ export default function InitialIssuedChecksClient({
       }
       if (searchQuery.trim()) {
         const q = searchQuery.trim().toLowerCase();
-        const no = (c.checkNumber || c.sayadId || '').toLowerCase();
+        const checkNum = (c.checkNumber || '').toLowerCase();
+        const sayad = (c.sayadId || '').toLowerCase();
         const desc = (c.description || '').toLowerCase();
         const custName = String((c.expand?.customer as Record<string, unknown> | undefined)?.name || '').toLowerCase();
-        if (!no.includes(q) && !desc.includes(q) && !custName.includes(q)) {
+        if (!checkNum.includes(q) && !sayad.includes(q) && !desc.includes(q) && !custName.includes(q)) {
           return false;
         }
       }
@@ -256,7 +262,7 @@ export default function InitialIssuedChecksClient({
             {summary.outstandingCount.toLocaleString('fa-IR')} <span className="text-xs font-bold">فقره</span>
           </p>
           <p className="mt-1 font-mono text-xs font-bold text-amber-800 dark:text-amber-300">
-            {formatMoney(summary.outstandingAmount)} {currencySuffix}
+            {displayOutstandingAmount.toLocaleString('fa-IR')} {currencySuffix}
           </p>
         </div>
 
@@ -268,7 +274,8 @@ export default function InitialIssuedChecksClient({
             </div>
           </div>
           <p className="mt-2 font-mono text-2xl font-black text-slate-900 dark:text-white">
-            {formatMoney(summary.totalAmount)} <span className="text-xs font-bold">{currencySuffix}</span>
+            {displayTotalAmount.toLocaleString('fa-IR')}{' '}
+            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">{currencySuffix}</span>
           </p>
         </div>
       </div>
@@ -408,9 +415,14 @@ export default function InitialIssuedChecksClient({
                         </div>
                       </td>
 
-                      {/* Check Number */}
+                      {/* Check Number & Sayad ID */}
                       <td className="px-3 py-3.5 font-mono font-bold text-slate-900 dark:text-slate-100">
-                        <div>{check.checkNumber || check.sayadId}</div>
+                        <div>{check.checkNumber || check.sayadId || '—'}</div>
+                        {check.sayadId && check.sayadId !== check.checkNumber ? (
+                          <div className="text-[10px] text-slate-500 dark:text-slate-400 font-mono mt-0.5" title="شناسه صیاد">
+                            صیاد: {check.sayadId}
+                          </div>
+                        ) : null}
                         <div className="text-[9px] text-emerald-600 dark:text-emerald-400 font-sans font-bold mt-0.5">
                           تفضیل ۲ (۲۱۱۰)
                         </div>

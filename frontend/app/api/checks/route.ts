@@ -78,8 +78,10 @@ export async function POST(request: Request) {
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
   const bankAccountId = text(body?.bankAccount || body?.bankAccountId, 40);
   const customerId = text(body?.customer || body?.customerId, 40);
-  const rawSayadId = text(body?.sayadId || body?.checkNumber, 80);
+  const rawSayadId = text(body?.sayadId, 80);
   const normalizedSayadId = normalizeDigits(rawSayadId).replace(/\D/g, '');
+  const rawCheckNumber = text(body?.checkNumber || body?.check_number, 80);
+  const normalizedCheckNumber = normalizeDigits(rawCheckNumber).trim();
   const description = text(body?.description || body?.babat, 500);
   const dueDateJalali = text(body?.dueDateJalali, 20) || text(body?.dueDate, 20);
   const issueDateJalali = text(body?.issueDateJalali, 20) || formatJalaliDate();
@@ -159,6 +161,8 @@ export async function POST(request: Request) {
       bankAccount: bankAccount.id,
       customer: customer.id,
       sayadId: normalizedSayadId,
+      check_number: normalizedCheckNumber || normalizedSayadId,
+      checkNumber: normalizedCheckNumber || normalizedSayadId,
       amount,
       currency,
       description,

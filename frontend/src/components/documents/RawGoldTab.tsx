@@ -40,6 +40,7 @@ export type DetailState = {
   bankName?: string;
   bankBranch?: string;
   accountNumber?: string;
+  checkNumber?: string;
   sayadId?: string;
   dueDateJalali?: string;
   bankOperationKind?: string;

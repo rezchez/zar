@@ -11,6 +11,7 @@ const checkCollectionPayload = {
     { id: 'bank_account_rel', name: 'bankAccount', type: 'relation', collectionId: 'bank_accounts', maxSelect: 1, required: true },
     { id: 'customer_rel', name: 'customer', type: 'relation', collectionId: 'customers', maxSelect: 1, required: true },
     { id: 'sayad_id', name: 'sayadId', type: 'text', required: false, min: 0, max: 80 },
+    { id: 'check_num_field', name: 'check_number', type: 'text', required: false, max: 80, presentable: true },
     { id: 'check_number', name: 'checkNumber', type: 'text', required: false, max: 80 },
     { id: 'is_opening_balance', name: 'is_opening_balance', type: 'bool', required: false },
     { id: 'opening_balance_date', name: 'opening_balance_date', type: 'text', required: false, max: 40 },
@@ -84,6 +85,7 @@ export async function ensureChecksCollection(pb: PocketBase) {
 
         const fields: Record<string, unknown>[] = [
           { id: 'sayad_id', name: 'sayadId', type: 'text', required: false, min: 0, max: 80 },
+          { id: 'check_num_field', name: 'check_number', type: 'text', required: false, max: 80, presentable: true },
           { id: 'check_number', name: 'checkNumber', type: 'text', required: false, max: 80 },
           { id: 'is_opening_balance', name: 'is_opening_balance', type: 'bool', required: false },
           { id: 'opening_balance_date', name: 'opening_balance_date', type: 'text', required: false, max: 40 },

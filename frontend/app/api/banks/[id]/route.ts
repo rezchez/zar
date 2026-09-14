@@ -185,13 +185,16 @@ export async function DELETE(
       return NextResponse.json({ message: 'حساب بانکی مورد نظر یافت نشد.' }, { status: 404 });
     }
 
-    // 2. بررسی وجود تراکنش — شرط حذف: transaction_count === 0 (نه balance === 0)
-    let transactionCount = 0;
+    // 2. بررسی وجود تراکنش‌های عملیاتی — تراکنش‌های عملیاتی، چک یا اسناد مالی مانع حذف هستند
+    let operationalTxCount = 0;
     try {
       const txResult = await writer.collection('bank_transactions').getList(1, 1, {
-        filter: writer.filter('bank_account = {:accountId}', { accountId: id }),
+        filter: writer.filter(
+          'bank_account = {:accountId} && is_opening_balance != true && transaction_type != "opening_balance" && !(source_key ~ "opening:bank:")',
+          { accountId: id },
+        ),
       });
-      transactionCount += txResult.totalItems;
+      operationalTxCount += txResult.totalItems;
     } catch {
       // اگر collection bank_transactions وجود نداشت، صفر می‌ماند
     }
@@ -201,7 +204,7 @@ export async function DELETE(
       const checkResult = await writer.collection('checks').getList(1, 1, {
         filter: writer.filter('bankAccount = {:accountId}', { accountId: id }),
       });
-      transactionCount += checkResult.totalItems;
+      operationalTxCount += checkResult.totalItems;
     } catch {
       // silent
     }
@@ -214,22 +217,22 @@ export async function DELETE(
           { accountId: id },
         ),
       });
-      transactionCount += docResult.totalItems;
+      operationalTxCount += docResult.totalItems;
     } catch {
       // silent
     }
 
-    if (transactionCount > 0) {
+    if (operationalTxCount > 0) {
       // Audit log برای تلاش ناموفق
       await recordAuditEvent({
         userId: context.user.id,
         event: 'settings_updated',
         request,
-        details: `تلاش برای حذف حساب بانکی ${String(existing.bankName || '')} (${String(existing.accountNumber || '')}) رد شد — ${transactionCount} تراکنش وجود دارد.`,
+        details: `تلاش برای حذف حساب بانکی ${String(existing.bankName || '')} (${String(existing.accountNumber || '')}) رد شد — ${operationalTxCount} تراکنش عملیاتی وجود دارد.`,
         entityType: 'bank_account',
         entityId: id,
         entityLabel: `${String(existing.bankName || '')} - ${String(existing.accountNumber || '')}`,
-        changes: { action: 'bank_account.delete_rejected', reason: 'has_transactions', transactionCount, result: 'failed' },
+        changes: { action: 'bank_account.delete_rejected', reason: 'has_transactions', transactionCount: operationalTxCount, result: 'failed' },
         authenticatedClient: context.pb,
       }).catch(() => undefined);
 
@@ -237,29 +240,63 @@ export async function DELETE(
         {
           success: false,
           code: 'BANK_ACCOUNT_HAS_TRANSACTIONS',
-          message: `این حساب بانکی قابل حذف نیست؛ برای این حساب ${transactionCount} تراکنش مالی ثبت شده است.`,
-          transactionCount,
+          message: `این حساب بانکی قابل حذف نیست؛ برای این حساب ${operationalTxCount} تراکنش مالی عملیاتی ثبت شده است. برای عدم استفاده، می‌توانید حساب را مسدود (Block) کنید.`,
+          transactionCount: operationalTxCount,
         },
         { status: 409 },
       );
     }
 
-    // 3. حذف linked Chart of Accounts record اگر وجود داشت و بدون سند باشد
+    // 3. پاکسازی تراکنش‌های افتتاحیه و اسناد حسابداری افتتاحیه
+    try {
+      const openingTxs = await writer.collection('bank_transactions').getFullList({
+        filter: writer.filter('bank_account = {:accountId}', { accountId: id }),
+      }).catch(() => []);
+      for (const otx of openingTxs) {
+        await writer.collection('bank_transactions').delete(otx.id).catch(() => undefined);
+      }
+    } catch {
+      // silent
+    }
+
+    try {
+      const sourceKey = `opening:bank:${id}`;
+      const openingJournal = await writer.collection('journal_entries').getFirstListItem(
+        writer.filter('sourceKey = {:sourceKey}', { sourceKey }),
+      ).catch(() => null);
+
+      if (openingJournal) {
+        const lines = await writer.collection('journal_lines').getFullList({
+          filter: writer.filter('journal_entry_id = {:jId}', { jId: openingJournal.id }),
+        }).catch(() => []);
+        for (const line of lines) {
+          await writer.collection('journal_lines').delete(line.id).catch(() => undefined);
+        }
+        await writer.collection('journal_entries').delete(openingJournal.id).catch(() => undefined);
+      }
+    } catch {
+      // silent
+    }
+
+    // 4. حذف linked Chart of Accounts record اگر تفصیلی اختصاصی (سطح 4) بود و بدون سند باشد
     const linkedAccountId = typeof existing.accountId === 'string' ? existing.accountId : null;
-    if (linkedAccountId) {
+    if (linkedAccountId && linkedAccountId !== 'yidoxfgzbxpxwo7') {
       try {
-        const journalLines = await writer.collection('journal_lines').getList(1, 1, {
-          filter: writer.filter('accountId = {:accId}', { accId: linkedAccountId }),
-        }).catch(() => ({ totalItems: 0 }));
-        if (journalLines.totalItems === 0) {
-          await writer.collection('chart_of_accounts').delete(linkedAccountId).catch(() => undefined);
+        const coaRecord = await writer.collection('chart_of_accounts').getOne(linkedAccountId).catch(() => null);
+        if (coaRecord && Number(coaRecord.level) === 4) {
+          const remainingLines = await writer.collection('journal_lines').getList(1, 1, {
+            filter: writer.filter('account_id = {:accId} || accountId = {:accId}', { accId: linkedAccountId }),
+          }).catch(() => ({ totalItems: 0 }));
+          if (remainingLines.totalItems === 0) {
+            await writer.collection('chart_of_accounts').delete(linkedAccountId).catch(() => undefined);
+          }
         }
       } catch {
         // اگر حذف CoA ممکن نبود، حساب بدون آن حذف می‌شود
       }
     }
 
-    // 4. حذف حساب بانکی
+    // 5. حذف حساب بانکی
     await writer.collection('bank_accounts').delete(id);
 
     // 5. Audit log برای حذف موفق
