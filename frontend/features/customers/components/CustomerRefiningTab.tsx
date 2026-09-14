@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 
 import DatePicker from '@/components/ui/date-picker';
+import { roundWeight } from '@/lib/weight';
 import type { Customer } from '@/lib/customer';
 import type {
   RefiningCase,

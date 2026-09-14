@@ -39,11 +39,14 @@ export function generateGroupSlug(name: string): string {
   return `custom_${clean.toLowerCase().replace(/\s+/g, '_')}_${Date.now()}`;
 }
 
-export function isRefinerCustomer(customerOrGroup: string | { groupName?: string } | null | undefined): boolean {
+export function isRefinerCustomer(
+  customerOrGroup: string | Record<string, any> | { groupName?: string } | null | undefined,
+): boolean {
   if (!customerOrGroup) return false;
-  const nameOrSlug = typeof customerOrGroup === 'string'
-    ? customerOrGroup.trim()
-    : (customerOrGroup.groupName || '').trim();
+  const nameOrSlug =
+    typeof customerOrGroup === 'string'
+      ? customerOrGroup.trim()
+      : String(customerOrGroup.groupName || customerOrGroup.group_name || '').trim();
 
   const clean = nameOrSlug.toLowerCase();
   return (
