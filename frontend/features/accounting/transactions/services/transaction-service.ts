@@ -17,11 +17,14 @@ async function getTransactionWriter(fallback: PocketBase) {
   }
 }
 
+import { isValidZfDocumentNumber, generateUniqueZfDocumentNumber } from '@/lib/document-number';
+
 function openingBalancePayload(
   customer: Customer,
   balances: CustomerBalanceValues,
   actorId: string,
   createdBy: string,
+  documentNumber: string,
 ) {
   return {
     customer: customer.id,
@@ -35,7 +38,7 @@ function openingBalancePayload(
     transactionDate: validTransactionDate(
       customer.created,
     ),
-    documentNumber: "1",
+    documentNumber,
     description: 'مانده اول دوره',
     goldAmount: balances.goldBalance,
     silverAmount: balances.silverBalance,
@@ -75,11 +78,19 @@ export async function syncOpeningBalanceTransaction(
 
   const existing = await findExisting();
 
+  let docNumber = '';
+  if (existing && isValidZfDocumentNumber(existing.documentNumber)) {
+    docNumber = existing.documentNumber;
+  } else {
+    docNumber = await generateUniqueZfDocumentNumber(writer);
+  }
+
   const payload = openingBalancePayload(
     customer,
     balances,
     actorId,
     existing?.createdBy || actorId,
+    docNumber,
   );
 
   let transaction;

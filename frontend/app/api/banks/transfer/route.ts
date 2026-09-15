@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 
 import { getServerAuthContext } from '@/lib/auth';
 import { ensureBankAccountsCollection } from '@/lib/bank-collection';
+import { generateUniqueZfDocumentNumber } from '@/lib/document-number';
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
 
 type TransferKind = 'bank-to-bank' | 'cash-to-bank' | 'bank-to-cash';
@@ -148,8 +149,12 @@ export async function POST(request: Request) {
       }),
     };
 
+    const outgoingDocNum = await generateUniqueZfDocumentNumber(writer);
+    const incomingDocNum = await generateUniqueZfDocumentNumber(writer, 10, new Set([outgoingDocNum]));
+
     const outgoing = await writer.collection('transactions').create({
       ...transactionPayload,
+      documentNumber: outgoingDocNum,
       documentNature: 'paid',
       rialAmount: -amount,
       documentDetails: JSON.stringify({
@@ -161,6 +166,7 @@ export async function POST(request: Request) {
 
     const incoming = await writer.collection('transactions').create({
       ...transactionPayload,
+      documentNumber: incomingDocNum,
       sourceKey: `bank-transfer:${documentId}-in`,
       documentNature: 'received',
       rialAmount: amount,

@@ -8,6 +8,7 @@ import type { BankAccount } from '@/lib/bank';
 import type { Customer } from '@/lib/customer';
 import type { CheckRecord } from '@/lib/check';
 import { DEFAULT_CHART_OF_ACCOUNTS } from '@/lib/chart-of-accounts';
+import { generateUniqueZfDocumentNumber, isValidZfDocumentNumber } from '@/lib/document-number';
 
 export interface JournalLineInput {
   accountId: string;
@@ -1529,6 +1530,13 @@ export async function postRefiningFee(
     .getFirstListItem(pb.filter('sourceKey = {:sk}', { sk: txSourceKey }))
     .catch(() => null);
 
+  let docNum = '';
+  if (existingTx && isValidZfDocumentNumber(existingTx.documentNumber)) {
+    docNum = existingTx.documentNumber;
+  } else {
+    docNum = await generateUniqueZfDocumentNumber(pb);
+  }
+
   const txPayload = {
     customer: refiner.id,
     customerCode: refiner.customerCode ?? 0,
@@ -1540,7 +1548,7 @@ export async function postRefiningFee(
     isOpeningBalance: false,
     transactionDate: new Date().toISOString(),
     documentId: refiningCase.id,
-    documentNumber: refiningCase.caseNumber,
+    documentNumber: docNum,
     description: desc,
     goldAmount: 0,
     silverAmount: 0,

@@ -13,6 +13,7 @@ import {
   getActiveDocumentPrefix,
   getNextDocumentNumber,
   getNextDocumentSequenceForCustomer,
+  generateUniqueZfDocumentNumber,
 } from '@/lib/document-service';
 import { jalaliDateToIso, normalizeDigits } from '@/lib/jalali';
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
@@ -26,7 +27,7 @@ const amountFields = [
   'tertiaryAmount',
 ] as const;
 
-type MeltedInventoryItem = {
+export type RawGoldInventoryItem = {
   id: string;
   weight: number;
   remainingWeight: number;
@@ -34,7 +35,10 @@ type MeltedInventoryItem = {
   stampNumber: string;
   labName?: string;
   customerName: string;
+  rawKind: 'molten' | 'conditional' | 'misc' | 'question';
 };
+
+export type MeltedInventoryItem = RawGoldInventoryItem;
 
 const METAL_BASE_KARATS = {
   gold: 750,
@@ -49,6 +53,24 @@ const rawMetalInventoryTypes = {
   question: 'sowaleh',
   unsettled: 'general_metal',
 } as const;
+
+const rawKindFromInventoryType: Record<string, 'molten' | 'conditional' | 'misc' | 'question'> = {
+  melted: 'molten',
+  conditional: 'conditional',
+  miscellaneous: 'misc',
+  sowaleh: 'question',
+};
+
+const rawKindFromDocumentSubType: Record<string, 'molten' | 'conditional' | 'misc' | 'question'> = {
+  'incoming-molten': 'molten',
+  'outgoing-molten': 'molten',
+  'incoming-conditional': 'conditional',
+  'outgoing-conditional': 'conditional',
+  'incoming-misc': 'misc',
+  'outgoing-misc': 'misc',
+  'incoming-question': 'question',
+  'outgoing-question': 'question',
+};
 
 function parseDetails(value: unknown): Record<string, unknown> {
   if (value && typeof value === 'object' && !Array.isArray(value)) return value as Record<string, unknown>;
@@ -73,27 +95,42 @@ function metalInventoryType(rawKind: unknown) {
   return rawMetalInventoryTypes[rawKind as keyof typeof rawMetalInventoryTypes] ?? 'general_metal';
 }
 
-/** Dedicated metal ledger, with a non-duplicating legacy-transactions fallback. */
-async function getMeltedInventory(pb: NonNullable<Awaited<ReturnType<typeof getServerAuthContext>>>['pb']) {
+/** Dedicated metal ledger, with a non-duplicating legacy-transactions fallback for raw gold items. */
+export async function getRawGoldInventory(
+  pb: NonNullable<Awaited<ReturnType<typeof getServerAuthContext>>>['pb'],
+  kind?: 'molten' | 'conditional' | 'misc' | 'question',
+) {
+  const targetInvType = kind ? rawMetalInventoryTypes[kind] : null;
+
+  const invFilter = targetInvType
+    ? `metal = "gold" && inventory_type = "${targetInvType}" && is_deleted != true`
+    : 'metal = "gold" && (inventory_type = "melted" || inventory_type = "conditional" || inventory_type = "miscellaneous" || inventory_type = "sowaleh") && is_deleted != true';
+
+  const txFilter = kind
+    ? `(documentSubType = "incoming-${kind}" || documentSubType = "outgoing-${kind}")`
+    : '(documentSubType = "incoming-molten" || documentSubType = "outgoing-molten" || documentSubType = "incoming-conditional" || documentSubType = "outgoing-conditional" || documentSubType = "incoming-misc" || documentSubType = "outgoing-misc" || documentSubType = "incoming-question" || documentSubType = "outgoing-question")';
+
   const [inventoryRecords, transactionRecords] = await Promise.all([
     pb.collection('metal_inventory').getFullList({
-      filter: 'metal = "gold" && inventory_type = "melted" && is_deleted != true',
+      filter: invFilter,
       sort: 'created',
       expand: 'customer',
     }).catch(() => []),
     pb.collection('transactions').getFullList({
-      filter: 'documentSubType = "incoming-molten" || documentSubType = "outgoing-molten"',
+      filter: txFilter,
       sort: 'created',
       expand: 'customer',
     }).catch(() => []),
   ]);
 
-  const available = new Map<string, MeltedInventoryItem>();
+  const available = new Map<string, RawGoldInventoryItem>();
   const linkedTransactionIds = new Set<string>();
   for (const record of inventoryRecords) {
     const transactionId = String(record.transaction_id ?? '');
     if (transactionId) linkedTransactionIds.add(transactionId);
     const weight = Math.abs(Number(record.raw_weight ?? 0));
+    const invType = String(record.inventory_type ?? '');
+    const itemKind = rawKindFromInventoryType[invType] ?? 'molten';
     if (String(record.direction) === 'in' && weight > 0) {
       available.set(record.id, {
         id: record.id,
@@ -103,6 +140,7 @@ async function getMeltedInventory(pb: NonNullable<Awaited<ReturnType<typeof getS
         stampNumber: String(record.stamp_number ?? ''),
         labName: String(record.lab_name ?? ''),
         customerName: String(record.expand?.customer?.name ?? (record.is_opening_balance ? 'موجودی اول دوره' : '')),
+        rawKind: itemKind,
       });
     }
   }
@@ -115,6 +153,8 @@ async function getMeltedInventory(pb: NonNullable<Awaited<ReturnType<typeof getS
     if (linkedTransactionIds.has(record.id) || record.is_deleted === true) continue;
     const details = parseDetails(record.documentDetails);
     const weight = Math.abs(Number(record.goldAmount ?? 0));
+    const subType = String(record.documentSubType ?? '');
+    const itemKind = rawKindFromDocumentSubType[subType] ?? (details.rawKind as 'molten' | 'conditional' | 'misc' | 'question') ?? 'molten';
     if (record.documentNature === 'received' && weight > 0) {
       available.set(record.id, {
         id: record.id,
@@ -124,6 +164,7 @@ async function getMeltedInventory(pb: NonNullable<Awaited<ReturnType<typeof getS
         stampNumber: String(details.stampNumber ?? ''),
         labName: String(details.labName ?? ''),
         customerName: String(record.expand?.customer?.name ?? (record.isOpeningBalance ? 'موجودی اول دوره' : (record.customerCode ?? ''))),
+        rawKind: itemKind,
       });
     }
     if (record.documentNature === 'paid') {
@@ -131,7 +172,15 @@ async function getMeltedInventory(pb: NonNullable<Awaited<ReturnType<typeof getS
       if (source) source.remainingWeight = Math.max(0, source.remainingWeight - weight);
     }
   }
-  return [...available.values()].filter((item) => item.remainingWeight > 0.0000001);
+  const result = [...available.values()].filter((item) => item.remainingWeight > 0.0000001);
+  if (kind) {
+    return result.filter((item) => item.rawKind === kind);
+  }
+  return result;
+}
+
+export async function getMeltedInventory(pb: NonNullable<Awaited<ReturnType<typeof getServerAuthContext>>>['pb']) {
+  return getRawGoldInventory(pb, 'molten');
 }
 
 function readString(value: unknown, maxLength: number) {
@@ -186,9 +235,12 @@ export async function GET(request: Request) {
 
   try {
     const url = new URL(request.url);
-    if (url.searchParams.get('inventory') === 'melted') {
+    const inventoryParam = url.searchParams.get('inventory');
+    if (inventoryParam === 'melted' || inventoryParam === 'raw-gold') {
+      const kindParam = url.searchParams.get('kind') as 'molten' | 'conditional' | 'misc' | 'question' | null;
+      const targetKind = inventoryParam === 'melted' ? 'molten' : (kindParam || undefined);
       return NextResponse.json({
-        inventory: await getMeltedInventory(context.pb),
+        inventory: await getRawGoldInventory(context.pb, targetKind),
       });
     }
 
@@ -271,13 +323,14 @@ export async function POST(request: Request) {
     }).catch(() => []);
 
     if (existingDocument.length > 0 || existingFirstLine) {
-      const records = existingDocument.length > 0 ? existingDocument : [existingFirstLine];
+      const records = existingDocument.length > 0 ? existingDocument : (existingFirstLine ? [existingFirstLine] : []);
+      const primaryRecord = records[0];
       return NextResponse.json({
         transactions: records.map(mapDocument),
-        transaction: mapDocument(records[0]),
+        transaction: primaryRecord ? mapDocument(primaryRecord) : null,
         documentId,
-        documentNumber: String(records[0].documentNumber ?? ''),
-        documentSequence: Number(records[0].documentSequence ?? 1),
+        documentNumber: String(primaryRecord?.documentNumber ?? ''),
+        documentSequence: Number(primaryRecord?.documentSequence ?? 1),
         alreadyExists: true,
       }, { status: 200 });
     }
@@ -285,8 +338,12 @@ export async function POST(request: Request) {
     const requestedLines = Array.isArray(body.lines) ? body.lines : [body];
     const lines = requestedLines.length ? requestedLines : [body];
 
-    const availableMelted = new Map(
-      (await getMeltedInventory(context.pb)).map((item) => [item.id, item.remainingWeight]),
+    const rawGoldInventoryItems = await getRawGoldInventory(context.pb);
+    const availableRawGold = new Map(
+      rawGoldInventoryItems.map((item) => [item.id, item.remainingWeight]),
+    );
+    const rawGoldInventoryMap = new Map(
+      rawGoldInventoryItems.map((item) => [item.id, item]),
     );
 
     const preparedLines = lines.map((rawLine, index) => {
@@ -322,16 +379,35 @@ export async function POST(request: Request) {
       }
       if (
         lineNature === 'paid'
-        && line.documentSubType === 'outgoing-molten'
         && typeof details.inventorySourceId === 'string'
         && details.inventorySourceId
       ) {
         const requestedWeight = Math.abs(lineAmounts.goldAmount ?? 0);
-        const availableWeight = availableMelted.get(details.inventorySourceId) ?? 0;
+        const availableWeight = availableRawGold.get(details.inventorySourceId) ?? 0;
         if (requestedWeight > availableWeight + 0.0000001) {
-          throw new Error(`وزن خروجی ردیف ${index + 1} از موجودی آبشده بیشتر است.`);
+          const kindTitle = details.rawKind === 'conditional'
+            ? 'شرطی'
+            : details.rawKind === 'misc'
+              ? 'متفرقه'
+              : details.rawKind === 'question'
+                ? 'سواله'
+                : 'آبشده';
+          throw new Error(`وزن خروجی ردیف ${index + 1} از موجودی ${kindTitle} بیشتر است.`);
         }
-        availableMelted.set(details.inventorySourceId, availableWeight - requestedWeight);
+        availableRawGold.set(details.inventorySourceId, availableWeight - requestedWeight);
+
+        // Populate & enforce assay lab, stamp, and purity directly from the source inventory record
+        const sourceItem = rawGoldInventoryMap.get(details.inventorySourceId);
+        if (sourceItem) {
+          // Purity must be strictly locked to the source lot's purity
+          details.purity = sourceItem.purity;
+          if (sourceItem.labName) {
+            details.labName = (sourceItem.labName ?? '').trim();
+          }
+          if (sourceItem.stampNumber) {
+            details.stampNumber = (sourceItem.stampNumber ?? '').trim();
+          }
+        }
       }
 
       return {
@@ -394,9 +470,15 @@ export async function POST(request: Request) {
     while (attempts < 5) {
       attempts++;
       finalSequence = await getNextDocumentSequenceForCustomer(writer, customer.id);
-      finalDocumentNumber = buildDocumentNumber(activePrefix, finalSequence);
+      const usedNumbers = new Set<string>();
+      const lineDocumentNumbers: string[] = [];
+      for (let i = 0; i < preparedLines.length; i++) {
+        const num = await generateUniqueZfDocumentNumber(writer, 10, usedNumbers);
+        lineDocumentNumbers.push(num);
+      }
+      finalDocumentNumber = lineDocumentNumbers[0] || '';
 
-      const documentPayloads = preparedLines.map((prepared) => ({
+      const documentPayloads = preparedLines.map((prepared, idx) => ({
         customer: customer.id,
         customerCode: Number(customer.customerCode ?? 0),
         createdBy: context.user.id,
@@ -409,7 +491,7 @@ export async function POST(request: Request) {
         documentId,
         documentSequence: finalSequence,
         documentNumberPrefixSnapshot: activePrefix,
-        documentNumber: finalDocumentNumber,
+        documentNumber: lineDocumentNumbers[idx],
         description: readString(prepared.line.description ?? body.description, 2000),
         documentNature: prepared.lineNature,
         documentTab: readString(prepared.line.documentTab ?? body.documentTab, 40) || 'general',

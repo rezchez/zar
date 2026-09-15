@@ -68,3 +68,11 @@ export async function getNextDocumentNumber(
   const documentNumber = buildDocumentNumber(prefix, sequence);
   return { prefix, sequence, documentNumber };
 }
+
+export {
+  ZF_DOCUMENT_NUMBER_REGEX,
+  isValidZfDocumentNumber,
+  generateZfDocumentNumber,
+  generateUniqueZfDocumentNumber,
+} from '@/lib/document-number';
+

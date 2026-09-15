@@ -1,4 +1,5 @@
 import PocketBase from 'pocketbase';
+import { generateZfDocumentNumber } from '../lib/document-number';
 
 const pocketbaseUrl = process.env.POCKETBASE_URL ?? 'http://127.0.0.1:8090';
 const seedMarker = '__zar_seed_demo_40__';
@@ -283,6 +284,7 @@ async function main() {
       isOpeningBalance: true,
       sourceKey: `opening:${customer.id}`,
       transactionDate: customer.created,
+      documentNumber: generateZfDocumentNumber(),
       description: 'مانده اول دوره',
       ...balances,
       foreignCurrency: customer.secondaryCurrency ?? '',
@@ -296,7 +298,7 @@ async function main() {
 
     const lines = buildSeedLines(index);
     for (const [lineIndex, line] of lines.entries()) {
-      const documentNumber = String(lineIndex + 1);
+      const documentNumber = generateZfDocumentNumber();
       const day = lineIndex + 2;
       const transactionDate = new Date(Date.UTC(2026, 0, day, 9, 30)).toISOString();
       await pb.collection('transactions').create({
@@ -307,9 +309,9 @@ async function main() {
         transactionType: 'document',
         status: 'posted',
         isOpeningBalance: false,
-        sourceKey: `document:${customer.id}:seed:${documentNumber}`,
+        sourceKey: `document:${customer.id}:seed:${lineIndex + 1}`,
         transactionDate,
-        documentId: `seed-document:${customer.id}:${documentNumber}`,
+        documentId: `seed-document:${customer.id}:${lineIndex + 1}`,
         documentNumber,
         description: line.description,
         goldAmount: line.goldAmount ?? 0,

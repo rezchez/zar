@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { NextResponse } from 'next/server';
 
 import { getServerAuthContext } from '@/lib/auth';
+import { generateUniqueZfDocumentNumber } from '@/lib/document-number';
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
 import { mapTransaction } from '@/lib/transaction';
 
@@ -113,6 +114,8 @@ export async function POST(request: Request) {
       if (next < 0) return NextResponse.json({ message: 'موجودی صندوق کافی نیست.' }, { status: 400 });
     }
 
+    const settlementDocNumber = await generateUniqueZfDocumentNumber(writer);
+
     const transaction = await writer.collection('transactions').create({
       customer: customer.id,
       customerCode: Number(customer.customerCode ?? 0),
@@ -124,7 +127,7 @@ export async function POST(request: Request) {
       sourceKey: idempotencyKey,
       transactionDate: new Date().toISOString(),
       documentId: idempotencyKey,
-      documentNumber: '',
+      documentNumber: settlementDocNumber,
       description: text(body.description, 1000) || `تسویه ${sourceType === 'bank' ? 'بانکی' : 'نقدی'} طرف‌حساب`,
       documentNature: direction === 'receive' ? 'received' : 'paid',
       documentTab: sourceType,

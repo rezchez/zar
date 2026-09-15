@@ -142,21 +142,45 @@ export default function RawGoldTab({
   const isMoltenOrConditional = draftLine.details.rawKind === 'molten' || draftLine.details.rawKind === 'conditional';
   const hasValidWeight = Boolean(Number(draftLine.details.rawWeight) > 0);
   const isRequired = isGold && isMoltenOrConditional && hasValidWeight;
+  const isPaidRawFromInventory = nature === 'paid' && Boolean(draftLine.details.inventorySourceId);
 
-  // Keep assay data aligned with the selected stock lot, including when the
+  const inventoryLabel = draftLine.details.rawKind === 'conditional'
+    ? 'انتخاب موجودی شرطی'
+    : draftLine.details.rawKind === 'misc'
+      ? 'انتخاب موجودی متفرقه'
+      : draftLine.details.rawKind === 'question'
+        ? 'انتخاب موجودی سواله'
+        : 'انتخاب موجودی آبشده';
+
+  // Keep assay and purity data aligned with the selected stock lot, including when the
   // inventory list finishes loading after the source has already been picked.
   useEffect(() => {
-    if (nature !== 'paid' || draftLine.details.rawKind !== 'molten' || !draftLine.details.inventorySourceId) return;
-    const source = meltedInventory.find((item) => item.id === draftLine.details.inventorySourceId);
-    const labName = source?.labName?.trim();
-    if (!labName || draftLine.details.labName === labName) return;
+    if (nature !== 'paid') return;
+    if (!draftLine.details.inventorySourceId) return;
 
-    setDraftLine((current) => (
-      current.details.inventorySourceId === source?.id && current.details.labName !== labName
-        ? { ...current, details: { ...current.details, labName } }
-        : current
-    ));
-  }, [draftLine.details.inventorySourceId, draftLine.details.labName, draftLine.details.rawKind, meltedInventory, nature, setDraftLine]);
+    const source = meltedInventory.find((item) => item.id === draftLine.details.inventorySourceId);
+    if (!source) return;
+
+    const targetLabName = (source.labName ?? '').trim();
+    const targetPurity = String(source.purity || 750);
+    const needLabUpdate = draftLine.details.labName !== targetLabName;
+    const needPurityUpdate = draftLine.details.purity !== targetPurity;
+
+    if (needLabUpdate || needPurityUpdate) {
+      setDraftLine((current) => (
+        current.details.inventorySourceId === source.id
+          ? {
+              ...current,
+              details: {
+                ...current.details,
+                labName: needLabUpdate ? targetLabName : current.details.labName,
+                purity: needPurityUpdate ? targetPurity : current.details.purity,
+              },
+            }
+          : current
+      ));
+    }
+  }, [draftLine.details.inventorySourceId, draftLine.details.labName, draftLine.details.purity, draftLine.details.rawKind, meltedInventory, nature, setDraftLine]);
 
   return (
     <div className="space-y-4">
@@ -175,23 +199,22 @@ export default function RawGoldTab({
       />
       <div className="document-dynamic-fields">
         <div className="document-special-grid raw-gold-fields">
-          {nature === 'paid' && draftLine.details.rawKind === 'molten' ? (
-            <Field label="انتخاب موجودی آبشده" wide>
+          {nature === 'paid' && draftLine.details.rawKind !== 'unsettled' ? (
+            <Field label={inventoryLabel} wide>
               <select
                 value={draftLine.details.inventorySourceId}
                 onChange={(event) => {
-                  const source = meltedInventory.find((item) => item.id === event.target.value);
+                  const selectedId = event.target.value;
+                  const source = meltedInventory.find((item) => item.id === selectedId);
                   setDraftLine((current) => ({
                     ...current,
                     details: {
                       ...current.details,
-                      inventorySourceId: event.target.value,
-                      rawWeight: source ? String(source.remainingWeight) : current.details.rawWeight,
-                      purity: source ? String(source.purity || 750) : current.details.purity,
-                      stampNumber: source?.stampNumber ?? current.details.stampNumber,
-                      // The assay lab belongs to the exact melted inventory lot.
-                      // Carry it into the outflow so the outgoing document remains traceable.
-                      labName: source?.labName ?? current.details.labName,
+                      inventorySourceId: selectedId,
+                      rawWeight: source ? String(source.remainingWeight) : (selectedId ? current.details.rawWeight : ''),
+                      purity: source ? String(source.purity || 750) : (selectedId ? current.details.purity : '750'),
+                      stampNumber: source ? (source.stampNumber ?? '') : '',
+                      labName: source ? (source.labName ?? '') : '',
                     },
                   }));
                 }}
@@ -199,7 +222,7 @@ export default function RawGoldTab({
                 <option value="">انتخاب از موجودی فعال...</option>
                 {meltedInventory.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {item.stampNumber || 'بدون انگ'} · {item.labName || 'ری‌گیری نامشخص'} · {item.customerName} · {item.remainingWeight.toFixed(3)} گرم · عیار {item.purity}
+                    {item.stampNumber || 'بدون انگ'} · {item.labName || 'ری‌گیری نامشخص'} · {item.customerName} · باقیمانده: {item.remainingWeight.toFixed(3)} گرم · عیار {item.purity}
                   </option>
                 ))}
               </select>
@@ -222,12 +245,14 @@ export default function RawGoldTab({
               min="1"
               max="1000"
               step="0.1"
+              readOnly={isPaidRawFromInventory}
+              disabled={isPaidRawFromInventory}
               value={draftLine.details.purity}
               onChange={(event) => updateDraftDetail('purity', event.target.value)}
               onKeyDown={handleKeyDownEnter}
               aria-label="عیار ردیف سند"
               placeholder="۷۵۰"
-              title="عیار اول از تنظیمات برنامه خوانده می‌شود و قابل ویرایش است."
+              title={isPaidRawFromInventory ? 'عیار از موجودی انتخابی قفل شده است.' : 'عیار اول از تنظیمات برنامه خوانده می‌شود و قابل ویرایش است.'}
             />
           </Field>
           <Field label="تبدیل‌شده به ۷۵۰">
@@ -243,9 +268,10 @@ export default function RawGoldTab({
                 <AssayLaboratorySelect
                   inputRef={labInputRef}
                   value={draftLine.details.labName}
+                  disabled={isPaidRawFromInventory}
                   onChange={(val) => updateDraftDetail('labName', val)}
                   onKeyDown={handleKeyDownEnter}
-                  placeholder="انتخاب یا جستجوی ری‌گیری..."
+                  placeholder={isPaidRawFromInventory ? (draftLine.details.labName || 'بدون ری‌گیری در موجودی') : 'انتخاب یا جستجوی ری‌گیری...'}
                   error={errors.labName}
                 />
               </Field>

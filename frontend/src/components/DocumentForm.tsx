@@ -5,6 +5,7 @@ import {
   Check,
   ClipboardList,
   Flame,
+  Hash,
   LoaderCircle,
   MapPin,
   PencilLine,
@@ -282,7 +283,7 @@ function isLineReady(line: DocumentLine) {
     && numberValue(line.details.metalPrice) > 0;
 }
 
-function validateLine(line: DocumentLine) {
+function validateLine(line: DocumentLine, inventory: MeltedInventoryItem[] = []) {
   if (line.documentTab === 'currency') {
     if (!line.details.currencyUnit) return 'واحد ارز را انتخاب کنید.';
     if (numberValue(line.details.currencyQuantity) <= 0) return 'تعداد ارز باید بیشتر از صفر باشد.';
@@ -326,6 +327,22 @@ function validateLine(line: DocumentLine) {
     && !line.details.inventorySourceId
   ) {
     return 'برای خروج آبشده، یک موجودی فعال انتخاب کنید.';
+  }
+  if (
+    line.documentNature === 'paid'
+    && line.details.inventorySourceId
+  ) {
+    const sourceItem = inventory.find((item) => item.id === line.details.inventorySourceId);
+    if (sourceItem && rawWeight > sourceItem.remainingWeight + 0.0000001) {
+      const kindTitle = line.details.rawKind === 'conditional'
+        ? 'شرطی'
+        : line.details.rawKind === 'misc'
+          ? 'متفرقه'
+          : line.details.rawKind === 'question'
+            ? 'سواله'
+            : 'آبشده';
+      return `وزن خروجی نمی‌تواند بیشتر از موجودی ${kindTitle} (${sourceItem.remainingWeight.toFixed(3)} گرم) باشد.`;
+    }
   }
   if (line.details.rawKind !== 'conditional') {
     const purityStr = normalizeDigits(line.details.purity).trim();
@@ -782,8 +799,11 @@ export default function DocumentForm({
   }, [selectedCustomerId]);
 
   useEffect(() => {
-    if (documentNature !== 'paid' || draftLine.details.rawKind !== 'molten') return;
-    fetch('/api/documents?inventory=melted', { cache: 'no-store' })
+    if (documentNature !== 'paid') return;
+    const kind = draftLine.details.rawKind;
+    if (kind === 'unsettled') return;
+    const url = `/api/documents?inventory=raw-gold&kind=${kind}`;
+    fetch(url, { cache: 'no-store' })
       .then((response) => response.ok ? response.json() : Promise.reject())
       .then((data: { inventory?: MeltedInventoryItem[] }) => setMeltedInventory(data.inventory ?? []))
       .catch(() => setMeltedInventory([]));
@@ -1091,7 +1111,7 @@ export default function DocumentForm({
   }
 
   function commitDraftLine() {
-    const validationMessage = validateLine(draftLine);
+    const validationMessage = validateLine(draftLine, meltedInventory);
     if (validationMessage) {
       setErrorMessage(validationMessage);
       return;
@@ -1626,7 +1646,18 @@ export default function DocumentForm({
           </div>
 
           {/* Document Number - Immediately after Customer search */}
-          <div className="w-full lg:w-48">
+          <div className="w-full lg:w-48 flex flex-col justify-end">
+            {/* Unique ZF Document Number Display Above Document Number */}
+            <div className="flex items-center justify-between gap-1.5 px-2 py-1 mb-1.5 rounded-lg bg-amber-500/10 border border-amber-500/25 text-[11px] font-bold text-amber-950 dark:text-amber-300 shadow-xs">
+              <span className="flex items-center gap-1 text-[11px] text-amber-800 dark:text-amber-400">
+                <Hash size={12} className="shrink-0 text-amber-600 dark:text-amber-400" />
+                <span>شناسه یکتا:</span>
+              </span>
+              <span className="font-mono font-black text-xs tracking-wider select-all" dir="ltr">
+                {documentNumberLoading ? '...' : (selectedCustomerId ? 'ZF────────' : '---')}
+              </span>
+            </div>
+
             <Field label="شماره سند">
               <div className="document-number-field">
                 <input

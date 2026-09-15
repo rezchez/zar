@@ -8,6 +8,7 @@ import { mapCheckRecord, type CheckStatus, type ChequeType } from '@/lib/check';
 import { formatJalaliDate, jalaliDateToIso, normalizeDigits } from '@/lib/jalali';
 import { parseLocalizedAmount } from '@/lib/money';
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
+import { generateUniqueZfDocumentNumber } from '@/lib/document-number';
 import { postPayableChequeIssue, postReceivableChequeReceipt } from '@/lib/accounting-posting-engine';
 import { mapBankAccount } from '@/lib/bank';
 
@@ -230,6 +231,8 @@ export async function POST(request: Request) {
     }
 
     // 3. Customer Transaction Ledger Entry (settlementMethod: 'check')
+    const checkDocNumber = await generateUniqueZfDocumentNumber(writer);
+
     await writer.collection('transactions').create({
       customer: customer.id,
       customerCode: Number(customer.customerCode ?? 0),
@@ -241,7 +244,7 @@ export async function POST(request: Request) {
       sourceKey: `check-issued:${checkRecord.id}`,
       transactionDate: new Date().toISOString(),
       documentId,
-      documentNumber: '',
+      documentNumber: checkDocNumber,
       description: `صدور چک صیادی ${normalizedSayadId} — ${description}`,
       documentNature: chequeType === 'payable' ? 'paid' : 'received',
       documentTab: 'bank',

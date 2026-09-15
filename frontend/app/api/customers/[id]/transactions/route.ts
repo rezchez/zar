@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 
 import { recordAuditEvent } from '@/lib/audit';
 import { getServerAuthContext } from '@/lib/auth';
+import { generateUniqueZfDocumentNumber } from '@/lib/document-number';
 import { mapTransaction, sumPostedTransactions } from '@/lib/transaction';
 
 const allowedTransactionTypes = new Set(['document', 'adjustment', 'reversal']);
@@ -147,6 +148,7 @@ export async function POST(
     }
 
     let transaction;
+    const documentNumber = await generateUniqueZfDocumentNumber(context.pb);
     try {
       transaction = await context.pb.collection('transactions').create({
         customer: id,
@@ -159,7 +161,7 @@ export async function POST(
         sourceKey,
         transactionDate,
         documentId,
-        documentNumber: readString(body.documentNumber, 80),
+        documentNumber,
         description: readString(body.description, 2000),
         ...amounts,
         foreignCurrency: String(customer.secondaryCurrency ?? ''),
@@ -189,12 +191,12 @@ export async function POST(
       details: `تراکنش ${transactionType} برای حساب ${customer.customerCode ?? '—'} ثبت شد.`,
       entityType: 'transaction',
       entityId: transaction.id,
-      entityLabel: `${customer.customerCode ?? '—'} - ${readString(body.documentNumber, 80) || 'بدون شماره سند'}`,
+      entityLabel: `${customer.customerCode ?? '—'} - ${documentNumber}`,
       changes: {
         transactionType,
         transactionDate,
         documentId,
-        documentNumber: readString(body.documentNumber, 80),
+        documentNumber,
         description: readString(body.description, 2000),
         amounts,
       },
