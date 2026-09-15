@@ -4,9 +4,12 @@ import {
   BarChart3,
   Boxes,
   FileSpreadsheet,
+  FlaskConical,
+  HandCoins,
   History,
   LayoutDashboard,
   PackageOpen,
+  Settings,
   ShieldCheck,
   SlidersHorizontal,
   UserPlus,
@@ -88,10 +91,23 @@ const navGroupsBase: NavGroupData[] = [
         href: '/dashboard/reports',
       },
       {
-        id: 'refining-packets',
-        title: 'پاکت‌های نزد ریگیری',
-        icon: PackageOpen,
-        href: '/dashboard/refining/packets',
+        id: 'refining',
+        title: 'ری‌گیری',
+        icon: FlaskConical,
+        children: [
+          {
+            id: 'refining-packets',
+            title: 'پاکت‌های نزد ریگیری',
+            icon: PackageOpen,
+            href: '/dashboard/refining/packets',
+          },
+          {
+            id: 'conditional-karat',
+            title: 'عیار شرطی',
+            icon: HandCoins,
+            href: '/dashboard/documents/new',
+          },
+        ],
       },
     ],
   },
@@ -207,22 +223,29 @@ export default function DashboardShell({
         heading: 'مدیریت و تنظیمات',
         items: [
           {
-            id: 'user-management',
-            title: 'مدیریت کاربران',
-            icon: ShieldCheck,
-            href: '/dashboard/users',
-          },
-          {
-            id: 'activity-log',
-            title: 'لاگ و رویدادها',
-            icon: History,
-            href: '/dashboard/activity-log',
-          },
-          {
-            id: 'program-settings',
-            title: 'تنظیمات کلی سامانه',
-            icon: SlidersHorizontal,
-            href: '/dashboard/settings',
+            id: 'general-management',
+            title: 'مدیریت کلی',
+            icon: Settings,
+            children: [
+              {
+                id: 'user-management',
+                title: 'مدیریت کاربران',
+                icon: ShieldCheck,
+                href: '/dashboard/users',
+              },
+              {
+                id: 'activity-log',
+                title: 'لاگ و رویدادها',
+                icon: History,
+                href: '/dashboard/activity-log',
+              },
+              {
+                id: 'program-settings',
+                title: 'تنظیمات کلی سامانه',
+                icon: SlidersHorizontal,
+                href: '/dashboard/settings',
+              },
+            ],
           },
         ],
       });
@@ -245,6 +268,8 @@ export default function DashboardShell({
         ? 'program-settings'
         : pathname === '/dashboard/reports'
           ? 'reports'
+          : pathname === '/dashboard/refining/packets'
+            ? 'refining-packets'
           : pathname === '/dashboard/documents/new'
             ? 'document-new'
             : pathname === '/dashboard/documents/initial-inventory' || pathname === '/dashboard/documents/opening-balance'
