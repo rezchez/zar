@@ -3,6 +3,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { FlaskConical, ListPlus, Sparkles } from 'lucide-react';
 import type React from 'react';
+import { useEffect } from 'react';
 
 import DocumentOperationTypeSelector from '@/src/components/documents/DocumentOperationTypeSelector';
 import Field from '@/src/components/documents/Field';
@@ -97,6 +98,21 @@ export default function GoldSaleTab({
       ? convertPricesFromMesghal17(numericPrice)
       : convertPricesFromOunceUsd(numericPrice);
 
+  // The sales/purchase tab has its own inventory selector. Keep the assay
+  // lab from the selected melted lot in sync with the document row.
+  useEffect(() => {
+    if (nature !== 'paid' || draftLine.details.rawKind !== 'molten' || !draftLine.details.inventorySourceId) return;
+    const source = meltedInventory.find((item) => item.id === draftLine.details.inventorySourceId);
+    const labName = source?.labName?.trim();
+    if (!labName || draftLine.details.labName === labName) return;
+
+    setDraftLine((current) => (
+      current.details.inventorySourceId === source?.id && current.details.labName !== labName
+        ? { ...current, details: { ...current.details, labName } }
+        : current
+    ));
+  }, [draftLine.details.inventorySourceId, draftLine.details.labName, draftLine.details.rawKind, meltedInventory, nature, setDraftLine]);
+
   const handlePriceTypeChange = (newType: DetailState['metalPriceType']) => {
     updateMetalValue('metalPriceType', newType);
   };
@@ -160,6 +176,7 @@ export default function GoldSaleTab({
                         rawWeight: source ? String(source.remainingWeight) : current.details.rawWeight,
                         purity: source ? String(source.purity || 750) : current.details.purity,
                         stampNumber: source?.stampNumber ?? current.details.stampNumber,
+                        labName: source?.labName ?? current.details.labName,
                       },
                     }));
                   }}
@@ -167,7 +184,7 @@ export default function GoldSaleTab({
                   <option value="">انتخاب از موجودی فعال...</option>
                   {meltedInventory.map((item) => (
                     <option key={item.id} value={item.id}>
-                      {item.stampNumber || 'بدون انگ'} · {item.customerName} · {item.remainingWeight.toFixed(3)} گرم · عیار {item.purity}
+                      {item.stampNumber || 'بدون انگ'} · {item.labName || 'ری‌گیری نامشخص'} · {item.customerName} · {item.remainingWeight.toFixed(3)} گرم · عیار {item.purity}
                     </option>
                   ))}
                 </select>

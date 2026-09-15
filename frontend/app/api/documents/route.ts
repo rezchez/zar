@@ -26,6 +26,114 @@ const amountFields = [
   'tertiaryAmount',
 ] as const;
 
+type MeltedInventoryItem = {
+  id: string;
+  weight: number;
+  remainingWeight: number;
+  purity: number;
+  stampNumber: string;
+  labName?: string;
+  customerName: string;
+};
+
+const METAL_BASE_KARATS = {
+  gold: 750,
+  silver: 999,
+  platinum: 950,
+} as const;
+
+const rawMetalInventoryTypes = {
+  molten: 'melted',
+  conditional: 'conditional',
+  misc: 'miscellaneous',
+  question: 'sowaleh',
+  unsettled: 'general_metal',
+} as const;
+
+function parseDetails(value: unknown): Record<string, unknown> {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return value as Record<string, unknown>;
+  if (typeof value !== 'string') return {};
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function metalAmount(record: Record<string, unknown>, metal: string) {
+  if (metal === 'silver') return Math.abs(Number(record.silverAmount ?? 0));
+  if (metal === 'platinum') return Math.abs(Number(record.platinumAmount ?? 0));
+  return Math.abs(Number(record.goldAmount ?? 0));
+}
+
+function metalInventoryType(rawKind: unknown) {
+  return rawMetalInventoryTypes[rawKind as keyof typeof rawMetalInventoryTypes] ?? 'general_metal';
+}
+
+/** Dedicated metal ledger, with a non-duplicating legacy-transactions fallback. */
+async function getMeltedInventory(pb: NonNullable<Awaited<ReturnType<typeof getServerAuthContext>>>['pb']) {
+  const [inventoryRecords, transactionRecords] = await Promise.all([
+    pb.collection('metal_inventory').getFullList({
+      filter: 'metal = "gold" && inventory_type = "melted" && is_deleted != true',
+      sort: 'created',
+      expand: 'customer',
+    }).catch(() => []),
+    pb.collection('transactions').getFullList({
+      filter: 'documentSubType = "incoming-molten" || documentSubType = "outgoing-molten"',
+      sort: 'created',
+      expand: 'customer',
+    }).catch(() => []),
+  ]);
+
+  const available = new Map<string, MeltedInventoryItem>();
+  const linkedTransactionIds = new Set<string>();
+  for (const record of inventoryRecords) {
+    const transactionId = String(record.transaction_id ?? '');
+    if (transactionId) linkedTransactionIds.add(transactionId);
+    const weight = Math.abs(Number(record.raw_weight ?? 0));
+    if (String(record.direction) === 'in' && weight > 0) {
+      available.set(record.id, {
+        id: record.id,
+        weight,
+        remainingWeight: weight,
+        purity: Number(record.purity ?? 750) || 750,
+        stampNumber: String(record.stamp_number ?? ''),
+        labName: String(record.lab_name ?? ''),
+        customerName: String(record.expand?.customer?.name ?? (record.is_opening_balance ? 'موجودی اول دوره' : '')),
+      });
+    }
+  }
+  for (const record of inventoryRecords) {
+    if (String(record.direction) !== 'out') continue;
+    const source = available.get(String(record.source_inventory_id ?? ''));
+    if (source) source.remainingWeight = Math.max(0, source.remainingWeight - Math.abs(Number(record.raw_weight ?? 0)));
+  }
+  for (const record of transactionRecords) {
+    if (linkedTransactionIds.has(record.id) || record.is_deleted === true) continue;
+    const details = parseDetails(record.documentDetails);
+    const weight = Math.abs(Number(record.goldAmount ?? 0));
+    if (record.documentNature === 'received' && weight > 0) {
+      available.set(record.id, {
+        id: record.id,
+        weight,
+        remainingWeight: weight,
+        purity: Number(details.purity ?? 750) || 750,
+        stampNumber: String(details.stampNumber ?? ''),
+        labName: String(details.labName ?? ''),
+        customerName: String(record.expand?.customer?.name ?? (record.isOpeningBalance ? 'موجودی اول دوره' : (record.customerCode ?? ''))),
+      });
+    }
+    if (record.documentNature === 'paid') {
+      const source = available.get(String(details.inventorySourceId ?? ''));
+      if (source) source.remainingWeight = Math.max(0, source.remainingWeight - weight);
+    }
+  }
+  return [...available.values()].filter((item) => item.remainingWeight > 0.0000001);
+}
+
 function readString(value: unknown, maxLength: number) {
   return typeof value === 'string' ? value.trim().slice(0, maxLength) : '';
 }
@@ -79,41 +187,8 @@ export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
     if (url.searchParams.get('inventory') === 'melted') {
-      const records = await context.pb.collection('transactions').getFullList({
-        filter: 'documentSubType = "incoming-molten" || documentSubType = "outgoing-molten" || documentSubType = "conditional-molten" || documentSubType = "misc-molten"',
-        sort: 'created',
-        expand: 'customer',
-      });
-      const inflows = new Map<string, {
-        id: string;
-        weight: number;
-        remainingWeight: number;
-        purity: number;
-        stampNumber: string;
-        customerName: string;
-      }>();
-      for (const record of records) {
-        const details = typeof record.documentDetails === 'string'
-          ? (() => { try { return JSON.parse(record.documentDetails) as Record<string, unknown>; } catch { return {}; } })()
-          : {};
-        const weight = Math.abs(Number(record.goldAmount ?? 0));
-        if (record.documentNature === 'received' && weight > 0) {
-          inflows.set(record.id, {
-            id: record.id,
-            weight,
-            remainingWeight: weight,
-            purity: Number(details.purity ?? 750) || 750,
-            stampNumber: String(details.stampNumber ?? ''),
-            customerName: String(record.expand?.customer?.name ?? (record.isOpeningBalance ? 'موجودی اول دوره' : (record.customerCode ?? ''))),
-          });
-        }
-        if (record.documentNature === 'paid' && typeof details.inventorySourceId === 'string') {
-          const source = inflows.get(details.inventorySourceId);
-          if (source) source.remainingWeight = Math.max(0, source.remainingWeight - weight);
-        }
-      }
       return NextResponse.json({
-        inventory: [...inflows.values()].filter((item) => item.remainingWeight > 0.0000001),
+        inventory: await getMeltedInventory(context.pb),
       });
     }
 
@@ -157,7 +232,9 @@ export async function POST(request: Request) {
   }
 
   const documentDateJalali = readString(body.documentDateJalali, 20);
-  const requestedStatus = body.status === 'temporary' ? 'temporary' : 'final';
+  // UI labels are temporary/final while the transactions collection stores
+  // accounting states as draft/posted.
+  const requestedStatus = body.status === 'temporary' ? 'draft' : 'posted';
   const transactionDate = jalaliDateToIso(documentDateJalali);
   if (!transactionDate) {
     return NextResponse.json(
@@ -176,6 +253,15 @@ export async function POST(request: Request) {
     }
 
     const documentId = readString(body.documentId, 80) || randomUUID();
+    // The document ID is the user-facing idempotency token; sourceKey is the
+    // storage-level guard used for each row. Check both before creating a
+    // financial document so a retry can never create another first line.
+    const existingFirstLine = await context.pb.collection('transactions').getFirstListItem(
+      context.pb.filter(
+        'sourceKey = {:sourceKey} && is_deleted = false',
+        { sourceKey: `document:${documentId}:1` },
+      ),
+    ).catch(() => null);
     const existingDocument = await context.pb.collection('transactions').getFullList({
       filter: context.pb.filter(
         'documentId = {:documentId} && is_deleted = false',
@@ -184,13 +270,14 @@ export async function POST(request: Request) {
       sort: 'documentLineNumber',
     }).catch(() => []);
 
-    if (existingDocument.length > 0) {
+    if (existingDocument.length > 0 || existingFirstLine) {
+      const records = existingDocument.length > 0 ? existingDocument : [existingFirstLine];
       return NextResponse.json({
-        transactions: existingDocument.map(mapDocument),
-        transaction: mapDocument(existingDocument[0]),
+        transactions: records.map(mapDocument),
+        transaction: mapDocument(records[0]),
         documentId,
-        documentNumber: String(existingDocument[0].documentNumber ?? ''),
-        documentSequence: Number(existingDocument[0].documentSequence ?? 1),
+        documentNumber: String(records[0].documentNumber ?? ''),
+        documentSequence: Number(records[0].documentSequence ?? 1),
         alreadyExists: true,
       }, { status: 200 });
     }
@@ -198,24 +285,9 @@ export async function POST(request: Request) {
     const requestedLines = Array.isArray(body.lines) ? body.lines : [body];
     const lines = requestedLines.length ? requestedLines : [body];
 
-    const inventoryRecords = await context.pb.collection('transactions').getFullList({
-      filter: 'documentSubType = "incoming-molten" || documentSubType = "outgoing-molten" || documentSubType = "conditional-molten" || documentSubType = "misc-molten"',
-      sort: 'created',
-    });
-    const availableMelted = new Map<string, number>();
-    for (const record of inventoryRecords) {
-      const weight = Math.abs(Number(record.goldAmount ?? 0));
-      const details = typeof record.documentDetails === 'string'
-        ? (() => { try { return JSON.parse(record.documentDetails) as Record<string, unknown>; } catch { return {}; } })()
-        : {};
-      if (record.documentNature === 'received' && weight > 0) availableMelted.set(record.id, weight);
-      if (record.documentNature === 'paid' && typeof details.inventorySourceId === 'string') {
-        availableMelted.set(
-          details.inventorySourceId,
-          Math.max(0, (availableMelted.get(details.inventorySourceId) ?? 0) - weight),
-        );
-      }
-    }
+    const availableMelted = new Map(
+      (await getMeltedInventory(context.pb)).map((item) => [item.id, item.remainingWeight]),
+    );
 
     const preparedLines = lines.map((rawLine, index) => {
       const line = rawLine && typeof rawLine === 'object' && !Array.isArray(rawLine)
@@ -236,6 +308,18 @@ export async function POST(request: Request) {
         throw new Error(`ردیف ${index + 1} باید حداقل یک مبلغ یا وزن غیرصفر داشته باشد.`);
       }
       const details = normalizeDetails(line.documentDetails);
+      if (line.documentTab === 'raw-gold') {
+        const metal = String(details.metalType ?? 'gold');
+        const rawKind = String(details.rawKind ?? 'molten');
+        const weight = metalAmount(lineAmounts, metal);
+        const purity = readAmount(details.purity);
+        if (!['gold', 'silver', 'platinum'].includes(metal) || !Object.hasOwn(rawMetalInventoryTypes, rawKind)) {
+          throw new Error(`مشخصات فلز در ردیف ${index + 1} معتبر نیست.`);
+        }
+        if (weight <= 0 || purity === null || purity < 1 || purity > 1000) {
+          throw new Error(`وزن یا عیار فلز در ردیف ${index + 1} معتبر نیست.`);
+        }
+      }
       if (
         lineNature === 'paid'
         && line.documentSubType === 'outgoing-molten'
@@ -300,6 +384,8 @@ export async function POST(request: Request) {
     }
 
     const activePrefix = await getActiveDocumentPrefix(writer);
+    const metalTypes = await writer.collection('metal_types').getFullList({ fields: 'id,code,base_karat' }).catch(() => []);
+    const metalTypeByCode = new Map(metalTypes.map((record) => [String(record.code), record]));
     let attempts = 0;
     let finalRecords: Record<string, unknown>[] = [];
     let finalSequence = 1;
@@ -341,13 +427,61 @@ export async function POST(request: Request) {
       }));
 
       const currentCreatedRecords = [];
+      const currentCreatedInventoryRecords = [];
       try {
         for (const payload of documentPayloads) {
           currentCreatedRecords.push(await writer.collection('transactions').create(payload));
         }
+        for (let index = 0; index < preparedLines.length; index++) {
+          const prepared = preparedLines[index];
+          if (prepared.line.documentTab !== 'raw-gold') continue;
+          const metal = String(prepared.documentDetails.metalType ?? 'gold') as keyof typeof METAL_BASE_KARATS;
+          const rawWeight = metalAmount(prepared.lineAmounts, metal);
+          if (rawWeight <= 0) continue;
+          const metalType = metalTypeByCode.get(metal);
+          const baseKarat = Number(metalType?.base_karat ?? METAL_BASE_KARATS[metal]);
+          const purity = Number(prepared.documentDetails.purity);
+          const sourceKey = `document:${documentId}:${prepared.lineNumber}:metal`;
+          const existingInventory = await writer.collection('metal_inventory').getFirstListItem(
+            writer.filter('source_key = {:sourceKey}', { sourceKey }),
+          ).catch(() => null);
+          if (existingInventory) continue;
+          currentCreatedInventoryRecords.push(await writer.collection('metal_inventory').create({
+            metal_type: metalType?.id ?? '',
+            metal,
+            inventory_type: metalInventoryType(prepared.documentDetails.rawKind),
+            direction: prepared.lineNature === 'received' ? 'in' : 'out',
+            transaction_type: String(prepared.line.documentSubType ?? ''),
+            raw_weight: rawWeight,
+            purity,
+            base_karat: baseKarat,
+            converted_weight: (rawWeight * purity) / baseKarat,
+            lab_name: readString(prepared.documentDetails.labName, 120),
+            stamp_number: readString(prepared.documentDetails.stampNumber, 80),
+            total_amount: Math.round(Math.abs(readAmount(prepared.documentDetails.totalAmount) ?? 0)),
+            date: documentDateJalali,
+            description: readString(prepared.line.description ?? body.description, 500),
+            document_id: documentId,
+            transaction_id: currentCreatedRecords[index].id,
+            customer: customer.id,
+            source_inventory_id: readString(prepared.documentDetails.inventorySourceId, 40),
+            source_key: sourceKey,
+            is_opening_balance: false,
+            is_deleted: false,
+            created_by: context.user.id,
+            updated_by: context.user.id,
+          }));
+        }
         finalRecords = currentCreatedRecords as unknown as Record<string, unknown>[];
         break;
       } catch (err) {
+        for (const record of currentCreatedInventoryRecords) {
+          try {
+            await writer.collection('metal_inventory').delete(record.id);
+          } catch {
+            // ignore
+          }
+        }
         for (const record of currentCreatedRecords) {
           try {
             await writer.collection('transactions').delete(record.id);

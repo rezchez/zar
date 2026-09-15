@@ -2,6 +2,7 @@
 
 import { ListPlus } from 'lucide-react';
 import type React from 'react';
+import { useEffect } from 'react';
 
 import Field from '@/src/components/documents/Field';
 import { RawMetalOperationTypeSelector } from '@/src/components/documents/DocumentOperationTypeSelector';
@@ -94,6 +95,7 @@ export type MeltedInventoryItem = {
   remainingWeight: number;
   purity: number;
   stampNumber: string;
+  labName?: string;
   customerName: string;
 };
 
@@ -140,6 +142,22 @@ export default function RawGoldTab({
   const isMoltenOrConditional = draftLine.details.rawKind === 'molten' || draftLine.details.rawKind === 'conditional';
   const hasValidWeight = Boolean(Number(draftLine.details.rawWeight) > 0);
   const isRequired = isGold && isMoltenOrConditional && hasValidWeight;
+
+  // Keep assay data aligned with the selected stock lot, including when the
+  // inventory list finishes loading after the source has already been picked.
+  useEffect(() => {
+    if (nature !== 'paid' || draftLine.details.rawKind !== 'molten' || !draftLine.details.inventorySourceId) return;
+    const source = meltedInventory.find((item) => item.id === draftLine.details.inventorySourceId);
+    const labName = source?.labName?.trim();
+    if (!labName || draftLine.details.labName === labName) return;
+
+    setDraftLine((current) => (
+      current.details.inventorySourceId === source?.id && current.details.labName !== labName
+        ? { ...current, details: { ...current.details, labName } }
+        : current
+    ));
+  }, [draftLine.details.inventorySourceId, draftLine.details.labName, draftLine.details.rawKind, meltedInventory, nature, setDraftLine]);
+
   return (
     <div className="space-y-4">
       <div className="document-operation-title">
@@ -171,6 +189,9 @@ export default function RawGoldTab({
                       rawWeight: source ? String(source.remainingWeight) : current.details.rawWeight,
                       purity: source ? String(source.purity || 750) : current.details.purity,
                       stampNumber: source?.stampNumber ?? current.details.stampNumber,
+                      // The assay lab belongs to the exact melted inventory lot.
+                      // Carry it into the outflow so the outgoing document remains traceable.
+                      labName: source?.labName ?? current.details.labName,
                     },
                   }));
                 }}
@@ -178,7 +199,7 @@ export default function RawGoldTab({
                 <option value="">انتخاب از موجودی فعال...</option>
                 {meltedInventory.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {item.stampNumber || 'بدون انگ'} · {item.customerName} · {item.remainingWeight.toFixed(3)} گرم · عیار {item.purity}
+                    {item.stampNumber || 'بدون انگ'} · {item.labName || 'ری‌گیری نامشخص'} · {item.customerName} · {item.remainingWeight.toFixed(3)} گرم · عیار {item.purity}
                   </option>
                 ))}
               </select>
