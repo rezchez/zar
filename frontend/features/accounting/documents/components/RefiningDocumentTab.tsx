@@ -37,7 +37,7 @@ type RefiningDocumentTabProps = {
   weightPrecision?: number;
   meltedInventory?: MeltedInventoryItem[];
   convertedTo750: (weight: string, purity: string) => number;
-  faNumber: (val: string | number, precision?: number) => string;
+  faNumber: (value: number, fractionDigits?: number) => string;
   baseCurrency?: 'IRR' | 'IRT';
   errors?: { labName?: string; stampNumber?: string };
   labInputRef?: React.RefObject<HTMLInputElement | null>;
