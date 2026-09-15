@@ -63,12 +63,21 @@ export type DetailState = {
   profitAmount?: string;
   discountAmount?: string;
   convertedWeight?: string;
+  // Refining fields (ری‌گیری)
+  refiningCaseId?: string;
+  refiningCaseNumber?: string;
+  refiningOpKind?: 'delivery' | 'receipt' | 'sample_send' | 'sample_receive' | 'fee';
+  refiningPacketId?: string;
+  refiningPacketNumber?: string;
+  refiningSampleWeight?: string;
+  refiningReturnedWeight?: string;
+  refiningWeightLoss?: string;
 };
 
 export type DocumentLine = {
   id: string;
   documentNature: 'received' | 'paid';
-  documentTab: 'raw-gold' | 'gold-sale' | 'currency' | 'cash' | 'workmanship' | 'coin' | 'bank' | 'claim';
+  documentTab: 'raw-gold' | 'gold-sale' | 'currency' | 'cash' | 'workmanship' | 'coin' | 'bank' | 'claim' | 'refining';
   sourceTab?: string;
   documentSubType: string;
   documentTypeLabel?: string;

@@ -234,7 +234,8 @@ export function DatePicker({
     setIsOpen(false);
   };
 
-  const handleClear = (e?: React.MouseEvent) => {
+  const handleClear = (e?: React.MouseEvent | React.KeyboardEvent) => {
+    e?.preventDefault();
     e?.stopPropagation();
     onValueChange?.('', '', undefined);
     onChange?.('');
@@ -250,7 +251,7 @@ export function DatePicker({
         </label>
       ) : null}
 
-      <div className="relative flex items-center">
+      <div className="relative flex items-center w-full">
         <button
           type="button"
           disabled={disabled || readOnly}
@@ -264,6 +265,7 @@ export function DatePicker({
             isOpen && 'ring-2 ring-amber-500/40 border-amber-500 shadow-md',
             disabled && 'opacity-50 cursor-not-allowed bg-slate-100 dark:bg-slate-800',
             error && 'border-rose-500 focus:ring-rose-500/40',
+            clearable && displayString && !disabled && !readOnly ? 'pl-8' : '',
           )}
           aria-haspopup="dialog"
           aria-expanded={isOpen}
@@ -276,21 +278,6 @@ export function DatePicker({
           </div>
 
           <div className="flex items-center gap-1 shrink-0">
-            {clearable && displayString && !disabled && !readOnly ? (
-              <span
-                role="button"
-                tabIndex={0}
-                onClick={handleClear}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') handleClear();
-                }}
-                className="p-1 text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 transition-colors rounded-lg cursor-pointer"
-                title="پاک کردن"
-              >
-                <X size={14} />
-              </span>
-            ) : null}
-
             {distanceLabel ? (
               <span className="hidden sm:inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-black text-amber-700 dark:text-amber-300 border border-amber-500/20">
                 <Clock3 size={10} />
@@ -299,6 +286,18 @@ export function DatePicker({
             ) : null}
           </div>
         </button>
+
+        {clearable && displayString && !disabled && !readOnly ? (
+          <button
+            type="button"
+            onClick={handleClear}
+            className="absolute left-2.5 top-1/2 -translate-y-1/2 z-10 p-1 text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 transition-colors rounded-lg cursor-pointer flex items-center justify-center"
+            title="پاک کردن تاریخ"
+            aria-label="پاک کردن تاریخ"
+          >
+            <X size={14} />
+          </button>
+        ) : null}
       </div>
 
       {error ? (

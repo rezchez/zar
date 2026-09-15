@@ -4,7 +4,7 @@ import { getServerAuthContext } from '@/lib/auth';
 import { getCustomerWithBalances } from '@/lib/customer-service';
 import type { CustomerTransaction } from '@/lib/transaction';
 import CustomerForm from '@/src/components/CustomerFormLoader';
-import CustomerTransactionLedger from '@/src/components/CustomerTransactionLedger';
+import CustomerDetailSections from '@/features/customers/components/CustomerDetailSections';
 import DashboardShell from '@/src/components/dashboard/DashboardShell';
 
 export const dynamic = 'force-dynamic';
@@ -28,7 +28,8 @@ export default async function EditCustomerPage({ params }: { params: Promise<{ i
   return (
     <DashboardShell user={context.user}>
       <CustomerForm customer={customer} />
-      <CustomerTransactionLedger
+      <CustomerDetailSections
+        customer={customer}
         customerId={record.id}
         initialTransactions={transactions}
       />

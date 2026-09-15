@@ -4,14 +4,18 @@ import {
   ArrowLeftRight,
   Check,
   ClipboardList,
+  Flame,
   LoaderCircle,
+  MapPin,
   PencilLine,
+  Phone,
   Pin,
   PinOff,
   Plus,
   RotateCcw,
   Search,
   Sparkles,
+  Tag,
   Trash2,
   UserRound,
   X,
@@ -22,6 +26,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import DatePicker from '@/components/ui/date-picker';
 import { getCurrencyDisplayName, type Currency } from '@/lib/currencies';
 import { currencyDisplay, type Customer } from '@/lib/customer';
+import { isRefinerGroup } from '@/lib/customer-groups';
 import DocumentSubmitActions from '@/components/documents/document-submit-actions';
 import DocumentEntryTabs from '@/src/components/documents/DocumentEntryTabs';
 import type { DocumentNature } from '@/lib/document';
@@ -44,6 +49,7 @@ import CashTab from '@/src/components/documents/CashTab';
 import ClaimTab from '@/src/components/documents/ClaimTab';
 import BankTab from '@/src/components/documents/BankTab';
 import WorkmanshipTab from '@/src/components/documents/WorkmanshipTab';
+import RefiningDocumentTab from '@/src/components/documents/RefiningDocumentTab';
 import Field from '@/src/components/documents/Field';
 import HawalaModal from '@/src/components/documents/HawalaModal';
 import DocumentPrint from '@/src/components/documents/DocumentPrint';
@@ -183,13 +189,17 @@ function createLine(nature: DocumentNature = 'received', sourceTab = 'metals'): 
               ? 'bank'
               : sourceTab === 'claim'
                 ? 'claim'
-                : 'raw-gold';
+                : sourceTab === 'refining'
+                  ? 'refining'
+                  : 'raw-gold';
   return {
     id: crypto.randomUUID(),
     documentNature: nature,
     documentTab: docTab,
     sourceTab,
-    documentSubType: documentSubType(nature, 'molten'),
+    documentSubType: sourceTab === 'refining'
+      ? (nature === 'paid' ? 'outgoing-refining' : 'incoming-refining')
+      : documentSubType(nature, 'molten'),
     settlementMethod: 'weight',
     balanceSource: 'current',
     description: '',
@@ -214,6 +224,7 @@ function createLine(nature: DocumentNature = 'received', sourceTab = 'metals'): 
       settlementQuantity: '',
       settlesTradeId: '',
       inventorySourceId: '',
+      refiningOpKind: nature === 'paid' ? 'delivery' : 'receipt',
     },
   };
 }
@@ -254,6 +265,14 @@ function isLineReady(line: DocumentLine) {
     const rawWeight = numberValue(line.details.rawWeight);
     return rawWeight > 0 && Boolean(line.details.workmanshipName?.trim());
   }
+  if (line.documentTab === 'refining') {
+    const opKind = line.details.refiningOpKind || (line.documentNature === 'paid' ? 'delivery' : 'receipt');
+    if (opKind === 'fee') {
+      return numberValue(line.details.totalAmount) > 0;
+    }
+    const rawWeight = numberValue(line.details.rawWeight);
+    return rawWeight > 0;
+  }
   const rawWeight = line.details.calculationMethod === 'money'
     ? actualWeightFromMoney(line.details)
     : numberValue(line.details.rawWeight);
@@ -275,6 +294,20 @@ function validateLine(line: DocumentLine) {
     const rawWeight = numberValue(line.details.rawWeight);
     if (rawWeight <= 0) return 'وزن کار ساخته باید بیشتر از صفر باشد.';
     if (!line.details.workmanshipName?.trim()) return 'نام کار ساخته را وارد کنید.';
+    return '';
+  }
+  if (line.documentTab === 'refining') {
+    const opKind = line.details.refiningOpKind || (line.documentNature === 'paid' ? 'delivery' : 'receipt');
+    if (opKind === 'fee') {
+      if (numberValue(line.details.totalAmount) <= 0) return 'مبلغ اجرت ری‌گیری باید بیشتر از صفر باشد.';
+      return '';
+    }
+    const rawWeight = numberValue(line.details.rawWeight);
+    if (rawWeight <= 0) return 'وزن باید بیشتر از صفر باشد.';
+    if (opKind !== 'sample_send') {
+      const purityNum = numberValue(line.details.purity);
+      if (purityNum <= 0 || purityNum > 1000) return 'عیار باید عددی معتبر و بین ۱ تا ۱۰۰۰ باشد.';
+    }
     return '';
   }
   const rawWeight = line.details.calculationMethod === 'money'
@@ -317,7 +350,19 @@ function getLineDocumentTypeLabel(
   tab: string,
   rawKind: RawOperationKind,
   unsettledTrade?: boolean,
+  refiningOpKind?: string,
 ): string {
+  if (tab === 'refining') {
+    if (nature === 'paid') {
+      if (refiningOpKind === 'sample_send') return 'ارسال پاکت ری‌گیری';
+      return 'ارسال طلا به ری‌گیری';
+    } else {
+      if (refiningOpKind === 'sample_receive') return 'دریافت نتیجه پاکت ری‌گیری';
+      if (refiningOpKind === 'fee') return 'اجرت ری‌گیری';
+      return 'دریافت طلا از ری‌گیری';
+    }
+  }
+
   if (tab === 'currency') {
     if (unsettledTrade) {
       return nature === 'received' ? 'خرید ارز (بدون تسویه)' : 'فروش ارز (بدون تسویه)';
@@ -357,6 +402,39 @@ function rawOperationLabel(nature: DocumentNature, kind: RawOperationKind) {
   return `${prefix} آب‌شده`;
 }
 
+function getCustomerGroupBadge(groupName?: string) {
+  const name = (groupName || '').trim();
+  if (!name) return null;
+  if (isRefinerGroup(name)) {
+    return {
+      label: 'ریگیر',
+      classes: 'bg-amber-100 text-amber-900 border-amber-300/80 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800',
+    };
+  }
+  if (name === 'همکار' || name === 'بنکدار') {
+    return {
+      label: name,
+      classes: 'bg-blue-100 text-blue-900 border-blue-300/80 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800',
+    };
+  }
+  if (name === 'supplier' || name === 'تأمین‌کننده') {
+    return {
+      label: 'تأمین‌کننده',
+      classes: 'bg-purple-100 text-purple-900 border-purple-300/80 dark:bg-purple-950/60 dark:text-purple-300 dark:border-purple-800',
+    };
+  }
+  if (name === 'customer' || name === 'مشتری' || name === 'خریدار') {
+    return {
+      label: 'مشتری',
+      classes: 'bg-emerald-100 text-emerald-900 border-emerald-300/80 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800',
+    };
+  }
+  return {
+    label: name,
+    classes: 'bg-slate-100 text-slate-800 border-slate-300/80 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700',
+  };
+}
+
 export default function DocumentForm({
   customers,
 }: {
@@ -383,6 +461,10 @@ export default function DocumentForm({
 
   const [customerQuery, setCustomerQuery] = useState('');
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
+  const [isCustomerDropdownOpen, setIsCustomerDropdownOpen] = useState(false);
+  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
+  const customerSearchRef = useRef<HTMLDivElement>(null);
+  const customerInputRef = useRef<HTMLInputElement>(null);
   const [documentNumberDisplay, setDocumentNumberDisplay] = useState('');
   const [documentNumberLoading, setDocumentNumberLoading] = useState(false);
   const [documentId, setDocumentId] = useState(() => crypto.randomUUID());
@@ -399,6 +481,26 @@ export default function DocumentForm({
   const labInputRef = useRef<HTMLInputElement>(null);
   const stampInputRef = useRef<HTMLInputElement>(null);
   const [meltedInventory, setMeltedInventory] = useState<MeltedInventoryItem[]>([]);
+
+  // Close customer search dropdown on click outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent | TouchEvent) {
+      if (
+        customerSearchRef.current &&
+        !customerSearchRef.current.contains(event.target as Node)
+      ) {
+        setIsCustomerDropdownOpen(false);
+        setActiveSuggestionIndex(-1);
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
+  }, []);
 
   // Exit Navigation Guard Modal State
   const [showExitModal, setShowExitModal] = useState(false);
@@ -604,16 +706,42 @@ export default function DocumentForm({
     : 'انتخاب نشده';
 
   const suggestions = useMemo(() => {
-    const query = customerQuery.trim().toLocaleLowerCase();
-    if (!query || selectedCustomer) return [];
+    if (selectedCustomer) return [];
+    const rawQuery = customerQuery.trim().toLocaleLowerCase();
+    const normalizedQuery = normalizeDigits(rawQuery);
+
+    if (!rawQuery) {
+      return isCustomerDropdownOpen ? customers.slice(0, 8) : [];
+    }
+
     return customers
-      .filter((customer) =>
-        `${customer.name} ${customer.customerCode} ${customer.phone1}`
-          .toLocaleLowerCase()
-          .includes(query),
-      )
-      .slice(0, 8);
-  }, [customerQuery, customers, selectedCustomer]);
+      .filter((customer) => {
+        const name = (customer.name || '').toLocaleLowerCase();
+        const englishName = (customer.englishName || '').toLocaleLowerCase();
+        const code = normalizeDigits(String(customer.customerCode || ''));
+        const p1 = normalizeDigits(customer.phone1 || '');
+        const p2 = normalizeDigits(customer.phone2 || '');
+        const p3 = normalizeDigits(customer.phone3 || '');
+        const group = (customer.groupName || '').toLocaleLowerCase();
+        const city = (customer.city || '').toLocaleLowerCase();
+        const nationalId = normalizeDigits(customer.nationalId || '');
+        const isRefinerMatch = isRefinerGroup(rawQuery) && isRefinerGroup(customer.groupName);
+
+        return (
+          isRefinerMatch ||
+          name.includes(rawQuery) ||
+          englishName.includes(rawQuery) ||
+          code.includes(normalizedQuery) ||
+          p1.includes(normalizedQuery) ||
+          p2.includes(normalizedQuery) ||
+          p3.includes(normalizedQuery) ||
+          group.includes(rawQuery) ||
+          city.includes(rawQuery) ||
+          nationalId.includes(normalizedQuery)
+        );
+      })
+      .slice(0, 10);
+  }, [customerQuery, customers, selectedCustomer, isCustomerDropdownOpen]);
 
   const draftReady = isLineReady(draftLine);
   const currencyUnits = useMemo(() => {
@@ -779,6 +907,8 @@ export default function DocumentForm({
     setDocumentNumberLoading(true);
     setSelectedCustomerId(customer.id);
     setCustomerQuery(`${customer.customerCode} - ${customer.name}`);
+    setIsCustomerDropdownOpen(false);
+    setActiveSuggestionIndex(-1);
   }
 
   function clearCustomer() {
@@ -786,6 +916,41 @@ export default function DocumentForm({
     setCustomerQuery('');
     setDocumentNumberDisplay('');
     setDocumentNumberLoading(false);
+    setIsCustomerDropdownOpen(true);
+    setActiveSuggestionIndex(-1);
+    setTimeout(() => {
+      customerInputRef.current?.focus();
+    }, 50);
+  }
+
+  function handleCustomerKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (!isCustomerDropdownOpen || suggestions.length === 0) {
+      if (event.key === 'ArrowDown') {
+        setIsCustomerDropdownOpen(true);
+        setActiveSuggestionIndex(0);
+        event.preventDefault();
+      }
+      return;
+    }
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setActiveSuggestionIndex((prev) => (prev + 1) % suggestions.length);
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setActiveSuggestionIndex((prev) => (prev <= 0 ? suggestions.length - 1 : prev - 1));
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      if (activeSuggestionIndex >= 0 && activeSuggestionIndex < suggestions.length) {
+        chooseCustomer(suggestions[activeSuggestionIndex]);
+      } else if (suggestions.length === 1) {
+        chooseCustomer(suggestions[0]);
+      }
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      setIsCustomerDropdownOpen(false);
+      setActiveSuggestionIndex(-1);
+    }
   }
 
   function changeNature(nature: DocumentNature) {
@@ -947,12 +1112,13 @@ export default function DocumentForm({
     setLineValidationErrors({});
     setErrorMessage('');
 
-    const lineSourceTab = draftLine.sourceTab || (draftLine.documentTab === 'currency' ? 'currency' : draftLine.documentTab === 'gold-sale' ? 'gold-sale' : 'metals');
+    const lineSourceTab = draftLine.sourceTab || (draftLine.documentTab === 'currency' ? 'currency' : draftLine.documentTab === 'gold-sale' ? 'gold-sale' : draftLine.documentTab === 'refining' ? 'refining' : 'metals');
     const docTypeLabel = getLineDocumentTypeLabel(
       documentNature,
       lineSourceTab,
       draftLine.details.rawKind,
       draftLine.details.unsettledTrade,
+      draftLine.details.refiningOpKind,
     );
 
     const rawWeight = draftLine.details.calculationMethod === 'money'
@@ -1046,7 +1212,7 @@ export default function DocumentForm({
   }
 
   function editLine(line: DocumentLine) {
-    const lineSourceTab = line.sourceTab || (line.documentTab === 'currency' ? 'currency' : line.documentTab === 'gold-sale' ? 'gold-sale' : 'metals');
+    const lineSourceTab = line.sourceTab || (line.documentTab === 'currency' ? 'currency' : line.documentTab === 'gold-sale' ? 'gold-sale' : line.documentTab === 'refining' ? 'refining' : 'metals');
     setDraftLine(line);
     setEditingLineId(line.id);
     setActiveEntryTab(lineSourceTab);
@@ -1128,15 +1294,15 @@ export default function DocumentForm({
             balanceSource: line.balanceSource,
             description: line.description,
             documentDetails: line.details,
-            goldAmount: (line.documentTab === 'raw-gold' || line.documentTab === 'gold-sale') && line.details.metalType === 'gold'
+            goldAmount: (line.documentTab === 'raw-gold' || line.documentTab === 'gold-sale' || line.documentTab === 'refining') && line.details.metalType === 'gold' && line.details.refiningOpKind !== 'fee'
               ? line.details.calculationMethod === 'money'
                 ? actualWeightFromMoney(line.details)
                 : numberValue(line.details.rawWeight)
               : 0,
-            silverAmount: (line.documentTab === 'raw-gold' || line.documentTab === 'gold-sale') && line.details.metalType === 'silver'
+            silverAmount: (line.documentTab === 'raw-gold' || line.documentTab === 'gold-sale' || line.documentTab === 'refining') && line.details.metalType === 'silver' && line.details.refiningOpKind !== 'fee'
               ? line.details.calculationMethod === 'money' ? actualWeightFromMoney(line.details) : numberValue(line.details.rawWeight)
               : 0,
-            platinumAmount: (line.documentTab === 'raw-gold' || line.documentTab === 'gold-sale') && line.details.metalType === 'platinum'
+            platinumAmount: (line.documentTab === 'raw-gold' || line.documentTab === 'gold-sale' || line.documentTab === 'refining') && line.details.metalType === 'platinum' && line.details.refiningOpKind !== 'fee'
               ? line.details.calculationMethod === 'money' ? actualWeightFromMoney(line.details) : numberValue(line.details.rawWeight)
               : 0,
             rialAmount: line.documentTab === 'currency'
@@ -1145,7 +1311,9 @@ export default function DocumentForm({
                 ? numberValue(line.details.totalAmount)
                 : line.documentTab === 'gold-sale'
                   ? numberValue(line.details.totalAmount)
-                  : 0,
+                  : line.documentTab === 'refining' && line.details.refiningOpKind === 'fee'
+                    ? numberValue(line.details.totalAmount)
+                    : 0,
             foreignAmount: line.documentTab === 'currency'
               ? numberValue(line.details.currencyQuantity)
               : line.documentTab === 'cash' && line.details.isForeignCash
@@ -1206,7 +1374,7 @@ export default function DocumentForm({
     };
 
     committedLines.forEach((line) => {
-      if (line.documentTab === 'raw-gold' || line.documentTab === 'gold-sale') {
+      if (line.documentTab === 'raw-gold' || line.documentTab === 'gold-sale' || (line.documentTab === 'refining' && line.details.refiningOpKind !== 'fee')) {
         const metal = line.details.metalType || 'gold';
         const weight = line.details.calculationMethod === 'money'
           ? actualWeightFromMoney(line.details)
@@ -1229,8 +1397,9 @@ export default function DocumentForm({
   const hasAssayOrStamp = useMemo(() => {
     return committedLines.some(
       (line) =>
-        (line.documentTab === 'raw-gold' || line.documentTab === 'gold-sale' || line.sourceTab === 'metals' || line.sourceTab === 'gold-sale') &&
-        (line.details?.rawKind === 'molten' || line.details?.rawKind === 'conditional'),
+        Boolean(line.details?.stampNumber || line.details?.labName) ||
+        ((line.documentTab === 'raw-gold' || line.documentTab === 'gold-sale' || line.documentTab === 'refining' || line.sourceTab === 'metals' || line.sourceTab === 'gold-sale' || line.sourceTab === 'refining') &&
+        (line.details?.rawKind === 'molten' || line.details?.rawKind === 'conditional')),
     );
   }, [committedLines]);
 
@@ -1241,6 +1410,7 @@ export default function DocumentForm({
         line.documentTab === 'cash' ||
         line.sourceTab === 'currency' ||
         line.sourceTab === 'cash' ||
+        (line.documentTab === 'refining' && line.details?.refiningOpKind === 'fee') ||
         numberValue(line.details?.totalAmount) > 0 ||
         numberValue(line.details?.currencyTotalAmount) > 0,
     );
@@ -1249,7 +1419,7 @@ export default function DocumentForm({
   // Identify editing line source tab for smart blur
   const editingLine = editingLineId ? committedLines.find((line) => line.id === editingLineId) || (draftLine.id === editingLineId ? draftLine : null) : null;
   const editingSourceTab = editingLine
-    ? (editingLine.sourceTab || (editingLine.documentTab === 'currency' ? 'currency' : editingLine.documentTab === 'gold-sale' ? 'gold-sale' : 'metals'))
+    ? (editingLine.sourceTab || (editingLine.documentTab === 'currency' ? 'currency' : editingLine.documentTab === 'gold-sale' ? 'gold-sale' : editingLine.documentTab === 'refining' ? 'refining' : 'metals'))
     : null;
 
   return (
@@ -1276,7 +1446,7 @@ export default function DocumentForm({
         {/* Top Row: Customer Selection (Right) & Document Number (Immediately After) */}
         <div className="grid gap-2.5 lg:grid-cols-[1fr_auto] items-end">
           {/* Customer Selection Search / Selected Card */}
-          <div className="space-y-1.5">
+          <div className="space-y-1.5" ref={customerSearchRef}>
             <AnimatePresence mode="wait" initial={false}>
               {!selectedCustomer ? (
                 <motion.div
@@ -1287,42 +1457,111 @@ export default function DocumentForm({
                   transition={{ duration: 0.15, ease: 'easeOut' }}
                   className="w-full"
                 >
-                  <label className="account-field document-account-search-field max-w-none">
+                  <div className="account-field document-account-search-field max-w-none">
                     <span className="text-xs font-bold text-slate-600 dark:text-slate-300">طرف‌حساب</span>
-                    <div className="gooey-search document-search-shell">
-                      <Search size={16} />
+                    <div className="gooey-search document-search-shell relative">
+                      <Search size={16} className="text-slate-400 shrink-0" />
                       <input
+                        ref={customerInputRef}
                         value={customerQuery}
+                        onFocus={() => setIsCustomerDropdownOpen(true)}
                         onChange={(event) => {
                           setCustomerQuery(event.target.value);
+                          setIsCustomerDropdownOpen(true);
+                          setActiveSuggestionIndex(-1);
                         }}
-                        placeholder="نام یا کد طرف‌حساب را وارد کنید..."
+                        onKeyDown={handleCustomerKeyDown}
+                        placeholder="جستجو با نام، کد، تلفن یا گروه (مثلاً ریگیر)..."
                         autoComplete="off"
                       />
+                      {customerQuery ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCustomerQuery('');
+                            setActiveSuggestionIndex(-1);
+                            customerInputRef.current?.focus();
+                          }}
+                          className="p-1 text-slate-400 hover:text-rose-500 transition-colors rounded-lg shrink-0 cursor-pointer"
+                          title="پاک کردن متن جستجو"
+                          aria-label="پاک کردن"
+                        >
+                          <X size={14} />
+                        </button>
+                      ) : null}
                     </div>
-                    {suggestions.length ? (
-                      <div className="document-customer-suggestions">
-                        {suggestions.map((customer) => (
-                          <button
-                            type="button"
-                            key={customer.id}
-                            onClick={() => chooseCustomer(customer)}
-                          >
-                            <span className="document-suggestion-avatar">
-                              {customer.name.charAt(0)}
-                            </span>
-                            <span>
-                              <strong>{customer.name}</strong>
-                              <small>
-                                کد {toPersianDigits(String(customer.customerCode))}
-                                {customer.phone1 ? ` · ${toPersianDigits(customer.phone1)}` : ''}
-                              </small>
-                            </span>
-                          </button>
-                        ))}
-                      </div>
+
+                    {isCustomerDropdownOpen ? (
+                      suggestions.length > 0 ? (
+                        <div className="document-customer-suggestions" role="listbox">
+                          {suggestions.map((customer, idx) => {
+                            const groupBadge = getCustomerGroupBadge(customer.groupName);
+                            const isHighlighted = idx === activeSuggestionIndex;
+                            const phone = customer.phone1 || customer.phone2 || customer.phone3 || '';
+
+                            return (
+                              <button
+                                type="button"
+                                key={customer.id}
+                                role="option"
+                                aria-selected={isHighlighted}
+                                className={isHighlighted ? 'is-active' : ''}
+                                onMouseEnter={() => setActiveSuggestionIndex(idx)}
+                                onClick={() => chooseCustomer(customer)}
+                              >
+                                {/* Right side: Avatar + Name + Code + Group */}
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  <span className="document-suggestion-avatar shrink-0">
+                                    {customer.name.charAt(0)}
+                                  </span>
+                                  <div className="min-w-0 text-right">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <strong className="text-xs sm:text-sm font-black text-slate-900 dark:text-slate-100 truncate">
+                                        {customer.name}
+                                      </strong>
+                                      {groupBadge ? (
+                                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black border ${groupBadge.classes}`}>
+                                          <Tag size={10} />
+                                          {groupBadge.label}
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                    <small className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold block mt-0.5">
+                                      کد: {toPersianDigits(String(customer.customerCode))}
+                                    </small>
+                                  </div>
+                                </div>
+
+                                {/* Left side: Phone + City */}
+                                <div className="flex flex-col items-end gap-1 shrink-0 text-left pl-1">
+                                  {phone ? (
+                                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800/80 px-2 py-0.5 rounded-lg border border-slate-200/60 dark:border-slate-700/60" dir="ltr">
+                                      <Phone size={11} className="text-amber-600 dark:text-amber-400" />
+                                      {toPersianDigits(phone)}
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] text-slate-400">فاقد شماره</span>
+                                  )}
+                                  {customer.city ? (
+                                    <span className="inline-flex items-center gap-1 text-[10px] text-slate-500 dark:text-slate-400">
+                                      <MapPin size={10} className="text-slate-400" />
+                                      {customer.city}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : customerQuery.trim() ? (
+                        <div className="document-customer-suggestions p-4 text-center">
+                          <p className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                            طرف‌حسابی با مشخصات وارد شده یافت نشد.
+                          </p>
+                        </div>
+                      ) : null
                     ) : null}
-                  </label>
+                  </div>
                 </motion.div>
               ) : (
                 <motion.div
@@ -1331,23 +1570,55 @@ export default function DocumentForm({
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -4 }}
                   transition={{ duration: 0.15, ease: 'easeOut' }}
-                  className="w-full sm:w-1/3 flex items-center justify-between rounded-xl border border-teal-200 bg-teal-50/60 p-2 dark:border-teal-900/60 dark:bg-teal-950/30 transition-all duration-300"
+                  className="w-full flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 rounded-2xl border border-teal-300/80 bg-gradient-to-r from-teal-50/90 via-emerald-50/40 to-teal-50/70 p-3 sm:px-4 sm:py-2.5 dark:border-teal-800/80 dark:bg-gradient-to-r dark:from-teal-950/40 dark:via-slate-900/60 dark:to-emerald-950/30 shadow-xs transition-all duration-300"
                 >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="document-suggestion-avatar shrink-0"><UserRound size={15} /></span>
-                    <div className="min-w-0 truncate">
-                      <strong className="block text-xs font-bold text-slate-800 dark:text-slate-100 truncate">{selectedCustomer.name}</strong>
-                      <small className="text-[10px] text-slate-500 dark:text-slate-400 block truncate">
-                        کد {toPersianDigits(String(selectedCustomer.customerCode))}
-                      </small>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="document-suggestion-avatar shrink-0 w-10 h-10 bg-teal-100 text-teal-800 dark:bg-teal-900/50 dark:text-teal-300 border border-teal-200 dark:border-teal-700/60 rounded-xl flex items-center justify-center font-black text-sm">
+                      {selectedCustomer.name.charAt(0)}
+                    </span>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <strong className="text-sm font-black text-slate-900 dark:text-slate-100">
+                          {selectedCustomer.name}
+                        </strong>
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-black bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                          کد: {toPersianDigits(String(selectedCustomer.customerCode))}
+                        </span>
+                        {(() => {
+                          const badge = getCustomerGroupBadge(selectedCustomer.groupName);
+                          return badge ? (
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black border ${badge.classes}`}>
+                              <Tag size={10} />
+                              گروه: {badge.label}
+                            </span>
+                          ) : null;
+                        })()}
+                      </div>
+                      <div className="flex items-center gap-3 mt-1 text-[11px] text-slate-600 dark:text-slate-300">
+                        {(selectedCustomer.phone1 || selectedCustomer.phone2 || selectedCustomer.phone3) ? (
+                          <span className="inline-flex items-center gap-1 font-bold" dir="ltr">
+                            <Phone size={12} className="text-teal-600 dark:text-teal-400" />
+                            {toPersianDigits(selectedCustomer.phone1 || selectedCustomer.phone2 || selectedCustomer.phone3 || '')}
+                          </span>
+                        ) : null}
+                        {selectedCustomer.city ? (
+                          <span className="inline-flex items-center gap-1 text-slate-500 dark:text-slate-400 font-medium">
+                            <MapPin size={11} className="text-slate-400" />
+                            {selectedCustomer.city}
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
                   </div>
+
                   <button
                     type="button"
                     onClick={clearCustomer}
-                    className="rounded-lg border border-teal-300 bg-white px-2.5 py-1 text-[11px] font-bold text-teal-700 transition hover:bg-teal-50 dark:border-teal-700 dark:bg-slate-800 dark:text-teal-300 dark:hover:bg-slate-700 shrink-0"
+                    className="flex items-center gap-1.5 rounded-xl border border-teal-300 bg-white px-3 py-1.5 text-xs font-bold text-teal-800 transition hover:bg-teal-100/70 hover:shadow-xs dark:border-teal-700 dark:bg-slate-800 dark:text-teal-300 dark:hover:bg-slate-700 shrink-0 cursor-pointer self-center"
+                    title="تغییر یا انتخاب طرف‌حساب دیگر"
                   >
-                    تغییر
+                    <ArrowLeftRight size={13} />
+                    <span>تغییر طرف‌حساب</span>
                   </button>
                 </motion.div>
               )}
@@ -1381,98 +1652,106 @@ export default function DocumentForm({
         </AnimatePresence>
 
         {/* Bottom Metadata Row: Document Nature (Switch) + Metal Type + Currency Type + Document Date */}
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 items-end pt-2">
-          <Field label="نوع سند">
-            <button
-              type="button"
-              className={`document-nature-switch ${documentNature}`}
-              onClick={() => changeNature(documentNature === 'received' ? 'paid' : 'received')}
-              role="switch"
-              aria-checked={documentNature === 'received'}
-            >
-              <span className="document-nature-switch-track">
-                <motion.span
-                  className="document-nature-switch-thumb"
-                  animate={{ x: documentNature === 'received' ? 0 : -42 }}
-                  transition={{ type: 'spring', stiffness: 450, damping: 30 }}
-                />
-              </span>
-              <strong>سند {documentNature === 'received' ? 'دریافتی' : 'پرداختی'}</strong>
-            </button>
-          </Field>
-
-          <Field label="جنس فلز">
-            <select
-              className="text-xs h-9"
-              value={draftLine.details.metalType}
-              onChange={(event) => {
-                const metalType = event.target.value as MetalType;
-                setDraftLine((current) => ({
-                  ...current,
-                  details: {
-                    ...current.details,
-                    metalType,
-                    purity: String(purityForMetal(metalType)),
-                  },
-                }));
-              }}
-            >
-              <option value="gold">طلای خام</option>
-              <option value="silver">نقره</option>
-              <option value="platinum">پلاتین</option>
-            </select>
-          </Field>
-
-          <Field label="نوع ارز">
-            <div className="flex items-center gap-1.5">
-              <select
-                className="text-xs h-9 flex-1"
-                value={selectedCurrency}
-                onChange={(event) => {
-                  const curr = event.target.value;
-                  setSelectedCurrency(curr);
-                  const currObj = availableCurrencies.find((c) => c.code === curr);
-                  updateDraftDetail('currencyUnit', currObj?.code || '');
-                  updateDraftDetail('settlementCurrencyUnit', currObj?.code || '');
-                }}
-                disabled={currenciesLoading || availableCurrencies.length === 0}
-              >
-                {availableCurrencies.length === 0 ? (
-                  <option value="">
-                    {currenciesLoading ? 'در حال دریافت ارزها...' : 'ارزی در کالکشن ثبت نشده است'}
-                  </option>
-                ) : availableCurrencies.map((curr) => (
-                  <option key={curr.code} value={curr.code}>
-                    {getCurrencyDisplayName(curr)} ({curr.code})
-                  </option>
-                ))}
-              </select>
+        <div className="flex flex-wrap lg:flex-nowrap gap-3 items-end pt-2">
+          <div className="w-full sm:w-auto shrink-0 min-w-[190px]">
+            <Field label="نوع سند">
               <button
                 type="button"
-                onClick={() => {
-                  setAddCurrencyError('');
-                  setShowAddCurrencyModal(true);
-                }}
-                className="h-9 w-9 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold flex items-center justify-center transition-colors shrink-0"
-                title="افزودن ارز جدید"
+                className={`document-nature-switch ${documentNature}`}
+                onClick={() => changeNature(documentNature === 'received' ? 'paid' : 'received')}
+                role="switch"
+                aria-checked={documentNature === 'received'}
               >
-                <Plus size={16} />
+                <span className="document-nature-switch-track">
+                  <motion.span
+                    className="document-nature-switch-thumb"
+                    animate={{ x: documentNature === 'received' ? 0 : -26 }}
+                    transition={{ type: 'spring', stiffness: 500, damping: 35, bounce: 0 }}
+                  />
+                </span>
+                <strong>سند {documentNature === 'received' ? 'دریافتی' : 'پرداختی'}</strong>
               </button>
-            </div>
-          </Field>
+            </Field>
+          </div>
 
-          <Field label="تاریخ سند">
-            <DatePicker
-              value={documentDateJalali}
-              onValueChange={(_iso, jalali) => {
-                if (jalali) setDocumentDateJalali(jalali);
-              }}
-              calendarType="shamsi"
-              format="yyyy/MM/dd"
-              placeholder="انتخاب تاریخ سند"
-              className="w-full"
-            />
-          </Field>
+          <div className="w-full sm:w-36 shrink-0">
+            <Field label="جنس فلز">
+              <select
+                className="text-xs h-9"
+                value={draftLine.details.metalType}
+                onChange={(event) => {
+                  const metalType = event.target.value as MetalType;
+                  setDraftLine((current) => ({
+                    ...current,
+                    details: {
+                      ...current.details,
+                      metalType,
+                      purity: String(purityForMetal(metalType)),
+                    },
+                  }));
+                }}
+              >
+                <option value="gold">طلای خام</option>
+                <option value="silver">نقره</option>
+                <option value="platinum">پلاتین</option>
+              </select>
+            </Field>
+          </div>
+
+          <div className="w-full sm:flex-1 min-w-[200px]">
+            <Field label="نوع ارز">
+              <div className="flex items-center gap-1.5">
+                <select
+                  className="text-xs h-9 flex-1"
+                  value={selectedCurrency}
+                  onChange={(event) => {
+                    const curr = event.target.value;
+                    setSelectedCurrency(curr);
+                    const currObj = availableCurrencies.find((c) => c.code === curr);
+                    updateDraftDetail('currencyUnit', currObj?.code || '');
+                    updateDraftDetail('settlementCurrencyUnit', currObj?.code || '');
+                  }}
+                  disabled={currenciesLoading || availableCurrencies.length === 0}
+                >
+                  {availableCurrencies.length === 0 ? (
+                    <option value="">
+                      {currenciesLoading ? 'در حال دریافت ارزها...' : 'ارزی در کالکشن ثبت نشده است'}
+                    </option>
+                  ) : availableCurrencies.map((curr) => (
+                    <option key={curr.code} value={curr.code}>
+                      {getCurrencyDisplayName(curr)} ({curr.code})
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAddCurrencyError('');
+                    setShowAddCurrencyModal(true);
+                  }}
+                  className="h-9 w-9 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold flex items-center justify-center transition-colors shrink-0"
+                  title="افزودن ارز جدید"
+                >
+                  <Plus size={16} />
+                </button>
+              </div>
+            </Field>
+          </div>
+
+          <div className="w-full sm:flex-1 min-w-[200px]">
+            <Field label="تاریخ سند">
+              <DatePicker
+                value={documentDateJalali}
+                onValueChange={(_iso, jalali) => {
+                  setDocumentDateJalali(jalali);
+                }}
+                calendarType="shamsi"
+                format="yyyy/MM/dd"
+                placeholder="انتخاب تاریخ سند"
+                className="w-full"
+              />
+            </Field>
+          </div>
         </div>
       </section>
 
@@ -1555,6 +1834,30 @@ export default function DocumentForm({
               toPersianDigits={toPersianDigits}
               faNumber={faNumber}
               numberValue={numberValue}
+              errors={lineValidationErrors}
+              labInputRef={labInputRef}
+              stampInputRef={stampInputRef}
+            />
+          )}
+          refiningTabLabel={documentNature === 'received' ? 'دریافت از ری‌گیری' : 'ارسال به ری‌گیری'}
+          refiningTabContent={(
+            <RefiningDocumentTab
+              nature={documentNature}
+              selectedCustomer={selectedCustomer}
+              draftLine={draftLine}
+              setDraftLine={setDraftLine}
+              committedLines={committedLines}
+              editingLineId={editingLineId}
+              isLinesPinned={isLinesPinned}
+              commitDraftLine={commitDraftLine}
+              updateDraftDetail={updateDraftDetail}
+              handleKeyDownEnter={handleKeyDownEnter}
+              draftReady={draftReady}
+              weightPrecision={weightPrecision}
+              meltedInventory={meltedInventory}
+              convertedTo750={convertedTo750}
+              faNumber={faNumber}
+              baseCurrency={baseCurrency}
               errors={lineValidationErrors}
               labInputRef={labInputRef}
               stampInputRef={stampInputRef}
@@ -2243,6 +2546,7 @@ function CommittedLineRow({
       line.sourceTab || line.documentTab,
       line.details.rawKind,
       line.details.unsettledTrade,
+      line.details.refiningOpKind,
     );
 
   const metalLabel = line.documentTab === 'currency'
@@ -2285,9 +2589,17 @@ function CommittedLineRow({
         {faNumber(index + 1)}
       </td>
       <td className="text-right">
-        <span className="font-semibold text-slate-800 dark:text-slate-200 block truncate" title={docType}>
-          {docType}
-        </span>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {(line.documentTab === 'refining' || line.sourceTab === 'refining') ? (
+            <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-extrabold text-amber-900 border border-amber-300/80 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800 shrink-0">
+              <Flame size={11} className="text-amber-600 dark:text-amber-400 shrink-0" />
+              ری‌گیری
+            </span>
+          ) : null}
+          <span className="font-semibold text-slate-800 dark:text-slate-200 truncate" title={docType}>
+            {docType}
+          </span>
+        </div>
       </td>
       <td className="text-center font-medium text-slate-700 dark:text-slate-200">
         {metalLabel}

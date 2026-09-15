@@ -12,6 +12,7 @@ export interface CustomerGroup {
 export const SYSTEM_GROUPS: Array<{ name: string; slug: string; englishName: string }> = [
   { name: 'مشتری', slug: 'customer', englishName: 'Customer' },
   { name: 'بنکدار', slug: 'wholesaler', englishName: 'Wholesaler' },
+  { name: 'ریگیر', slug: 'refiner', englishName: 'Refiner' },
   { name: 'سنگ فروش', slug: 'stone_seller', englishName: 'Stone Seller' },
   { name: 'آبکار', slug: 'gold_plater', englishName: 'Gold Plater' },
   { name: 'مخراج کار', slug: 'stone_setter', englishName: 'Stone Setter' },
@@ -23,6 +24,30 @@ export const SYSTEM_GROUPS: Array<{ name: string; slug: string; englishName: str
   { name: 'تراشکار', slug: 'lapidary', englishName: 'Lapidary' },
   { name: 'تعمیرکار', slug: 'repairer', englishName: 'Repairer' },
 ];
+
+/**
+ * Checks whether a customer group corresponds to the Gold Refiner (ریگیر) group.
+ * Accurately handles Persian half-space (ZWNJ \u200c), Arabic Kaf/Yeh, spaces, and synonyms.
+ */
+export function isRefinerGroup(groupName?: string | null): boolean {
+  if (!groupName || typeof groupName !== 'string') return false;
+  const clean = groupName
+    .replace(/\u200c/g, '') // remove ZWNJ (نیم‌فاصله)
+    .replace(/\s+/g, '')   // remove all whitespace
+    .replace(/ي/g, 'ی')    // Arabic Yeh -> Persian Yeh
+    .replace(/ك/g, 'ک')    // Arabic Kaf -> Persian Kaf
+    .trim()
+    .toLowerCase();
+
+  return (
+    clean === 'ریگیر' ||
+    clean === 'ریگیری' ||
+    clean === 'refiner' ||
+    clean === 'refining' ||
+    clean.includes('ریگیر') ||
+    clean.includes('ریگیری')
+  );
+}
 
 export function isSystemGroup(slugOrName: string): boolean {
   const clean = slugOrName.trim();

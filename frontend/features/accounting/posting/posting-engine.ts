@@ -78,6 +78,7 @@ export const SYSTEM_ACCOUNT_CODES = {
   GOLD_SALES_REVENUE: '4110',
   GOLD_COST_OF_SALES: '5200',
   PROFIT_LOSS: '3500',
+  REFINING_EXPENSE: '5500',
 } as const;
 
 /**
@@ -1463,3 +1464,101 @@ export async function postReceivableChequeCollection(
 
   return { journal, nextBankBalance };
 }
+
+/**
+ * Posts the double-entry journal entry for refining service fee (اجرت و دستمزد ری‌گیری).
+ * - Debit: Expense (5500 - هزینه‌های مستقیم تولید و خدمات فنی)
+ * - Credit: Counterparty Liability (2120 - بستانکاران تجاری / طرف‌حساب‌ها) for the refiner
+ * Also records a transaction in transactions collection to reflect creditor balance (بدهی ما به ریگیر).
+ */
+export async function postRefiningFee(
+  refiningCase: {
+    id: string;
+    caseNumber: string;
+    refiningFee: number;
+    description?: string;
+  },
+  refiner: {
+    id: string;
+    name: string;
+    customerCode?: number;
+  },
+  userId: string,
+  pb: PocketBase,
+): Promise<JournalEntryResult> {
+  const amount = Math.round(refiningCase.refiningFee);
+  if (amount <= 0) {
+    throw new Error('مبلغ اجرت ری‌گیری باید بزرگتر از صفر باشد.');
+  }
+
+  const expenseAccount = SYSTEM_ACCOUNT_CODES.REFINING_EXPENSE;
+  const liabilityAccount = SYSTEM_ACCOUNT_CODES.COUNTERPARTY_LIABILITY;
+
+  const desc = `اجرت و هزینه خدمات ری‌گیری پرونده ${refiningCase.caseNumber} (ریگیر: ${refiner.name})`;
+
+  const journal = await postJournalEntry(
+    {
+      description: desc,
+      sourceType: 'document',
+      sourceId: refiningCase.id,
+      sourceKey: `refining:fee:${refiningCase.id}`,
+      userId,
+      lines: [
+        {
+          accountId: expenseAccount,
+          debit: amount,
+          credit: 0,
+          description: `هزینه اجرت ری‌گیری پرونده ${refiningCase.caseNumber}`,
+        },
+        {
+          accountId: liabilityAccount,
+          debit: 0,
+          credit: amount,
+          description: `بستانکار طرف‌حساب: ${refiner.name} بابت اجرت ری‌گیری`,
+          partyId: refiner.id,
+        },
+      ],
+    },
+    pb,
+  );
+
+  // Sync to transactions collection for customer balance ledger
+  const txSourceKey = `refining:fee:${refiningCase.id}`;
+  const existingTx = await pb
+    .collection('transactions')
+    .getFirstListItem(pb.filter('sourceKey = {:sk}', { sk: txSourceKey }))
+    .catch(() => null);
+
+  const txPayload = {
+    customer: refiner.id,
+    customerCode: refiner.customerCode ?? 0,
+    createdBy: userId,
+    updatedBy: userId,
+    sourceKey: txSourceKey,
+    transactionType: 'document',
+    status: 'final',
+    isOpeningBalance: false,
+    transactionDate: new Date().toISOString(),
+    documentId: refiningCase.id,
+    documentNumber: refiningCase.caseNumber,
+    description: desc,
+    goldAmount: 0,
+    silverAmount: 0,
+    platinumAmount: 0,
+    rialAmount: amount, // positive = creditor / طلبکار از ما (our debt to refiner)
+    foreignAmount: 0,
+    tertiaryAmount: 0,
+    documentNature: 'received',
+    documentTab: 'refining',
+    documentSubType: 'refining_fee',
+  };
+
+  if (existingTx) {
+    await pb.collection('transactions').update(existingTx.id, txPayload).catch(() => undefined);
+  } else {
+    await pb.collection('transactions').create(txPayload).catch(() => undefined);
+  }
+
+  return journal;
+}
+

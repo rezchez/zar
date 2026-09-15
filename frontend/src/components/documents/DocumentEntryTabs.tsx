@@ -4,6 +4,7 @@ import {
   Banknote,
   CircleDollarSign,
   Coins,
+  Flame,
   Gem,
   HandCoins,
   Landmark,
@@ -24,6 +25,8 @@ type DocumentEntryTabsProps = {
   firstTabContent: ReactNode;
   goldSaleTabContent?: ReactNode;
   goldSaleTabLabel?: string;
+  refiningTabContent?: ReactNode;
+  refiningTabLabel?: string;
   currencyTabContent?: ReactNode;
   coinTabContent?: ReactNode;
   cashTabContent?: ReactNode;
@@ -52,6 +55,8 @@ export default function DocumentEntryTabs({
   firstTabContent,
   goldSaleTabContent,
   goldSaleTabLabel,
+  refiningTabContent,
+  refiningTabLabel,
   currencyTabContent,
   coinTabContent,
   cashTabContent,
@@ -81,6 +86,12 @@ export default function DocumentEntryTabs({
   const tabs: TabDefinition[] = [
     { id: 'metals', label: metalsTabLabel, icon: Gem, content: firstTabContent },
     { id: 'gold-sale', label: goldSaleTabLabel ?? (nature === 'received' ? 'خرید طلا' : 'فروش طلا'), icon: Gem, content: goldSaleTabContent ?? <PlaceholderTab label="خرید و فروش فلزات" /> },
+    {
+      id: 'refining',
+      label: refiningTabLabel ?? (nature === 'received' ? 'دریافت از ری‌گیری' : 'ارسال به ری‌گیری'),
+      icon: Flame,
+      content: refiningTabContent ?? <PlaceholderTab label={nature === 'received' ? 'دریافت از ری‌گیری' : 'ارسال به ری‌گیری'} />,
+    },
     { id: 'goods', label: 'کالا و جواهر', icon: Package, content: <PlaceholderTab label="کالا و جواهر" /> },
     {
       id: 'currency',

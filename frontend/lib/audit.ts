@@ -42,7 +42,15 @@ export type AuditEvent =
   | 'backup_validated'
   | 'backup_restored'
   | 'backup_deleted'
-  | 'backup_failed';
+  | 'backup_failed'
+  | 'refining_case_created'
+  | 'refining_case_updated'
+  | 'refining_gold_delivered'
+  | 'refining_output_received'
+  | 'refining_sample_created'
+  | 'refining_sample_received'
+  | 'refining_fee_recorded'
+  | 'refining_status_changed';
 
 export function getRequestMetadata(request?: Request) {
   if (!request || !request.headers) {
@@ -80,7 +88,7 @@ export async function recordAuditEvent({
   userId: string;
   event: AuditEvent;
   request?: Request;
-  details?: string;
+  details?: string | Record<string, unknown>;
   entityType?: string;
   entityId?: string;
   entityLabel?: string;
@@ -94,7 +102,7 @@ export async function recordAuditEvent({
     ipAddress: metadata.ipAddress,
     operatingSystem: metadata.operatingSystem,
     userAgent: metadata.userAgent.slice(0, 500),
-    details: (details ?? '').slice(0, 2000),
+    details: (typeof details === 'string' ? details : details ? JSON.stringify(details) : '').slice(0, 2000),
     entityType: (entityType ?? '').slice(0, 40),
     entityId: (entityId ?? '').slice(0, 80),
     entityLabel: (entityLabel ?? '').slice(0, 240),

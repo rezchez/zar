@@ -34,6 +34,7 @@ export const EXACT_PATH_LABELS: Record<string, string> = {
   '/dashboard/audit-logs': 'لاگ حسابرسی',
   '/dashboard/settings': 'تنظیمات کلی سامانه',
   '/dashboard/account': 'حساب کاربری',
+  '/dashboard/refining/packets': 'پاکت‌های نزد ریگیری',
 };
 
 /**
@@ -60,6 +61,8 @@ export const SEGMENT_FALLBACK_LABELS: Record<string, string> = {
   account: 'حساب کاربری',
   'activity-log': 'لاگ و رویدادها',
   'audit-logs': 'لاگ حسابرسی',
+  refining: 'ری‌گیری طلا',
+  packets: 'پاکت‌های نزد ریگیری',
 };
 
 /**

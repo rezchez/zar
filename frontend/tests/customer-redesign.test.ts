@@ -105,11 +105,12 @@ describe('Account Code Gap Detection Algorithm', () => {
 });
 
 describe('Customer System and Custom Groups', () => {
-  test('contains all 12 system groups with correct mappings', () => {
-    expect(SYSTEM_GROUPS.length).toBe(12);
+  test('contains all 13 system groups with correct mappings', () => {
+    expect(SYSTEM_GROUPS.length).toBe(13);
     const slugs = SYSTEM_GROUPS.map((g) => g.slug);
     expect(slugs).toContain('customer');
     expect(slugs).toContain('wholesaler');
+    expect(slugs).toContain('refiner');
     expect(slugs).toContain('stone_seller');
     expect(slugs).toContain('gold_plater');
     expect(slugs).toContain('stone_setter');

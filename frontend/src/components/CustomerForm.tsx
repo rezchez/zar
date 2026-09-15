@@ -3,6 +3,7 @@
 import {
   Check,
   ChevronDown,
+  Flame,
   ImagePlus,
   LoaderCircle,
   Plus,
@@ -17,6 +18,7 @@ import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 
 import DatePicker from '@/components/ui/date-picker';
+import { isRefinerGroup } from '@/lib/customer-groups';
 
 import {
   currencyDisplay,
@@ -407,6 +409,7 @@ export default function CustomerForm({
       } else {
         setAvatarFile(null);
         setRemoveAvatar(false);
+        router.refresh();
       }
     } catch {
       setErrorMessage('ارتباط با سرور برقرار نشد.');
@@ -468,9 +471,19 @@ export default function CustomerForm({
           <h1>{customer ? 'ویرایش طرف‌حساب' : 'افزودن طرف‌حساب'}</h1>
           <p>اطلاعات هویتی، ارتباطی و مانده اولیه را با دقت ثبت کنید.</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Link className="dashboard-secondary-button" href="/dashboard/customers">بازگشت به فهرست</Link>
           {customer ? <span className="customer-code-badge">کد فعلی {customer.customerCode}</span> : null}
+          {customer && isRefinerGroup(String(state.groupName || customer.groupName)) ? (
+            <a
+              href="#refining-cases-section"
+              className="dashboard-secondary-button bg-amber-500/10 text-amber-800 dark:text-amber-300 border-amber-500/30 hover:bg-amber-500/20 font-black flex items-center gap-1.5 transition-colors"
+              title="مشاهده و مدیریت پرونده‌های ری‌گیری طلا"
+            >
+              <Flame size={15} className="text-amber-600 dark:text-amber-400" />
+              <span>پرونده‌های ری‌گیری</span>
+            </a>
+          ) : null}
         </div>
       </div>
 
