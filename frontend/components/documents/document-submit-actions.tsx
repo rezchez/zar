@@ -50,36 +50,36 @@ export default function DocumentSubmitActions({
   const isLoading = temporaryLoading || finalLoading;
 
   return (
-    <div className="w-full space-y-3" dir="rtl">
-      <div className="flex w-full flex-col gap-2 sm:flex-row">
+    <div className="relative" dir="rtl">
+      <div className="flex items-center gap-1.5">
         <button
           type="button"
           onClick={() => void submit('temporary')}
           disabled={isLoading}
-          className="inline-flex h-7.5 flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-transparent px-2.5 text-[11px] font-bold text-slate-600 transition hover:border-slate-400 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+          className="inline-flex h-7.5 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-300 bg-transparent px-2.5 text-[11px] font-bold text-slate-600 transition hover:border-slate-400 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
         >
           {temporaryLoading
             ? <LoaderCircle size={13} className="animate-spin" />
             : <Clock3 size={13} />}
-          ثبت موقت سند
+          ثبت موقت
         </button>
         <button
           type="button"
           onClick={() => void submit('final')}
           disabled={isLoading}
-          className="inline-flex h-7.5 flex-1 items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-2.5 text-[11px] font-bold text-white shadow-sm shadow-emerald-600/20 transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex h-7.5 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-emerald-600 px-2.5 text-[11px] font-bold text-white shadow-sm shadow-emerald-600/20 transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {finalLoading
             ? <LoaderCircle size={13} className="animate-spin" />
             : <CheckCircle2 size={13} />}
-          ثبت نهایی سند کل
+          ثبت سند کل
         </button>
       </div>
       {toast ? (
         <div
           role="status"
           aria-live="polite"
-          className={`rounded-xl border px-4 py-3 text-sm font-semibold ${
+          className={`absolute left-0 top-full z-50 mt-2 min-w-64 rounded-xl border px-4 py-3 text-sm font-semibold shadow-lg ${
             toast.tone === 'success'
               ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
               : 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300'

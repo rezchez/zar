@@ -2053,14 +2053,22 @@ export default function DocumentForm({
             : 'p-3'
         }`}
       >
-        <div className="document-lines-head flex items-center justify-between pb-1 border-b border-slate-100 dark:border-slate-800">
+        <div className="document-lines-head flex flex-wrap items-center justify-between gap-2 pb-1 border-b border-slate-100 dark:border-slate-800">
           <h2 className="flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-slate-100">
             <ClipboardList size={15} />
             <span>ردیف‌های سند ({faNumber(committedLines.length)})</span>
           </h2>
 
-          {/* Action Icons: [ Pin ] [ Print ] [ Bale ] */}
+          {/* Submit actions and utility icons */}
           <div className="flex items-center gap-1.5 shrink-0">
+            <DocumentSubmitActions
+              onSubmit={async (status) => {
+                await save(status);
+              }}
+            />
+
+            <span className="mx-0.5 h-5 w-px bg-slate-200 dark:bg-slate-700" aria-hidden="true" />
+
             {/* Pin / Unpin Button */}
             <button
               type="button"
@@ -2165,8 +2173,8 @@ export default function DocumentForm({
           </div>
         )}
 
-        {/* BOTTOM SUBMIT & NET BALANCE SIDE-BY-SIDE */}
-        <div className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-2">
+        {/* DOCUMENT NET BALANCE */}
+        <div className={committedLines.length ? 'mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center' : 'hidden'}>
           {committedLines.length ? (
             <div className="flex flex-wrap items-center gap-2 px-3 py-1.5 border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50/80 dark:bg-slate-900/80 text-xs font-bold shrink-0">
               <span className="text-slate-600 dark:text-slate-400">
@@ -2205,23 +2213,7 @@ export default function DocumentForm({
                 </span>
               )}
             </div>
-          ) : <div className="hidden sm:block flex-1" />}
-
-          <div className="w-full sm:w-auto flex items-center gap-2 min-w-[240px]">
-            {committedLines.length > 0 && (
-              <DocumentPrint
-                customer={selectedCustomer || null}
-                documentNumber={effectiveDocumentNumberDisplay}
-                documentDateJalali={documentDateJalali}
-                lines={committedLines}
-              />
-            )}
-            <DocumentSubmitActions
-              onSubmit={async (status) => {
-                await save(status);
-              }}
-            />
-          </div>
+          ) : null}
         </div>
       </motion.section>
 

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Printer } from 'lucide-react';
 import type { Customer } from '@/lib/customer';
 import { useAppSettings } from '@/src/components/SettingsProvider';
@@ -12,6 +13,15 @@ import {
   getPageDimensions,
   DEFAULT_TABLE_COLUMNS,
 } from '@/lib/print-templates';
+
+const DEFAULT_INVOICE_TEMPLATE = DEFAULT_SYSTEM_TEMPLATES.find(
+  (template) => template.templateType !== 'customer',
+) || DEFAULT_SYSTEM_TEMPLATES[0];
+
+function getActiveInvoiceTemplate(templates: InvoicePrintTemplate[]): InvoicePrintTemplate {
+  const invoiceTemplates = templates.filter((template) => template.templateType !== 'customer');
+  return invoiceTemplates.find((template) => template.isActive) || invoiceTemplates[0] || DEFAULT_INVOICE_TEMPLATE;
+}
 
 type DocumentPrintProps = {
   customer: Customer | null;
@@ -34,7 +44,14 @@ export default function DocumentPrint({
 }: DocumentPrintProps) {
   const { settings } = useAppSettings();
 
-  const [activeTemplate, setActiveTemplate] = useState<InvoicePrintTemplate>(DEFAULT_SYSTEM_TEMPLATES[0]);
+  const [activeTemplate, setActiveTemplate] = useState<InvoicePrintTemplate>(DEFAULT_INVOICE_TEMPLATE);
+  const [isMounted, setIsMounted] = useState(false);
+  const [isPreparingPrint, setIsPreparingPrint] = useState(false);
+  const [printRequested, setPrintRequested] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -43,8 +60,7 @@ export default function DocumentPrint({
       .then((data) => {
         if (!mounted) return;
         if (data?.templates && data.templates.length > 0) {
-          const active = data.templates.find((t: InvoicePrintTemplate) => t.isActive) || data.templates[0];
-          setActiveTemplate(active);
+          setActiveTemplate(getActiveInvoiceTemplate(data.templates));
         }
       })
       .catch(() => {
@@ -55,10 +71,39 @@ export default function DocumentPrint({
     };
   }, []);
 
+  useEffect(() => {
+    if (!printRequested) return;
+
+    let secondFrame = 0;
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        window.print();
+        setPrintRequested(false);
+      });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      if (secondFrame) window.cancelAnimationFrame(secondFrame);
+    };
+  }, [activeTemplate, printRequested]);
+
   if (!lines.length) return null;
 
-  function handlePrint() {
-    window.print();
+  async function handlePrint() {
+    setIsPreparingPrint(true);
+    try {
+      const response = await fetch('/api/settings/print-templates', { cache: 'no-store' });
+      const data = response.ok ? await response.json() : null;
+      if (data?.templates?.length) {
+        setActiveTemplate(getActiveInvoiceTemplate(data.templates));
+      }
+    } catch {
+      // Print with the last successfully loaded invoice template.
+    } finally {
+      setIsPreparingPrint(false);
+      setPrintRequested(true);
+    }
   }
 
   const pageDims = getPageDimensions(
@@ -73,7 +118,8 @@ export default function DocumentPrint({
       {iconOnly ? (
         <button
           type="button"
-          onClick={handlePrint}
+          onClick={() => void handlePrint()}
+          disabled={isPreparingPrint}
           className={className || "p-1.5 rounded-lg transition-all border bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-teal-600 dark:text-teal-400 hover:text-teal-700 dark:hover:text-teal-300 hover:bg-slate-200 dark:hover:bg-slate-700"}
           title="چاپ سند"
           aria-label="چاپ سند"
@@ -83,7 +129,8 @@ export default function DocumentPrint({
       ) : (
         <button
           type="button"
-          onClick={handlePrint}
+          onClick={() => void handlePrint()}
+          disabled={isPreparingPrint}
           className={className || "document-secondary-button border-teal-300 dark:border-teal-800 text-teal-700 dark:text-teal-300 hover:bg-teal-50 dark:hover:bg-teal-950/40"}
         >
           <Printer size={15} />
@@ -91,25 +138,32 @@ export default function DocumentPrint({
         </button>
       )}
 
-      {/* Hidden Print Container for CSS @media print */}
-      <div className="hidden print:block fixed inset-0 bg-white text-black p-0 font-sans leading-relaxed text-right dir-rtl">
+      {isMounted && createPortal(
+        <div className="document-print-root hidden bg-white p-0 font-sans leading-relaxed text-right text-black" dir="rtl">
         <style>{`
           @media print {
             @page {
               size: ${pageDims.widthMm}mm ${pageDims.heightMm}mm;
               margin: 0;
             }
-            body * { visibility: hidden; }
-            #printable-document, #printable-document * { visibility: visible; }
+            html, body {
+              width: ${pageDims.widthMm}mm;
+              height: ${pageDims.heightMm}mm;
+              margin: 0 !important;
+              padding: 0 !important;
+            }
+            body > *:not(.document-print-root) { display: none !important; }
+            .document-print-root { display: block !important; }
             #printable-document {
-              position: absolute;
-              left: 0;
-              top: 0;
+              position: relative;
               width: ${pageDims.widthMm}mm;
               height: ${pageDims.heightMm}mm;
               margin: 0;
               padding: 0;
               box-sizing: border-box;
+              overflow: hidden !important;
+              break-after: avoid-page;
+              page-break-after: avoid;
             }
           }
         `}</style>
@@ -161,7 +215,9 @@ export default function DocumentPrint({
             );
           })}
         </div>
-      </div>
+        </div>,
+        document.body,
+      )}
     </>
   );
 }
@@ -217,17 +273,43 @@ function renderRealPrintElementContent(
       );
 
     case 'items_table': {
-      const configuredCols = template.table?.columns.filter((c) => c.visible) || DEFAULT_TABLE_COLUMNS;
+      const allColumns = template.table?.columns?.length ? template.table.columns : DEFAULT_TABLE_COLUMNS;
+      const configuredColumnIds = el.content?.tableColumns?.length
+        ? el.content.tableColumns
+        : allColumns.filter((column) => column.visible).map((column) => column.id);
+      const configuredCols = configuredColumnIds
+        .map((columnId) => allColumns.find((column) => column.id === columnId))
+        .filter((column): column is NonNullable<typeof column> => Boolean(column?.visible))
+        .filter((column) => column.id !== 'index' || template.table?.showIndexColumn !== false);
+
+      if (!configuredCols.length) return null;
 
       return (
-        <table className="w-full h-full text-[85%] border-collapse border border-slate-400">
+        <table
+          className="h-full w-full table-fixed border-collapse"
+          style={{
+            fontSize: template.table?.fontSizePt ? `${template.table.fontSizePt}pt` : '85%',
+            color: template.table?.bodyTextColor || el.style.color || '#0f172a',
+            borderColor: template.table?.borderColor || el.style.borderColor || '#94a3b8',
+            borderWidth: template.table?.borderWidthMm ? `${template.table.borderWidthMm}mm` : undefined,
+          }}
+        >
           <thead>
-            <tr className="bg-slate-100 border-b border-slate-400 font-bold">
+            <tr
+              className="font-bold"
+              style={{
+                backgroundColor: template.table?.headerBackgroundColor || '#f1f5f9',
+                color: template.table?.headerTextColor || '#0f172a',
+              }}
+            >
               {configuredCols.map((col) => (
                 <th
                   key={col.id}
-                  style={{ width: col.widthMm ? `${col.widthMm}mm` : 'auto' }}
-                  className="p-1 border border-slate-400"
+                  className="border p-1 text-center"
+                  style={{
+                    width: col.widthMm ? `${col.widthMm}mm` : 'auto',
+                    borderColor: template.table?.borderColor || el.style.borderColor || '#94a3b8',
+                  }}
                 >
                   {col.label}
                 </th>
@@ -241,7 +323,7 @@ function renderRealPrintElementContent(
               const c750 = line.converted750 || (rawWeight * purity) / 750;
 
               return (
-                <tr key={line.id} className="border-b border-slate-300">
+                <tr key={line.id} style={{ height: template.table?.rowHeightMm ? `${template.table.rowHeightMm}mm` : undefined }}>
                   {configuredCols.map((col) => {
                     let cellVal: React.ReactNode = '-';
                     if (col.id === 'index') cellVal = idx + 1;
@@ -257,7 +339,14 @@ function renderRealPrintElementContent(
                     if (col.id === 'description') cellVal = line.description || '-';
 
                     return (
-                      <td key={col.id} className="p-1 border border-slate-300 text-center">
+                      <td
+                        key={col.id}
+                        className="break-words border p-1 text-center align-middle"
+                        style={{
+                          borderColor: template.table?.borderColor || el.style.borderColor || '#94a3b8',
+                          textAlign: col.textAlign || 'center',
+                        }}
+                      >
                         {cellVal}
                       </td>
                     );

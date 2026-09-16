@@ -160,10 +160,10 @@ export default function NotificationCenter({ userRole }: { userRole: 'user' | 'm
     const timer = setTimeout(() => {
       void fetchNotifications();
     }, 0);
-    // Increase polling interval from 5 seconds to 60 seconds (60000ms) to reduce excessive network requests and RAM usage.
+    // Poll every 45 seconds to limit notification requests and reduce server load.
     const interval = setInterval(() => {
       void fetchNotifications();
-    }, 60000);
+    }, 45_000);
     return () => {
       clearTimeout(timer);
       clearInterval(interval);
