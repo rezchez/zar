@@ -145,12 +145,20 @@ export default function RawGoldTab({
   const isPaidRawFromInventory = nature === 'paid' && Boolean(draftLine.details.inventorySourceId);
 
   const inventoryLabel = draftLine.details.rawKind === 'conditional'
-    ? 'انتخاب موجودی شرطی'
+    ? 'موجودی شرطی'
     : draftLine.details.rawKind === 'misc'
-      ? 'انتخاب موجودی متفرقه'
+      ? 'موجودی متفرقه'
       : draftLine.details.rawKind === 'question'
-        ? 'انتخاب موجودی سواله'
-        : 'انتخاب موجودی آبشده';
+        ? 'موجودی سواله'
+        : 'موجودی آبشده';
+
+  const inventoryPlaceholder = draftLine.details.rawKind === 'conditional'
+    ? 'انتخاب از موجودی شرطی صندوق...'
+    : draftLine.details.rawKind === 'misc'
+      ? 'انتخاب از موجودی متفرقه صندوق...'
+      : draftLine.details.rawKind === 'question'
+        ? 'انتخاب از موجودی سواله صندوق...'
+        : 'انتخاب از موجودی آبشده صندوق...';
 
   // Keep assay and purity data aligned with the selected stock lot, including when the
   // inventory list finishes loading after the source has already been picked.
@@ -200,7 +208,7 @@ export default function RawGoldTab({
       <div className="document-dynamic-fields">
         <div className="document-special-grid raw-gold-fields">
           {nature === 'paid' && draftLine.details.rawKind !== 'unsettled' ? (
-            <Field label={inventoryLabel} wide>
+            <Field label={inventoryLabel}>
               <select
                 value={draftLine.details.inventorySourceId}
                 onChange={(event) => {
@@ -219,7 +227,7 @@ export default function RawGoldTab({
                   }));
                 }}
               >
-                <option value="">انتخاب از موجودی فعال...</option>
+                <option value="">{inventoryPlaceholder}</option>
                 {meltedInventory.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.stampNumber || 'بدون انگ'} · {item.labName || 'ری‌گیری نامشخص'} · {item.customerName} · باقیمانده: {item.remainingWeight.toFixed(3)} گرم · عیار {item.purity}
@@ -262,7 +270,7 @@ export default function RawGoldTab({
               value={faNumber(convertedTo750(draftLine.details.rawWeight, draftLine.details.purity), weightPrecision)}
             />
           </Field>
-          {draftLine.details.rawKind !== 'misc' ? (
+          {draftLine.details.rawKind !== 'misc' && draftLine.details.rawKind !== 'question' ? (
             <>
               <Field label="نام آزمایشگاه ری‌گیری" required={isRequired} error={errors.labName}>
                 <AssayLaboratorySelect

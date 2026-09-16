@@ -1078,8 +1078,8 @@ export default function DocumentForm({
         ...current.details,
         rawKind: kind,
         purity: kind === 'conditional' ? '' : current.details.purity || String(purityForMetal(current.details.metalType)),
-        labName: kind === 'misc' ? '' : current.details.labName,
-        stampNumber: kind === 'misc' ? '' : current.details.stampNumber,
+        labName: (kind === 'misc' || kind === 'question') ? '' : current.details.labName,
+        stampNumber: (kind === 'misc' || kind === 'question') ? '' : current.details.stampNumber,
       };
       return {
         ...current,

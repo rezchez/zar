@@ -93,12 +93,20 @@ export default function GoldSaleTab({
   const isPaidRawFromInventory = nature === 'paid' && Boolean(draftLine.details.inventorySourceId);
 
   const inventoryLabel = draftLine.details.rawKind === 'conditional'
-    ? 'انتخاب موجودی شرطی'
+    ? 'موجودی شرطی'
     : draftLine.details.rawKind === 'misc'
-      ? 'انتخاب موجودی متفرقه'
+      ? 'موجودی متفرقه'
       : draftLine.details.rawKind === 'question'
-        ? 'انتخاب موجودی سواله'
-        : 'انتخاب موجودی آبشده';
+        ? 'موجودی سواله'
+        : 'موجودی آبشده';
+
+  const inventoryPlaceholder = draftLine.details.rawKind === 'conditional'
+    ? 'انتخاب از موجودی شرطی صندوق...'
+    : draftLine.details.rawKind === 'misc'
+      ? 'انتخاب از موجودی متفرقه صندوق...'
+      : draftLine.details.rawKind === 'question'
+        ? 'انتخاب از موجودی سواله صندوق...'
+        : 'انتخاب از موجودی آبشده صندوق...';
 
   // The sales/purchase tab has its own inventory selector. Keep the assay
   // lab and purity from the selected lot in sync with the document row.
@@ -214,7 +222,7 @@ export default function GoldSaleTab({
           <div className="document-special-grid raw-gold-fields">
             {/* Inventory Source Selector for Outgoing Raw Gold */}
             {nature === 'paid' && draftLine.details.rawKind !== 'unsettled' ? (
-              <Field label={inventoryLabel} wide>
+              <Field label={inventoryLabel}>
                 <select
                   value={draftLine.details.inventorySourceId}
                   onChange={(event) => {
@@ -233,7 +241,7 @@ export default function GoldSaleTab({
                     }));
                   }}
                 >
-                  <option value="">انتخاب از موجودی فعال...</option>
+                  <option value="">{inventoryPlaceholder}</option>
                   {meltedInventory.map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.stampNumber || 'بدون انگ'} · {item.labName || 'ری‌گیری نامشخص'} · {item.customerName} · باقیمانده: {item.remainingWeight.toFixed(3)} گرم · عیار {item.purity}
