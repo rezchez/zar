@@ -1,4 +1,4 @@
-export type BackupDestinationType = 'local' | 'bale' | 'arvan';
+export type BackupDestinationType = 'local' | 'bale' | 'arvan' | 's3';
 
 export type DestinationUploadPayload = {
   backupId: string;

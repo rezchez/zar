@@ -22,6 +22,7 @@ import {
   Trash2,
   Upload,
   X,
+  Zap,
 } from 'lucide-react';
 
 import type { BackupMetadata } from '@/lib/backup-service';
@@ -95,7 +96,13 @@ type BackupScheduleState = {
   scheduleDayOfWeek: number;
   scheduleDayOfMonth: number;
   destinationBale: boolean;
-  destinationArvan: boolean;
+  destinationS3: boolean;
+  destinationArvan?: boolean;
+  s3Endpoint?: string;
+  s3Bucket?: string;
+  s3Region?: string;
+  s3AccessKey?: string;
+  s3SecretKey?: string;
   arvanEndpoint?: string;
   arvanBucket?: string;
   arvanAccessKey?: string;
@@ -121,11 +128,12 @@ export default function DatabaseBackupSection() {
     scheduleDayOfWeek: 0,
     scheduleDayOfMonth: 1,
     destinationBale: false,
-    destinationArvan: false,
-    arvanEndpoint: 'https://s3.ir-thr-at1.arvanstorage.ir',
-    arvanBucket: '',
-    arvanAccessKey: '',
-    arvanSecretKey: '',
+    destinationS3: false,
+    s3Endpoint: 'https://s3.ir-thr-at1.arvanstorage.ir',
+    s3Bucket: '',
+    s3Region: 'ir-thr-at1',
+    s3AccessKey: '',
+    s3SecretKey: '',
     lastRunAt: null,
     nextRunAt: null,
     lastStatus: null,
@@ -168,9 +176,25 @@ export default function DatabaseBackupSection() {
       const res = await fetch('/api/admin/backups/schedule');
       const data = await res.json();
       if (res.ok && data.success && data.schedule) {
-        setScheduleConfig(data.schedule);
-        setDestBaleOnCreate(Boolean(data.schedule.destinationBale));
-        setDestArvanOnCreate(Boolean(data.schedule.destinationArvan));
+        const sched = data.schedule;
+        const isS3 = typeof sched.destinationS3 === 'boolean' ? sched.destinationS3 : Boolean(sched.destinationArvan);
+        const s3Ep = sched.s3Endpoint || sched.arvanEndpoint || 'https://s3.ir-thr-at1.arvanstorage.ir';
+        const s3B = sched.s3Bucket || sched.arvanBucket || '';
+        const s3R = sched.s3Region || 'ir-thr-at1';
+        const s3A = sched.s3AccessKey || sched.arvanAccessKey || '';
+        const s3S = sched.s3SecretKey || sched.arvanSecretKey || '';
+
+        setScheduleConfig({
+          ...sched,
+          destinationS3: isS3,
+          s3Endpoint: s3Ep,
+          s3Bucket: s3B,
+          s3Region: s3R,
+          s3AccessKey: s3A,
+          s3SecretKey: s3S,
+        });
+        setDestBaleOnCreate(Boolean(sched.destinationBale));
+        setDestArvanOnCreate(isS3);
       }
     } catch {
       // Scheduler load fail handled silently
@@ -229,9 +253,18 @@ export default function DatabaseBackupSection() {
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        setMessage({ type: 'success', text: 'تنظیمات زمان‌بندی پشتیبان‌گیری خودکار با موفقیت ذخیره شد.' });
+        setMessage({ type: 'success', text: 'تنظیمات زمان‌بندی پشتیبان‌گیری خودکار و S3 Storage با موفقیت ذخیره شد.' });
         if (data.schedule) {
-          setScheduleConfig((prev) => ({ ...prev, ...data.schedule }));
+          const sched = data.schedule;
+          const isS3 = typeof sched.destinationS3 === 'boolean' ? sched.destinationS3 : Boolean(sched.destinationArvan);
+          setScheduleConfig((prev) => ({
+            ...prev,
+            ...sched,
+            destinationS3: isS3,
+            s3Endpoint: sched.s3Endpoint || sched.arvanEndpoint || prev.s3Endpoint,
+            s3Bucket: sched.s3Bucket || sched.arvanBucket || prev.s3Bucket,
+            s3Region: sched.s3Region || prev.s3Region,
+          }));
         }
       } else {
         setMessage({ type: 'error', text: data.error || 'خطا در ذخیره زمان‌بندی' });
@@ -243,15 +276,52 @@ export default function DatabaseBackupSection() {
     }
   }
 
+  // Quick Backup (واحد با یک کلیک بدون فرم)
+  async function handleQuickBackup() {
+    setActionLoading('quick-backup');
+    setMessage(null);
+
+    try {
+      const destinations: Array<'local' | 'bale' | 'arvan' | 's3'> = ['local'];
+      if (scheduleConfig.destinationBale) destinations.push('bale');
+      if (scheduleConfig.destinationS3) destinations.push('s3');
+
+      const res = await fetch('/api/admin/backups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          note: 'پشتیبان‌گیری سریع دستی سیستم',
+          destinations,
+          dispatchDestinations: true,
+        }),
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        setMessage({
+          type: 'success',
+          text: `پشتیبان‌گیری سریع با موفقیت انجام شد (شناسه: ${data.backup?.backupId || ''}).`,
+        });
+        void loadBackups();
+      } else {
+        setMessage({ type: 'error', text: data.error || 'خطا در ایجاد پشتیبان‌گیری سریع' });
+      }
+    } catch {
+      setMessage({ type: 'error', text: 'خطا در برقراری ارتباط با سرور جهت پشتیبان‌گیری سریع' });
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
   // Create Backup
   async function handleCreateBackup(e: React.FormEvent) {
     e.preventDefault();
     setActionLoading('create');
     setMessage(null);
 
-    const destinations: Array<'local' | 'bale' | 'arvan'> = ['local'];
+    const destinations: Array<'local' | 'bale' | 'arvan' | 's3'> = ['local'];
     if (destBaleOnCreate) destinations.push('bale');
-    if (destArvanOnCreate) destinations.push('arvan');
+    if (destArvanOnCreate) destinations.push('s3');
 
     try {
       const res = await fetch('/api/admin/backups', {
@@ -682,40 +752,48 @@ export default function DatabaseBackupSection() {
                 <span>پشتیبان‌گیری اتوماتیک در بله (Bale)</span>
               </label>
 
-              {/* Arvan S3 Destination */}
+              {/* S3 Storage Destination (Arvan / S3 Compatible) */}
               <label className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={scheduleConfig.destinationArvan}
+                  checked={scheduleConfig.destinationS3}
                   onChange={(e) =>
-                    setScheduleConfig((prev) => ({ ...prev, destinationArvan: e.target.checked }))
+                    setScheduleConfig((prev) => ({
+                      ...prev,
+                      destinationS3: e.target.checked,
+                      destinationArvan: e.target.checked,
+                    }))
                   }
                   className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
                 />
-                <span>پشتیبان‌گیری اتوماتیک در فضای ابری آروان (Arvan S3)</span>
+                <span>پشتیبان‌گیری خودکار در فضای ابری S3 (ابر آروان / S3 Compatible)</span>
               </label>
             </div>
 
-            {/* Arvan Cloud S3 configuration inputs if checked */}
-            {scheduleConfig.destinationArvan && (
-              <div className="mt-3 p-3 rounded-xl border border-blue-100 dark:border-blue-900/40 bg-blue-50/30 dark:bg-blue-950/20 space-y-2.5 text-xs">
+            {/* S3 Storage configuration inputs if checked */}
+            {scheduleConfig.destinationS3 && (
+              <div className="mt-3 p-3.5 rounded-xl border border-blue-100 dark:border-blue-900/40 bg-blue-50/30 dark:bg-blue-950/20 space-y-2.5 text-xs">
                 <span className="font-bold text-blue-900 dark:text-blue-300 block">
-                  تنظیمات اتصال به مخزن ذخیره‌سازی ابری آروان:
+                  تنظیمات اتصال به مخزن ذخیره‌سازی ابری S3 (S3 Storage Settings):
                 </span>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                   <div>
                     <label className="text-[11px] text-slate-600 dark:text-slate-400 block mb-1">
-                      Endpoint آروان:
+                      آدرس سرویس ابری (Endpoint):
                     </label>
                     <input
                       type="text"
-                      value={scheduleConfig.arvanEndpoint || ''}
+                      value={scheduleConfig.s3Endpoint || ''}
                       onChange={(e) =>
-                        setScheduleConfig((prev) => ({ ...prev, arvanEndpoint: e.target.value }))
+                        setScheduleConfig((prev) => ({
+                          ...prev,
+                          s3Endpoint: e.target.value,
+                          arvanEndpoint: e.target.value,
+                        }))
                       }
                       dir="ltr"
                       placeholder="https://s3.ir-thr-at1.arvanstorage.ir"
-                      className="w-full text-xs h-8 rounded-lg border border-slate-200 dark:border-slate-700 px-2.5 bg-white dark:bg-slate-900"
+                      className="w-full text-xs h-8 rounded-lg border border-slate-200 dark:border-slate-700 px-2.5 bg-white dark:bg-slate-900 font-mono"
                     />
                   </div>
 
@@ -725,45 +803,76 @@ export default function DatabaseBackupSection() {
                     </label>
                     <input
                       type="text"
-                      value={scheduleConfig.arvanBucket || ''}
+                      value={scheduleConfig.s3Bucket || ''}
                       onChange={(e) =>
-                        setScheduleConfig((prev) => ({ ...prev, arvanBucket: e.target.value }))
+                        setScheduleConfig((prev) => ({
+                          ...prev,
+                          s3Bucket: e.target.value,
+                          arvanBucket: e.target.value,
+                        }))
                       }
                       dir="ltr"
                       placeholder="zarfolio-backups"
-                      className="w-full text-xs h-8 rounded-lg border border-slate-200 dark:border-slate-700 px-2.5 bg-white dark:bg-slate-900"
+                      className="w-full text-xs h-8 rounded-lg border border-slate-200 dark:border-slate-700 px-2.5 bg-white dark:bg-slate-900 font-mono"
                     />
                   </div>
 
                   <div>
                     <label className="text-[11px] text-slate-600 dark:text-slate-400 block mb-1">
-                      Access Key:
+                      منطقه (Region):
                     </label>
                     <input
-                      type="password"
-                      value={scheduleConfig.arvanAccessKey || ''}
+                      type="text"
+                      value={scheduleConfig.s3Region || ''}
                       onChange={(e) =>
-                        setScheduleConfig((prev) => ({ ...prev, arvanAccessKey: e.target.value }))
+                        setScheduleConfig((prev) => ({
+                          ...prev,
+                          s3Region: e.target.value,
+                        }))
                       }
                       dir="ltr"
-                      placeholder="••••••••"
-                      className="w-full text-xs h-8 rounded-lg border border-slate-200 dark:border-slate-700 px-2.5 bg-white dark:bg-slate-900"
+                      placeholder="ir-thr-at1 یا us-east-1"
+                      className="w-full text-xs h-8 rounded-lg border border-slate-200 dark:border-slate-700 px-2.5 bg-white dark:bg-slate-900 font-mono"
                     />
                   </div>
 
                   <div>
                     <label className="text-[11px] text-slate-600 dark:text-slate-400 block mb-1">
-                      Secret Key:
+                      کلید دسترسی (Access Key):
                     </label>
                     <input
                       type="password"
-                      value={scheduleConfig.arvanSecretKey || ''}
+                      value={scheduleConfig.s3AccessKey || ''}
                       onChange={(e) =>
-                        setScheduleConfig((prev) => ({ ...prev, arvanSecretKey: e.target.value }))
+                        setScheduleConfig((prev) => ({
+                          ...prev,
+                          s3AccessKey: e.target.value,
+                          arvanAccessKey: e.target.value,
+                        }))
                       }
                       dir="ltr"
                       placeholder="••••••••"
-                      className="w-full text-xs h-8 rounded-lg border border-slate-200 dark:border-slate-700 px-2.5 bg-white dark:bg-slate-900"
+                      className="w-full text-xs h-8 rounded-lg border border-slate-200 dark:border-slate-700 px-2.5 bg-white dark:bg-slate-900 font-mono"
+                    />
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="text-[11px] text-slate-600 dark:text-slate-400 block mb-1">
+                      کلید امنیتی (Secret Key):
+                    </label>
+                    <input
+                      type="password"
+                      value={scheduleConfig.s3SecretKey || ''}
+                      onChange={(e) =>
+                        setScheduleConfig((prev) => ({
+                          ...prev,
+                          s3SecretKey: e.target.value,
+                          arvanSecretKey: e.target.value,
+                        }))
+                      }
+                      dir="ltr"
+                      placeholder="••••••••"
+                      className="w-full text-xs h-8 rounded-lg border border-slate-200 dark:border-slate-700 px-2.5 bg-white dark:bg-slate-900 font-mono"
                     />
                   </div>
                 </div>
@@ -889,6 +998,21 @@ export default function DatabaseBackupSection() {
               <Upload size={15} className="text-blue-600 dark:text-blue-400" />
             )}
             <span>بازیابی از فایل پشتیبان</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleQuickBackup}
+            disabled={actionLoading === 'quick-backup' || !!actionLoading}
+            className="p-2 px-3 rounded-xl border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm disabled:opacity-50"
+            title="ایجاد پشتیبان سریع بدون باز کردن فرم و ارسال به مقاصد فعال"
+          >
+            {actionLoading === 'quick-backup' ? (
+              <Loader2 size={15} className="animate-spin text-amber-600 dark:text-amber-400" />
+            ) : (
+              <Zap size={15} className="text-amber-600 dark:text-amber-400 fill-amber-500/20" />
+            )}
+            <span>پشتیبان‌گیری سریع</span>
           </button>
 
           <button

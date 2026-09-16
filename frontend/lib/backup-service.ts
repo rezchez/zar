@@ -17,7 +17,7 @@ const gunzipAsync = promisify(zlib.gunzip);
 export type BackupStatus = 'pending' | 'running' | 'completed' | 'failed' | 'valid' | 'corrupted';
 
 export type DestinationStatus = {
-  destination: 'local' | 'bale' | 'arvan';
+  destination: 'local' | 'bale' | 'arvan' | 's3';
   status: 'pending' | 'success' | 'failed' | 'skipped';
   message?: string;
   error?: string;
@@ -329,6 +329,7 @@ export const CORE_COLLECTIONS_TO_BACKUP = [
   'refining_samples',
   'print_templates',
   'notifications',
+  'scheduled_backups',
 ];
 
 export type CreateBackupOptions = {
@@ -336,7 +337,7 @@ export type CreateBackupOptions = {
   isEmergency?: boolean;
   password?: string;
   dispatchDestinations?: boolean;
-  destinations?: Array<'local' | 'bale' | 'arvan'>;
+  destinations?: Array<'local' | 'bale' | 'arvan' | 's3'>;
 };
 
 /**
@@ -465,13 +466,22 @@ export async function createDatabaseBackup({
     try {
       const { getPocketBaseServiceClient } = await import('@/lib/pocketbase-service');
       const pb = await getPocketBaseServiceClient().catch(() => null);
-      const settingsRecord = await pb?.collection('app_settings').getFirstListItem('', { requestKey: null }).catch(() => null);
       
-      const { normalizeSettings } = await import('@/lib/settings');
-      const settings = settingsRecord ? normalizeSettings(settingsRecord.export()) : null;
+      // Try fetching from scheduled_backups first
+      const scheduledRecord = await pb?.collection('scheduled_backups').getFirstListItem('', { requestKey: null }).catch(() => null);
+      const sched = scheduledRecord as unknown as Record<string, unknown> | null;
 
-      const shouldSendBale = destinations ? destinations.includes('bale') : Boolean(settings?.backupDestinationBale);
-      const shouldSendArvan = destinations ? destinations.includes('arvan') : Boolean(settings?.backupDestinationArvan);
+      const settingsRecord = await pb?.collection('app_settings').getFirstListItem('', { requestKey: null }).catch(() => null);
+      const { normalizeSettings } = await import('@/lib/settings');
+      const settings = settingsRecord ? normalizeSettings(settingsRecord as Record<string, unknown>) : null;
+
+      const shouldSendBale = destinations
+        ? destinations.includes('bale')
+        : (sched ? Boolean(sched.destinationBale) : Boolean(settings?.backupDestinationBale));
+
+      const shouldSendS3 = destinations
+        ? (destinations.includes('s3') || destinations.includes('arvan'))
+        : (sched ? Boolean(sched.destinationS3) : Boolean(settings?.backupDestinationArvan));
 
       const uploadPayload = {
         backupId,
@@ -499,19 +509,27 @@ export async function createDatabaseBackup({
         });
       }
 
-      if (shouldSendArvan) {
-        const arvanAdapter = new ArvanS3BackupDestination({
-          endpoint: settings?.backupArvanEndpoint,
-          bucket: settings?.backupArvanBucket,
-          accessKey: settings?.backupArvanAccessKey,
-          secretKey: settings?.backupArvanSecretKey,
-        });
-        const arvanRes = await arvanAdapter.upload(uploadPayload);
+      if (shouldSendS3) {
+        const s3Endpoint = (sched?.s3Endpoint as string) || settings?.backupArvanEndpoint;
+        const s3Bucket = (sched?.s3Bucket as string) || settings?.backupArvanBucket;
+        const s3Region = (sched?.s3Region as string) || 'ir-thr-at1';
+        const s3AccessKey = (sched?.s3AccessKey as string) || settings?.backupArvanAccessKey;
+        const s3SecretKey = (sched?.s3SecretKey as string) || settings?.backupArvanSecretKey;
+
+        const s3Adapter = new ArvanS3BackupDestination({
+          endpoint: s3Endpoint,
+          bucket: s3Bucket,
+          region: s3Region,
+          accessKey: s3AccessKey,
+          secretKey: s3SecretKey,
+        }, 's3');
+
+        const s3Res = await s3Adapter.upload(uploadPayload);
         destinationStatuses.push({
-          destination: 'arvan',
-          status: arvanRes.success ? 'success' : 'failed',
-          message: arvanRes.message,
-          error: arvanRes.error,
+          destination: 's3',
+          status: s3Res.success ? 'success' : 'failed',
+          message: s3Res.message,
+          error: s3Res.error,
         });
       }
     } catch (destErr) {

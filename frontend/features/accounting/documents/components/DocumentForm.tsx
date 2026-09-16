@@ -1388,26 +1388,66 @@ export default function DocumentForm({
     }
   }
 
-  const metalNetEffects = useMemo(() => {
-    const effects: Record<'gold' | 'silver' | 'platinum', number> = {
+  const documentNetEffects = useMemo(() => {
+    const effects = {
       gold: 0,
       silver: 0,
       platinum: 0,
+      rial: 0,
+      foreign: 0,
     };
 
     committedLines.forEach((line) => {
-      if (line.documentTab === 'raw-gold' || line.documentTab === 'gold-sale' || (line.documentTab === 'refining' && line.details.refiningOpKind !== 'fee')) {
+      const direction = line.documentNature === 'received' ? 1 : -1;
+
+      // Metal Weight effects (grams)
+      if (
+        line.documentTab === 'raw-gold' ||
+        line.documentTab === 'gold-sale' ||
+        (line.documentTab === 'refining' && line.details.refiningOpKind !== 'fee')
+      ) {
         const metal = line.details.metalType || 'gold';
         const weight = line.details.calculationMethod === 'money'
           ? actualWeightFromMoney(line.details)
           : numberValue(line.details.rawWeight);
-        const direction = line.documentNature === 'received' ? 1 : -1;
-        effects[metal] += direction * weight;
+        if (metal in effects) {
+          effects[metal as 'gold' | 'silver' | 'platinum'] += direction * weight;
+        }
+      }
+
+      // Rial Financial effect (IRR integer)
+      const rialAmount = line.documentTab === 'currency'
+        ? numberValue(line.details.currencyTotalAmount)
+        : (line.documentTab === 'cash' && !line.details.isForeignCash)
+          ? numberValue(line.details.totalAmount)
+          : line.documentTab === 'gold-sale'
+            ? numberValue(line.details.totalAmount)
+            : (line.documentTab === 'refining' && line.details.refiningOpKind === 'fee')
+              ? numberValue(line.details.totalAmount)
+              : 0;
+      if (rialAmount) {
+        effects.rial += direction * rialAmount;
+      }
+
+      // Foreign Currency effect
+      const foreignAmount = line.documentTab === 'currency'
+        ? numberValue(line.details.currencyQuantity)
+        : (line.documentTab === 'cash' && line.details.isForeignCash)
+          ? numberValue(line.details.totalAmount)
+          : 0;
+      if (foreignAmount) {
+        effects.foreign += direction * foreignAmount;
       }
     });
 
     return effects;
   }, [committedLines]);
+
+  const metalNetEffects = useMemo(() => ({
+    gold: documentNetEffects.gold,
+    silver: documentNetEffects.silver,
+    platinum: documentNetEffects.platinum,
+  }), [documentNetEffects]);
 
   const activeMetals = useMemo(
     () => (Object.keys(metalNetEffects) as Array<'gold' | 'silver' | 'platinum'>).filter(

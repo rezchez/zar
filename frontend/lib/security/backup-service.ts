@@ -468,7 +468,7 @@ export async function createDatabaseBackup({
       const settingsRecord = await pb?.collection('app_settings').getFirstListItem('', { requestKey: null }).catch(() => null);
       
       const { normalizeSettings } = await import('@/lib/settings');
-      const settings = settingsRecord ? normalizeSettings(settingsRecord.export()) : null;
+      const settings = settingsRecord ? normalizeSettings(settingsRecord as Record<string, unknown>) : null;
 
       const shouldSendBale = destinations ? destinations.includes('bale') : Boolean(settings?.backupDestinationBale);
       const shouldSendArvan = destinations ? destinations.includes('arvan') : Boolean(settings?.backupDestinationArvan);

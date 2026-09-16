@@ -10,13 +10,16 @@ export type ArvanS3Config = {
   region?: string;
 };
 
+export type S3StorageConfig = ArvanS3Config;
+
 export class ArvanS3BackupDestination implements BackupDestinationAdapter {
-  readonly name = 'arvan' as const;
-  readonly label = 'ابر آروان (ArvanCloud S3)';
+  readonly name: 'arvan' | 's3' = 's3';
+  readonly label = 'فضای ابری S3 (ابر آروان / سازگار با S3)';
 
   private config: ArvanS3Config;
 
-  constructor(config?: ArvanS3Config) {
+  constructor(config?: ArvanS3Config, destinationName: 'arvan' | 's3' = 's3') {
+    this.name = destinationName;
     this.config = {
       endpoint: config?.endpoint || process.env.ARVAN_S3_ENDPOINT || 'https://s3.ir-thr-at1.arvanstorage.ir',
       bucket: config?.bucket || process.env.ARVAN_S3_BUCKET || '',
@@ -109,11 +112,12 @@ export class ArvanS3BackupDestination implements BackupDestinationAdapter {
   }
 
   async upload(payload: DestinationUploadPayload): Promise<DestinationUploadResult> {
+    const destName = this.name;
     if (!this.isConfigured()) {
       return {
-        destination: 'arvan',
+        destination: destName,
         success: false,
-        error: 'تنظیمات فضای ابری آروان (Bucket، Endpoint، AccessKey یا SecretKey) کامل نیست.',
+        error: 'تنظیمات فضای ابری آروان / S3 (آدرس مخزن، Bucket، Access Key یا Secret Key) کامل نیست.',
       };
     }
 
@@ -139,23 +143,23 @@ export class ArvanS3BackupDestination implements BackupDestinationAdapter {
       if (!response.ok) {
         const text = await response.text().catch(() => '');
         return {
-          destination: 'arvan',
+          destination: destName,
           success: false,
-          error: `خطای ذخیره‌سازی ابری آروان (${response.status}): ${text.slice(0, 200)}`,
+          error: `خطای ذخیره‌سازی ابری S3 (${response.status}): ${text.slice(0, 200)}`,
         };
       }
 
       return {
-        destination: 'arvan',
+        destination: destName,
         success: true,
         remotePath: `${bucket}/${objectKey}`,
-        message: `فایل با موفقیت در فضای ذخیره‌سازی ابری آروان (مسیر ${objectKey}) بارگذاری شد.`,
+        message: `فایل با موفقیت در مخزن ذخیره‌سازی ابری S3 (مسیر ${objectKey}) بارگذاری شد.`,
       };
     } catch (err) {
       return {
-        destination: 'arvan',
+        destination: destName,
         success: false,
-        error: `خطا در ارتباط با فضای ابری آروان: ${err instanceof Error ? err.message : 'خطای ناشناخته'}`,
+        error: `خطا در ارتباط با مخزن ذخیره‌سازی S3: ${err instanceof Error ? err.message : 'خطای ناشناخته'}`,
       };
     }
   }

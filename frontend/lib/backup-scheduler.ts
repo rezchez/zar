@@ -20,28 +20,56 @@ export function getDaysInJalaliMonth(year: number, month: number): number {
   return isLeap ? 30 : 29;
 }
 
+export type ScheduledBackupConfig = {
+  autoEnabled?: boolean;
+  scheduleType?: 'interval' | 'hourly' | 'daily' | 'weekly' | 'monthly';
+  scheduleIntervalHours?: number;
+  scheduleTime?: string;
+  scheduleDayOfWeek?: number;
+  scheduleDayOfMonth?: number;
+  destinationBale?: boolean;
+  destinationS3?: boolean;
+  s3Endpoint?: string;
+  s3Bucket?: string;
+  s3Region?: string;
+  s3AccessKey?: string;
+  s3SecretKey?: string;
+  lastRunAt?: string | null;
+  nextRunAt?: string | null;
+  lastStatus?: string | null;
+};
+
 /**
  * Calculates the next backup run timestamp deterministically based on schedule configuration.
  * Always schedules in the future relative to `fromTime`.
  */
 export function calculateNextBackupTime(
-  settings: Pick<
-    AppSettings,
-    'backupScheduleType' | 'backupScheduleIntervalHours' | 'backupScheduleTime' | 'backupScheduleDayOfWeek' | 'backupScheduleDayOfMonth'
-  >,
+  settings: {
+    scheduleType?: string;
+    scheduleIntervalHours?: number;
+    scheduleTime?: string;
+    scheduleDayOfWeek?: number;
+    scheduleDayOfMonth?: number;
+    backupScheduleType?: string;
+    backupScheduleIntervalHours?: number;
+    backupScheduleTime?: string;
+    backupScheduleDayOfWeek?: number;
+    backupScheduleDayOfMonth?: number;
+  },
   fromTime: Date = new Date()
 ): ScheduleCalculationResult {
-  const type = settings.backupScheduleType || 'daily';
-  const timeStr = settings.backupScheduleTime || '02:00';
+  const type = (settings.scheduleType || settings.backupScheduleType || 'daily') as 'interval' | 'hourly' | 'daily' | 'weekly' | 'monthly';
+  const timeStr = settings.scheduleTime || settings.backupScheduleTime || '02:00';
   const [targetHour, targetMinute] = timeStr.split(':').map((v) => parseInt(v, 10) || 0);
 
   const next = new Date(fromTime.getTime());
 
   if (type === 'interval' || type === 'hourly') {
     // Custom user-defined interval in hours (1..168)
+    const rawHours = settings.scheduleIntervalHours ?? settings.backupScheduleIntervalHours;
     const intervalHours = type === 'hourly'
       ? 1
-      : Math.max(1, Math.min(168, Number(settings.backupScheduleIntervalHours) || 4));
+      : Math.max(1, Math.min(168, Number(rawHours) || 4));
 
     // Align to the next interval-hour slot
     next.setMinutes(0, 0, 0);
@@ -57,7 +85,8 @@ export function calculateNextBackupTime(
   } else if (type === 'weekly') {
     // 0 = شنبه (Saturday), 1 = یکشنبه (Sunday) ... 6 = جمعه (Friday)
     // JS getDay(): 0 = Sun, 1 = Mon, 2 = Tue, 3 = Wed, 4 = Thu, 5 = Fri, 6 = Sat
-    const targetJalaliDay = Math.max(0, Math.min(6, settings.backupScheduleDayOfWeek ?? 0));
+    const rawDayOfWeek = settings.scheduleDayOfWeek ?? settings.backupScheduleDayOfWeek ?? 0;
+    const targetJalaliDay = Math.max(0, Math.min(6, rawDayOfWeek));
     // Convert targetJalaliDay to JS getDay():
     // Jalali 0 (Sat) -> JS 6
     // Jalali 1 (Sun) -> JS 0
@@ -74,7 +103,8 @@ export function calculateNextBackupTime(
     next.setDate(next.getDate() + daysToAdd);
   } else if (type === 'monthly') {
     // Day of Jalali month (1..31)
-    const targetDayOfMonth = Math.max(1, Math.min(31, settings.backupScheduleDayOfMonth ?? 1));
+    const rawDayOfMonth = settings.scheduleDayOfMonth ?? settings.backupScheduleDayOfMonth ?? 1;
+    const targetDayOfMonth = Math.max(1, Math.min(31, rawDayOfMonth));
 
     // Determine current Jalali date
     let currentJ = gregorianToJalali(fromTime.getUTCFullYear(), fromTime.getUTCMonth() + 1, fromTime.getUTCDate());
@@ -130,13 +160,15 @@ export async function checkAndRunScheduledBackup(): Promise<{ executed: boolean;
     const pb = await getPocketBaseServiceClient().catch(() => null);
     if (!pb) return { executed: false };
 
-    const settingsRecord = await pb.collection('app_settings').getFirstListItem('', { requestKey: null }).catch(() => null);
-    if (!settingsRecord) return { executed: false };
+    // 1. Fetch configuration from scheduled_backups collection
+    const scheduleRecord = await pb.collection('scheduled_backups').getFirstListItem('', { requestKey: null }).catch(() => null);
+    if (!scheduleRecord) return { executed: false };
 
-    const autoEnabled = Boolean(settingsRecord.get('backupAutoEnabled'));
+    const rec = scheduleRecord as unknown as Record<string, unknown>;
+    const autoEnabled = Boolean(rec.autoEnabled);
     if (!autoEnabled) return { executed: false };
 
-    const nextRunIso = settingsRecord.get('backupNextRunAt') as string | undefined;
+    const nextRunIso = (rec.nextRunAt as string | undefined) || undefined;
     const now = new Date();
 
     // If nextRunAt is missing or overdue, trigger backup
@@ -146,7 +178,7 @@ export async function checkAndRunScheduledBackup(): Promise<{ executed: boolean;
     }
 
     const { createDatabaseBackup } = await import('@/lib/backup-service');
-    const note = 'پشتیبان‌گیری خودکار سیستم طبق زمان‌بندی';
+    const note = 'پشتیبان‌گیری خودکار سیستم طبق زمان‌بندی سرور';
     
     // Create backup with destination distribution
     const meta = await createDatabaseBackup({
@@ -155,17 +187,21 @@ export async function checkAndRunScheduledBackup(): Promise<{ executed: boolean;
     });
 
     // Compute next run time
-    const { normalizeSettings } = await import('@/lib/settings');
-    const normalized = normalizeSettings(settingsRecord.export());
-    const nextSchedule = calculateNextBackupTime(normalized, new Date());
+    const nextSchedule = calculateNextBackupTime({
+      scheduleType: rec.scheduleType as string,
+      scheduleIntervalHours: Number(rec.scheduleIntervalHours) || 4,
+      scheduleTime: (rec.scheduleTime as string) || '02:00',
+      scheduleDayOfWeek: Number(rec.scheduleDayOfWeek) || 0,
+      scheduleDayOfMonth: Number(rec.scheduleDayOfMonth) || 1,
+    }, new Date());
 
-    // Update settings with last run and next run
-    await pb.collection('app_settings').update(
-      settingsRecord.id,
+    // Update scheduled_backups with last run and next run
+    await pb.collection('scheduled_backups').update(
+      scheduleRecord.id,
       {
-        backupLastRunAt: now.toISOString(),
-        backupNextRunAt: nextSchedule.nextRunAtIso,
-        backupLastStatus: 'completed',
+        lastRunAt: now.toISOString(),
+        nextRunAt: nextSchedule.nextRunAtIso,
+        lastStatus: 'completed',
       },
       { requestKey: null }
     );
@@ -176,12 +212,12 @@ export async function checkAndRunScheduledBackup(): Promise<{ executed: boolean;
     try {
       const { getPocketBaseServiceClient } = await import('@/lib/pocketbase-service');
       const pb = await getPocketBaseServiceClient().catch(() => null);
-      const settingsRecord = await pb?.collection('app_settings').getFirstListItem('', { requestKey: null }).catch(() => null);
-      if (settingsRecord && pb) {
-        await pb.collection('app_settings').update(
-          settingsRecord.id,
+      const scheduleRecord = await pb?.collection('scheduled_backups').getFirstListItem('', { requestKey: null }).catch(() => null);
+      if (scheduleRecord && pb) {
+        await pb.collection('scheduled_backups').update(
+          scheduleRecord.id,
           {
-            backupLastStatus: 'failed',
+            lastStatus: 'failed',
           },
           { requestKey: null }
         );
