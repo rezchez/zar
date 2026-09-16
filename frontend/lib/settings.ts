@@ -60,6 +60,23 @@ export type AppSettings = {
   baleSendText: boolean;
   baleMessageTemplate: string;
 
+  // Automated Backup Settings & Destinations
+  backupAutoEnabled: boolean;
+  backupScheduleType: 'interval' | 'hourly' | 'daily' | 'weekly' | 'monthly';
+  backupScheduleIntervalHours: number; // 1..168 (e.g. every 2, 4, 6, 8, 12 hours)
+  backupScheduleTime: string; // 'HH:mm'
+  backupScheduleDayOfWeek: number; // 0..6 (0=شنبه, 6=جمعه)
+  backupScheduleDayOfMonth: number; // 1..31
+  backupDestinationBale: boolean;
+  backupDestinationArvan: boolean;
+  backupArvanEndpoint: string;
+  backupArvanBucket: string;
+  backupArvanAccessKey: string;
+  backupArvanSecretKey: string;
+  backupLastRunAt: string | null;
+  backupNextRunAt: string | null;
+  backupLastStatus: string | null;
+
   // Report Print Templates
   reportTemplates?: import('./report-templates').ReportPrintTemplate[];
 
@@ -127,6 +144,23 @@ export const defaultSettings: AppSettings = {
   baleSendPdf: true,
   baleSendText: true,
   baleMessageTemplate: 'گزارش جدید از سامانه زر فولیو ارسال شد.\nعنوان: {title}\nتاریخ: {date}\nتعداد: {count}',
+
+  // Backup Defaults
+  backupAutoEnabled: false,
+  backupScheduleType: 'daily',
+  backupScheduleIntervalHours: 4, // پیش‌فرض ۴ ساعت
+  backupScheduleTime: '02:00',
+  backupScheduleDayOfWeek: 0, // شنبه
+  backupScheduleDayOfMonth: 1, // روز اول ماه
+  backupDestinationBale: false,
+  backupDestinationArvan: false,
+  backupArvanEndpoint: 'https://s3.ir-thr-at1.arvanstorage.ir',
+  backupArvanBucket: '',
+  backupArvanAccessKey: '',
+  backupArvanSecretKey: '',
+  backupLastRunAt: null,
+  backupNextRunAt: null,
+  backupLastStatus: null,
 
   reportTemplates: DEFAULT_REPORT_TEMPLATES,
 };
@@ -262,6 +296,31 @@ export function normalizeSettings(input: Record<string, unknown>): AppSettings {
     baleSendPdf: typeof input.baleSendPdf === 'boolean' ? input.baleSendPdf : defaultSettings.baleSendPdf,
     baleSendText: typeof input.baleSendText === 'boolean' ? input.baleSendText : defaultSettings.baleSendText,
     baleMessageTemplate: String(input.baleMessageTemplate ?? defaultSettings.baleMessageTemplate).trim() || defaultSettings.baleMessageTemplate,
+
+    // Backup Settings Normalization
+    backupAutoEnabled: typeof input.backupAutoEnabled === 'boolean' ? input.backupAutoEnabled : defaultSettings.backupAutoEnabled,
+    backupScheduleType: (['interval', 'hourly', 'daily', 'weekly', 'monthly'].includes(String(input.backupScheduleType))
+      ? String(input.backupScheduleType)
+      : defaultSettings.backupScheduleType) as AppSettings['backupScheduleType'],
+    backupScheduleIntervalHours: Number.isInteger(Number(input.backupScheduleIntervalHours)) && Number(input.backupScheduleIntervalHours) > 0
+      ? Math.max(1, Math.min(168, Number(input.backupScheduleIntervalHours)))
+      : defaultSettings.backupScheduleIntervalHours,
+    backupScheduleTime: String(input.backupScheduleTime || defaultSettings.backupScheduleTime).trim(),
+    backupScheduleDayOfWeek: Number.isInteger(Number(input.backupScheduleDayOfWeek))
+      ? Math.max(0, Math.min(6, Number(input.backupScheduleDayOfWeek)))
+      : defaultSettings.backupScheduleDayOfWeek,
+    backupScheduleDayOfMonth: Number.isInteger(Number(input.backupScheduleDayOfMonth))
+      ? Math.max(1, Math.min(31, Number(input.backupScheduleDayOfMonth)))
+      : defaultSettings.backupScheduleDayOfMonth,
+    backupDestinationBale: typeof input.backupDestinationBale === 'boolean' ? input.backupDestinationBale : defaultSettings.backupDestinationBale,
+    backupDestinationArvan: typeof input.backupDestinationArvan === 'boolean' ? input.backupDestinationArvan : defaultSettings.backupDestinationArvan,
+    backupArvanEndpoint: String(input.backupArvanEndpoint ?? defaultSettings.backupArvanEndpoint).trim(),
+    backupArvanBucket: String(input.backupArvanBucket ?? defaultSettings.backupArvanBucket).trim(),
+    backupArvanAccessKey: String(input.backupArvanAccessKey ?? defaultSettings.backupArvanAccessKey).trim(),
+    backupArvanSecretKey: String(input.backupArvanSecretKey ?? defaultSettings.backupArvanSecretKey).trim(),
+    backupLastRunAt: input.backupLastRunAt ? String(input.backupLastRunAt).trim() : null,
+    backupNextRunAt: input.backupNextRunAt ? String(input.backupNextRunAt).trim() : null,
+    backupLastStatus: input.backupLastStatus ? String(input.backupLastStatus).trim() : null,
 
     reportTemplates: Array.isArray(input.reportTemplates)
       ? (input.reportTemplates as ReportPrintTemplate[])

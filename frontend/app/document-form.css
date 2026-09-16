@@ -741,9 +741,9 @@
 .document-lines-panel {
   position: relative;
   z-index: 20;
-  padding: 16px 20px;
+  padding: 10px 14px;
   border: 1px solid #cbd5e1;
-  border-radius: 16px;
+  border-radius: 14px;
   background: #ffffff;
   box-shadow: 0 4px 20px rgba(15, 23, 42, 0.04);
 }
@@ -761,11 +761,11 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-top: 12px;
+  margin-top: 8px;
   border: 1px dashed #94a3b8;
   border-radius: 12px;
   background: #f8fafc;
-  padding: 24px 16px;
+  padding: 16px 12px;
   color: #334155;
   text-align: center;
   font-weight: 700;
@@ -780,7 +780,7 @@
   width: 100%;
   max-width: 100%;
   overflow-x: auto;
-  margin-top: 12px;
+  margin-top: 6px;
 }
 
 .document-lines-table {

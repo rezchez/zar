@@ -19,6 +19,8 @@ type DocumentPrintProps = {
   documentDateJalali: string;
   lines: DocumentLine[];
   isFinalized?: boolean;
+  iconOnly?: boolean;
+  className?: string;
 };
 
 export default function DocumentPrint({
@@ -27,6 +29,8 @@ export default function DocumentPrint({
   documentDateJalali,
   lines,
   isFinalized = false,
+  iconOnly = false,
+  className,
 }: DocumentPrintProps) {
   const { settings } = useAppSettings();
 
@@ -66,14 +70,26 @@ export default function DocumentPrint({
 
   return (
     <>
-      <button
-        type="button"
-        onClick={handlePrint}
-        className="document-secondary-button border-teal-300 dark:border-teal-800 text-teal-700 dark:text-teal-300 hover:bg-teal-50 dark:hover:bg-teal-950/40"
-      >
-        <Printer size={15} />
-        <span>چاپ سند</span>
-      </button>
+      {iconOnly ? (
+        <button
+          type="button"
+          onClick={handlePrint}
+          className={className || "p-1.5 rounded-lg transition-all border bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-teal-600 dark:text-teal-400 hover:text-teal-700 dark:hover:text-teal-300 hover:bg-slate-200 dark:hover:bg-slate-700"}
+          title="چاپ سند"
+          aria-label="چاپ سند"
+        >
+          <Printer size={14} />
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={handlePrint}
+          className={className || "document-secondary-button border-teal-300 dark:border-teal-800 text-teal-700 dark:text-teal-300 hover:bg-teal-50 dark:hover:bg-teal-950/40"}
+        >
+          <Printer size={15} />
+          <span>چاپ سند</span>
+        </button>
+      )}
 
       {/* Hidden Print Container for CSS @media print */}
       <div className="hidden print:block fixed inset-0 bg-white text-black p-0 font-sans leading-relaxed text-right dir-rtl">

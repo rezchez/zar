@@ -13,6 +13,7 @@ import {
   Pin,
   PinOff,
   Plus,
+  Printer,
   RotateCcw,
   Search,
   Sparkles,
@@ -54,6 +55,7 @@ import RefiningDocumentTab from '@/src/components/documents/RefiningDocumentTab'
 import Field from '@/src/components/documents/Field';
 import HawalaModal from '@/src/components/documents/HawalaModal';
 import DocumentPrint from '@/src/components/documents/DocumentPrint';
+import BaleIcon from '@/src/components/documents/BaleIcon';
 
 type CalculationMethod = 'weight' | 'money';
 type MetalPriceType = 'mesghal17' | 'gram18' | 'ounceUsd';
@@ -2016,20 +2018,57 @@ export default function DocumentForm({
             <span>ردیف‌های سند ({faNumber(committedLines.length)})</span>
           </h2>
 
-          {/* Pin / Unpin Icon Button */}
-          <button
-            type="button"
-            onClick={toggleLinesPin}
-            className={`p-1.5 rounded-lg transition-all border ${
-              isLinesPinned
-                ? 'bg-amber-500 border-amber-600 text-white shadow-sm ring-2 ring-amber-400/30 dark:bg-amber-600 dark:border-amber-500'
-                : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'
-            }`}
-            title={isLinesPinned ? 'غیرفعال‌سازی حالت چسبان' : 'فعال‌سازی حالت چسبان'}
-            aria-label={isLinesPinned ? 'غیرفعال‌سازی حالت چسبان' : 'فعال‌سازی حالت چسبان'}
-          >
-            {isLinesPinned ? <Pin size={14} className="fill-current" /> : <PinOff size={14} />}
-          </button>
+          {/* Action Icons: [ Pin ] [ Print ] [ Bale ] */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {/* Pin / Unpin Button */}
+            <button
+              type="button"
+              onClick={toggleLinesPin}
+              className={`p-1.5 rounded-lg transition-all border ${
+                isLinesPinned
+                  ? 'bg-amber-500 border-amber-600 text-white shadow-sm ring-2 ring-amber-400/30 dark:bg-amber-600 dark:border-amber-500'
+                  : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'
+              }`}
+              title={isLinesPinned ? 'غیرفعال‌سازی حالت چسبان' : 'فعال‌سازی حالت چسبان'}
+              aria-label={isLinesPinned ? 'غیرفعال‌سازی حالت چسبان' : 'فعال‌سازی حالت چسبان'}
+            >
+              {isLinesPinned ? <Pin size={14} className="fill-current" /> : <PinOff size={14} />}
+            </button>
+
+            {/* Print Icon Button */}
+            {committedLines.length > 0 ? (
+              <DocumentPrint
+                customer={selectedCustomer || null}
+                documentNumber={effectiveDocumentNumberDisplay}
+                documentDateJalali={documentDateJalali}
+                lines={committedLines}
+                iconOnly
+              />
+            ) : (
+              <button
+                type="button"
+                disabled
+                className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 text-slate-300 dark:text-slate-600 cursor-not-allowed opacity-50"
+                title="چاپ سند (بدون ردیف)"
+                aria-label="چاپ سند"
+              >
+                <Printer size={14} />
+              </button>
+            )}
+
+            {/* Bale SVG Icon Button (Placeheld for next phase) */}
+            <button
+              type="button"
+              className="p-1.5 rounded-lg transition-all border bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 hover:border-emerald-300 dark:hover:border-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
+              title="ارسال به بله"
+              aria-label="ارسال به بله"
+              onClick={() => {
+                // Feature to be enabled in next milestone
+              }}
+            >
+              <BaleIcon size={14} />
+            </button>
+          </div>
         </div>
 
         {!committedLines.length ? (

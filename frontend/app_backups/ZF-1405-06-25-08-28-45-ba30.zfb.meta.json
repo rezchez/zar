@@ -1,0 +1,25 @@
+{
+  "backupId": "ZF-1405-06-25-08-28-45-ba30",
+  "filename": "ZF-1405-06-25-08-28-45-ba30.zfb",
+  "createdAt": "2026-09-16T08:28:45.035Z",
+  "createdAtJalali": "1405/06/25 08:28:45",
+  "applicationVersion": "0.1.3 BETA",
+  "backupFormatVersion": 1,
+  "databaseType": "PocketBase",
+  "schemaVersion": "1.0",
+  "size": 1364,
+  "uncompressedSize": 1952,
+  "checksum": "0a47ad4bd4374b357921ebc41ad1e8afde53d7cb6f25e04e9314f9e8792e424b",
+  "compressionAlgorithm": "gzip",
+  "encryptionEnabled": true,
+  "status": "valid",
+  "storageDestinations": [
+    {
+      "destination": "local",
+      "status": "success",
+      "message": "فایل محلی ذخیره شد: ZF-1405-06-25-08-28-45-ba30.zfb"
+    }
+  ],
+  "isEmergency": false,
+  "note": "تست پشتیبان رمزگذاری‌شده ZFB"
+}

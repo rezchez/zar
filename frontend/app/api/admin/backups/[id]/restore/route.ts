@@ -19,7 +19,15 @@ export async function POST(
     }
 
     const { id } = await params;
-    const result = await restoreDatabaseBackup(id);
+    let password: string | undefined;
+    try {
+      const body = (await request.json()) as { password?: string };
+      password = body.password;
+    } catch {
+      // Optional body
+    }
+
+    const result = await restoreDatabaseBackup(id, password);
 
     await recordAuditEvent({
       userId: context.user.id,

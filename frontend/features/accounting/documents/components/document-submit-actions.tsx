@@ -56,22 +56,22 @@ export default function DocumentSubmitActions({
           type="button"
           onClick={() => void submit('temporary')}
           disabled={isLoading}
-          className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-xl border border-slate-300 bg-transparent px-3.5 text-xs font-bold text-slate-600 transition hover:border-slate-400 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+          className="inline-flex h-7.5 flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-transparent px-2.5 text-[11px] font-bold text-slate-600 transition hover:border-slate-400 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
         >
           {temporaryLoading
-            ? <LoaderCircle size={15} className="animate-spin" />
-            : <Clock3 size={15} />}
+            ? <LoaderCircle size={13} className="animate-spin" />
+            : <Clock3 size={13} />}
           ثبت موقت سند
         </button>
         <button
           type="button"
           onClick={() => void submit('final')}
           disabled={isLoading}
-          className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 text-xs font-bold text-white shadow-sm shadow-emerald-600/20 transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex h-7.5 flex-1 items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-2.5 text-[11px] font-bold text-white shadow-sm shadow-emerald-600/20 transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {finalLoading
-            ? <LoaderCircle size={15} className="animate-spin" />
-            : <CheckCircle2 size={15} />}
+            ? <LoaderCircle size={13} className="animate-spin" />
+            : <CheckCircle2 size={13} />}
           ثبت نهایی سند کل
         </button>
       </div>
