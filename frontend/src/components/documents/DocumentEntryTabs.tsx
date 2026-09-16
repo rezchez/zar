@@ -15,6 +15,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { motion } from 'framer-motion';
 
 import type { Customer } from '@/lib/customer';
 import BankOperation from '@/src/components/documents/BankOperation';
@@ -147,13 +148,20 @@ export default function DocumentEntryTabs({
   const selectedTab = tabs.find((tab) => tab.id === activeTab) ?? tabs[0];
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[12rem_minmax(0,1fr)]">
+    <div className="grid gap-4 lg:grid-cols-[13rem_minmax(0,1fr)]">
       <div className="min-w-0 lg:col-start-2 lg:row-start-1">
         {selectedTab.content}
       </div>
+
+      {/* Appica UI inspired tabs list */}
       <nav
-        className="order-first flex gap-1.5 overflow-x-auto pb-1 lg:order-last lg:col-start-1 lg:row-start-1 lg:block lg:space-y-1.5 lg:overflow-visible"
+        role="tablist"
         aria-label="تب‌های ثبت سند"
+        className={`order-first flex gap-1 overflow-x-auto p-1.5 rounded-2xl border backdrop-blur-sm scrollbar-none lg:order-last lg:col-start-1 lg:row-start-1 lg:flex lg:flex-col lg:overflow-visible transition-colors duration-250 ${
+          nature === 'paid'
+            ? 'bg-rose-100/50 dark:bg-rose-950/20 border-rose-200/70 dark:border-rose-900/40'
+            : 'bg-emerald-100/50 dark:bg-emerald-950/20 border-emerald-200/70 dark:border-emerald-900/40'
+        }`}
       >
         {tabs.map((tab) => {
           const Icon = tab.icon;
@@ -163,24 +171,57 @@ export default function DocumentEntryTabs({
           return (
             <button
               type="button"
+              role="tab"
               key={tab.id}
               onClick={() => selectTab(tab.id)}
-              aria-current={isActive ? 'page' : undefined}
+              aria-selected={isActive}
+              tabIndex={isActive ? 0 : -1}
               disabled={isEditingMode && !isActive}
-              className={`flex min-w-max items-center gap-2 rounded-xl px-3 py-2.5 text-right text-xs font-bold transition-all duration-200 lg:w-full border ${
-                isBlurred ? 'filter blur-[1.5px] opacity-35 pointer-events-none' : 'filter blur-0 opacity-100'
+              className={`group/trigger relative flex min-w-max items-center justify-between gap-2.5 rounded-xl px-3 py-2 text-right text-xs outline-none transition-colors duration-200 select-none lg:w-full ${
+                isBlurred
+                  ? 'filter blur-[1.5px] opacity-35 pointer-events-none'
+                  : 'filter blur-0 opacity-100'
               } ${
                 isActive
-                  ? nature === 'paid'
-                    ? 'bg-rose-600 text-white border-rose-700 shadow-md shadow-rose-600/25 font-extrabold'
-                    : 'bg-emerald-600 text-white border-emerald-700 shadow-md shadow-emerald-600/25 font-extrabold'
+                  ? 'text-white font-black'
                   : nature === 'paid'
-                    ? 'bg-slate-100/90 text-slate-900 border-slate-200 hover:bg-rose-50 hover:text-rose-700 dark:bg-slate-800/90 dark:text-slate-100 dark:border-slate-700 dark:hover:bg-rose-950/50 dark:hover:text-rose-300'
-                    : 'bg-slate-100/90 text-slate-900 border-slate-200 hover:bg-emerald-50 hover:text-emerald-700 dark:bg-slate-800/90 dark:text-slate-100 dark:border-slate-700 dark:hover:bg-emerald-950/50 dark:hover:text-emerald-300'
+                    ? 'font-medium text-rose-950/80 dark:text-rose-200/80 hover:text-rose-900 dark:hover:text-white hover:bg-rose-200/40 dark:hover:bg-rose-900/30'
+                    : 'font-medium text-emerald-950/80 dark:text-emerald-200/80 hover:text-emerald-900 dark:hover:text-white hover:bg-emerald-200/40 dark:hover:bg-emerald-900/30'
               }`}
             >
-              <Icon size={15} />
-              <span>{tab.label}</span>
+              {/* Appica-style sliding pill indicator using Framer Motion layoutId */}
+              {isActive && (
+                <motion.span
+                  layoutId="document-entry-tab-indicator"
+                  transition={{ type: 'spring', bounce: 0.15, duration: 0.3 }}
+                  className={`absolute inset-0 z-0 rounded-xl shadow-md border ${
+                    nature === 'paid'
+                      ? 'bg-rose-600 dark:bg-rose-600 border-rose-700 dark:border-rose-500 shadow-rose-600/30'
+                      : 'bg-emerald-600 dark:bg-emerald-600 border-emerald-700 dark:border-emerald-500 shadow-emerald-600/30'
+                  }`}
+                />
+              )}
+
+              {/* Tab trigger inner content with icon & label */}
+              <span className="relative z-10 flex items-center gap-2">
+                <span
+                  className={`flex h-6 w-6 items-center justify-center rounded-lg transition-colors duration-200 ${
+                    isActive
+                      ? 'bg-white/20 text-white'
+                      : nature === 'paid'
+                        ? 'text-rose-700 dark:text-rose-400 group-hover/trigger:text-rose-900 dark:group-hover/trigger:text-rose-200'
+                        : 'text-emerald-700 dark:text-emerald-400 group-hover/trigger:text-emerald-900 dark:group-hover/trigger:text-emerald-200'
+                  }`}
+                >
+                  <Icon size={15} />
+                </span>
+                <span className="truncate">{tab.label}</span>
+              </span>
+
+              {/* Active accent indicator dot */}
+              {isActive && (
+                <span className="relative z-10 h-1.5 w-1.5 rounded-full bg-white shadow-xs" />
+              )}
             </button>
           );
         })}

@@ -34,10 +34,14 @@ export default function DocumentSubmitActions({
           : 'سند به‌صورت موقت ذخیره شد.',
       });
     } catch (error) {
-      setToast({
-        tone: 'error',
-        message: error instanceof Error ? error.message : 'ثبت سند انجام نشد.',
-      });
+      const errMsg = error instanceof Error ? error.message : 'ثبت سند انجام نشد.';
+      // Don't show the customer selection notice in the document submit actions (rows panel)
+      if (errMsg !== 'ابتدا طرف حساب را از فهرست انتخاب کنید') {
+        setToast({
+          tone: 'error',
+          message: errMsg,
+        });
+      }
     } finally {
       if (status === 'temporary') {
         setTemporaryLoading(false);
