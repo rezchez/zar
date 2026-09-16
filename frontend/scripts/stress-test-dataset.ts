@@ -11,6 +11,7 @@
  */
 
 import { Database } from 'bun:sqlite';
+import * as fs from 'fs';
 import * as path from 'path';
 
 const isLive = process.argv.includes('--live');
@@ -24,43 +25,62 @@ console.log('===================================================================
 // Initialize database
 let db: Database;
 
+function initTables(database: Database) {
+  database.run(`
+    CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT, name TEXT, created TEXT, updated TEXT);
+    CREATE TABLE IF NOT EXISTS currencies (id TEXT PRIMARY KEY, code TEXT, name TEXT, symbol TEXT, is_active INTEGER);
+    CREATE TABLE IF NOT EXISTS cash_funds (id TEXT PRIMARY KEY, name TEXT, accountId TEXT, isActive INTEGER, currency TEXT, initial_balance REAL, balance REAL, currency_name TEXT, code TEXT, opening_balance REAL, current_balance REAL, is_active INTEGER, description TEXT, created_by TEXT, updated_by TEXT, created TEXT, updated TEXT);
+    CREATE TABLE IF NOT EXISTS cash_transactions (id TEXT PRIMARY KEY, currency_ref TEXT, currency_symbol TEXT, currency_name TEXT, transaction_type TEXT, is_opening_balance INTEGER, created_by TEXT, date TEXT, direction TEXT, vault TEXT, amount REAL, currency TEXT, source_key TEXT, description TEXT, created TEXT, updated TEXT);
+    CREATE TABLE IF NOT EXISTS bank_accounts (id TEXT PRIMARY KEY, bankName TEXT, accountNumber TEXT, balance REAL, currency TEXT, accountId TEXT, createdBy TEXT, updatedBy TEXT, created TEXT, updated TEXT);
+    CREATE TABLE IF NOT EXISTS bank_transactions (id TEXT PRIMARY KEY, bank_account TEXT, amount REAL, currency TEXT, direction TEXT, transaction_type TEXT, is_opening_balance INTEGER, source_key TEXT, date TEXT, description TEXT, created_by TEXT, created TEXT, updated TEXT);
+    CREATE TABLE IF NOT EXISTS metal_inventory (id TEXT PRIMARY KEY, metal TEXT, inventory_type TEXT, metal_type TEXT, purity REAL, base_karat REAL, raw_weight REAL, converted_weight REAL, unit_price REAL, total_amount REAL, lab_name TEXT, stamp_number TEXT, direction TEXT, transaction_type TEXT, is_opening_balance INTEGER, date TEXT, description TEXT, created_by TEXT, updated_by TEXT, created TEXT, updated TEXT);
+    CREATE TABLE IF NOT EXISTS coin_inventory (id TEXT PRIMARY KEY, item_name TEXT, item_type TEXT, metal TEXT, nature TEXT, quantity REAL, unit_weight REAL, total_weight REAL, purity REAL, converted_weight REAL, unit_price REAL, total_amount REAL, direction TEXT, transaction_type TEXT, date TEXT, description TEXT, created TEXT, updated TEXT);
+    CREATE TABLE IF NOT EXISTS workmanship_inventory (id TEXT PRIMARY KEY, code TEXT, name TEXT, metal TEXT, purity REAL, base_karat REAL, raw_weight REAL, converted_weight REAL, quantity REAL, wage_mode TEXT, wage REAL, total_wage REAL, metal_price REAL, total_amount REAL, is_opening_balance INTEGER, transaction_type TEXT, date TEXT, description TEXT, created_by TEXT, updated_by TEXT, created TEXT, updated TEXT);
+    CREATE TABLE IF NOT EXISTS gemstone_inventory (id TEXT PRIMARY KEY, inventory_code TEXT, inventory_mode TEXT, root_category TEXT, gemstone_type TEXT, shape TEXT, cut_grade TEXT, diamond_color_grade TEXT, diamond_clarity_grade TEXT, certificate_lab TEXT, report_number TEXT, has_certificate INTEGER, growth_method TEXT, origin_country TEXT, size_unit TEXT, color_range_label TEXT, clarity_range_label TEXT, pool_identity_key TEXT, quantity REAL, weight_ct REAL, weight_g REAL, unit_price REAL, total_amount REAL, currency TEXT, is_opening_balance INTEGER, description TEXT, created_by TEXT, updated_by TEXT, created TEXT, updated TEXT);
+    CREATE TABLE IF NOT EXISTS gemstone_inventory_transactions (id TEXT PRIMARY KEY, gemstone TEXT, transaction_type TEXT, direction TEXT, quantity REAL, weight_ct REAL, weight_g REAL, unit_price REAL, total_amount REAL, weighted_avg_cost_at_tx REAL, source_key TEXT, date TEXT, notes TEXT, created_by TEXT, created TEXT);
+    CREATE TABLE IF NOT EXISTS goods_inventory (id TEXT PRIMARY KEY, sku TEXT, item_name TEXT, goods_type TEXT, category TEXT, unit TEXT, quantity REAL, unit_price REAL, total_amount REAL, is_opening_balance INTEGER, date TEXT, description TEXT, created_by TEXT, updated_by TEXT, created TEXT, updated TEXT);
+    CREATE TABLE IF NOT EXISTS journal_entries (id TEXT PRIMARY KEY, entryNumber TEXT, entryDate TEXT, entryDateJalali TEXT, description TEXT, sourceType TEXT, sourceId TEXT, sourceKey TEXT UNIQUE, status TEXT, totalDebit REAL, totalCredit REAL, createdBy TEXT, updatedBy TEXT, created TEXT, updated TEXT);
+    CREATE TABLE IF NOT EXISTS journal_lines (id TEXT PRIMARY KEY, journal_entry_id TEXT, account_id TEXT, debit REAL, credit REAL, description TEXT, created TEXT, updated TEXT);
+    CREATE TABLE IF NOT EXISTS chart_of_accounts (id TEXT PRIMARY KEY, code TEXT, name TEXT, level INTEGER, parent_id TEXT);
+  `);
+}
+
 if (isLive) {
-  db = new Database(dbPath);
-} else {
-  // Create an in-memory database and clone the exact schemas from data.db
-  db = new Database(':memory:');
-  const sourceDb = new Database(dbPath);
-  
-  const tables = sourceDb.query(
-    "SELECT sql FROM sqlite_master WHERE type IN ('table', 'index') AND sql IS NOT NULL AND name NOT LIKE 'sqlite_%'"
-  ).all() as { sql: string }[];
-  
-  for (const item of tables) {
-    try {
-      db.run(item.sql);
-    } catch {
-      // Ignore existing
-    }
+  const dir = path.dirname(dbPath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
   }
-  
-  // Clone superusers, users, currencies, chart_of_accounts
-  const cloneTables = ['users', 'currencies', 'chart_of_accounts'];
-  for (const table of cloneTables) {
+  db = new Database(dbPath);
+  initTables(db);
+} else {
+  db = new Database(':memory:');
+  initTables(db);
+
+  if (fs.existsSync(dbPath)) {
+    let sourceDb: Database | null = null;
     try {
-      const rows = sourceDb.query(`SELECT * FROM ${table}`).all();
-      if (rows.length > 0) {
-        const cols = Object.keys(rows[0] as object);
-        const placeholders = cols.map(() => '?').join(', ');
-        const insertStmt = db.prepare(`INSERT OR IGNORE INTO ${table} (${cols.map(c => `\`${c}\``).join(', ')}) VALUES (${placeholders})`);
-        for (const row of rows) {
-          insertStmt.run(...Object.values(row as object));
+      sourceDb = new Database(dbPath);
+      const cloneTables = ['users', 'currencies', 'chart_of_accounts'];
+      for (const table of cloneTables) {
+        try {
+          const rows = sourceDb.query(`SELECT * FROM ${table}`).all();
+          if (rows.length > 0) {
+            const cols = Object.keys(rows[0] as object);
+            const placeholders = cols.map(() => '?').join(', ');
+            const insertStmt = db.prepare(`INSERT OR IGNORE INTO ${table} (${cols.map(c => `\`${c}\``).join(', ')}) VALUES (${placeholders})`);
+            for (const row of rows) {
+              insertStmt.run(...Object.values(row as object));
+            }
+          }
+        } catch {
+          // Table might not exist or be empty
         }
       }
+      sourceDb.close();
     } catch {
-      // Table might not exist or be empty
+      // ignore
     }
   }
-  sourceDb.close();
 }
 
 // PRAGMA optimization

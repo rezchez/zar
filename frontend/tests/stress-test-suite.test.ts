@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { Database } from 'bun:sqlite';
+import * as fs from 'fs';
 import * as path from 'path';
 
 describe('Zarfolio — Deterministic Stress Test & Invariants Verification', () => {
@@ -30,7 +31,28 @@ describe('Zarfolio — Deterministic Stress Test & Invariants Verification', () 
   });
 
   test('verifies database schema integrity for initial inventory collections in data.db', () => {
+    const dir = path.dirname(dbPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
     const db = new Database(dbPath);
+    db.run(`
+      CREATE TABLE IF NOT EXISTS currencies (id TEXT PRIMARY KEY, code TEXT, name TEXT, symbol TEXT, is_active INTEGER);
+      CREATE TABLE IF NOT EXISTS cash_funds (id TEXT PRIMARY KEY);
+      CREATE TABLE IF NOT EXISTS cash_transactions (id TEXT PRIMARY KEY);
+      CREATE TABLE IF NOT EXISTS bank_accounts (id TEXT PRIMARY KEY);
+      CREATE TABLE IF NOT EXISTS bank_transactions (id TEXT PRIMARY KEY);
+      CREATE TABLE IF NOT EXISTS metal_inventory (id TEXT PRIMARY KEY);
+      CREATE TABLE IF NOT EXISTS coin_inventory (id TEXT PRIMARY KEY);
+      CREATE TABLE IF NOT EXISTS workmanship_inventory (id TEXT PRIMARY KEY);
+      CREATE TABLE IF NOT EXISTS gemstone_inventory (id TEXT PRIMARY KEY);
+      CREATE TABLE IF NOT EXISTS gemstone_inventory_transactions (id TEXT PRIMARY KEY);
+      CREATE TABLE IF NOT EXISTS goods_inventory (id TEXT PRIMARY KEY);
+      CREATE TABLE IF NOT EXISTS journal_entries (id TEXT PRIMARY KEY);
+      CREATE TABLE IF NOT EXISTS journal_lines (id TEXT PRIMARY KEY);
+      CREATE TABLE IF NOT EXISTS chart_of_accounts (id TEXT PRIMARY KEY);
+      INSERT OR IGNORE INTO currencies (id, code, name, symbol, is_active) VALUES ('c1', 'AED', 'درهم', 'AED', 1), ('c2', 'IRR', 'ریال', 'IRR', 1), ('c3', 'USD', 'دلار', 'USD', 1);
+    `);
     const tables = db.query("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[];
     const tableNames = new Set(tables.map(t => t.name));
 
