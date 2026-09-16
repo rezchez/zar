@@ -5,7 +5,6 @@ import {
   Check,
   ClipboardList,
   Flame,
-  Hash,
   LoaderCircle,
   MapPin,
   PencilLine,
@@ -26,7 +25,11 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import DatePicker from '@/components/ui/date-picker';
-import { getCurrencyDisplayName, type Currency } from '@/lib/currencies';
+import {
+  getCurrenciesForBaseCurrency,
+  getCurrencyDisplayName,
+  type Currency,
+} from '@/lib/currencies';
 import { currencyDisplay, type Customer } from '@/lib/customer';
 import { isRefinerGroup } from '@/lib/customer-groups';
 import DocumentSubmitActions from '@/components/documents/document-submit-actions';
@@ -44,6 +47,7 @@ import RawGoldTab, {
   type MeltedInventoryItem,
   type RawOperationKind,
 } from '@/src/components/documents/RawGoldTab';
+import { getInventoryItemAvailability } from '@/lib/inventory-reservation';
 import GoldSaleTab from '@/src/components/documents/GoldSaleTab';
 import CurrencyTab from '@/src/components/documents/CurrencyTab';
 import CoinTab from '@/src/components/documents/CoinTab';
@@ -129,40 +133,53 @@ function faNumber(value: number, fractionDigits = 0) {
   }).format(value);
 }
 
-function convertedTo750(weight: string, purity: string) {
+function convertedTo750(weight: string, purity: string, baseKarat = 750) {
   const actualWeight = numberValue(weight);
   const carat = numberValue(purity);
-  if (actualWeight <= 0 || carat <= 0) return 0;
-  return (actualWeight * carat) / 750;
+  if (actualWeight <= 0 || carat <= 0 || baseKarat <= 0) return 0;
+  return (actualWeight * carat) / baseKarat;
 }
 
 function metalPriceLabel(type: MetalPriceType) {
-  if (type === 'mesghal17') return 'قیمت فلز هر مثقال';
-  if (type === 'gram18') return 'قیمت فلز هر گرم';
-  return 'قیمت فلز هر اونس';
+  if (type === 'mesghal17') return 'قیمت هر مثقال ۱۷ عیار';
+  if (type === 'gram18') return 'قیمت هر گرم ۱۸ عیار';
+  if (type === 'ounceUsd') return 'قیمت هر اونس';
+  if (type === 'gramSilver925') return 'قیمت هر گرم نقره ۹۲۵';
+  if (type === 'gramSilver995') return 'قیمت هر گرم نقره ۹۹۵';
+  if (type === 'gramSilver999') return 'قیمت هر گرم نقره ۹۹۹';
+  return 'قیمت هر گرم پلاتین';
 }
 
-function pricePer750Gram(type: MetalPriceType, price: string) {
+function silverPricePurity(type: MetalPriceType) {
+  if (type === 'gramSilver925') return 925;
+  if (type === 'gramSilver995') return 995;
+  if (type === 'gramSilver999') return 999;
+  return 0;
+}
+
+function pricePerBaseGram(type: MetalPriceType, price: string, baseKarat = 750) {
   const value = numberValue(price);
   if (value <= 0) return 0;
   if (type === 'mesghal17') return value / MESGHAL_17_TO_GRAM_18;
   if (type === 'ounceUsd') return value / TROY_OUNCE_GRAMS;
+  const silverPurity = silverPricePurity(type);
+  if (silverPurity > 0) return value * (baseKarat / silverPurity);
   return value;
 }
 
-function totalFromWeight(weight: string, purity: string, type: MetalPriceType, price: string) {
-  return Math.round(convertedTo750(weight, purity) * pricePer750Gram(type, price));
+function totalFromWeight(weight: string, purity: string, type: MetalPriceType, price: string, baseKarat = 750) {
+  return Math.round(convertedTo750(weight, purity, baseKarat) * pricePerBaseGram(type, price, baseKarat));
 }
 
-function convertedWeightFromTotal(total: string, type: MetalPriceType, price: string) {
-  const perGram = pricePer750Gram(type, price);
+function convertedWeightFromTotal(total: string, type: MetalPriceType, price: string, baseKarat = 750) {
+  const perGram = pricePerBaseGram(type, price, baseKarat);
   return perGram > 0 ? numberValue(total) / perGram : 0;
 }
 
-function actualWeightFromMoney(details: Pick<DetailState, 'totalAmount' | 'purity' | 'metalPriceType' | 'metalPrice'>) {
+function actualWeightFromMoney(details: Pick<DetailState, 'totalAmount' | 'purity' | 'metalPriceType' | 'metalPrice' | 'metalType'>, baseKarat = 750) {
   const purityNumber = numberValue(details.purity);
-  if (purityNumber <= 0) return 0;
-  return (convertedWeightFromTotal(details.totalAmount, details.metalPriceType, details.metalPrice) * 750) / purityNumber;
+  if (purityNumber <= 0 || baseKarat <= 0) return 0;
+  return (convertedWeightFromTotal(details.totalAmount, details.metalPriceType, details.metalPrice, baseKarat) * baseKarat) / purityNumber;
 }
 
 function documentSubType(nature: DocumentNature, kind: RawOperationKind) {
@@ -208,6 +225,7 @@ function createLine(nature: DocumentNature = 'received', sourceTab = 'metals'): 
     description: '',
     details: {
       metalType: 'gold',
+      baseKarat: 750,
       rawKind: 'molten',
       rawWeight: '',
       purity: '750',
@@ -277,7 +295,7 @@ function isLineReady(line: DocumentLine) {
     return rawWeight > 0;
   }
   const rawWeight = line.details.calculationMethod === 'money'
-    ? actualWeightFromMoney(line.details)
+    ? actualWeightFromMoney(line.details, Number(line.details.baseKarat || 750))
     : numberValue(line.details.rawWeight);
   if (line.documentTab === 'raw-gold') return rawWeight > 0;
   return rawWeight > 0
@@ -285,7 +303,12 @@ function isLineReady(line: DocumentLine) {
     && numberValue(line.details.metalPrice) > 0;
 }
 
-function validateLine(line: DocumentLine, inventory: MeltedInventoryItem[] = []) {
+function validateLine(
+  line: DocumentLine,
+  inventory: MeltedInventoryItem[] = [],
+  committedLines: DocumentLine[] = [],
+  editingLineId: string | null = null,
+) {
   if (line.documentTab === 'currency') {
     if (!line.details.currencyUnit) return 'واحد ارز را انتخاب کنید.';
     if (numberValue(line.details.currencyQuantity) <= 0) return 'تعداد ارز باید بیشتر از صفر باشد.';
@@ -314,7 +337,7 @@ function validateLine(line: DocumentLine, inventory: MeltedInventoryItem[] = [])
     return '';
   }
   const rawWeight = line.details.calculationMethod === 'money'
-    ? actualWeightFromMoney(line.details)
+    ? actualWeightFromMoney(line.details, Number(line.details.baseKarat || 750))
     : numberValue(line.details.rawWeight);
   if (rawWeight <= 0) {
     return 'وزن طلای خام باید بیشتر از صفر باشد.';
@@ -335,15 +358,11 @@ function validateLine(line: DocumentLine, inventory: MeltedInventoryItem[] = [])
     && line.details.inventorySourceId
   ) {
     const sourceItem = inventory.find((item) => item.id === line.details.inventorySourceId);
-    if (sourceItem && rawWeight > sourceItem.remainingWeight + 0.0000001) {
-      const kindTitle = line.details.rawKind === 'conditional'
-        ? 'شرطی'
-        : line.details.rawKind === 'misc'
-          ? 'متفرقه'
-          : line.details.rawKind === 'question'
-            ? 'سواله'
-            : 'آبشده';
-      return `وزن خروجی نمی‌تواند بیشتر از موجودی ${kindTitle} (${sourceItem.remainingWeight.toFixed(3)} گرم) باشد.`;
+    if (sourceItem) {
+      const { availableRemaining } = getInventoryItemAvailability(sourceItem, committedLines, editingLineId);
+      if (rawWeight > availableRemaining + 0.0000001) {
+        return 'مقدار انتخاب‌شده بیشتر از موجودی قابل استفاده است.';
+      }
     }
   }
   if (line.details.rawKind !== 'conditional') {
@@ -464,6 +483,8 @@ export default function DocumentForm({
   const weightPrecision = Number(settings.weightDecimalPlaces) || 3;
   const { goldBaseKarat, silverBaseKarat, platinumBaseKarat } = settings;
   const purityForMetal = (metalType: MetalType) => baseKaratForMetal(metalType, settings);
+  const baseKaratForLine = (line: DocumentLine) => purityForMetal(line.details.metalType);
+  const actualWeightForLine = (line: DocumentLine) => actualWeightFromMoney(line.details, baseKaratForLine(line));
 
   function createSettingsLine(nature: DocumentNature = 'received', sourceTab = 'metals') {
     const line = sourceTab === 'currency'
@@ -474,6 +495,7 @@ export default function DocumentForm({
       details: {
         ...line.details,
         purity: String(purityForMetal(line.details.metalType)),
+        baseKarat: purityForMetal(line.details.metalType),
       },
     };
   }
@@ -500,6 +522,88 @@ export default function DocumentForm({
   const labInputRef = useRef<HTMLInputElement>(null);
   const stampInputRef = useRef<HTMLInputElement>(null);
   const [meltedInventory, setMeltedInventory] = useState<MeltedInventoryItem[]>([]);
+
+  const [previewData, setPreviewData] = useState<{
+    previousBalance: {
+      rial: number;
+      gold: number;
+      silver: number;
+      platinum: number;
+      foreign: number;
+      tertiary: number;
+      secondaryCurrency?: string;
+      secondaryCurrencySymbol?: string;
+      tertiaryCurrency?: string;
+      tertiaryCurrencySymbol?: string;
+    };
+    transactionEffect: {
+      rial: number;
+      gold: number;
+      silver: number;
+      platinum: number;
+      foreign: number;
+      tertiary: number;
+    };
+    projectedBalance: {
+      rial: number;
+      gold: number;
+      silver: number;
+      platinum: number;
+      foreign: number;
+      tertiary: number;
+    };
+  } | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  useEffect(() => {
+    if (!selectedCustomerId) {
+      setPreviewData(null);
+      setPreviewLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    setPreviewLoading(true);
+
+    const timer = setTimeout(() => {
+      fetch('/api/transactions/preview-balance', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          customerId: selectedCustomerId,
+          lines: committedLines.map((line) => ({
+            documentNature: line.documentNature,
+            documentTab: line.documentTab,
+            sourceTab: line.sourceTab,
+            details: line.details,
+          })),
+        }),
+        signal: controller.signal,
+      })
+        .then(async (res) => {
+          if (!res.ok) throw new Error();
+          return res.json();
+        })
+        .then((resData) => {
+          if (resData?.success && resData?.data) {
+            setPreviewData(resData.data);
+          }
+        })
+        .catch((err) => {
+          if (err?.name === 'AbortError') return;
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) {
+            setPreviewLoading(false);
+          }
+        });
+    }, 150);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [selectedCustomerId, committedLines]);
 
   // Close customer search dropdown on click outside
   useEffect(() => {
@@ -566,7 +670,9 @@ export default function DocumentForm({
         setSelectedCurrency((current) =>
           currencies.some((currency) => currency.code === current)
             ? current
-            : currencies[0]?.code ?? '',
+            : currencies.find((currency) => currency.code === baseCurrency)?.code
+              ?? currencies[0]?.code
+              ?? '',
         );
       })
       .catch((error: unknown) => {
@@ -580,20 +686,40 @@ export default function DocumentForm({
       });
 
     return () => controller.abort();
-  }, []);
+  }, [baseCurrency]);
+
+  const activeCurrencies = useMemo(
+    () => getCurrenciesForBaseCurrency(availableCurrencies, baseCurrency),
+    [availableCurrencies, baseCurrency],
+  );
+
+  useEffect(() => {
+    setSelectedCurrency((current) => {
+      if (activeCurrencies.some((currency) => currency.code === current)) return current;
+      return activeCurrencies.find((currency) => currency.code === baseCurrency)?.code
+        ?? activeCurrencies[0]?.code
+        ?? '';
+    });
+  }, [activeCurrencies, baseCurrency]);
 
   useEffect(() => {
     if (!selectedCurrency) return;
-    setDraftLine((current) => current.documentTab !== 'currency' || current.details.currencyUnit
-      ? current
-      : {
+    setDraftLine((current) => {
+      const currentUnit = current.details.currencyUnit.toUpperCase();
+      const mustSyncDomesticUnit = currentUnit === 'IRR' || currentUnit === 'IRT';
+      if (current.documentTab !== 'currency' || (current.details.currencyUnit && !mustSyncDomesticUnit)) {
+        return current;
+      }
+      if (current.details.currencyUnit === selectedCurrency) return current;
+      return {
           ...current,
           details: {
             ...current.details,
             currencyUnit: selectedCurrency,
             settlementCurrencyUnit: selectedCurrency,
           },
-        });
+        };
+    });
   }, [selectedCurrency, draftLine.documentTab]);
 
   // Document lines pin state initialized safely
@@ -606,14 +732,15 @@ export default function DocumentForm({
     const timer = window.setTimeout(() => {
       setDraftLine((current) => {
         if (current.details.rawKind === 'conditional') return current;
-        const nextPurity = String(baseKaratForMetal(current.details.metalType, {
+        const nextBaseKarat = baseKaratForMetal(current.details.metalType, {
           goldBaseKarat,
           silverBaseKarat,
           platinumBaseKarat,
-        }));
-        return current.details.purity === nextPurity
+        });
+        const nextPurity = String(nextBaseKarat);
+        return current.details.purity === nextPurity && current.details.baseKarat === nextBaseKarat
           ? current
-          : { ...current, details: { ...current.details, purity: nextPurity } };
+          : { ...current, details: { ...current.details, purity: nextPurity, baseKarat: nextBaseKarat } };
       });
     }, 0);
     return () => window.clearTimeout(timer);
@@ -764,8 +891,8 @@ export default function DocumentForm({
 
   const draftReady = isLineReady(draftLine);
   const currencyUnits = useMemo(() => {
-    return availableCurrencies.map((currency) => currency.code);
-  }, [availableCurrencies]);
+    return activeCurrencies.map((currency) => currency.code);
+  }, [activeCurrencies]);
 
   // Per-customer document number querying
   useEffect(() => {
@@ -1058,7 +1185,9 @@ export default function DocumentForm({
       if (field === 'calculationMethod') {
         details.calculationMethod = value as CalculationMethod;
       }
-      const converted = convertedTo750(details.rawWeight, details.purity);
+      const baseKarat = purityForMetal(details.metalType);
+      details.baseKarat = baseKarat;
+      const converted = convertedTo750(details.rawWeight, details.purity, baseKarat);
       if (details.calculationMethod === 'weight') {
         if (field !== 'totalAmount') {
           details.totalAmount = String(totalFromWeight(
@@ -1066,6 +1195,7 @@ export default function DocumentForm({
             details.purity,
             details.metalPriceType,
             details.metalPrice,
+            baseKarat,
           ) || '');
         }
       } else {
@@ -1073,11 +1203,12 @@ export default function DocumentForm({
           details.totalAmount,
           details.metalPriceType,
           details.metalPrice,
+          baseKarat,
         );
-        if (computed > 0) details.rawWeight = String((computed * 750) / Math.max(1, numberValue(details.purity)));
+        if (computed > 0) details.rawWeight = String((computed * baseKarat) / Math.max(1, numberValue(details.purity)));
       }
       if (details.calculationMethod === 'weight' && field === 'metalPriceType' && converted > 0) {
-        details.totalAmount = String(totalFromWeight(details.rawWeight, details.purity, details.metalPriceType, details.metalPrice) || '');
+        details.totalAmount = String(totalFromWeight(details.rawWeight, details.purity, details.metalPriceType, details.metalPrice, baseKarat) || '');
       }
       return {
         ...current,
@@ -1090,8 +1221,8 @@ export default function DocumentForm({
   function validateGoldAssayFields(line: DocumentLine): { valid: boolean; errorMsg?: string; errors: { labName?: string; stampNumber?: string }; firstFocusField?: 'lab' | 'stamp' } {
     const isGold = line.details.metalType === 'gold';
     const isMoltenOrConditional = line.details.rawKind === 'molten' || line.details.rawKind === 'conditional';
-    const rawWeight = line.details.calculationMethod === 'money'
-      ? actualWeightFromMoney(line.details)
+  const rawWeight = line.details.calculationMethod === 'money'
+    ? actualWeightFromMoney(line.details, Number(line.details.baseKarat || 750))
       : numberValue(line.details.rawWeight);
 
     if (isGold && isMoltenOrConditional && rawWeight > 0) {
@@ -1113,7 +1244,7 @@ export default function DocumentForm({
   }
 
   function commitDraftLine() {
-    const validationMessage = validateLine(draftLine, meltedInventory);
+    const validationMessage = validateLine(draftLine, meltedInventory, committedLines, editingLineId);
     if (validationMessage) {
       setErrorMessage(validationMessage);
       return;
@@ -1144,9 +1275,10 @@ export default function DocumentForm({
     );
 
     const rawWeight = draftLine.details.calculationMethod === 'money'
-      ? actualWeightFromMoney(draftLine.details)
+      ? actualWeightForLine(draftLine)
       : numberValue(draftLine.details.rawWeight);
-    const c750 = convertedTo750(String(rawWeight), draftLine.details.purity);
+    const baseKarat = baseKaratForLine(draftLine);
+    const c750 = convertedTo750(String(rawWeight), draftLine.details.purity, baseKarat);
 
     // Snapshot current documentNature, documentTypeLabel, converted750, and user description
     const lineToCommit: DocumentLine = {
@@ -1156,7 +1288,7 @@ export default function DocumentForm({
       documentTypeLabel: docTypeLabel,
       converted750: c750,
       description: draftLine.description ? draftLine.description.trim() : '',
-      details: { ...draftLine.details },
+      details: { ...draftLine.details, baseKarat },
     };
 
     let supplementaryCashLine: DocumentLine | null = null;
@@ -1318,14 +1450,14 @@ export default function DocumentForm({
             documentDetails: line.details,
             goldAmount: (line.documentTab === 'raw-gold' || line.documentTab === 'gold-sale' || line.documentTab === 'refining') && line.details.metalType === 'gold' && line.details.refiningOpKind !== 'fee'
               ? line.details.calculationMethod === 'money'
-                ? actualWeightFromMoney(line.details)
+                ? actualWeightForLine(line)
                 : numberValue(line.details.rawWeight)
               : 0,
             silverAmount: (line.documentTab === 'raw-gold' || line.documentTab === 'gold-sale' || line.documentTab === 'refining') && line.details.metalType === 'silver' && line.details.refiningOpKind !== 'fee'
-              ? line.details.calculationMethod === 'money' ? actualWeightFromMoney(line.details) : numberValue(line.details.rawWeight)
+              ? line.details.calculationMethod === 'money' ? actualWeightForLine(line) : numberValue(line.details.rawWeight)
               : 0,
             platinumAmount: (line.documentTab === 'raw-gold' || line.documentTab === 'gold-sale' || line.documentTab === 'refining') && line.details.metalType === 'platinum' && line.details.refiningOpKind !== 'fee'
-              ? line.details.calculationMethod === 'money' ? actualWeightFromMoney(line.details) : numberValue(line.details.rawWeight)
+              ? line.details.calculationMethod === 'money' ? actualWeightForLine(line) : numberValue(line.details.rawWeight)
               : 0,
             rialAmount: line.documentTab === 'currency'
               ? numberValue(line.details.currencyTotalAmount)
@@ -1379,7 +1511,9 @@ export default function DocumentForm({
 
       window.scrollTo({ top: 0, behavior: 'smooth' });
       if (status === 'temporary') {
-        setMessage(`سند شماره ${toPersianDigits(registeredNumber)} به‌صورت موقت ذخیره شد.`);
+        setMessage(`سند شماره ${toPersianDigits(registeredNumber)} به صورت موقت ذخیره شد.`);
+      } else {
+        setMessage('سند با موفقیت نهایی شد.');
       }
     } catch (error) {
       throw error instanceof Error ? error : new Error('ارتباط با سرور برقرار نشد.');
@@ -1388,66 +1522,26 @@ export default function DocumentForm({
     }
   }
 
-  const documentNetEffects = useMemo(() => {
-    const effects = {
+  const metalNetEffects = useMemo(() => {
+    const effects: Record<'gold' | 'silver' | 'platinum', number> = {
       gold: 0,
       silver: 0,
       platinum: 0,
-      rial: 0,
-      foreign: 0,
     };
 
     committedLines.forEach((line) => {
-      const direction = line.documentNature === 'received' ? 1 : -1;
-
-      // Metal Weight effects (grams)
-      if (
-        line.documentTab === 'raw-gold' ||
-        line.documentTab === 'gold-sale' ||
-        (line.documentTab === 'refining' && line.details.refiningOpKind !== 'fee')
-      ) {
+      if (line.documentTab === 'raw-gold' || line.documentTab === 'gold-sale' || (line.documentTab === 'refining' && line.details.refiningOpKind !== 'fee')) {
         const metal = line.details.metalType || 'gold';
         const weight = line.details.calculationMethod === 'money'
-          ? actualWeightFromMoney(line.details)
+          ? actualWeightForLine(line)
           : numberValue(line.details.rawWeight);
-        if (metal in effects) {
-          effects[metal as 'gold' | 'silver' | 'platinum'] += direction * weight;
-        }
-      }
-
-      // Rial Financial effect (IRR integer)
-      const rialAmount = line.documentTab === 'currency'
-        ? numberValue(line.details.currencyTotalAmount)
-        : (line.documentTab === 'cash' && !line.details.isForeignCash)
-          ? numberValue(line.details.totalAmount)
-          : line.documentTab === 'gold-sale'
-            ? numberValue(line.details.totalAmount)
-            : (line.documentTab === 'refining' && line.details.refiningOpKind === 'fee')
-              ? numberValue(line.details.totalAmount)
-              : 0;
-      if (rialAmount) {
-        effects.rial += direction * rialAmount;
-      }
-
-      // Foreign Currency effect
-      const foreignAmount = line.documentTab === 'currency'
-        ? numberValue(line.details.currencyQuantity)
-        : (line.documentTab === 'cash' && line.details.isForeignCash)
-          ? numberValue(line.details.totalAmount)
-          : 0;
-      if (foreignAmount) {
-        effects.foreign += direction * foreignAmount;
+        const direction = line.documentNature === 'received' ? 1 : -1;
+        effects[metal] += direction * weight;
       }
     });
 
     return effects;
   }, [committedLines]);
-
-  const metalNetEffects = useMemo(() => ({
-    gold: documentNetEffects.gold,
-    silver: documentNetEffects.silver,
-    platinum: documentNetEffects.platinum,
-  }), [documentNetEffects]);
 
   const activeMetals = useMemo(
     () => (Object.keys(metalNetEffects) as Array<'gold' | 'silver' | 'platinum'>).filter(
@@ -1504,9 +1598,9 @@ export default function DocumentForm({
       </AnimatePresence>
 
       {/* UNIFIED CONTAINER: Customer Selection + Document Meta */}
-      <section className="dashboard-panel document-account-panel p-4 space-y-4">
+      <section className="dashboard-panel document-account-panel document-account-panel--document-entry p-4 space-y-4">
         {/* Top Row: Customer Selection (Right) & Document Number (Immediately After) */}
-        <div className="grid gap-2.5 lg:grid-cols-[1fr_auto] items-end">
+        <div className="grid gap-2 lg:grid-cols-[1fr_auto] items-end">
           {/* Customer Selection Search / Selected Card */}
           <div className="space-y-1.5" ref={customerSearchRef}>
             <AnimatePresence mode="wait" initial={false}>
@@ -1687,19 +1781,8 @@ export default function DocumentForm({
             </AnimatePresence>
           </div>
 
-          {/* Document Number - Immediately after Customer search */}
+          {/* The public document sequence remains visible; the persistent ZF id is intentionally not shown here. */}
           <div className="w-full lg:w-48 flex flex-col justify-end">
-            {/* Unique ZF Document Number Display Above Document Number */}
-            <div className="flex items-center justify-between gap-1.5 px-2 py-1 mb-1.5 rounded-lg bg-amber-500/10 border border-amber-500/25 text-[11px] font-bold text-amber-950 dark:text-amber-300 shadow-xs">
-              <span className="flex items-center gap-1 text-[11px] text-amber-800 dark:text-amber-400">
-                <Hash size={12} className="shrink-0 text-amber-600 dark:text-amber-400" />
-                <span>شناسه یکتا:</span>
-              </span>
-              <span className="font-mono font-black text-xs tracking-wider select-all" dir="ltr">
-                {documentNumberLoading ? '...' : (selectedCustomerId ? 'ZF────────' : '---')}
-              </span>
-            </div>
-
             <Field label="شماره سند">
               <div className="document-number-field">
                 <input
@@ -1725,7 +1808,7 @@ export default function DocumentForm({
         </AnimatePresence>
 
         {/* Bottom Metadata Row: Document Nature (Switch) + Metal Type + Currency Type + Document Date */}
-        <div className="flex flex-wrap lg:flex-nowrap gap-3 items-end pt-2">
+        <div className="flex flex-wrap lg:flex-nowrap gap-3 items-end">
           <div className="w-full sm:w-auto shrink-0 min-w-[190px]">
             <Field label="نوع سند">
               <button
@@ -1760,6 +1843,8 @@ export default function DocumentForm({
                       ...current.details,
                       metalType,
                       purity: String(purityForMetal(metalType)),
+                      baseKarat: purityForMetal(metalType),
+                      metalPriceType: metalType === 'silver' ? 'gramSilver999' : metalType === 'platinum' ? 'gramPlatinum' : 'gram18',
                     },
                   }));
                 }}
@@ -1784,13 +1869,13 @@ export default function DocumentForm({
                     updateDraftDetail('currencyUnit', currObj?.code || '');
                     updateDraftDetail('settlementCurrencyUnit', currObj?.code || '');
                   }}
-                  disabled={currenciesLoading || availableCurrencies.length === 0}
+                  disabled={currenciesLoading || activeCurrencies.length === 0}
                 >
-                  {availableCurrencies.length === 0 ? (
+                  {activeCurrencies.length === 0 ? (
                     <option value="">
                       {currenciesLoading ? 'در حال دریافت ارزها...' : 'ارزی در کالکشن ثبت نشده است'}
                     </option>
-                  ) : availableCurrencies.map((curr) => (
+                  ) : activeCurrencies.map((curr) => (
                     <option key={curr.code} value={curr.code}>
                       {getCurrencyDisplayName(curr)} ({curr.code})
                     </option>
@@ -1869,6 +1954,7 @@ export default function DocumentForm({
               nature={documentNature}
               draftLine={draftLine}
               setDraftLine={setDraftLine}
+              committedLines={committedLines}
               weightPrecision={weightPrecision}
               meltedInventory={meltedInventory}
               editingLineId={editingLineId}
@@ -1878,7 +1964,8 @@ export default function DocumentForm({
               updateDraftDetail={updateDraftDetail}
               handleKeyDownEnter={handleKeyDownEnter}
               draftReady={draftReady}
-              convertedTo750={convertedTo750}
+              baseKarat={purityForMetal(draftLine.details.metalType)}
+              convertedTo750={(weight, purity) => convertedTo750(weight, purity, purityForMetal(draftLine.details.metalType))}
               faNumber={faNumber}
               errors={lineValidationErrors}
               labInputRef={labInputRef}
@@ -1890,6 +1977,7 @@ export default function DocumentForm({
               nature={documentNature}
               draftLine={draftLine}
               setDraftLine={setDraftLine}
+              committedLines={committedLines}
               weightPrecision={weightPrecision}
               meltedInventory={meltedInventory}
               editingLineId={editingLineId}
@@ -1900,9 +1988,10 @@ export default function DocumentForm({
               updateDraftDetail={updateDraftDetail}
               handleKeyDownEnter={handleKeyDownEnter}
               draftReady={draftReady}
-              convertedTo750={convertedTo750}
-              convertedWeightFromTotal={convertedWeightFromTotal}
-              actualWeightFromMoney={actualWeightFromMoney}
+              baseKarat={purityForMetal(draftLine.details.metalType)}
+              convertedTo750={(weight, purity) => convertedTo750(weight, purity, purityForMetal(draftLine.details.metalType))}
+              convertedWeightFromTotal={(total, type, price) => convertedWeightFromTotal(total, type, price, purityForMetal(draftLine.details.metalType))}
+              actualWeightFromMoney={(details) => actualWeightFromMoney(details, purityForMetal(details.metalType))}
               rawOperationLabel={rawOperationLabel}
               toPersianDigits={toPersianDigits}
               faNumber={faNumber}
@@ -2214,6 +2303,136 @@ export default function DocumentForm({
             </div>
           ) : null}
         </div>
+
+        {/* CUSTOMER BALANCE PREVIEW AFTER DOCUMENT */}
+        {selectedCustomer && previewData ? (
+          <div className="mt-3 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/90 space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-200/70 dark:border-slate-800 pb-2">
+              <span className="text-xs font-black text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                <Sparkles size={14} className="text-amber-500" />
+                <span>پیش‌نمایش مانده طرف‌حساب ({selectedCustomer.name})</span>
+              </span>
+              {previewLoading ? (
+                <span className="text-[10px] text-amber-600 dark:text-amber-400 font-bold flex items-center gap-1">
+                  <LoaderCircle size={12} className="spin" /> در حال محاسبه...
+                </span>
+              ) : null}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {/* 1. Previous Balance */}
+              <div className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/80 space-y-1">
+                <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block">
+                  مانده قبلی
+                </span>
+                <div className="space-y-0.5 text-xs font-black">
+                  <div className="text-slate-900 dark:text-slate-100">
+                    {faNumber(Math.abs(previewData.previousBalance.rial))} {baseCurrency === 'IRT' ? 'تومان' : 'ریال'}
+                    <small className="text-[10px] text-slate-500 font-bold mr-1">
+                      ({previewData.previousBalance.rial > 0 ? 'بستانکار' : previewData.previousBalance.rial < 0 ? 'بدهکار' : 'تسویه'})
+                    </small>
+                  </div>
+                  {previewData.previousBalance.gold !== 0 || previewData.transactionEffect.gold !== 0 ? (
+                    <div className="text-amber-700 dark:text-amber-300">
+                      طلا: {faNumber(Math.abs(previewData.previousBalance.gold), weightPrecision)} گرم
+                      <small className="text-[10px] text-slate-500 font-bold mr-1">
+                        ({previewData.previousBalance.gold > 0 ? 'بستانکار' : previewData.previousBalance.gold < 0 ? 'بدهکار' : 'تسویه'})
+                      </small>
+                    </div>
+                  ) : null}
+                  {previewData.previousBalance.silver !== 0 || previewData.transactionEffect.silver !== 0 ? (
+                    <div className="text-slate-600 dark:text-slate-300">
+                      نقره: {faNumber(Math.abs(previewData.previousBalance.silver), weightPrecision)} گرم
+                    </div>
+                  ) : null}
+                  {previewData.previousBalance.platinum !== 0 || previewData.transactionEffect.platinum !== 0 ? (
+                    <div className="text-purple-600 dark:text-purple-300">
+                      پلاتین: {faNumber(Math.abs(previewData.previousBalance.platinum), weightPrecision)} گرم
+                    </div>
+                  ) : null}
+                  {previewData.previousBalance.foreign !== 0 || previewData.transactionEffect.foreign !== 0 ? (
+                    <div className="text-teal-600 dark:text-teal-400">
+                      ارز: {faNumber(Math.abs(previewData.previousBalance.foreign), 2)} {previewData.previousBalance.secondaryCurrency || 'واحد'}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+
+              {/* 2. Transaction Effect */}
+              <div className="p-2.5 rounded-xl border border-amber-200/80 dark:border-amber-900/60 bg-amber-50/50 dark:bg-amber-950/30 space-y-1">
+                <span className="text-[11px] font-bold text-amber-800 dark:text-amber-300 block">
+                  اثر این سند
+                </span>
+                <div className="space-y-0.5 text-xs font-black">
+                  <div className={previewData.transactionEffect.rial >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
+                    {previewData.transactionEffect.rial >= 0 ? '+' : ''}{faNumber(previewData.transactionEffect.rial)} {baseCurrency === 'IRT' ? 'تومان' : 'ریال'}
+                  </div>
+                  {previewData.transactionEffect.gold !== 0 ? (
+                    <div className={previewData.transactionEffect.gold >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
+                      طلا: {previewData.transactionEffect.gold >= 0 ? '+' : ''}{faNumber(previewData.transactionEffect.gold, weightPrecision)} گرم
+                    </div>
+                  ) : null}
+                  {previewData.transactionEffect.silver !== 0 ? (
+                    <div className={previewData.transactionEffect.silver >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
+                      نقره: {previewData.transactionEffect.silver >= 0 ? '+' : ''}{faNumber(previewData.transactionEffect.silver, weightPrecision)} گرم
+                    </div>
+                  ) : null}
+                  {previewData.transactionEffect.platinum !== 0 ? (
+                    <div className={previewData.transactionEffect.platinum >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
+                      پلاتین: {previewData.transactionEffect.platinum >= 0 ? '+' : ''}{faNumber(previewData.transactionEffect.platinum, weightPrecision)} گرم
+                    </div>
+                  ) : null}
+                  {previewData.transactionEffect.foreign !== 0 ? (
+                    <div className={previewData.transactionEffect.foreign >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
+                      ارز: {previewData.transactionEffect.foreign >= 0 ? '+' : ''}{faNumber(previewData.transactionEffect.foreign, 2)} {previewData.previousBalance.secondaryCurrency || 'واحد'}
+                    </div>
+                  ) : null}
+                  {previewData.transactionEffect.rial === 0 && previewData.transactionEffect.gold === 0 && previewData.transactionEffect.silver === 0 && previewData.transactionEffect.platinum === 0 && previewData.transactionEffect.foreign === 0 ? (
+                    <div className="text-slate-400">بدون اثر</div>
+                  ) : null}
+                </div>
+              </div>
+
+              {/* 3. Projected Balance */}
+              <div className="p-2.5 rounded-xl border border-teal-200/80 dark:border-teal-900/60 bg-teal-50/50 dark:bg-teal-950/30 space-y-1">
+                <span className="text-[11px] font-bold text-teal-800 dark:text-teal-300 block">
+                  مانده پس از ثبت سند
+                </span>
+                <div className="space-y-0.5 text-xs font-black">
+                  <div className="text-slate-900 dark:text-slate-100">
+                    {faNumber(Math.abs(previewData.projectedBalance.rial))} {baseCurrency === 'IRT' ? 'تومان' : 'ریال'}
+                    <small className="text-[10px] text-slate-500 font-bold mr-1">
+                      ({previewData.projectedBalance.rial > 0 ? 'بستانکار' : previewData.projectedBalance.rial < 0 ? 'بدهکار' : 'تسویه'})
+                    </small>
+                  </div>
+                  {previewData.projectedBalance.gold !== 0 || previewData.transactionEffect.gold !== 0 ? (
+                    <div className="text-amber-700 dark:text-amber-300">
+                      طلا: {faNumber(Math.abs(previewData.projectedBalance.gold), weightPrecision)} گرم
+                      <small className="text-[10px] text-slate-500 font-bold mr-1">
+                        ({previewData.projectedBalance.gold > 0 ? 'بستانکار' : previewData.projectedBalance.gold < 0 ? 'بدهکار' : 'تسویه'})
+                      </small>
+                    </div>
+                  ) : null}
+                  {previewData.projectedBalance.silver !== 0 || previewData.transactionEffect.silver !== 0 ? (
+                    <div className="text-slate-600 dark:text-slate-300">
+                      نقره: {faNumber(Math.abs(previewData.projectedBalance.silver), weightPrecision)} گرم
+                    </div>
+                  ) : null}
+                  {previewData.projectedBalance.platinum !== 0 || previewData.transactionEffect.platinum !== 0 ? (
+                    <div className="text-purple-600 dark:text-purple-300">
+                      پلاتین: {faNumber(Math.abs(previewData.projectedBalance.platinum), weightPrecision)} گرم
+                    </div>
+                  ) : null}
+                  {previewData.projectedBalance.foreign !== 0 || previewData.transactionEffect.foreign !== 0 ? (
+                    <div className="text-teal-600 dark:text-teal-400">
+                      ارز: {faNumber(Math.abs(previewData.projectedBalance.foreign), 2)} {previewData.previousBalance.secondaryCurrency || 'واحد'}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </motion.section>
 
       {/* HAWALA TRANSFER MODAL */}
@@ -2656,14 +2875,14 @@ function CommittedLineRow({
     : (line.details.metalType === 'silver' ? 'نقره' : line.details.metalType === 'platinum' ? 'پلاتین' : 'طلا');
 
   const rawWeight = line.details.calculationMethod === 'money'
-    ? actualWeightFromMoney(line.details)
+    ? actualWeightFromMoney(line.details, Number(line.details.baseKarat || 750))
     : numberValue(line.details.rawWeight);
 
   const purityVal = numberValue(line.details.purity);
 
-  // Formula: weight * purity / 750
+  // Formula: weight * purity / the base karat captured when the line was registered.
   const c750 = line.converted750
-    ?? (rawWeight > 0 && purityVal > 0 ? (rawWeight * purityVal) / 750 : 0);
+    ?? (rawWeight > 0 && purityVal > 0 ? (rawWeight * purityVal) / Number(line.details.baseKarat || 750) : 0);
 
   const weightDisplay = rawWeight > 0 ? faNumber(rawWeight, weightPrecision) : '-';
   const purityDisplay = purityVal > 0 ? toPersianDigits(line.details.purity) : '-';

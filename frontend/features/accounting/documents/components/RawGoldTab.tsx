@@ -12,11 +12,12 @@ export type RawOperationKind = 'molten' | 'misc' | 'conditional' | 'question' | 
 
 export type DetailState = {
   metalType: 'gold' | 'silver' | 'platinum';
+  baseKarat?: number;
   rawKind: RawOperationKind;
   rawWeight: string;
   purity: string;
   calculationMethod: 'weight' | 'money';
-  metalPriceType: 'mesghal17' | 'gram18' | 'ounceUsd';
+  metalPriceType: 'mesghal17' | 'gram18' | 'ounceUsd' | 'gramSilver925' | 'gramSilver995' | 'gramSilver999' | 'gramPlatinum';
   metalPrice: string;
   totalAmount: string;
   labName: string;
@@ -45,13 +46,11 @@ export type DetailState = {
   sayadId?: string;
   dueDateJalali?: string;
   bankOperationKind?: string;
-  // Cash Fund fields (صندوق‌های وجه نقد)
   cashFundId?: string;
   cashFundName?: string;
   cashFundCurrency?: string;
   cashFundCurrencyId?: string;
   cashFundBalance?: number;
-  // Workmanship / Manufactured Artifact fields (کار ساخته)
   workmanshipName?: string;
   workmanshipOptionId?: number;
   workmanshipOptionLabel?: string;
@@ -64,7 +63,6 @@ export type DetailState = {
   profitAmount?: string;
   discountAmount?: string;
   convertedWeight?: string;
-  // Refining fields (ری‌گیری)
   refiningCaseId?: string;
   refiningCaseNumber?: string;
   refiningOpKind?: 'delivery' | 'receipt' | 'sample_send' | 'sample_receive' | 'fee';
@@ -97,12 +95,38 @@ export type MeltedInventoryItem = {
   stampNumber: string;
   labName?: string;
   customerName: string;
+  rawKind?: 'molten' | 'conditional' | 'misc' | 'question';
 };
+
+export function getInventoryItemAvailability(
+  item: MeltedInventoryItem,
+  committedLines: DocumentLine[] = [],
+  editingLineId: string | null = null,
+) {
+  const currentReserved = committedLines.reduce((sum, line) => {
+    if (line.id === editingLineId) return sum;
+    if (line.documentNature === 'paid' && line.details.inventorySourceId === item.id) {
+      const weight = Number(line.details.rawWeight) || 0;
+      return sum + weight;
+    }
+    return sum;
+  }, 0);
+
+  const initialWeight = item.weight || item.remainingWeight;
+  const availableRemaining = Math.max(0, item.remainingWeight - currentReserved);
+
+  return {
+    initialWeight,
+    currentReserved,
+    availableRemaining,
+  };
+}
 
 type RawGoldTabProps = {
   nature: 'received' | 'paid';
   draftLine: DocumentLine;
   setDraftLine: React.Dispatch<React.SetStateAction<DocumentLine>>;
+  committedLines?: DocumentLine[];
   weightPrecision: number;
   meltedInventory: MeltedInventoryItem[];
   editingLineId: string | null;
@@ -112,6 +136,7 @@ type RawGoldTabProps = {
   updateDraftDetail: <K extends keyof DetailState>(field: K, value: DetailState[K]) => void;
   handleKeyDownEnter: (event: React.KeyboardEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => void;
   draftReady: boolean;
+  baseKarat?: number;
   convertedTo750: (weight: string, purity: string) => number;
   faNumber: (value: number, fractionDigits?: number) => string;
   errors?: { labName?: string; stampNumber?: string };
@@ -123,6 +148,7 @@ export default function RawGoldTab({
   nature,
   draftLine,
   setDraftLine,
+  committedLines = [],
   weightPrecision,
   meltedInventory,
   editingLineId,
@@ -132,6 +158,7 @@ export default function RawGoldTab({
   updateDraftDetail,
   handleKeyDownEnter,
   draftReady,
+  baseKarat = 750,
   convertedTo750,
   faNumber,
   errors = {},
@@ -214,25 +241,59 @@ export default function RawGoldTab({
                 onChange={(event) => {
                   const selectedId = event.target.value;
                   const source = meltedInventory.find((item) => item.id === selectedId);
-                  setDraftLine((current) => ({
-                    ...current,
-                    details: {
-                      ...current.details,
-                      inventorySourceId: selectedId,
-                      rawWeight: source ? String(source.remainingWeight) : (selectedId ? current.details.rawWeight : ''),
-                      purity: source ? String(source.purity || 750) : (selectedId ? current.details.purity : '750'),
-                      stampNumber: source ? (source.stampNumber ?? '') : '',
-                      labName: source ? (source.labName ?? '') : '',
-                    },
-                  }));
+                  if (source) {
+                    const { availableRemaining } = getInventoryItemAvailability(source, committedLines, editingLineId);
+                    setDraftLine((current) => ({
+                      ...current,
+                      details: {
+                        ...current.details,
+                        inventorySourceId: selectedId,
+                        rawWeight: String(availableRemaining),
+                        purity: String(source.purity || 750),
+                        stampNumber: source.stampNumber ?? '',
+                        labName: source.labName ?? '',
+                      },
+                    }));
+                  } else {
+                    setDraftLine((current) => ({
+                      ...current,
+                      details: {
+                        ...current.details,
+                        inventorySourceId: '',
+                        rawWeight: '',
+                        purity: '750',
+                        stampNumber: '',
+                        labName: '',
+                      },
+                    }));
+                  }
                 }}
               >
                 <option value="">{inventoryPlaceholder}</option>
-                {meltedInventory.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.stampNumber || 'بدون انگ'} · {item.labName || 'ری‌گیری نامشخص'} · {item.customerName} · باقیمانده: {item.remainingWeight.toFixed(3)} گرم · عیار {item.purity}
-                  </option>
-                ))}
+                {meltedInventory.map((item) => {
+                  const { initialWeight, currentReserved, availableRemaining } = getInventoryItemAvailability(
+                    item,
+                    committedLines,
+                    editingLineId,
+                  );
+                  const isDisabled = availableRemaining <= 0 && item.id !== draftLine.details.inventorySourceId;
+
+                  let labelText = `${item.stampNumber || 'بدون انگ'} · ${item.labName || 'ری‌گیری نامشخص'} · ${item.customerName}`;
+                  if (currentReserved > 0) {
+                    labelText += ` (اولیه: ${faNumber(initialWeight, 3)}g | خروج موقت: ${faNumber(currentReserved, 3)}g | قابل انتخاب: ${faNumber(availableRemaining, 3)}g)`;
+                  } else {
+                    labelText += ` (اولیه: ${faNumber(initialWeight, 3)}g | قابل انتخاب: ${faNumber(availableRemaining, 3)}g)`;
+                  }
+                  if (isDisabled) {
+                    labelText += ' - غیرقابل انتخاب (پایان موجودی)';
+                  }
+
+                  return (
+                    <option key={item.id} value={item.id} disabled={isDisabled}>
+                      {labelText}
+                    </option>
+                  );
+                })}
               </select>
             </Field>
           ) : null}
@@ -263,7 +324,7 @@ export default function RawGoldTab({
               title={isPaidRawFromInventory ? 'عیار از موجودی انتخابی قفل شده است.' : 'عیار اول از تنظیمات برنامه خوانده می‌شود و قابل ویرایش است.'}
             />
           </Field>
-          <Field label="تبدیل‌شده به ۷۵۰">
+          <Field label={`تبدیل‌شده به عیار ${baseKarat.toLocaleString('fa-IR')}`}>
             <input
               readOnly
               className="computed-field"
@@ -287,9 +348,12 @@ export default function RawGoldTab({
                 <input
                   ref={stampInputRef}
                   value={draftLine.details.stampNumber}
-                  onChange={(event) => updateDraftDetail('stampNumber', event.target.value)}
+                  onChange={(event) => {
+                    const cleaned = event.target.value.replace(/[^0-9]/g, '');
+                    updateDraftDetail('stampNumber', cleaned);
+                  }}
                   onKeyDown={handleKeyDownEnter}
-                  placeholder="شماره پاکت یا انگ"
+                  placeholder="شماره پاکت یا انگ (فقط عدد)"
                 />
               </Field>
             </>

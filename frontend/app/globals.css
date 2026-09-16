@@ -2759,32 +2759,71 @@ select:-webkit-autofill:active {
 /* ری‌گیری - استایل‌های فوکوس و کنتراست فیلد و جستجو */
 .assay-lab-input,
 .account-field .assay-lab-input {
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
   background-color: #ffffff;
+  padding: 9px 12px;
+  padding-left: 28px;
   color: #0f172a;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+.assay-lab-input::placeholder,
+.account-field .assay-lab-input::placeholder {
+  color: #64748b;
+  opacity: 1;
+  font-weight: 500;
 }
 .assay-lab-input:focus,
 .account-field .assay-lab-input:focus {
-  background-color: #ffffff;
-  color: #020617;
   border-color: #f59e0b;
+  background-color: #ffffff;
+  color: #0f172a;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.25);
+  outline: none;
+}
+.assay-lab-input:disabled,
+.account-field .assay-lab-input:disabled {
+  cursor: not-allowed;
+  background-color: #f1f5f9;
+  color: #475569;
+  border-color: #cbd5e1;
 }
 
 [data-theme="dark"] .assay-lab-input,
 .dark .assay-lab-input,
 [data-theme="dark"] .account-field .assay-lab-input,
 .dark .account-field .assay-lab-input {
-  background-color: #1e293b !important;
+  border-color: #3b4d68 !important;
+  background-color: #0f172a !important;
   color: #ffffff !important;
-  border-color: #334155 !important;
+  font-weight: 700;
+}
+[data-theme="dark"] .assay-lab-input::placeholder,
+.dark .assay-lab-input::placeholder,
+[data-theme="dark"] .account-field .assay-lab-input::placeholder,
+.dark .account-field .assay-lab-input::placeholder {
+  color: #94a3b8 !important;
+  opacity: 1;
 }
 [data-theme="dark"] .assay-lab-input:focus,
 .dark .assay-lab-input:focus,
 [data-theme="dark"] .account-field .assay-lab-input:focus,
 .dark .account-field .assay-lab-input:focus {
-  background-color: #1e293b !important;
-  color: #ffffff !important;
   border-color: #f59e0b !important;
+  background-color: #0f172a !important;
+  color: #ffffff !important;
   box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.35) !important;
+}
+[data-theme="dark"] .assay-lab-input:disabled,
+.dark .assay-lab-input:disabled,
+[data-theme="dark"] .account-field .assay-lab-input:disabled,
+.dark .account-field .assay-lab-input:disabled {
+  background-color: #1e293b !important;
+  color: #64748b !important;
+  border-color: #334155 !important;
 }
 
 .assay-lab-search-input,

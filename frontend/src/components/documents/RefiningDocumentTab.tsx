@@ -17,7 +17,12 @@ import type { Customer } from '@/lib/customer';
 import { isRefinerGroup } from '@/lib/customer-groups';
 import Field from '@/src/components/documents/Field';
 import MoneyInputField from '@/src/components/documents/MoneyInputField';
-import type { DetailState, DocumentLine, MeltedInventoryItem } from '@/src/components/documents/RawGoldTab';
+import {
+  getInventoryItemAvailability,
+  type DetailState,
+  type DocumentLine,
+  type MeltedInventoryItem,
+} from '@/src/components/documents/RawGoldTab';
 import type { RefiningCase, RefiningSample } from '@/features/refining/types';
 
 export type RefiningOperationKind = 'delivery' | 'receipt' | 'sample_send' | 'sample_receive' | 'fee';
@@ -49,6 +54,7 @@ export default function RefiningDocumentTab({
   selectedCustomer,
   draftLine,
   setDraftLine,
+  committedLines = [],
   editingLineId,
   isLinesPinned,
   commitDraftLine,
@@ -68,12 +74,10 @@ export default function RefiningDocumentTab({
   const isCustomerSelected = Boolean(selectedCustomer);
   const isRefiner = isCustomerSelected && isRefinerGroup(selectedCustomer?.groupName);
 
-  // Operation kind state inside refining tab
   const activeOpKind: RefiningOperationKind = (
     draftLine.details.refiningOpKind || (isPaid ? 'delivery' : 'receipt')
   ) as RefiningOperationKind;
 
-  // Active cases & samples from API
   const [cases, setCases] = useState<RefiningCase[]>([]);
   const [casesLoading, setCasesLoading] = useState(false);
   const [pendingPackets, setPendingPackets] = useState<RefiningSample[]>([]);
@@ -81,7 +85,6 @@ export default function RefiningDocumentTab({
   const [showNewCaseInput, setShowNewCaseInput] = useState(false);
   const [newCaseNumber, setNewCaseNumber] = useState('');
 
-  // Fetch refining cases when customer is selected & is refiner
   useEffect(() => {
     if (!selectedCustomer?.id || !isRefiner) {
       setCases([]);
@@ -97,9 +100,7 @@ export default function RefiningDocumentTab({
           setCases(data.cases);
         }
       })
-      .catch(() => {
-        // Silently catch network errors
-      })
+      .catch(() => {})
       .finally(() => {
         if (isMounted) setCasesLoading(false);
       });
@@ -109,7 +110,6 @@ export default function RefiningDocumentTab({
     };
   }, [selectedCustomer?.id, isRefiner]);
 
-  // Fetch unreceived sample packets when in receipt mode
   useEffect(() => {
     if (!selectedCustomer?.id || !isRefiner || isPaid) {
       setPendingPackets([]);
@@ -128,9 +128,7 @@ export default function RefiningDocumentTab({
           setPendingPackets(refinerPackets);
         }
       })
-      .catch(() => {
-        // Silently catch network errors
-      })
+      .catch(() => {})
       .finally(() => {
         if (isMounted) setPacketsLoading(false);
       });
@@ -140,7 +138,6 @@ export default function RefiningDocumentTab({
     };
   }, [selectedCustomer?.id, isRefiner, isPaid]);
 
-  // Handle switching operation sub-type
   const handleOpChange = (kind: RefiningOperationKind) => {
     updateDraftDetail('refiningOpKind', kind);
     if (kind === 'fee') {
@@ -150,21 +147,18 @@ export default function RefiningDocumentTab({
     }
   };
 
-  // Live conversion to 750
   const currentWeight = draftLine.details.rawWeight || '0';
   const currentPurity = draftLine.details.purity || '750';
   const liveConverted750 = useMemo(() => {
     return convertedTo750(currentWeight, currentPurity);
   }, [currentWeight, currentPurity, convertedTo750]);
 
-  // Live calculation of sample weight loss
   const sampleDeclaredWeight = Number(draftLine.details.refiningSampleWeight) || 0;
   const sampleReturnedWeight = Number(draftLine.details.rawWeight) || 0;
   const sampleWeightLoss = sampleDeclaredWeight > 0 && sampleReturnedWeight > 0
     ? Math.max(0, sampleDeclaredWeight - sampleReturnedWeight)
     : 0;
 
-  // Selected case
   const selectedCase = cases.find((c) => c.id === draftLine.details.refiningCaseId);
 
   return (
@@ -398,26 +392,48 @@ export default function RefiningDocumentTab({
                     <select
                       value={draftLine.details.inventorySourceId || ''}
                       onChange={(event) => {
-                        const source = meltedInventory.find((item) => item.id === event.target.value);
-                        setDraftLine((current) => ({
-                          ...current,
-                          details: {
-                            ...current.details,
-                            inventorySourceId: event.target.value,
-                            rawWeight: source ? String(source.remainingWeight) : current.details.rawWeight,
-                            purity: source ? String(source.purity || 750) : current.details.purity,
-                            stampNumber: source?.stampNumber ?? current.details.stampNumber,
-                          },
-                        }));
+                        const selectedId = event.target.value;
+                        const source = meltedInventory.find((item) => item.id === selectedId);
+                        if (source) {
+                          const { availableRemaining } = getInventoryItemAvailability(source, committedLines, editingLineId);
+                          setDraftLine((current) => ({
+                            ...current,
+                            details: {
+                              ...current.details,
+                              inventorySourceId: selectedId,
+                              rawWeight: String(availableRemaining),
+                              purity: String(source.purity || 750),
+                              stampNumber: source.stampNumber ?? current.details.stampNumber,
+                            },
+                          }));
+                        } else {
+                          setDraftLine((current) => ({
+                            ...current,
+                            details: {
+                              ...current.details,
+                              inventorySourceId: '',
+                              rawWeight: '',
+                              purity: '750',
+                            },
+                          }));
+                        }
                       }}
                     >
                       <option value="">انتخاب از موجودی فعال آبشده...</option>
-                      {meltedInventory.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          وزن: {faNumber(item.remainingWeight, weightPrecision)} گرم - عیار:{' '}
-                          {item.purity || 750} {item.stampNumber ? `(انگ: ${item.stampNumber})` : ''}
-                        </option>
-                      ))}
+                      {meltedInventory.map((item) => {
+                        const { initialWeight, currentReserved, availableRemaining } = getInventoryItemAvailability(
+                          item,
+                          committedLines,
+                          editingLineId,
+                        );
+                        const isDisabled = availableRemaining <= 0 && item.id !== draftLine.details.inventorySourceId;
+
+                        return (
+                          <option key={item.id} value={item.id} disabled={isDisabled}>
+                            {item.stampNumber || 'بدون انگ'} · {item.customerName} · اولیه: {faNumber(initialWeight, 2)}g | خروج موقت: {faNumber(currentReserved, 2)}g | قابل انتخاب: {faNumber(availableRemaining, 2)}g · عیار: {item.purity || 750}
+                          </option>
+                        );
+                      })}
                     </select>
                   </Field>
                 ) : null}
@@ -466,9 +482,12 @@ export default function RefiningDocumentTab({
                   <input
                     type="text"
                     value={draftLine.details.refiningPacketNumber || ''}
-                    onChange={(e) => updateDraftDetail('refiningPacketNumber', e.target.value)}
+                    onChange={(e) => {
+                      const cleaned = e.target.value.replace(/[^0-9]/g, '');
+                      updateDraftDetail('refiningPacketNumber', cleaned);
+                    }}
                     onKeyDown={handleKeyDownEnter}
-                    placeholder="مثلاً PKT-1405-001"
+                    placeholder="شماره پاکت نمونه (فقط عدد)"
                   />
                 </Field>
 
@@ -508,9 +527,12 @@ export default function RefiningDocumentTab({
                     ref={stampInputRef}
                     type="text"
                     value={draftLine.details.stampNumber || ''}
-                    onChange={(e) => updateDraftDetail('stampNumber', e.target.value)}
+                    onChange={(e) => {
+                      const cleaned = e.target.value.replace(/[^0-9]/g, '');
+                      updateDraftDetail('stampNumber', cleaned);
+                    }}
                     onKeyDown={handleKeyDownEnter}
-                    placeholder="شماره انگ یا بارکد"
+                    placeholder="شماره انگ یا بارکد (فقط عدد)"
                   />
                 </Field>
 
@@ -604,9 +626,12 @@ export default function RefiningDocumentTab({
                   <input
                     type="text"
                     value={draftLine.details.refiningPacketNumber || ''}
-                    onChange={(e) => updateDraftDetail('refiningPacketNumber', e.target.value)}
+                    onChange={(e) => {
+                      const cleaned = e.target.value.replace(/[^0-9]/g, '');
+                      updateDraftDetail('refiningPacketNumber', cleaned);
+                    }}
                     onKeyDown={handleKeyDownEnter}
-                    placeholder="شماره پاکت"
+                    placeholder="شماره پاکت (فقط عدد)"
                   />
                 </Field>
 

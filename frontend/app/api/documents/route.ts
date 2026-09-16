@@ -365,6 +365,20 @@ export async function POST(request: Request) {
         throw new Error(`ردیف ${index + 1} باید حداقل یک مبلغ یا وزن غیرصفر داشته باشد.`);
       }
       const details = normalizeDetails(line.documentDetails);
+
+      if (details.stampNumber) {
+        const stampStr = String(details.stampNumber).trim();
+        if (stampStr && !/^[0-9]+$/.test(stampStr)) {
+          throw new Error(`شماره پاکت / انگ در ردیف ${index + 1} همواره فقط عدد است.`);
+        }
+      }
+
+      if (details.refiningPacketNumber) {
+        const packetStr = String(details.refiningPacketNumber).trim();
+        if (packetStr && !/^[0-9]+$/.test(packetStr)) {
+          throw new Error(`شماره پاکت در ردیف ${index + 1} همواره فقط عدد است.`);
+        }
+      }
       if (line.documentTab === 'raw-gold') {
         const metal = String(details.metalType ?? 'gold');
         const rawKind = String(details.rawKind ?? 'molten');
@@ -385,14 +399,7 @@ export async function POST(request: Request) {
         const requestedWeight = Math.abs(lineAmounts.goldAmount ?? 0);
         const availableWeight = availableRawGold.get(details.inventorySourceId) ?? 0;
         if (requestedWeight > availableWeight + 0.0000001) {
-          const kindTitle = details.rawKind === 'conditional'
-            ? 'شرطی'
-            : details.rawKind === 'misc'
-              ? 'متفرقه'
-              : details.rawKind === 'question'
-                ? 'سواله'
-                : 'آبشده';
-          throw new Error(`وزن خروجی ردیف ${index + 1} از موجودی ${kindTitle} بیشتر است.`);
+          throw new Error('مقدار انتخاب‌شده بیشتر از موجودی قابل استفاده است.');
         }
         availableRawGold.set(details.inventorySourceId, availableWeight - requestedWeight);
 

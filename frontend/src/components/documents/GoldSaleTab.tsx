@@ -11,7 +11,13 @@ import MoneyInputField from '@/src/components/documents/MoneyInputField';
 import SlidingToggle from '@/src/components/documents/SlidingToggle';
 import { AssayLaboratorySelect } from '@/components/AssayLaboratorySelect';
 import { useAppSettings } from '@/src/components/SettingsProvider';
-import type { DetailState, DocumentLine, MeltedInventoryItem, RawOperationKind } from '@/src/components/documents/RawGoldTab';
+import {
+  getInventoryItemAvailability,
+  type DetailState,
+  type DocumentLine,
+  type MeltedInventoryItem,
+  type RawOperationKind,
+} from '@/src/components/documents/RawGoldTab';
 import {
   convertPricesFromGram18,
   convertPricesFromMesghal17,
@@ -23,6 +29,7 @@ type GoldSaleTabProps = {
   nature: 'received' | 'paid';
   draftLine: DocumentLine;
   setDraftLine: React.Dispatch<React.SetStateAction<DocumentLine>>;
+  committedLines?: DocumentLine[];
   weightPrecision: number;
   meltedInventory: MeltedInventoryItem[];
   editingLineId: string | null;
@@ -54,6 +61,7 @@ export default function GoldSaleTab({
   nature,
   draftLine,
   setDraftLine,
+  committedLines = [],
   weightPrecision,
   meltedInventory,
   editingLineId,
@@ -108,8 +116,7 @@ export default function GoldSaleTab({
         ? 'انتخاب از موجودی سواله صندوق...'
         : 'انتخاب از موجودی آبشده صندوق...';
 
-  // The sales/purchase tab has its own inventory selector. Keep the assay
-  // lab and purity from the selected lot in sync with the document row.
+  // Keep assay lab and purity in sync with the selected lot
   useEffect(() => {
     if (nature !== 'paid') return;
     if (!draftLine.details.inventorySourceId) return;
@@ -159,8 +166,6 @@ export default function GoldSaleTab({
     : priceOptions[0].value;
   const numericPrice = parseNumericValue(draftLine.details.metalPrice);
 
-  // Changing the metal must also change an incompatible price basis. Without
-  // this normalization the select could retain a gold-only option for silver.
   useEffect(() => {
     if (storedPriceType === currentPriceType) return;
     updateMetalValue('metalPriceType', priceOptions[0].value);
@@ -228,25 +233,59 @@ export default function GoldSaleTab({
                   onChange={(event) => {
                     const selectedId = event.target.value;
                     const source = meltedInventory.find((item) => item.id === selectedId);
-                    setDraftLine((current) => ({
-                      ...current,
-                      details: {
-                        ...current.details,
-                        inventorySourceId: selectedId,
-                        rawWeight: source ? String(source.remainingWeight) : (selectedId ? current.details.rawWeight : ''),
-                        purity: source ? String(source.purity || 750) : (selectedId ? current.details.purity : '750'),
-                        stampNumber: source ? (source.stampNumber ?? '') : '',
-                        labName: source ? (source.labName ?? '') : '',
-                      },
-                    }));
+                    if (source) {
+                      const { availableRemaining } = getInventoryItemAvailability(source, committedLines, editingLineId);
+                      setDraftLine((current) => ({
+                        ...current,
+                        details: {
+                          ...current.details,
+                          inventorySourceId: selectedId,
+                          rawWeight: String(availableRemaining),
+                          purity: String(source.purity || 750),
+                          stampNumber: source.stampNumber ?? '',
+                          labName: source.labName ?? '',
+                        },
+                      }));
+                    } else {
+                      setDraftLine((current) => ({
+                        ...current,
+                        details: {
+                          ...current.details,
+                          inventorySourceId: '',
+                          rawWeight: '',
+                          purity: '750',
+                          stampNumber: '',
+                          labName: '',
+                        },
+                      }));
+                    }
                   }}
                 >
                   <option value="">{inventoryPlaceholder}</option>
-                  {meltedInventory.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.stampNumber || 'بدون انگ'} · {item.labName || 'ری‌گیری نامشخص'} · {item.customerName} · باقیمانده: {item.remainingWeight.toFixed(3)} گرم · عیار {item.purity}
-                    </option>
-                  ))}
+                  {meltedInventory.map((item) => {
+                    const { initialWeight, currentReserved, availableRemaining } = getInventoryItemAvailability(
+                      item,
+                      committedLines,
+                      editingLineId,
+                    );
+                    const isDisabled = availableRemaining <= 0 && item.id !== draftLine.details.inventorySourceId;
+
+                    let labelText = `${item.stampNumber || 'بدون انگ'} · ${item.labName || 'ری‌گیری نامشخص'} · ${item.customerName}`;
+                    if (currentReserved > 0) {
+                      labelText += ` (اولیه: ${faNumber(initialWeight, 3)}g | خروج موقت: ${faNumber(currentReserved, 3)}g | قابل انتخاب: ${faNumber(availableRemaining, 3)}g)`;
+                    } else {
+                      labelText += ` (اولیه: ${faNumber(initialWeight, 3)}g | قابل انتخاب: ${faNumber(availableRemaining, 3)}g)`;
+                    }
+                    if (isDisabled) {
+                      labelText += ' - غیرقابل انتخاب (پایان موجودی)';
+                    }
+
+                    return (
+                      <option key={item.id} value={item.id} disabled={isDisabled}>
+                        {labelText}
+                      </option>
+                    );
+                  })}
                 </select>
               </Field>
             ) : null}
@@ -335,7 +374,7 @@ export default function GoldSaleTab({
                 />
               </>
             ) : (
-              /* MONEY CALCULATION MODE LAYOUT (Total Amount first, Karat second) */
+              /* MONEY CALCULATION MODE LAYOUT */
               <>
                 <MoneyInputField
                   label="مبلغ کل"
@@ -409,7 +448,7 @@ export default function GoldSaleTab({
               </>
             )}
 
-            {/* Equivalent Prices Summary Badge for Gram / Mesghal / Ounce */}
+            {/* Equivalent Prices Summary Badge */}
             {numericPrice > 0 && !isSilver && !isPlatinum ? (
               <div className="col-span-full flex flex-wrap items-center gap-3 rounded-xl border border-slate-200/80 bg-slate-50/80 dark:border-slate-800 dark:bg-slate-900/40 p-2.5 text-[11px] font-bold text-slate-600 dark:text-slate-300">
                 <span className="text-amber-600 dark:text-amber-400">معادل قیمت در سایر واحدها:</span>
@@ -421,7 +460,7 @@ export default function GoldSaleTab({
               </div>
             ) : null}
 
-            {/* Assay Lab Name and Stamp Number for Molten & Conditional Gold */}
+            {/* Assay Lab Name and Stamp Number */}
             {!isMisc && isMoltenOrConditional ? (
               <>
                 <Field label="نام آزمایشگاه ری‌گیری" required={isAssayRequired} error={errors.labName}>
@@ -439,9 +478,12 @@ export default function GoldSaleTab({
                   <input
                     ref={stampInputRef}
                     value={draftLine.details.stampNumber}
-                    onChange={(event) => updateDraftDetail('stampNumber', event.target.value)}
+                    onChange={(event) => {
+                      const cleaned = event.target.value.replace(/[^0-9]/g, '');
+                      updateDraftDetail('stampNumber', cleaned);
+                    }}
                     onKeyDown={handleKeyDownEnter}
-                    placeholder="شماره پاکت یا انگ"
+                    placeholder="شماره پاکت یا انگ (فقط عدد)"
                   />
                 </Field>
               </>

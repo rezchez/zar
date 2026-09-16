@@ -47,6 +47,7 @@ import RawGoldTab, {
   type MeltedInventoryItem,
   type RawOperationKind,
 } from '@/src/components/documents/RawGoldTab';
+import { getInventoryItemAvailability } from '@/lib/inventory-reservation';
 import GoldSaleTab from '@/src/components/documents/GoldSaleTab';
 import CurrencyTab from '@/src/components/documents/CurrencyTab';
 import CoinTab from '@/src/components/documents/CoinTab';
@@ -302,7 +303,12 @@ function isLineReady(line: DocumentLine) {
     && numberValue(line.details.metalPrice) > 0;
 }
 
-function validateLine(line: DocumentLine, inventory: MeltedInventoryItem[] = []) {
+function validateLine(
+  line: DocumentLine,
+  inventory: MeltedInventoryItem[] = [],
+  committedLines: DocumentLine[] = [],
+  editingLineId: string | null = null,
+) {
   if (line.documentTab === 'currency') {
     if (!line.details.currencyUnit) return 'واحد ارز را انتخاب کنید.';
     if (numberValue(line.details.currencyQuantity) <= 0) return 'تعداد ارز باید بیشتر از صفر باشد.';
@@ -352,15 +358,11 @@ function validateLine(line: DocumentLine, inventory: MeltedInventoryItem[] = [])
     && line.details.inventorySourceId
   ) {
     const sourceItem = inventory.find((item) => item.id === line.details.inventorySourceId);
-    if (sourceItem && rawWeight > sourceItem.remainingWeight + 0.0000001) {
-      const kindTitle = line.details.rawKind === 'conditional'
-        ? 'شرطی'
-        : line.details.rawKind === 'misc'
-          ? 'متفرقه'
-          : line.details.rawKind === 'question'
-            ? 'سواله'
-            : 'آبشده';
-      return `وزن خروجی نمی‌تواند بیشتر از موجودی ${kindTitle} (${sourceItem.remainingWeight.toFixed(3)} گرم) باشد.`;
+    if (sourceItem) {
+      const { availableRemaining } = getInventoryItemAvailability(sourceItem, committedLines, editingLineId);
+      if (rawWeight > availableRemaining + 0.0000001) {
+        return 'مقدار انتخاب‌شده بیشتر از موجودی قابل استفاده است.';
+      }
     }
   }
   if (line.details.rawKind !== 'conditional') {
@@ -520,6 +522,88 @@ export default function DocumentForm({
   const labInputRef = useRef<HTMLInputElement>(null);
   const stampInputRef = useRef<HTMLInputElement>(null);
   const [meltedInventory, setMeltedInventory] = useState<MeltedInventoryItem[]>([]);
+
+  const [previewData, setPreviewData] = useState<{
+    previousBalance: {
+      rial: number;
+      gold: number;
+      silver: number;
+      platinum: number;
+      foreign: number;
+      tertiary: number;
+      secondaryCurrency?: string;
+      secondaryCurrencySymbol?: string;
+      tertiaryCurrency?: string;
+      tertiaryCurrencySymbol?: string;
+    };
+    transactionEffect: {
+      rial: number;
+      gold: number;
+      silver: number;
+      platinum: number;
+      foreign: number;
+      tertiary: number;
+    };
+    projectedBalance: {
+      rial: number;
+      gold: number;
+      silver: number;
+      platinum: number;
+      foreign: number;
+      tertiary: number;
+    };
+  } | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  useEffect(() => {
+    if (!selectedCustomerId) {
+      setPreviewData(null);
+      setPreviewLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    setPreviewLoading(true);
+
+    const timer = setTimeout(() => {
+      fetch('/api/transactions/preview-balance', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          customerId: selectedCustomerId,
+          lines: committedLines.map((line) => ({
+            documentNature: line.documentNature,
+            documentTab: line.documentTab,
+            sourceTab: line.sourceTab,
+            details: line.details,
+          })),
+        }),
+        signal: controller.signal,
+      })
+        .then(async (res) => {
+          if (!res.ok) throw new Error();
+          return res.json();
+        })
+        .then((resData) => {
+          if (resData?.success && resData?.data) {
+            setPreviewData(resData.data);
+          }
+        })
+        .catch((err) => {
+          if (err?.name === 'AbortError') return;
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) {
+            setPreviewLoading(false);
+          }
+        });
+    }, 150);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [selectedCustomerId, committedLines]);
 
   // Close customer search dropdown on click outside
   useEffect(() => {
@@ -1160,7 +1244,7 @@ export default function DocumentForm({
   }
 
   function commitDraftLine() {
-    const validationMessage = validateLine(draftLine, meltedInventory);
+    const validationMessage = validateLine(draftLine, meltedInventory, committedLines, editingLineId);
     if (validationMessage) {
       setErrorMessage(validationMessage);
       return;
@@ -1427,7 +1511,9 @@ export default function DocumentForm({
 
       window.scrollTo({ top: 0, behavior: 'smooth' });
       if (status === 'temporary') {
-        setMessage(`سند شماره ${toPersianDigits(registeredNumber)} به‌صورت موقت ذخیره شد.`);
+        setMessage(`سند شماره ${toPersianDigits(registeredNumber)} به صورت موقت ذخیره شد.`);
+      } else {
+        setMessage('سند با موفقیت نهایی شد.');
       }
     } catch (error) {
       throw error instanceof Error ? error : new Error('ارتباط با سرور برقرار نشد.');
@@ -1868,6 +1954,7 @@ export default function DocumentForm({
               nature={documentNature}
               draftLine={draftLine}
               setDraftLine={setDraftLine}
+              committedLines={committedLines}
               weightPrecision={weightPrecision}
               meltedInventory={meltedInventory}
               editingLineId={editingLineId}
@@ -1890,6 +1977,7 @@ export default function DocumentForm({
               nature={documentNature}
               draftLine={draftLine}
               setDraftLine={setDraftLine}
+              committedLines={committedLines}
               weightPrecision={weightPrecision}
               meltedInventory={meltedInventory}
               editingLineId={editingLineId}
@@ -2215,6 +2303,136 @@ export default function DocumentForm({
             </div>
           ) : null}
         </div>
+
+        {/* CUSTOMER BALANCE PREVIEW AFTER DOCUMENT */}
+        {selectedCustomer && previewData ? (
+          <div className="mt-3 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/90 space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-200/70 dark:border-slate-800 pb-2">
+              <span className="text-xs font-black text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                <Sparkles size={14} className="text-amber-500" />
+                <span>پیش‌نمایش مانده طرف‌حساب ({selectedCustomer.name})</span>
+              </span>
+              {previewLoading ? (
+                <span className="text-[10px] text-amber-600 dark:text-amber-400 font-bold flex items-center gap-1">
+                  <LoaderCircle size={12} className="spin" /> در حال محاسبه...
+                </span>
+              ) : null}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {/* 1. Previous Balance */}
+              <div className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/80 space-y-1">
+                <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block">
+                  مانده قبلی
+                </span>
+                <div className="space-y-0.5 text-xs font-black">
+                  <div className="text-slate-900 dark:text-slate-100">
+                    {faNumber(Math.abs(previewData.previousBalance.rial))} {baseCurrency === 'IRT' ? 'تومان' : 'ریال'}
+                    <small className="text-[10px] text-slate-500 font-bold mr-1">
+                      ({previewData.previousBalance.rial > 0 ? 'بستانکار' : previewData.previousBalance.rial < 0 ? 'بدهکار' : 'تسویه'})
+                    </small>
+                  </div>
+                  {previewData.previousBalance.gold !== 0 || previewData.transactionEffect.gold !== 0 ? (
+                    <div className="text-amber-700 dark:text-amber-300">
+                      طلا: {faNumber(Math.abs(previewData.previousBalance.gold), weightPrecision)} گرم
+                      <small className="text-[10px] text-slate-500 font-bold mr-1">
+                        ({previewData.previousBalance.gold > 0 ? 'بستانکار' : previewData.previousBalance.gold < 0 ? 'بدهکار' : 'تسویه'})
+                      </small>
+                    </div>
+                  ) : null}
+                  {previewData.previousBalance.silver !== 0 || previewData.transactionEffect.silver !== 0 ? (
+                    <div className="text-slate-600 dark:text-slate-300">
+                      نقره: {faNumber(Math.abs(previewData.previousBalance.silver), weightPrecision)} گرم
+                    </div>
+                  ) : null}
+                  {previewData.previousBalance.platinum !== 0 || previewData.transactionEffect.platinum !== 0 ? (
+                    <div className="text-purple-600 dark:text-purple-300">
+                      پلاتین: {faNumber(Math.abs(previewData.previousBalance.platinum), weightPrecision)} گرم
+                    </div>
+                  ) : null}
+                  {previewData.previousBalance.foreign !== 0 || previewData.transactionEffect.foreign !== 0 ? (
+                    <div className="text-teal-600 dark:text-teal-400">
+                      ارز: {faNumber(Math.abs(previewData.previousBalance.foreign), 2)} {previewData.previousBalance.secondaryCurrency || 'واحد'}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+
+              {/* 2. Transaction Effect */}
+              <div className="p-2.5 rounded-xl border border-amber-200/80 dark:border-amber-900/60 bg-amber-50/50 dark:bg-amber-950/30 space-y-1">
+                <span className="text-[11px] font-bold text-amber-800 dark:text-amber-300 block">
+                  اثر این سند
+                </span>
+                <div className="space-y-0.5 text-xs font-black">
+                  <div className={previewData.transactionEffect.rial >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
+                    {previewData.transactionEffect.rial >= 0 ? '+' : ''}{faNumber(previewData.transactionEffect.rial)} {baseCurrency === 'IRT' ? 'تومان' : 'ریال'}
+                  </div>
+                  {previewData.transactionEffect.gold !== 0 ? (
+                    <div className={previewData.transactionEffect.gold >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
+                      طلا: {previewData.transactionEffect.gold >= 0 ? '+' : ''}{faNumber(previewData.transactionEffect.gold, weightPrecision)} گرم
+                    </div>
+                  ) : null}
+                  {previewData.transactionEffect.silver !== 0 ? (
+                    <div className={previewData.transactionEffect.silver >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
+                      نقره: {previewData.transactionEffect.silver >= 0 ? '+' : ''}{faNumber(previewData.transactionEffect.silver, weightPrecision)} گرم
+                    </div>
+                  ) : null}
+                  {previewData.transactionEffect.platinum !== 0 ? (
+                    <div className={previewData.transactionEffect.platinum >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
+                      پلاتین: {previewData.transactionEffect.platinum >= 0 ? '+' : ''}{faNumber(previewData.transactionEffect.platinum, weightPrecision)} گرم
+                    </div>
+                  ) : null}
+                  {previewData.transactionEffect.foreign !== 0 ? (
+                    <div className={previewData.transactionEffect.foreign >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
+                      ارز: {previewData.transactionEffect.foreign >= 0 ? '+' : ''}{faNumber(previewData.transactionEffect.foreign, 2)} {previewData.previousBalance.secondaryCurrency || 'واحد'}
+                    </div>
+                  ) : null}
+                  {previewData.transactionEffect.rial === 0 && previewData.transactionEffect.gold === 0 && previewData.transactionEffect.silver === 0 && previewData.transactionEffect.platinum === 0 && previewData.transactionEffect.foreign === 0 ? (
+                    <div className="text-slate-400">بدون اثر</div>
+                  ) : null}
+                </div>
+              </div>
+
+              {/* 3. Projected Balance */}
+              <div className="p-2.5 rounded-xl border border-teal-200/80 dark:border-teal-900/60 bg-teal-50/50 dark:bg-teal-950/30 space-y-1">
+                <span className="text-[11px] font-bold text-teal-800 dark:text-teal-300 block">
+                  مانده پس از ثبت سند
+                </span>
+                <div className="space-y-0.5 text-xs font-black">
+                  <div className="text-slate-900 dark:text-slate-100">
+                    {faNumber(Math.abs(previewData.projectedBalance.rial))} {baseCurrency === 'IRT' ? 'تومان' : 'ریال'}
+                    <small className="text-[10px] text-slate-500 font-bold mr-1">
+                      ({previewData.projectedBalance.rial > 0 ? 'بستانکار' : previewData.projectedBalance.rial < 0 ? 'بدهکار' : 'تسویه'})
+                    </small>
+                  </div>
+                  {previewData.projectedBalance.gold !== 0 || previewData.transactionEffect.gold !== 0 ? (
+                    <div className="text-amber-700 dark:text-amber-300">
+                      طلا: {faNumber(Math.abs(previewData.projectedBalance.gold), weightPrecision)} گرم
+                      <small className="text-[10px] text-slate-500 font-bold mr-1">
+                        ({previewData.projectedBalance.gold > 0 ? 'بستانکار' : previewData.projectedBalance.gold < 0 ? 'بدهکار' : 'تسویه'})
+                      </small>
+                    </div>
+                  ) : null}
+                  {previewData.projectedBalance.silver !== 0 || previewData.transactionEffect.silver !== 0 ? (
+                    <div className="text-slate-600 dark:text-slate-300">
+                      نقره: {faNumber(Math.abs(previewData.projectedBalance.silver), weightPrecision)} گرم
+                    </div>
+                  ) : null}
+                  {previewData.projectedBalance.platinum !== 0 || previewData.transactionEffect.platinum !== 0 ? (
+                    <div className="text-purple-600 dark:text-purple-300">
+                      پلاتین: {faNumber(Math.abs(previewData.projectedBalance.platinum), weightPrecision)} گرم
+                    </div>
+                  ) : null}
+                  {previewData.projectedBalance.foreign !== 0 || previewData.transactionEffect.foreign !== 0 ? (
+                    <div className="text-teal-600 dark:text-teal-400">
+                      ارز: {faNumber(Math.abs(previewData.projectedBalance.foreign), 2)} {previewData.previousBalance.secondaryCurrency || 'واحد'}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </motion.section>
 
       {/* HAWALA TRANSFER MODAL */}
