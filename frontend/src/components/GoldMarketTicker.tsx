@@ -142,7 +142,6 @@ export default function GoldMarketTicker() {
     <section className="dashboard-panel gold-ticker" aria-label="قیمت لحظه‌ای طلا و بازار">
       <div className="dashboard-panel-heading">
         <div>
-          <p className="eyebrow">بازار زنده</p>
           <h2>قیمت لحظه‌ای طلا و سکه</h2>
         </div>
         <div className="flex items-center gap-3">

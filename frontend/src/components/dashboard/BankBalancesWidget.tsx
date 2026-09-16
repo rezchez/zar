@@ -34,7 +34,7 @@ export default function BankBalancesWidget() {
   }, [load]);
 
   return (
-    <section className="dashboard-panel" dir="rtl">
+    <section className="dashboard-panel bank-balances-widget" dir="rtl">
       <div className="dashboard-panel-heading">
         <div>
           <p className="eyebrow">حساب‌های مالی</p>
@@ -48,7 +48,7 @@ export default function BankBalancesWidget() {
       {error ? <p className="form-error">{error}</p> : null}
       {!loading && !banks.length && !error ? <p className="dashboard-empty-search">هنوز حساب بانکی ثبت نشده است.</p> : null}
 
-      <div className="mt-4 space-y-2">
+      <div className="bank-balances-widget-list mt-4 space-y-2">
         {banks.map((bank) => (
           <div key={bank.id} className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/70 p-3 dark:border-slate-700 dark:bg-slate-900/60">
             <BankLogo bankName={bank.bankName} size={38} />

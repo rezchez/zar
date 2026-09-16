@@ -22,20 +22,13 @@ export default async function DashboardPage() {
       {/* سربرگ خوش‌آمدگویی */}
       <div className="dashboard-page-heading">
         <div>
-          <p className="eyebrow">نمای کلی</p>
           <h1>سلام، {user.name || 'کاربر'}</h1>
-          <p>وضعیت بازار و تراز طلای شما در یک نگاه.</p>
         </div>
-        <span className="dashboard-status-pill">
-          <span />
-          بازار باز
-        </span>
       </div>
 
       {/* میان‌برهای سریع حسابداری طلا */}
       <QuickGoldActions />
 
-      {/* نوار زنده قیمت طلا و سکه */}
       <GoldMarketTicker />
 
       {/* شاخص‌های تراز وزنی و ریالی */}
@@ -44,9 +37,8 @@ export default async function DashboardPage() {
       {/* تقویم هجری شمسی */}
       <div className="dashboard-widgets-grid">
         <JalaliCalendar />
+        <BankBalancesWidget />
       </div>
-
-      <BankBalancesWidget />
     </DashboardShell>
   );
 }

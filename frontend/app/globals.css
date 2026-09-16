@@ -4988,8 +4988,35 @@ select:-webkit-autofill:active {
 
 .dashboard-widgets-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 22rem));
+  justify-content: start;
+  align-items: start;
   gap: 15px;
+}
+
+.bank-balances-widget {
+  min-width: 0;
+  align-self: start;
+}
+
+.bank-balances-widget-list {
+  max-height: 260px;
+  overflow-y: auto;
+  padding-inline-start: 2px;
+}
+
+@media (min-width: 1001px) {
+  .bank-balances-widget {
+    display: flex;
+    flex-direction: column;
+    aspect-ratio: 1 / 1;
+  }
+
+  .bank-balances-widget-list {
+    min-height: 0;
+    max-height: none;
+    flex: 1;
+  }
 }
 
 .jalali-calendar,

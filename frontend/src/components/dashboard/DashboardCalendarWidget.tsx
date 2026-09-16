@@ -80,14 +80,14 @@ export default function DashboardCalendarWidget({
 
   return (
     <div
-      className={`dashboard-panel w-full rounded-2xl p-4 sm:p-5 text-slate-900 dark:text-slate-100 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-slate-200/80 dark:border-slate-800/80 shadow-xl transition-all ${className}`}
+      className={`dashboard-panel w-full self-start rounded-2xl p-3 sm:p-4 text-slate-900 dark:text-slate-100 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-slate-200/80 dark:border-slate-800/80 shadow-xl transition-all ${className}`}
       dir="rtl"
     >
       {/* Top Header */}
-      <div className="flex items-center justify-between pb-3 mb-2 border-b border-slate-200/80 dark:border-slate-800/80">
+      <div className="mb-1.5 flex items-center justify-between border-b border-slate-200/80 pb-2.5 dark:border-slate-800/80">
         <div className="flex items-center gap-2.5">
-          <div className="p-2 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 shadow-2xs">
-            <CalendarIcon size={18} />
+          <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-1.5 text-amber-600 shadow-2xs dark:text-amber-400">
+            <CalendarIcon size={16} />
           </div>
           <div>
             <div className="flex items-center gap-1.5">
@@ -112,7 +112,7 @@ export default function DashboardCalendarWidget({
       </div>
 
       {/* PersianLabs Calendar Component */}
-      <div className="w-full flex justify-center">
+      <div className="flex w-full justify-center">
         <Calendar
           mode="single"
           calendarType={calendarType}
@@ -122,7 +122,7 @@ export default function DashboardCalendarWidget({
           onMonthChange={setCurrentMonth}
           showHolidays
           events={events}
-          className="w-full max-w-full p-0"
+          className="w-full max-w-[22rem] p-0"
         />
       </div>
 
@@ -135,7 +135,7 @@ export default function DashboardCalendarWidget({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -4 }}
             transition={{ duration: 0.15 }}
-            className="mt-3 pt-3 border-t border-slate-200/80 dark:border-slate-800/80"
+            className="mt-2 border-t border-slate-200/80 pt-2 dark:border-slate-800/80"
           >
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-1.5 text-xs font-black text-slate-900 dark:text-slate-100">
@@ -153,7 +153,7 @@ export default function DashboardCalendarWidget({
                 {dayHolidays.map((holiday, idx) => (
                   <div
                     key={`${holiday.title}-${idx}`}
-                    className={`flex items-start gap-2 p-2 rounded-xl text-xs font-bold border transition-all ${
+                    className={`flex items-start gap-2 rounded-xl border p-1.5 text-xs font-bold transition-all ${
                       holiday.official
                         ? 'bg-rose-500/10 border-rose-500/20 text-rose-700 dark:text-rose-300'
                         : 'bg-amber-500/10 border-amber-500/20 text-amber-800 dark:text-amber-300'
@@ -173,7 +173,7 @@ export default function DashboardCalendarWidget({
                 ))}
               </div>
             ) : (
-              <div className="p-2 rounded-xl bg-slate-100/70 dark:bg-slate-800/50 text-slate-600 dark:text-slate-400 text-xs font-bold flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 rounded-xl bg-slate-100/70 p-1.5 text-xs font-bold text-slate-600 dark:bg-slate-800/50 dark:text-slate-400">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                 <span>روز کاری عادی</span>
               </div>
