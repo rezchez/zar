@@ -58,7 +58,7 @@ import DocumentPrint from '@/src/components/documents/DocumentPrint';
 import BaleIcon from '@/src/components/documents/BaleIcon';
 
 type CalculationMethod = 'weight' | 'money';
-type MetalPriceType = 'mesghal17' | 'gram18' | 'ounceUsd';
+type MetalPriceType = DetailState['metalPriceType'];
 
 type DateParts = {
   year: number;

@@ -36,9 +36,10 @@ type GoldSaleTabProps = {
   updateDraftDetail: <K extends keyof DetailState>(field: K, value: DetailState[K]) => void;
   handleKeyDownEnter: (event: React.KeyboardEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => void;
   draftReady: boolean;
+  baseKarat?: number;
   convertedTo750: (weight: string, purity: string) => number;
   convertedWeightFromTotal: (total: string, type: DetailState['metalPriceType'], price: string) => number;
-  actualWeightFromMoney: (details: Pick<DetailState, 'totalAmount' | 'purity' | 'metalPriceType' | 'metalPrice'>) => number;
+  actualWeightFromMoney: (details: Pick<DetailState, 'totalAmount' | 'purity' | 'metalPriceType' | 'metalPrice' | 'metalType'>) => number;
   rawOperationLabel: (nature: 'received' | 'paid', kind: RawOperationKind) => string;
   metalPriceLabel?: (type: DetailState['metalPriceType']) => string;
   toPersianDigits: (str: string) => string;
@@ -63,6 +64,7 @@ export default function GoldSaleTab({
   updateDraftDetail,
   handleKeyDownEnter,
   draftReady,
+  baseKarat = 750,
   convertedTo750,
   convertedWeightFromTotal,
   actualWeightFromMoney,
@@ -128,8 +130,33 @@ export default function GoldSaleTab({
     }
   }, [draftLine.details.inventorySourceId, draftLine.details.labName, draftLine.details.purity, draftLine.details.rawKind, meltedInventory, nature, setDraftLine]);
 
-  const currentPriceType = draftLine.details.metalPriceType || 'gram18';
+  const isSilver = draftLine.details.metalType === 'silver';
+  const isPlatinum = draftLine.details.metalType === 'platinum';
+  const storedPriceType = draftLine.details.metalPriceType;
+  const priceOptions: Array<{ value: DetailState['metalPriceType']; label: string }> = isSilver
+    ? [
+        { value: 'gramSilver925', label: 'هر گرم نقره ۹۲۵' },
+        { value: 'gramSilver995', label: 'هر گرم نقره ۹۹۵' },
+        { value: 'gramSilver999', label: 'هر گرم نقره ۹۹۹' },
+      ]
+    : isPlatinum
+      ? [{ value: 'gramPlatinum', label: 'هر گرم پلاتین' }]
+      : [
+          { value: 'gram18', label: 'گرم ۱۸ عیار' },
+          { value: 'mesghal17', label: 'مثقال ۱۷ عیار' },
+          { value: 'ounceUsd', label: 'هر اونس (دلاری)' },
+        ];
+  const currentPriceType = priceOptions.some((option) => option.value === storedPriceType)
+    ? storedPriceType
+    : priceOptions[0].value;
   const numericPrice = parseNumericValue(draftLine.details.metalPrice);
+
+  // Changing the metal must also change an incompatible price basis. Without
+  // this normalization the select could retain a gold-only option for silver.
+  useEffect(() => {
+    if (storedPriceType === currentPriceType) return;
+    updateMetalValue('metalPriceType', priceOptions[0].value);
+  }, [currentPriceType, draftLine.details.metalType, priceOptions, storedPriceType, updateMetalValue]);
 
   const priceTriple = currentPriceType === 'gram18'
     ? convertPricesFromGram18(numericPrice)
@@ -262,14 +289,14 @@ export default function GoldSaleTab({
                   />
                 </Field>
 
-                <Field label="تبدیل‌شده به ۷۵۰">
+                <Field label={`تبدیل‌شده به عیار ${baseKarat.toLocaleString('fa-IR')}`}>
                   <input
                     value={faNumber(
                       convertedTo750(draftLine.details.rawWeight, draftLine.details.purity),
                       weightPrecision,
                     )}
                     readOnly
-                    aria-label="وزن تبدیل‌شده به عیار ۷۵۰"
+                    aria-label={`وزن تبدیل‌شده به عیار ${baseKarat}`}
                     className="computed-field font-bold"
                   />
                 </Field>
@@ -279,20 +306,12 @@ export default function GoldSaleTab({
                     value={currentPriceType}
                     onChange={(event) => handlePriceTypeChange(event.target.value as DetailState['metalPriceType'])}
                   >
-                    <option value="gram18">گرم ۱۸ عیار</option>
-                    <option value="mesghal17">مثقال ۱۷ عیار</option>
-                    <option value="ounceUsd">هر اونس (دلاری)</option>
+                    {priceOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                   </select>
                 </Field>
 
                 <MoneyInputField
-                  label={
-                    currentPriceType === 'mesghal17'
-                      ? 'قیمت هر مثقال ۱۷ عیار'
-                      : currentPriceType === 'gram18'
-                        ? 'قیمت هر گرم ۱۸ عیار'
-                        : 'قیمت هر اونس'
-                  }
+                  label={priceOptions.find((option) => option.value === currentPriceType)?.label || 'قیمت فلز'}
                   value={draftLine.details.metalPrice}
                   onChange={handlePriceValueChange}
                   baseCurrency={baseCurrency}
@@ -346,7 +365,7 @@ export default function GoldSaleTab({
                   />
                 </Field>
 
-                <Field label="تبدیل‌شده به ۷۵۰">
+                <Field label={`تبدیل‌شده به عیار ${baseKarat.toLocaleString('fa-IR')}`}>
                   <input
                     value={faNumber(
                       convertedWeightFromTotal(
@@ -357,7 +376,7 @@ export default function GoldSaleTab({
                       weightPrecision,
                     )}
                     readOnly
-                    aria-label="وزن تبدیل‌شده به ۷۵۰"
+                    aria-label={`وزن تبدیل‌شده به عیار ${baseKarat}`}
                     className="computed-field font-bold"
                   />
                 </Field>
@@ -367,20 +386,12 @@ export default function GoldSaleTab({
                     value={currentPriceType}
                     onChange={(event) => handlePriceTypeChange(event.target.value as DetailState['metalPriceType'])}
                   >
-                    <option value="gram18">گرم ۱۸ عیار</option>
-                    <option value="mesghal17">مثقال ۱۷ عیار</option>
-                    <option value="ounceUsd">هر اونس (دلاری)</option>
+                    {priceOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                   </select>
                 </Field>
 
                 <MoneyInputField
-                  label={
-                    currentPriceType === 'mesghal17'
-                      ? 'قیمت هر مثقال ۱۷ عیار'
-                      : currentPriceType === 'gram18'
-                        ? 'قیمت هر گرم ۱۸ عیار'
-                        : 'قیمت هر اونس'
-                  }
+                  label={priceOptions.find((option) => option.value === currentPriceType)?.label || 'قیمت فلز'}
                   value={draftLine.details.metalPrice}
                   onChange={handlePriceValueChange}
                   baseCurrency={baseCurrency}
@@ -391,7 +402,7 @@ export default function GoldSaleTab({
             )}
 
             {/* Equivalent Prices Summary Badge for Gram / Mesghal / Ounce */}
-            {numericPrice > 0 ? (
+            {numericPrice > 0 && !isSilver && !isPlatinum ? (
               <div className="col-span-full flex flex-wrap items-center gap-3 rounded-xl border border-slate-200/80 bg-slate-50/80 dark:border-slate-800 dark:bg-slate-900/40 p-2.5 text-[11px] font-bold text-slate-600 dark:text-slate-300">
                 <span className="text-amber-600 dark:text-amber-400">معادل قیمت در سایر واحدها:</span>
                 <span>گرم ۱۸: {faNumber(priceTriple.gram18)} {baseCurrency === 'IRT' ? 'تومان' : 'ریال'}</span>

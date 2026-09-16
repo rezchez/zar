@@ -7,6 +7,7 @@ import {
   DuplicateCurrencyError,
   formatDynamicAmountLabel,
   getCurrencies,
+  getCurrenciesForBaseCurrency,
   getCurrencyDisplayName,
   type Currency,
 } from '../lib/currencies';
@@ -59,6 +60,19 @@ describe('Currencies Database Collection & UI Dropdown Integration Tests', () =>
 
     const aed: Currency = { id: '2', name: 'درهم', symbol: 'AED', code: 'AED' };
     expect(getCurrencyDisplayName(aed)).toBe('درهم (AED)');
+  });
+
+  test('only the selected domestic base currency is active in document currency lists', () => {
+    const currencies: Currency[] = [
+      { id: 'irr', name: 'ریال ایران', symbol: 'ریال', code: 'IRR' },
+      { id: 'irt', name: 'تومان', symbol: 'تومان', code: 'IRT' },
+      { id: 'usd', name: 'دلار', symbol: '$', code: 'USD' },
+    ];
+
+    expect(getCurrenciesForBaseCurrency(currencies, 'IRR').map((currency) => currency.code))
+      .toEqual(['IRR', 'USD']);
+    expect(getCurrenciesForBaseCurrency(currencies, 'IRT').map((currency) => currency.code))
+      .toEqual(['IRT', 'USD']);
   });
 
   test('deleteCurrency validates input id/code correctly', async () => {

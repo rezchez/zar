@@ -47,6 +47,21 @@ export function getCurrencyDisplayName(currency: Currency): string {
   return currency.name;
 }
 
+/**
+ * Keeps the document currency selector consistent with the application's
+ * accounting unit. Foreign currencies remain available, while only the
+ * currently selected domestic unit (IRR or IRT) is active.
+ */
+export function getCurrenciesForBaseCurrency(
+  currencies: Currency[],
+  baseCurrency: 'IRR' | 'IRT',
+): Currency[] {
+  return currencies.filter((currency) => {
+    const code = currency.code.toUpperCase();
+    return (code !== 'IRR' && code !== 'IRT') || code === baseCurrency;
+  });
+}
+
 export function formatDynamicAmountLabel(currency?: Currency | null): string {
   if (!currency) return 'موجودی اولیه';
   return `موجودی اولیه ${currency.name || currency.symbol || currency.code || 'ارز'}`;

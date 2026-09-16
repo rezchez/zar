@@ -12,11 +12,12 @@ export type RawOperationKind = 'molten' | 'misc' | 'conditional' | 'question' | 
 
 export type DetailState = {
   metalType: 'gold' | 'silver' | 'platinum';
+  baseKarat?: number;
   rawKind: RawOperationKind;
   rawWeight: string;
   purity: string;
   calculationMethod: 'weight' | 'money';
-  metalPriceType: 'mesghal17' | 'gram18' | 'ounceUsd';
+  metalPriceType: 'mesghal17' | 'gram18' | 'ounceUsd' | 'gramSilver925' | 'gramSilver995' | 'gramSilver999' | 'gramPlatinum';
   metalPrice: string;
   totalAmount: string;
   labName: string;
@@ -112,6 +113,7 @@ type RawGoldTabProps = {
   updateDraftDetail: <K extends keyof DetailState>(field: K, value: DetailState[K]) => void;
   handleKeyDownEnter: (event: React.KeyboardEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => void;
   draftReady: boolean;
+  baseKarat?: number;
   convertedTo750: (weight: string, purity: string) => number;
   faNumber: (value: number, fractionDigits?: number) => string;
   errors?: { labName?: string; stampNumber?: string };
@@ -132,6 +134,7 @@ export default function RawGoldTab({
   updateDraftDetail,
   handleKeyDownEnter,
   draftReady,
+  baseKarat = 750,
   convertedTo750,
   faNumber,
   errors = {},
@@ -255,7 +258,7 @@ export default function RawGoldTab({
               title={isPaidRawFromInventory ? 'عیار از موجودی انتخابی قفل شده است.' : 'عیار اول از تنظیمات برنامه خوانده می‌شود و قابل ویرایش است.'}
             />
           </Field>
-          <Field label="تبدیل‌شده به ۷۵۰">
+          <Field label={`تبدیل‌شده به عیار ${baseKarat.toLocaleString('fa-IR')}`}>
             <input
               readOnly
               className="computed-field"

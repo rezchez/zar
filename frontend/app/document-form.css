@@ -44,6 +44,12 @@
   box-shadow: 0 4px 20px rgba(15, 23, 42, 0.04);
 }
 
+/* The account and document-number fields start together, close to the panel edge. */
+.document-account-panel--document-entry {
+  padding: 6px 16px 16px;
+  gap: 6px;
+}
+
 .document-account-heading,
 .document-draft-editor-head,
 .document-operation-title,
@@ -1445,6 +1451,10 @@
   .document-draft-editor,
   .document-lines-panel {
     padding: 14px;
+  }
+
+  .document-account-panel--document-entry {
+    padding: 6px 14px 14px;
   }
 
   .document-account-heading,
