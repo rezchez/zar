@@ -596,7 +596,7 @@ export default function DatabaseBackupSection() {
               <input
                 type="checkbox"
                 id="backupAutoEnabled"
-                checked={scheduleConfig.autoEnabled}
+                checked={Boolean(scheduleConfig.autoEnabled)}
                 onChange={(e) =>
                   setScheduleConfig((prev) => ({ ...prev, autoEnabled: e.target.checked }))
                 }
@@ -613,7 +613,7 @@ export default function DatabaseBackupSection() {
                 دوره تکرار زمان‌بندی:
               </label>
               <select
-                value={scheduleConfig.scheduleType}
+                value={scheduleConfig.scheduleType || 'daily'}
                 onChange={(e) =>
                   setScheduleConfig((prev) => ({
                     ...prev,
@@ -641,7 +641,7 @@ export default function DatabaseBackupSection() {
                     type="number"
                     min={1}
                     max={168}
-                    value={scheduleConfig.scheduleIntervalHours}
+                    value={scheduleConfig.scheduleIntervalHours ?? 4}
                     onChange={(e) =>
                       setScheduleConfig((prev) => ({
                         ...prev,
@@ -662,7 +662,7 @@ export default function DatabaseBackupSection() {
                 </label>
                 <input
                   type="time"
-                  value={scheduleConfig.scheduleTime}
+                  value={scheduleConfig.scheduleTime || '02:00'}
                   onChange={(e) =>
                     setScheduleConfig((prev) => ({ ...prev, scheduleTime: e.target.value }))
                   }
@@ -743,7 +743,7 @@ export default function DatabaseBackupSection() {
               <label className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={scheduleConfig.destinationBale}
+                  checked={Boolean(scheduleConfig.destinationBale)}
                   onChange={(e) =>
                     setScheduleConfig((prev) => ({ ...prev, destinationBale: e.target.checked }))
                   }
@@ -756,7 +756,7 @@ export default function DatabaseBackupSection() {
               <label className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={scheduleConfig.destinationS3}
+                  checked={Boolean(scheduleConfig.destinationS3 ?? scheduleConfig.destinationArvan)}
                   onChange={(e) =>
                     setScheduleConfig((prev) => ({
                       ...prev,
