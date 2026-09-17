@@ -50,6 +50,7 @@ export type AuditEvent =
   | 'refining_output_received'
   | 'refining_sample_created'
   | 'refining_sample_received'
+  | 'refining_packet_assay_settled'
   | 'refining_fee_recorded'
   | 'refining_status_changed';
 

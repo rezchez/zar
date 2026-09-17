@@ -7,6 +7,7 @@ import {
   createSamplePacket,
   receiveSamplePacket,
   receiveOutputGold,
+  settlePacketAssay,
   recordCaseRefiningFee,
   getUnreceivedPackets,
   getRefiningCaseDetails,
@@ -77,8 +78,14 @@ function createMockPocketBase() {
           let list = [...colData];
           if (opts?.filter) {
             if (opts.filter.includes('case_id =')) {
-              const cId = opts.filter.split('=')[1]?.trim().replace(/['"]/g, '');
-              list = list.filter((x) => x.case_id === cId);
+              const match = opts.filter.match(/case_id\s*=\s*['"]?([^'"\s&]+)['"]?/);
+              if (match) {
+                const cId = match[1];
+                list = list.filter((x) => x.case_id === cId);
+              }
+            }
+            if (opts.filter.includes('item_type = "output_gold"')) {
+              list = list.filter((x) => x.item_type === 'output_gold');
             }
             if (opts.filter.includes('status = "with_refiner"')) {
               list = list.filter((x) => x.status === 'with_refiner');
@@ -339,10 +346,10 @@ describe('Zarfolio — Gold Refining Module Architecture (ماژول ری‌گی
   });
 
   // ─────────────────────────────────────────────────────────────
-  // 5. Output Gold Receipt
+  // 5. Output Gold Receipt & Conditional Purity Settlement
   // ─────────────────────────────────────────────────────────────
-  describe('Output Gold Receipt & Inventory Return', () => {
-    it('receives output refined gold, enters into inventory, and updates case', async () => {
+  describe('Output Gold Receipt & Conditional Purity Settlement', () => {
+    it('receives conditional output gold with default 750 purity and conditional inventory_type', async () => {
       const mockPb = createMockPocketBase();
       const newCase = await createRefiningCase(
         mockPb,
@@ -357,8 +364,7 @@ describe('Zarfolio — Gold Refining Module Architecture (ماژول ری‌گی
         newCase.id,
         {
           rawWeight: 98.4,
-          purity: 750,
-          stampNumber: 'ENG-FINAL-101',
+          stampNumber: 'ENG-CONDITIONAL-101',
           labName: 'ری‌گیری اعتماد',
           receiptDate: '1405/06/27',
         },
@@ -366,6 +372,8 @@ describe('Zarfolio — Gold Refining Module Architecture (ماژول ری‌گی
       );
 
       expect(outputItem.rawWeight).toBe(98.4);
+      expect(outputItem.purity).toBe(750); // Default temporary purity 750
+      expect(outputItem.inventoryType).toBe('conditional');
       expect(outputItem.status).toBe('received');
 
       const receiptInv = mockPb._store.metal_inventory.find(
@@ -374,12 +382,97 @@ describe('Zarfolio — Gold Refining Module Architecture (ماژول ری‌گی
       expect(receiptInv).toBeDefined();
       expect(receiptInv.direction).toBe('in');
       expect(receiptInv.raw_weight).toBe(98.4);
-      expect(receiptInv.stamp_number).toBe('ENG-FINAL-101');
+      expect(receiptInv.inventory_type).toBe('conditional');
+      expect(receiptInv.purity).toBe(750);
 
       // Check remaining weight
       const caseRecord = mockPb._store.refining_cases[0];
       expect(caseRecord.remaining_weight).toBe(1.6); // 100 - 98.4
       expect(caseRecord.status).toBe('partially_received');
+    });
+
+    it('converts conditional gold to melted gold when sample packet is received with lab purity', async () => {
+      const mockPb = createMockPocketBase();
+      const newCase = await createRefiningCase(
+        mockPb,
+        { refinerId: 'refiner_1' },
+        'user_admin',
+      );
+
+      // 1. Deliver gold
+      await deliverGoldToRefiner(mockPb, newCase.id, { rawWeight: 100, purity: 750 }, 'user_admin');
+
+      // 2. Receive conditional gold (98g with temporary 750)
+      const outputItem = await receiveOutputGold(
+        mockPb,
+        newCase.id,
+        { rawWeight: 98, stampNumber: 'ENG-101' },
+        'user_admin',
+      );
+      expect(outputItem.inventoryType).toBe('conditional');
+      expect(outputItem.purity).toBe(750);
+
+      // 3. Issue sample packet
+      const sample = await createSamplePacket(
+        mockPb,
+        newCase.id,
+        { declaredWeight: 2 },
+        'user_admin',
+      );
+
+      // 4. Receive sample packet with certified lab assay purity (e.g. 760)
+      const receivedSample = await receiveSamplePacket(
+        mockPb,
+        sample.id,
+        { receivedWeight: 1.95, purity: 760 },
+        'user_admin',
+      );
+      expect(receivedSample.purity).toBe(760);
+
+      // 5. Verify that refining_items and metal_inventory were updated to melted with 760 purity!
+      const updatedItem = mockPb._store.refining_items.find((i: any) => i.id === outputItem.id);
+      expect(updatedItem.inventory_type).toBe('melted');
+      expect(updatedItem.purity).toBe(760);
+      // Converted weight at 760: 98 * 760 / 750 = 99.307
+      expect(updatedItem.converted_weight).toBeCloseTo(99.307, 2);
+
+      const updatedInv = mockPb._store.metal_inventory.find(
+        (m: any) => m.transaction_type === 'refining_receipt',
+      );
+      expect(updatedInv.inventory_type).toBe('melted');
+      expect(updatedInv.purity).toBe(760);
+      expect(updatedInv.converted_weight).toBeCloseTo(99.307, 2);
+    });
+
+    it('settles packet assay purity directly via settlePacketAssay', async () => {
+      const mockPb = createMockPocketBase();
+      const newCase = await createRefiningCase(
+        mockPb,
+        { refinerId: 'refiner_1' },
+        'user_admin',
+      );
+
+      await deliverGoldToRefiner(mockPb, newCase.id, { rawWeight: 100, purity: 750 }, 'user_admin');
+      const outputItem = await receiveOutputGold(
+        mockPb,
+        newCase.id,
+        { rawWeight: 98 },
+        'user_admin',
+      );
+      const sample = await createSamplePacket(
+        mockPb,
+        newCase.id,
+        { declaredWeight: 2 },
+        'user_admin',
+      );
+
+      // Settle assay directly
+      const settled = await settlePacketAssay(mockPb, sample.id, 740, 'user_admin');
+      expect(settled.purity).toBe(740);
+
+      const updatedItem = mockPb._store.refining_items.find((i: any) => i.id === outputItem.id);
+      expect(updatedItem.inventory_type).toBe('melted');
+      expect(updatedItem.purity).toBe(740);
     });
   });
 

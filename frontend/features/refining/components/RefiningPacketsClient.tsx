@@ -28,6 +28,7 @@ export default function RefiningPacketsClient() {
   // Receive Modal State
   const [selectedPacket, setSelectedPacket] = useState<RefiningSample | null>(null);
   const [receivedWeight, setReceivedWeight] = useState<string>('');
+  const [labPurity, setLabPurity] = useState<string>('750');
   const [receivedDate, setReceivedDate] = useState<string>('');
   const [submitting, setSubmitting] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
@@ -57,6 +58,7 @@ export default function RefiningPacketsClient() {
   const openReceiveModal = (packet: RefiningSample) => {
     setSelectedPacket(packet);
     setReceivedWeight(packet.declaredWeight.toString());
+    setLabPurity(packet.purity ? packet.purity.toString() : '750');
     setReceivedDate(formatJalaliDate(new Date()));
     setModalError(null);
   };
@@ -64,6 +66,7 @@ export default function RefiningPacketsClient() {
   const closeReceiveModal = () => {
     setSelectedPacket(null);
     setReceivedWeight('');
+    setLabPurity('750');
     setReceivedDate('');
     setModalError(null);
   };
@@ -78,6 +81,12 @@ export default function RefiningPacketsClient() {
       return;
     }
 
+    const numPurity = parseFloat(labPurity);
+    if (!numPurity || numPurity <= 0 || numPurity > 1000) {
+      setModalError('لطفاً عیار اعلامی آزمایشگاه را عددی بین ۱ تا ۱۰۰۰ وارد کنید.');
+      return;
+    }
+
     setSubmitting(true);
     setModalError(null);
 
@@ -87,6 +96,7 @@ export default function RefiningPacketsClient() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           receivedWeight: numWeight,
+          purity: numPurity,
           receivedDate: receivedDate.trim(),
         }),
       });
@@ -99,7 +109,7 @@ export default function RefiningPacketsClient() {
       }
 
       setSuccessBanner(
-        `پاکت ${selectedPacket.packetNumber} با موفقیت دریافت شد و وزن ${formatWeight(numWeight)} گرم وارد موجودی طلا گردید.`,
+        `پاکت ${selectedPacket.packetNumber} دریافت شد، وزن ${formatWeight(numWeight)} گرم وارد موجودی گردید و طلای شرطی پرونده به آبشده قطعی با عیار ${numPurity} تبدیل شد.`,
       );
       closeReceiveModal();
       void fetchPackets();
@@ -338,6 +348,27 @@ export default function RefiningPacketsClient() {
                     className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
                   />
                 </div>
+              </div>
+
+              {/* Lab Assay Purity Input */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-black text-slate-700 dark:text-slate-200">
+                  عیار اعلامی آزمایشگاه (نتیجه ری‌گیری) <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="1"
+                  max="1000"
+                  required
+                  value={labPurity}
+                  onChange={(e) => setLabPurity(e.target.value)}
+                  placeholder="۷۵۰"
+                  className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 font-mono text-sm font-bold text-slate-900 shadow-2xs transition-all focus:border-emerald-500 focus:bg-white focus:text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-emerald-400 dark:focus:bg-slate-800 dark:focus:text-white dark:focus:ring-emerald-400/20"
+                />
+                <span className="text-[11px] text-amber-600 dark:text-amber-400 block">
+                  ⚡ با ثبت این عیار، طلای شرطی پرونده به صورت خودکار به «آبشده قطعی» با عیار اعلام‌شده تبدیل می‌شود.
+                </span>
               </div>
 
               {/* Received Date Input (DatePicker) */}
