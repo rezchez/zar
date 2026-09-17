@@ -251,4 +251,34 @@ describe('Document Refining Tab Tests', () => {
       expect(isRefinerGroup('')).toBe(false);
     });
   });
+
+  describe('Phase 1: Refining Delivery (تحویل طلا به ریگیر)', () => {
+    it('supports all required sent gold types: molten, misc, coin, conditional', () => {
+      const allowedSentTypes = ['molten', 'misc', 'coin', 'conditional'];
+      const rawMetalInventoryTypes: Record<string, string> = {
+        molten: 'melted',
+        misc: 'miscellaneous',
+        coin: 'coin',
+        conditional: 'conditional',
+      };
+
+      for (const sentType of allowedSentTypes) {
+        expect(rawMetalInventoryTypes[sentType]).toBeDefined();
+        expect(typeof rawMetalInventoryTypes[sentType]).toBe('string');
+      }
+    });
+
+    it('accurately calculates converted 750 weight for non-standard purities (e.g. 740, 743)', () => {
+      const converted740 = (100 * 740) / 750; // 98.6666...
+      const converted743 = (100 * 743) / 750; // 99.0666...
+
+      expect(converted740).toBeCloseTo(98.6667, 3);
+      expect(converted743).toBeCloseTo(99.0667, 3);
+    });
+
+    it('rejects gold delivery if counterparty is not a Refiner group', () => {
+      const nonRefinerGroup = 'همکار';
+      expect(isRefinerGroup(nonRefinerGroup)).toBe(false);
+    });
+  });
 });

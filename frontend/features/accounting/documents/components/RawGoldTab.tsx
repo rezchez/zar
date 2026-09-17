@@ -8,7 +8,7 @@ import Field from '@/src/components/documents/Field';
 import { RawMetalOperationTypeSelector } from '@/src/components/documents/DocumentOperationTypeSelector';
 import { AssayLaboratorySelect } from '@/components/AssayLaboratorySelect';
 
-export type RawOperationKind = 'molten' | 'misc' | 'conditional' | 'question' | 'unsettled';
+export type RawOperationKind = 'molten' | 'misc' | 'conditional' | 'question' | 'coin' | 'unsettled';
 
 export type DetailState = {
   metalType: 'gold' | 'silver' | 'platinum';

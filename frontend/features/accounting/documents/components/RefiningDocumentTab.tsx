@@ -372,7 +372,7 @@ export default function RefiningDocumentTab({
             {/* 1. DELIVERY MODE FIELDS */}
             {activeOpKind === 'delivery' ? (
               <>
-                {/* Kind of gold (molten / misc / scrap) */}
+                {/* Kind of gold (molten / misc / coin / conditional) */}
                 <Field label="نوع بار ارسالی">
                   <select
                     value={draftLine.details.rawKind || 'molten'}
@@ -380,9 +380,10 @@ export default function RefiningDocumentTab({
                       updateDraftDetail('rawKind', e.target.value as any);
                     }}
                   >
-                    <option value="molten">طلای آبشده</option>
-                    <option value="misc">طلای متفرقه / شکسته‌شده</option>
-                    <option value="question">بار سواله</option>
+                    <option value="molten">طلای آب‌شده</option>
+                    <option value="misc">متفرقه</option>
+                    <option value="coin">سکه</option>
+                    <option value="conditional">شرطی</option>
                   </select>
                 </Field>
 

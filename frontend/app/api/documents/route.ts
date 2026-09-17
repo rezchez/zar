@@ -15,8 +15,10 @@ import {
   getNextDocumentSequenceForCustomer,
   generateUniqueZfDocumentNumber,
 } from '@/lib/document-service';
+import { isRefinerGroup } from '@/lib/customer-groups';
 import { jalaliDateToIso, normalizeDigits } from '@/lib/jalali';
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
+import { createRefiningCase, syncCaseTotals } from '@/features/refining/services/refining-service';
 
 const amountFields = [
   'goldAmount',
@@ -50,6 +52,7 @@ const rawMetalInventoryTypes = {
   molten: 'melted',
   conditional: 'conditional',
   misc: 'miscellaneous',
+  coin: 'coin',
   question: 'sowaleh',
   unsettled: 'general_metal',
 } as const;
@@ -379,6 +382,19 @@ export async function POST(request: Request) {
           throw new Error(`شماره پاکت در ردیف ${index + 1} همواره فقط عدد است.`);
         }
       }
+      if (line.documentTab === 'refining') {
+        if (!isRefinerGroup(customer.groupName)) {
+          throw new Error(`طرف‌حساب انتخابی («${customer.name}») در گروه «ریگیر» قرار ندارد.`);
+        }
+        const opKind = String(details.refiningOpKind || (lineNature === 'paid' ? 'delivery' : 'receipt'));
+        if (opKind === 'delivery') {
+          const weight = metalAmount(lineAmounts, 'gold');
+          const purity = readAmount(details.purity);
+          if (weight <= 0 || purity === null || purity < 1 || purity > 1000) {
+            throw new Error(`وزن یا عیار طلای تحویلی در ردیف ${index + 1} معتبر نیست.`);
+          }
+        }
+      }
       if (line.documentTab === 'raw-gold') {
         const metal = String(details.metalType ?? 'gold');
         const rawKind = String(details.rawKind ?? 'molten');
@@ -523,7 +539,11 @@ export async function POST(request: Request) {
         }
         for (let index = 0; index < preparedLines.length; index++) {
           const prepared = preparedLines[index];
-          if (prepared.line.documentTab !== 'raw-gold') continue;
+          const isRawGold = prepared.line.documentTab === 'raw-gold';
+          const isRefiningDelivery = prepared.line.documentTab === 'refining' && (prepared.documentDetails.refiningOpKind === 'delivery' || (!prepared.documentDetails.refiningOpKind && prepared.lineNature === 'paid'));
+
+          if (!isRawGold && !isRefiningDelivery) continue;
+
           const metal = String(prepared.documentDetails.metalType ?? 'gold') as keyof typeof METAL_BASE_KARATS;
           const rawWeight = metalAmount(prepared.lineAmounts, metal);
           if (rawWeight <= 0) continue;
@@ -535,12 +555,13 @@ export async function POST(request: Request) {
             writer.filter('source_key = {:sourceKey}', { sourceKey }),
           ).catch(() => null);
           if (existingInventory) continue;
-          currentCreatedInventoryRecords.push(await writer.collection('metal_inventory').create({
+
+          const createdMetalInv = await writer.collection('metal_inventory').create({
             metal_type: metalType?.id ?? '',
             metal,
             inventory_type: metalInventoryType(prepared.documentDetails.rawKind),
-            direction: prepared.lineNature === 'received' ? 'in' : 'out',
-            transaction_type: String(prepared.line.documentSubType ?? ''),
+            direction: isRefiningDelivery ? 'out' : (prepared.lineNature === 'received' ? 'in' : 'out'),
+            transaction_type: isRefiningDelivery ? 'outgoing-refining' : String(prepared.line.documentSubType ?? ''),
             raw_weight: rawWeight,
             purity,
             base_karat: baseKarat,
@@ -559,7 +580,59 @@ export async function POST(request: Request) {
             is_deleted: false,
             created_by: context.user.id,
             updated_by: context.user.id,
-          }));
+          });
+          currentCreatedInventoryRecords.push(createdMetalInv);
+
+          // If this is refining delivery, record item in refining_items and sync case totals
+          if (isRefiningDelivery) {
+            let targetCaseRecord = null;
+            const caseId = readString(prepared.documentDetails.refiningCaseId, 50);
+            const caseNum = readString(prepared.documentDetails.refiningCaseNumber, 60);
+
+            if (caseId) {
+              targetCaseRecord = await writer.collection('refining_cases').getOne(caseId).catch(() => null);
+            }
+            if (!targetCaseRecord && caseNum) {
+              targetCaseRecord = await writer.collection('refining_cases').getFirstListItem(
+                writer.filter('case_number = {:caseNum} && refiner = {:refinerId}', { caseNum, refinerId: customer.id }),
+              ).catch(() => null);
+            }
+            if (!targetCaseRecord) {
+              // Create or find open case for this refiner
+              targetCaseRecord = await writer.collection('refining_cases').getFirstListItem(
+                writer.filter('refiner = {:refinerId} && status = "open"', { refinerId: customer.id }),
+              ).catch(() => null);
+            }
+            if (!targetCaseRecord) {
+              const newCase = await createRefiningCase(
+                writer,
+                { refinerId: customer.id, date: documentDateJalali, description: readString(prepared.line.description, 500) },
+                context.user.id,
+              );
+              targetCaseRecord = await writer.collection('refining_cases').getOne(newCase.id).catch(() => null);
+            }
+
+            if (targetCaseRecord) {
+              await writer.collection('refining_items').create({
+                case_id: targetCaseRecord.id,
+                item_type: 'sent_gold',
+                metal: 'gold',
+                inventory_type: metalInventoryType(prepared.documentDetails.rawKind),
+                raw_weight: rawWeight,
+                purity,
+                converted_weight: (rawWeight * purity) / 750,
+                stamp_number: readString(prepared.documentDetails.stampNumber, 80),
+                lab_name: readString(prepared.documentDetails.labName, 120),
+                status: 'with_refiner',
+                description: readString(prepared.line.description ?? body.description, 500),
+                metal_inventory_id: createdMetalInv.id,
+                created_by: context.user.id,
+                updated_by: context.user.id,
+              }).catch(() => null);
+
+              await syncCaseTotals(writer, targetCaseRecord.id);
+            }
+          }
         }
         finalRecords = currentCreatedRecords as unknown as Record<string, unknown>[];
         break;

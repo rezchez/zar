@@ -9,7 +9,7 @@ import { RawMetalOperationTypeSelector } from '@/src/components/documents/Docume
 import { AssayLaboratorySelect } from '@/components/AssayLaboratorySelect';
 import { getInventoryItemAvailability, type MeltedInventoryItem } from '@/lib/inventory-reservation';
 
-export type RawOperationKind = 'molten' | 'misc' | 'conditional' | 'question' | 'unsettled';
+export type RawOperationKind = 'molten' | 'misc' | 'conditional' | 'question' | 'coin' | 'unsettled';
 
 export type DetailState = {
   metalType: 'gold' | 'silver' | 'platinum';
