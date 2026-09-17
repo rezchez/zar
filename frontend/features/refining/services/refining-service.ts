@@ -6,6 +6,7 @@ import type { RecordModel } from 'pocketbase';
 import { metalAtBaseKarat, roundWeight } from '@/lib/weight';
 import { formatJalaliDate, normalizeDigits } from '@/lib/jalali';
 import { recordAuditEvent } from '@/lib/audit';
+import { isRefinerGroup } from '@/lib/customer-groups';
 import { postRefiningFee } from '@/features/accounting/posting/posting-engine';
 import type {
   RefiningCase,
@@ -40,6 +41,14 @@ export async function validateRefinerCustomer(
   const customer = await pb.collection('customers').getOne(customerId).catch(() => null);
   if (!customer) {
     throw new RefiningError('طرف‌حساب مورد نظر یافت نشد.', 404);
+  }
+
+  const groupName = String(customer.groupName || '').trim();
+  if (!isRefinerGroup(groupName)) {
+    throw new RefiningError(
+      `طرف‌حساب "${customer.name}" عضو گروه ریگیر نیست (گروه فعلی: ${groupName || 'نامشخص'}). امکان ثبت پرونده ری‌گیری وجود ندارد.`,
+      400,
+    );
   }
 
   return customer;
@@ -454,64 +463,10 @@ export async function createSamplePacket(
 }
 
 /**
- * Helper to convert all conditional output gold in a case to melted gold
- * based on the certified assay lab purity.
- */
-export async function settleConditionalGoldToMelted(
-  pb: PocketBase,
-  caseId: string,
-  labPurity: number,
-  userId: string,
-): Promise<{ updatedCount: number; newConvertedWeight: number }> {
-  const purity = roundWeight(Number(labPurity), 1);
-  if (!purity || purity <= 0 || purity > 1000) {
-    throw new RefiningError('عیار اعلامی آزمایشگاه باید عددی بین ۱ تا ۱۰۰۰ باشد.', 400);
-  }
-
-  // Find all output gold items in this case that are conditional
-  const items = await pb.collection('refining_items').getFullList({
-    filter: pb.filter('case_id = {:caseId} && item_type = "output_gold"', { caseId }),
-  }).catch(() => [] as RecordModel[]);
-
-  let updatedCount = 0;
-  let totalNewConverted = 0;
-
-  for (const item of items) {
-    // Check if item is conditional (or currently has temporary purity)
-    const rawWeight = Number(item.raw_weight) || 0;
-    const newConvertedWeight = metalAtBaseKarat(rawWeight, purity, 750);
-    totalNewConverted += newConvertedWeight;
-
-    // 1. Update refining_items record
-    await pb.collection('refining_items').update(item.id, {
-      purity,
-      converted_weight: newConvertedWeight,
-      inventory_type: 'melted',
-      updated_by: userId,
-    }).catch(() => undefined);
-
-    // 2. Update corresponding metal_inventory record if exists
-    if (item.metal_inventory_id) {
-      await pb.collection('metal_inventory').update(item.metal_inventory_id, {
-        purity,
-        converted_weight: newConvertedWeight,
-        inventory_type: 'melted',
-        updated_by: userId,
-      }).catch(() => undefined);
-    }
-
-    updatedCount++;
-  }
-
-  return { updatedCount, newConvertedWeight: totalNewConverted };
-}
-
-/**
  * 4. Receive Sample Packet (دریافت پاکت نمونه).
  * Enforces IDEMPOTENCY: Re-receiving the same sample is strictly rejected.
  * Enforces ACCOUNTING RULE: weight difference does NOT affect refiner debt.
  * Enforces INVENTORY RULE: actual received weight enters metal_inventory.
- * When assay lab purity is provided, automatically converts conditional gold of the case to melted gold.
  */
 export async function receiveSamplePacket(
   pb: PocketBase,
@@ -543,10 +498,6 @@ export async function receiveSamplePacket(
   }
 
   const purity = data.purity ? roundWeight(Number(data.purity), 1) : Number(sample.purity) || 750;
-  if (purity <= 0 || purity > 1000) {
-    throw new RefiningError('عیار طلا باید عددی بین ۱ تا ۱۰۰۰ باشد.', 400);
-  }
-
   const declaredWeight = Number(sample.declared_weight) || 0;
   // Difference = Declared - Received (Operational refining loss/difference)
   const weightDifference = roundWeight(declaredWeight - receivedWeight, 3);
@@ -584,12 +535,7 @@ export async function receiveSamplePacket(
     updated_by: userId,
   });
 
-  // 3. Settle conditional gold of this case into melted gold with lab purity
-  if (data.purity && data.purity > 0 && sample.case_id) {
-    await settleConditionalGoldToMelted(pb, sample.case_id, purity, userId);
-  }
-
-  // 4. Update case totals
+  // 3. Update case totals
   if (caseRecord) {
     await syncCaseTotals(pb, caseRecord.id);
   }
@@ -604,7 +550,6 @@ export async function receiveSamplePacket(
       declaredWeight,
       receivedWeight,
       weightDifference,
-      purity,
     },
     request,
   });
@@ -613,82 +558,15 @@ export async function receiveSamplePacket(
 }
 
 /**
- * 4.b Settle Packet Assay (ثبت عیار قطعی پاکت و تبدیل طلای شرطی به آبشده).
- * Can be called either for a received sample or to independently register/update lab purity.
- */
-export async function settlePacketAssay(
-  pb: PocketBase,
-  sampleId: string,
-  purity: number,
-  userId: string,
-  request?: Request,
-): Promise<RefiningSample> {
-  const sample = await pb.collection('refining_samples').getOne(sampleId).catch(() => null);
-  if (!sample) {
-    throw new RefiningError('پاکت نمونه مورد نظر یافت نشد.', 404);
-  }
-
-  const cleanPurity = roundWeight(Number(purity), 1);
-  if (!cleanPurity || cleanPurity <= 0 || cleanPurity > 1000) {
-    throw new RefiningError('عیار اعلامی آزمایشگاه باید عددی بین ۱ تا ۱۰۰۰ باشد.', 400);
-  }
-
-  // Recalculate converted received weight if already received
-  const recWeight = Number(sample.received_weight) || 0;
-  const convertedReceivedWeight = recWeight > 0 ? metalAtBaseKarat(recWeight, cleanPurity, 750) : 0;
-
-  // 1. Update sample record
-  const updatedSample = await pb.collection('refining_samples').update(sample.id, {
-    purity: cleanPurity,
-    converted_received_weight: convertedReceivedWeight,
-    updated_by: userId,
-  });
-
-  // 2. Update sample's metal_inventory record if already received
-  if (sample.metal_inventory_id) {
-    await pb.collection('metal_inventory').update(sample.metal_inventory_id, {
-      purity: cleanPurity,
-      converted_weight: convertedReceivedWeight,
-      updated_by: userId,
-    }).catch(() => undefined);
-  }
-
-  // 3. Settle all conditional gold in this case to melted gold
-  if (sample.case_id) {
-    await settleConditionalGoldToMelted(pb, sample.case_id, cleanPurity, userId);
-    await syncCaseTotals(pb, sample.case_id);
-  }
-
-  const caseRecord = sample.case_id
-    ? await pb.collection('refining_cases').getOne(sample.case_id).catch(() => null)
-    : null;
-
-  await recordAuditEvent({
-    event: 'refining_packet_assay_settled',
-    userId,
-    details: {
-      caseId: sample.case_id,
-      sampleId: sample.id,
-      packetNumber: sample.packet_number,
-      purity: cleanPurity,
-    },
-    request,
-  });
-
-  return mapRefiningSample(updatedSample, caseRecord?.case_number);
-}
-
-/**
- * 5. Receive Output Refined Gold (دریافت طلای خروجی / دریافت شرطی).
- * Enters gold into metal_inventory as conditional gold (with default temporary 750 purity)
- * until the assay lab result is received.
+ * 5. Receive Output Refined Gold (دریافت طلای خروجی).
+ * Enters refined gold into metal_inventory and updates case totals.
  */
 export async function receiveOutputGold(
   pb: PocketBase,
   caseId: string,
   data: {
     rawWeight: number;
-    purity?: number;
+    purity: number;
     stampNumber?: string;
     labName?: string;
     receiptDate?: string;
@@ -703,13 +581,10 @@ export async function receiveOutputGold(
   }
 
   const rawWeight = roundWeight(Number(data.rawWeight), 3);
-  // Conditional receipt defaults to temporary 750 purity if not specified
-  const purity = data.purity && Number(data.purity) > 0
-    ? roundWeight(Number(data.purity), 1)
-    : 750;
+  const purity = roundWeight(Number(data.purity), 1);
 
   if (!rawWeight || rawWeight <= 0) {
-    throw new RefiningError('وزن طلای دریافتی باید بزرگتر از صفر باشد.', 400);
+    throw new RefiningError('وزن طلای خروجی باید بزرگتر از صفر باشد.', 400);
   }
   if (!purity || purity <= 0 || purity > 1000) {
     throw new RefiningError('عیار طلا باید عددی بین ۱ تا ۱۰۰۰ باشد.', 400);
@@ -719,10 +594,10 @@ export async function receiveOutputGold(
   const receiptDate = data.receiptDate?.trim() || formatJalaliDate(new Date());
   const todayIso = new Date().toISOString();
 
-  // 1. Inflow into metal_inventory as conditional gold
+  // 1. Inflow into metal_inventory as refined melted gold
   const metalInv = await pb.collection('metal_inventory').create({
     metal: 'gold',
-    inventory_type: 'conditional',
+    inventory_type: 'melted',
     direction: 'in',
     transaction_type: 'refining_receipt',
     raw_weight: rawWeight,
@@ -732,7 +607,7 @@ export async function receiveOutputGold(
     stamp_number: data.stampNumber || '',
     lab_name: data.labName || '',
     date: todayIso,
-    description: `دریافت طلای شرطی ری‌گیری پرونده ${caseRecord.case_number} ${data.description ? `(${data.description})` : ''}`,
+    description: `دریافت طلای خروجی ری‌گیری پرونده ${caseRecord.case_number} ${data.description ? `(${data.description})` : ''}`,
     created_by: userId,
     updated_by: userId,
   });
@@ -742,7 +617,7 @@ export async function receiveOutputGold(
     case_id: caseRecord.id,
     item_type: 'output_gold',
     metal: 'gold',
-    inventory_type: 'conditional',
+    inventory_type: 'melted',
     raw_weight: rawWeight,
     purity,
     converted_weight: convertedWeight,
@@ -954,75 +829,4 @@ export async function getRefiningCasesByRefiner(
   }).catch(() => [] as RecordModel[]);
 
   return records.map((r) => mapRefiningCase(r));
-}
-
-/**
- * 10. Delete a refining case and all associated items, samples, inventory movements, and journal entries.
- */
-export async function deleteRefiningCase(
-  pb: PocketBase,
-  caseId: string,
-  userId: string,
-  request?: Request,
-): Promise<void> {
-  const caseRecord = await pb.collection('refining_cases').getOne(caseId).catch(() => null);
-  if (!caseRecord) {
-    throw new RefiningError('پرونده ری‌گیری مورد نظر یافت نشد.', 404);
-  }
-
-  // 1. Fetch related items
-  const items = await pb.collection('refining_items').getFullList({
-    filter: pb.filter('case_id = {:caseId}', { caseId }),
-  }).catch(() => [] as RecordModel[]);
-
-  // 2. Fetch related samples
-  const samples = await pb.collection('refining_samples').getFullList({
-    filter: pb.filter('case_id = {:caseId}', { caseId }),
-  }).catch(() => [] as RecordModel[]);
-
-  // 3. Delete metal_inventory movements created by items
-  for (const item of items) {
-    if (item.metal_inventory_id) {
-      await pb.collection('metal_inventory').delete(item.metal_inventory_id).catch(() => {});
-    }
-    await pb.collection('refining_items').delete(item.id).catch(() => {});
-  }
-
-  // 4. Delete metal_inventory movements created by samples
-  for (const sample of samples) {
-    if (sample.metal_inventory_id) {
-      await pb.collection('metal_inventory').delete(sample.metal_inventory_id).catch(() => {});
-    }
-    await pb.collection('refining_samples').delete(sample.id).catch(() => {});
-  }
-
-  // 5. Delete journal entry for refining fee if posted
-  if (caseRecord.journal_entry_id) {
-    const lines = await pb.collection('journal_lines').getFullList({
-      filter: pb.filter('entry = {:entryId}', { entryId: caseRecord.journal_entry_id }),
-    }).catch(() => [] as RecordModel[]);
-
-    for (const line of lines) {
-      await pb.collection('journal_lines').delete(line.id).catch(() => {});
-    }
-    await pb.collection('journal_entries').delete(caseRecord.journal_entry_id).catch(() => {});
-  }
-
-  // 6. Delete the case itself
-  await pb.collection('refining_cases').delete(caseId);
-
-  // 7. Audit log
-  await recordAuditEvent({
-    event: 'refining_case_deleted',
-    userId,
-    details: {
-      caseId,
-      caseNumber: caseRecord.case_number,
-      refinerId: caseRecord.refiner,
-      totalSentWeight: caseRecord.total_sent_weight,
-      itemsCount: items.length,
-      samplesCount: samples.length,
-    },
-    request,
-  });
 }

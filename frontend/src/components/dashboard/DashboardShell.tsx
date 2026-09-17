@@ -92,20 +92,20 @@ const navGroupsBase: NavGroupData[] = [
       },
       {
         id: 'refining',
-        title: 'ری‌گیری طلا',
+        title: 'ری‌گیری',
         icon: FlaskConical,
         children: [
-          {
-            id: 'refining-cases',
-            title: 'پرونده‌های ری‌گیری',
-            icon: FlaskConical,
-            href: '/dashboard/refining',
-          },
           {
             id: 'refining-packets',
             title: 'پاکت‌های نزد ریگیری',
             icon: PackageOpen,
             href: '/dashboard/refining/packets',
+          },
+          {
+            id: 'conditional-karat',
+            title: 'عیار شرطی',
+            icon: HandCoins,
+            href: '/dashboard/documents/new',
           },
         ],
       },

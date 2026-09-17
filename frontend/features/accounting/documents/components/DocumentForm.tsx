@@ -55,6 +55,7 @@ import CashTab from '@/src/components/documents/CashTab';
 import ClaimTab from '@/src/components/documents/ClaimTab';
 import BankTab from '@/src/components/documents/BankTab';
 import WorkmanshipTab from '@/src/components/documents/WorkmanshipTab';
+import RefiningDocumentTab from '@/src/components/documents/RefiningDocumentTab';
 import Field from '@/src/components/documents/Field';
 import HawalaModal from '@/src/components/documents/HawalaModal';
 import DocumentPrint from '@/src/components/documents/DocumentPrint';
@@ -1995,6 +1996,30 @@ export default function DocumentForm({
               toPersianDigits={toPersianDigits}
               faNumber={faNumber}
               numberValue={numberValue}
+              errors={lineValidationErrors}
+              labInputRef={labInputRef}
+              stampInputRef={stampInputRef}
+            />
+          )}
+          refiningTabLabel={documentNature === 'received' ? 'دریافت از ری‌گیری' : 'ارسال به ری‌گیری'}
+          refiningTabContent={(
+            <RefiningDocumentTab
+              nature={documentNature}
+              selectedCustomer={selectedCustomer}
+              draftLine={draftLine}
+              setDraftLine={setDraftLine}
+              committedLines={committedLines}
+              editingLineId={editingLineId}
+              isLinesPinned={isLinesPinned}
+              commitDraftLine={commitDraftLine}
+              updateDraftDetail={updateDraftDetail}
+              handleKeyDownEnter={handleKeyDownEnter}
+              draftReady={draftReady}
+              weightPrecision={weightPrecision}
+              meltedInventory={meltedInventory}
+              convertedTo750={convertedTo750}
+              faNumber={faNumber}
+              baseCurrency={baseCurrency}
               errors={lineValidationErrors}
               labInputRef={labInputRef}
               stampInputRef={stampInputRef}
