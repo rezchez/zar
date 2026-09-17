@@ -2,7 +2,7 @@
 
 import { CircleHelp, FlaskConical, Gem, HandCoins } from 'lucide-react';
 
-export type RawOperationKind = 'molten' | 'misc' | 'conditional' | 'question' | 'unsettled';
+export type RawOperationKind = 'molten' | 'misc' | 'conditional' | 'question' | 'coin' | 'unsettled';
 export type DocumentNature = 'received' | 'paid';
 
 type OperationTypeSelectorProps = {
