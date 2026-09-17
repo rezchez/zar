@@ -15,6 +15,7 @@ import {
   RefreshCw,
   Scale,
   Sparkles,
+  Trash2,
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
@@ -29,6 +30,8 @@ import { REFINING_CASE_STATUS_LABELS } from '../types';
 import { formatWeight } from '@/lib/weight';
 import { formatJalaliDate } from '@/lib/jalali';
 import { useAppSettings } from '@/src/components/SettingsProvider';
+import DatePicker from '@/components/ui/date-picker';
+import { AssayLaboratorySelect } from '@/components/AssayLaboratorySelect';
 
 interface RefiningCaseDetailModalProps {
   caseId: string;
@@ -86,6 +89,33 @@ export default function RefiningCaseDetailModal({
   const [sampleReceivedWeight, setSampleReceivedWeight] = useState('');
   const [sampleReceivedDate, setSampleReceivedDate] = useState(formatJalaliDate(new Date()));
   const [receiveSubmitting, setReceiveSubmitting] = useState(false);
+
+  // Delete Case State
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deletingCase, setDeletingCase] = useState(false);
+
+  const handleDeleteCase = async () => {
+    setDeletingCase(true);
+    setErrorBanner(null);
+    try {
+      const res = await fetch(`/api/refining/cases/${caseId}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setErrorBanner(data.message || 'خطا در حذف پرونده ری‌گیری');
+        setDeletingCase(false);
+        setConfirmDelete(false);
+        return;
+      }
+      onUpdated?.();
+      onClose();
+    } catch {
+      setErrorBanner('خطا در برقراری ارتباط با سرور.');
+      setDeletingCase(false);
+      setConfirmDelete(false);
+    }
+  };
 
   const fetchDetails = useCallback(async () => {
     setLoading(true);
@@ -336,72 +366,129 @@ export default function RefiningCaseDetailModal({
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-2xl p-2.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-          >
-            <X size={20} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(true)}
+              className="inline-flex items-center gap-1.5 rounded-2xl border border-rose-200 bg-rose-50/70 px-3.5 py-2 text-xs font-black text-rose-700 transition-all hover:bg-rose-100 hover:text-rose-800 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-300 dark:hover:bg-rose-900/40"
+              title="حذف پرونده ری‌گیری"
+            >
+              <Trash2 size={15} />
+              <span>حذف پرونده</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-2xl p-2.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+            >
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
-        {/* Nav Tabs */}
-        <div className="flex shrink-0 border-b border-slate-100 bg-slate-50/60 px-5 text-xs font-black dark:border-slate-800 dark:bg-slate-800/40">
-          <button
-            type="button"
-            onClick={() => setActiveTab('summary')}
-            className={`border-b-2 py-3 px-4 transition-all ${
-              activeTab === 'summary'
-                ? 'border-amber-500 text-amber-600 dark:text-amber-400'
-                : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-            }`}
-          >
-            خلاصه و تراز وزنی
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('sent')}
-            className={`border-b-2 py-3 px-4 transition-all ${
-              activeTab === 'sent'
-                ? 'border-amber-500 text-amber-600 dark:text-amber-400'
-                : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-            }`}
-          >
-            طلای ارسالی ({sentItems.length.toLocaleString('fa-IR')})
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('output')}
-            className={`border-b-2 py-3 px-4 transition-all ${
-              activeTab === 'output'
-                ? 'border-amber-500 text-amber-600 dark:text-amber-400'
-                : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-            }`}
-          >
-            طلای خروجی ({outputItems.length.toLocaleString('fa-IR')})
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('samples')}
-            className={`border-b-2 py-3 px-4 transition-all ${
-              activeTab === 'samples'
-                ? 'border-amber-500 text-amber-600 dark:text-amber-400'
-                : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-            }`}
-          >
-            پاکت‌های نمونه ({samples.length.toLocaleString('fa-IR')})
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('fee')}
-            className={`border-b-2 py-3 px-4 transition-all ${
-              activeTab === 'fee'
-                ? 'border-amber-500 text-amber-600 dark:text-amber-400'
-                : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-            }`}
-          >
-            اجرت و حسابداری
-          </button>
+        {/* Appica-Style Tabs Navigation */}
+        <div className="shrink-0 border-b border-slate-100 bg-slate-50/50 p-3 sm:px-6 dark:border-slate-800 dark:bg-slate-900/50">
+          <div className="overflow-x-auto scrollbar-none">
+            <div className="inline-flex w-full min-w-max items-center gap-1.5 rounded-2xl bg-slate-200/60 p-1.5 dark:bg-slate-800/80">
+              <button
+                type="button"
+                onClick={() => setActiveTab('summary')}
+                className={`relative inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition-all duration-200 select-none ${
+                  activeTab === 'summary'
+                    ? 'bg-white text-amber-800 shadow-sm dark:bg-slate-900 dark:text-amber-300'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/40 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-700/40'
+                }`}
+              >
+                <Scale size={15} className="shrink-0 text-amber-600 dark:text-amber-400" />
+                <span>خلاصه و تراز وزنی</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('sent')}
+                className={`relative inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition-all duration-200 select-none ${
+                  activeTab === 'sent'
+                    ? 'bg-white text-amber-800 shadow-sm dark:bg-slate-900 dark:text-amber-300'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/40 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-700/40'
+                }`}
+              >
+                <Flame size={15} className="shrink-0 text-amber-600 dark:text-amber-400" />
+                <span>خروج طلا</span>
+                <span
+                  className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 font-mono text-[10px] font-black transition-colors ${
+                    activeTab === 'sent'
+                      ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                      : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
+                  }`}
+                >
+                  {sentItems.length.toLocaleString('fa-IR')}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('output')}
+                className={`relative inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition-all duration-200 select-none ${
+                  activeTab === 'output'
+                    ? 'bg-white text-emerald-800 shadow-sm dark:bg-slate-900 dark:text-emerald-300'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/40 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-700/40'
+                }`}
+              >
+                <Sparkles size={15} className="shrink-0 text-emerald-600 dark:text-emerald-400" />
+                <span>دریافت شرطی</span>
+                <span
+                  className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 font-mono text-[10px] font-black transition-colors ${
+                    activeTab === 'output'
+                      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                      : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
+                  }`}
+                >
+                  {outputItems.length.toLocaleString('fa-IR')}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('samples')}
+                className={`relative inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition-all duration-200 select-none ${
+                  activeTab === 'samples'
+                    ? 'bg-white text-amber-800 shadow-sm dark:bg-slate-900 dark:text-amber-300'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/40 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-700/40'
+                }`}
+              >
+                <PackageOpen size={15} className="shrink-0 text-amber-600 dark:text-amber-400" />
+                <span>پاکت‌های نمونه</span>
+                <span
+                  className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 font-mono text-[10px] font-black transition-colors ${
+                    activeTab === 'samples'
+                      ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                      : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
+                  }`}
+                >
+                  {samples.length.toLocaleString('fa-IR')}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('fee')}
+                className={`relative inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition-all duration-200 select-none ${
+                  activeTab === 'fee'
+                    ? 'bg-white text-amber-800 shadow-sm dark:bg-slate-900 dark:text-amber-300'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/40 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-700/40'
+                }`}
+              >
+                <DollarSign size={15} className="shrink-0 text-amber-600 dark:text-amber-400" />
+                <span>اجرت و حسابداری</span>
+                {refiningCase?.feeSettled ? (
+                  <span className="inline-flex items-center justify-center rounded-full bg-emerald-100 px-2 py-0.5 font-mono text-[10px] font-black text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                    ثبت‌شده
+                  </span>
+                ) : null}
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* Banners */}
@@ -514,7 +601,7 @@ export default function RefiningCaseDetailModal({
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-black text-slate-700 dark:text-slate-300">
-                  لیست اقلام طلای تحویل‌شده به ریگیر
+                  اقلام خروج طلا (تحویل‌شده به ریگیر)
                 </span>
                 <button
                   type="button"
@@ -522,7 +609,7 @@ export default function RefiningCaseDetailModal({
                   className="inline-flex items-center gap-1.5 rounded-2xl bg-amber-600 px-4 py-2 text-xs font-black text-white shadow-xs transition-all hover:bg-amber-500"
                 >
                   <Plus size={14} />
-                  <span>تحویل طلای جدید به ریگیر</span>
+                  <span>ثبت خروج طلای جدید به ریگیر</span>
                 </button>
               </div>
 
@@ -542,7 +629,7 @@ export default function RefiningCaseDetailModal({
                     {sentItems.length === 0 ? (
                       <tr>
                         <td colSpan={6} className="p-6 text-center text-slate-400">
-                          هنوز طلایی برای این پرونده تحویل ریگیر نشده است.
+                          هنوز طلایی برای این پرونده خارج/تحویل ریگیر نشده است.
                         </td>
                       </tr>
                     ) : (
@@ -571,7 +658,7 @@ export default function RefiningCaseDetailModal({
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-black text-slate-700 dark:text-slate-300">
-                  طلای تصفیه‌شده دریافتی از ریگیر
+                  اقلام دریافت شرطی (طلای تصفیه‌شده از ریگیر)
                 </span>
                 <button
                   type="button"
@@ -579,7 +666,7 @@ export default function RefiningCaseDetailModal({
                   className="inline-flex items-center gap-1.5 rounded-2xl bg-emerald-600 px-4 py-2 text-xs font-black text-white shadow-xs transition-all hover:bg-emerald-500"
                 >
                   <Plus size={14} />
-                  <span>ثبت دریافت طلای خروجی</span>
+                  <span>ثبت دریافت شرطی</span>
                 </button>
               </div>
 
@@ -599,7 +686,7 @@ export default function RefiningCaseDetailModal({
                     {outputItems.length === 0 ? (
                       <tr>
                         <td colSpan={6} className="p-6 text-center text-slate-400">
-                          هنوز طلای خروجی برای این پرونده دریافت و ثبت نشده است.
+                          هنوز طلایی به عنوان دریافت شرطی برای این پرونده ثبت نشده است.
                         </td>
                       </tr>
                     ) : (
@@ -851,7 +938,7 @@ export default function RefiningCaseDetailModal({
           <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
             <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900 space-y-4">
               <div className="flex items-center justify-between border-b pb-3 dark:border-slate-800">
-                <h4 className="text-sm font-black text-slate-900 dark:text-white">دریافت طلای خروجی تصفیه‌شده</h4>
+                <h4 className="text-sm font-black text-slate-900 dark:text-white">ثبت دریافت شرطی (طلای تصفیه‌شده)</h4>
                 <button type="button" onClick={() => setOpenOutputModal(false)}>
                   <X size={18} />
                 </button>
@@ -859,7 +946,7 @@ export default function RefiningCaseDetailModal({
 
               <form onSubmit={handleOutputSubmit} className="space-y-3.5 text-xs">
                 <div>
-                  <label className="block font-black mb-1">وزن طلای خروجی (گرم) *</label>
+                  <label className="block font-black mb-1">وزن طلای دریافتی (گرم) *</label>
                   <input
                     type="number"
                     step="0.001"
@@ -887,9 +974,9 @@ export default function RefiningCaseDetailModal({
                   />
                 </div>
 
-                <div>
-                  <label className="block font-black mb-1">شماره انگ و آزمایشگاه</label>
-                  <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-black mb-1">شماره انگ جدید</label>
                     <input
                       type="text"
                       value={outputStamp}
@@ -897,23 +984,25 @@ export default function RefiningCaseDetailModal({
                       placeholder="شماره انگ جدید"
                       className="h-10 w-full rounded-2xl border px-3 font-mono dark:border-slate-700 dark:bg-slate-800"
                     />
-                    <input
-                      type="text"
+                  </div>
+                  <div>
+                    <label className="block font-black mb-1">نام ری‌گیری (آزمایشگاه)</label>
+                    <AssayLaboratorySelect
                       value={outputLab}
-                      onChange={(e) => setOutputLab(e.target.value)}
-                      placeholder="نام ری‌گیری"
-                      className="h-10 w-full rounded-2xl border px-3 dark:border-slate-700 dark:bg-slate-800"
+                      onChange={(val) => setOutputLab(val)}
+                      placeholder="انتخاب یا جستجوی ری‌گیری..."
                     />
                   </div>
                 </div>
 
                 <div>
                   <label className="block font-black mb-1">تاریخ دریافت</label>
-                  <input
-                    type="text"
+                  <DatePicker
                     value={outputDate}
-                    onChange={(e) => setOutputDate(e.target.value)}
-                    className="h-10 w-full rounded-2xl border px-3 font-mono dark:border-slate-700 dark:bg-slate-800"
+                    onValueChange={(_iso, jalali) => setOutputDate(jalali)}
+                    calendarType="shamsi"
+                    format="yyyy/MM/dd"
+                    className="w-full"
                   />
                 </div>
 
@@ -1032,11 +1121,12 @@ export default function RefiningCaseDetailModal({
 
                 <div>
                   <label className="block font-black mb-1">تاریخ دریافت</label>
-                  <input
-                    type="text"
+                  <DatePicker
                     value={sampleReceivedDate}
-                    onChange={(e) => setSampleReceivedDate(e.target.value)}
-                    className="h-10 w-full rounded-2xl border px-3 font-mono dark:border-slate-700 dark:bg-slate-800"
+                    onValueChange={(_iso, jalali) => setSampleReceivedDate(jalali)}
+                    calendarType="shamsi"
+                    format="yyyy/MM/dd"
+                    className="w-full"
                   />
                 </div>
 
@@ -1110,6 +1200,54 @@ export default function RefiningCaseDetailModal({
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        ) : null}
+
+        {/* Delete Confirmation Modal */}
+        {confirmDelete ? (
+          <div className="fixed inset-0 z-70 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs">
+            <div className="w-full max-w-md rounded-3xl border border-rose-200 bg-white p-6 shadow-2xl dark:border-rose-900/50 dark:bg-slate-900 space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="flex size-11 items-center justify-center rounded-2xl bg-rose-500/15 text-rose-600 dark:bg-rose-500/25 dark:text-rose-400">
+                  <Trash2 size={22} />
+                </div>
+                <div>
+                  <h4 className="text-sm font-black text-slate-900 dark:text-white">حذف پرونده ری‌گیری</h4>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    شماره پرونده: <span className="font-mono font-bold text-slate-700 dark:text-slate-200">{refiningCase?.caseNumber}</span>
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-rose-100 bg-rose-50/60 p-4 text-xs font-bold leading-relaxed text-rose-900 dark:border-rose-900/30 dark:bg-rose-950/30 dark:text-rose-300 space-y-1.5">
+                <p>⚠️ با حذف این پرونده ری‌گیری:</p>
+                <ul className="list-disc pr-4 space-y-1 text-[11px] font-medium text-rose-800 dark:text-rose-300">
+                  <li>تمام اقلام طلا و پاکت‌های نمونه ثبت‌شده ذیل این پرونده حذف می‌گردند.</li>
+                  <li>کلیه خروج‌ها و ورودهای طلای انبار مرتبط با این پرونده به صورت کامل لغو و بازگردانی می‌شوند.</li>
+                  <li>اسناد دوبل حسابداری ثبت‌شده برای اجرت ری‌گیری این پرونده به صورت خودکار حذف می‌شوند.</li>
+                </ul>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(false)}
+                  disabled={deletingCase}
+                  className="h-10 rounded-2xl border px-4 text-xs font-bold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                >
+                  انصراف
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteCase}
+                  disabled={deletingCase}
+                  className="inline-flex h-10 items-center gap-2 rounded-2xl bg-rose-600 px-5 text-xs font-black text-white hover:bg-rose-500 disabled:opacity-50"
+                >
+                  {deletingCase ? <LoaderCircle size={14} className="animate-spin" /> : null}
+                  <span>تأیید و حذف قطعی</span>
+                </button>
+              </div>
             </div>
           </div>
         ) : null}

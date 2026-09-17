@@ -6,7 +6,6 @@ import type { RecordModel } from 'pocketbase';
 import { metalAtBaseKarat, roundWeight } from '@/lib/weight';
 import { formatJalaliDate, normalizeDigits } from '@/lib/jalali';
 import { recordAuditEvent } from '@/lib/audit';
-import { isRefinerGroup } from '@/lib/customer-groups';
 import { postRefiningFee } from '@/features/accounting/posting/posting-engine';
 import type {
   RefiningCase,
@@ -41,14 +40,6 @@ export async function validateRefinerCustomer(
   const customer = await pb.collection('customers').getOne(customerId).catch(() => null);
   if (!customer) {
     throw new RefiningError('طرف‌حساب مورد نظر یافت نشد.', 404);
-  }
-
-  const groupName = String(customer.groupName || '').trim();
-  if (!isRefinerGroup(groupName)) {
-    throw new RefiningError(
-      `طرف‌حساب "${customer.name}" عضو گروه ریگیر نیست (گروه فعلی: ${groupName || 'نامشخص'}). امکان ثبت پرونده ری‌گیری وجود ندارد.`,
-      400,
-    );
   }
 
   return customer;
@@ -829,4 +820,75 @@ export async function getRefiningCasesByRefiner(
   }).catch(() => [] as RecordModel[]);
 
   return records.map((r) => mapRefiningCase(r));
+}
+
+/**
+ * 10. Delete a refining case and all associated items, samples, inventory movements, and journal entries.
+ */
+export async function deleteRefiningCase(
+  pb: PocketBase,
+  caseId: string,
+  userId: string,
+  request?: Request,
+): Promise<void> {
+  const caseRecord = await pb.collection('refining_cases').getOne(caseId).catch(() => null);
+  if (!caseRecord) {
+    throw new RefiningError('پرونده ری‌گیری مورد نظر یافت نشد.', 404);
+  }
+
+  // 1. Fetch related items
+  const items = await pb.collection('refining_items').getFullList({
+    filter: pb.filter('case_id = {:caseId}', { caseId }),
+  }).catch(() => [] as RecordModel[]);
+
+  // 2. Fetch related samples
+  const samples = await pb.collection('refining_samples').getFullList({
+    filter: pb.filter('case_id = {:caseId}', { caseId }),
+  }).catch(() => [] as RecordModel[]);
+
+  // 3. Delete metal_inventory movements created by items
+  for (const item of items) {
+    if (item.metal_inventory_id) {
+      await pb.collection('metal_inventory').delete(item.metal_inventory_id).catch(() => {});
+    }
+    await pb.collection('refining_items').delete(item.id).catch(() => {});
+  }
+
+  // 4. Delete metal_inventory movements created by samples
+  for (const sample of samples) {
+    if (sample.metal_inventory_id) {
+      await pb.collection('metal_inventory').delete(sample.metal_inventory_id).catch(() => {});
+    }
+    await pb.collection('refining_samples').delete(sample.id).catch(() => {});
+  }
+
+  // 5. Delete journal entry for refining fee if posted
+  if (caseRecord.journal_entry_id) {
+    const lines = await pb.collection('journal_lines').getFullList({
+      filter: pb.filter('entry = {:entryId}', { entryId: caseRecord.journal_entry_id }),
+    }).catch(() => [] as RecordModel[]);
+
+    for (const line of lines) {
+      await pb.collection('journal_lines').delete(line.id).catch(() => {});
+    }
+    await pb.collection('journal_entries').delete(caseRecord.journal_entry_id).catch(() => {});
+  }
+
+  // 6. Delete the case itself
+  await pb.collection('refining_cases').delete(caseId);
+
+  // 7. Audit log
+  await recordAuditEvent({
+    event: 'refining_case_deleted',
+    userId,
+    details: {
+      caseId,
+      caseNumber: caseRecord.case_number,
+      refinerId: caseRecord.refiner,
+      totalSentWeight: caseRecord.total_sent_weight,
+      itemsCount: items.length,
+      samplesCount: samples.length,
+    },
+    request,
+  });
 }

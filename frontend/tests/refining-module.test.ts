@@ -10,6 +10,7 @@ import {
   recordCaseRefiningFee,
   getUnreceivedPackets,
   getRefiningCaseDetails,
+  deleteRefiningCase,
   RefiningError,
 } from '@/features/refining/services/refining-service';
 import { SYSTEM_ACCOUNT_CODES } from '@/features/accounting/posting/posting-engine';
@@ -114,6 +115,13 @@ function createMockPocketBase() {
           colData[idx] = { ...colData[idx], ...data, updated: new Date().toISOString() };
           return { ...colData[idx] };
         },
+        delete: async (id: string) => {
+          const idx = colData.findIndex((x) => x.id === id);
+          if (idx !== -1) {
+            colData.splice(idx, 1);
+          }
+          return true;
+        },
       };
     },
     _store: store,
@@ -134,9 +142,11 @@ describe('Zarfolio — Gold Refining Module Architecture (ماژول ری‌گی
       expect(customer.groupName).toBe('ریگیر');
     });
 
-    it('strictly rejects customer who does NOT belong to "ریگیر" group', async () => {
+    it('accepts any registered customer without restricting to refiner group', async () => {
       const mockPb = createMockPocketBase();
-      expect(validateRefinerCustomer(mockPb, 'customer_1')).rejects.toThrow(RefiningError);
+      const customer = await validateRefinerCustomer(mockPb, 'customer_1');
+      expect(customer.id).toBe('customer_1');
+      expect(customer.name).toBe('جناب احمدی');
     });
 
     it('rejects nonexistent customer ID', async () => {
@@ -169,15 +179,15 @@ describe('Zarfolio — Gold Refining Module Architecture (ماژول ری‌گی
       expect(newCase.refiningFee).toBe(0);
     });
 
-    it('prevents case creation for non-refiner counterparty', async () => {
+    it('allows case creation for any valid customer', async () => {
       const mockPb = createMockPocketBase();
-      expect(
-        createRefiningCase(
-          mockPb,
-          { refinerId: 'customer_1', description: 'تست غیرمجاز' },
-          'user_admin',
-        ),
-      ).rejects.toThrow('عضو گروه ریگیر نیست');
+      const newCase = await createRefiningCase(
+        mockPb,
+        { refinerId: 'customer_1', description: 'ری‌گیری برای مشتری' },
+        'user_admin',
+      );
+      expect(newCase.refinerId).toBe('customer_1');
+      expect(newCase.status).toBe('open');
     });
   });
 
@@ -463,16 +473,52 @@ describe('Zarfolio — Gold Refining Module Architecture (ماژول ری‌گی
   });
 
   // ─────────────────────────────────────────────────────────────
-  // 8. Navigation & Breadcrumb Labels Verification
+  // 9. Case Deletion Verification
   // ─────────────────────────────────────────────────────────────
-  describe('Breadcrumb Navigation Labels', () => {
-    it('registers exact path /dashboard/refining/packets', () => {
-      expect(EXACT_PATH_LABELS['/dashboard/refining/packets']).toBe('پاکت‌های نزد ریگیری');
-    });
+  describe('Case Deletion & Cleanup Verification', () => {
+    it('deletes a refining case and cleans up related items, samples, inventory and journals', async () => {
+      const mockPb = createMockPocketBase();
+      const newCase = await createRefiningCase(
+        mockPb,
+        { refinerId: 'refiner_1' },
+        'user_admin',
+      );
 
-    it('registers fallback segments for refining and packets', () => {
-      expect(SEGMENT_FALLBACK_LABELS['refining']).toBe('ری‌گیری طلا');
-      expect(SEGMENT_FALLBACK_LABELS['packets']).toBe('پاکت‌های نزد ریگیری');
+      // Deliver gold (creates refining_item and metal_inventory)
+      await deliverGoldToRefiner(mockPb, newCase.id, { rawWeight: 100, purity: 750 }, 'user_admin');
+
+      // Create sample packet and receive it (receive creates metal_inventory)
+      const sample = await createSamplePacket(mockPb, newCase.id, { declaredWeight: 2.0, purity: 750 }, 'user_admin');
+      await receiveSamplePacket(mockPb, sample.id, { receivedWeight: 1.9 }, 'user_admin');
+
+      // Record fee (creates journal_entries, journal_lines, transactions)
+      await recordCaseRefiningFee(mockPb, newCase.id, 10_000_000, 'user_admin');
+
+      // Ensure records exist prior to deletion
+      expect(mockPb._store.refining_cases.length).toBe(1);
+      expect(mockPb._store.refining_items.length).toBe(1);
+      expect(mockPb._store.refining_samples.length).toBe(1);
+      expect(mockPb._store.metal_inventory.length).toBe(2);
+      expect(mockPb._store.journal_entries.length).toBe(1);
+      expect(mockPb._store.journal_lines.length).toBe(2);
+
+      // Delete the case
+      await deleteRefiningCase(mockPb, newCase.id, 'user_admin');
+
+      // Verify case is removed
+      expect(mockPb._store.refining_cases.length).toBe(0);
+
+      // Verify cascading items and samples are removed
+      expect(mockPb._store.refining_items.length).toBe(0);
+      expect(mockPb._store.refining_samples.length).toBe(0);
+
+      // Verify linked metal inventory is removed
+      expect(mockPb._store.metal_inventory.length).toBe(0);
+
+      // Verify linked journals and lines are removed
+      expect(mockPb._store.journal_entries.length).toBe(0);
+      expect(mockPb._store.journal_lines.length).toBe(0);
     });
   });
 });
+

@@ -45,6 +45,7 @@ export type AuditEvent =
   | 'backup_failed'
   | 'refining_case_created'
   | 'refining_case_updated'
+  | 'refining_case_deleted'
   | 'refining_gold_delivered'
   | 'refining_output_received'
   | 'refining_sample_created'

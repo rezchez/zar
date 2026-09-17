@@ -34,6 +34,7 @@ export const EXACT_PATH_LABELS: Record<string, string> = {
   '/dashboard/audit-logs': 'لاگ حسابرسی',
   '/dashboard/settings': 'تنظیمات کلی سامانه',
   '/dashboard/account': 'حساب کاربری',
+  '/dashboard/refining': 'مدیریت ری‌گیری طلا',
   '/dashboard/refining/packets': 'پاکت‌های نزد ریگیری',
 };
 

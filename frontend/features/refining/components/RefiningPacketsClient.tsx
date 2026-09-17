@@ -17,6 +17,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { RefiningSample } from '../types';
 import { formatWeight } from '@/lib/weight';
 import { formatJalaliDate } from '@/lib/jalali';
+import DatePicker from '@/components/ui/date-picker';
 
 export default function RefiningPacketsClient() {
   const [packets, setPackets] = useState<RefiningSample[]>([]);
@@ -339,25 +340,19 @@ export default function RefiningPacketsClient() {
                 </div>
               </div>
 
-              {/* Received Date Input */}
+              {/* Received Date Input (DatePicker) */}
               <div className="space-y-1.5">
                 <label className="block text-xs font-black text-slate-700 dark:text-slate-200">
                   تاریخ دریافت پاکت <span className="text-rose-500">*</span>
                 </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    required
-                    value={receivedDate}
-                    onChange={(e) => setReceivedDate(e.target.value)}
-                    placeholder="۱۴۰۵/۰۶/۲۵"
-                    className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 pr-10 font-mono text-sm font-bold text-slate-900 shadow-2xs transition-all focus:border-emerald-500 focus:bg-white focus:text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-emerald-400 dark:focus:bg-slate-800 dark:focus:text-white dark:focus:ring-emerald-400/20"
-                  />
-                  <Calendar
-                    size={18}
-                    className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
-                  />
-                </div>
+                <DatePicker
+                  value={receivedDate}
+                  onValueChange={(_iso, jalali) => setReceivedDate(jalali)}
+                  calendarType="shamsi"
+                  format="yyyy/MM/dd"
+                  placeholder="انتخاب تاریخ دریافت"
+                  className="w-full"
+                />
               </div>
 
               {/* Live Difference & Operational Loss Notice */}

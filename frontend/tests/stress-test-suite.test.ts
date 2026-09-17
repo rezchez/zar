@@ -37,7 +37,7 @@ describe('Zarfolio — Deterministic Stress Test & Invariants Verification', () 
     }
     const db = new Database(dbPath);
     db.run(`
-      CREATE TABLE IF NOT EXISTS currencies (id TEXT PRIMARY KEY, code TEXT, name TEXT, symbol TEXT, is_active INTEGER);
+      CREATE TABLE IF NOT EXISTS currencies (id TEXT PRIMARY KEY, code TEXT, name TEXT, symbol TEXT);
       CREATE TABLE IF NOT EXISTS cash_funds (id TEXT PRIMARY KEY);
       CREATE TABLE IF NOT EXISTS cash_transactions (id TEXT PRIMARY KEY);
       CREATE TABLE IF NOT EXISTS bank_accounts (id TEXT PRIMARY KEY);
@@ -51,7 +51,7 @@ describe('Zarfolio — Deterministic Stress Test & Invariants Verification', () 
       CREATE TABLE IF NOT EXISTS journal_entries (id TEXT PRIMARY KEY);
       CREATE TABLE IF NOT EXISTS journal_lines (id TEXT PRIMARY KEY);
       CREATE TABLE IF NOT EXISTS chart_of_accounts (id TEXT PRIMARY KEY);
-      INSERT OR IGNORE INTO currencies (id, code, name, symbol, is_active) VALUES ('c1', 'AED', 'درهم', 'AED', 1), ('c2', 'IRR', 'ریال', 'IRR', 1), ('c3', 'USD', 'دلار', 'USD', 1);
+      INSERT OR IGNORE INTO currencies (id, code, name, symbol) VALUES ('c1', 'AED', 'درهم', 'AED'), ('c2', 'IRR', 'ریال', 'IRR'), ('c3', 'USD', 'دلار', 'USD');
     `);
     const tables = db.query("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[];
     const tableNames = new Set(tables.map(t => t.name));
