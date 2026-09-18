@@ -186,6 +186,18 @@ migrate((app) => {
         },
         {
           "hidden": false,
+          "id": "text_stamp_number",
+          "max": 80,
+          "min": 0,
+          "name": "stamp_number",
+          "pattern": "",
+          "primaryKey": false,
+          "required": false,
+          "system": false,
+          "type": "text"
+        },
+        {
+          "hidden": false,
           "id": "text_created_by",
           "max": 50,
           "min": 0,

@@ -370,18 +370,29 @@ export async function POST(request: Request) {
       const details = normalizeDetails(line.documentDetails);
 
       if (details.stampNumber) {
-        const stampStr = String(details.stampNumber).trim();
+        const stampStr = normalizeDigits(String(details.stampNumber).trim());
+        details.stampNumber = stampStr;
         if (stampStr && !/^[0-9]+$/.test(stampStr)) {
           throw new Error(`شماره پاکت / انگ در ردیف ${index + 1} همواره فقط عدد است.`);
         }
       }
 
       if (details.refiningPacketNumber) {
-        const packetStr = String(details.refiningPacketNumber).trim();
+        const packetStr = normalizeDigits(String(details.refiningPacketNumber).trim());
+        details.refiningPacketNumber = packetStr;
         if (packetStr && !/^[0-9]+$/.test(packetStr)) {
           throw new Error(`شماره پاکت در ردیف ${index + 1} همواره فقط عدد است.`);
         }
       }
+
+      if (details.packetNumber) {
+        const packetStr = normalizeDigits(String(details.packetNumber).trim());
+        details.packetNumber = packetStr;
+        if (packetStr && !/^[0-9]+$/.test(packetStr)) {
+          throw new Error(`شماره پاکت در ردیف ${index + 1} همواره فقط عدد است.`);
+        }
+      }
+
       if (line.documentTab === 'refining') {
         if (!isRefinerGroup(customer.groupName)) {
           throw new Error(`طرف‌حساب انتخابی («${customer.name}») در گروه «ریگیر» قرار ندارد.`);
@@ -397,7 +408,9 @@ export async function POST(request: Request) {
       }
       if (line.documentTab === 'raw-gold') {
         const metal = String(details.metalType ?? 'gold');
-        const rawKind = String(details.rawKind ?? 'molten');
+        const rawKindInput = String(details.rawKind ?? 'molten');
+        const rawKind = rawKindFromInventoryType[rawKindInput] ?? rawKindInput;
+        details.rawKind = rawKind;
         const weight = metalAmount(lineAmounts, metal);
         const purity = readAmount(details.purity);
         if (!['gold', 'silver', 'platinum'].includes(metal) || !Object.hasOwn(rawMetalInventoryTypes, rawKind)) {
@@ -692,7 +705,21 @@ export async function POST(request: Request) {
       registeredAt: finalRecords[0].created,
     }, { status: 201 });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'ثبت سند انجام نشد. اطلاعات سند را بررسی و دوباره تلاش کنید.';
+    console.error('Error submitting document:', error);
+    let message = error instanceof Error ? error.message : 'ثبت سند انجام نشد. اطلاعات سند را بررسی و دوباره تلاش کنید.';
+    if (error && typeof error === 'object' && 'response' in error) {
+      const pbError = (error as { response?: { message?: string; data?: Record<string, { message?: string }> } }).response;
+      if (pbError?.data && Object.keys(pbError.data).length > 0) {
+        const details = Object.entries(pbError.data)
+          .map(([k, v]) => `${k}: ${v?.message || 'نامعتبر'}`)
+          .join('، ');
+        message = `خطا در ثبت رکورد: ${details}`;
+      } else if (pbError?.message) {
+        message = pbError.message.includes('Failed to create record') ? 'خطا در ثبت رکورد' : pbError.message;
+      }
+    } else if (message.includes('Failed to create record')) {
+      message = 'خطا در ثبت رکورد';
+    }
     return NextResponse.json(
       { message },
       { status: 400 },

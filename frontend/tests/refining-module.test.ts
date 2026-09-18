@@ -457,7 +457,7 @@ describe('Zarfolio — Gold Refining Module Architecture (ماژول ری‌گی
       expect(details.summary.totalDeclaredSampleWeight).toBe(2);
       expect(details.summary.totalReceivedSampleWeight).toBe(1.85);
       expect(details.summary.totalWeightDifference).toBe(0.15); // operational loss
-      expect(details.summary.remainingWeightAtRefiner).toBe(8.15); // 200 - 190 - 1.85
+      expect(details.summary.remainingWeightAtRefiner).toBe(8); // 200 - 190 - 1.85 (received) - 0.15 (loss) = 8
       expect(details.summary.debtToRefiner).toBe(20_000_000);
     });
   });
