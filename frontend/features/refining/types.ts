@@ -6,7 +6,7 @@ export type RefiningCaseStatus =
   | 'completed';
 
 export const REFINING_CASE_STATUS_LABELS: Record<RefiningCaseStatus, string> = {
-  open: 'باز / جدید',
+  open: 'جدید',
   sent_to_refiner: 'ارسال‌شده به ریگیر',
   refining: 'در حال ری‌گیری',
   partially_received: 'دریافت بخشی از طلا',
@@ -28,6 +28,7 @@ export interface RefiningCase {
   refiningFee: number;
   feeSettled: boolean;
   journalEntryId?: string;
+  stampNumber?: string;
   createdBy?: string;
   updatedBy?: string;
   created?: string;

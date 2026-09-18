@@ -126,6 +126,7 @@ export function mapRefiningCase(record: RecordModel, refinerName?: string): Refi
     refiningFee: Number(record.refining_fee) || 0,
     feeSettled: Boolean(record.fee_settled),
     journalEntryId: record.journal_entry_id || undefined,
+    stampNumber: record.stamp_number || undefined,
     createdBy: record.created_by || undefined,
     updatedBy: record.updated_by || undefined,
     created: record.created,
@@ -229,9 +230,19 @@ export async function syncCaseTotals(pb: PocketBase, caseId: string): Promise<vo
     3,
   );
 
-  // Remaining weight at refiner = Sent - Output Received - Received Sample
-  const remainingWeight = roundWeight(
-    Math.max(0, totalSentWeight - totalReceivedWeight - totalReceivedSampleWeight),
+  const totalWeightDifference = roundWeight(
+    samples
+      .filter((s) => s.status === 'received')
+      .reduce((sum, s) => sum + (Number(s.weight_difference) || 0), 0),
+    3,
+  );
+
+  // For received samples, both received weight and the assay loss (افت ری‌گیری) are accounted for
+  const accountedSampleWeight = roundWeight(totalReceivedSampleWeight + totalWeightDifference, 3);
+
+  // Remaining weight at refiner = Sent - Output Received - Accounted Sample Weight (Received + Loss)
+  let remainingWeight = roundWeight(
+    Math.max(0, totalSentWeight - totalReceivedWeight - accountedSampleWeight),
     3,
   );
 
@@ -242,12 +253,18 @@ export async function syncCaseTotals(pb: PocketBase, caseId: string): Promise<vo
   if (totalSentWeight > 0 && nextStatus === 'open') {
     nextStatus = 'sent_to_refiner';
   }
-  if (totalReceivedWeight > 0 || totalReceivedSampleWeight > 0) {
-    if (remainingWeight <= 0.001) {
+
+  // Any sample received and assayed (عیار ثبت شده) marks the refining as completed (پایان ری‌گیری)
+  const hasSettledSample = samples.some(
+    (s) => Number(s.purity) > 0 && (s.status === 'received' || Number(s.converted_received_weight) > 0),
+  );
+
+  if (hasSettledSample || remainingWeight <= 0.001) {
+    if (totalReceivedWeight > 0 || totalReceivedSampleWeight > 0 || hasSettledSample) {
       nextStatus = 'completed';
-    } else {
-      nextStatus = 'partially_received';
     }
+  } else if (totalReceivedWeight > 0 || totalReceivedSampleWeight > 0) {
+    nextStatus = 'partially_received';
   }
 
   await pb.collection('refining_cases').update(caseId, {
@@ -318,6 +335,7 @@ export async function deliverGoldToRefiner(
     rawWeight: number;
     purity: number;
     inventoryType?: string;
+    sourceInventoryId?: string;
     stampNumber?: string;
     labName?: string;
     description?: string;
@@ -331,11 +349,31 @@ export async function deliverGoldToRefiner(
   }
 
   const rawWeight = roundWeight(Number(data.rawWeight), 3);
-  const purity = roundWeight(Number(data.purity), 1);
+  let purity = roundWeight(Number(data.purity), 1);
 
   if (!rawWeight || rawWeight <= 0) {
     throw new RefiningError('وزن طلای ارسالی باید بزرگتر از صفر باشد.', 400);
   }
+
+  let stampNumber = data.stampNumber || '';
+  let labName = data.labName || '';
+
+  // If linked to a source inventory lot, lock purity and inherit stamp/lab
+  if (data.sourceInventoryId) {
+    const sourceLot = await pb.collection('metal_inventory').getOne(data.sourceInventoryId).catch(() => null);
+    if (sourceLot) {
+      if (sourceLot.purity) {
+        purity = roundWeight(Number(sourceLot.purity), 1);
+      }
+      if (!stampNumber && sourceLot.stamp_number) {
+        stampNumber = String(sourceLot.stamp_number);
+      }
+      if (!labName && sourceLot.lab_name) {
+        labName = String(sourceLot.lab_name);
+      }
+    }
+  }
+
   if (!purity || purity <= 0 || purity > 1000) {
     throw new RefiningError('عیار طلا باید عددی بین ۱ تا ۱۰۰۰ باشد.', 400);
   }
@@ -354,8 +392,9 @@ export async function deliverGoldToRefiner(
     purity,
     base_karat: 750,
     converted_weight: convertedWeight,
-    stamp_number: data.stampNumber || '',
-    lab_name: data.labName || '',
+    stamp_number: stampNumber,
+    lab_name: labName,
+    source_inventory_id: data.sourceInventoryId || '',
     date: todayIso,
     description: `تحویل به ریگیر - پرونده ${caseRecord.case_number} ${data.description ? `(${data.description})` : ''}`,
     created_by: userId,
@@ -371,8 +410,8 @@ export async function deliverGoldToRefiner(
     raw_weight: rawWeight,
     purity,
     converted_weight: convertedWeight,
-    stamp_number: data.stampNumber || '',
-    lab_name: data.labName || '',
+    stamp_number: stampNumber,
+    lab_name: labName,
     status: 'with_refiner',
     description: data.description || '',
     metal_inventory_id: metalInvRecord.id,
@@ -571,6 +610,8 @@ export async function receiveOutputGold(
     labName?: string;
     receiptDate?: string;
     description?: string;
+    packetNumber?: string;
+    sampleDeclaredWeight?: number;
   },
   userId: string,
   request?: Request,
@@ -631,8 +672,40 @@ export async function receiveOutputGold(
     updated_by: userId,
   });
 
-  // 3. Update case totals
+  // 3. If refiner announced a packet number with conditional receipt, register/create sample packet
+  if (data.packetNumber?.trim()) {
+    const pktNumber = data.packetNumber.trim();
+    const declaredWeight = data.sampleDeclaredWeight && Number(data.sampleDeclaredWeight) > 0
+      ? roundWeight(Number(data.sampleDeclaredWeight), 3)
+      : 2.5;
+
+    await pb.collection('refining_samples').create({
+      packet_number: pktNumber,
+      case_id: caseRecord.id,
+      refiner: caseRecord.refiner,
+      declared_weight: declaredWeight,
+      received_weight: 0,
+      weight_difference: 0,
+      purity: 750,
+      converted_received_weight: 0,
+      status: 'with_refiner',
+      issue_date: receiptDate,
+      description: `پاکت نمونه اعلامی ریگیر همراه با تحویل طلای شرطی ${data.stampNumber ? `(انگ: ${data.stampNumber})` : ''}`,
+      created_by: userId,
+      updated_by: userId,
+    }).catch(() => undefined);
+  }
+
+  // 4. Update case totals
   await syncCaseTotals(pb, caseRecord.id);
+
+  // 5. Save stamp number on the case itself for easy tracking alongside case_number
+  if (data.stampNumber?.trim()) {
+    await pb.collection('refining_cases').update(caseRecord.id, {
+      stamp_number: data.stampNumber.trim(),
+      updated_by: userId,
+    });
+  }
 
   await recordAuditEvent({
     event: 'refining_output_received',
@@ -791,8 +864,9 @@ export async function getRefiningCaseDetails(
     samples.filter((sm) => sm.status === 'received').reduce((s, sm) => s + sm.weightDifference, 0),
     3,
   );
+  const accountedSampleWeight = roundWeight(totalReceivedSampleWeight + totalWeightDifference, 3);
   const remainingWeightAtRefiner = roundWeight(
-    Math.max(0, totalSentWeight - totalOutputWeight - totalReceivedSampleWeight),
+    Math.max(0, totalSentWeight - totalOutputWeight - accountedSampleWeight),
     3,
   );
 
