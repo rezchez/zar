@@ -21,6 +21,7 @@ import { REFINING_CASE_STATUS_LABELS } from '../types';
 import { formatWeight } from '@/lib/weight';
 import { formatJalaliDate } from '@/lib/jalali';
 import { useAppSettings } from '@/src/components/SettingsProvider';
+import { useToastManager } from '@/components/ui/toast';
 import RefiningCaseDetailModal from './RefiningCaseDetailModal';
 
 interface RefiningTabProps {
@@ -29,11 +30,11 @@ interface RefiningTabProps {
 
 export default function RefiningTab({ customer }: RefiningTabProps) {
   const { settings } = useAppSettings();
+  const toast = useToastManager();
   const currencySuffix = settings.baseCurrency === 'IRT' ? 'تومان' : 'ریال';
 
   const [cases, setCases] = useState<RefiningCase[]>([]);
   const [loading, setLoading] = useState(true);
-  const [errorBanner, setErrorBanner] = useState<string | null>(null);
 
   // New Case Modal State
   const [openNewCaseModal, setOpenNewCaseModal] = useState(false);
@@ -46,21 +47,20 @@ export default function RefiningTab({ customer }: RefiningTabProps) {
 
   const fetchCases = useCallback(async () => {
     setLoading(true);
-    setErrorBanner(null);
     try {
       const res = await fetch(`/api/refining/cases?refinerId=${customer.id}`, { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
         setCases(data.cases || []);
       } else {
-        setErrorBanner('خطا در دریافت پرونده‌های ری‌گیری این طرف‌حساب.');
+        toast.error('خطا در دریافت پرونده‌ها', 'خطا در دریافت پرونده‌های ری‌گیری این طرف‌حساب.');
       }
     } catch {
-      setErrorBanner('عدم برقراری ارتباط با سرور.');
+      toast.error('خطای شبکه', 'عدم برقراری ارتباط با سرور.');
     } finally {
       setLoading(false);
     }
-  }, [customer.id]);
+  }, [customer.id, toast]);
 
   useEffect(() => {
     void fetchCases();
@@ -69,7 +69,6 @@ export default function RefiningTab({ customer }: RefiningTabProps) {
   const handleCreateCase = async (e: React.FormEvent) => {
     e.preventDefault();
     setCreatingCase(true);
-    setErrorBanner(null);
 
     try {
       const res = await fetch('/api/refining/cases', {
@@ -84,11 +83,15 @@ export default function RefiningTab({ customer }: RefiningTabProps) {
 
       const data = await res.json();
       if (!res.ok) {
-        setErrorBanner(data.message || 'خطا در ایجاد پرونده ری‌گیری');
+        toast.error('خطا در ایجاد پرونده', data.message || 'ثبت پرونده ری‌گیری با خطا مواجه شد.');
         setCreatingCase(false);
         return;
       }
 
+      toast.success(
+        'پرونده ری‌گیری ایجاد شد',
+        `شماره پرونده: ${data.refiningCase?.caseNumber || 'جدید'}`
+      );
       setOpenNewCaseModal(false);
       setNewCaseDesc('');
       void fetchCases();
@@ -96,7 +99,7 @@ export default function RefiningTab({ customer }: RefiningTabProps) {
         setSelectedCaseId(data.refiningCase.id);
       }
     } catch {
-      setErrorBanner('خطا در ارتباط با سرور.');
+      toast.error('خطای شبکه', 'عدم برقراری ارتباط با سرور.');
     } finally {
       setCreatingCase(false);
     }
@@ -156,7 +159,7 @@ export default function RefiningTab({ customer }: RefiningTabProps) {
         </div>
 
         <div className="rounded-3xl border border-emerald-200/60 bg-emerald-50/40 p-4 shadow-2xs dark:border-emerald-900/40 dark:bg-emerald-950/20">
-          <span className="text-[11px] font-bold text-emerald-800 dark:text-emerald-300">طلای خروجی دریافتی</span>
+          <span className="text-[11px] font-bold text-emerald-800 dark:text-emerald-300">طلای شرطی دریافت شده</span>
           <p className="mt-1 font-mono text-base font-black text-emerald-700 dark:text-emerald-400">
             {formatWeight(totalReceived)} <span className="text-xs font-normal">گرم</span>
           </p>
@@ -176,14 +179,6 @@ export default function RefiningTab({ customer }: RefiningTabProps) {
           </p>
         </div>
       </div>
-
-      {/* Error Banner */}
-      {errorBanner ? (
-        <div className="flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50/80 p-3.5 text-xs font-bold text-rose-800 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300">
-          <AlertCircle size={16} className="shrink-0 text-rose-600" />
-          <span>{errorBanner}</span>
-        </div>
-      ) : null}
 
       {/* Cases Table */}
       <div className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900">

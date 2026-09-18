@@ -17,37 +17,39 @@ import { useCallback, useEffect, useState } from 'react';
 import type { RefiningSample } from '../types';
 import { formatWeight } from '@/lib/weight';
 import { formatJalaliDate } from '@/lib/jalali';
+<<<<<<< HEAD
+=======
+import DatePicker from '@/components/ui/date-picker';
+import { useToastManager } from '@/components/ui/toast';
+>>>>>>> cd583e7 (fixed many bugs)
 
 export default function RefiningPacketsClient() {
+  const toast = useToastManager();
   const [packets, setPackets] = useState<RefiningSample[]>([]);
   const [loading, setLoading] = useState(true);
-  const [errorBanner, setErrorBanner] = useState<string | null>(null);
-  const [successBanner, setSuccessBanner] = useState<string | null>(null);
 
   // Receive Modal State
   const [selectedPacket, setSelectedPacket] = useState<RefiningSample | null>(null);
   const [receivedWeight, setReceivedWeight] = useState<string>('');
   const [receivedDate, setReceivedDate] = useState<string>('');
   const [submitting, setSubmitting] = useState(false);
-  const [modalError, setModalError] = useState<string | null>(null);
 
   const fetchPackets = useCallback(async () => {
     setLoading(true);
-    setErrorBanner(null);
     try {
       const res = await fetch('/api/refining/packets', { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
         setPackets(data.packets || []);
       } else {
-        setErrorBanner('خطا در دریافت لیست پاکت‌های نزد ریگیری');
+        toast.error('خطا در دریافت لیست', 'امکان دریافت لیست پاکت‌های نزد ریگیری وجود ندارد.');
       }
     } catch {
-      setErrorBanner('عدم برقراری ارتباط با سرور.');
+      toast.error('خطای شبکه', 'عدم برقراری ارتباط با سرور.');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [toast]);
 
   useEffect(() => {
     void fetchPackets();
@@ -57,14 +59,12 @@ export default function RefiningPacketsClient() {
     setSelectedPacket(packet);
     setReceivedWeight(packet.declaredWeight.toString());
     setReceivedDate(formatJalaliDate(new Date()));
-    setModalError(null);
   };
 
   const closeReceiveModal = () => {
     setSelectedPacket(null);
     setReceivedWeight('');
     setReceivedDate('');
-    setModalError(null);
   };
 
   const handleReceiveSubmit = async (e: React.FormEvent) => {
@@ -73,12 +73,20 @@ export default function RefiningPacketsClient() {
 
     const numWeight = parseFloat(receivedWeight);
     if (!numWeight || numWeight <= 0 || isNaN(numWeight)) {
-      setModalError('لطفاً وزن واقعی دریافتی را به درستی وارد کنید.');
+      toast.warning('وزن نامعتبر', 'لطفاً وزن واقعی دریافتی را به درستی وارد کنید.');
       return;
     }
 
+<<<<<<< HEAD
+=======
+    const numPurity = parseFloat(labPurity);
+    if (!numPurity || numPurity <= 0 || numPurity > 1000) {
+      toast.warning('عیار نامعتبر', 'لطفاً عیار اعلامی آزمایشگاه را عددی بین ۱ تا ۱۰۰۰ وارد کنید.');
+      return;
+    }
+
+>>>>>>> cd583e7 (fixed many bugs)
     setSubmitting(true);
-    setModalError(null);
 
     try {
       const res = await fetch(`/api/refining/packets/${selectedPacket.id}/receive`, {
@@ -92,18 +100,24 @@ export default function RefiningPacketsClient() {
 
       const data = await res.json();
       if (!res.ok) {
-        setModalError(data.message || 'خطا در ثبت دریافت پاکت');
+        toast.error('خطا در ثبت دریافت', data.message || 'ثبت دریافت پاکت با خطا مواجه شد.');
         setSubmitting(false);
         return;
       }
 
+<<<<<<< HEAD
       setSuccessBanner(
         `پاکت ${selectedPacket.packetNumber} با موفقیت دریافت شد و وزن ${formatWeight(numWeight)} گرم وارد موجودی طلا گردید.`,
+=======
+      toast.success(
+        'دریافت پاکت نمونه انجام شد',
+        `پاکت ${selectedPacket.packetNumber} دریافت شد، وزن ${formatWeight(numWeight)} گرم وارد موجودی گردید و طلای شرطی پرونده به آبشده قطعی با عیار ${numPurity} تبدیل شد.`
+>>>>>>> cd583e7 (fixed many bugs)
       );
       closeReceiveModal();
       void fetchPackets();
     } catch {
-      setModalError('خطا در ارتباط با سرور.');
+      toast.error('خطای شبکه', 'عدم برقراری ارتباط با سرور.');
     } finally {
       setSubmitting(false);
     }
@@ -144,30 +158,6 @@ export default function RefiningPacketsClient() {
           </button>
         </div>
       </div>
-
-      {/* Error & Success Messages */}
-      {errorBanner ? (
-        <div className="flex items-center gap-3 rounded-2xl border border-rose-200 bg-rose-50/80 p-4 text-xs font-bold text-rose-800 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300">
-          <AlertCircle size={18} className="shrink-0 text-rose-600" />
-          <span>{errorBanner}</span>
-        </div>
-      ) : null}
-
-      {successBanner ? (
-        <div className="flex items-center justify-between rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 text-xs font-bold text-emerald-800 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-300">
-          <div className="flex items-center gap-3">
-            <CheckCircle2 size={18} className="shrink-0 text-emerald-600" />
-            <span>{successBanner}</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setSuccessBanner(null)}
-            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-          >
-            <X size={16} />
-          </button>
-        </div>
-      ) : null}
 
       {/* Packets Table */}
       <div className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900">
@@ -293,13 +283,6 @@ export default function RefiningPacketsClient() {
 
             {/* Modal Body / Form */}
             <form onSubmit={handleReceiveSubmit} className="p-6 space-y-4">
-              {modalError ? (
-                <div className="flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50/80 p-3 text-xs font-bold text-rose-800 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300">
-                  <AlertCircle size={16} className="shrink-0 text-rose-600" />
-                  <span>{modalError}</span>
-                </div>
-              ) : null}
-
               {/* Summary details */}
               <div className="grid grid-cols-2 gap-3 rounded-2xl bg-slate-50 p-3.5 dark:bg-slate-800/50">
                 <div>

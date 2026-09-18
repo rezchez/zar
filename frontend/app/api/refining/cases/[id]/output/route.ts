@@ -29,6 +29,8 @@ export async function POST(
         labName: body.labName,
         receiptDate: body.receiptDate,
         description: body.description,
+        packetNumber: body.packetNumber,
+        sampleDeclaredWeight: body.sampleDeclaredWeight,
       },
       context.user.id,
       request,

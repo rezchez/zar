@@ -24,6 +24,8 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
+import { ToastProvider, Toaster } from '@/components/ui/toast';
+
 export default async function RootLayout({
   children,
 }: Readonly<{
@@ -45,8 +47,11 @@ export default async function RootLayout({
       <body suppressHydrationWarning>
         <ThemeProvider>
           <SettingsProvider>
-            {children}
-            <PwaInstallPrompt />
+            <ToastProvider>
+              <Toaster position="bottom-right" progress />
+              {children}
+              <PwaInstallPrompt />
+            </ToastProvider>
           </SettingsProvider>
         </ThemeProvider>
       </body>

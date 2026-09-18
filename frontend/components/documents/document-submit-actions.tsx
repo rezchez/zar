@@ -2,11 +2,7 @@
 
 import { CheckCircle2, Clock3, LoaderCircle } from 'lucide-react';
 import { useState } from 'react';
-
-type Toast = {
-  tone: 'success' | 'error';
-  message: string;
-};
+import { useToastManager } from '@/components/ui/toast';
 
 export default function DocumentSubmitActions({
   onSubmit,
@@ -15,7 +11,7 @@ export default function DocumentSubmitActions({
 }) {
   const [temporaryLoading, setTemporaryLoading] = useState<boolean>(false);
   const [finalLoading, setFinalLoading] = useState<boolean>(false);
-  const [toast, setToast] = useState<Toast | null>(null);
+  const toast = useToastManager();
 
   async function submit(status: 'temporary' | 'final') {
     if (status === 'temporary') {
@@ -23,24 +19,19 @@ export default function DocumentSubmitActions({
     } else {
       setFinalLoading(true);
     }
-    setToast(null);
 
     try {
       await onSubmit(status);
-      setToast({
-        tone: 'success',
-        message: status === 'final'
+      toast.success(
+        status === 'final'
           ? 'سند با موفقیت نهایی شد.'
           : 'سند به‌صورت موقت ذخیره شد.',
-      });
+      );
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : 'ثبت سند انجام نشد.';
       // Don't show the customer selection notice in the document submit actions (rows panel)
       if (errMsg !== 'ابتدا طرف حساب را از فهرست انتخاب کنید') {
-        setToast({
-          tone: 'error',
-          message: errMsg,
-        });
+        toast.error(errMsg);
       }
     } finally {
       if (status === 'temporary') {
@@ -79,19 +70,6 @@ export default function DocumentSubmitActions({
           ثبت سند کل
         </button>
       </div>
-      {toast ? (
-        <div
-          role="status"
-          aria-live="polite"
-          className={`absolute left-0 top-full z-50 mt-2 min-w-64 rounded-xl border px-4 py-3 text-sm font-semibold shadow-lg ${
-            toast.tone === 'success'
-              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-              : 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300'
-          }`}
-        >
-          {toast.message}
-        </div>
-      ) : null}
     </div>
   );
 }

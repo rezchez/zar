@@ -56,10 +56,22 @@ export function getCurrenciesForBaseCurrency(
   currencies: Currency[],
   baseCurrency: 'IRR' | 'IRT',
 ): Currency[] {
-  return currencies.filter((currency) => {
-    const code = currency.code.toUpperCase();
+  const filtered = currencies.filter((currency) => {
+    const code = (currency.code || currency.symbol || '').toUpperCase();
     return (code !== 'IRR' && code !== 'IRT') || code === baseCurrency;
   });
+
+  const seen = new Set<string>();
+  const uniqueCurrencies: Currency[] = [];
+  for (const curr of filtered) {
+    const key = (curr.code || curr.symbol || curr.id || '').trim().toUpperCase();
+    if (key && !seen.has(key)) {
+      seen.add(key);
+      uniqueCurrencies.push(curr);
+    }
+  }
+
+  return uniqueCurrencies;
 }
 
 export function formatDynamicAmountLabel(currency?: Currency | null): string {
@@ -79,7 +91,16 @@ export async function getCurrencies(pb?: Client | null): Promise<Currency[]> {
       records = await collection.getFullList();
     }
     const mapped = records.map(mapCurrencyRecord).filter((currency) => currency.id && currency.name);
-    return mapped;
+    const seen = new Set<string>();
+    const deduplicated: Currency[] = [];
+    for (const item of mapped) {
+      const codeKey = (item.code || item.symbol || item.id).trim().toUpperCase();
+      if (!seen.has(codeKey)) {
+        seen.add(codeKey);
+        deduplicated.push(item);
+      }
+    }
+    return deduplicated;
   } catch {
     return [];
   }

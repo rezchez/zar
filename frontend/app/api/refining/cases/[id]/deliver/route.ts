@@ -26,6 +26,7 @@ export async function POST(
         rawWeight: body.rawWeight,
         purity: body.purity,
         inventoryType: body.inventoryType,
+        sourceInventoryId: body.sourceInventoryId,
         stampNumber: body.stampNumber,
         labName: body.labName,
         description: body.description,
