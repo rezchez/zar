@@ -2,11 +2,7 @@ import { redirect } from 'next/navigation';
 
 import { getServerAuth } from '@/lib/auth';
 import DashboardShell from '@/src/components/dashboard/DashboardShell';
-import GoldMarketTicker from '@/src/components/GoldMarketTicker';
-import GoldBalanceTrackers from '@/src/components/GoldBalanceTrackers';
-import JalaliCalendar from '@/src/components/JalaliCalendar';
-import QuickGoldActions from '@/src/components/QuickGoldActions';
-import BankBalancesWidget from '@/src/components/dashboard/BankBalancesWidget';
+import DashboardClientContainer from '@/src/components/dashboard/DashboardClientContainer';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,25 +16,16 @@ export default async function DashboardPage() {
   return (
     <DashboardShell user={user}>
       {/* سربرگ خوش‌آمدگویی */}
-      <div className="dashboard-page-heading">
+      <div className="dashboard-page-heading mb-4">
         <div>
-          <h1>سلام، {user.name || 'کاربر'}</h1>
+          <h1 className="text-xl font-black text-slate-900 dark:text-slate-100">
+            سلام، {user.name || 'کاربر'}
+          </h1>
         </div>
       </div>
 
-      {/* میان‌برهای سریع حسابداری طلا */}
-      <QuickGoldActions />
-
-      <GoldMarketTicker />
-
-      {/* شاخص‌های تراز وزنی و ریالی */}
-      <GoldBalanceTrackers />
-
-      {/* تقویم هجری شمسی */}
-      <div className="dashboard-widgets-grid">
-        <JalaliCalendar />
-        <BankBalancesWidget />
-      </div>
+      {/* سیستم هوشمند مدیریت و Drag & Drop ویجت‌های داشبورد */}
+      <DashboardClientContainer />
     </DashboardShell>
   );
 }
