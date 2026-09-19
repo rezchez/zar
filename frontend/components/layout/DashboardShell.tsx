@@ -4,6 +4,7 @@ import {
   BarChart3,
   Boxes,
   FileSpreadsheet,
+  Flame,
   FlaskConical,
   HandCoins,
   History,
@@ -95,6 +96,12 @@ const navGroupsBase: NavGroupData[] = [
         title: 'ری‌گیری',
         icon: FlaskConical,
         children: [
+          {
+            id: 'refining-management',
+            title: 'مدیریت ری‌گیری',
+            icon: Flame,
+            href: '/dashboard/refining',
+          },
           {
             id: 'refining-packets',
             title: 'پاکت‌های نزد ریگیری',
@@ -270,6 +277,8 @@ export default function DashboardShell({
           ? 'reports'
           : pathname === '/dashboard/refining/packets'
             ? 'refining-packets'
+          : pathname === '/dashboard/refining'
+            ? 'refining-management'
           : pathname === '/dashboard/documents/new'
             ? 'document-new'
             : pathname === '/dashboard/documents/initial-inventory' || pathname === '/dashboard/documents/opening-balance'

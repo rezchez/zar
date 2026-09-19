@@ -466,6 +466,10 @@ describe('Zarfolio — Gold Refining Module Architecture (ماژول ری‌گی
   // 8. Navigation & Breadcrumb Labels Verification
   // ─────────────────────────────────────────────────────────────
   describe('Breadcrumb Navigation Labels', () => {
+    it('registers exact path /dashboard/refining', () => {
+      expect(EXACT_PATH_LABELS['/dashboard/refining']).toBe('مدیریت ری‌گیری');
+    });
+
     it('registers exact path /dashboard/refining/packets', () => {
       expect(EXACT_PATH_LABELS['/dashboard/refining/packets']).toBe('پاکت‌های نزد ریگیری');
     });

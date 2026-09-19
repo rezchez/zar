@@ -2,20 +2,28 @@
 
 import {
   AlertCircle,
+  AlertTriangle,
+  ArrowDownLeft,
   Calendar,
   Check,
   CheckCircle2,
   ChevronLeft,
   DollarSign,
   Flame,
+  Inbox,
   Layers,
   LoaderCircle,
   PackageOpen,
   Plus,
   RefreshCw,
   Scale,
+  Send,
   Sparkles,
+  Trash2,
   X,
+  FlaskConical,
+  Gem,
+  HandCoins,
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
@@ -29,8 +37,6 @@ import { REFINING_CASE_STATUS_LABELS } from '../types';
 import { formatWeight } from '@/lib/weight';
 import { formatJalaliDate } from '@/lib/jalali';
 import { useAppSettings } from '@/src/components/SettingsProvider';
-<<<<<<< HEAD
-=======
 import DatePicker from '@/components/ui/date-picker';
 import { AssayLaboratorySelect } from '@/components/AssayLaboratorySelect';
 import { PriceInput } from '@/components/ui/price-input';
@@ -44,7 +50,6 @@ const DELIVERY_KIND_LABELS: Record<DeliveryGoldKind, string> = {
   conditional: 'شرطی',
   sowaleh: 'سواله',
 };
->>>>>>> cd583e7 (fixed many bugs)
 
 const KIND_TO_INVENTORY_PARAM: Record<DeliveryGoldKind, 'molten' | 'misc' | 'conditional' | 'question'> = {
   melted: 'molten',
@@ -88,13 +93,10 @@ export default function RefiningCaseDetailModal({
 
   // Sub-modal states
   const [openDeliverModal, setOpenDeliverModal] = useState(false);
-<<<<<<< HEAD
-=======
   const [deliverKind, setDeliverKind] = useState<DeliveryGoldKind>('melted');
   const [deliverLots, setDeliverLots] = useState<InventoryLotItem[]>([]);
   const [selectedLotId, setSelectedLotId] = useState<string>('');
   const [loadingLots, setLoadingLots] = useState(false);
->>>>>>> cd583e7 (fixed many bugs)
   const [deliverWeight, setDeliverWeight] = useState('');
   const [deliverPurity, setDeliverPurity] = useState('750');
   const [deliverStamp, setDeliverStamp] = useState('');
@@ -104,7 +106,6 @@ export default function RefiningCaseDetailModal({
 
   const [openOutputModal, setOpenOutputModal] = useState(false);
   const [outputWeight, setOutputWeight] = useState('');
-  const [outputPurity, setOutputPurity] = useState('750');
   const [outputStamp, setOutputStamp] = useState('');
   const [outputLab, setOutputLab] = useState('');
   const [outputPacketNumber, setOutputPacketNumber] = useState('');
@@ -123,14 +124,13 @@ export default function RefiningCaseDetailModal({
   const [feeAmount, setFeeAmount] = useState('');
   const [feeSubmitting, setFeeSubmitting] = useState(false);
 
-  // Receive sample inline
+  // Receive sample inline & Settle Assay Purity
   const [receivingSampleId, setReceivingSampleId] = useState<string | null>(null);
   const [sampleReceivedWeight, setSampleReceivedWeight] = useState('');
+  const [sampleLabPurity, setSampleLabPurity] = useState('750');
   const [sampleReceivedDate, setSampleReceivedDate] = useState(formatJalaliDate(new Date()));
   const [receiveSubmitting, setReceiveSubmitting] = useState(false);
 
-<<<<<<< HEAD
-=======
   // Direct Settle Assay Purity Modal
   const [settlingSampleId, setSettlingSampleId] = useState<string | null>(null);
   const [settlePurityValue, setSettlePurityValue] = useState('750');
@@ -163,7 +163,6 @@ export default function RefiningCaseDetailModal({
     }
   };
 
->>>>>>> cd583e7 (fixed many bugs)
   const fetchDetails = useCallback(async () => {
     setLoading(true);
     try {
@@ -259,11 +258,8 @@ export default function RefiningCaseDetailModal({
         body: JSON.stringify({
           rawWeight: rawW,
           purity: pur,
-<<<<<<< HEAD
-=======
           inventoryType: deliverKind,
           sourceInventoryId: selectedLotId || undefined,
->>>>>>> cd583e7 (fixed many bugs)
           stampNumber: deliverStamp.trim(),
           labName: deliverLab.trim(),
           description: deliverDesc.trim(),
@@ -276,17 +272,15 @@ export default function RefiningCaseDetailModal({
         return;
       }
 
-<<<<<<< HEAD
-      setSuccessBanner(`طلای ارسالی به وزن ${formatWeight(rawW)} گرم با موفقیت ثبت و از انبار آزاد خارج شد.`);
-=======
       toast.success(
         'خروج طلا با موفقیت ثبت شد',
         `طلای ارسالی (${DELIVERY_KIND_LABELS[deliverKind]}) به وزن ${formatWeight(rawW)} گرم از انبار آزاد خارج گردید.`
       );
->>>>>>> cd583e7 (fixed many bugs)
       setOpenDeliverModal(false);
       setSelectedLotId('');
       setDeliverWeight('');
+      setDeliverStamp('');
+      setDeliverLab('');
       setDeliverDesc('');
       void fetchDetails();
       onUpdated?.();
@@ -300,14 +294,8 @@ export default function RefiningCaseDetailModal({
   const handleOutputSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const rawW = parseFloat(outputWeight);
-<<<<<<< HEAD
-    const pur = parseFloat(outputPurity);
-    if (!rawW || rawW <= 0 || !pur || pur <= 0) {
-      setErrorBanner('لطفاً وزن و عیار معتبر وارد کنید.');
-=======
     if (!rawW || rawW <= 0) {
       toast.warning('وزن نامعتبر', 'لطفاً وزن معتبر برای طلای دریافتی وارد کنید.');
->>>>>>> cd583e7 (fixed many bugs)
       return;
     }
 
@@ -318,7 +306,7 @@ export default function RefiningCaseDetailModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           rawWeight: rawW,
-          purity: pur,
+          purity: 750, // Temporary default 750 for conditional gold
           stampNumber: outputStamp.trim(),
           labName: outputLab.trim(),
           receiptDate: outputDate.trim(),
@@ -330,15 +318,6 @@ export default function RefiningCaseDetailModal({
 
       const data = await res.json();
       if (!res.ok) {
-<<<<<<< HEAD
-        setErrorBanner(data.message || 'خطا در دریافت طلای خروجی');
-        return;
-      }
-
-      setSuccessBanner(`طلای خروجی تصفیه‌شده به وزن ${formatWeight(rawW)} گرم با موفقیت وارد انبار طلا شد.`);
-      setOpenOutputModal(false);
-      setOutputWeight('');
-=======
         toast.error('خطا در دریافت طلا', data.message || 'ثبت طلای دریافتی با خطا مواجه شد.');
         return;
       }
@@ -353,7 +332,6 @@ export default function RefiningCaseDetailModal({
       setOutputLab('');
       setOutputPacketNumber('');
       setOutputSampleWeight('2.5');
->>>>>>> cd583e7 (fixed many bugs)
       setOutputDesc('');
       void fetchDetails();
       onUpdated?.();
@@ -406,6 +384,7 @@ export default function RefiningCaseDetailModal({
 
   const handleReceiveSample = async (sampleId: string) => {
     const recW = parseFloat(sampleReceivedWeight);
+    const labPurity = parseFloat(sampleLabPurity);
     if (!recW || recW <= 0) {
       toast.warning('وزن نامعتبر', 'لطفاً وزن واقعی دریافتی پاکت را وارد کنید.');
       return;
@@ -419,6 +398,7 @@ export default function RefiningCaseDetailModal({
         body: JSON.stringify({
           receivedWeight: recW,
           receivedDate: sampleReceivedDate.trim(),
+          purity: labPurity && labPurity > 0 ? labPurity : undefined,
         }),
       });
 
@@ -428,16 +408,13 @@ export default function RefiningCaseDetailModal({
         return;
       }
 
-<<<<<<< HEAD
-      setSuccessBanner(`پاکت نمونه دریافت شد و وزن ${formatWeight(recW)} گرم وارد موجودی طلا گردید.`);
-=======
       toast.success(
         'دریافت پاکت نمونه و تبدیل قطعی',
         `پاکت نمونه دریافت شد، وزن ${formatWeight(recW)} گرم وارد موجودی گردید و طلای شرطی پرونده به آبشده قطعی با عیار ${labPurity || 750} تبدیل شد.`
       );
->>>>>>> cd583e7 (fixed many bugs)
       setReceivingSampleId(null);
       setSampleReceivedWeight('');
+      setSampleLabPurity('750');
       void fetchDetails();
       onUpdated?.();
     } catch {
@@ -447,13 +424,6 @@ export default function RefiningCaseDetailModal({
     }
   };
 
-<<<<<<< HEAD
-  const handleFeeSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const fee = parseInt(feeAmount.replace(/\D/g, ''), 10);
-    if (!fee || fee <= 0) {
-      setErrorBanner('لطفاً مبلغ اجرت ری‌گیری را وارد کنید.');
-=======
   const handleSettlePuritySubmit = async (sampleId: string) => {
     const purityVal = parseFloat(settlePurityValue);
     if (!purityVal || purityVal <= 0 || purityVal > 1000) {
@@ -494,7 +464,6 @@ export default function RefiningCaseDetailModal({
     const fee = parseInt(feeAmount.replace(/,/g, ''), 10);
     if (isNaN(fee) || fee < 0) {
       toast.warning('مبلغ نامعتبر', 'لطفاً مبلغ اجرت معتبر وارد کنید.');
->>>>>>> cd583e7 (fixed many bugs)
       return;
     }
 
@@ -503,7 +472,7 @@ export default function RefiningCaseDetailModal({
       const res = await fetch(`/api/refining/cases/${caseId}/fee`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refiningFee: fee }),
+        body: JSON.stringify({ fee }),
       });
 
       const data = await res.json();
@@ -512,11 +481,7 @@ export default function RefiningCaseDetailModal({
         return;
       }
 
-<<<<<<< HEAD
-      setSuccessBanner('اجرت ری‌گیری با موفقیت در سیستم حسابداری دوبل ثبت و بدهی ما به ریگیر منظور شد.');
-=======
       toast.success('ثبت اجرت ری‌گیری', 'اجرت ری‌گیری با موفقیت ثبت و سند حسابداری دوبل صادر گردید.');
->>>>>>> cd583e7 (fixed many bugs)
       setOpenFeeModal(false);
       setFeeAmount('');
       void fetchDetails();
@@ -556,80 +521,34 @@ export default function RefiningCaseDetailModal({
                   </span>
                 ) : null}
               </div>
-              <p className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                طرف‌حساب ریگیر: {refiningCase?.refinerName || '—'} | تاریخ: {refiningCase?.date || '—'}
+              <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                طرف‌حساب: <strong className="text-slate-800 dark:text-slate-200">{refiningCase?.refinerName || '—'}</strong>
+                {refiningCase?.date ? ` — تاریخ: ${refiningCase.date}` : ''}
               </p>
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-2xl p-2.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-          >
-            <X size={20} />
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Delete Case Trigger Button */}
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(true)}
+              title="حذف پرونده ری‌گیری"
+              className="rounded-2xl p-2.5 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/40 dark:hover:text-rose-400"
+            >
+              <Trash2 size={18} />
+            </button>
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-2xl p-2.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+            >
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
-<<<<<<< HEAD
-        {/* Nav Tabs */}
-        <div className="flex shrink-0 border-b border-slate-100 bg-slate-50/60 px-5 text-xs font-black dark:border-slate-800 dark:bg-slate-800/40">
-          <button
-            type="button"
-            onClick={() => setActiveTab('summary')}
-            className={`border-b-2 py-3 px-4 transition-all ${
-              activeTab === 'summary'
-                ? 'border-amber-500 text-amber-600 dark:text-amber-400'
-                : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-            }`}
-          >
-            خلاصه و تراز وزنی
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('sent')}
-            className={`border-b-2 py-3 px-4 transition-all ${
-              activeTab === 'sent'
-                ? 'border-amber-500 text-amber-600 dark:text-amber-400'
-                : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-            }`}
-          >
-            طلای ارسالی ({sentItems.length.toLocaleString('fa-IR')})
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('output')}
-            className={`border-b-2 py-3 px-4 transition-all ${
-              activeTab === 'output'
-                ? 'border-amber-500 text-amber-600 dark:text-amber-400'
-                : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-            }`}
-          >
-            طلای خروجی ({outputItems.length.toLocaleString('fa-IR')})
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('samples')}
-            className={`border-b-2 py-3 px-4 transition-all ${
-              activeTab === 'samples'
-                ? 'border-amber-500 text-amber-600 dark:text-amber-400'
-                : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-            }`}
-          >
-            پاکت‌های نمونه ({samples.length.toLocaleString('fa-IR')})
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('fee')}
-            className={`border-b-2 py-3 px-4 transition-all ${
-              activeTab === 'fee'
-                ? 'border-amber-500 text-amber-600 dark:text-amber-400'
-                : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-            }`}
-          >
-            اجرت و حسابداری
-          </button>
-=======
         {/* Delete Confirmation Alert Banner */}
         {confirmDelete ? (
           <div className="m-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-2xl border border-rose-300 bg-rose-50/90 p-4 text-xs font-bold text-rose-900 dark:border-rose-900/60 dark:bg-rose-950/50 dark:text-rose-200">
@@ -738,7 +657,6 @@ export default function RefiningCaseDetailModal({
               <span>اجرت ری‌گیری</span>
             </button>
           </div>
->>>>>>> cd583e7 (fixed many bugs)
         </div>
 
         {/* Modal Scrollable Body */}
@@ -908,11 +826,6 @@ export default function RefiningCaseDetailModal({
           ) : activeTab === 'sent' ? (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-<<<<<<< HEAD
-                <span className="text-xs font-black text-slate-700 dark:text-slate-300">
-                  لیست اقلام طلای تحویل‌شده به ریگیر
-                </span>
-=======
                 <div>
                   <span className="text-xs font-black text-slate-700 dark:text-slate-300">
                     اقلام طلای ارسالی / تحویل‌شده به ریگیر
@@ -921,14 +834,13 @@ export default function RefiningCaseDetailModal({
                     این اقلام مستقیماً از انبار آزاد طلا خارج شده و تا زمان بازگشت، در تعهد ریگیر قرار دارند.
                   </p>
                 </div>
->>>>>>> cd583e7 (fixed many bugs)
                 <button
                   type="button"
                   onClick={() => setOpenDeliverModal(true)}
                   className="inline-flex items-center gap-1.5 rounded-2xl bg-amber-600 px-4 py-2 text-xs font-black text-white shadow-xs transition-all hover:bg-amber-500"
                 >
                   <Plus size={14} />
-                  <span>تحویل طلای جدید به ریگیر</span>
+                  <span>ثبت خروج طلای جدید به ریگیر</span>
                 </button>
               </div>
 
@@ -936,6 +848,7 @@ export default function RefiningCaseDetailModal({
                 <table className="w-full text-right text-xs">
                   <thead className="border-b border-slate-100 bg-slate-50 font-black text-slate-500 dark:border-slate-800 dark:bg-slate-800/50 dark:text-slate-400">
                     <tr>
+                      <th className="p-3">نوع طلا</th>
                       <th className="p-3">وزن (گرم)</th>
                       <th className="p-3">عیار</th>
                       <th className="p-3">معادل ۷۵۰</th>
@@ -947,13 +860,18 @@ export default function RefiningCaseDetailModal({
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
                     {sentItems.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="p-6 text-center text-slate-400">
-                          هنوز طلایی برای این پرونده تحویل ریگیر نشده است.
+                        <td colSpan={7} className="p-6 text-center text-slate-400">
+                          هنوز طلایی برای این پرونده خارج/تحویل ریگیر نشده است.
                         </td>
                       </tr>
                     ) : (
                       sentItems.map((item) => (
                         <tr key={item.id}>
+                          <td className="p-3">
+                            <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                              {DELIVERY_KIND_LABELS[item.inventoryType as DeliveryGoldKind] || item.inventoryType || 'آبشده'}
+                            </span>
+                          </td>
                           <td className="p-3 font-mono font-black text-slate-900 dark:text-white">
                             {formatWeight(item.rawWeight)}
                           </td>
@@ -974,41 +892,6 @@ export default function RefiningCaseDetailModal({
               </div>
             </div>
           ) : activeTab === 'output' ? (
-<<<<<<< HEAD
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-black text-slate-700 dark:text-slate-300">
-                  طلای تصفیه‌شده دریافتی از ریگیر
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setOpenOutputModal(true)}
-                  className="inline-flex items-center gap-1.5 rounded-2xl bg-emerald-600 px-4 py-2 text-xs font-black text-white shadow-xs transition-all hover:bg-emerald-500"
-                >
-                  <Plus size={14} />
-                  <span>ثبت دریافت طلای خروجی</span>
-                </button>
-              </div>
-
-              <div className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-2xs dark:border-slate-800 dark:bg-slate-900">
-                <table className="w-full text-right text-xs">
-                  <thead className="border-b border-slate-100 bg-slate-50 font-black text-slate-500 dark:border-slate-800 dark:bg-slate-800/50 dark:text-slate-400">
-                    <tr>
-                      <th className="p-3">وزن دریافتی (گرم)</th>
-                      <th className="p-3">عیار نهایی</th>
-                      <th className="p-3">معادل ۷۵۰</th>
-                      <th className="p-3">شماره انگ</th>
-                      <th className="p-3">آزمایشگاه</th>
-                      <th className="p-3">تاریخ دریافت</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-                    {outputItems.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="p-6 text-center text-slate-400">
-                          هنوز طلای خروجی برای این پرونده دریافت و ثبت نشده است.
-                        </td>
-=======
             <div className="space-y-6">
               {/* Part 1: Conditional Gold Outputs Received */}
               <div className="space-y-4">
@@ -1042,7 +925,6 @@ export default function RefiningCaseDetailModal({
                         <th className="p-3">شماره انگ</th>
                         <th className="p-3">آزمایشگاه</th>
                         <th className="p-3">تاریخ دریافت</th>
->>>>>>> cd583e7 (fixed many bugs)
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
@@ -1051,58 +933,6 @@ export default function RefiningCaseDetailModal({
                           <td colSpan={7} className="p-6 text-center text-slate-400">
                             هنوز طلایی به عنوان دریافت شرطی برای این پرونده ثبت نشده است.
                           </td>
-<<<<<<< HEAD
-                          <td className="p-3 font-mono font-bold text-amber-700 dark:text-amber-400">
-                            {item.purity}
-                          </td>
-                          <td className="p-3 font-mono text-slate-600 dark:text-slate-300">
-                            {formatWeight(item.convertedWeight)}
-                          </td>
-                          <td className="p-3 font-mono font-bold">{item.stampNumber || '—'}</td>
-                          <td className="p-3">{item.labName || '—'}</td>
-                          <td className="p-3 font-mono">{item.receiptDate || '—'}</td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          ) : activeTab === 'samples' ? (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-black text-slate-700 dark:text-slate-300">
-                  پاکت‌های نمونه ری‌گیری
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setOpenSampleModal(true)}
-                  className="inline-flex items-center gap-1.5 rounded-2xl bg-amber-600 px-4 py-2 text-xs font-black text-white shadow-xs transition-all hover:bg-amber-500"
-                >
-                  <Plus size={14} />
-                  <span>صدور پاکت نمونه جدید</span>
-                </button>
-              </div>
-
-              <div className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-2xs dark:border-slate-800 dark:bg-slate-900">
-                <table className="w-full text-right text-xs">
-                  <thead className="border-b border-slate-100 bg-slate-50 font-black text-slate-500 dark:border-slate-800 dark:bg-slate-800/50 dark:text-slate-400">
-                    <tr>
-                      <th className="p-3">شماره پاکت</th>
-                      <th className="p-3">وزن اعلام‌شده</th>
-                      <th className="p-3">وزن دریافتی</th>
-                      <th className="p-3">افت / اختلاف</th>
-                      <th className="p-3">وضعیت</th>
-                      <th className="p-3 text-center">عملیات</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-                    {samples.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="p-6 text-center text-slate-400">
-                          هیچ پاکت نمونه‌ای برای این پرونده صادر نشده است.
-                        </td>
-=======
                         </tr>
                       ) : (
                         outputItems.map((item) => (
@@ -1175,7 +1005,6 @@ export default function RefiningCaseDetailModal({
                         <th className="p-3">عیار آزمایشگاه</th>
                         <th className="p-3">وضعیت</th>
                         <th className="p-3 text-center">عملیات</th>
->>>>>>> cd583e7 (fixed many bugs)
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
@@ -1184,50 +1013,6 @@ export default function RefiningCaseDetailModal({
                           <td colSpan={7} className="p-6 text-center text-slate-400">
                             هیچ پاکت نمونه‌ای برای این پرونده ثبت نشده است. هنگام ثبت دریافت طلای شرطی، شماره پاکت اعلامی ریگیر را ثبت نمایید.
                           </td>
-<<<<<<< HEAD
-                          <td className="p-3 font-mono font-bold text-amber-700 dark:text-amber-400">
-                            {formatWeight(s.declaredWeight)} گرم
-                          </td>
-                          <td className="p-3 font-mono font-black text-emerald-700 dark:text-emerald-400">
-                            {s.status === 'received' ? `${formatWeight(s.receivedWeight)} گرم` : '—'}
-                          </td>
-                          <td className="p-3 font-mono font-bold text-rose-600 dark:text-rose-400">
-                            {s.status === 'received' ? `${formatWeight(s.weightDifference)} گرم` : '—'}
-                          </td>
-                          <td className="p-3">
-                            <span
-                              className={`rounded-full px-2.5 py-1 text-[10px] font-black ${
-                                s.status === 'received'
-                                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
-                                  : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
-                              }`}
-                            >
-                              {s.status === 'received' ? 'دریافت‌شده' : 'نزد ریگیر'}
-                            </span>
-                          </td>
-                          <td className="p-3 text-center">
-                            {s.status === 'with_refiner' ? (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setReceivingSampleId(s.id);
-                                  setSampleReceivedWeight(s.declaredWeight.toString());
-                                }}
-                                className="inline-flex items-center gap-1 rounded-xl bg-emerald-600 px-3 py-1.5 text-[11px] font-black text-white hover:bg-emerald-500"
-                              >
-                                <Check size={12} />
-                                <span>دریافت پاکت</span>
-                              </button>
-                            ) : (
-                              <span className="text-[11px] text-slate-400">تکمیل</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-=======
                         </tr>
                       ) : (
                         samples.map((s) => (
@@ -1294,7 +1079,6 @@ export default function RefiningCaseDetailModal({
                     </tbody>
                   </table>
                 </div>
->>>>>>> cd583e7 (fixed many bugs)
               </div>
             </div>
           ) : (
@@ -1353,54 +1137,9 @@ export default function RefiningCaseDetailModal({
                 </button>
               </div>
 
-              <form onSubmit={handleDeliverSubmit} className="space-y-3.5 text-xs">
+              <form onSubmit={handleDeliverSubmit} className="space-y-4 text-xs">
+                {/* Gold Type Selection - Inspired by RawMetalOperationTypeSelector */}
                 <div>
-<<<<<<< HEAD
-                  <label className="block font-black mb-1">وزن طلا (گرم) *</label>
-                  <input
-                    type="number"
-                    step="0.001"
-                    min="0.001"
-                    required
-                    value={deliverWeight}
-                    onChange={(e) => setDeliverWeight(e.target.value)}
-                    placeholder="مثال: ۱۰۵.۲۰۰"
-                    className="h-10 w-full rounded-2xl border px-3 font-mono font-bold dark:border-slate-700 dark:bg-slate-800"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-black mb-1">عیار (بر پایه ۱۰۰۰) *</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="1"
-                    max="1000"
-                    required
-                    value={deliverPurity}
-                    onChange={(e) => setDeliverPurity(e.target.value)}
-                    placeholder="۷۵۰"
-                    className="h-10 w-full rounded-2xl border px-3 font-mono font-bold dark:border-slate-700 dark:bg-slate-800"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-black mb-1">شماره انگ / آزمایشگاه</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <input
-                      type="text"
-                      value={deliverStamp}
-                      onChange={(e) => setDeliverStamp(e.target.value)}
-                      placeholder="شماره انگ"
-                      className="h-10 w-full rounded-2xl border px-3 font-mono dark:border-slate-700 dark:bg-slate-800"
-                    />
-                    <input
-                      type="text"
-                      value={deliverLab}
-                      onChange={(e) => setDeliverLab(e.target.value)}
-                      placeholder="نام آزمایشگاه"
-                      className="h-10 w-full rounded-2xl border px-3 dark:border-slate-700 dark:bg-slate-800"
-=======
                   <label className="block font-black mb-1.5 text-slate-700 dark:text-slate-300">
                     نوع طلای ارسالی به ریگیر *
                   </label>
@@ -1527,13 +1266,10 @@ export default function RefiningCaseDetailModal({
                       className={`h-10 w-full rounded-2xl border px-3 font-mono font-bold dark:border-slate-700 dark:bg-slate-800 ${
                         selectedLotId ? 'bg-slate-100 text-slate-500 cursor-not-allowed dark:bg-slate-800/80 dark:text-slate-400' : ''
                       }`}
->>>>>>> cd583e7 (fixed many bugs)
                     />
                   </div>
                 </div>
 
-<<<<<<< HEAD
-=======
                 <div>
                   <label className="block font-black mb-1 text-slate-700 dark:text-slate-300">شماره انگ / آزمایشگاه ری‌گیری</label>
                   <div className="grid grid-cols-2 gap-2">
@@ -1554,7 +1290,6 @@ export default function RefiningCaseDetailModal({
                   </div>
                 </div>
 
->>>>>>> cd583e7 (fixed many bugs)
                 <div>
                   <label className="block font-black mb-1">توضیحات</label>
                   <input
@@ -1591,13 +1326,9 @@ export default function RefiningCaseDetailModal({
           <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
             <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900 space-y-4">
               <div className="flex items-center justify-between border-b pb-3 dark:border-slate-800">
-<<<<<<< HEAD
-                <h4 className="text-sm font-black text-slate-900 dark:text-white">دریافت طلای خروجی تصفیه‌شده</h4>
-=======
                 <h4 className="text-sm font-black text-slate-900 dark:text-white">
                   ثبت دریافت شرطی و پاکت ری‌گیری
                 </h4>
->>>>>>> cd583e7 (fixed many bugs)
                 <button type="button" onClick={() => setOpenOutputModal(false)}>
                   <X size={18} />
                 </button>
@@ -1605,7 +1336,7 @@ export default function RefiningCaseDetailModal({
 
               <form onSubmit={handleOutputSubmit} className="space-y-3.5 text-xs">
                 <div>
-                  <label className="block font-black mb-1">وزن طلای خروجی (گرم) *</label>
+                  <label className="block font-black mb-1">وزن طلای دریافتی (گرم) *</label>
                   <input
                     type="number"
                     step="0.001"
@@ -1618,21 +1349,6 @@ export default function RefiningCaseDetailModal({
                   />
                 </div>
 
-<<<<<<< HEAD
-                <div>
-                  <label className="block font-black mb-1">عیار رسمی خروجی *</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="1"
-                    max="1000"
-                    required
-                    value={outputPurity}
-                    onChange={(e) => setOutputPurity(e.target.value)}
-                    placeholder="۷۵۰"
-                    className="h-10 w-full rounded-2xl border px-3 font-mono font-bold dark:border-slate-700 dark:bg-slate-800"
-                  />
-=======
                 {/* Packet Number announced by Refiner */}
                 <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-3.5 dark:border-amber-900/40 dark:bg-amber-950/30 space-y-2.5">
                   <div className="flex items-center gap-2">
@@ -1671,12 +1387,11 @@ export default function RefiningCaseDetailModal({
                   <p className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
                     این طلا به عنوان «شرطی» با عیار موقت ۷۵۰ وارد انبار می‌شود. پس از اعلام نتیجه آزمایشگاه، با ثبت عیار پاکت به آبشده قطعی با عیار واقعی تبدیل خواهد شد.
                   </p>
->>>>>>> cd583e7 (fixed many bugs)
                 </div>
 
-                <div>
-                  <label className="block font-black mb-1">شماره انگ و آزمایشگاه</label>
-                  <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-black mb-1">شماره انگ جدید</label>
                     <input
                       type="text"
                       value={outputStamp}
@@ -1684,23 +1399,25 @@ export default function RefiningCaseDetailModal({
                       placeholder="شماره انگ جدید"
                       className="h-10 w-full rounded-2xl border px-3 font-mono dark:border-slate-700 dark:bg-slate-800"
                     />
-                    <input
-                      type="text"
+                  </div>
+                  <div>
+                    <label className="block font-black mb-1">نام ری‌گیری (آزمایشگاه)</label>
+                    <AssayLaboratorySelect
                       value={outputLab}
-                      onChange={(e) => setOutputLab(e.target.value)}
-                      placeholder="نام ری‌گیری"
-                      className="h-10 w-full rounded-2xl border px-3 dark:border-slate-700 dark:bg-slate-800"
+                      onChange={(val) => setOutputLab(val)}
+                      placeholder="انتخاب یا جستجوی ری‌گیری..."
                     />
                   </div>
                 </div>
 
                 <div>
                   <label className="block font-black mb-1">تاریخ دریافت</label>
-                  <input
-                    type="text"
+                  <DatePicker
                     value={outputDate}
-                    onChange={(e) => setOutputDate(e.target.value)}
-                    className="h-10 w-full rounded-2xl border px-3 font-mono dark:border-slate-700 dark:bg-slate-800"
+                    onValueChange={(_iso, jalali) => setOutputDate(jalali)}
+                    calendarType="shamsi"
+                    format="yyyy/MM/dd"
+                    className="w-full"
                   />
                 </div>
 
@@ -1717,7 +1434,7 @@ export default function RefiningCaseDetailModal({
                     disabled={outputSubmitting}
                     className="h-10 rounded-2xl bg-emerald-600 px-5 font-black text-white hover:bg-emerald-500"
                   >
-                    {outputSubmitting ? 'در حال ثبت...' : 'تأیید و ورود به موجودی'}
+                    {outputSubmitting ? 'در حال ثبت...' : 'تأیید و ورود به موجودی شرطی'}
                   </button>
                 </div>
               </form>
@@ -1729,7 +1446,7 @@ export default function RefiningCaseDetailModal({
           <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
             <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900 space-y-4">
               <div className="flex items-center justify-between border-b pb-3 dark:border-slate-800">
-                <h4 className="text-sm font-black text-slate-900 dark:text-white">صدور پاکت نمونه ری‌گیری</h4>
+                <h4 className="text-sm font-black text-slate-900 dark:text-white">صدور پاکت نمونه برای ری‌گیری</h4>
                 <button type="button" onClick={() => setOpenSampleModal(false)}>
                   <X size={18} />
                 </button>
@@ -1737,7 +1454,7 @@ export default function RefiningCaseDetailModal({
 
               <form onSubmit={handleSampleSubmit} className="space-y-3.5 text-xs">
                 <div>
-                  <label className="block font-black mb-1">وزن اعلام‌شده پاکت (گرم) *</label>
+                  <label className="block font-black mb-1">وزن اعلام‌شده نمونه (گرم) *</label>
                   <input
                     type="number"
                     step="0.001"
@@ -1797,7 +1514,7 @@ export default function RefiningCaseDetailModal({
           <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
             <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900 space-y-4">
               <div className="flex items-center justify-between border-b pb-3 dark:border-slate-800">
-                <h4 className="text-sm font-black text-slate-900 dark:text-white">دریافت پاکت نمونه</h4>
+                <h4 className="text-sm font-black text-slate-900 dark:text-white">دریافت پاکت نمونه و اعلام نتیجه ری‌گیری</h4>
                 <button type="button" onClick={() => setReceivingSampleId(null)}>
                   <X size={18} />
                 </button>
@@ -1818,12 +1535,30 @@ export default function RefiningCaseDetailModal({
                 </div>
 
                 <div>
-                  <label className="block font-black mb-1">تاریخ دریافت</label>
+                  <label className="block font-black mb-1">عیار اعلامی آزمایشگاه (نتیجه ری‌گیری)</label>
                   <input
-                    type="text"
+                    type="number"
+                    step="0.1"
+                    min="1"
+                    max="1000"
+                    value={sampleLabPurity}
+                    onChange={(e) => setSampleLabPurity(e.target.value)}
+                    placeholder="۷۵۰"
+                    className="h-10 w-full rounded-2xl border px-3 font-mono font-bold dark:border-slate-700 dark:bg-slate-800"
+                  />
+                  <span className="text-[11px] text-amber-600 dark:text-amber-400 mt-1 block">
+                    ⚡ با ثبت این عیار، طلای شرطی پرونده به آبشده قطعی با همین عیار تبدیل می‌شود.
+                  </span>
+                </div>
+
+                <div>
+                  <label className="block font-black mb-1">تاریخ دریافت</label>
+                  <DatePicker
                     value={sampleReceivedDate}
-                    onChange={(e) => setSampleReceivedDate(e.target.value)}
-                    className="h-10 w-full rounded-2xl border px-3 font-mono dark:border-slate-700 dark:bg-slate-800"
+                    onValueChange={(_iso, jalali) => setSampleReceivedDate(jalali)}
+                    calendarType="shamsi"
+                    format="yyyy/MM/dd"
+                    className="w-full"
                   />
                 </div>
 
@@ -1846,6 +1581,58 @@ export default function RefiningCaseDetailModal({
                     className="h-10 rounded-2xl bg-emerald-600 px-5 font-black text-white hover:bg-emerald-500"
                   >
                     {receiveSubmitting ? 'در حال دریافت...' : 'تأیید و ورود به موجودی'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {settlingSampleId ? (
+          <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
+            <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900 space-y-4">
+              <div className="flex items-center justify-between border-b pb-3 dark:border-slate-800">
+                <h4 className="text-sm font-black text-slate-900 dark:text-white">ثبت عیار آزمایشگاه و تبدیل به آبشده</h4>
+                <button type="button" onClick={() => setSettlingSampleId(null)}>
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="space-y-3.5 text-xs">
+                <div>
+                  <label className="block font-black mb-1">عیار قطعی اعلامی آزمایشگاه *</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="1"
+                    max="1000"
+                    required
+                    value={settlePurityValue}
+                    onChange={(e) => setSettlePurityValue(e.target.value)}
+                    placeholder="۷۵۰"
+                    className="h-10 w-full rounded-2xl border px-3 font-mono font-bold dark:border-slate-700 dark:bg-slate-800"
+                  />
+                </div>
+
+                <div className="rounded-2xl bg-emerald-50 p-3 text-[11px] leading-relaxed text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
+                  ✨ با ثبت این عیار، تمام اقلام طلای شرطی این پرونده در انبار طلا به «آبشده قطعی» با عیار اعلام‌شده تبدیل شده و معادل ۷۵۰ آن‌ها مجدداً محاسبه می‌شود.
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setSettlingSampleId(null)}
+                    className="h-10 rounded-2xl border px-4 font-bold"
+                  >
+                    انصراف
+                  </button>
+                  <button
+                    type="button"
+                    disabled={settlingSubmitting}
+                    onClick={() => void handleSettlePuritySubmit(settlingSampleId)}
+                    className="h-10 rounded-2xl bg-amber-600 px-5 font-black text-white hover:bg-amber-500"
+                  >
+                    {settlingSubmitting ? 'در حال ثبت...' : 'ثبت عیار و تبدیل به آبشده'}
                   </button>
                 </div>
               </div>
@@ -1899,6 +1686,54 @@ export default function RefiningCaseDetailModal({
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        ) : null}
+
+        {/* Delete Confirmation Modal */}
+        {confirmDelete ? (
+          <div className="fixed inset-0 z-70 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs">
+            <div className="w-full max-w-md rounded-3xl border border-rose-200 bg-white p-6 shadow-2xl dark:border-rose-900/50 dark:bg-slate-900 space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="flex size-11 items-center justify-center rounded-2xl bg-rose-500/15 text-rose-600 dark:bg-rose-500/25 dark:text-rose-400">
+                  <Trash2 size={22} />
+                </div>
+                <div>
+                  <h4 className="text-sm font-black text-slate-900 dark:text-white">حذف پرونده ری‌گیری</h4>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    شماره پرونده: <span className="font-mono font-bold text-slate-700 dark:text-slate-200">{refiningCase?.caseNumber}</span>
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-rose-100 bg-rose-50/60 p-4 text-xs font-bold leading-relaxed text-rose-900 dark:border-rose-900/30 dark:bg-rose-950/30 dark:text-rose-300 space-y-1.5">
+                <p>⚠️ با حذف این پرونده ری‌گیری:</p>
+                <ul className="list-disc pr-4 space-y-1 text-[11px] font-medium text-rose-800 dark:text-rose-300">
+                  <li>تمام اقلام طلا و پاکت‌های نمونه ثبت‌شده ذیل این پرونده حذف می‌گردند.</li>
+                  <li>کلیه خروج‌ها و ورودهای طلای انبار مرتبط با این پرونده به صورت کامل لغو و بازگردانی می‌شوند.</li>
+                  <li>اسناد دوبل حسابداری ثبت‌شده برای اجرت ری‌گیری این پرونده به صورت خودکار حذف می‌شوند.</li>
+                </ul>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(false)}
+                  disabled={deletingCase}
+                  className="h-10 rounded-2xl border px-4 text-xs font-bold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                >
+                  انصراف
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteCase}
+                  disabled={deletingCase}
+                  className="inline-flex h-10 items-center gap-2 rounded-2xl bg-rose-600 px-5 text-xs font-black text-white hover:bg-rose-500 disabled:opacity-50"
+                >
+                  {deletingCase ? <LoaderCircle size={14} className="animate-spin" /> : null}
+                  <span>تأیید و حذف قطعی</span>
+                </button>
+              </div>
             </div>
           </div>
         ) : null}
