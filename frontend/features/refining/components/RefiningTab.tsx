@@ -13,7 +13,7 @@ import {
   Scale,
   X,
 } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import type { Customer } from '@/lib/customer';
 import type { RefiningCase } from '../types';
@@ -23,6 +23,25 @@ import { formatJalaliDate } from '@/lib/jalali';
 import { useAppSettings } from '@/src/components/SettingsProvider';
 import { useToastManager } from '@/components/ui/toast';
 import RefiningCaseDetailModal from './RefiningCaseDetailModal';
+import {
+  AppicaDataTable,
+  SortableHeader,
+  appicaTableFeatures,
+  useTable,
+  type ColumnDef,
+  type ColumnVisibilityState,
+  type SortingState,
+} from '@/components/ui/data-table';
+
+const COLUMN_LABELS: Record<string, string> = {
+  caseNumber: 'شماره پرونده',
+  date: 'تاریخ',
+  status: 'وضعیت',
+  totalSentWeight: 'طلای ارسالی',
+  totalReceivedWeight: 'طلای دریافتی',
+  remainingWeight: 'مانده نزد ریگیر',
+  refiningFee: 'اجرت',
+};
 
 interface RefiningTabProps {
   customer: Customer;
@@ -110,6 +129,124 @@ export default function RefiningTab({ customer }: RefiningTabProps) {
   const totalRemaining = cases.reduce((s, c) => s + c.remainingWeight, 0);
   const totalFees = cases.reduce((s, c) => s + c.refiningFee, 0);
 
+  const columns = useMemo<ColumnDef<typeof appicaTableFeatures, RefiningCase>[]>(
+    () => [
+      {
+        accessorKey: 'caseNumber',
+        header: ({ column }) => <SortableHeader column={column}>شماره پرونده</SortableHeader>,
+        cell: ({ row }) => (
+          <div className="flex items-center gap-2 font-mono font-black text-slate-900 dark:text-white">
+            <span>{row.original.caseNumber}</span>
+            {row.original.stampNumber ? (
+              <span
+                className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+                title="شماره انگ"
+              >
+                {row.original.stampNumber}
+              </span>
+            ) : null}
+          </div>
+        ),
+      },
+      {
+        accessorKey: 'date',
+        header: ({ column }) => <SortableHeader column={column}>تاریخ</SortableHeader>,
+        cell: ({ row }) => (
+          <span className="font-mono text-slate-600 dark:text-slate-400">
+            {row.original.date || '—'}
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'status',
+        header: ({ column }) => <SortableHeader column={column}>وضعیت</SortableHeader>,
+        cell: ({ row }) => (
+          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-black text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+            {REFINING_CASE_STATUS_LABELS[row.original.status] || row.original.status}
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'totalSentWeight',
+        header: ({ column }) => <SortableHeader column={column}>طلای ارسالی</SortableHeader>,
+        cell: ({ row }) => (
+          <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
+            {formatWeight(row.original.totalSentWeight)} گرم
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'totalReceivedWeight',
+        header: ({ column }) => <SortableHeader column={column}>طلای دریافتی</SortableHeader>,
+        cell: ({ row }) => (
+          <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400">
+            {formatWeight(row.original.totalReceivedWeight)} گرم
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'remainingWeight',
+        header: ({ column }) => <SortableHeader column={column}>مانده نزد ریگیر</SortableHeader>,
+        cell: ({ row }) => (
+          <span className="font-mono font-black text-amber-700 dark:text-amber-400">
+            {formatWeight(row.original.remainingWeight)} گرم
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'refiningFee',
+        header: ({ column }) => <SortableHeader column={column}>اجرت</SortableHeader>,
+        cell: ({ row }) => {
+          const fee = row.original.refiningFee;
+          if (!fee || fee <= 0) return <span className="text-slate-400 font-mono">—</span>;
+          const displayFee = settings.baseCurrency === 'IRT' ? Math.floor(fee / 10) : fee;
+          return (
+            <span className="font-mono font-bold text-slate-700 dark:text-slate-300">
+              {displayFee.toLocaleString('fa-IR')} {currencySuffix}
+            </span>
+          );
+        },
+      },
+      {
+        id: 'actions',
+        header: () => <span className="text-center block">عملیات</span>,
+        cell: ({ row }) => (
+          <div className="flex justify-center">
+            <button
+              type="button"
+              onClick={() => setSelectedCaseId(row.original.id)}
+              className="inline-flex items-center gap-1 rounded-xl bg-amber-500/15 px-3 py-1.5 text-xs font-black text-amber-800 transition-all hover:bg-amber-500/25 dark:bg-amber-500/20 dark:text-amber-300"
+            >
+              <span>مدیریت پرونده</span>
+              <ChevronLeft size={14} />
+            </button>
+          </div>
+        ),
+        enableSorting: false,
+        enableHiding: false,
+      },
+    ],
+    [settings.baseCurrency, currencySuffix]
+  );
+
+  const [sorting, setSorting] = useState<SortingState>([]);
+  const [globalFilter, setGlobalFilter] = useState('');
+  const [columnVisibility, setColumnVisibility] = useState<ColumnVisibilityState>({});
+
+  const table = useTable({
+    features: appicaTableFeatures,
+    data: cases,
+    columns,
+    state: {
+      sorting,
+      globalFilter,
+      columnVisibility,
+    },
+    onSortingChange: setSorting,
+    onGlobalFilterChange: setGlobalFilter,
+    onColumnVisibilityChange: setColumnVisibility,
+  });
+
   return (
     <div className="space-y-6 pt-2">
       {/* Top Banner & Action */}
@@ -150,118 +287,56 @@ export default function RefiningTab({ customer }: RefiningTabProps) {
       </div>
 
       {/* Summary KPI Cards */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="rounded-3xl border border-slate-200/80 bg-white p-4 shadow-2xs dark:border-slate-800 dark:bg-slate-900">
-          <span className="text-[11px] font-bold text-slate-400">مجموع طلای ارسالی</span>
-          <p className="mt-1 font-mono text-base font-black text-slate-900 dark:text-white">
-            {formatWeight(totalSent)} <span className="text-xs font-normal">گرم</span>
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+        <div className="rounded-2xl border border-slate-200/80 bg-white px-3.5 py-2.5 shadow-2xs dark:border-slate-800 dark:bg-slate-900">
+          <span className="text-[10.5px] font-bold text-slate-400">مجموع طلای ارسالی</span>
+          <p className="mt-0.5 font-mono text-sm sm:text-base font-black text-slate-900 dark:text-white">
+            {formatWeight(totalSent)} <span className="text-[11px] font-normal text-slate-400">گرم</span>
           </p>
         </div>
 
-        <div className="rounded-3xl border border-emerald-200/60 bg-emerald-50/40 p-4 shadow-2xs dark:border-emerald-900/40 dark:bg-emerald-950/20">
-          <span className="text-[11px] font-bold text-emerald-800 dark:text-emerald-300">طلای شرطی دریافت شده</span>
-          <p className="mt-1 font-mono text-base font-black text-emerald-700 dark:text-emerald-400">
-            {formatWeight(totalReceived)} <span className="text-xs font-normal">گرم</span>
+        <div className="rounded-2xl border border-emerald-200/60 bg-emerald-50/40 px-3.5 py-2.5 shadow-2xs dark:border-emerald-900/40 dark:bg-emerald-950/20">
+          <span className="text-[10.5px] font-bold text-emerald-800 dark:text-emerald-300">طلای شرطی دریافت شده</span>
+          <p className="mt-0.5 font-mono text-sm sm:text-base font-black text-emerald-700 dark:text-emerald-400">
+            {formatWeight(totalReceived)} <span className="text-[11px] font-normal text-emerald-600/70 dark:text-emerald-400/70">گرم</span>
           </p>
         </div>
 
-        <div className="rounded-3xl border border-amber-200/60 bg-amber-50/40 p-4 shadow-2xs dark:border-amber-900/40 dark:bg-amber-950/20">
-          <span className="text-[11px] font-bold text-amber-800 dark:text-amber-300">مانده طلا نزد این ریگیر</span>
-          <p className="mt-1 font-mono text-base font-black text-amber-700 dark:text-amber-400">
-            {formatWeight(totalRemaining)} <span className="text-xs font-normal">گرم</span>
+        <div className="rounded-2xl border border-amber-200/60 bg-amber-50/40 px-3.5 py-2.5 shadow-2xs dark:border-amber-900/40 dark:bg-amber-950/20">
+          <span className="text-[10.5px] font-bold text-amber-800 dark:text-amber-300">مانده طلا نزد این ریگیر</span>
+          <p className="mt-0.5 font-mono text-sm sm:text-base font-black text-amber-700 dark:text-amber-400">
+            {formatWeight(totalRemaining)} <span className="text-[11px] font-normal text-amber-600/70 dark:text-amber-400/70">گرم</span>
           </p>
         </div>
 
-        <div className="rounded-3xl border border-slate-200/80 bg-white p-4 shadow-2xs dark:border-slate-800 dark:bg-slate-900">
-          <span className="text-[11px] font-bold text-slate-400">مجموع اجرت ری‌گیری</span>
-          <p className="mt-1 font-mono text-base font-black text-slate-900 dark:text-white">
-            {totalFees.toLocaleString('fa-IR')} <span className="text-xs font-normal">{currencySuffix}</span>
+        <div className="rounded-2xl border border-slate-200/80 bg-white px-3.5 py-2.5 shadow-2xs dark:border-slate-800 dark:bg-slate-900">
+          <span className="text-[10.5px] font-bold text-slate-400">مجموع اجرت ری‌گیری</span>
+          <p className="mt-0.5 font-mono text-sm sm:text-base font-black text-slate-900 dark:text-white">
+            {(settings.baseCurrency === 'IRT' ? Math.floor(totalFees / 10) : totalFees).toLocaleString('fa-IR')} <span className="text-[11px] font-normal text-slate-400">{currencySuffix}</span>
           </p>
         </div>
       </div>
 
-      {/* Cases Table */}
-      <div className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900">
-        {loading ? (
-          <div className="flex min-h-[220px] flex-col items-center justify-center gap-3">
-            <LoaderCircle size={28} className="animate-spin text-amber-500" />
-            <span className="text-xs font-bold text-slate-400">در حال دریافت پرونده‌ها...</span>
-          </div>
-        ) : cases.length === 0 ? (
-          <div className="flex min-h-[220px] flex-col items-center justify-center gap-3 p-8 text-center">
-            <Flame size={32} className="text-slate-300 dark:text-slate-600" />
-            <p className="text-xs font-black text-slate-700 dark:text-slate-300">
-              هنوز پرونده ری‌گیری برای این طرف‌حساب ثبت نشده است.
-            </p>
-            <button
-              type="button"
-              onClick={() => setOpenNewCaseModal(true)}
-              className="mt-1 text-xs font-black text-amber-600 hover:text-amber-500 dark:text-amber-400"
-            >
-              + ثبت اولین پرونده ری‌گیری
-            </button>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-right text-xs">
-              <thead>
-                <tr className="border-b border-slate-100 bg-slate-50/50 font-black text-slate-500 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-400">
-                  <th className="px-4 py-3.5">شماره پرونده</th>
-                  <th className="px-4 py-3.5">تاریخ</th>
-                  <th className="px-4 py-3.5">وضعیت</th>
-                  <th className="px-4 py-3.5">طلای ارسالی</th>
-                  <th className="px-4 py-3.5">طلای دریافتی</th>
-                  <th className="px-4 py-3.5">مانده نزد ریگیر</th>
-                  <th className="px-4 py-3.5">اجرت</th>
-                  <th className="px-4 py-3.5 text-center">عملیات</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-                {cases.map((c) => (
-                  <tr
-                    key={c.id}
-                    className="transition-colors hover:bg-slate-50/70 dark:hover:bg-slate-800/30"
-                  >
-                    <td className="px-4 py-3.5 font-mono font-black text-slate-900 dark:text-white">
-                      {c.caseNumber}
-                    </td>
-                    <td className="px-4 py-3.5 font-mono text-slate-600 dark:text-slate-400">
-                      {c.date || '—'}
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-black text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                        {REFINING_CASE_STATUS_LABELS[c.status] || c.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3.5 font-mono font-bold text-slate-800 dark:text-slate-200">
-                      {formatWeight(c.totalSentWeight)} گرم
-                    </td>
-                    <td className="px-4 py-3.5 font-mono font-bold text-emerald-700 dark:text-emerald-400">
-                      {formatWeight(c.totalReceivedWeight)} گرم
-                    </td>
-                    <td className="px-4 py-3.5 font-mono font-black text-amber-700 dark:text-amber-400">
-                      {formatWeight(c.remainingWeight)} گرم
-                    </td>
-                    <td className="px-4 py-3.5 font-mono font-bold text-slate-700 dark:text-slate-300">
-                      {c.refiningFee > 0 ? `${c.refiningFee.toLocaleString('fa-IR')} ${currencySuffix}` : '—'}
-                    </td>
-                    <td className="px-4 py-3.5 text-center">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedCaseId(c.id)}
-                        className="inline-flex items-center gap-1 rounded-xl bg-amber-500/15 px-3 py-1.5 text-xs font-black text-amber-800 transition-all hover:bg-amber-500/25 dark:bg-amber-500/20 dark:text-amber-300"
-                      >
-                        <span>مدیریت پرونده</span>
-                        <ChevronLeft size={14} />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      {/* Appica Data Table */}
+      <AppicaDataTable
+        table={table}
+        isLoading={loading}
+        loadingMessage="در حال دریافت پرونده‌ها..."
+        emptyMessage="هنوز پرونده ری‌گیری برای این طرف‌حساب ثبت نشده است."
+        emptyIcon={<Flame size={32} className="text-slate-300 dark:text-slate-600" />}
+        columnLabels={COLUMN_LABELS}
+        searchPlaceholder="جستجو در پرونده‌های این طرف‌حساب..."
+        extraActionsSlot={
+          <button
+            type="button"
+            onClick={() => setOpenNewCaseModal(true)}
+            className="inline-flex h-10 items-center gap-1.5 rounded-2xl bg-amber-600 px-3.5 text-xs font-black text-white hover:bg-amber-500"
+          >
+            <Plus size={14} />
+            <span>پرونده جدید</span>
+          </button>
+        }
+      />
 
       {/* New Case Modal */}
       {openNewCaseModal ? (

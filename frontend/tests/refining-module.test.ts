@@ -8,12 +8,24 @@ import {
   receiveSamplePacket,
   receiveOutputGold,
   recordCaseRefiningFee,
+  deleteCaseRefiningFee,
+  updateRefiningItem,
+  deleteRefiningItem,
+  updateSamplePacket,
+  deleteSamplePacket,
+  deleteRefiningCase,
+  settleSampleAssayPurity,
   getUnreceivedPackets,
   getRefiningCaseDetails,
   RefiningError,
 } from '@/features/refining/services/refining-service';
 import { SYSTEM_ACCOUNT_CODES } from '@/features/accounting/posting/posting-engine';
 import { EXACT_PATH_LABELS, SEGMENT_FALLBACK_LABELS } from '@/components/layout/Breadcrumbs';
+import {
+  mapTransaction,
+  transactionBalancesToCustomerBalances,
+} from '@/features/accounting/transactions/services/transaction';
+
 
 function createMockPocketBase() {
   const store: Record<string, any[]> = {
@@ -58,15 +70,17 @@ function createMockPocketBase() {
         getFirstListItem: async (filterStr: string) => {
           for (const item of colData) {
             if (filterStr.includes('sourceKey') && item.sourceKey) {
-              const matchKey = filterStr.split('"')[1] || filterStr.split("'")[1] || '';
+              const matchKey = (filterStr.split('sourceKey =')[1] || '').trim().replace(/['"]/g, '') ||
+                filterStr.split('"')[1] || filterStr.split("'")[1] || '';
               if (item.sourceKey === matchKey) return { ...item };
             }
             if (filterStr.includes('packet_number') && item.packet_number) {
-              const matchPkt = filterStr.split('"')[1] || filterStr.split("'")[1] || '';
+              const matchPkt = (filterStr.split('packet_number =')[1] || '').trim().replace(/['"]/g, '') ||
+                filterStr.split('"')[1] || filterStr.split("'")[1] || '';
               if (item.packet_number === matchPkt) return { ...item };
             }
             if (filterStr.includes('code =') && item.code) {
-              const matchCode = filterStr.split('=')[1]?.trim().replace(/['"]/g, '');
+              const matchCode = filterStr.split('code =')[1]?.trim().split(' ')[0]?.replace(/['"]/g, '');
               if (item.code === matchCode) return { ...item };
             }
           }
@@ -76,14 +90,22 @@ function createMockPocketBase() {
           let list = [...colData];
           if (opts?.filter) {
             if (opts.filter.includes('case_id =')) {
-              const cId = opts.filter.split('=')[1]?.trim().replace(/['"]/g, '');
+              const cId = opts.filter.split('case_id =')[1]?.trim().split(' ')[0]?.replace(/['"]/g, '');
               list = list.filter((x) => x.case_id === cId);
+            }
+            if (opts.filter.includes('journal_entry_id =')) {
+              const jId = opts.filter.split('journal_entry_id =')[1]?.trim().split(' ')[0]?.replace(/['"]/g, '');
+              list = list.filter((x) => x.journal_entry_id === jId);
+            }
+            if (opts.filter.includes('item_type =')) {
+              const iType = opts.filter.split('item_type =')[1]?.trim().split(' ')[0]?.replace(/['"]/g, '');
+              list = list.filter((x) => x.item_type === iType);
             }
             if (opts.filter.includes('status = "with_refiner"')) {
               list = list.filter((x) => x.status === 'with_refiner');
             }
             if (opts.filter.includes('refiner =')) {
-              const rId = opts.filter.split('=')[1]?.trim().replace(/['"]/g, '');
+              const rId = opts.filter.split('refiner =')[1]?.trim().split(' ')[0]?.replace(/['"]/g, '');
               list = list.filter((x) => x.refiner === rId);
             }
           }
@@ -113,6 +135,11 @@ function createMockPocketBase() {
           if (idx === -1) throw new Error(`Not found in ${name}`);
           colData[idx] = { ...colData[idx], ...data, updated: new Date().toISOString() };
           return { ...colData[idx] };
+        },
+        delete: async (id: string) => {
+          const idx = colData.findIndex((x) => x.id === id);
+          if (idx !== -1) colData.splice(idx, 1);
+          return true;
         },
       };
     },
@@ -422,6 +449,36 @@ describe('Zarfolio — Gold Refining Module Architecture (ماژول ری‌گی
       expect(tx.length).toBe(1);
       expect(tx[0].customer).toBe('refiner_1');
       expect(tx[0].rialAmount).toBe(15_000_000); // positive = creditor (طلبکار از ما)
+      expect(tx[0].status).toBe('final');
+      expect(tx[0].is_deleted).toBe(false);
+
+      // Verify that customer ledger balance immediately reflects 15M IRR debt to refiner
+      const balances = transactionBalancesToCustomerBalances(tx.map(mapTransaction));
+      expect(balances.rialBalance).toBe(15_000_000);
+    });
+
+    it('accepts string fees with commas and Persian numerals', async () => {
+      const mockPb = createMockPocketBase();
+      const newCase = await createRefiningCase(
+        mockPb,
+        { refinerId: 'refiner_1' },
+        'user_admin',
+      );
+
+      // Comma-formatted Persian string: "۲۵,۰۰۰,۰۰۰"
+      const updatedCase = await recordCaseRefiningFee(
+        mockPb,
+        newCase.id,
+        '۲۵,۰۰۰,۰۰۰' as any,
+        'user_admin',
+      );
+
+      expect(updatedCase.refiningFee).toBe(25_000_000);
+      expect(updatedCase.feeSettled).toBe(true);
+
+      const tx = mockPb._store.transactions[0];
+      expect(tx.rialAmount).toBe(25_000_000);
+      expect(tx.documentDateJalali).toBeDefined();
     });
   });
 
@@ -477,6 +534,317 @@ describe('Zarfolio — Gold Refining Module Architecture (ماژول ری‌گی
     it('registers fallback segments for refining and packets', () => {
       expect(SEGMENT_FALLBACK_LABELS['refining']).toBe('ری‌گیری طلا');
       expect(SEGMENT_FALLBACK_LABELS['packets']).toBe('پاکت‌های نزد ریگیری');
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────
+  // 9. Refining Fee Edit & Deletion Verification
+  // ─────────────────────────────────────────────────────────────
+  describe('Refining Fee Edit & Deletion', () => {
+    it('updates existing refining fee with new amount and replaces journal lines and transaction', async () => {
+      const mockPb = createMockPocketBase();
+      const newCase = await createRefiningCase(mockPb, { refinerId: 'refiner_1' }, 'user_admin');
+
+      // 1. Initial fee: 10M IRR
+      await recordCaseRefiningFee(mockPb, newCase.id, 10_000_000, 'user_admin');
+      expect(mockPb._store.journal_entries.length).toBe(1);
+      expect(mockPb._store.transactions.length).toBe(1);
+      expect(mockPb._store.transactions[0].rialAmount).toBe(10_000_000);
+
+      // 2. Edit fee: update to 12M IRR
+      const updatedCase = await recordCaseRefiningFee(mockPb, newCase.id, 12_000_000, 'user_admin');
+      expect(updatedCase.refiningFee).toBe(12_000_000);
+      expect(updatedCase.feeSettled).toBe(true);
+
+      // Verify transaction was updated to 12M IRR
+      expect(mockPb._store.transactions.length).toBe(1);
+      expect(mockPb._store.transactions[0].rialAmount).toBe(12_000_000);
+      expect(mockPb._store.transactions[0].is_deleted).toBe(false);
+
+      // Verify customer balance immediately reflects updated 12M IRR debt
+      const updatedBalances = transactionBalancesToCustomerBalances(mockPb._store.transactions.map(mapTransaction));
+      expect(updatedBalances.rialBalance).toBe(12_000_000);
+
+      // Verify journal lines were updated to 12M IRR
+      const lines = mockPb._store.journal_lines;
+      expect(lines.length).toBe(2);
+      const debitLine = lines.find((l: any) => l.debit > 0);
+      const creditLine = lines.find((l: any) => l.credit > 0);
+      expect(debitLine.debit).toBe(12_000_000);
+      expect(creditLine.credit).toBe(12_000_000);
+    });
+
+    it('deletes refining fee, clears journal entry & lines, and removes transaction', async () => {
+      const mockPb = createMockPocketBase();
+      const newCase = await createRefiningCase(mockPb, { refinerId: 'refiner_1' }, 'user_admin');
+
+      await recordCaseRefiningFee(mockPb, newCase.id, 15_000_000, 'user_admin');
+      expect(mockPb._store.journal_entries.length).toBe(1);
+      expect(mockPb._store.journal_lines.length).toBe(2);
+      expect(mockPb._store.transactions.length).toBe(1);
+      const initialBalances = transactionBalancesToCustomerBalances(mockPb._store.transactions.map(mapTransaction));
+      expect(initialBalances.rialBalance).toBe(15_000_000);
+
+      // Delete fee
+      const clearedCase = await deleteCaseRefiningFee(mockPb, newCase.id, 'user_admin');
+      expect(clearedCase.refiningFee).toBe(0);
+      expect(clearedCase.feeSettled).toBe(false);
+
+      // GL and transaction should be deleted and customer balance returns to 0
+      expect(mockPb._store.journal_entries.length).toBe(0);
+      expect(mockPb._store.journal_lines.length).toBe(0);
+      expect(mockPb._store.transactions.length).toBe(0);
+      const clearedBalances = transactionBalancesToCustomerBalances(mockPb._store.transactions.map(mapTransaction));
+      expect(clearedBalances.rialBalance).toBe(0);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────
+  // 10. Refining Items (Sent & Output Gold) Edit & Deletion
+  // ─────────────────────────────────────────────────────────────
+  describe('Refining Items Edit & Deletion', () => {
+    it('edits sent gold weight and purity, recalculating inventory and case totals', async () => {
+      const mockPb = createMockPocketBase();
+      const newCase = await createRefiningCase(mockPb, { refinerId: 'refiner_1' }, 'user_admin');
+
+      const sentItem = await deliverGoldToRefiner(
+        mockPb,
+        newCase.id,
+        { rawWeight: 100, purity: 750, inventoryType: 'miscellaneous' },
+        'user_admin',
+      );
+
+      // Initial checks
+      expect(sentItem.rawWeight).toBe(100);
+      const invRecord = mockPb._store.metal_inventory.find((i: any) => i.id === sentItem.metalInventoryId);
+      expect(invRecord).toBeDefined();
+      expect(invRecord.raw_weight).toBe(100);
+
+      // Edit item: change weight to 105g and purity to 740
+      const updatedItem = await updateRefiningItem(
+        mockPb,
+        newCase.id,
+        sentItem.id,
+        { rawWeight: 105, purity: 740 },
+        'user_admin',
+      );
+
+      expect(updatedItem.rawWeight).toBe(105);
+      expect(updatedItem.purity).toBe(740);
+
+      // Verify linked metal_inventory updated
+      const updatedInv = mockPb._store.metal_inventory.find((i: any) => i.id === sentItem.metalInventoryId);
+      expect(updatedInv.raw_weight).toBe(105);
+      expect(updatedInv.purity).toBe(740);
+
+      // Verify case totals updated
+      const caseRecord = mockPb._store.refining_cases.find((c: any) => c.id === newCase.id);
+      expect(caseRecord.total_sent_weight).toBe(105);
+      expect(caseRecord.remaining_weight).toBe(105);
+    });
+
+    it('deletes sent gold item and reverses linked inventory and updates case totals', async () => {
+      const mockPb = createMockPocketBase();
+      const newCase = await createRefiningCase(mockPb, { refinerId: 'refiner_1' }, 'user_admin');
+
+      const sentItem = await deliverGoldToRefiner(
+        mockPb,
+        newCase.id,
+        { rawWeight: 100, purity: 750 },
+        'user_admin',
+      );
+
+      expect(mockPb._store.refining_items.length).toBe(1);
+      expect(mockPb._store.metal_inventory.length).toBe(1);
+
+      // Delete item
+      await deleteRefiningItem(mockPb, newCase.id, sentItem.id, 'user_admin');
+
+      expect(mockPb._store.refining_items.length).toBe(0);
+      expect(mockPb._store.metal_inventory.length).toBe(0);
+
+      const caseRecord = mockPb._store.refining_cases.find((c: any) => c.id === newCase.id);
+      expect(caseRecord.total_sent_weight).toBe(0);
+      expect(caseRecord.remaining_weight).toBe(0);
+    });
+
+    it('edits output gold and deletes output gold with inventory reversal', async () => {
+      const mockPb = createMockPocketBase();
+      const newCase = await createRefiningCase(mockPb, { refinerId: 'refiner_1' }, 'user_admin');
+      await deliverGoldToRefiner(mockPb, newCase.id, { rawWeight: 100, purity: 750 }, 'user_admin');
+
+      // Receive 98g output conditional gold
+      const outputItem = await receiveOutputGold(
+        mockPb,
+        newCase.id,
+        { rawWeight: 98, purity: 750, inventoryType: 'conditional' },
+        'user_admin',
+      );
+
+      expect(outputItem.rawWeight).toBe(98);
+      expect(mockPb._store.metal_inventory.length).toBe(2);
+
+      // Edit output item: change weight to 97.5g
+      const updatedOutput = await updateRefiningItem(
+        mockPb,
+        newCase.id,
+        outputItem.id,
+        { rawWeight: 97.5 },
+        'user_admin',
+      );
+
+      expect(updatedOutput.rawWeight).toBe(97.5);
+      const outputInv = mockPb._store.metal_inventory.find((i: any) => i.id === outputItem.metalInventoryId);
+      expect(outputInv.raw_weight).toBe(97.5);
+
+      // Case remaining weight: 100 - 97.5 = 2.5g
+      const caseRecord = mockPb._store.refining_cases.find((c: any) => c.id === newCase.id);
+      expect(caseRecord.total_received_weight).toBe(97.5);
+      expect(caseRecord.remaining_weight).toBe(2.5);
+
+      // Delete output gold
+      await deleteRefiningItem(mockPb, newCase.id, outputItem.id, 'user_admin');
+      expect(mockPb._store.refining_items.length).toBe(1); // only sent item left
+      expect(mockPb._store.metal_inventory.length).toBe(1); // only sent inv left
+      const afterDeleteCase = mockPb._store.refining_cases.find((c: any) => c.id === newCase.id);
+      expect(afterDeleteCase.total_received_weight).toBe(0);
+      expect(afterDeleteCase.remaining_weight).toBe(100);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────
+  // 11. Sample Packet Edit, Deletion & Assay Lab Settlement
+  // ─────────────────────────────────────────────────────────────
+  describe('Sample Packet Edit, Deletion & Assay Lab Settlement', () => {
+    it('edits sample declared and received weight, recalculating refining loss', async () => {
+      const mockPb = createMockPocketBase();
+      const newCase = await createRefiningCase(mockPb, { refinerId: 'refiner_1' }, 'user_admin');
+      await deliverGoldToRefiner(mockPb, newCase.id, { rawWeight: 100, purity: 750 }, 'user_admin');
+
+      // Issue sample with 2.0g declared
+      const sample = await createSamplePacket(mockPb, newCase.id, { declaredWeight: 2.0 }, 'user_admin');
+      expect(sample.declaredWeight).toBe(2);
+
+      // Edit declared weight to 2.5g before receipt
+      const editedSample = await updateSamplePacket(
+        mockPb,
+        newCase.id,
+        sample.id,
+        { declaredWeight: 2.5 },
+        'user_admin',
+      );
+      expect(editedSample.declaredWeight).toBe(2.5);
+
+      // Now receive sample: 2.3g received (loss = 0.2g)
+      const receivedSample = await receiveSamplePacket(
+        mockPb,
+        sample.id,
+        { receivedWeight: 2.3 },
+        'user_admin',
+      );
+      expect(receivedSample.weightDifference).toBe(0.2);
+
+      // Edit received sample: change receivedWeight to 2.4g (loss = 0.1g)
+      const updatedReceivedSample = await updateSamplePacket(
+        mockPb,
+        newCase.id,
+        sample.id,
+        { receivedWeight: 2.4 },
+        'user_admin',
+      );
+      expect(updatedReceivedSample.receivedWeight).toBe(2.4);
+      expect(updatedReceivedSample.weightDifference).toBe(0.1);
+
+      // Check linked metal_inventory
+      const invRecord = mockPb._store.metal_inventory.find((i: any) => i.id === receivedSample.metalInventoryId);
+      expect(invRecord.raw_weight).toBe(2.4);
+    });
+
+    it('settles assay lab purity converting conditional gold to definitive melted gold', async () => {
+      const mockPb = createMockPocketBase();
+      const newCase = await createRefiningCase(mockPb, { refinerId: 'refiner_1' }, 'user_admin');
+      await deliverGoldToRefiner(mockPb, newCase.id, { rawWeight: 100, purity: 750 }, 'user_admin');
+
+      // Sample packet
+      const sample = await createSamplePacket(mockPb, newCase.id, { declaredWeight: 2.0, purity: 750 }, 'user_admin');
+      await receiveSamplePacket(mockPb, sample.id, { receivedWeight: 1.9 }, 'user_admin');
+
+      // Output gold received conditionally
+      const output = await receiveOutputGold(
+        mockPb,
+        newCase.id,
+        { rawWeight: 98, purity: 750, inventoryType: 'conditional' },
+        'user_admin',
+      );
+      expect(output.inventoryType).toBe('conditional');
+
+      // Assay lab returns purity = 760
+      const settledSample = await settleSampleAssayPurity(mockPb, sample.id, 760, 'user_admin');
+      expect(settledSample.purity).toBe(760);
+
+      // Output gold in case must be converted to melted with 760 purity
+      const updatedOutputItem = mockPb._store.refining_items.find((i: any) => i.id === output.id);
+      expect(updatedOutputItem.purity).toBe(760);
+      expect(updatedOutputItem.inventory_type).toBe('melted');
+
+      // Metal inventory record for output gold must also be converted to melted
+      const outputInv = mockPb._store.metal_inventory.find((i: any) => i.id === output.metalInventoryId);
+      expect(outputInv.purity).toBe(760);
+      expect(outputInv.inventory_type).toBe('melted');
+    });
+
+    it('deletes sample packet and clears inventory and updates case totals', async () => {
+      const mockPb = createMockPocketBase();
+      const newCase = await createRefiningCase(mockPb, { refinerId: 'refiner_1' }, 'user_admin');
+      await deliverGoldToRefiner(mockPb, newCase.id, { rawWeight: 100, purity: 750 }, 'user_admin');
+
+      const sample = await createSamplePacket(mockPb, newCase.id, { declaredWeight: 2.0 }, 'user_admin');
+      await receiveSamplePacket(mockPb, sample.id, { receivedWeight: 1.8 }, 'user_admin');
+
+      expect(mockPb._store.refining_samples.length).toBe(1);
+      // Inventory has sent gold + sample receipt
+      expect(mockPb._store.metal_inventory.length).toBe(2);
+
+      // Delete sample packet
+      await deleteSamplePacket(mockPb, newCase.id, sample.id, 'user_admin');
+
+      expect(mockPb._store.refining_samples.length).toBe(0);
+      expect(mockPb._store.metal_inventory.length).toBe(1); // sample receipt inv deleted
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────
+  // 12. Full Refining Case Deletion Verification
+  // ─────────────────────────────────────────────────────────────
+  describe('Full Refining Case Deletion', () => {
+    it('deletes case, items, samples, journal entries, and inventory movements cleanly', async () => {
+      const mockPb = createMockPocketBase();
+      const newCase = await createRefiningCase(mockPb, { refinerId: 'refiner_1' }, 'user_admin');
+
+      await deliverGoldToRefiner(mockPb, newCase.id, { rawWeight: 100, purity: 750 }, 'user_admin');
+      const sample = await createSamplePacket(mockPb, newCase.id, { declaredWeight: 2.0 }, 'user_admin');
+      await receiveSamplePacket(mockPb, sample.id, { receivedWeight: 1.8 }, 'user_admin');
+      await receiveOutputGold(mockPb, newCase.id, { rawWeight: 90, purity: 750 }, 'user_admin');
+      await recordCaseRefiningFee(mockPb, newCase.id, 5_000_000, 'user_admin');
+
+      expect(mockPb._store.refining_cases.length).toBe(1);
+      expect(mockPb._store.refining_items.length).toBe(2);
+      expect(mockPb._store.refining_samples.length).toBe(1);
+      expect(mockPb._store.metal_inventory.length).toBe(3);
+      expect(mockPb._store.journal_entries.length).toBe(1);
+      expect(mockPb._store.journal_lines.length).toBe(2);
+      expect(mockPb._store.transactions.length).toBe(1);
+
+      // Delete entire case
+      await deleteRefiningCase(mockPb, newCase.id, 'user_admin');
+
+      expect(mockPb._store.refining_cases.length).toBe(0);
+      expect(mockPb._store.refining_items.length).toBe(0);
+      expect(mockPb._store.refining_samples.length).toBe(0);
+      expect(mockPb._store.metal_inventory.length).toBe(0);
+      expect(mockPb._store.journal_entries.length).toBe(0);
+      expect(mockPb._store.journal_lines.length).toBe(0);
+      expect(mockPb._store.transactions.length).toBe(0);
     });
   });
 });

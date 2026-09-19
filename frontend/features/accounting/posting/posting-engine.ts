@@ -1492,6 +1492,16 @@ export async function postRefiningFee(
     throw new Error('مبلغ اجرت ری‌گیری باید بزرگتر از صفر باشد.');
   }
 
+  let writer = pb;
+  if (!(pb as any)._store) {
+    try {
+      const { getPocketBaseServiceClient } = await import('@/lib/pocketbase-service');
+      writer = await getPocketBaseServiceClient();
+    } catch {
+      writer = pb;
+    }
+  }
+
   const expenseAccount = SYSTEM_ACCOUNT_CODES.REFINING_EXPENSE;
   const liabilityAccount = SYSTEM_ACCOUNT_CODES.COUNTERPARTY_LIABILITY;
 
@@ -1520,21 +1530,21 @@ export async function postRefiningFee(
         },
       ],
     },
-    pb,
+    writer,
   );
 
   // Sync to transactions collection for customer balance ledger
   const txSourceKey = `refining:fee:${refiningCase.id}`;
-  const existingTx = await pb
+  const existingTx = await writer
     .collection('transactions')
-    .getFirstListItem(pb.filter('sourceKey = {:sk}', { sk: txSourceKey }))
+    .getFirstListItem(writer.filter('sourceKey = {:sk}', { sk: txSourceKey }))
     .catch(() => null);
 
   let docNum = '';
   if (existingTx && isValidZfDocumentNumber(existingTx.documentNumber)) {
     docNum = existingTx.documentNumber;
   } else {
-    docNum = await generateUniqueZfDocumentNumber(pb);
+    docNum = await generateUniqueZfDocumentNumber(writer);
   }
 
   const txPayload = {
@@ -1546,6 +1556,7 @@ export async function postRefiningFee(
     transactionType: 'document',
     status: 'final',
     isOpeningBalance: false,
+    is_deleted: false,
     transactionDate: new Date().toISOString(),
     documentId: refiningCase.id,
     documentNumber: docNum,
@@ -1556,17 +1567,23 @@ export async function postRefiningFee(
     rialAmount: amount, // positive = creditor / طلبکار از ما (our debt to refiner)
     foreignAmount: 0,
     tertiaryAmount: 0,
+    foreignCurrency: '',
+    foreignCurrencySymbol: '',
+    tertiaryCurrency: '',
+    tertiaryCurrencySymbol: '',
+    documentDateJalali: formatJalaliDate(new Date()),
     documentNature: 'received',
     documentTab: 'refining',
     documentSubType: 'refining_fee',
   };
 
   if (existingTx) {
-    await pb.collection('transactions').update(existingTx.id, txPayload).catch(() => undefined);
+    await writer.collection('transactions').update(existingTx.id, txPayload);
   } else {
-    await pb.collection('transactions').create(txPayload).catch(() => undefined);
+    await writer.collection('transactions').create(txPayload);
   }
 
   return journal;
 }
+
 

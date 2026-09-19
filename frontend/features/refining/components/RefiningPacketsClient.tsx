@@ -12,18 +12,42 @@ import {
   Scale,
   X,
 } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import type { RefiningSample } from '../types';
 import { formatWeight } from '@/lib/weight';
 import { formatJalaliDate } from '@/lib/jalali';
 import DatePicker from '@/components/ui/date-picker';
 import { useToastManager } from '@/components/ui/toast';
+import {
+  AppicaDataTable,
+  SortableHeader,
+  appicaTableFeatures,
+  useTable,
+  type ColumnDef,
+  type ColumnVisibilityState,
+  type SortingState,
+} from '@/components/ui/data-table';
+
+const COLUMN_LABELS: Record<string, string> = {
+  packetNumber: 'شماره پاکت',
+  caseNumber: 'شماره پرونده',
+  refinerName: 'نام ریگیر',
+  declaredWeight: 'وزن اعلام‌شده',
+  issueDate: 'تاریخ ارسال',
+  status: 'وضعیت',
+};
 
 export default function RefiningPacketsClient() {
   const toast = useToastManager();
   const [packets, setPackets] = useState<RefiningSample[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // TanStack Table State
+  const [sorting, setSorting] = useState<SortingState>([{ id: 'issueDate', desc: true }]);
+  const [columnVisibility, setColumnVisibility] = useState<ColumnVisibilityState>({});
+  const [rowSelection, setRowSelection] = useState({});
+  const [globalFilter, setGlobalFilter] = useState('');
 
   // Receive Modal State
   const [selectedPacket, setSelectedPacket] = useState<RefiningSample | null>(null);
@@ -121,6 +145,99 @@ export default function RefiningPacketsClient() {
   const currentReceived = parseFloat(receivedWeight) || 0;
   const difference = currentReceived > 0 ? declared - currentReceived : 0;
 
+  const columns = useMemo<ColumnDef<typeof appicaTableFeatures, RefiningSample>[]>(
+    () => [
+      {
+        accessorKey: 'packetNumber',
+        header: ({ column }) => <SortableHeader column={column}>شماره پاکت</SortableHeader>,
+        cell: ({ row }) => (
+          <span className="font-mono font-black text-slate-900 dark:text-white">
+            {row.original.packetNumber}
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'caseNumber',
+        header: ({ column }) => <SortableHeader column={column}>شماره پرونده</SortableHeader>,
+        cell: ({ row }) => (
+          <span className="font-mono font-bold text-slate-600 dark:text-slate-300">
+            {row.original.caseNumber || '—'}
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'refinerName',
+        header: ({ column }) => <SortableHeader column={column}>نام ریگیر</SortableHeader>,
+        cell: ({ row }) => (
+          <span className="font-bold text-slate-800 dark:text-slate-200">
+            {row.original.refinerName || '—'}
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'declaredWeight',
+        header: ({ column }) => <SortableHeader column={column}>وزن اعلام‌شده</SortableHeader>,
+        cell: ({ row }) => (
+          <span className="font-mono font-black text-amber-700 dark:text-amber-400">
+            {formatWeight(row.original.declaredWeight)}{' '}
+            <span className="text-[10px] font-bold text-slate-400">گرم</span>
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'issueDate',
+        header: ({ column }) => <SortableHeader column={column}>تاریخ ارسال</SortableHeader>,
+        cell: ({ row }) => (
+          <span className="font-mono text-slate-600 dark:text-slate-400">
+            {row.original.issueDate}
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'status',
+        header: ({ column }) => <SortableHeader column={column}>وضعیت</SortableHeader>,
+        cell: () => (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100/80 px-2.5 py-1 text-[11px] font-black text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+            <span className="size-1.5 rounded-full bg-amber-500 animate-pulse" />
+            نزد ریگیر
+          </span>
+        ),
+      },
+      {
+        id: 'actions',
+        header: () => <div className="text-center">عملیات</div>,
+        cell: ({ row }) => (
+          <div className="text-center">
+            <button
+              type="button"
+              onClick={() => openReceiveModal(row.original)}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-black text-white shadow-xs transition-all hover:bg-emerald-500 active:scale-95"
+            >
+              <Check size={14} />
+              <span>دریافت پاکت</span>
+            </button>
+          </div>
+        ),
+        enableSorting: false,
+        enableHiding: false,
+      },
+    ],
+    [],
+  );
+
+  const table = useTable({
+    features: appicaTableFeatures,
+    data: packets,
+    columns,
+    state: { sorting, columnVisibility, rowSelection, globalFilter },
+    onSortingChange: setSorting,
+    onColumnVisibilityChange: setColumnVisibility,
+    onRowSelectionChange: setRowSelection,
+    onGlobalFilterChange: setGlobalFilter,
+    globalFilterFn: 'includesString',
+    initialState: { pagination: { pageIndex: 0, pageSize: 10 } },
+  });
+
   return (
     <div className="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6">
       {/* Top Banner */}
@@ -152,98 +269,20 @@ export default function RefiningPacketsClient() {
         </div>
       </div>
 
-      {/* Packets Table */}
-      <div className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900">
-        <div className="border-b border-slate-100 p-4 dark:border-slate-800/80">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Inbox size={18} className="text-amber-500" />
-              <span className="text-xs font-black text-slate-800 dark:text-slate-200">
-                فهرست پاکت‌های در جریان
-              </span>
-            </div>
-            <span className="rounded-full bg-slate-100 px-2.5 py-0.5 font-mono text-xs font-black text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-              {packets.length.toLocaleString('fa-IR')} پاکت
-            </span>
+      {/* Appica Packets Data Table */}
+      <AppicaDataTable
+        table={table}
+        isLoading={loading}
+        loadingMessage="در حال دریافت اطلاعات پاکت‌ها..."
+        emptyMessage="هیچ پاکت نمونه‌ای نزد ریگیری وجود ندارد."
+        emptyIcon={
+          <div className="flex size-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500">
+            <PackageOpen size={28} />
           </div>
-        </div>
-
-        {loading ? (
-          <div className="flex min-h-[250px] flex-col items-center justify-center gap-3">
-            <LoaderCircle size={28} className="animate-spin text-amber-500" />
-            <span className="text-xs font-bold text-slate-400">در حال دریافت اطلاعات...</span>
-          </div>
-        ) : packets.length === 0 ? (
-          <div className="flex min-h-[250px] flex-col items-center justify-center gap-3 p-8 text-center">
-            <div className="flex size-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500">
-              <PackageOpen size={28} />
-            </div>
-            <p className="text-sm font-black text-slate-700 dark:text-slate-300">
-              هیچ پاکت نمونه‌ای نزد ریگیری وجود ندارد.
-            </p>
-            <p className="text-xs text-slate-400">
-              تمام پاکت‌های صادرشده دریافت شده و وارد موجودی طلا گردیده‌اند.
-            </p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-right text-xs">
-              <thead>
-                <tr className="border-b border-slate-100 bg-slate-50/50 font-black text-slate-500 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-400">
-                  <th className="px-4 py-3.5">شماره پاکت</th>
-                  <th className="px-4 py-3.5">شماره پرونده</th>
-                  <th className="px-4 py-3.5">نام ریگیر</th>
-                  <th className="px-4 py-3.5">وزن اعلام‌شده (گرم)</th>
-                  <th className="px-4 py-3.5">تاریخ ارسال</th>
-                  <th className="px-4 py-3.5">وضعیت</th>
-                  <th className="px-4 py-3.5 text-center">عملیات</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-                {packets.map((pkt) => (
-                  <tr
-                    key={pkt.id}
-                    className="transition-colors hover:bg-slate-50/70 dark:hover:bg-slate-800/30"
-                  >
-                    <td className="px-4 py-3.5 font-mono font-black text-slate-900 dark:text-white">
-                      {pkt.packetNumber}
-                    </td>
-                    <td className="px-4 py-3.5 font-mono font-bold text-slate-600 dark:text-slate-300">
-                      {pkt.caseNumber || '—'}
-                    </td>
-                    <td className="px-4 py-3.5 font-bold text-slate-800 dark:text-slate-200">
-                      {pkt.refinerName || '—'}
-                    </td>
-                    <td className="px-4 py-3.5 font-mono font-black text-amber-700 dark:text-amber-400">
-                      {formatWeight(pkt.declaredWeight)}{' '}
-                      <span className="text-[10px] font-bold text-slate-400">گرم</span>
-                    </td>
-                    <td className="px-4 py-3.5 font-mono text-slate-600 dark:text-slate-400">
-                      {pkt.issueDate}
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100/80 px-2.5 py-1 text-[11px] font-black text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
-                        <span className="size-1.5 rounded-full bg-amber-500 animate-pulse" />
-                        نزد ریگیر
-                      </span>
-                    </td>
-                    <td className="px-4 py-3.5 text-center">
-                      <button
-                        type="button"
-                        onClick={() => openReceiveModal(pkt)}
-                        className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-black text-white shadow-xs transition-all hover:bg-emerald-500 active:scale-95"
-                      >
-                        <Check size={14} />
-                        <span>دریافت پاکت</span>
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+        }
+        columnLabels={COLUMN_LABELS}
+        searchPlaceholder="جستجو در شماره پاکت، پرونده، ریگیر..."
+      />
 
       {/* Receive Packet Modal */}
       {selectedPacket ? (
