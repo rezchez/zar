@@ -11,7 +11,6 @@ import {
   RefreshCw,
   SlidersHorizontal,
   Trash2,
-  Users,
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -25,6 +24,7 @@ import { formatWeight } from '@/lib/weight';
 import { formatJalaliDate } from '@/lib/jalali';
 import { useAppSettings } from '@/src/components/SettingsProvider';
 import RefiningCaseDetailModal from './RefiningCaseDetailModal';
+import RefiningCustomerPicker from './RefiningCustomerPicker';
 import {
   AppicaDataTable,
   SortableHeader,
@@ -37,12 +37,12 @@ import {
 
 const COLUMN_LABELS: Record<string, string> = {
   caseNumber: 'شماره پرونده',
-  refinerName: 'ریگیر (آزمایشگاه)',
-  date: 'تاریخ ثبت',
+  refinerName: 'ریگیر',
+  date: 'تاریخ',
   status: 'وضعیت',
-  totalSentWeight: 'طلای ارسالی',
-  totalReceivedWeight: 'طلای دریافتی',
-  remainingWeight: 'مانده نزد ریگیر',
+  totalSentWeight: 'ارسال',
+  totalReceivedWeight: 'دریافت',
+  remainingWeight: 'مانده',
   refiningFee: 'اجرت',
 };
 
@@ -203,6 +203,7 @@ export default function RefiningManagementClient() {
     () => [
       {
         id: 'select',
+        size: 34,
         header: ({ table }) => (
           <div className="flex justify-center">
             <input
@@ -215,7 +216,7 @@ export default function RefiningManagementClient() {
                 }
               }}
               onChange={(e) => table.toggleAllPageRowsSelected(e.target.checked)}
-              className="size-4 rounded-md accent-amber-600 cursor-pointer"
+              className="size-3.5 rounded accent-amber-600 cursor-pointer"
               aria-label="انتخاب همه ردیف‌ها"
             />
           </div>
@@ -226,7 +227,7 @@ export default function RefiningManagementClient() {
               type="checkbox"
               checked={row.getIsSelected()}
               onChange={(e) => row.toggleSelected(e.target.checked)}
-              className="size-4 rounded-md accent-amber-600 cursor-pointer"
+              className="size-3.5 rounded accent-amber-600 cursor-pointer"
               aria-label="انتخاب سطر"
             />
           </div>
@@ -236,13 +237,14 @@ export default function RefiningManagementClient() {
       },
       {
         accessorKey: 'caseNumber',
+        size: 130,
         header: ({ column }) => <SortableHeader column={column}>شماره پرونده</SortableHeader>,
         cell: ({ row }) => (
-          <div className="flex items-center gap-2 font-mono font-black text-slate-900 dark:text-white">
-            <span>{row.original.caseNumber}</span>
+          <div className="flex items-center gap-1.5 font-mono font-black text-slate-900 dark:text-white">
+            <span className="truncate">{row.original.caseNumber}</span>
             {row.original.stampNumber ? (
               <span
-                className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+                className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.2 text-[10px] font-black text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
                 title="شماره انگ"
               >
                 {row.original.stampNumber}
@@ -253,30 +255,33 @@ export default function RefiningManagementClient() {
       },
       {
         accessorKey: 'refinerName',
-        header: ({ column }) => <SortableHeader column={column}>ریگیر (آزمایشگاه)</SortableHeader>,
+        size: 130,
+        header: ({ column }) => <SortableHeader column={column}>ریگیر</SortableHeader>,
         cell: ({ row }) => (
-          <span className="font-bold text-slate-800 dark:text-slate-200">
+          <span className="font-bold text-slate-800 dark:text-slate-200 truncate block text-xs" title={row.original.refinerName}>
             {row.original.refinerName || 'ریگیر نامشخص'}
           </span>
         ),
       },
       {
         accessorKey: 'date',
-        header: ({ column }) => <SortableHeader column={column}>تاریخ ثبت</SortableHeader>,
+        size: 85,
+        header: ({ column }) => <SortableHeader column={column}>تاریخ</SortableHeader>,
         cell: ({ row }) => (
-          <span className="font-mono text-slate-600 dark:text-slate-400">
+          <span className="font-mono text-slate-600 dark:text-slate-400 whitespace-nowrap text-xs">
             {row.original.date || '—'}
           </span>
         ),
       },
       {
         accessorKey: 'status',
+        size: 120,
         header: ({ column }) => <SortableHeader column={column}>وضعیت</SortableHeader>,
         cell: ({ row }) => {
           const status = row.original.status;
           return (
             <span
-              className={`rounded-full px-2.5 py-1 text-[11px] font-black ${
+              className={`inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-[10.5px] font-black ${
                 status === 'completed'
                   ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
                   : status === 'partially_received'
@@ -291,38 +296,42 @@ export default function RefiningManagementClient() {
       },
       {
         accessorKey: 'totalSentWeight',
-        header: ({ column }) => <SortableHeader column={column}>طلای ارسالی</SortableHeader>,
+        size: 85,
+        header: ({ column }) => <SortableHeader column={column}>ارسال</SortableHeader>,
         cell: ({ row }) => (
-          <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
-            {formatWeight(row.original.totalSentWeight)} گرم
+          <span className="font-mono font-bold text-slate-800 dark:text-slate-200 whitespace-nowrap text-xs">
+            {formatWeight(row.original.totalSentWeight)} g
           </span>
         ),
       },
       {
         accessorKey: 'totalReceivedWeight',
-        header: ({ column }) => <SortableHeader column={column}>طلای دریافتی</SortableHeader>,
+        size: 85,
+        header: ({ column }) => <SortableHeader column={column}>دریافت</SortableHeader>,
         cell: ({ row }) => (
-          <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400">
-            {formatWeight(row.original.totalReceivedWeight)} گرم
+          <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400 whitespace-nowrap text-xs">
+            {formatWeight(row.original.totalReceivedWeight)} g
           </span>
         ),
       },
       {
         accessorKey: 'remainingWeight',
-        header: ({ column }) => <SortableHeader column={column}>مانده نزد ریگیر</SortableHeader>,
+        size: 85,
+        header: ({ column }) => <SortableHeader column={column}>مانده</SortableHeader>,
         cell: ({ row }) => (
-          <span className="font-mono font-black text-amber-700 dark:text-amber-400">
-            {formatWeight(row.original.remainingWeight)} گرم
+          <span className="font-mono font-black text-amber-700 dark:text-amber-400 whitespace-nowrap text-xs">
+            {formatWeight(row.original.remainingWeight)} g
           </span>
         ),
       },
       {
         accessorKey: 'refiningFee',
+        size: 105,
         header: ({ column }) => <SortableHeader column={column}>اجرت</SortableHeader>,
         cell: ({ row }) => {
           const fee = row.original.refiningFee;
           return (
-            <span className="font-mono font-bold text-slate-700 dark:text-slate-300">
+            <span className="font-mono font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap text-xs">
               {fee > 0
                 ? `${(settings.baseCurrency === 'IRT' ? Math.floor(fee / 10) : fee).toLocaleString('fa-IR')} ${currencySuffix}`
                 : '—'}
@@ -332,24 +341,25 @@ export default function RefiningManagementClient() {
       },
       {
         id: 'actions',
+        size: 95,
         header: () => <div className="text-center">عملیات</div>,
         cell: ({ row }) => (
-          <div className="flex items-center justify-center gap-1.5">
+          <div className="flex items-center justify-center gap-1">
             <button
               type="button"
               onClick={() => setSelectedCaseId(row.original.id)}
-              className="inline-flex items-center gap-1 rounded-xl bg-amber-500/15 px-3 py-1.5 text-xs font-black text-amber-800 transition-all hover:bg-amber-500/25 dark:bg-amber-500/20 dark:text-amber-300"
+              className="inline-flex items-center gap-1 rounded-xl bg-amber-500/15 px-2 py-1 text-xs font-black text-amber-800 transition-all hover:bg-amber-500/25 dark:bg-amber-500/20 dark:text-amber-300"
             >
               <span>مدیریت</span>
-              <ChevronLeft size={14} />
+              <ChevronLeft size={13} />
             </button>
             <button
               type="button"
               onClick={() => setCaseToDelete(row.original)}
-              className="inline-flex items-center justify-center size-8 rounded-xl border border-rose-200/80 bg-rose-50/70 text-rose-600 transition-all hover:bg-rose-100 hover:text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-400 dark:hover:bg-rose-900/40"
+              className="inline-flex items-center justify-center size-7 rounded-xl border border-rose-200/80 bg-rose-50/70 text-rose-600 transition-all hover:bg-rose-100 hover:text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-400 dark:hover:bg-rose-900/40"
               title="حذف پرونده ری‌گیری"
             >
-              <Trash2 size={14} />
+              <Trash2 size={13} />
             </button>
           </div>
         ),
@@ -473,7 +483,7 @@ export default function RefiningManagementClient() {
           { id: 'open', label: 'جدید', count: cases.filter((c) => c.status === 'open').length },
           { id: 'sent_to_refiner', label: 'ارسال به ریگیر', count: cases.filter((c) => c.status === 'sent_to_refiner').length },
           { id: 'refining', label: 'در حال ری‌گیری', count: cases.filter((c) => c.status === 'refining').length },
-          { id: 'partially_received', label: 'دریافت بخشی', count: cases.filter((c) => c.status === 'partially_received').length },
+          { id: 'partially_received', label: 'در انتظار تعیین عیار', count: cases.filter((c) => c.status === 'partially_received').length },
           { id: 'completed', label: 'تکمیل‌شده', count: cases.filter((c) => c.status === 'completed').length },
         ].map((tab) => {
           const isActive = statusFilter === tab.id;
@@ -512,6 +522,8 @@ export default function RefiningManagementClient() {
         emptyIcon={<Flame size={36} className="text-slate-300 dark:text-slate-600" />}
         columnLabels={COLUMN_LABELS}
         searchPlaceholder="جستجو در شماره پرونده، ریگیر، توضیحات..."
+        noHorizontalScroll={true}
+        dense={true}
         filterSlot={
           refiners.length > 0 ? (
             <div className="relative flex items-center">
@@ -519,7 +531,7 @@ export default function RefiningManagementClient() {
               <select
                 value={selectedRefinerFilter}
                 onChange={(e) => setSelectedRefinerFilter(e.target.value)}
-                className="h-10 rounded-2xl border border-slate-200 bg-slate-50/80 pr-8 pl-3.5 text-xs font-bold text-slate-800 shadow-2xs transition-all hover:border-slate-300 focus:border-amber-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-200 dark:hover:border-slate-600 dark:focus:border-amber-400"
+                className="h-10 rounded-2xl border border-slate-200 bg-slate-50/80 pr-8 pl-3.5 text-xs font-bold text-slate-800 shadow-2xs transition-all hover:border-slate-300 focus:border-amber-500 focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-200 dark:hover:border-slate-600 dark:focus:border-amber-400"
               >
                 <option value="all" className="bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100">
                   همه طرف‌حساب‌ها
@@ -538,7 +550,7 @@ export default function RefiningManagementClient() {
       {/* New Case Modal */}
       {openNewCaseModal ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
+          <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
             <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
               <div className="flex items-center gap-2">
                 <Flame size={20} className="text-amber-600" />
@@ -556,49 +568,14 @@ export default function RefiningManagementClient() {
             </div>
 
             <form onSubmit={handleCreateCase} className="mt-4 space-y-4">
-              <div>
-                <label className="mb-1.5 block text-xs font-black text-slate-800 dark:text-slate-200">
-                  انتخاب طرف‌حساب (ریگیر / مشتری) <span className="text-rose-500">*</span>
-                </label>
-                {loadingRefiners ? (
-                  <div className="flex h-11 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-400 dark:border-slate-800 dark:bg-slate-800/50">
-                    <LoaderCircle size={15} className="ml-2 animate-spin text-amber-500" />
-                    در حال بارگذاری لیست طرف‌حساب‌ها...
-                  </div>
-                ) : refiners.length === 0 ? (
-                  <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-3.5 text-xs font-bold text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-200">
-                    هیچ طرف‌حسابی در سامانه ثبت نشده است. لطفاً ابتدا از بخش طرف‌حساب‌ها اقدام به ثبت طرف‌حساب نمایید.
-                  </div>
-                ) : (
-                  <div className="space-y-1.5">
-                    <div className="relative">
-                      <select
-                        value={selectedRefinerId}
-                        onChange={(e) => setSelectedRefinerId(e.target.value)}
-                        required
-                        className="h-11 w-full appearance-none rounded-2xl border border-slate-300 bg-white px-3.5 pr-9 text-xs font-black text-slate-900 shadow-2xs transition-all focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-amber-400"
-                      >
-                        <option value="" className="text-slate-400 dark:text-slate-500">
-                          -- انتخاب طرف‌حساب مورد نظر --
-                        </option>
-                        {refiners.map((r) => (
-                          <option
-                            key={r.id}
-                            value={r.id}
-                            className="py-1 text-slate-900 dark:bg-slate-800 dark:text-slate-100"
-                          >
-                            {r.name} {r.groupName ? `[${r.groupName}]` : ''} {r.customerCode ? `(کد: ${r.customerCode})` : ''}
-                          </option>
-                        ))}
-                      </select>
-                      <Users
-                        size={16}
-                        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
+              <RefiningCustomerPicker
+                customers={refiners}
+                selectedCustomerId={selectedRefinerId}
+                onSelectCustomer={(c) => setSelectedRefinerId(c?.id || '')}
+                loading={loadingRefiners}
+                label="انتخاب طرف‌حساب (ریگیر / مشتری)"
+                required
+              />
 
               <div>
                 <label className="mb-1.5 block text-xs font-black text-slate-800 dark:text-slate-200">

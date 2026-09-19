@@ -36,6 +36,7 @@ export type ManagedUser = {
   phone: string;
   phoneEditable: boolean;
   verified: boolean;
+  avatarUrl?: string | null;
   created: string;
   lastLoginAt: string | null;
   lastLogoutAt: string | null;
@@ -673,8 +674,17 @@ function UserRow({
       <tr>
         <td>
           <div className="managed-user-cell">
-            <span className="managed-user-avatar">
-              {(user.name || user.email || '—').charAt(0)}
+            <span className="managed-user-avatar overflow-hidden">
+              {user.avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={user.avatarUrl}
+                  alt=""
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                (user.name || user.email || '—').charAt(0)
+              )}
             </span>
             <div>
               <div className="managed-user-name-edit">

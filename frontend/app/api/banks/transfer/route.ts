@@ -119,13 +119,13 @@ export async function POST(request: Request) {
     }
 
     const documentId = idempotencyKey;
-    const transactionPayload = {
+    const ledgerCustomerCode = Number(ledgerAccount.customerCode);
+    const transactionPayload: Record<string, unknown> = {
       customer: ledgerAccount.id,
-      customerCode: Number(ledgerAccount.customerCode ?? 0),
       createdBy: context.user.id,
       updatedBy: context.user.id,
       transactionType: 'adjustment',
-      status: 'final',
+      status: 'posted',
       isOpeningBalance: false,
       sourceKey: `bank-transfer:${documentId}-out`,
       transactionDate: new Date().toISOString(),
@@ -148,6 +148,16 @@ export async function POST(request: Request) {
         amount,
       }),
     };
+    if (ledgerCustomerCode >= 1) {
+      transactionPayload.customerCode = ledgerCustomerCode;
+    }
+
+    const baseDetailsObj = {
+      kind,
+      sourceBankId,
+      destinationBankId,
+      amount,
+    };
 
     const outgoingDocNum = await generateUniqueZfDocumentNumber(writer);
     const incomingDocNum = await generateUniqueZfDocumentNumber(writer, 10, new Set([outgoingDocNum]));
@@ -158,7 +168,7 @@ export async function POST(request: Request) {
       documentNature: 'paid',
       rialAmount: -amount,
       documentDetails: JSON.stringify({
-        ...JSON.parse(transactionPayload.documentDetails),
+        ...baseDetailsObj,
         side: 'outgoing',
       }),
     });
@@ -171,7 +181,7 @@ export async function POST(request: Request) {
       documentNature: 'received',
       rialAmount: amount,
       documentDetails: JSON.stringify({
-        ...JSON.parse(transactionPayload.documentDetails),
+        ...baseDetailsObj,
         side: 'incoming',
       }),
     });

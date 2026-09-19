@@ -40,6 +40,18 @@ export interface MetalAccountMapping {
    * پیش‌فرض: ۴۱۲۰
    */
   wageIncomeAccountId?: string;
+
+  /**
+   * حساب معین هزینه تعدیلات و کسر ناشی از گرد کردن (سایر هزینه‌های عملیاتی)
+   * پیش‌فرض: ۶۵۰۰
+   */
+  roundingExpenseAccountId?: string;
+
+  /**
+   * حساب معین درآمد و اضافه ناشی از گرد کردن (سایر درآمدها)
+   * پیش‌فرض: ۴۳۰۰
+   */
+  roundingIncomeAccountId?: string;
 }
 
 export const DEFAULT_METAL_ACCOUNT_MAPPING: MetalAccountMapping = {
@@ -49,6 +61,8 @@ export const DEFAULT_METAL_ACCOUNT_MAPPING: MetalAccountMapping = {
   counterpartyLiabilityAccountId: SYSTEM_ACCOUNT_CODES.COUNTERPARTY_LIABILITY, // 2120
   counterpartyReceivableAccountId: SYSTEM_ACCOUNT_CODES.NOTES_RECEIVABLE, // 1120
   wageIncomeAccountId: '4120',
+  roundingExpenseAccountId: SYSTEM_ACCOUNT_CODES.ROUNDING_EXPENSE, // 6500
+  roundingIncomeAccountId: SYSTEM_ACCOUNT_CODES.ROUNDING_INCOME, // 4300
 };
 
 /**
@@ -79,74 +93,163 @@ export async function resolveMetalAccountMapping(
   return { ...DEFAULT_METAL_ACCOUNT_MAPPING };
 }
 
-/**
- * Prepares planned Double-Entry Journal template lines for Metal Transactions
- * (Ready for Phase 2 implementation without hardcoding brittle assumptions).
- */
-export function buildMetalPurchaseJournalLines(params: {
+export interface BuildMetalPurchaseJournalLinesParams {
   amountRials: number;
   weightGrams750: number;
   customerId: string;
   customerName: string;
   mapping?: Partial<MetalAccountMapping>;
-}): JournalLineInput[] {
-  const map = { ...DEFAULT_METAL_ACCOUNT_MAPPING, ...params.mapping };
-  const amount = Math.round(params.amountRials);
-
-  return [
-    {
-      accountId: map.metalInventoryAccountId,
-      accountCode: SYSTEM_ACCOUNT_CODES.GOLD_INVENTORY,
-      accountName: 'موجودی طلا و فلزات گرانبها',
-      debit: amount,
-      credit: 0,
-      description: `خرید طلا معادل ۷۵۰ به وزن ${params.weightGrams750.toFixed(3)} گرم از ${params.customerName}`,
-      partyId: params.customerId,
-    },
-    {
-      accountId: map.counterpartyLiabilityAccountId,
-      accountCode: SYSTEM_ACCOUNT_CODES.COUNTERPARTY_LIABILITY,
-      accountName: 'بستانکاران تجاری / طرف‌حساب‌ها',
-      debit: 0,
-      credit: amount,
-      description: `بستانکاری طرف‌حساب ${params.customerName} بابت تحویل طلا`,
-      partyId: params.customerId,
-    },
-  ];
+  exactAmountRials?: number;
+  roundingDifference?: number;
 }
 
-export function buildMetalSaleJournalLines(params: {
+/**
+ * Prepares planned Double-Entry Journal template lines for Metal Purchase Transactions.
+ */
+export function buildMetalPurchaseJournalLines(
+  params: BuildMetalPurchaseJournalLinesParams,
+): JournalLineInput[] {
+  const map = { ...DEFAULT_METAL_ACCOUNT_MAPPING, ...params.mapping };
+  const roundingDiff = Math.round(params.roundingDifference ?? 0);
+  const exactGoodsValue = params.exactAmountRials !== undefined
+    ? Math.round(params.exactAmountRials)
+    : roundingDiff !== 0
+      ? Math.round(params.amountRials - roundingDiff)
+      : Math.round(params.amountRials);
+  const supplierPayableAmount = exactGoodsValue + roundingDiff;
+
+  const lines: JournalLineInput[] = [];
+
+  // 1. Inventory Asset increase
+  lines.push({
+    accountId: map.metalInventoryAccountId,
+    accountCode: SYSTEM_ACCOUNT_CODES.GOLD_INVENTORY,
+    accountName: 'موجودی طلا و فلزات گرانبها',
+    debit: exactGoodsValue,
+    credit: 0,
+    description: `خرید طلا معادل ۷۵۰ به وزن ${params.weightGrams750.toFixed(3)} گرم از ${params.customerName}`,
+    partyId: params.customerId,
+  });
+
+  // 2. If purchase rounded up (we paid more -> Expense)
+  if (roundingDiff > 0) {
+    lines.push({
+      accountId: map.roundingExpenseAccountId || SYSTEM_ACCOUNT_CODES.ROUNDING_EXPENSE,
+      accountCode: SYSTEM_ACCOUNT_CODES.ROUNDING_EXPENSE,
+      accountName: 'سایر هزینه‌های عملیاتی - تعدیلات گرد کردن',
+      debit: roundingDiff,
+      credit: 0,
+      description: `تعدیلات و اضافه پرداختی ناشی از گرد کردن در خرید از ${params.customerName}`,
+      partyId: params.customerId,
+    });
+  }
+
+  // 3. Supplier Liability recognition
+  lines.push({
+    accountId: map.counterpartyLiabilityAccountId,
+    accountCode: SYSTEM_ACCOUNT_CODES.COUNTERPARTY_LIABILITY,
+    accountName: 'بستانکاران تجاری / طرف‌حساب‌ها',
+    debit: 0,
+    credit: supplierPayableAmount,
+    description: `بستانکاری طرف‌حساب ${params.customerName} بابت تحویل طلا`,
+    partyId: params.customerId,
+  });
+
+  // 4. If purchase rounded down (we paid less -> Gain/Income)
+  if (roundingDiff < 0) {
+    lines.push({
+      accountId: map.roundingIncomeAccountId || SYSTEM_ACCOUNT_CODES.ROUNDING_INCOME,
+      accountCode: SYSTEM_ACCOUNT_CODES.ROUNDING_INCOME,
+      accountName: 'سایر درآمدها - کسر و اضافات گرد کردن',
+      debit: 0,
+      credit: Math.abs(roundingDiff),
+      description: `تخفیف و کسر ناشی از گرد کردن در خرید از ${params.customerName}`,
+      partyId: params.customerId,
+    });
+  }
+
+  return lines;
+}
+
+export interface BuildMetalSaleJournalLinesParams {
   salesRevenueRials: number;
-  costOfSalesRials: number;
+  costOfSalesRials?: number;
   weightGrams750: number;
   customerId: string;
   customerName: string;
   mapping?: Partial<MetalAccountMapping>;
-}): JournalLineInput[] {
-  const map = { ...DEFAULT_METAL_ACCOUNT_MAPPING, ...params.mapping };
-  const salesAmount = Math.round(params.salesRevenueRials);
-  const costAmount = Math.round(params.costOfSalesRials);
-
-  return [
-    // 1. Debt recognition for Customer
-    {
-      accountId: map.counterpartyReceivableAccountId,
-      accountCode: SYSTEM_ACCOUNT_CODES.NOTES_RECEIVABLE,
-      accountName: 'حساب‌ها و اسناد دریافتنی تجاری',
-      debit: salesAmount,
-      credit: 0,
-      description: `بدهکار طرف‌حساب ${params.customerName} بابت فروش طلا (${params.weightGrams750.toFixed(3)} گرم)`,
-      partyId: params.customerId,
-    },
-    // 2. Sales Revenue recognition
-    {
-      accountId: map.goldSalesRevenueAccountId,
-      accountCode: SYSTEM_ACCOUNT_CODES.GOLD_SALES_REVENUE,
-      accountName: 'درآمد حاصل از فروش طلا و مسکوکات',
-      debit: 0,
-      credit: salesAmount,
-      description: `شناسایی درآمد حاصل از فروش طلا به ${params.customerName}`,
-      partyId: params.customerId,
-    },
-  ];
+  roundingDifference?: number;
+  exactRevenueRials?: number;
 }
+
+/**
+ * Prepares planned Double-Entry Journal template lines for Metal Sale Transactions.
+ * Accurately creates distinct journal lines for rounding adjustments (account 6500 or 4300).
+ */
+export function buildMetalSaleJournalLines(
+  params: BuildMetalSaleJournalLinesParams,
+): JournalLineInput[] {
+  const map = { ...DEFAULT_METAL_ACCOUNT_MAPPING, ...params.mapping };
+  const roundingDiff = Math.round(params.roundingDifference ?? 0);
+  const exactRevenue = params.exactRevenueRials !== undefined
+    ? Math.round(params.exactRevenueRials)
+    : roundingDiff !== 0
+      ? Math.round(params.salesRevenueRials - roundingDiff)
+      : Math.round(params.salesRevenueRials);
+  const customerReceivableAmount = exactRevenue + roundingDiff;
+
+  const lines: JournalLineInput[] = [];
+
+  // 1. Debt recognition for Customer (charged with final rounded/receivable amount)
+  lines.push({
+    accountId: map.counterpartyReceivableAccountId,
+    accountCode: SYSTEM_ACCOUNT_CODES.NOTES_RECEIVABLE,
+    accountName: 'حساب‌ها و اسناد دریافتنی تجاری',
+    debit: customerReceivableAmount,
+    credit: 0,
+    description: `بدهکار طرف‌حساب ${params.customerName} بابت فروش طلا (${params.weightGrams750.toFixed(3)} گرم)`,
+    partyId: params.customerId,
+  });
+
+  // 2. If rounded down (seller absorbed the discount -> Operating Expense)
+  if (roundingDiff < 0) {
+    lines.push({
+      accountId: map.roundingExpenseAccountId || SYSTEM_ACCOUNT_CODES.ROUNDING_EXPENSE,
+      accountCode: SYSTEM_ACCOUNT_CODES.ROUNDING_EXPENSE,
+      accountName: 'سایر هزینه‌های عملیاتی - تعدیلات گرد کردن',
+      debit: Math.abs(roundingDiff),
+      credit: 0,
+      description: `تعدیلات و کسر ناشی از گرد کردن در فروش به ${params.customerName}`,
+      partyId: params.customerId,
+    });
+  }
+
+  // 3. Sales Revenue recognition (credited with exact unrounded revenue)
+  lines.push({
+    accountId: map.goldSalesRevenueAccountId,
+    accountCode: SYSTEM_ACCOUNT_CODES.GOLD_SALES_REVENUE,
+    accountName: 'درآمد حاصل از فروش طلا و مسکوکات',
+    debit: 0,
+    credit: exactRevenue,
+    description: `شناسایی درآمد حاصل از فروش طلا به ${params.customerName}`,
+    partyId: params.customerId,
+  });
+
+  // 4. If rounded up (seller received extra -> Other Income)
+  if (roundingDiff > 0) {
+    lines.push({
+      accountId: map.roundingIncomeAccountId || SYSTEM_ACCOUNT_CODES.ROUNDING_INCOME,
+      accountCode: SYSTEM_ACCOUNT_CODES.ROUNDING_INCOME,
+      accountName: 'سایر درآمدها - اضافات گرد کردن',
+      debit: 0,
+      credit: roundingDiff,
+      description: `اضافه ناشی از گرد کردن در فروش به ${params.customerName}`,
+      partyId: params.customerId,
+    });
+  }
+
+  return lines;
+}
+
+export { postMetalSale } from './posting-engine';
+

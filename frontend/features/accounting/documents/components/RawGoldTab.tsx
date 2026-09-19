@@ -71,6 +71,11 @@ export type DetailState = {
   refiningSampleWeight?: string;
   refiningReturnedWeight?: string;
   refiningWeightLoss?: string;
+  roundingDifference?: number;
+  exactCalculatedAmount?: number;
+  isAmountRounded?: boolean;
+  roundingDigits?: number;
+  roundingMode?: 'round' | 'ceil' | 'floor';
 };
 
 export type DocumentLine = {

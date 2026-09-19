@@ -1,9 +1,9 @@
 'use client';
 
 import { AnimatePresence, motion } from 'framer-motion';
-import { FlaskConical, ListPlus, Sparkles } from 'lucide-react';
+import { FlaskConical, ListPlus, Sparkles, Settings } from 'lucide-react';
 import type React from 'react';
-import { useEffect } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 
 import DocumentOperationTypeSelector from '@/src/components/documents/DocumentOperationTypeSelector';
 import Field from '@/src/components/documents/Field';
@@ -11,6 +11,8 @@ import MoneyInputField from '@/src/components/documents/MoneyInputField';
 import SlidingToggle from '@/src/components/documents/SlidingToggle';
 import { AssayLaboratorySelect } from '@/components/AssayLaboratorySelect';
 import { useAppSettings } from '@/src/components/SettingsProvider';
+import AmountRoundingModal from '@/features/accounting/documents/components/AmountRoundingModal';
+import { useToastManager } from '@/components/ui/toast';
 import {
   getInventoryItemAvailability,
   type DetailState,
@@ -23,6 +25,7 @@ import {
   convertPricesFromMesghal17,
   convertPricesFromOunceUsd,
   parseNumericValue,
+  roundAmountToDigits,
 } from '@/src/lib/trade-utils';
 
 type GoldSaleTabProps = {
@@ -87,6 +90,28 @@ export default function GoldSaleTab({
   const { settings } = useAppSettings();
   const baseCurrency = settings.baseCurrency || 'IRR';
 
+  const toast = useToastManager();
+  const [isRoundingModalOpen, setIsRoundingModalOpen] = useState(false);
+  const [roundingDigits, setRoundingDigits] = useState<number>(3);
+  const [roundingMode, setRoundingMode] = useState<'round' | 'ceil' | 'floor'>('round');
+  const [autoApplyRounding, setAutoApplyRounding] = useState<boolean>(false);
+  const [lastRoundedAmount, setLastRoundedAmount] = useState<number | null>(null);
+
+  // Load saved preference from localStorage
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('zarfolio_gold_sale_rounding');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed.digits === 'number') setRoundingDigits(parsed.digits);
+        if (parsed.mode === 'round' || parsed.mode === 'ceil' || parsed.mode === 'floor') setRoundingMode(parsed.mode);
+        if (typeof parsed.autoApply === 'boolean') setAutoApplyRounding(parsed.autoApply);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
   const isGold = draftLine.details.metalType === 'gold';
   const isMoltenOrConditional = draftLine.details.rawKind === 'molten' || draftLine.details.rawKind === 'conditional';
   const isMisc = draftLine.details.rawKind === 'misc';
@@ -95,6 +120,141 @@ export default function GoldSaleTab({
   const calculatedWeight = !isWeightMode
     ? actualWeightFromMoney(draftLine.details)
     : numberValue(draftLine.details.rawWeight);
+
+  // Exact unrounded total calculated from weight formula
+  const exactCalculatedAmount = useMemo(() => {
+    if (!isWeightMode) return parseNumericValue(draftLine.details.totalAmount);
+    const weight = draftLine.details.rawWeight;
+    const purity = draftLine.details.purity;
+    const price = draftLine.details.metalPrice;
+    const type = draftLine.details.metalPriceType;
+    const pVal = numberValue(price);
+    if (!weight || pVal <= 0) return 0;
+    const baseKaratVal = baseKarat || 750;
+    const c750 = convertedTo750(weight, purity);
+    let perGram = pVal;
+    if (type === 'mesghal17') perGram = pVal / 4.3318;
+    else if (type === 'ounceUsd') perGram = pVal / 31.1035;
+    else if (type === 'gramSilver925') perGram = pVal * (baseKaratVal / 925);
+    else if (type === 'gramSilver995') perGram = pVal * (baseKaratVal / 995);
+    else if (type === 'gramSilver999') perGram = pVal * (baseKaratVal / 999);
+    return Math.round(c750 * perGram);
+  }, [isWeightMode, draftLine.details.rawWeight, draftLine.details.purity, draftLine.details.metalPrice, draftLine.details.metalPriceType, baseKarat, convertedTo750, numberValue]);
+
+  const currentAmountNum = parseNumericValue(draftLine.details.totalAmount);
+  const isAmountRounded =
+    currentAmountNum > 0 &&
+    ((exactCalculatedAmount > 0 && currentAmountNum !== exactCalculatedAmount) ||
+      (lastRoundedAmount !== null && currentAmountNum === lastRoundedAmount));
+
+  const handleApplyRounding = (
+    roundedAmount: number,
+    digits: number,
+    mode: 'round' | 'ceil' | 'floor',
+    autoApply: boolean,
+  ) => {
+    setRoundingDigits(digits);
+    setRoundingMode(mode);
+    setAutoApplyRounding(autoApply);
+    setLastRoundedAmount(roundedAmount);
+
+    try {
+      localStorage.setItem(
+        'zarfolio_gold_sale_rounding',
+        JSON.stringify({ digits, mode, autoApply }),
+      );
+    } catch {
+      // ignore
+    }
+
+    const diff = exactCalculatedAmount > 0 ? (roundedAmount - exactCalculatedAmount) : 0;
+    setDraftLine((current) => ({
+      ...current,
+      details: {
+        ...current.details,
+        totalAmount: String(roundedAmount),
+        roundingDifference: diff,
+        exactCalculatedAmount,
+        isAmountRounded: diff !== 0,
+        roundingDigits: digits,
+        roundingMode: mode,
+      },
+    }));
+    toast.success(`مبلغ کل به ${digits} رقم رند گردید.`);
+  };
+
+  const handleResetRounding = () => {
+    if (exactCalculatedAmount > 0) {
+      setLastRoundedAmount(null);
+      setDraftLine((current) => ({
+        ...current,
+        details: {
+          ...current.details,
+          totalAmount: String(exactCalculatedAmount),
+          roundingDifference: 0,
+          exactCalculatedAmount,
+          isAmountRounded: false,
+        },
+      }));
+      toast.info('مبلغ به فرمول دقیق محاسباتی بازگردانی شد.');
+    }
+  };
+
+  // Auto-round when weight or price changes if autoApplyRounding is enabled
+  useEffect(() => {
+    if (!autoApplyRounding || !isWeightMode) return;
+    if (exactCalculatedAmount <= 0) return;
+    const rounded = roundAmountToDigits(exactCalculatedAmount, roundingDigits, roundingMode);
+    if (rounded > 0 && String(rounded) !== draftLine.details.totalAmount) {
+      const diff = rounded - exactCalculatedAmount;
+      setDraftLine((current) => ({
+        ...current,
+        details: {
+          ...current.details,
+          totalAmount: String(rounded),
+          roundingDifference: diff,
+          exactCalculatedAmount,
+          isAmountRounded: diff !== 0,
+          roundingDigits,
+          roundingMode,
+        },
+      }));
+      setLastRoundedAmount(rounded);
+    }
+  }, [
+    exactCalculatedAmount,
+    autoApplyRounding,
+    isWeightMode,
+    roundingDigits,
+    roundingMode,
+    draftLine.details.totalAmount,
+    setDraftLine,
+  ]);
+
+  // Keep rounding details synchronized when totalAmount or exact amount changes
+  useEffect(() => {
+    if (!isWeightMode) return;
+    if (exactCalculatedAmount <= 0) return;
+    const currentNum = parseNumericValue(draftLine.details.totalAmount);
+    if (currentNum > 0) {
+      const diff = currentNum - exactCalculatedAmount;
+      if (
+        draftLine.details.roundingDifference !== diff ||
+        draftLine.details.exactCalculatedAmount !== exactCalculatedAmount ||
+        draftLine.details.isAmountRounded !== (diff !== 0)
+      ) {
+        setDraftLine((current) => ({
+          ...current,
+          details: {
+            ...current.details,
+            roundingDifference: diff,
+            exactCalculatedAmount,
+            isAmountRounded: diff !== 0,
+          },
+        }));
+      }
+    }
+  }, [exactCalculatedAmount, isWeightMode, draftLine.details.totalAmount, draftLine.details.roundingDifference, draftLine.details.exactCalculatedAmount, draftLine.details.isAmountRounded, setDraftLine]);
 
   const isAssayRequired = isGold && isMoltenOrConditional && calculatedWeight > 0;
   const isPriceRequired = isWeightMode ? parseNumericValue(draftLine.details.rawWeight) > 0 : true;
@@ -116,7 +276,7 @@ export default function GoldSaleTab({
         ? 'انتخاب از موجودی سواله صندوق...'
         : 'انتخاب از موجودی آبشده صندوق...';
 
-  // Keep assay lab and purity in sync with the selected lot
+  // Keep assay lab, purity, and stamp number in sync with the selected lot
   useEffect(() => {
     if (nature !== 'paid') return;
     if (!draftLine.details.inventorySourceId) return;
@@ -126,10 +286,12 @@ export default function GoldSaleTab({
 
     const targetLabName = (source.labName ?? '').trim();
     const targetPurity = String(source.purity || 750);
+    const targetStamp = (source.stampNumber ?? '').trim();
     const needLabUpdate = draftLine.details.labName !== targetLabName;
     const needPurityUpdate = draftLine.details.purity !== targetPurity;
+    const needStampUpdate = draftLine.details.stampNumber !== targetStamp;
 
-    if (needLabUpdate || needPurityUpdate) {
+    if (needLabUpdate || needPurityUpdate || needStampUpdate) {
       setDraftLine((current) => (
         current.details.inventorySourceId === source.id
           ? {
@@ -138,12 +300,13 @@ export default function GoldSaleTab({
                 ...current.details,
                 labName: needLabUpdate ? targetLabName : current.details.labName,
                 purity: needPurityUpdate ? targetPurity : current.details.purity,
+                stampNumber: needStampUpdate ? targetStamp : current.details.stampNumber,
               },
             }
           : current
       ));
     }
-  }, [draftLine.details.inventorySourceId, draftLine.details.labName, draftLine.details.purity, draftLine.details.rawKind, meltedInventory, nature, setDraftLine]);
+  }, [draftLine.details.inventorySourceId, draftLine.details.labName, draftLine.details.purity, draftLine.details.stampNumber, draftLine.details.rawKind, meltedInventory, nature, setDraftLine]);
 
   const isSilver = draftLine.details.metalType === 'silver';
   const isPlatinum = draftLine.details.metalType === 'platinum';
@@ -367,10 +530,51 @@ export default function GoldSaleTab({
                 />
 
                 <MoneyInputField
-                  label="مبلغ کل (محاسباتی)"
+                  label={
+                    <span className="flex items-center gap-1.5">
+                      <span>مبلغ کل (محاسباتی)</span>
+                      {isAmountRounded ? (
+                        <span className="inline-flex items-center rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800 dark:bg-amber-900/60 dark:text-amber-200">
+                          رند شده ({roundingDigits} رقم)
+                        </span>
+                      ) : null}
+                    </span>
+                  }
                   value={draftLine.details.totalAmount}
                   readOnly
                   baseCurrency={baseCurrency}
+                  action={
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setIsRoundingModalOpen(true);
+                      }}
+                      className={`flex items-center justify-center rounded-lg p-1.5 transition-all ${
+                        isAmountRounded
+                          ? 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/60 dark:text-amber-300 dark:hover:bg-amber-800 shadow-2xs'
+                          : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-300'
+                      }`}
+                      title="تنظیمات رند کردن مبلغ کل (محاسباتی)"
+                      aria-label="تنظیمات رند کردن مبلغ کل (محاسباتی)"
+                    >
+                      <Settings className="h-3.5 w-3.5" />
+                    </button>
+                  }
+                />
+
+                <AmountRoundingModal
+                  isOpen={isRoundingModalOpen}
+                  onClose={() => setIsRoundingModalOpen(false)}
+                  currentAmount={currentAmountNum}
+                  exactCalculatedAmount={exactCalculatedAmount}
+                  baseCurrency={baseCurrency}
+                  initialDigits={roundingDigits}
+                  initialMode={roundingMode}
+                  initialAutoApply={autoApplyRounding}
+                  onApply={handleApplyRounding}
+                  onReset={handleResetRounding}
                 />
               </>
             ) : (
@@ -478,12 +682,17 @@ export default function GoldSaleTab({
                   <input
                     ref={stampInputRef}
                     value={draftLine.details.stampNumber}
+                    readOnly={isPaidRawFromInventory}
+                    disabled={isPaidRawFromInventory}
                     onChange={(event) => {
+                      if (isPaidRawFromInventory) return;
                       const cleaned = event.target.value.replace(/[^0-9]/g, '');
                       updateDraftDetail('stampNumber', cleaned);
                     }}
                     onKeyDown={handleKeyDownEnter}
-                    placeholder="شماره پاکت یا انگ (فقط عدد)"
+                    placeholder={isPaidRawFromInventory ? (draftLine.details.stampNumber || 'بدون انگ در موجودی') : 'شماره پاکت یا انگ (فقط عدد)'}
+                    title={isPaidRawFromInventory ? 'شماره انگ از موجودی انتخابی قفل شده است.' : undefined}
+                    className={isPaidRawFromInventory ? 'cursor-not-allowed bg-slate-100 dark:bg-slate-800/80 text-slate-500' : ''}
                   />
                 </Field>
               </>

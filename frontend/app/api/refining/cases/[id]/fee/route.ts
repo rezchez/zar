@@ -55,7 +55,17 @@ export async function POST(
     if (err instanceof RefiningError) {
       return NextResponse.json({ message: err.message }, { status: err.statusCode });
     }
-    const message = err instanceof Error ? err.message : 'خطا در ثبت اجرت ری‌گیری';
+    const anyErr = err as any;
+    const respData = anyErr?.response?.data || anyErr?.data;
+    let detail = '';
+    if (respData && typeof respData === 'object') {
+      detail = Object.entries(respData)
+        .map(([field, val]) => `${field}: ${(val as any)?.message || String(val)}`)
+        .join(' | ');
+    }
+    const message = detail
+      ? `خطا در ثبت اجرت: ${detail}`
+      : (err instanceof Error ? err.message : 'خطا در ثبت اجرت ری‌گیری');
     return NextResponse.json({ message }, { status: 500 });
   }
 }

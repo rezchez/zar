@@ -449,7 +449,7 @@ describe('Zarfolio — Gold Refining Module Architecture (ماژول ری‌گی
       expect(tx.length).toBe(1);
       expect(tx[0].customer).toBe('refiner_1');
       expect(tx[0].rialAmount).toBe(15_000_000); // positive = creditor (طلبکار از ما)
-      expect(tx[0].status).toBe('final');
+      expect(tx[0].status).toBe('posted');
       expect(tx[0].is_deleted).toBe(false);
 
       // Verify that customer ledger balance immediately reflects 15M IRR debt to refiner

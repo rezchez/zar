@@ -13,6 +13,7 @@ import {
   UserRound,
 } from 'lucide-react';
 import { useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 type AccountUser = {
   name?: string;
@@ -27,6 +28,7 @@ type AccountUser = {
 };
 
 export default function AccountSettings({ user }: { user: AccountUser }) {
+  const router = useRouter();
   const [name, setName] = useState(user.name ?? '');
   const [email, setEmail] = useState(user.email ?? '');
   const [nationalCode, setNationalCode] = useState(user.nationalCode ?? '');
@@ -68,7 +70,7 @@ export default function AccountSettings({ user }: { user: AccountUser }) {
         body: formData,
       });
       const data = (await response.json().catch(() => null)) as
-        | { message?: string }
+        | { message?: string; avatarUrl?: string | null }
         | null;
 
       if (!response.ok) {
@@ -77,11 +79,17 @@ export default function AccountSettings({ user }: { user: AccountUser }) {
       }
 
       setMessage(data?.message ?? 'اطلاعات ذخیره شد.');
-      setAvatarFile(null);
-      if (removeAvatar && !avatarFile) {
+      if (avatarUrl && avatarUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(avatarUrl);
+      }
+      if (typeof data?.avatarUrl === 'string') {
+        setAvatarUrl(data.avatarUrl);
+      } else if (removeAvatar && !avatarFile) {
         setAvatarUrl('');
       }
+      setAvatarFile(null);
       setRemoveAvatar(false);
+      router.refresh();
     } catch {
       setErrorMessage('ارتباط با سرور برقرار نشد.');
     } finally {
@@ -100,10 +108,14 @@ export default function AccountSettings({ user }: { user: AccountUser }) {
         return;
       }
 
+      if (avatarUrl && avatarUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(avatarUrl);
+      }
       setAvatarUrl('');
       setAvatarFile(null);
       setRemoveAvatar(false);
       setMessage('آواتار حذف شد.');
+      router.refresh();
     } catch {
       setErrorMessage('حذف آواتار انجام نشد.');
     } finally {
@@ -201,6 +213,20 @@ export default function AccountSettings({ user }: { user: AccountUser }) {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    if (!file.type.startsWith('image/')) {
+      setErrorMessage('لطفاً یک فایل تصویری (JPG, PNG, WebP) انتخاب کنید.');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setErrorMessage('حجم تصویر نباید بیشتر از ۵ مگابایت باشد.');
+      return;
+    }
+
+    setErrorMessage('');
+    if (avatarUrl && avatarUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(avatarUrl);
+    }
     setAvatarFile(file);
     setRemoveAvatar(false);
     setAvatarUrl(URL.createObjectURL(file));
@@ -245,6 +271,7 @@ export default function AccountSettings({ user }: { user: AccountUser }) {
                 type="button"
                 className="dashboard-secondary-button"
                 onClick={() => fileInputRef.current?.click()}
+                disabled={loading}
               >
                 <ImagePlus size={15} />
                 انتخاب آواتار
@@ -263,6 +290,7 @@ export default function AccountSettings({ user }: { user: AccountUser }) {
                 type="file"
                 accept="image/png,image/jpeg,image/webp"
                 hidden
+                disabled={loading}
                 onChange={chooseAvatar}
               />
             </div>

@@ -9,7 +9,7 @@ export const REFINING_CASE_STATUS_LABELS: Record<RefiningCaseStatus, string> = {
   open: 'جدید',
   sent_to_refiner: 'ارسال‌شده به ریگیر',
   refining: 'در حال ری‌گیری',
-  partially_received: 'دریافت بخشی از طلا',
+  partially_received: 'در انتظار تعیین عیار',
   completed: 'تکمیل و تسویه‌شده',
 };
 

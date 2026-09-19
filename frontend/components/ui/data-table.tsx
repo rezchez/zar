@@ -214,6 +214,12 @@ export function DataTableSearch({
   placeholder?: string;
   className?: string;
 }) {
+  const [internalValue, setInternalValue] = React.useState(value ?? '');
+
+  React.useEffect(() => {
+    setInternalValue(value ?? '');
+  }, [value]);
+
   return (
     <div className={`relative ${className}`}>
       <Search
@@ -222,15 +228,22 @@ export function DataTableSearch({
       />
       <input
         type="text"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
+        value={internalValue}
+        onChange={(e) => {
+          const nextVal = e.target.value;
+          setInternalValue(nextVal);
+          onChange(nextVal);
+        }}
         placeholder={placeholder}
         className="h-10 w-full rounded-2xl border border-slate-200 bg-white pe-4 ps-9 text-xs font-bold text-slate-900 placeholder:text-slate-400 shadow-2xs transition-all focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
       />
-      {value ? (
+      {internalValue ? (
         <button
           type="button"
-          onClick={() => onChange('')}
+          onClick={() => {
+            setInternalValue('');
+            onChange('');
+          }}
           className="absolute left-2.5 top-1/2 -translate-y-1/2 rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700 dark:hover:text-slate-200"
         >
           <X size={13} />
@@ -317,9 +330,10 @@ export function DataTablePagination({
   pageSizeOptions?: number[];
   className?: string;
 }) {
+  const tableState = (typeof table.getState === 'function' ? table.getState() : table.state) || {};
   const selectedCount = table.getFilteredSelectedRowModel?.()?.rows?.length || 0;
   const totalCount = table.getFilteredRowModel?.()?.rows?.length || 0;
-  const pageIndex = table.getState?.()?.pagination?.pageIndex ?? 0;
+  const pageIndex = tableState?.pagination?.pageIndex ?? 0;
   const pageCount = table.getPageCount?.() || 1;
 
   return (
@@ -339,7 +353,7 @@ export function DataTablePagination({
           <div className="flex items-center gap-1.5">
             <span className="text-[11px] text-slate-400">تعداد در صفحه:</span>
             <select
-              value={table.getState?.()?.pagination?.pageSize ?? 10}
+              value={tableState?.pagination?.pageSize ?? 10}
               onChange={(e) => table.setPageSize(Number(e.target.value))}
               className="h-8 rounded-xl border border-slate-200 bg-white px-2 text-xs font-bold text-slate-700 shadow-2xs focus:border-amber-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
             >
@@ -359,21 +373,21 @@ export function DataTablePagination({
         </span>
         <button
           type="button"
-          disabled={!table.getCanPreviousPage?.()}
-          onClick={() => table.previousPage?.()}
-          className="inline-flex h-8 items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 shadow-2xs transition-all hover:bg-slate-50 disabled:pointer-events-none disabled:opacity-40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+          onClick={() => table.previousPage()}
+          disabled={!table.getCanPreviousPage()}
+          className="flex size-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-2xs hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+          aria-label="صفحه قبل"
         >
-          <ChevronRight size={14} />
-          <span>قبلی</span>
+          <ChevronRight size={15} />
         </button>
         <button
           type="button"
-          disabled={!table.getCanNextPage?.()}
-          onClick={() => table.nextPage?.()}
-          className="inline-flex h-8 items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 shadow-2xs transition-all hover:bg-slate-50 disabled:pointer-events-none disabled:opacity-40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+          onClick={() => table.nextPage()}
+          disabled={!table.getCanNextPage()}
+          className="flex size-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-2xs hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+          aria-label="صفحه بعد"
         >
-          <span>بعدی</span>
-          <ChevronLeft size={14} />
+          <ChevronLeft size={15} />
         </button>
       </div>
     </div>
@@ -397,6 +411,8 @@ export interface AppicaDataTableProps {
   showSearch?: boolean;
   showColumnToggle?: boolean;
   showPagination?: boolean;
+  noHorizontalScroll?: boolean;
+  dense?: boolean;
   className?: string;
 }
 
@@ -414,9 +430,12 @@ export function AppicaDataTable({
   showSearch = true,
   showColumnToggle = true,
   showPagination = true,
+  noHorizontalScroll = false,
+  dense = false,
   className = '',
 }: AppicaDataTableProps) {
-  const globalFilter = table.getState?.()?.globalFilter ?? '';
+  const tableState = (typeof table.getState === 'function' ? table.getState() : table.state) || {};
+  const globalFilter = tableState.globalFilter ?? '';
   const rows = table.getRowModel?.()?.rows || [];
   const headerGroups = table.getHeaderGroups?.() || [];
 
@@ -461,15 +480,19 @@ export function AppicaDataTable({
           </p>
         </div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-right text-xs">
+        <div className={noHorizontalScroll ? 'overflow-x-hidden' : 'overflow-x-auto'}>
+          <table className={`w-full text-right text-xs ${noHorizontalScroll ? 'table-auto' : ''}`}>
             <thead className="border-b border-slate-100 bg-slate-50/70 font-black text-slate-500 dark:border-slate-800 dark:bg-slate-800/50 dark:text-slate-400">
               {headerGroups.map((headerGroup: any) => (
                 <tr key={headerGroup.id}>
                   {headerGroup.headers.map((header: any) => (
                     <th
                       key={header.id}
-                      className="px-4 py-3.5 text-right font-black whitespace-nowrap"
+                      className={`${
+                        noHorizontalScroll || dense
+                          ? 'px-2.5 py-3 text-[11px]'
+                          : 'px-4 py-3.5 whitespace-nowrap'
+                      } text-right font-black`}
                     >
                       {header.isPlaceholder
                         ? null
@@ -492,7 +515,11 @@ export function AppicaDataTable({
                     {row.getVisibleCells().map((cell: any) => (
                       <td
                         key={cell.id}
-                        className="px-4 py-3.5 align-middle whitespace-nowrap"
+                        className={`${
+                          noHorizontalScroll || dense
+                            ? 'px-2.5 py-2.5 text-[11.5px]'
+                            : 'px-4 py-3.5 whitespace-nowrap'
+                        } align-middle`}
                       >
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </td>
