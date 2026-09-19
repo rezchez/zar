@@ -115,7 +115,13 @@ export async function updateUserPreferences(
   }
 
   if (updates.customPreferences !== undefined) {
-    payload.customPreferences = updates.customPreferences;
+    const existingCustom = typeof existing?.customPreferences === 'object' && existing?.customPreferences !== null
+      ? (existing.customPreferences as Record<string, unknown>)
+      : {};
+    payload.customPreferences = {
+      ...existingCustom,
+      ...updates.customPreferences,
+    };
   }
 
   if (existing) {
