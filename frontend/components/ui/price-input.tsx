@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { normalizeDigits } from '@/lib/jalali';
 import { numberToPersianWords } from '@/lib/money';
+import { useAppSettings } from '@/components/shared/SettingsProvider';
 
 export interface PriceInputProps
   extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'value' | 'defaultValue' | 'onChange' | 'min' | 'max'> {
@@ -60,6 +61,54 @@ export function formatPriceWithCommas(cleanVal: string): string {
   return `${isNeg ? '-' : ''}${intPart}${decimalPart}`;
 }
 
+/**
+ * Inverts the currency representation for the helper text beneath monetary fields:
+ * - If input currency is Rial (IRR), written text is in Toman (IRT) (value / 10 + ' تومان')
+ * - If input currency is Toman (IRT), written text is in Rial (IRR) (value * 10 + ' ریال')
+ * - If input currency is foreign (USD, EUR, etc.), written text remains in that currency.
+ */
+export function formatAmountHelperWords(
+  numericValue: number | null,
+  currencySuffix?: string,
+  baseCurrency: 'IRR' | 'IRT' = 'IRR',
+): string {
+  if (numericValue === null || numericValue === 0 || !Number.isFinite(numericValue)) return '';
+
+  const activeSuffix = currencySuffix || (baseCurrency === 'IRT' ? 'تومان' : 'ریال');
+
+  const isToman =
+    (currencySuffix && (currencySuffix.includes('تومان') || currencySuffix.trim().toUpperCase() === 'IRT')) ||
+    (!currencySuffix && baseCurrency === 'IRT');
+
+  const isRial =
+    (currencySuffix && (currencySuffix.includes('ریال') || currencySuffix.trim().toUpperCase() === 'IRR')) ||
+    (!currencySuffix && baseCurrency === 'IRR');
+
+  if (isRial) {
+    // Inverted: Rial input -> Toman written text
+    const isNeg = numericValue < 0;
+    const absVal = Math.abs(numericValue);
+    const tomanVal = absVal < 10 && absVal > 0 ? absVal / 10 : Math.floor(absVal / 10);
+    const convertedVal = isNeg ? -tomanVal : tomanVal;
+    const words = numberToPersianWords(convertedVal);
+    return words ? `${words} تومان` : '';
+  }
+
+  if (isToman) {
+    // Inverted: Toman input -> Rial written text
+    const isNeg = numericValue < 0;
+    const absVal = Math.abs(numericValue);
+    const rialVal = Math.round(absVal * 10);
+    const convertedVal = isNeg ? -rialVal : rialVal;
+    const words = numberToPersianWords(convertedVal);
+    return words ? `${words} ریال` : '';
+  }
+
+  // Other / Foreign currency
+  const words = numberToPersianWords(numericValue);
+  return words ? `${words} ${activeSuffix}` : '';
+}
+
 export const PriceInput = React.forwardRef<HTMLInputElement, PriceInputProps>(
   (
     {
@@ -70,7 +119,7 @@ export const PriceInput = React.forwardRef<HTMLInputElement, PriceInputProps>(
       min,
       max,
       currencySuffix,
-      baseCurrency = 'IRR',
+      baseCurrency: propBaseCurrency,
       showWords = false,
       name,
       disabled,
@@ -82,6 +131,9 @@ export const PriceInput = React.forwardRef<HTMLInputElement, PriceInputProps>(
     },
     ref,
   ) => {
+    const appSettings = useAppSettings();
+    const effectiveBaseCurrency: 'IRR' | 'IRT' =
+      propBaseCurrency || appSettings?.settings?.baseCurrency || 'IRR';
     const isControlled = controlledValue !== undefined;
     const allowNegative = min === undefined || min < 0;
 
@@ -174,15 +226,13 @@ export const PriceInput = React.forwardRef<HTMLInputElement, PriceInputProps>(
       props.onBlur?.(e);
     };
 
-    // Calculate Persian words
-    const persianWords = React.useMemo(() => {
-      if (!showWords || numericValue === null || numericValue === 0) return '';
-      const unit = currencySuffix || (baseCurrency === 'IRT' ? 'تومان' : 'ریال');
-      const words = numberToPersianWords(numericValue);
-      return words ? `${words} ${unit}` : '';
-    }, [showWords, numericValue, currencySuffix, baseCurrency]);
+    const activeSuffix = currencySuffix || (effectiveBaseCurrency === 'IRT' ? 'تومان' : 'ریال');
 
-    const activeSuffix = currencySuffix || (baseCurrency === 'IRT' ? 'تومان' : 'ریال');
+    // Calculate Persian words with inverted currency representation
+    const persianWords = React.useMemo(() => {
+      if (!showWords) return '';
+      return formatAmountHelperWords(numericValue, currencySuffix, effectiveBaseCurrency);
+    }, [showWords, numericValue, currencySuffix, effectiveBaseCurrency]);
 
     return (
       <div className="w-full space-y-1">

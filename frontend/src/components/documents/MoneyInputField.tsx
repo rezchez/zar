@@ -4,9 +4,10 @@ import React from 'react';
 import Field from '@/src/components/documents/Field';
 import { PriceInput } from '@/components/ui/price-input';
 import { getCurrencyUnitLabel } from '@/src/lib/trade-utils';
+import { useAppSettings } from '@/src/components/SettingsProvider';
 
 type MoneyInputFieldProps = {
-  label: string;
+  label: React.ReactNode;
   value: string | number;
   onChange?: (rawValue: string) => void;
   baseCurrency?: 'IRR' | 'IRT';
@@ -21,13 +22,14 @@ type MoneyInputFieldProps = {
   showWords?: boolean;
   wide?: boolean;
   name?: string;
+  action?: React.ReactNode;
 };
 
 export default function MoneyInputField({
   label,
   value,
   onChange,
-  baseCurrency = 'IRR',
+  baseCurrency,
   currencySuffix,
   readOnly = false,
   required = false,
@@ -39,11 +41,14 @@ export default function MoneyInputField({
   showWords = true,
   wide = false,
   name,
+  action,
 }: MoneyInputFieldProps) {
-  const currencySymbol = currencySuffix || getCurrencyUnitLabel(baseCurrency);
+  const { settings } = useAppSettings();
+  const effectiveBaseCurrency = baseCurrency || settings?.baseCurrency || 'IRR';
+  const currencySymbol = currencySuffix || getCurrencyUnitLabel(effectiveBaseCurrency);
 
   return (
-    <Field label={label} required={required} error={error} wide={wide}>
+    <Field label={label} action={action} required={required} error={error} wide={wide}>
       <PriceInput
         ref={inputRef}
         name={name}
@@ -53,7 +58,7 @@ export default function MoneyInputField({
             onChange(rawVal);
           }
         }}
-        baseCurrency={baseCurrency}
+        baseCurrency={effectiveBaseCurrency}
         currencySuffix={currencySymbol}
         readOnly={readOnly}
         placeholder={placeholder}

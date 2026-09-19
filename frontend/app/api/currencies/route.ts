@@ -11,7 +11,14 @@ export async function GET() {
 
   try {
     const currencies = await getCurrencies(context.pb);
-    return NextResponse.json({ currencies });
+    return NextResponse.json(
+      { currencies },
+      {
+        headers: {
+          'Cache-Control': 'private, max-age=60, stale-while-revalidate=300',
+        },
+      },
+    );
   } catch {
     return NextResponse.json({ message: 'دریافت لیست ارزها انجام نشد.' }, { status: 500 });
   }

@@ -41,7 +41,9 @@ export function getCurrencyUnitLabel(baseCurrency: 'IRR' | 'IRT' = 'IRR'): strin
 }
 
 /**
- * Converts a numeric amount to Persian words with the active currency unit.
+ * Converts a numeric amount to Persian words with inverted currency representation:
+ * - If baseCurrency is 'IRR', words are converted and expressed in Toman ('تومان')
+ * - If baseCurrency is 'IRT', words are converted and expressed in Rial ('ریال')
  */
 export function getAmountInPersianWords(
   amount: string | number,
@@ -49,9 +51,47 @@ export function getAmountInPersianWords(
 ): string {
   const num = parseNumericValue(amount);
   if (!num || num <= 0) return '';
-  const words = numberToPersianWords(num);
-  const unit = getCurrencyUnitLabel(baseCurrency);
-  return `${words} ${unit}`;
+  if (baseCurrency === 'IRR') {
+    const isNeg = num < 0;
+    const absVal = Math.abs(num);
+    const toman = absVal < 10 && absVal > 0 ? absVal / 10 : Math.floor(absVal / 10);
+    const converted = isNeg ? -toman : toman;
+    const words = numberToPersianWords(converted);
+    return words ? `${words} تومان` : '';
+  } else {
+    const isNeg = num < 0;
+    const absVal = Math.abs(num);
+    const rial = Math.round(absVal * 10);
+    const converted = isNeg ? -rial : rial;
+    const words = numberToPersianWords(converted);
+    return words ? `${words} ریال` : '';
+  }
+}
+
+/**
+ * Rounds a numeric amount to a specified number of trailing zero digits.
+ * @param amount - The numeric monetary amount to round.
+ * @param digits - The number of trailing digits to round to 0 (e.g. 3 rounds to nearest 1,000, 4 to nearest 10,000).
+ * @param mode - Rounding mode: 'round' (nearest), 'ceil' (upward), or 'floor' (downward).
+ */
+export function roundAmountToDigits(
+  amount: number,
+  digits: number,
+  mode: 'round' | 'ceil' | 'floor' = 'round',
+): number {
+  if (!Number.isFinite(amount) || amount === 0 || digits <= 0) return amount;
+  const factor = Math.pow(10, Math.min(12, Math.max(1, Math.floor(digits))));
+  if (amount < 0) {
+    const abs = Math.abs(amount);
+    let roundedAbs = 0;
+    if (mode === 'ceil') roundedAbs = Math.floor(abs / factor) * factor;
+    else if (mode === 'floor') roundedAbs = Math.ceil(abs / factor) * factor;
+    else roundedAbs = Math.round(abs / factor) * factor;
+    return -roundedAbs;
+  }
+  if (mode === 'ceil') return Math.ceil(amount / factor) * factor;
+  if (mode === 'floor') return Math.floor(amount / factor) * factor;
+  return Math.round(amount / factor) * factor;
 }
 
 /**

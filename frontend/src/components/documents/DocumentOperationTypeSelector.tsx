@@ -45,32 +45,32 @@ function OperationOption({
       role="radio"
       aria-checked={active}
       onClick={onClick}
-      className={`group flex min-h-20 items-center gap-3 rounded-2xl border px-4 py-3 text-right transition ${
+      className={`group flex min-h-11 items-center gap-2.5 rounded-xl border px-3 py-2 text-right transition ${
         active
           ? accent.active
           : `border-slate-200 bg-white/70 text-slate-600 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300 ${accent.hover}`
       }`}
     >
-      <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${
+      <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg text-xs ${
         active
           ? `${accent.icon} text-white`
           : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300'
       }`}>
-        <Icon size={19} />
+        <Icon size={15} />
       </span>
       <span className="min-w-0">
         <span className="flex items-center gap-1.5">
-          <strong className="block text-sm">{title}</strong>
+          <strong className="block text-xs font-bold leading-none">{title}</strong>
           <span
-            className="inline-grid h-5 w-5 place-items-center rounded-full border border-current/25 text-current/75"
+            className="inline-grid h-4 w-4 place-items-center rounded-full border border-current/25 text-current/75"
             title={description}
             aria-label={`راهنمای ${title}: ${description}`}
           >
-            <CircleHelp size={13} />
+            <CircleHelp size={11} />
           </span>
         </span>
       </span>
-      <span className={`mr-auto h-4 w-4 rounded-full border-2 ${
+      <span className={`mr-auto h-3.5 w-3.5 rounded-full border-2 ${
         active ? `${accent.radio} ring-2` : 'border-slate-300 dark:border-slate-600'
       }`} />
     </button>
@@ -129,7 +129,7 @@ export default function DocumentOperationTypeSelector({
   onChange,
 }: OperationTypeSelectorProps) {
   return (
-    <div className="grid gap-3 sm:grid-cols-3" role="radiogroup" aria-label="نوع عملیات فلز">
+    <div className="grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="نوع عملیات فلز">
       <MoltenOperationOption
         active={value === 'molten'}
         nature={nature}

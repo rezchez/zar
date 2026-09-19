@@ -51,7 +51,7 @@ export default function CurrencyTab({
       <div className="document-special-grid raw-gold-fields">
         <Field label="واحد ارز">
           <select
-            value={draftLine.details.currencyUnit}
+            value={draftLine.details.currencyUnit || currencyUnits[0] || 'USD'}
             onChange={(event) => {
               updateDraftDetail('currencyUnit', event.target.value);
               updateDraftDetail('settlementCurrencyUnit', event.target.value);
@@ -59,7 +59,7 @@ export default function CurrencyTab({
             disabled={currencyUnits.length === 0}
           >
             {currencyUnits.length === 0 ? (
-              <option value="">ارزی در کالکشن ثبت نشده است</option>
+              <option value="">در حال بارگذاری ارزها...</option>
             ) : currencyUnits.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
           </select>
         </Field>

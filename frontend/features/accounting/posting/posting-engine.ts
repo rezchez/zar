@@ -80,6 +80,8 @@ export const SYSTEM_ACCOUNT_CODES = {
   GOLD_COST_OF_SALES: '5200',
   PROFIT_LOSS: '3500',
   REFINING_EXPENSE: '5500',
+  ROUNDING_EXPENSE: '6500',
+  ROUNDING_INCOME: '4300',
 } as const;
 
 /**
@@ -1492,6 +1494,16 @@ export async function postRefiningFee(
     throw new Error('مبلغ اجرت ری‌گیری باید بزرگتر از صفر باشد.');
   }
 
+  let writer = pb;
+  if (!(pb as any)._store) {
+    try {
+      const { getPocketBaseServiceClient } = await import('@/lib/pocketbase-service');
+      writer = await getPocketBaseServiceClient();
+    } catch {
+      writer = pb;
+    }
+  }
+
   const expenseAccount = SYSTEM_ACCOUNT_CODES.REFINING_EXPENSE;
   const liabilityAccount = SYSTEM_ACCOUNT_CODES.COUNTERPARTY_LIABILITY;
 
@@ -1520,32 +1532,32 @@ export async function postRefiningFee(
         },
       ],
     },
-    pb,
+    writer,
   );
 
   // Sync to transactions collection for customer balance ledger
   const txSourceKey = `refining:fee:${refiningCase.id}`;
-  const existingTx = await pb
+  const existingTx = await writer
     .collection('transactions')
-    .getFirstListItem(pb.filter('sourceKey = {:sk}', { sk: txSourceKey }))
+    .getFirstListItem(writer.filter('sourceKey = {:sk}', { sk: txSourceKey }))
     .catch(() => null);
 
   let docNum = '';
   if (existingTx && isValidZfDocumentNumber(existingTx.documentNumber)) {
     docNum = existingTx.documentNumber;
   } else {
-    docNum = await generateUniqueZfDocumentNumber(pb);
+    docNum = await generateUniqueZfDocumentNumber(writer);
   }
 
-  const txPayload = {
+  const txPayload: Record<string, unknown> = {
     customer: refiner.id,
-    customerCode: refiner.customerCode ?? 0,
     createdBy: userId,
     updatedBy: userId,
     sourceKey: txSourceKey,
     transactionType: 'document',
-    status: 'final',
+    status: 'posted',
     isOpeningBalance: false,
+    is_deleted: false,
     transactionDate: new Date().toISOString(),
     documentId: refiningCase.id,
     documentNumber: docNum,
@@ -1556,17 +1568,106 @@ export async function postRefiningFee(
     rialAmount: amount, // positive = creditor / طلبکار از ما (our debt to refiner)
     foreignAmount: 0,
     tertiaryAmount: 0,
+    foreignCurrency: '',
+    foreignCurrencySymbol: '',
+    tertiaryCurrency: '',
+    tertiaryCurrencySymbol: '',
+    documentDateJalali: formatJalaliDate(new Date()),
     documentNature: 'received',
     documentTab: 'refining',
     documentSubType: 'refining_fee',
+    settlementMethod: 'amount',
+    balanceSource: 'current',
   };
 
-  if (existingTx) {
-    await pb.collection('transactions').update(existingTx.id, txPayload).catch(() => undefined);
-  } else {
-    await pb.collection('transactions').create(txPayload).catch(() => undefined);
+  const cCode = Number(refiner.customerCode);
+  if (cCode && cCode >= 1) {
+    txPayload.customerCode = cCode;
+  }
+
+  try {
+    if (existingTx) {
+      await writer.collection('transactions').update(existingTx.id, txPayload);
+    } else {
+      await writer.collection('transactions').create(txPayload);
+    }
+  } catch (txErr: any) {
+    const respData = txErr?.response?.data || txErr?.data;
+    const fieldDetails =
+      respData && typeof respData === 'object'
+        ? Object.entries(respData)
+            .map(([field, val]) => `${field}: ${(val as any)?.message || String(val)}`)
+            .join(' | ')
+        : '';
+    throw new Error(
+      `ثبت تراکنش مالی در دفتر کل با خطا مواجه شد: ${fieldDetails || txErr?.message || 'خطای ناشناخته'}`,
+    );
   }
 
   return journal;
 }
 
+export async function postMetalSale(
+  params: {
+    documentId: string;
+    documentNumber: string;
+    entryDateJalali?: string;
+    salesRevenueRials: number;
+    exactRevenueRials?: number;
+    roundingDifference?: number;
+    weightGrams750: number;
+    customer: {
+      id: string;
+      name: string;
+      customerCode?: number;
+    };
+    userId: string;
+    description?: string;
+    mapping?: Record<string, string>;
+  },
+  pb: PocketBase,
+): Promise<JournalEntryResult> {
+  const roundedAmount = Math.round(params.salesRevenueRials);
+  if (roundedAmount <= 0) {
+    throw new Error('مبلغ فروش طلا باید بزرگتر از صفر باشد.');
+  }
+
+  let writer = pb;
+  if (!(pb as any)._store) {
+    try {
+      const { getPocketBaseServiceClient } = await import('@/lib/pocketbase-service');
+      writer = await getPocketBaseServiceClient();
+    } catch {
+      writer = pb;
+    }
+  }
+
+  const { buildMetalSaleJournalLines, resolveMetalAccountMapping } = await import('./metal-accounting');
+  const accountMapping = await resolveMetalAccountMapping(writer);
+  const mapping = { ...accountMapping, ...params.mapping };
+
+  const lines = buildMetalSaleJournalLines({
+    salesRevenueRials: roundedAmount,
+    exactRevenueRials: params.exactRevenueRials,
+    roundingDifference: params.roundingDifference,
+    weightGrams750: params.weightGrams750,
+    customerId: params.customer.id,
+    customerName: params.customer.name,
+    mapping,
+  });
+
+  const desc = params.description || `فروش طلا به وزن ${params.weightGrams750.toFixed(3)} گرم به طرف‌حساب ${params.customer.name} (سند ${params.documentNumber})`;
+
+  return postJournalEntry(
+    {
+      description: desc,
+      sourceType: 'document',
+      sourceId: params.documentId,
+      sourceKey: `metal:sale:${params.documentId}`,
+      entryDateJalali: params.entryDateJalali,
+      userId: params.userId,
+      lines,
+    },
+    writer,
+  );
+}

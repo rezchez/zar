@@ -26,6 +26,19 @@ export class RefiningError extends Error {
   }
 }
 
+async function getWriter(fallback: PocketBase): Promise<PocketBase> {
+  if ((fallback as any)._store) {
+    return fallback;
+  }
+  try {
+    const { getPocketBaseServiceClient } = await import('@/lib/pocketbase-service');
+    return await getPocketBaseServiceClient();
+  } catch {
+    return fallback;
+  }
+}
+
+
 /**
  * Validates that a counterparty belongs strictly to the 'ریگیر' group.
  * Rejects with 400 if customer is missing or belongs to another group.
@@ -606,6 +619,7 @@ export async function receiveOutputGold(
   data: {
     rawWeight: number;
     purity: number;
+    inventoryType?: string;
     stampNumber?: string;
     labName?: string;
     receiptDate?: string;
@@ -634,11 +648,12 @@ export async function receiveOutputGold(
   const convertedWeight = metalAtBaseKarat(rawWeight, purity, 750);
   const receiptDate = data.receiptDate?.trim() || formatJalaliDate(new Date());
   const todayIso = new Date().toISOString();
+  const invType = data.inventoryType || (data.packetNumber ? 'conditional' : 'melted');
 
-  // 1. Inflow into metal_inventory as refined melted gold
+  // 1. Inflow into metal_inventory
   const metalInv = await pb.collection('metal_inventory').create({
     metal: 'gold',
-    inventory_type: 'melted',
+    inventory_type: invType,
     direction: 'in',
     transaction_type: 'refining_receipt',
     raw_weight: rawWeight,
@@ -658,7 +673,7 @@ export async function receiveOutputGold(
     case_id: caseRecord.id,
     item_type: 'output_gold',
     metal: 'gold',
-    inventory_type: 'melted',
+    inventory_type: invType,
     raw_weight: rawWeight,
     purity,
     converted_weight: convertedWeight,
@@ -740,8 +755,11 @@ export async function recordCaseRefiningFee(
     throw new RefiningError('پرونده ری‌گیری یافت نشد.', 404);
   }
 
-  const fee = Math.round(Number(feeAmount));
-  if (!fee || fee <= 0) {
+  const cleanFee = typeof feeAmount === 'string'
+    ? Number(String(feeAmount).replace(/[,\s]/g, '').replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d))))
+    : Number(feeAmount);
+  const fee = Math.round(cleanFee);
+  if (!fee || isNaN(fee) || fee <= 0) {
     throw new RefiningError('مبلغ اجرت ری‌گیری باید بزرگتر از صفر باشد.', 400);
   }
 
@@ -749,6 +767,8 @@ export async function recordCaseRefiningFee(
   if (!refiner) {
     throw new RefiningError('طرف‌حساب ریگیر پرونده یافت نشد.', 404);
   }
+
+  const writer = await getWriter(pb);
 
   // Post double-entry journal entry and sync to customer transactions
   const journal = await postRefiningFee(
@@ -764,16 +784,17 @@ export async function recordCaseRefiningFee(
       customerCode: Number(refiner.customerCode) || 0,
     },
     userId,
-    pb,
+    writer,
   );
 
   // Update case record
-  const updatedCase = await pb.collection('refining_cases').update(caseRecord.id, {
+  const updatedCase = await writer.collection('refining_cases').update(caseRecord.id, {
     refining_fee: fee,
     fee_settled: true,
     journal_entry_id: journal.id,
     updated_by: userId,
   });
+
 
   await recordAuditEvent({
     event: 'refining_fee_recorded',
@@ -904,3 +925,462 @@ export async function getRefiningCasesByRefiner(
 
   return records.map((r) => mapRefiningCase(r));
 }
+
+/**
+ * 10. Delete Refining Fee and Reverse Accounting & Customer Balance
+ */
+export async function deleteCaseRefiningFee(
+  pb: PocketBase,
+  caseId: string,
+  userId: string,
+  request?: Request,
+): Promise<RefiningCase> {
+  const caseRecord = await pb.collection('refining_cases').getOne(caseId).catch(() => null);
+  if (!caseRecord) {
+    throw new RefiningError('پرونده ری‌گیری یافت نشد.', 404);
+  }
+
+  const writer = await getWriter(pb);
+  const journalKey = `refining:fee:${caseRecord.id}`;
+
+  // Remove child journal lines and parent journal entry
+  const existingJournal = await writer.collection('journal_entries').getFirstListItem(
+    writer.filter('sourceKey = {:key}', { key: journalKey }),
+  ).catch(() => null);
+
+  if (existingJournal) {
+    const childLines = await writer.collection('journal_lines').getFullList({
+      filter: writer.filter('journal_entry_id = {:id}', { id: existingJournal.id }),
+    }).catch(() => []);
+    for (const line of childLines) {
+      await writer.collection('journal_lines').delete(line.id).catch(() => undefined);
+    }
+    await writer.collection('journal_entries').delete(existingJournal.id).catch(() => undefined);
+  }
+
+  // Remove ledger transaction
+  const existingTx = await writer.collection('transactions').getFirstListItem(
+    writer.filter('sourceKey = {:key}', { key: journalKey }),
+  ).catch(() => null);
+  if (existingTx) {
+    await writer.collection('transactions').delete(existingTx.id).catch(() => undefined);
+  }
+
+  // Reset fee fields
+  const updatedCase = await writer.collection('refining_cases').update(caseRecord.id, {
+    refining_fee: 0,
+    fee_settled: false,
+    journal_entry_id: '',
+    updated_by: userId,
+  });
+
+  await recordAuditEvent({
+    event: 'refining_fee_deleted' as any,
+    userId,
+    details: {
+      caseId: caseRecord.id,
+      caseNumber: caseRecord.case_number,
+      previousFee: caseRecord.refining_fee,
+    },
+    request,
+  });
+
+  const refinerName = caseRecord.expand?.refiner?.name || '';
+  return mapRefiningCase(updatedCase, refinerName);
+}
+
+/**
+ * 11. Update Refining Item (Sent Gold or Output Gold)
+ */
+export async function updateRefiningItem(
+  pb: PocketBase,
+  caseId: string,
+  itemId: string,
+  data: {
+    rawWeight?: number;
+    purity?: number;
+    stampNumber?: string;
+    labName?: string;
+    description?: string;
+    receiptDate?: string;
+  },
+  userId: string,
+  request?: Request,
+): Promise<RefiningItem> {
+  const itemRecord = await pb.collection('refining_items').getOne(itemId).catch(() => null);
+  if (!itemRecord || itemRecord.case_id !== caseId) {
+    throw new RefiningError('ردیف ری‌گیری مورد نظر یافت نشد.', 404);
+  }
+
+  const rawWeight = data.rawWeight !== undefined ? roundWeight(Number(data.rawWeight), 3) : Number(itemRecord.raw_weight);
+  const purity = data.purity !== undefined ? roundWeight(Number(data.purity), 1) : Number(itemRecord.purity);
+
+  if (rawWeight <= 0) {
+    throw new RefiningError('وزن طلا باید بزرگتر از صفر باشد.', 400);
+  }
+  if (purity <= 0 || purity > 1000) {
+    throw new RefiningError('عیار طلا باید بین ۱ تا ۱۰۰۰ باشد.', 400);
+  }
+
+  const convertedWeight = metalAtBaseKarat(rawWeight, purity, 750);
+  const stampNumber = data.stampNumber !== undefined ? data.stampNumber.trim() : (itemRecord.stamp_number || '');
+  const labName = data.labName !== undefined ? data.labName.trim() : (itemRecord.lab_name || '');
+  const description = data.description !== undefined ? data.description.trim() : (itemRecord.description || '');
+  const receiptDate = data.receiptDate !== undefined ? data.receiptDate.trim() : (itemRecord.receipt_date || '');
+
+  // 1. Update linked metal_inventory record if exists
+  if (itemRecord.metal_inventory_id) {
+    await pb.collection('metal_inventory').update(itemRecord.metal_inventory_id, {
+      raw_weight: rawWeight,
+      purity,
+      converted_weight: convertedWeight,
+      stamp_number: stampNumber,
+      lab_name: labName,
+      updated_by: userId,
+    }).catch(() => undefined);
+  }
+
+  // 2. Update refining item
+  const updatedItem = await pb.collection('refining_items').update(itemRecord.id, {
+    raw_weight: rawWeight,
+    purity,
+    converted_weight: convertedWeight,
+    stamp_number: stampNumber,
+    lab_name: labName,
+    description,
+    receipt_date: receiptDate,
+    updated_by: userId,
+  });
+
+  // 3. Recalculate case totals
+  await syncCaseTotals(pb, caseId);
+
+  await recordAuditEvent({
+    event: 'refining_item_updated' as any,
+    userId,
+    details: {
+      caseId,
+      itemId,
+      itemType: itemRecord.item_type,
+      rawWeight,
+      purity,
+      convertedWeight,
+    },
+    request,
+  });
+
+  return mapRefiningItem(updatedItem);
+}
+
+/**
+ * 12. Delete Refining Item and Reverse Stock Movement
+ */
+export async function deleteRefiningItem(
+  pb: PocketBase,
+  caseId: string,
+  itemId: string,
+  userId: string,
+  request?: Request,
+): Promise<void> {
+  const itemRecord = await pb.collection('refining_items').getOne(itemId).catch(() => null);
+  if (!itemRecord || itemRecord.case_id !== caseId) {
+    throw new RefiningError('ردیف ری‌گیری مورد نظر یافت نشد.', 404);
+  }
+
+  // 1. Delete linked metal_inventory record (reverses stock movement)
+  if (itemRecord.metal_inventory_id) {
+    await pb.collection('metal_inventory').delete(itemRecord.metal_inventory_id).catch(() => undefined);
+  }
+
+  // 2. Delete item record
+  await pb.collection('refining_items').delete(itemRecord.id);
+
+  // 3. Recalculate case totals
+  await syncCaseTotals(pb, caseId);
+
+  await recordAuditEvent({
+    event: 'refining_item_deleted' as any,
+    userId,
+    details: {
+      caseId,
+      itemId,
+      itemType: itemRecord.item_type,
+      rawWeight: itemRecord.raw_weight,
+    },
+    request,
+  });
+}
+
+/**
+ * 13. Update Sample Packet (Declared Weight, Received Weight, Purity)
+ */
+export async function updateSamplePacket(
+  pb: PocketBase,
+  caseId: string,
+  sampleId: string,
+  data: {
+    declaredWeight?: number;
+    receivedWeight?: number;
+    purity?: number;
+    description?: string;
+  },
+  userId: string,
+  request?: Request,
+): Promise<RefiningSample> {
+  const sampleRecord = await pb.collection('refining_samples').getOne(sampleId).catch(() => null);
+  if (!sampleRecord || sampleRecord.case_id !== caseId) {
+    throw new RefiningError('پاکت نمونه مورد نظر یافت نشد.', 404);
+  }
+
+  const declaredWeight = data.declaredWeight !== undefined ? roundWeight(Number(data.declaredWeight), 3) : Number(sampleRecord.declared_weight);
+  let receivedWeight = Number(sampleRecord.received_weight) || 0;
+  if (data.receivedWeight !== undefined) {
+    receivedWeight = roundWeight(Number(data.receivedWeight), 3);
+  }
+
+  if (declaredWeight <= 0) {
+    throw new RefiningError('وزن اعلام‌شده نمونه باید بزرگتر از صفر باشد.', 400);
+  }
+
+  const purity = data.purity !== undefined ? roundWeight(Number(data.purity), 1) : (Number(sampleRecord.purity) || 750);
+  if (purity <= 0 || purity > 1000) {
+    throw new RefiningError('عیار نمونه باید بین ۱ تا ۱۰۰۰ باشد.', 400);
+  }
+
+  const weightDifference = sampleRecord.status === 'received' || receivedWeight > 0
+    ? roundWeight(declaredWeight - receivedWeight, 3)
+    : 0;
+
+  const convertedReceivedWeight = receivedWeight > 0 ? metalAtBaseKarat(receivedWeight, purity, 750) : 0;
+  const description = data.description !== undefined ? data.description.trim() : (sampleRecord.description || '');
+
+  // 1. Update linked metal_inventory record if already received
+  if (sampleRecord.metal_inventory_id && receivedWeight > 0) {
+    await pb.collection('metal_inventory').update(sampleRecord.metal_inventory_id, {
+      raw_weight: receivedWeight,
+      purity,
+      converted_weight: convertedReceivedWeight,
+      updated_by: userId,
+    }).catch(() => undefined);
+  }
+
+  // 2. Update sample
+  const updatedSample = await pb.collection('refining_samples').update(sampleRecord.id, {
+    declared_weight: declaredWeight,
+    received_weight: receivedWeight,
+    weight_difference: weightDifference,
+    purity,
+    converted_received_weight: convertedReceivedWeight,
+    description,
+    updated_by: userId,
+  });
+
+  // 3. Recalculate case totals
+  await syncCaseTotals(pb, caseId);
+
+  await recordAuditEvent({
+    event: 'refining_sample_updated' as any,
+    userId,
+    details: {
+      caseId,
+      sampleId,
+      declaredWeight,
+      receivedWeight,
+      purity,
+    },
+    request,
+  });
+
+  return mapRefiningSample(updatedSample);
+}
+
+/**
+ * 14. Delete Sample Packet
+ */
+export async function deleteSamplePacket(
+  pb: PocketBase,
+  caseId: string,
+  sampleId: string,
+  userId: string,
+  request?: Request,
+): Promise<void> {
+  const sampleRecord = await pb.collection('refining_samples').getOne(sampleId).catch(() => null);
+  if (!sampleRecord || sampleRecord.case_id !== caseId) {
+    throw new RefiningError('پاکت نمونه مورد نظر یافت نشد.', 404);
+  }
+
+  // 1. Remove inventory entry if sample was received
+  if (sampleRecord.metal_inventory_id) {
+    await pb.collection('metal_inventory').delete(sampleRecord.metal_inventory_id).catch(() => undefined);
+  }
+
+  // 2. Delete sample
+  await pb.collection('refining_samples').delete(sampleRecord.id);
+
+  // 3. Recalculate case totals
+  await syncCaseTotals(pb, caseId);
+
+  await recordAuditEvent({
+    event: 'refining_sample_deleted' as any,
+    userId,
+    details: {
+      caseId,
+      sampleId,
+      packetNumber: sampleRecord.packet_number,
+    },
+    request,
+  });
+}
+
+/**
+ * 15. Delete Entire Refining Case
+ */
+export async function deleteRefiningCase(
+  pb: PocketBase,
+  caseId: string,
+  userId: string,
+  request?: Request,
+): Promise<void> {
+  const caseRecord = await pb.collection('refining_cases').getOne(caseId).catch(() => null);
+  if (!caseRecord) {
+    throw new RefiningError('پرونده ری‌گیری یافت نشد.', 404);
+  }
+
+  // 1. Delete all items and reverse inventory
+  const items = await pb.collection('refining_items').getFullList({
+    filter: pb.filter('case_id = {:caseId}', { caseId }),
+  }).catch(() => []);
+  for (const item of items) {
+    if (item.metal_inventory_id) {
+      await pb.collection('metal_inventory').delete(item.metal_inventory_id).catch(() => undefined);
+    }
+    await pb.collection('refining_items').delete(item.id).catch(() => undefined);
+  }
+
+  // 2. Delete all samples and reverse inventory
+  const samples = await pb.collection('refining_samples').getFullList({
+    filter: pb.filter('case_id = {:caseId}', { caseId }),
+  }).catch(() => []);
+  for (const sample of samples) {
+    if (sample.metal_inventory_id) {
+      await pb.collection('metal_inventory').delete(sample.metal_inventory_id).catch(() => undefined);
+    }
+    await pb.collection('refining_samples').delete(sample.id).catch(() => undefined);
+  }
+
+  // 3. Reverse fee journal entry & transaction if present
+  const writer = await getWriter(pb);
+  const journalKey = `refining:fee:${caseRecord.id}`;
+  const existingJournal = await writer.collection('journal_entries').getFirstListItem(
+    writer.filter('sourceKey = {:key}', { key: journalKey }),
+  ).catch(() => null);
+  if (existingJournal) {
+    const childLines = await writer.collection('journal_lines').getFullList({
+      filter: writer.filter('journal_entry_id = {:id}', { id: existingJournal.id }),
+    }).catch(() => []);
+    for (const line of childLines) {
+      await writer.collection('journal_lines').delete(line.id).catch(() => undefined);
+    }
+    await writer.collection('journal_entries').delete(existingJournal.id).catch(() => undefined);
+  }
+
+  const existingTx = await writer.collection('transactions').getFirstListItem(
+    writer.filter('sourceKey = {:key}', { key: journalKey }),
+  ).catch(() => null);
+  if (existingTx) {
+    await writer.collection('transactions').delete(existingTx.id).catch(() => undefined);
+  }
+
+  // 4. Delete the case itself
+  await writer.collection('refining_cases').delete(caseRecord.id);
+
+  await recordAuditEvent({
+    event: 'refining_case_deleted' as any,
+    userId,
+    details: {
+      caseId: caseRecord.id,
+      caseNumber: caseRecord.case_number,
+    },
+    request,
+  });
+}
+
+/**
+ * 16. Settle or Update Assay Lab Purity for Case and Output Gold
+ */
+export async function settleSampleAssayPurity(
+  pb: PocketBase,
+  sampleId: string,
+  purity: number,
+  userId: string,
+  request?: Request,
+): Promise<RefiningSample> {
+  const sample = await pb.collection('refining_samples').getOne(sampleId).catch(() => null);
+  if (!sample) {
+    throw new RefiningError('پاکت نمونه مورد نظر یافت نشد.', 404);
+  }
+
+  const numPurity = roundWeight(Number(purity), 1);
+  if (!numPurity || numPurity <= 0 || numPurity > 1000) {
+    throw new RefiningError('عیار باید عددی بین ۱ تا ۱۰۰۰ باشد.', 400);
+  }
+
+  // Update sample record
+  const convertedReceivedWeight = Number(sample.received_weight) > 0
+    ? metalAtBaseKarat(Number(sample.received_weight), numPurity, 750)
+    : 0;
+
+  if (sample.metal_inventory_id) {
+    await pb.collection('metal_inventory').update(sample.metal_inventory_id, {
+      purity: numPurity,
+      converted_weight: convertedReceivedWeight,
+      updated_by: userId,
+    }).catch(() => undefined);
+  }
+
+  const updatedSample = await pb.collection('refining_samples').update(sample.id, {
+    purity: numPurity,
+    converted_received_weight: convertedReceivedWeight,
+    updated_by: userId,
+  });
+
+  // Update output gold items in this case from conditional to definitive melted gold with this lab purity
+  const outputItems = await pb.collection('refining_items').getFullList({
+    filter: pb.filter('case_id = {:caseId} && item_type = "output_gold"', { caseId: sample.case_id }),
+  }).catch(() => []);
+
+  for (const item of outputItems) {
+    const convertedWeight = metalAtBaseKarat(Number(item.raw_weight), numPurity, 750);
+    await pb.collection('refining_items').update(item.id, {
+      purity: numPurity,
+      converted_weight: convertedWeight,
+      inventory_type: 'melted',
+      updated_by: userId,
+    }).catch(() => undefined);
+
+    if (item.metal_inventory_id) {
+      await pb.collection('metal_inventory').update(item.metal_inventory_id, {
+        purity: numPurity,
+        converted_weight: convertedWeight,
+        inventory_type: 'melted',
+        updated_by: userId,
+      }).catch(() => undefined);
+    }
+  }
+
+  await syncCaseTotals(pb, sample.case_id);
+
+  await recordAuditEvent({
+    event: 'refining_purity_settled' as any,
+    userId,
+    details: {
+      caseId: sample.case_id,
+      sampleId: sample.id,
+      purity: numPurity,
+    },
+    request,
+  });
+
+  return mapRefiningSample(updatedSample);
+}
+

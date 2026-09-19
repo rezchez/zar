@@ -137,17 +137,17 @@
   box-shadow: 0 20px 45px rgba(15, 23, 42, 0.18);
 }
 
-.document-customer-suggestions button {
+.document-customer-suggestions > .document-customer-suggestion-item {
   display: flex;
   min-width: 0;
   width: 100%;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
   border: 0;
-  border-radius: 10px;
+  border-radius: 8px;
   background: transparent;
-  padding: 8px 10px;
+  padding: 5px 8px;
   color: #0f172a;
   text-align: right;
   font-family: inherit;
@@ -156,9 +156,27 @@
   cursor: pointer;
 }
 
-.document-customer-suggestions button:hover,
-.document-customer-suggestions button.is-active {
+.document-customer-suggestions > .document-customer-suggestion-item:hover,
+.document-customer-suggestions > .document-customer-suggestion-item.is-active {
   background: #f1f5f9;
+}
+
+.document-customer-suggestions .customer-fav-star-btn {
+  display: inline-flex !important;
+  width: 24px !important;
+  min-width: 24px !important;
+  max-width: 24px !important;
+  height: 24px !important;
+  min-height: 24px !important;
+  max-height: 24px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex-shrink: 0 !important;
+  border-radius: 6px !important;
 }
 
 .document-customer-suggestions strong {
@@ -1077,10 +1095,10 @@
   color: #cbd5e1;
 }
 
-[data-theme="dark"] .document-customer-suggestions button:hover,
-[data-theme="dark"] .document-customer-suggestions button.is-active,
-.dark .document-customer-suggestions button:hover,
-.dark .document-customer-suggestions button.is-active {
+[data-theme="dark"] .document-customer-suggestions > .document-customer-suggestion-item:hover,
+[data-theme="dark"] .document-customer-suggestions > .document-customer-suggestion-item.is-active,
+.dark .document-customer-suggestions > .document-customer-suggestion-item:hover,
+.dark .document-customer-suggestions > .document-customer-suggestion-item.is-active {
   background: #1e293b;
 }
 

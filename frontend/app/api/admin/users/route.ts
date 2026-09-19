@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { recordAuditEvent } from '@/lib/audit';
 import { getServerAuthContext } from '@/lib/auth';
+import { imageService } from '@/lib/images';
 import {
   canModifyTargetUser,
   hasPermission,
@@ -48,6 +49,7 @@ export async function GET() {
         phone: String(user.phone ?? ''),
         phoneEditable: user.phoneEditable === true,
         verified: user.verified === true,
+        avatarUrl: user.avatar ? imageService.buildAvatarUrl(user, queryClient) : null,
         created: user.created,
         lastLoginAt: user.lastLoginAt ?? null,
         lastLogoutAt: user.lastLogoutAt ?? null,

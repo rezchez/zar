@@ -7,6 +7,7 @@ import {
   createPocketBaseClient,
   PB_AUTH_COOKIE,
 } from '@/lib/pocketbase';
+import { buildVersionedUrl } from '@/lib/images';
 import { BALE_PHONE_COOKIE } from '@/lib/bale';
 import { hashPhoneSessionToken } from '@/lib/phone-session';
 
@@ -167,8 +168,8 @@ function mapAuthenticatedUser(
       avatar: typeof record.avatar === 'string'
         ? record.avatar
         : undefined,
-      avatarUrl: typeof record.avatar === 'string'
-        ? pb.files.getURL(record, record.avatar)
+      avatarUrl: typeof record.avatar === 'string' && record.avatar
+        ? buildVersionedUrl(pb.files.getURL(record, record.avatar), record.updated)
         : undefined,
       customPermissions,
     };

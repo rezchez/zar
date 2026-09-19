@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { recordAuditEvent } from '@/lib/audit';
 import { getServerAuthContext } from '@/lib/auth';
 import { isIranianMobile, normalizePhone } from '@/lib/bale';
+import { imageService } from '@/lib/images';
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
 
 function isValidNationalCode(value: string) {
@@ -77,18 +78,38 @@ export async function PATCH(request: Request) {
     );
   }
 
-  if (avatar && !avatar.type.startsWith('image/')) {
-    return NextResponse.json(
-      { message: 'آواتار باید یک فایل تصویری باشد.' },
-      { status: 400 },
-    );
-  }
+  let processedAvatar: { file: File; filename: string } | null = null;
+  if (avatar) {
+    const validation = await imageService.validate(avatar, {
+      purpose: 'avatar',
+      declaredMimeType: avatar.type,
+    });
 
-  if (avatar && avatar.size > 5 * 1024 * 1024) {
-    return NextResponse.json(
-      { message: 'حجم آواتار نباید بیشتر از ۵ مگابایت باشد.' },
-      { status: 400 },
-    );
+    if (!validation.valid) {
+      return NextResponse.json(
+        { message: validation.error ?? 'فایل آواتار معتبر نیست.' },
+        { status: 400 },
+      );
+    }
+
+    try {
+      const uploadResult = await imageService.processUpload({
+        file: avatar,
+        purpose: 'avatar',
+        entityId: context.user.id,
+      });
+      processedAvatar = uploadResult;
+    } catch (processError) {
+      return NextResponse.json(
+        {
+          message:
+            processError instanceof Error
+              ? processError.message
+              : 'پردازش تصویر با خطا مواجه شد.',
+        },
+        { status: 400 },
+      );
+    }
   }
 
   try {
@@ -146,8 +167,8 @@ export async function PATCH(request: Request) {
       updateData.append('phoneEditable', 'false');
     }
 
-    if (avatar) {
-      updateData.append('avatar', avatar, avatar.name);
+    if (processedAvatar) {
+      updateData.append('avatar', processedAvatar.file, processedAvatar.filename);
     }
 
     if (removeAvatar && !avatar) {
@@ -155,7 +176,7 @@ export async function PATCH(request: Request) {
     }
 
     const writer = await getPocketBaseServiceClient().catch(() => context.pb);
-    await writer.collection('users').update(context.user.id, updateData);
+    const updatedRecord = await writer.collection('users').update(context.user.id, updateData);
 
     let emailChangeRequested = false;
 
@@ -264,9 +285,17 @@ export async function PATCH(request: Request) {
       });
     }
 
+    let avatarUrl: string | null | undefined = undefined;
+    if (processedAvatar) {
+      avatarUrl = imageService.buildAvatarUrl(updatedRecord, writer);
+    } else if (removeAvatar && !avatar) {
+      avatarUrl = null;
+    }
+
     return NextResponse.json({
       success: true,
       emailChangeRequested,
+      avatarUrl,
       message: emailChangeRequested
         ? 'اطلاعات ذخیره شد؛ برای تغییر ایمیل، لینک تایید را بررسی کنید.'
         : 'اطلاعات حساب ذخیره شد.',
