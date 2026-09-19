@@ -13,6 +13,15 @@ export interface Currency {
   updated?: string;
 }
 
+export const DEFAULT_STANDARD_CURRENCIES: Currency[] = [
+  { id: 'curr_usd', code: 'USD', name: 'دلار آمریکا', symbol: '$', decimals: 2, isSystem: true, sortOrder: 1 },
+  { id: 'curr_eur', code: 'EUR', name: 'یورو', symbol: '€', decimals: 2, isSystem: true, sortOrder: 2 },
+  { id: 'curr_aed', code: 'AED', name: 'درهم امارات', symbol: 'د.إ', decimals: 2, isSystem: true, sortOrder: 3 },
+  { id: 'curr_gbp', code: 'GBP', name: 'پوند انگلیس', symbol: '£', decimals: 2, isSystem: true, sortOrder: 4 },
+  { id: 'curr_irt', code: 'IRT', name: 'تومان', symbol: 'تومان', decimals: 0, isSystem: true, sortOrder: 5 },
+  { id: 'curr_irr', code: 'IRR', name: 'ریال ایران', symbol: 'ریال', decimals: 0, isSystem: true, sortOrder: 6 },
+];
+
 type PocketBaseCurrencyRecord = Record<string, any>;
 
 export class DuplicateCurrencyError extends Error {

@@ -129,7 +129,7 @@ export default function RefiningManagementClient() {
   const fetchRefiners = useCallback(async () => {
     setLoadingRefiners(true);
     try {
-      const res = await fetch('/api/customers');
+      const res = await fetch('/api/customers?perPage=500');
       const data = await res.json();
       if (res.ok) {
         setRefiners(data.customers || data.items || []);

@@ -16,6 +16,7 @@ import {
   RotateCcw,
   Search,
   Sparkles,
+  Star,
   Tag,
   Trash2,
   UserRound,
@@ -23,6 +24,7 @@ import {
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useFavoriteCustomers } from '@/hooks/useFavoriteCustomers';
 
 import DatePicker from '@/components/ui/date-picker';
 import {
@@ -37,6 +39,7 @@ import { useToastManager } from '@/components/ui/toast';
 import {
   getCurrenciesForBaseCurrency,
   getCurrencyDisplayName,
+  DEFAULT_STANDARD_CURRENCIES,
   type Currency,
 } from '@/lib/currencies';
 import { currencyDisplay, type Customer } from '@/lib/customer';
@@ -274,7 +277,7 @@ function baseKaratForMetal(
   return settings.goldBaseKarat;
 }
 
-function createCurrencyLine(nature: DocumentNature = 'received'): DocumentLine {
+function createCurrencyLine(nature: DocumentNature = 'received', defaultCurrencyUnit = 'USD'): DocumentLine {
   const line = createLine(nature, 'currency');
   return {
     ...line,
@@ -285,6 +288,8 @@ function createCurrencyLine(nature: DocumentNature = 'received'): DocumentLine {
     details: {
       ...line.details,
       currencyTradeId: line.id,
+      currencyUnit: line.details.currencyUnit || defaultCurrencyUnit,
+      settlementCurrencyUnit: line.details.settlementCurrencyUnit || defaultCurrencyUnit,
     },
   };
 }
@@ -488,9 +493,11 @@ function getCustomerGroupBadge(groupName?: string) {
 
 export default function DocumentForm({
   customers,
+  initialCurrencies = [],
 }: {
   customers: Customer[];
   nextDocumentNumber?: number;
+  initialCurrencies?: Currency[];
 }) {
   const { settings } = useAppSettings();
   const weightPrecision = Number(settings.weightDecimalPlaces) || 3;
@@ -501,7 +508,7 @@ export default function DocumentForm({
 
   function createSettingsLine(nature: DocumentNature = 'received', sourceTab = 'metals') {
     const line = sourceTab === 'currency'
-      ? createCurrencyLine(nature)
+      ? createCurrencyLine(nature, selectedCurrency || 'USD')
       : createLine(nature, sourceTab);
     return {
       ...line,
@@ -517,6 +524,12 @@ export default function DocumentForm({
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [isCustomerDropdownOpen, setIsCustomerDropdownOpen] = useState(false);
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
+  const {
+    favoriteCustomerIds,
+    isFavorite: isCustomerFavorite,
+    toggleFavorite: toggleFavoriteCustomer,
+  } = useFavoriteCustomers();
+  const [filterFavoritesOnly, setFilterFavoritesOnly] = useState(false);
   const customerSearchRef = useRef<HTMLDivElement>(null);
   const customerInputRef = useRef<HTMLInputElement>(null);
   const [documentNumberDisplay, setDocumentNumberDisplay] = useState('');
@@ -658,9 +671,30 @@ export default function DocumentForm({
   const baseCurrency = (settings.baseCurrency || 'IRR') as 'IRR' | 'IRT';
 
   // The currencies collection is the single source for document currency fields.
-  const [availableCurrencies, setAvailableCurrencies] = useState<Currency[]>([]);
+  // Pre-seed synchronously from server props, local cache or default standard currencies for instant zero-delay render.
+  const [availableCurrencies, setAvailableCurrencies] = useState<Currency[]>(() => {
+    if (initialCurrencies && initialCurrencies.length > 0) {
+      return initialCurrencies;
+    }
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem('zarfolio_currencies_cache');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      } catch {}
+    }
+    return DEFAULT_STANDARD_CURRENCIES;
+  });
   const [currenciesLoading, setCurrenciesLoading] = useState(false);
-  const [selectedCurrency, setSelectedCurrency] = useState('');
+  const [selectedCurrency, setSelectedCurrency] = useState(() => {
+    const initialList = initialCurrencies && initialCurrencies.length > 0
+      ? initialCurrencies
+      : DEFAULT_STANDARD_CURRENCIES;
+    const active = getCurrenciesForBaseCurrency(initialList, baseCurrency);
+    return active.find((c) => c.code === baseCurrency)?.code ?? active[0]?.code ?? 'USD';
+  });
   const [showAddCurrencyModal, setShowAddCurrencyModal] = useState(false);
   const [newCurrencyName, setNewCurrencyName] = useState('');
   const [newCurrencySymbol, setNewCurrencySymbol] = useState('');
@@ -670,8 +704,7 @@ export default function DocumentForm({
 
   useEffect(() => {
     const controller = new AbortController();
-    setCurrenciesLoading(true);
-    fetch('/api/currencies', { cache: 'no-store', signal: controller.signal })
+    fetch('/api/currencies', { signal: controller.signal })
       .then(async (response) => {
         const data = await response.json();
         if (!response.ok || !Array.isArray(data.currencies)) {
@@ -680,20 +713,23 @@ export default function DocumentForm({
         return data.currencies as Currency[];
       })
       .then((currencies) => {
-        setAvailableCurrencies(currencies);
-        setSelectedCurrency((current) =>
-          currencies.some((currency) => currency.code === current)
-            ? current
-            : currencies.find((currency) => currency.code === baseCurrency)?.code
-              ?? currencies[0]?.code
-              ?? '',
-        );
+        if (currencies.length > 0) {
+          setAvailableCurrencies(currencies);
+          try {
+            localStorage.setItem('zarfolio_currencies_cache', JSON.stringify(currencies));
+          } catch {}
+          setSelectedCurrency((current) =>
+            currencies.some((currency) => currency.code === current)
+              ? current
+              : currencies.find((currency) => currency.code === baseCurrency)?.code
+                ?? currencies[0]?.code
+                ?? '',
+          );
+        }
       })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === 'AbortError') return;
-        setAvailableCurrencies([]);
-        setSelectedCurrency('');
-        setErrorMessage(error instanceof Error ? error.message : 'دریافت فهرست ارزها انجام نشد.');
+        console.warn('Background currencies sync:', error);
       })
       .finally(() => {
         if (!controller.signal.aborted) setCurrenciesLoading(false);
@@ -870,38 +906,55 @@ export default function DocumentForm({
     const rawQuery = customerQuery.trim().toLocaleLowerCase();
     const normalizedQuery = normalizeDigits(rawQuery);
 
-    if (!rawQuery) {
-      return isCustomerDropdownOpen ? customers.slice(0, 8) : [];
+    let list = customers;
+    if (filterFavoritesOnly) {
+      list = list.filter((c) => favoriteCustomerIds.includes(c.id));
     }
 
-    return customers
-      .filter((customer) => {
-        const name = (customer.name || '').toLocaleLowerCase();
-        const englishName = (customer.englishName || '').toLocaleLowerCase();
-        const code = normalizeDigits(String(customer.customerCode || ''));
-        const p1 = normalizeDigits(customer.phone1 || '');
-        const p2 = normalizeDigits(customer.phone2 || '');
-        const p3 = normalizeDigits(customer.phone3 || '');
-        const group = (customer.groupName || '').toLocaleLowerCase();
-        const city = (customer.city || '').toLocaleLowerCase();
-        const nationalId = normalizeDigits(customer.nationalId || '');
-        const isRefinerMatch = isRefinerGroup(rawQuery) && isRefinerGroup(customer.groupName);
+    if (!rawQuery) {
+      if (!isCustomerDropdownOpen) return [];
+      const sorted = [...list].sort((a, b) => {
+        const aFav = favoriteCustomerIds.includes(a.id) ? 1 : 0;
+        const bFav = favoriteCustomerIds.includes(b.id) ? 1 : 0;
+        return bFav - aFav;
+      });
+      return sorted.slice(0, 10);
+    }
 
-        return (
-          isRefinerMatch ||
-          name.includes(rawQuery) ||
-          englishName.includes(rawQuery) ||
-          code.includes(normalizedQuery) ||
-          p1.includes(normalizedQuery) ||
-          p2.includes(normalizedQuery) ||
-          p3.includes(normalizedQuery) ||
-          group.includes(rawQuery) ||
-          city.includes(rawQuery) ||
-          nationalId.includes(normalizedQuery)
-        );
-      })
-      .slice(0, 10);
-  }, [customerQuery, customers, selectedCustomer, isCustomerDropdownOpen]);
+    const matched = list.filter((customer) => {
+      const name = (customer.name || '').toLocaleLowerCase();
+      const englishName = (customer.englishName || '').toLocaleLowerCase();
+      const code = normalizeDigits(String(customer.customerCode || ''));
+      const p1 = normalizeDigits(customer.phone1 || '');
+      const p2 = normalizeDigits(customer.phone2 || '');
+      const p3 = normalizeDigits(customer.phone3 || '');
+      const group = (customer.groupName || '').toLocaleLowerCase();
+      const city = (customer.city || '').toLocaleLowerCase();
+      const nationalId = normalizeDigits(customer.nationalId || '');
+      const isRefinerMatch = isRefinerGroup(rawQuery) && isRefinerGroup(customer.groupName);
+
+      return (
+        isRefinerMatch ||
+        name.includes(rawQuery) ||
+        englishName.includes(rawQuery) ||
+        code.includes(normalizedQuery) ||
+        p1.includes(normalizedQuery) ||
+        p2.includes(normalizedQuery) ||
+        p3.includes(normalizedQuery) ||
+        group.includes(rawQuery) ||
+        city.includes(rawQuery) ||
+        nationalId.includes(normalizedQuery)
+      );
+    });
+
+    matched.sort((a, b) => {
+      const aFav = favoriteCustomerIds.includes(a.id) ? 1 : 0;
+      const bFav = favoriteCustomerIds.includes(b.id) ? 1 : 0;
+      return bFav - aFav;
+    });
+
+    return matched.slice(0, 12);
+  }, [customerQuery, customers, selectedCustomer, isCustomerDropdownOpen, filterFavoritesOnly, favoriteCustomerIds]);
 
   const draftReady = isLineReady(draftLine);
   const currencyUnits = useMemo(() => {
@@ -1635,7 +1688,24 @@ export default function DocumentForm({
                   className="w-full"
                 >
                   <div className="account-field document-account-search-field max-w-none">
-                    <span className="text-xs font-bold text-slate-600 dark:text-slate-300">طرف‌حساب</span>
+                    <div className="flex items-center justify-between pb-1">
+                      <span className="text-xs font-bold text-slate-600 dark:text-slate-300">طرف‌حساب</span>
+                      {favoriteCustomerIds.length > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => setFilterFavoritesOnly((prev) => !prev)}
+                          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold transition-all ${
+                            filterFavoritesOnly
+                              ? 'bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-950/70 dark:text-amber-300 dark:border-amber-700 shadow-2xs'
+                              : 'text-slate-500 hover:text-amber-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-amber-400 dark:hover:bg-slate-800/60'
+                          }`}
+                          title={filterFavoritesOnly ? 'نمایش همه طرف‌حساب‌ها' : 'نمایش فقط طرف‌حساب‌های ستاره‌دار'}
+                        >
+                          <Star className={`h-3 w-3 ${filterFavoritesOnly ? 'fill-amber-400 text-amber-500' : 'text-slate-400'}`} />
+                          <span>ستاره‌دارها ({toPersianDigits(favoriteCustomerIds.length)})</span>
+                        </button>
+                      ) : null}
+                    </div>
                     <div className="gooey-search document-search-shell relative">
                       <Search size={16} className="text-slate-400 shrink-0" />
                       <input
@@ -1675,58 +1745,90 @@ export default function DocumentForm({
                             const groupBadge = getCustomerGroupBadge(customer.groupName);
                             const isHighlighted = idx === activeSuggestionIndex;
                             const phone = customer.phone1 || customer.phone2 || customer.phone3 || '';
+                            const displayName = customer.name?.trim() || customer.englishName?.trim() || `طرف‌حساب ${customer.customerCode || ''}`;
+                            const initial = displayName.charAt(0) || '؟';
 
                             return (
-                              <button
-                                type="button"
+                              <div
                                 key={customer.id}
                                 role="option"
+                                tabIndex={0}
                                 aria-selected={isHighlighted}
-                                className={isHighlighted ? 'is-active' : ''}
+                                className={`document-customer-suggestion-item ${isHighlighted ? 'is-active' : ''}`}
                                 onMouseEnter={() => setActiveSuggestionIndex(idx)}
                                 onClick={() => chooseCustomer(customer)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault();
+                                    chooseCustomer(customer);
+                                  }
+                                }}
                               >
-                                {/* Right side: Avatar + Name + Code + Group */}
-                                <div className="flex items-center gap-2.5 min-w-0">
-                                  <span className="document-suggestion-avatar shrink-0">
-                                    {customer.name.charAt(0)}
+                                {/* Right side: Star button + Avatar + Name + Code + Group */}
+                                <div className="flex items-center gap-2 min-w-0 flex-1">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      toggleFavoriteCustomer(customer.id);
+                                    }}
+                                    className="customer-fav-star-btn size-6 min-w-6 max-w-6 min-h-6 max-h-6 flex items-center justify-center p-0 rounded-md hover:bg-slate-200/80 dark:hover:bg-slate-700/80 transition-colors shrink-0 text-slate-400 cursor-pointer"
+                                    title={isCustomerFavorite(customer.id) ? 'حذف از ستاره‌دارها' : 'افزودن به ستاره‌دارها'}
+                                    aria-label="ستاره‌دار کردن"
+                                  >
+                                    <Star
+                                      className={`h-3.5 w-3.5 transition-transform active:scale-125 ${
+                                        isCustomerFavorite(customer.id)
+                                          ? 'fill-amber-400 text-amber-500 drop-shadow-xs'
+                                          : 'text-slate-300 hover:text-amber-400 dark:text-slate-600 dark:hover:text-amber-300'
+                                      }`}
+                                    />
+                                  </button>
+                                  <span className="size-7 min-w-7 h-7 shrink-0 rounded-lg bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-300 font-black text-xs flex items-center justify-center">
+                                    {initial}
                                   </span>
-                                  <div className="min-w-0 text-right">
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                      <strong className="text-xs sm:text-sm font-black text-slate-900 dark:text-slate-100 truncate">
-                                        {customer.name}
-                                      </strong>
+                                  <div className="min-w-0 text-right flex-1">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span className="text-xs font-black text-slate-900 dark:text-slate-100 truncate block">
+                                        {displayName}
+                                      </span>
+                                      {isCustomerFavorite(customer.id) ? (
+                                        <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-50 text-amber-800 border border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800/80 shrink-0">
+                                          ★
+                                        </span>
+                                      ) : null}
                                       {groupBadge ? (
-                                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black border ${groupBadge.classes}`}>
-                                          <Tag size={10} />
+                                        <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9.5px] font-bold border shrink-0 ${groupBadge.classes}`}>
+                                          <Tag size={9} />
                                           {groupBadge.label}
                                         </span>
                                       ) : null}
                                     </div>
-                                    <small className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold block mt-0.5">
+                                    <span className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold block leading-tight">
                                       کد: {toPersianDigits(String(customer.customerCode))}
-                                    </small>
+                                    </span>
                                   </div>
                                 </div>
 
                                 {/* Left side: Phone + City */}
-                                <div className="flex flex-col items-end gap-1 shrink-0 text-left pl-1">
+                                <div className="flex flex-col items-end gap-0.5 shrink-0 text-left pl-1">
                                   {phone ? (
-                                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800/80 px-2 py-0.5 rounded-lg border border-slate-200/60 dark:border-slate-700/60" dir="ltr">
-                                      <Phone size={11} className="text-amber-600 dark:text-amber-400" />
+                                    <span className="inline-flex items-center gap-1 text-[10.5px] font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800/80 px-1.5 py-0.5 rounded-md border border-slate-200/60 dark:border-slate-700/60" dir="ltr">
+                                      <Phone size={10} className="text-amber-600 dark:text-amber-400" />
                                       {toPersianDigits(phone)}
                                     </span>
                                   ) : (
-                                    <span className="text-[10px] text-slate-400">فاقد شماره</span>
+                                    <span className="text-[9.5px] text-slate-400">فاقد شماره</span>
                                   )}
                                   {customer.city ? (
-                                    <span className="inline-flex items-center gap-1 text-[10px] text-slate-500 dark:text-slate-400">
-                                      <MapPin size={10} className="text-slate-400" />
+                                    <span className="inline-flex items-center gap-0.5 text-[9.5px] text-slate-400 font-semibold">
+                                      <MapPin size={9} />
                                       {customer.city}
                                     </span>
                                   ) : null}
                                 </div>
-                              </button>
+                              </div>
                             );
                           })}
                         </div>
@@ -1758,6 +1860,21 @@ export default function DocumentForm({
                         <strong className="text-sm font-black text-slate-900 dark:text-slate-100">
                           {selectedCustomer.name}
                         </strong>
+                        <button
+                          type="button"
+                          onClick={() => toggleFavoriteCustomer(selectedCustomer.id)}
+                          className="p-1 rounded-lg hover:bg-teal-100 dark:hover:bg-teal-900/40 transition-colors"
+                          title={isCustomerFavorite(selectedCustomer.id) ? 'حذف از ستاره‌دارها' : 'افزودن به طرف‌حساب‌های ستاره‌دار'}
+                          aria-label="ستاره‌دار کردن طرف‌حساب"
+                        >
+                          <Star
+                            className={`h-4 w-4 transition-transform active:scale-125 ${
+                              isCustomerFavorite(selectedCustomer.id)
+                                ? 'fill-amber-400 text-amber-500 drop-shadow-xs'
+                                : 'text-slate-400 hover:text-amber-500 dark:text-slate-500 dark:hover:text-amber-400'
+                            }`}
+                          />
+                        </button>
                         <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-black bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
                           کد: {toPersianDigits(String(selectedCustomer.customerCode))}
                         </span>

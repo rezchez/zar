@@ -11,7 +11,7 @@ import MoneyInputField from '@/src/components/documents/MoneyInputField';
 import SlidingToggle from '@/src/components/documents/SlidingToggle';
 import { AssayLaboratorySelect } from '@/components/AssayLaboratorySelect';
 import { useAppSettings } from '@/src/components/SettingsProvider';
-import AmountRoundingModal from '@/src/components/documents/AmountRoundingModal';
+import AmountRoundingModal from '@/features/accounting/documents/components/AmountRoundingModal';
 import { useToastManager } from '@/components/ui/toast';
 import {
   getInventoryItemAvailability,
@@ -97,19 +97,43 @@ export default function GoldSaleTab({
   const [autoApplyRounding, setAutoApplyRounding] = useState<boolean>(false);
   const [lastRoundedAmount, setLastRoundedAmount] = useState<number | null>(null);
 
-  // Load saved preference from localStorage
+  // Load saved preference from API & localStorage
   useEffect(() => {
+    let isMounted = true;
+
+    // Fast initial load from localStorage
     try {
       const saved = localStorage.getItem('zarfolio_gold_sale_rounding');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (typeof parsed.digits === 'number') setRoundingDigits(parsed.digits);
+        if (typeof parsed.digits === 'number') setRoundingDigits(Math.min(4, Math.max(1, parsed.digits)));
         if (parsed.mode === 'round' || parsed.mode === 'ceil' || parsed.mode === 'floor') setRoundingMode(parsed.mode);
         if (typeof parsed.autoApply === 'boolean') setAutoApplyRounding(parsed.autoApply);
       }
     } catch {
       // ignore
     }
+
+    // Authoritative fetch from server user preferences
+    fetch('/api/account/preferences')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!isMounted || !data?.preferences?.goldSaleRounding) return;
+        const gsr = data.preferences.goldSaleRounding;
+        if (typeof gsr.digits === 'number') setRoundingDigits(Math.min(4, Math.max(1, gsr.digits)));
+        if (gsr.mode === 'round' || gsr.mode === 'ceil' || gsr.mode === 'floor') setRoundingMode(gsr.mode);
+        if (typeof gsr.autoApply === 'boolean') setAutoApplyRounding(gsr.autoApply);
+        try {
+          localStorage.setItem('zarfolio_gold_sale_rounding', JSON.stringify(gsr));
+        } catch {}
+      })
+      .catch(() => {
+        // ignore network error, already loaded localStorage
+      });
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const isGold = draftLine.details.metalType === 'gold';
@@ -166,6 +190,17 @@ export default function GoldSaleTab({
     } catch {
       // ignore
     }
+
+    // Sync to user preferences endpoint
+    fetch('/api/account/preferences', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        goldSaleRounding: { digits, mode, autoApply },
+      }),
+    }).catch(() => {
+      // ignore network error
+    });
 
     const diff = exactCalculatedAmount > 0 ? (roundedAmount - exactCalculatedAmount) : 0;
     setDraftLine((current) => ({

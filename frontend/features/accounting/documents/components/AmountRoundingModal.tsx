@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Settings, X, RotateCcw, Check, ArrowDown, ArrowUp, Equal } from 'lucide-react';
 import { roundAmountToDigits } from '@/src/lib/trade-utils';
 import { formatMoney } from '@/lib/money';
@@ -28,8 +29,6 @@ const PRESET_DIGITS = [
   { digits: 2, label: '۲ رقم (صدگان)' },
   { digits: 3, label: '۳ رقم (هزارگان)' },
   { digits: 4, label: '۴ رقم (ده‌هزارگان)' },
-  { digits: 5, label: '۵ رقم (صدهزارگان)' },
-  { digits: 6, label: '۶ رقم (میلیون)' },
 ];
 
 export default function AmountRoundingModal({
@@ -44,14 +43,19 @@ export default function AmountRoundingModal({
   onApply,
   onReset,
 }: AmountRoundingModalProps) {
-  const [digits, setDigits] = useState<number>(initialDigits);
+  const [digits, setDigits] = useState<number>(Math.min(4, Math.max(1, initialDigits)));
   const [mode, setMode] = useState<'round' | 'ceil' | 'floor'>(initialMode);
   const [autoApply, setAutoApply] = useState<boolean>(initialAutoApply);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Sync state on open
   useEffect(() => {
     if (isOpen) {
-      setDigits(initialDigits);
+      setDigits(Math.min(4, Math.max(1, initialDigits)));
       setMode(initialMode);
       setAutoApply(initialAutoApply);
     }
@@ -69,7 +73,21 @@ export default function AmountRoundingModal({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
-  if (!isOpen) return null;
+  // Prevent background page from scrolling when modal is open
+  useEffect(() => {
+    if (!isOpen) return;
+    const originalBodyOverflow = document.body.style.overflow;
+    const originalHtmlOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow = originalBodyOverflow;
+      document.documentElement.style.overflow = originalHtmlOverflow;
+    };
+  }, [isOpen]);
+
+  if (!isOpen || !mounted) return null;
 
   // Base amount to perform rounding on
   const amountToRound = exactCalculatedAmount && exactCalculatedAmount > 0
@@ -95,17 +113,21 @@ export default function AmountRoundingModal({
     onClose();
   };
 
-  return (
+  const modalContent = (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4 animate-in fade-in duration-200"
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4 overflow-y-auto animate-in fade-in duration-200"
       onClick={onClose}
+      onWheel={(e) => {
+        e.stopPropagation();
+      }}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="rounding-modal-title"
-        className="w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl transition-all dark:border-slate-800 dark:bg-slate-900"
+        className="w-full max-w-lg max-h-[92vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl transition-all dark:border-slate-800 dark:bg-slate-900"
         onClick={(e) => e.stopPropagation()}
+        onWheel={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/70 px-5 py-4 dark:border-slate-800/80 dark:bg-slate-900/50">
@@ -155,7 +177,7 @@ export default function AmountRoundingModal({
             </label>
 
             {/* Quick Presets */}
-            <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5">
+            <div className="grid grid-cols-3 gap-2">
               {PRESET_DIGITS.map((p) => {
                 const isSelected = digits === p.digits;
                 return (
@@ -163,7 +185,7 @@ export default function AmountRoundingModal({
                     key={p.digits}
                     type="button"
                     onClick={() => setDigits(p.digits)}
-                    className={`rounded-lg px-2 py-1.5 text-center text-xs font-extrabold transition-all border ${
+                    className={`rounded-xl px-2.5 py-2 text-center text-xs font-extrabold transition-all border ${
                       isSelected
                         ? 'border-amber-500 bg-amber-500 text-white shadow-xs dark:border-amber-500 dark:bg-amber-600'
                         : 'border-slate-200 bg-white text-slate-700 hover:border-amber-400 hover:bg-amber-50/50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-amber-600'
@@ -184,7 +206,8 @@ export default function AmountRoundingModal({
                 <button
                   type="button"
                   onClick={() => setDigits((d) => Math.max(1, d - 1))}
-                  className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-white text-sm font-black text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                  disabled={digits <= 1}
+                  className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-white text-sm font-black text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:pointer-events-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
                   title="کاهش یک رقم"
                 >
                   -
@@ -194,8 +217,9 @@ export default function AmountRoundingModal({
                 </span>
                 <button
                   type="button"
-                  onClick={() => setDigits((d) => Math.min(9, d + 1))}
-                  className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-white text-sm font-black text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                  onClick={() => setDigits((d) => Math.min(4, d + 1))}
+                  disabled={digits >= 4}
+                  className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-white text-sm font-black text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:pointer-events-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
                   title="افزایش یک رقم"
                 >
                   +
@@ -340,4 +364,7 @@ export default function AmountRoundingModal({
       </div>
     </div>
   );
+
+  if (typeof document === 'undefined') return null;
+  return createPortal(modalContent, document.body);
 }
