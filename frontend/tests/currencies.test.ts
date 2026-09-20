@@ -60,6 +60,15 @@ describe('Currencies Database Collection & UI Dropdown Integration Tests', () =>
 
     const aed: Currency = { id: '2', name: 'درهم', symbol: 'AED', code: 'AED' };
     expect(getCurrencyDisplayName(aed)).toBe('درهم (AED)');
+
+    const irr: Currency = { id: 'irr', name: 'ریال ایران', symbol: 'ریال', code: 'IRR' };
+    expect(getCurrencyDisplayName(irr)).toBe('ریال ایران (IRR)');
+
+    const irt: Currency = { id: 'irt', name: 'تومان', symbol: 'تومان', code: 'IRT' };
+    expect(getCurrencyDisplayName(irt)).toBe('تومان (IRT)');
+
+    const irtIran: Currency = { id: 'irt2', name: 'تومان ایران', symbol: 'تومان', code: 'IRT' };
+    expect(getCurrencyDisplayName(irtIran)).toBe('تومان ایران (IRT)');
   });
 
   test('only the selected domestic base currency is active in document currency lists', () => {

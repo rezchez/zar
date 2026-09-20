@@ -3,6 +3,7 @@ import { describe, expect, it } from 'bun:test';
 describe('Program Settings — URL Tab Navigation & Deep Linking', () => {
   const VALID_TABS = [
     'general',
+    'document_numbering',
     'database_backup',
     'accounting_chart',
     'print_customization',
@@ -14,9 +15,10 @@ describe('Program Settings — URL Tab Navigation & Deep Linking', () => {
 
   const VALID_PRINT_SUB_TABS = ['reports', 'invoices', 'logo', 'store_info'] as const;
 
-  it('validates all 8 settings tabs are supported and defined', () => {
-    expect(VALID_TABS.length).toBe(8);
+  it('validates all 9 settings tabs are supported and defined', () => {
+    expect(VALID_TABS.length).toBe(9);
     expect(VALID_TABS).toContain('general');
+    expect(VALID_TABS).toContain('document_numbering');
     expect(VALID_TABS).toContain('database_backup');
     expect(VALID_TABS).toContain('accounting_chart');
     expect(VALID_TABS).toContain('print_customization');
@@ -34,6 +36,7 @@ describe('Program Settings — URL Tab Navigation & Deep Linking', () => {
       return 'general';
     }
 
+    expect(resolveTab('document_numbering')).toBe('document_numbering');
     expect(resolveTab('database_backup')).toBe('database_backup');
     expect(resolveTab('accounting_chart')).toBe('accounting_chart');
     expect(resolveTab('price_api')).toBe('price_api');
@@ -55,6 +58,9 @@ describe('Program Settings — URL Tab Navigation & Deep Linking', () => {
       const q = params.toString();
       return q ? `${pathname}?${q}` : pathname;
     }
+
+    expect(getUpdatedUrl('/dashboard/settings', '', 'document_numbering'))
+      .toBe('/dashboard/settings?tab=document_numbering');
 
     expect(getUpdatedUrl('/dashboard/settings', '', 'database_backup'))
       .toBe('/dashboard/settings?tab=database_backup');

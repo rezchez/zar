@@ -35,8 +35,10 @@ import {
   Square,
   FolderTree,
   Database,
+  FileDigit,
 } from 'lucide-react';
 import { useAppSettings } from '@/components/shared/SettingsProvider';
+import { useToastManager } from '@/components/ui/toast';
 import { jalaliDateToIso, parseJalaliDate, formatJalaliDate } from '@/lib/jalali';
 import { formatMoney } from '@/lib/money';
 import type { PriceApiSettings, PriceApiUnit } from '@/lib/price-api';
@@ -109,6 +111,12 @@ const SETTINGS_TABS = [
     icon: Building2,
   },
   {
+    id: 'document_numbering',
+    label: 'تنظیمات شماره‌گذاری اسناد',
+    description: 'پیشوند و الگوی شماره‌گذاری اسناد و فاکتورها',
+    icon: FileDigit,
+  },
+  {
     id: 'database_backup',
     label: 'پشتیبان‌گیری و بازیابی اطلاعات',
     description: 'ایجاد پشتیبان دستی، بررسی سلامت SHA-256 و بازیابی ایمن دیتابیس',
@@ -154,6 +162,7 @@ const SETTINGS_TABS = [
 
 const VALID_TABS = [
   'general',
+  'document_numbering',
   'database_backup',
   'accounting_chart',
   'print_customization',
@@ -175,6 +184,7 @@ export default function ProgramSettings() {
     isLoading,
     updateSettings,
   } = useAppSettings();
+  const toast = useToastManager();
 
   const router = useRouter();
   const pathname = usePathname();
@@ -375,22 +385,32 @@ export default function ProgramSettings() {
       });
       const data = await res.json();
       if (provider === 'telegram') {
-        setTelegramTestStatus({
-          success: res.ok && data.success,
-          message: data.message || (res.ok ? 'اتصال تلگرام با موفقیت برقرار شد.' : 'خطا در ارتباط با تلگرام'),
-        });
+        const isOk = res.ok && data.success;
+        const msg = data.message || (isOk ? 'اتصال تلگرام با موفقیت برقرار شد.' : 'خطا در ارتباط با تلگرام');
+        setTelegramTestStatus({ success: isOk, message: msg });
+        if (isOk) {
+          toast.success('تست اتصال تلگرام', msg);
+        } else {
+          toast.error('خطا در اتصال تلگرام', msg);
+        }
       } else {
-        setBaleTestStatus({
-          success: res.ok && data.success,
-          message: data.message || (res.ok ? 'اتصال بله با موفقیت برقرار شد.' : 'خطا در ارتباط با بله'),
-        });
+        const isOk = res.ok && data.success;
+        const msg = data.message || (isOk ? 'اتصال بله با موفقیت برقرار شد.' : 'خطا در ارتباط با بله');
+        setBaleTestStatus({ success: isOk, message: msg });
+        if (isOk) {
+          toast.success('تست اتصال بله', msg);
+        } else {
+          toast.error('خطا در اتصال بله', msg);
+        }
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'خطا در ارسال درخواست تست';
       if (provider === 'telegram') {
         setTelegramTestStatus({ success: false, message: msg });
+        toast.error('خطا در تست تلگرام', msg);
       } else {
         setBaleTestStatus({ success: false, message: msg });
+        toast.error('خطا در تست بله', msg);
       }
     } finally {
       if (provider === 'telegram') setIsTestingTelegram(false);
@@ -455,15 +475,25 @@ export default function ProgramSettings() {
     setStatusMessage(null);
     setSaveSuccess(false);
 
-    const res = await updateSettings(form);
+    try {
+      const res = await updateSettings(form);
 
-    setIsSaving(false);
-    if (res.success) {
-      setSaveSuccess(true);
-      setStatusMessage({ type: 'success', text: 'تنظیمات با موفقیت ذخیره شد.' });
-      setTimeout(() => setSaveSuccess(false), 3000);
-    } else {
-      setStatusMessage({ type: 'error', text: res.message || 'خطا در ثبت تنظیمات.' });
+      setIsSaving(false);
+      if (res.success) {
+        setSaveSuccess(true);
+        setStatusMessage({ type: 'success', text: 'تنظیمات با موفقیت ذخیره شد.' });
+        toast.success('تنظیمات ذخیره شد', 'تغییرات تنظیمات برنامه با موفقیت در سیستم اعمال گردید.');
+        setTimeout(() => setSaveSuccess(false), 3000);
+      } else {
+        const errorMsg = res.message || 'خطا در ثبت تنظیمات.';
+        setStatusMessage({ type: 'error', text: errorMsg });
+        toast.error('خطا در ذخیره تنظیمات', errorMsg);
+      }
+    } catch (err) {
+      setIsSaving(false);
+      const errorMsg = err instanceof Error ? err.message : 'خطا در ثبت تنظیمات.';
+      setStatusMessage({ type: 'error', text: errorMsg });
+      toast.error('خطا در ذخیره تنظیمات', errorMsg);
     }
   }
 
@@ -479,13 +509,18 @@ export default function ProgramSettings() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setPriceApiMessage({ type: 'error', text: data.message || 'خطا در ذخیره تنظیمات API قیمت.' });
+        const errorMsg = data.message || 'خطا در ذخیره تنظیمات API قیمت.';
+        setPriceApiMessage({ type: 'error', text: errorMsg });
+        toast.error('خطا در ذخیره تنظیمات API قیمت', errorMsg);
         return;
       }
       setPriceApi(data.settings);
       setPriceApiMessage({ type: 'success', text: 'تنظیمات API قیمت با موفقیت ذخیره شد.' });
+      toast.success('تنظیمات API قیمت ذخیره شد', 'پیکربندی وب‌سرویس قیمت با موفقیت به‌روزرسانی شد.');
     } catch {
-      setPriceApiMessage({ type: 'error', text: 'خطا در برقراری ارتباط با سرور.' });
+      const errorMsg = 'خطا در برقراری ارتباط با سرور.';
+      setPriceApiMessage({ type: 'error', text: errorMsg });
+      toast.error('خطا در ذخیره تنظیمات', errorMsg);
     } finally {
       setIsPriceApiSaving(false);
     }
@@ -502,21 +537,29 @@ export default function ProgramSettings() {
       });
       if (!saveRes.ok) {
         const data = await saveRes.json();
-        setPriceApiMessage({ type: 'error', text: data.message || 'ابتدا تنظیمات API را درست کنید.' });
+        const errorMsg = data.message || 'ابتدا تنظیمات API را درست کنید.';
+        setPriceApiMessage({ type: 'error', text: errorMsg });
+        toast.error('خطا در ذخیره تنظیمات', errorMsg);
         return;
       }
       const syncRes = await fetch('/api/price-api/sync?force=1', { method: 'POST' });
       const data = await syncRes.json();
       if (!syncRes.ok) {
-        setPriceApiMessage({ type: 'error', text: data.message || 'دریافت قیمت‌ها ناموفق بود.' });
+        const errorMsg = data.message || 'دریافت قیمت‌ها ناموفق بود.';
+        setPriceApiMessage({ type: 'error', text: errorMsg });
+        toast.error('خطا در دریافت قیمت‌ها', errorMsg);
         return;
       }
       const settingsRes = await fetch('/api/price-api', { cache: 'no-store' });
       const settingsData = await settingsRes.json();
       if (settingsData.settings) setPriceApi(settingsData.settings);
-      setPriceApiMessage({ type: 'success', text: `اتصال برقرار شد و ${toFaDigits(data.stored || 0)} قیمت ذخیره شد.` });
+      const successMsg = `اتصال برقرار شد و ${toFaDigits(data.stored || 0)} قیمت ذخیره شد.`;
+      setPriceApiMessage({ type: 'success', text: successMsg });
+      toast.success('همگام‌سازی موفق قیمت‌ها', successMsg);
     } catch {
-      setPriceApiMessage({ type: 'error', text: 'خطا در دریافت قیمت‌ها.' });
+      const errorMsg = 'خطا در دریافت قیمت‌ها.';
+      setPriceApiMessage({ type: 'error', text: errorMsg });
+      toast.error('خطا در استعلام قیمت‌ها', errorMsg);
     } finally {
       setIsPriceApiSyncing(false);
     }
@@ -625,17 +668,40 @@ export default function ProgramSettings() {
 
         {/* Tab Content Panel */}
         <main className="lg:col-span-8 xl:col-span-9 min-w-0 space-y-6">
-          {/* Status Messages */}
-          {statusMessage && (
-            <div
-              className={`p-3.5 rounded-xl text-xs flex items-center gap-2 border ${
-                statusMessage.type === 'success'
-                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
-                  : 'bg-rose-500/10 border-rose-500/30 text-rose-700 dark:text-rose-300'
-              }`}
-            >
-              {statusMessage.type === 'success' ? <Check size={16} /> : <AlertCircle size={16} />}
-              <span>{statusMessage.text}</span>
+          {/* TAB: Document Numbering Settings */}
+          {activeTab === 'document_numbering' && (
+            <div className="space-y-6">
+              <section className="dashboard-panel p-6 space-y-6">
+                <div className="account-panel-heading border-b border-slate-100 dark:border-slate-800 pb-4">
+                  <div>
+                    <p className="eyebrow">الگوی شماره‌گذاری و پیشوندها</p>
+                    <h2 className="flex items-center gap-2">
+                      <FileDigit size={18} className="text-amber-600" />
+                      تنظیمات شماره‌گذاری اسناد
+                    </h2>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  {/* Document Number Prefix */}
+                  <label className="account-field">
+                    <span className="font-bold text-xs flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
+                      <FileText size={14} />
+                      متن شروع شماره فاکتور / سند
+                    </span>
+                    <input
+                      type="text"
+                      value={form.documentNumberPrefix}
+                      onChange={(e) => updateFormField('documentNumberPrefix', e.target.value)}
+                      placeholder="مثال: سند-"
+                      maxLength={20}
+                    />
+                    <small className="text-slate-500">
+                      این پیشوند در انتهای شماره‌گذاری خودکار قبل از شماره ترتیبی قرار می‌گیرد (مثال: {form.documentNumberPrefix || 'سند-'}۱۳).
+                    </small>
+                  </label>
+                </div>
+              </section>
             </div>
           )}
 
@@ -679,24 +745,6 @@ export default function ProgramSettings() {
                   placeholder="مثال: زر فولیـو"
                   required
                 />
-              </label>
-
-              {/* Document Number Prefix */}
-              <label className="account-field">
-                <span className="font-bold text-xs flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
-                  <FileText size={14} />
-                  متن شروع شماره فاکتور / سند
-                </span>
-                <input
-                  type="text"
-                  value={form.documentNumberPrefix}
-                  onChange={(e) => updateFormField('documentNumberPrefix', e.target.value)}
-                  placeholder="مثال: سند-"
-                  maxLength={20}
-                />
-                <small className="text-slate-500">
-                  این پیشوند در انتهای شماره‌گذاری خودکار قبل از شماره ترتیبی قرار می‌گیرد (مثال: {form.documentNumberPrefix || 'سند-'}۱۳).
-                </small>
               </label>
 
               {/* Fiscal Year Start Date with Calendar Popover */}
@@ -2159,7 +2207,7 @@ export default function ProgramSettings() {
       )}
 
           {/* Save Button for Settings */}
-          {(activeTab === 'general' || activeTab === 'appearance' || activeTab === 'pwa_settings' || activeTab === 'manager_notifications') && (
+          {(activeTab === 'general' || activeTab === 'document_numbering' || activeTab === 'appearance' || activeTab === 'pwa_settings' || activeTab === 'manager_notifications') && (
             <div className="flex justify-end pt-4">
               <button
                 type="button"

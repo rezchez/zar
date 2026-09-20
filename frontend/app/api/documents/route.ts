@@ -30,6 +30,15 @@ const amountFields = [
   'tertiaryAmount',
 ] as const;
 
+export type RawGoldHistoryEntry = {
+  id: string;
+  type: 'received' | 'paid';
+  date: string;
+  customerName: string;
+  weight: number;
+  description?: string;
+};
+
 export type RawGoldInventoryItem = {
   id: string;
   weight: number;
@@ -39,6 +48,8 @@ export type RawGoldInventoryItem = {
   labName?: string;
   customerName: string;
   rawKind: 'molten' | 'conditional' | 'misc' | 'question';
+  date?: string;
+  history?: RawGoldHistoryEntry[];
 };
 
 export type MeltedInventoryItem = RawGoldInventoryItem;
@@ -135,6 +146,8 @@ export async function getRawGoldInventory(
     const weight = Math.abs(Number(record.raw_weight ?? 0));
     const invType = String(record.inventory_type ?? '');
     const itemKind = rawKindFromInventoryType[invType] ?? 'molten';
+    const itemDate = String(record.date || record.created?.slice(0, 10) || '');
+    const custName = String(record.expand?.customer?.name ?? (record.is_opening_balance ? 'موجودی اول دوره' : ''));
     if (String(record.direction) === 'in' && weight > 0) {
       available.set(record.id, {
         id: record.id,
@@ -143,15 +156,38 @@ export async function getRawGoldInventory(
         purity: Number(record.purity ?? 750) || 750,
         stampNumber: String(record.stamp_number ?? ''),
         labName: String(record.lab_name ?? ''),
-        customerName: String(record.expand?.customer?.name ?? (record.is_opening_balance ? 'موجودی اول دوره' : '')),
+        customerName: custName,
         rawKind: itemKind,
+        date: itemDate,
+        history: [
+          {
+            id: record.id,
+            type: 'received',
+            date: itemDate,
+            customerName: custName,
+            weight,
+            description: String(record.description ?? ''),
+          },
+        ],
       });
     }
   }
   for (const record of inventoryRecords) {
     if (String(record.direction) !== 'out') continue;
     const source = available.get(String(record.source_inventory_id ?? ''));
-    if (source) source.remainingWeight = Math.max(0, source.remainingWeight - Math.abs(Number(record.raw_weight ?? 0)));
+    if (source) {
+      const outWeight = Math.abs(Number(record.raw_weight ?? 0));
+      source.remainingWeight = Math.max(0, source.remainingWeight - outWeight);
+      if (!source.history) source.history = [];
+      source.history.push({
+        id: record.id,
+        type: 'paid',
+        date: String(record.date || record.created?.slice(0, 10) || ''),
+        customerName: String(record.expand?.customer?.name ?? ''),
+        weight: outWeight,
+        description: String(record.description ?? ''),
+      });
+    }
   }
   for (const record of transactionRecords) {
     if (linkedTransactionIds.has(record.id) || record.is_deleted === true) continue;
@@ -159,6 +195,8 @@ export async function getRawGoldInventory(
     const weight = Math.abs(Number(record.goldAmount ?? 0));
     const subType = String(record.documentSubType ?? '');
     const itemKind = rawKindFromDocumentSubType[subType] ?? (details.rawKind as 'molten' | 'conditional' | 'misc' | 'question') ?? 'molten';
+    const itemDate = String(record.documentDateJalali || record.transactionDate || record.created?.slice(0, 10) || '');
+    const custName = String(record.expand?.customer?.name ?? (record.isOpeningBalance ? 'موجودی اول دوره' : (record.customerCode ?? '')));
     if (record.documentNature === 'received' && weight > 0) {
       available.set(record.id, {
         id: record.id,
@@ -167,13 +205,40 @@ export async function getRawGoldInventory(
         purity: Number(details.purity ?? 750) || 750,
         stampNumber: String(details.stampNumber ?? ''),
         labName: String(details.labName ?? ''),
-        customerName: String(record.expand?.customer?.name ?? (record.isOpeningBalance ? 'موجودی اول دوره' : (record.customerCode ?? ''))),
+        customerName: custName,
         rawKind: itemKind,
+        date: itemDate,
+        history: [
+          {
+            id: record.id,
+            type: 'received',
+            date: itemDate,
+            customerName: custName,
+            weight,
+            description: String(record.description ?? ''),
+          },
+        ],
       });
     }
     if (record.documentNature === 'paid') {
       const source = available.get(String(details.inventorySourceId ?? ''));
-      if (source) source.remainingWeight = Math.max(0, source.remainingWeight - weight);
+      if (source) {
+        source.remainingWeight = Math.max(0, source.remainingWeight - weight);
+        if (!source.history) source.history = [];
+        source.history.push({
+          id: record.id,
+          type: 'paid',
+          date: String(record.documentDateJalali || record.transactionDate || record.created?.slice(0, 10) || ''),
+          customerName: String(record.expand?.customer?.name ?? (record.customerCode ?? '')),
+          weight,
+          description: String(record.description ?? ''),
+        });
+      }
+    }
+  }
+  for (const item of available.values()) {
+    if (item.history && item.history.length > 1) {
+      item.history.sort((a, b) => a.date.localeCompare(b.date));
     }
   }
   const result = [...available.values()].filter((item) => item.remainingWeight > 0.0000001);
@@ -233,7 +298,11 @@ export async function GET(request: Request) {
     return NextResponse.json({ message: 'ابتدا وارد حساب شوید.' }, { status: 401 });
   }
 
-  if (!hasPermission(context.user, 'document.view') && !hasPermission(context.user, 'document.manage')) {
+  if (
+    !hasPermission(context.user, 'document.view') &&
+    !hasPermission(context.user, 'document.manage') &&
+    !hasPermission(context.user, 'document.create')
+  ) {
     return NextResponse.json({ message: 'دسترسی غیرمجاز به اسناد.' }, { status: 403 });
   }
 

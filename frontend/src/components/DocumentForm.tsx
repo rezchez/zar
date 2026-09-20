@@ -5,7 +5,9 @@ import {
   Check,
   ClipboardList,
   Flame,
+  Info,
   LoaderCircle,
+  Lock,
   MapPin,
   PencilLine,
   Phone,
@@ -19,6 +21,7 @@ import {
   Star,
   Tag,
   Trash2,
+  Unlock,
   UserRound,
   X,
 } from 'lucide-react';
@@ -430,6 +433,30 @@ function getLineDocumentTypeLabel(
     return nature === 'received' ? 'دریافت نقد' : 'پرداخت نقد';
   }
 
+  if (tab === 'bank') {
+    return nature === 'received' ? 'دریافت بانکی' : 'پرداخت بانکی';
+  }
+
+  if (tab === 'coin') {
+    return nature === 'received' ? 'دریافت سکه' : 'پرداخت سکه';
+  }
+
+  if (tab === 'goods') {
+    return nature === 'received' ? 'ورود کالا و جواهر' : 'خروج کالا و جواهر';
+  }
+
+  if (tab === 'stone') {
+    return nature === 'received' ? 'ورود سنگ' : 'خروج سنگ';
+  }
+
+  if (tab === 'income-expense') {
+    return nature === 'received' ? 'درآمد' : 'هزینه';
+  }
+
+  if (tab === 'claim') {
+    return nature === 'received' ? 'بدهی ما' : 'طلب ما';
+  }
+
   if (tab === 'workmanship') {
     return nature === 'received' ? 'ورود کار ساخته' : 'خروج کار ساخته';
   }
@@ -491,6 +518,22 @@ function getCustomerGroupBadge(groupName?: string) {
   };
 }
 
+export const VALID_ENTRY_TABS = [
+  'metals',
+  'gold-sale',
+  'goods',
+  'currency',
+  'stone',
+  'coin',
+  'cash',
+  'bank',
+  'income-expense',
+  'claim',
+  'workmanship',
+] as const;
+
+export const LOCKED_CUSTOMER_STORAGE_KEY = 'zar_document_locked_customer_id';
+
 export default function DocumentForm({
   customers,
   initialCurrencies = [],
@@ -522,6 +565,8 @@ export default function DocumentForm({
 
   const [customerQuery, setCustomerQuery] = useState('');
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
+  const [isCustomerLocked, setIsCustomerLocked] = useState(false);
+  const [showLockInfo, setShowLockInfo] = useState(false);
   const [isCustomerDropdownOpen, setIsCustomerDropdownOpen] = useState(false);
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
   const {
@@ -545,6 +590,56 @@ export default function DocumentForm({
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const toast = useToastManager();
+
+  // Sync entry tab with URL hash or search params on load & hashchange
+  useEffect(() => {
+    const getTargetTab = (): string | null => {
+      if (typeof window === 'undefined') return null;
+      const hash = window.location.hash.replace(/^#/, '');
+      if (hash && (VALID_ENTRY_TABS as readonly string[]).includes(hash)) {
+        return hash;
+      }
+      const tabParam = new URLSearchParams(window.location.search).get('tab');
+      if (tabParam && (VALID_ENTRY_TABS as readonly string[]).includes(tabParam)) {
+        return tabParam;
+      }
+      return null;
+    };
+
+    const initialTab = getTargetTab();
+    if (initialTab) {
+      changeEntryTab(initialTab);
+    }
+
+    const handleHashChange = () => {
+      const currentTab = getTargetTab();
+      if (currentTab) {
+        changeEntryTab(currentTab);
+      }
+    };
+
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  // Restore locked customer from browser storage (localStorage) on refresh
+  useEffect(() => {
+    try {
+      const savedLockedId = localStorage.getItem(LOCKED_CUSTOMER_STORAGE_KEY);
+      if (savedLockedId) {
+        const match = customers.find((c) => c.id === savedLockedId);
+        if (match) {
+          setIsCustomerLocked(true);
+          chooseCustomer(match);
+        } else {
+          localStorage.removeItem(LOCKED_CUSTOMER_STORAGE_KEY);
+        }
+      }
+    } catch {
+      // ignore storage access restrictions
+    }
+  }, [customers]);
+
   const [lineValidationErrors, setLineValidationErrors] = useState<{ labName?: string; stampNumber?: string }>({});
   const labInputRef = useRef<HTMLInputElement>(null);
   const stampInputRef = useRef<HTMLInputElement>(null);
@@ -964,10 +1059,19 @@ export default function DocumentForm({
   // Per-customer document number querying
   useEffect(() => {
     if (!selectedCustomerId) {
+      setDocumentNumberLoading(false);
+      setDocumentNumberDisplay('');
       return;
     }
 
+    let active = true;
+    setDocumentNumberLoading(true);
+
     const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+    }, 10000);
+
     fetch(`/api/documents?customerId=${encodeURIComponent(selectedCustomerId)}`, {
       cache: 'no-store',
       signal: controller.signal,
@@ -981,29 +1085,39 @@ export default function DocumentForm({
         if (!response.ok || !data.documentNumber) {
           throw new Error(data.message ?? 'شماره سند دریافت نشد.');
         }
-        setDocumentNumberDisplay(data.documentNumber);
+        if (active) {
+          setDocumentNumberDisplay(data.documentNumber);
+        }
       })
       .catch((error: unknown) => {
+        if (!active) return;
         if (error instanceof DOMException && error.name === 'AbortError') return;
-        setErrorMessage('استعلام شماره سند این طرف‌حساب انجام نشد؛ دوباره تلاش کنید.');
+        console.error('Failed to query customer document number:', error);
+        setErrorMessage('استعلام شماره سند این طرف‌حساب انجام نشد؛ شماره پیش‌فرض در نظر گرفته شد.');
+        setDocumentNumberDisplay((prev) => prev || 'سند-1');
       })
       .finally(() => {
-        if (!controller.signal.aborted) setDocumentNumberLoading(false);
+        clearTimeout(timeoutId);
+        if (active) {
+          setDocumentNumberLoading(false);
+        }
       });
 
-    return () => controller.abort();
+    return () => {
+      active = false;
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
   }, [selectedCustomerId]);
 
   useEffect(() => {
     if (documentNature !== 'paid') return;
-    const kind = draftLine.details.rawKind;
-    if (kind === 'unsettled') return;
-    const url = `/api/documents?inventory=raw-gold&kind=${kind}`;
+    const url = '/api/documents?inventory=raw-gold';
     fetch(url, { cache: 'no-store' })
       .then((response) => response.ok ? response.json() : Promise.reject())
       .then((data: { inventory?: MeltedInventoryItem[] }) => setMeltedInventory(data.inventory ?? []))
       .catch(() => setMeltedInventory([]));
-  }, [documentNature, draftLine.details.rawKind]);
+  }, [documentNature]);
 
   const isFormDirty = Boolean(selectedCustomerId && (committedLines.length > 0 || draftReady));
 
@@ -1120,11 +1234,23 @@ export default function DocumentForm({
 
   function chooseCustomer(customer: Customer) {
     setErrorMessage('');
-    setDocumentNumberLoading(true);
-    setSelectedCustomerId(customer.id);
+    if (selectedCustomerId === customer.id) {
+      setDocumentNumberLoading(false);
+    } else {
+      setDocumentNumberLoading(true);
+      setSelectedCustomerId(customer.id);
+    }
     setCustomerQuery(`${customer.customerCode} - ${customer.name}`);
     setIsCustomerDropdownOpen(false);
     setActiveSuggestionIndex(-1);
+
+    if (isCustomerLocked) {
+      try {
+        localStorage.setItem(LOCKED_CUSTOMER_STORAGE_KEY, customer.id);
+      } catch {
+        // ignore
+      }
+    }
   }
 
   function clearCustomer() {
@@ -1134,9 +1260,34 @@ export default function DocumentForm({
     setDocumentNumberLoading(false);
     setIsCustomerDropdownOpen(true);
     setActiveSuggestionIndex(-1);
+    setIsCustomerLocked(false);
+    try {
+      localStorage.removeItem(LOCKED_CUSTOMER_STORAGE_KEY);
+    } catch {
+      // ignore
+    }
     setTimeout(() => {
       customerInputRef.current?.focus();
     }, 50);
+  }
+
+  function handleToggleCustomerLock(checked: boolean) {
+    setIsCustomerLocked(checked);
+    try {
+      if (checked) {
+        if (selectedCustomerId) {
+          localStorage.setItem(LOCKED_CUSTOMER_STORAGE_KEY, selectedCustomerId);
+          toast.success('طرف‌حساب انتخابی در حافظه مرورگر ذخیره شد و با رفرش باقی می‌ماند');
+        } else {
+          toast.info('قفل فعال شد؛ پس از انتخاب، طرف‌حساب در حافظه مرورگر ذخیره خواهد شد');
+        }
+      } else {
+        localStorage.removeItem(LOCKED_CUSTOMER_STORAGE_KEY);
+        toast.info('قفل طرف‌حساب برداشته شد');
+      }
+    } catch {
+      // ignore
+    }
   }
 
   function handleCustomerKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
@@ -1184,6 +1335,9 @@ export default function DocumentForm({
 
   function changeEntryTab(tab: string) {
     setActiveEntryTab(tab);
+    if (typeof window !== 'undefined' && window.location.hash !== `#${tab}`) {
+      window.history.replaceState(null, '', `#${tab}`);
+    }
     if (editingLineId) return;
 
     if (draftLine.sourceTab === tab) return;
@@ -1652,6 +1806,27 @@ export default function DocumentForm({
     ? (editingLine.sourceTab || (editingLine.documentTab === 'currency' ? 'currency' : editingLine.documentTab === 'gold-sale' ? 'gold-sale' : editingLine.documentTab === 'refining' ? 'refining' : 'metals'))
     : null;
 
+  const currentTab = editingSourceTab || activeEntryTab;
+  const currentLine = editingLine || draftLine;
+  const currentNature = currentLine?.documentNature || documentNature;
+  const currentRawKind = currentLine?.details?.rawKind || 'molten';
+  const currentUnsettled = currentLine?.details?.unsettledTrade;
+  const currentRefiningOpKind = currentLine?.details?.refiningOpKind;
+
+  const currentOpLabel = (currentTab === 'bank' && currentLine?.documentTypeLabel && currentLine.documentTypeLabel !== 'عملیات بانکی')
+    ? currentLine.documentTypeLabel
+    : getLineDocumentTypeLabel(
+        currentNature,
+        currentTab,
+        currentRawKind,
+        currentUnsettled,
+        currentRefiningOpKind,
+      );
+
+  const commitRowLabel = editingLineId
+    ? (currentOpLabel ? `ویرایش ردیف ${currentOpLabel}` : 'ویرایش ردیف')
+    : (currentOpLabel ? `ثبت ردیف ${currentOpLabel}` : 'ثبت ردیف');
+
   return (
     <div className={`document-form-page ${isLinesPinned ? 'pb-36' : ''}`}>
       {message ? <p className="account-message"><Check size={15} />{message}</p> : null}
@@ -1706,36 +1881,91 @@ export default function DocumentForm({
                         </button>
                       ) : null}
                     </div>
-                    <div className="gooey-search document-search-shell relative">
-                      <Search size={16} className="text-slate-400 shrink-0" />
-                      <input
-                        ref={customerInputRef}
-                        value={customerQuery}
-                        onFocus={() => setIsCustomerDropdownOpen(true)}
-                        onChange={(event) => {
-                          setCustomerQuery(event.target.value);
-                          setIsCustomerDropdownOpen(true);
-                          setActiveSuggestionIndex(-1);
-                        }}
-                        onKeyDown={handleCustomerKeyDown}
-                        placeholder="جستجو با نام، کد، تلفن یا گروه (مثلاً ریگیر)..."
-                        autoComplete="off"
-                      />
-                      {customerQuery ? (
+
+                    <div className="flex items-center gap-2">
+                      <div className="gooey-search document-search-shell relative flex-1">
+                        <Search size={16} className="text-slate-400 shrink-0" />
+                        <input
+                          ref={customerInputRef}
+                          value={customerQuery}
+                          onFocus={() => setIsCustomerDropdownOpen(true)}
+                          onChange={(event) => {
+                            setCustomerQuery(event.target.value);
+                            setIsCustomerDropdownOpen(true);
+                            setActiveSuggestionIndex(-1);
+                          }}
+                          onKeyDown={handleCustomerKeyDown}
+                          placeholder="جستجو با نام، کد، تلفن یا گروه (مثلاً ریگیر)..."
+                          autoComplete="off"
+                        />
+                        {customerQuery ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCustomerQuery('');
+                              setActiveSuggestionIndex(-1);
+                              customerInputRef.current?.focus();
+                            }}
+                            className="p-1 text-slate-400 hover:text-rose-500 transition-colors rounded-lg shrink-0 cursor-pointer"
+                            title="پاک کردن متن جستجو"
+                            aria-label="پاک کردن"
+                          >
+                            <X size={14} />
+                          </button>
+                        ) : null}
+                      </div>
+
+                      {/* Customer Lock Button & Info Icon in front of the field */}
+                      <div className="flex items-center gap-1 shrink-0">
                         <button
                           type="button"
-                          onClick={() => {
-                            setCustomerQuery('');
-                            setActiveSuggestionIndex(-1);
-                            customerInputRef.current?.focus();
-                          }}
-                          className="p-1 text-slate-400 hover:text-rose-500 transition-colors rounded-lg shrink-0 cursor-pointer"
-                          title="پاک کردن متن جستجو"
-                          aria-label="پاک کردن"
+                          onClick={() => handleToggleCustomerLock(!isCustomerLocked)}
+                          className={`flex h-[42px] w-[42px] items-center justify-center rounded-xl border transition-all cursor-pointer shadow-2xs ${
+                            isCustomerLocked
+                              ? 'border-amber-400 bg-amber-100 text-amber-900 hover:bg-amber-200 dark:border-amber-600 dark:bg-amber-950/80 dark:text-amber-300 dark:hover:bg-amber-900/60 ring-2 ring-amber-400/40'
+                              : 'border-slate-300 bg-white text-slate-400 hover:border-slate-400 hover:text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-500 dark:hover:border-slate-600 dark:hover:text-slate-300 dark:hover:bg-slate-800'
+                          }`}
+                          title={
+                            isCustomerLocked
+                              ? 'طرف‌حساب قفل است (برای باز کردن قفل کلیک کنید)'
+                              : 'قفل کردن طرف‌حساب (برای حفظ با رفرش صفحه کلیک کنید)'
+                          }
+                          aria-label="قفل طرف‌حساب"
                         >
-                          <X size={14} />
+                          {isCustomerLocked ? (
+                            <Lock size={18} className="text-amber-700 dark:text-amber-400" />
+                          ) : (
+                            <Unlock size={18} />
+                          )}
                         </button>
-                      ) : null}
+
+                        <div className="relative group/info">
+                          <button
+                            type="button"
+                            onClick={() => setShowLockInfo((prev) => !prev)}
+                            className="flex h-7 w-7 items-center justify-center rounded-full text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/50 dark:hover:text-amber-400 transition-colors cursor-pointer"
+                            title="راهنمای عملکرد قفل طرف‌حساب"
+                            aria-label="راهنمای عملکرد قفل طرف‌حساب"
+                          >
+                            <Info size={16} />
+                          </button>
+
+                          <div
+                            className={`absolute bottom-full mb-2 left-0 z-50 w-64 p-3 bg-slate-900 text-white dark:bg-slate-800 dark:text-slate-100 rounded-xl shadow-2xl text-[11px] leading-relaxed border border-slate-700/80 text-right transition-all duration-200 ${
+                              showLockInfo ? 'block' : 'hidden group-hover/info:block'
+                            }`}
+                          >
+                            <div className="font-bold text-amber-400 mb-1 flex items-center gap-1.5 pb-1 border-b border-slate-800 dark:border-slate-700">
+                              <Lock size={13} />
+                              <span>راهنمای قفل طرف‌حساب</span>
+                            </div>
+                            <p className="text-slate-300 dark:text-slate-300 pt-1">
+                              با فعال کردن این گزینه، طرف‌حساب انتخابی در حافظه مرورگر ذخیره شده و با رفرش صفحه یا مراجعات بعدی همچنان انتخاب‌شده باقی می‌ماند.
+                            </p>
+                            <div className="absolute top-full left-3 -mt-1 border-4 border-transparent border-t-slate-900 dark:border-t-slate-800" />
+                          </div>
+                        </div>
+                      </div>
                     </div>
 
                     {isCustomerDropdownOpen ? (
@@ -1860,6 +2090,57 @@ export default function DocumentForm({
                         <strong className="text-sm font-black text-slate-900 dark:text-slate-100">
                           {selectedCustomer.name}
                         </strong>
+                        {/* Lock Toggle Button & Info Icon */}
+                        <div className="inline-flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleCustomerLock(!isCustomerLocked)}
+                            className={`inline-flex items-center justify-center h-8 w-8 rounded-xl border transition-all cursor-pointer shadow-2xs ${
+                              isCustomerLocked
+                                ? 'border-amber-400 bg-amber-100 text-amber-900 hover:bg-amber-200 dark:border-amber-600 dark:bg-amber-950/80 dark:text-amber-300 dark:hover:bg-amber-900/60 ring-2 ring-amber-400/40'
+                                : 'border-slate-300 bg-white text-slate-400 hover:border-slate-400 hover:text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-500 dark:hover:border-slate-600 dark:hover:text-slate-300 dark:hover:bg-slate-800'
+                            }`}
+                            title={
+                              isCustomerLocked
+                                ? 'طرف‌حساب قفل است (برای باز کردن قفل کلیک کنید)'
+                                : 'قفل کردن طرف‌حساب (برای حفظ با رفرش صفحه کلیک کنید)'
+                            }
+                            aria-label="قفل طرف‌حساب"
+                          >
+                            {isCustomerLocked ? (
+                              <Lock size={15} className="text-amber-700 dark:text-amber-400" />
+                            ) : (
+                              <Unlock size={15} />
+                            )}
+                          </button>
+
+                          <div className="relative group/info">
+                            <button
+                              type="button"
+                              onClick={() => setShowLockInfo((prev) => !prev)}
+                              className="inline-flex h-6 w-6 items-center justify-center rounded-full text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/50 dark:hover:text-amber-400 transition-colors cursor-pointer"
+                              title="راهنمای عملکرد قفل طرف‌حساب"
+                              aria-label="راهنمای عملکرد قفل طرف‌حساب"
+                            >
+                              <Info size={14} />
+                            </button>
+
+                            <div
+                              className={`absolute bottom-full mb-2 left-0 z-50 w-64 p-3 bg-slate-900 text-white dark:bg-slate-800 dark:text-slate-100 rounded-xl shadow-2xl text-[11px] leading-relaxed border border-slate-700/80 text-right transition-all duration-200 ${
+                                showLockInfo ? 'block' : 'hidden group-hover/info:block'
+                              }`}
+                            >
+                              <div className="font-bold text-amber-400 mb-1 flex items-center gap-1.5 pb-1 border-b border-slate-800 dark:border-slate-700">
+                                <Lock size={13} />
+                                <span>راهنمای قفل طرف‌حساب</span>
+                              </div>
+                              <p className="text-slate-300 dark:text-slate-300 pt-1">
+                                با فعال کردن این گزینه، طرف‌حساب انتخابی در حافظه مرورگر ذخیره شده و با رفرش صفحه یا مراجعات بعدی همچنان انتخاب‌شده باقی می‌ماند.
+                              </p>
+                              <div className="absolute top-full left-2 -mt-1 border-4 border-transparent border-t-slate-900 dark:border-t-slate-800" />
+                            </div>
+                          </div>
+                        </div>
                         <button
                           type="button"
                           onClick={() => toggleFavoriteCustomer(selectedCustomer.id)}
@@ -2015,7 +2296,7 @@ export default function DocumentForm({
                     </option>
                   ) : activeCurrencies.map((curr, idx) => (
                     <option key={curr.id ? `${curr.code}-${curr.id}` : `${curr.code}-${idx}`} value={curr.code}>
-                      {getCurrencyDisplayName(curr)} ({curr.code})
+                      {getCurrencyDisplayName(curr)}
                     </option>
                   ))}
                 </select>
@@ -2108,6 +2389,7 @@ export default function DocumentForm({
               errors={lineValidationErrors}
               labInputRef={labInputRef}
               stampInputRef={stampInputRef}
+              commitRowLabel={commitRowLabel}
             />
           )}
           goldSaleTabContent={(
@@ -2137,6 +2419,7 @@ export default function DocumentForm({
               errors={lineValidationErrors}
               labInputRef={labInputRef}
               stampInputRef={stampInputRef}
+              commitRowLabel={commitRowLabel}
             />
           )}
           currencyTabContent={(
@@ -2267,6 +2550,9 @@ export default function DocumentForm({
               onSubmit={async (status) => {
                 await save(status);
               }}
+              onCommitRow={commitDraftLine}
+              showCommitRow={isLinesPinned}
+              commitRowLabel={commitRowLabel}
             />
 
             <span className="mx-0.5 h-5 w-px bg-slate-200 dark:bg-slate-700" aria-hidden="true" />
@@ -2374,174 +2660,128 @@ export default function DocumentForm({
           </Table>
         )}
 
-        {/* DOCUMENT NET BALANCE */}
-        <div className={committedLines.length ? 'mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center' : 'hidden'}>
-          {committedLines.length ? (
-            <div className="flex flex-wrap items-center gap-2 px-3 py-1.5 border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50/80 dark:bg-slate-900/80 text-xs font-bold shrink-0">
-              <span className="text-slate-600 dark:text-slate-400">
-                {activeMetals.length > 1 ? 'خالص اثر سند:' : 'خالص اثر سند بر مانده:'}
-              </span>
-              {activeMetals.length === 0 ? (
-                <span className="text-slate-500">بدون اثر وزنی</span>
-              ) : activeMetals.length === 1 ? (
-                (() => {
-                  const m = activeMetals[0];
-                  const label = m === 'silver' ? 'نقره' : m === 'platinum' ? 'پلاتین' : 'طلا';
-                  const val = metalNetEffects[m];
-                  return (
-                    <strong className={val >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
-                      {label}: {faNumber(Math.abs(val), weightPrecision)} گرم {val >= 0 ? 'بستانکار' : 'بدهکار'}
-                    </strong>
-                  );
-                })()
-              ) : (
-                <span className="flex flex-wrap gap-1.5 items-center text-slate-700 dark:text-slate-200">
-                  <span className="text-amber-600 dark:text-amber-400">چند فلزی (</span>
-                  {activeMetals.map((m, idx) => {
-                    const label = m === 'silver' ? 'نقره' : m === 'platinum' ? 'پلاتین' : 'طلا';
-                    const val = metalNetEffects[m];
-                    return (
-                      <span key={m} className="inline-flex items-center gap-1">
-                        <span>{label}:</span>
-                        <strong className={val >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
-                          {faNumber(Math.abs(val), weightPrecision)} گرم {val >= 0 ? 'بستانکار' : 'بدهکار'}
-                        </strong>
-                        {idx < activeMetals.length - 1 ? <span className="mx-0.5 text-slate-400">/</span> : null}
-                      </span>
-                    );
-                  })}
-                  <span className="text-amber-600 dark:text-amber-400">)</span>
-                </span>
-              )}
-            </div>
-          ) : null}
-        </div>
-
         {/* CUSTOMER BALANCE PREVIEW AFTER DOCUMENT */}
         {selectedCustomer && previewData ? (
-          <div className="mt-3 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/90 space-y-3">
-            <div className="flex items-center justify-between border-b border-slate-200/70 dark:border-slate-800 pb-2">
-              <span className="text-xs font-black text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
-                <Sparkles size={14} className="text-amber-500" />
-                <span>پیش‌نمایش مانده طرف‌حساب ({selectedCustomer.name})</span>
+          <div className="mt-2.5 flex flex-wrap items-center gap-2">
+            {previewLoading ? (
+              <span className="text-[10px] text-amber-600 dark:text-amber-400 font-bold flex items-center gap-1 w-full">
+                <LoaderCircle size={11} className="spin" /> در حال به‌روزرسانی مانده...
               </span>
-              {previewLoading ? (
-                <span className="text-[10px] text-amber-600 dark:text-amber-400 font-bold flex items-center gap-1">
-                  <LoaderCircle size={12} className="spin" /> در حال محاسبه...
-                </span>
-              ) : null}
+            ) : null}
+
+            {/* 1. Previous Balance */}
+            <div className="w-fit inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/80 text-xs">
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                مانده قبلی:
+              </span>
+              <div className="inline-flex flex-wrap items-center gap-x-2 font-black">
+                <div className="text-slate-900 dark:text-slate-100 whitespace-nowrap">
+                  {faNumber(Math.abs(previewData.previousBalance.rial))} {baseCurrency === 'IRT' ? 'تومان' : 'ریال'}
+                  <small className="text-[10px] text-slate-500 font-bold mr-1">
+                    ({previewData.previousBalance.rial > 0 ? 'بستانکار' : previewData.previousBalance.rial < 0 ? 'بدهکار' : 'تسویه'})
+                  </small>
+                </div>
+                {previewData.previousBalance.gold !== 0 || previewData.transactionEffect.gold !== 0 ? (
+                  <div className="text-amber-700 dark:text-amber-300 whitespace-nowrap">
+                    طلا: {faNumber(Math.abs(previewData.previousBalance.gold), weightPrecision)} گرم
+                    <small className="text-[10px] text-slate-500 font-bold mr-1">
+                      ({previewData.previousBalance.gold > 0 ? 'بستانکار' : previewData.previousBalance.gold < 0 ? 'بدهکار' : 'تسویه'})
+                    </small>
+                  </div>
+                ) : null}
+                {previewData.previousBalance.silver !== 0 || previewData.transactionEffect.silver !== 0 ? (
+                  <div className="text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                    نقره: {faNumber(Math.abs(previewData.previousBalance.silver), weightPrecision)} گرم
+                  </div>
+                ) : null}
+                {previewData.previousBalance.platinum !== 0 || previewData.transactionEffect.platinum !== 0 ? (
+                  <div className="text-purple-600 dark:text-purple-300 whitespace-nowrap">
+                    پلاتین: {faNumber(Math.abs(previewData.previousBalance.platinum), weightPrecision)} گرم
+                  </div>
+                ) : null}
+                {previewData.previousBalance.foreign !== 0 || previewData.transactionEffect.foreign !== 0 ? (
+                  <div className="text-teal-600 dark:text-teal-400 whitespace-nowrap">
+                    ارز: {faNumber(Math.abs(previewData.previousBalance.foreign), 2)} {previewData.previousBalance.secondaryCurrency || 'واحد'}
+                  </div>
+                ) : null}
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              {/* 1. Previous Balance */}
-              <div className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/80 space-y-1">
-                <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block">
-                  مانده قبلی
-                </span>
-                <div className="space-y-0.5 text-xs font-black">
-                  <div className="text-slate-900 dark:text-slate-100">
-                    {faNumber(Math.abs(previewData.previousBalance.rial))} {baseCurrency === 'IRT' ? 'تومان' : 'ریال'}
+            {/* 2. Transaction Effect */}
+            <div className="w-fit inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border border-amber-200/80 dark:border-amber-900/60 bg-amber-50/50 dark:bg-amber-950/30 text-xs">
+              <span className="text-[10px] font-bold text-amber-800 dark:text-amber-300 whitespace-nowrap">
+                اثر این سند:
+              </span>
+              <div className="inline-flex flex-wrap items-center gap-x-2 font-black">
+                {previewData.transactionEffect.rial === 0 && previewData.transactionEffect.gold === 0 && previewData.transactionEffect.silver === 0 && previewData.transactionEffect.platinum === 0 && previewData.transactionEffect.foreign === 0 ? (
+                  <div className="text-slate-400 font-medium whitespace-nowrap">بدون اثر</div>
+                ) : (
+                  <>
+                    {previewData.transactionEffect.rial !== 0 ? (
+                      <div className={`whitespace-nowrap ${previewData.transactionEffect.rial >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                        {previewData.transactionEffect.rial >= 0 ? '+' : ''}{faNumber(previewData.transactionEffect.rial)} {baseCurrency === 'IRT' ? 'تومان' : 'ریال'}
+                      </div>
+                    ) : null}
+                    {previewData.transactionEffect.gold !== 0 ? (
+                      <div className={`whitespace-nowrap ${previewData.transactionEffect.gold >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                        طلا: {previewData.transactionEffect.gold >= 0 ? '+' : ''}{faNumber(previewData.transactionEffect.gold, weightPrecision)} گرم
+                      </div>
+                    ) : null}
+                    {previewData.transactionEffect.silver !== 0 ? (
+                      <div className={`whitespace-nowrap ${previewData.transactionEffect.silver >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                        نقره: {previewData.transactionEffect.silver >= 0 ? '+' : ''}{faNumber(previewData.transactionEffect.silver, weightPrecision)} گرم
+                      </div>
+                    ) : null}
+                    {previewData.transactionEffect.platinum !== 0 ? (
+                      <div className={`whitespace-nowrap ${previewData.transactionEffect.platinum >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                        پلاتین: {previewData.transactionEffect.platinum >= 0 ? '+' : ''}{faNumber(previewData.transactionEffect.platinum, weightPrecision)} گرم
+                      </div>
+                    ) : null}
+                    {previewData.transactionEffect.foreign !== 0 ? (
+                      <div className={`whitespace-nowrap ${previewData.transactionEffect.foreign >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                        ارز: {previewData.transactionEffect.foreign >= 0 ? '+' : ''}{faNumber(previewData.transactionEffect.foreign, 2)} {previewData.previousBalance.secondaryCurrency || 'واحد'}
+                      </div>
+                    ) : null}
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* 3. Final Balance */}
+            <div className="w-fit inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border border-teal-200/80 dark:border-teal-900/60 bg-teal-50/50 dark:bg-teal-950/30 text-xs">
+              <span className="text-[10px] font-bold text-teal-800 dark:text-teal-300 whitespace-nowrap">
+                مانده نهایی:
+              </span>
+              <div className="inline-flex flex-wrap items-center gap-x-2 font-black">
+                <div className="text-slate-900 dark:text-slate-100 whitespace-nowrap">
+                  {faNumber(Math.abs(previewData.projectedBalance.rial))} {baseCurrency === 'IRT' ? 'تومان' : 'ریال'}
+                  <small className="text-[10px] text-slate-500 font-bold mr-1">
+                    ({previewData.projectedBalance.rial > 0 ? 'بستانکار' : previewData.projectedBalance.rial < 0 ? 'بدهکار' : 'تسویه'})
+                  </small>
+                </div>
+                {previewData.projectedBalance.gold !== 0 || previewData.transactionEffect.gold !== 0 ? (
+                  <div className="text-amber-700 dark:text-amber-300 whitespace-nowrap">
+                    طلا: {faNumber(Math.abs(previewData.projectedBalance.gold), weightPrecision)} گرم
                     <small className="text-[10px] text-slate-500 font-bold mr-1">
-                      ({previewData.previousBalance.rial > 0 ? 'بستانکار' : previewData.previousBalance.rial < 0 ? 'بدهکار' : 'تسویه'})
+                      ({previewData.projectedBalance.gold > 0 ? 'بستانکار' : previewData.projectedBalance.gold < 0 ? 'بدهکار' : 'تسویه'})
                     </small>
                   </div>
-                  {previewData.previousBalance.gold !== 0 || previewData.transactionEffect.gold !== 0 ? (
-                    <div className="text-amber-700 dark:text-amber-300">
-                      طلا: {faNumber(Math.abs(previewData.previousBalance.gold), weightPrecision)} گرم
-                      <small className="text-[10px] text-slate-500 font-bold mr-1">
-                        ({previewData.previousBalance.gold > 0 ? 'بستانکار' : previewData.previousBalance.gold < 0 ? 'بدهکار' : 'تسویه'})
-                      </small>
-                    </div>
-                  ) : null}
-                  {previewData.previousBalance.silver !== 0 || previewData.transactionEffect.silver !== 0 ? (
-                    <div className="text-slate-600 dark:text-slate-300">
-                      نقره: {faNumber(Math.abs(previewData.previousBalance.silver), weightPrecision)} گرم
-                    </div>
-                  ) : null}
-                  {previewData.previousBalance.platinum !== 0 || previewData.transactionEffect.platinum !== 0 ? (
-                    <div className="text-purple-600 dark:text-purple-300">
-                      پلاتین: {faNumber(Math.abs(previewData.previousBalance.platinum), weightPrecision)} گرم
-                    </div>
-                  ) : null}
-                  {previewData.previousBalance.foreign !== 0 || previewData.transactionEffect.foreign !== 0 ? (
-                    <div className="text-teal-600 dark:text-teal-400">
-                      ارز: {faNumber(Math.abs(previewData.previousBalance.foreign), 2)} {previewData.previousBalance.secondaryCurrency || 'واحد'}
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-
-              {/* 2. Transaction Effect */}
-              <div className="p-2.5 rounded-xl border border-amber-200/80 dark:border-amber-900/60 bg-amber-50/50 dark:bg-amber-950/30 space-y-1">
-                <span className="text-[11px] font-bold text-amber-800 dark:text-amber-300 block">
-                  اثر این سند
-                </span>
-                <div className="space-y-0.5 text-xs font-black">
-                  <div className={previewData.transactionEffect.rial >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
-                    {previewData.transactionEffect.rial >= 0 ? '+' : ''}{faNumber(previewData.transactionEffect.rial)} {baseCurrency === 'IRT' ? 'تومان' : 'ریال'}
+                ) : null}
+                {previewData.projectedBalance.silver !== 0 || previewData.transactionEffect.silver !== 0 ? (
+                  <div className="text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                    نقره: {faNumber(Math.abs(previewData.projectedBalance.silver), weightPrecision)} گرم
                   </div>
-                  {previewData.transactionEffect.gold !== 0 ? (
-                    <div className={previewData.transactionEffect.gold >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
-                      طلا: {previewData.transactionEffect.gold >= 0 ? '+' : ''}{faNumber(previewData.transactionEffect.gold, weightPrecision)} گرم
-                    </div>
-                  ) : null}
-                  {previewData.transactionEffect.silver !== 0 ? (
-                    <div className={previewData.transactionEffect.silver >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
-                      نقره: {previewData.transactionEffect.silver >= 0 ? '+' : ''}{faNumber(previewData.transactionEffect.silver, weightPrecision)} گرم
-                    </div>
-                  ) : null}
-                  {previewData.transactionEffect.platinum !== 0 ? (
-                    <div className={previewData.transactionEffect.platinum >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
-                      پلاتین: {previewData.transactionEffect.platinum >= 0 ? '+' : ''}{faNumber(previewData.transactionEffect.platinum, weightPrecision)} گرم
-                    </div>
-                  ) : null}
-                  {previewData.transactionEffect.foreign !== 0 ? (
-                    <div className={previewData.transactionEffect.foreign >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
-                      ارز: {previewData.transactionEffect.foreign >= 0 ? '+' : ''}{faNumber(previewData.transactionEffect.foreign, 2)} {previewData.previousBalance.secondaryCurrency || 'واحد'}
-                    </div>
-                  ) : null}
-                  {previewData.transactionEffect.rial === 0 && previewData.transactionEffect.gold === 0 && previewData.transactionEffect.silver === 0 && previewData.transactionEffect.platinum === 0 && previewData.transactionEffect.foreign === 0 ? (
-                    <div className="text-slate-400">بدون اثر</div>
-                  ) : null}
-                </div>
-              </div>
-
-              {/* 3. Projected Balance */}
-              <div className="p-2.5 rounded-xl border border-teal-200/80 dark:border-teal-900/60 bg-teal-50/50 dark:bg-teal-950/30 space-y-1">
-                <span className="text-[11px] font-bold text-teal-800 dark:text-teal-300 block">
-                  مانده پس از ثبت سند
-                </span>
-                <div className="space-y-0.5 text-xs font-black">
-                  <div className="text-slate-900 dark:text-slate-100">
-                    {faNumber(Math.abs(previewData.projectedBalance.rial))} {baseCurrency === 'IRT' ? 'تومان' : 'ریال'}
-                    <small className="text-[10px] text-slate-500 font-bold mr-1">
-                      ({previewData.projectedBalance.rial > 0 ? 'بستانکار' : previewData.projectedBalance.rial < 0 ? 'بدهکار' : 'تسویه'})
-                    </small>
+                ) : null}
+                {previewData.projectedBalance.platinum !== 0 || previewData.transactionEffect.platinum !== 0 ? (
+                  <div className="text-purple-600 dark:text-purple-300 whitespace-nowrap">
+                    پلاتین: {faNumber(Math.abs(previewData.projectedBalance.platinum), weightPrecision)} گرم
                   </div>
-                  {previewData.projectedBalance.gold !== 0 || previewData.transactionEffect.gold !== 0 ? (
-                    <div className="text-amber-700 dark:text-amber-300">
-                      طلا: {faNumber(Math.abs(previewData.projectedBalance.gold), weightPrecision)} گرم
-                      <small className="text-[10px] text-slate-500 font-bold mr-1">
-                        ({previewData.projectedBalance.gold > 0 ? 'بستانکار' : previewData.projectedBalance.gold < 0 ? 'بدهکار' : 'تسویه'})
-                      </small>
-                    </div>
-                  ) : null}
-                  {previewData.projectedBalance.silver !== 0 || previewData.transactionEffect.silver !== 0 ? (
-                    <div className="text-slate-600 dark:text-slate-300">
-                      نقره: {faNumber(Math.abs(previewData.projectedBalance.silver), weightPrecision)} گرم
-                    </div>
-                  ) : null}
-                  {previewData.projectedBalance.platinum !== 0 || previewData.transactionEffect.platinum !== 0 ? (
-                    <div className="text-purple-600 dark:text-purple-300">
-                      پلاتین: {faNumber(Math.abs(previewData.projectedBalance.platinum), weightPrecision)} گرم
-                    </div>
-                  ) : null}
-                  {previewData.projectedBalance.foreign !== 0 || previewData.transactionEffect.foreign !== 0 ? (
-                    <div className="text-teal-600 dark:text-teal-400">
-                      ارز: {faNumber(Math.abs(previewData.projectedBalance.foreign), 2)} {previewData.previousBalance.secondaryCurrency || 'واحد'}
-                    </div>
-                  ) : null}
-                </div>
+                ) : null}
+                {previewData.projectedBalance.foreign !== 0 || previewData.transactionEffect.foreign !== 0 ? (
+                  <div className="text-teal-600 dark:text-teal-400 whitespace-nowrap">
+                    ارز: {faNumber(Math.abs(previewData.projectedBalance.foreign), 2)} {previewData.previousBalance.secondaryCurrency || 'واحد'}
+                  </div>
+                ) : null}
               </div>
             </div>
           </div>

@@ -2488,6 +2488,14 @@ select:-webkit-autofill:active {
   font-family: inherit;
   font-size: 13.5px;
   font-weight: 700;
+  box-sizing: border-box;
+}
+
+.account-field select,
+.account-field input:not([type="checkbox"]):not([type="radio"]) {
+  height: 40px;
+  min-height: 40px;
+  max-height: 40px;
 }
 
 .account-field input::placeholder,

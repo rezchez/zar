@@ -20,6 +20,7 @@ import {
   Eye,
   Settings2,
 } from 'lucide-react';
+import { useToastManager } from '@/components/ui/toast';
 
 import {
   DEFAULT_REPORT_TEMPLATES,
@@ -52,6 +53,7 @@ export default function ReportPrintDesigner({ settings, onSettingsUpdated }: Rep
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'columns' | 'header_footer' | 'page_style'>('columns');
+  const toast = useToastManager();
 
   // Sync templates on settings change
   useEffect(() => {
@@ -214,10 +216,13 @@ export default function ReportPrintDesigner({ settings, onSettingsUpdated }: Rep
       }
 
       setSaveSuccess(true);
+      toast.success('ذخیره قالب گزارش', 'قالب گزارش چاپی با موفقیت ذخیره شد.');
       if (onSettingsUpdated) onSettingsUpdated();
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err: any) {
-      setErrorMessage(err.message || 'خطا در ذخیره قالب');
+      const errText = err.message || 'خطا در ذخیره قالب';
+      setErrorMessage(errText);
+      toast.error('خطا در ذخیره قالب گزارش', errText);
     } finally {
       setIsSaving(false);
     }

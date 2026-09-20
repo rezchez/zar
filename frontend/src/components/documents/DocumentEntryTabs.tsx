@@ -158,15 +158,18 @@ export default function DocumentEntryTabs({
           const isBlurred = isEditingMode && tab.id !== editingSourceTab;
 
           return (
-            <button
-              type="button"
+            <a
+              href={`#${tab.id}`}
               role="tab"
               key={tab.id}
-              onClick={() => selectTab(tab.id)}
+              onClick={(e) => {
+                e.preventDefault();
+                selectTab(tab.id);
+              }}
               aria-selected={isActive}
               tabIndex={isActive ? 0 : -1}
-              disabled={isEditingMode && !isActive}
-              className={`group/trigger relative flex min-w-max items-center justify-between gap-2.5 rounded-xl px-3 py-2 text-right text-xs outline-none transition-colors duration-200 select-none lg:w-full ${
+              aria-disabled={isEditingMode && !isActive}
+              className={`group/trigger relative flex min-w-max items-center justify-between gap-2.5 rounded-xl px-3 py-2 text-right text-xs outline-none transition-colors duration-200 select-none lg:w-full cursor-pointer ${
                 isBlurred
                   ? 'filter blur-[1.5px] opacity-35 pointer-events-none'
                   : 'filter blur-0 opacity-100'
@@ -211,7 +214,7 @@ export default function DocumentEntryTabs({
               {isActive && (
                 <span className="relative z-10 h-1.5 w-1.5 rounded-full bg-white shadow-xs" />
               )}
-            </button>
+            </a>
           );
         })}
       </nav>

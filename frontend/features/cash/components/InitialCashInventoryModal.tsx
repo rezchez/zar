@@ -18,6 +18,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import DatePicker from '@/components/ui/date-picker';
 import {
   formatDynamicAmountLabel,
+  getCurrencyDisplayName,
   type Currency,
 } from '@/lib/currencies';
 import { dateToJalaliString } from '@/lib/jalali';
@@ -379,12 +380,9 @@ export default function InitialCashInventoryModal({
                       <option value="">ارزی در کالکشن ثبت نشده است</option>
                     ) : currencies.map((curr) => {
                       const val = curr.id || curr.code;
-                      const label = curr.symbol
-                        ? `${curr.name} (${curr.symbol})`
-                        : curr.name;
                       return (
                         <option key={curr.id || val} value={curr.id || curr.code}>
-                          {label}
+                          {getCurrencyDisplayName(curr)}
                         </option>
                       );
                     })}

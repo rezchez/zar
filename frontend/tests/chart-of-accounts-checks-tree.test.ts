@@ -12,27 +12,27 @@ import { CHANGELOG_RELEASES } from '@/features/changelog/data/changelog';
 
 describe('Zarfolio — Opening Checks to Chart of Accounts Hierarchy & Versioning Tests', () => {
   describe('Version & Changelog Verification', () => {
-    it('APP_VERSION and APP_VERSION_FA are set to 0.1.4 BETA', () => {
-      expect(APP_VERSION).toBe('0.1.4 BETA');
-      expect(APP_VERSION_FA).toBe('۰.۱.۴ بتا');
+    it('APP_VERSION and APP_VERSION_FA are set to 0.0.8 BETA', () => {
+      expect(APP_VERSION).toBe('0.0.8 BETA');
+      expect(APP_VERSION_FA).toBe('۰.۰.۸ بتا');
     });
 
-    it('CHANGELOG_RELEASES contains 0.1.4 BETA as current active release', () => {
+    it('CHANGELOG_RELEASES contains 0.0.8 BETA as current active release', () => {
       expect(CHANGELOG_RELEASES.length).toBeGreaterThanOrEqual(2);
       const latest = CHANGELOG_RELEASES[0];
-      expect(latest.version).toBe('0.1.4 BETA');
-      expect(latest.versionFa).toBe('۰.۱.۴ بتا');
+      expect(latest.version).toBe('0.0.8 BETA');
+      expect(latest.versionFa).toBe('۰.۰.۸ بتا');
       expect(latest.isCurrent).toBe(true);
       expect(latest.changes.length).toBeGreaterThan(0);
 
-      // Verify that 0.0.3-beta historical release exists and documents check tree integration
-      const release003 = CHANGELOG_RELEASES.find((r) => r.version === '0.0.3-beta');
+      // Verify that 0.0.3 BETA 3 historical release exists and documents check tree integration
+      const release003 = CHANGELOG_RELEASES.find((r) => r.version === '0.0.3 BETA 3');
       expect(release003).toBeDefined();
       const treeChange = release003?.changes.find((c) => c.title.includes('درختواره'));
       expect(treeChange).toBeDefined();
       expect(treeChange?.type).toBe('feature');
 
-      // Verify that check editing fix is documented in 0.0.3-beta
+      // Verify that check editing fix is documented in 0.0.3 BETA 3
       const editFixChange = release003?.changes.find((c) => c.title.includes('ویرایش'));
       expect(editFixChange).toBeDefined();
       expect(editFixChange?.type).toBe('fix');

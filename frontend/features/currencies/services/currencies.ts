@@ -51,9 +51,25 @@ function mapCurrencyRecord(record: PocketBaseCurrencyRecord): Currency {
 }
 
 export function getCurrencyDisplayName(currency: Currency): string {
-  if (currency.symbol && currency.symbol !== currency.name) return `${currency.name} (${currency.symbol})`;
-  if (currency.code && currency.code !== currency.name) return `${currency.name} (${currency.code})`;
-  return currency.name;
+  const name = currency.name?.trim() || '';
+  const symbol = currency.symbol?.trim() || '';
+  const code = currency.code?.trim().toUpperCase() || '';
+
+  const isRedundantSymbol =
+    !symbol ||
+    symbol.toLowerCase() === name.toLowerCase() ||
+    name.toLowerCase().includes(symbol.toLowerCase()) ||
+    symbol.toLowerCase().includes(name.toLowerCase());
+
+  if (!isRedundantSymbol) {
+    return `${name} (${symbol})`;
+  }
+
+  if (code && code.toLowerCase() !== name.toLowerCase()) {
+    return `${name} (${code})`;
+  }
+
+  return name || code || symbol;
 }
 
 /**

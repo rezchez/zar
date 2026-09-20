@@ -51,6 +51,7 @@ import {
   type InvoiceTableColumnConfig,
 } from '@/lib/print-templates';
 import { useAppSettings } from '@/src/components/SettingsProvider';
+import { useToastManager } from '@/components/ui/toast';
 
 type Props = {
   onUnsavedChange?: (hasUnsaved: boolean) => void;
@@ -60,6 +61,7 @@ type ResizeHandleType = 'nw' | 'ne' | 'se' | 'sw' | 'e' | 'w' | 'n' | 's';
 
 export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
   const { settings } = useAppSettings();
+  const toast = useToastManager();
 
   const [templates, setTemplates] = useState<InvoicePrintTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
@@ -238,12 +240,15 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
 
       const data = await res.json();
       if (!res.ok) {
-        setStatusMsg({ type: 'error', text: data.message || 'خطا در ذخیره‌سازی قالب.' });
+        const errText = data.message || 'خطا در ذخیره‌سازی قالب.';
+        setStatusMsg({ type: 'error', text: errText });
+        toast.error('خطا در ذخیره قالب فاکتور', errText);
         return;
       }
 
       const saved: InvoicePrintTemplate = data.template;
       setStatusMsg({ type: 'success', text: 'تغییرات قالب با موفقیت ذخیره شد.' });
+      toast.success('ذخیره قالب فاکتور', 'تغییرات قالب با موفقیت ذخیره شد.');
 
       await fetchTemplates();
       setSelectedTemplateId(saved.id);
@@ -252,6 +257,7 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
       setIsDirty(false);
     } catch {
       setStatusMsg({ type: 'error', text: 'خطا در ارتباط با سرور.' });
+      toast.error('خطا در ذخیره قالب فاکتور', 'خطا در ارتباط با سرور.');
     } finally {
       setIsSaving(false);
     }
@@ -291,10 +297,14 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
       });
       const data = await res.json();
       if (!res.ok) {
-        setStatusMsg({ type: 'error', text: data.message || 'خطا در کپی قالب.' });
+        const errText = data.message || 'خطا در کپی قالب.';
+        setStatusMsg({ type: 'error', text: errText });
+        toast.error('خطا در کپی قالب فاکتور', errText);
         return;
       }
-      setStatusMsg({ type: 'success', text: `قالب جدید با نام «${dupName}» ساخته شد.` });
+      const msg = `قالب جدید با نام «${dupName}» ساخته شد.`;
+      setStatusMsg({ type: 'success', text: msg });
+      toast.success('کپی قالب فاکتور', msg);
       await fetchTemplates();
       setSelectedTemplateId(data.template.id);
       setActiveTemplate(JSON.parse(JSON.stringify(data.template)));
@@ -302,6 +312,7 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
       setIsDirty(false);
     } catch {
       setStatusMsg({ type: 'error', text: 'خطا در کپی قالب.' });
+      toast.error('خطا در کپی قالب فاکتور', 'خطا در برقراری ارتباط با سرور.');
     } finally {
       setIsLoading(false);
     }
@@ -345,13 +356,17 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
 
       const data = await res.json();
       if (!res.ok) {
-        setStatusMsg({ type: 'error', text: data.message || 'خطا در ایجاد قالب.' });
+        const errText = data.message || 'خطا در ایجاد قالب.';
+        setStatusMsg({ type: 'error', text: errText });
+        toast.error('خطا در ایجاد قالب فاکتور', errText);
         return;
       }
 
       setIsCreatingNew(false);
       setNewTemplateName('');
-      setStatusMsg({ type: 'success', text: `قالب «${name}» با موفقیت ایجاد شد.` });
+      const msg = `قالب «${name}» با موفقیت ایجاد شد.`;
+      setStatusMsg({ type: 'success', text: msg });
+      toast.success('ایجاد قالب فاکتور', msg);
       await fetchTemplates();
       setSelectedTemplateId(data.template.id);
       setActiveTemplate(JSON.parse(JSON.stringify(data.template)));
@@ -359,6 +374,7 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
       setIsDirty(false);
     } catch {
       setStatusMsg({ type: 'error', text: 'خطا در ایجاد قالب.' });
+      toast.error('خطا در ایجاد قالب فاکتور', 'خطا در برقراری ارتباط با سرور.');
     } finally {
       setIsLoading(false);
     }
@@ -382,7 +398,9 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
   const handleDeleteTemplate = async () => {
     if (!activeTemplate) return;
     if (activeTemplate.isSystemDefault) {
-      setStatusMsg({ type: 'error', text: 'قالب پیش‌فرض سیستمی قابل حذف نیست.' });
+      const errText = 'قالب پیش‌فرض سیستمی قابل حذف نیست.';
+      setStatusMsg({ type: 'error', text: errText });
+      toast.error('خطا در حذف قالب', errText);
       setConfirmDeleteDialogOpen(false);
       return;
     }
@@ -394,15 +412,20 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
       });
       const data = await res.json();
       if (!res.ok) {
-        setStatusMsg({ type: 'error', text: data.message || 'خطا در حذف قالب.' });
+        const errText = data.message || 'خطا در حذف قالب.';
+        setStatusMsg({ type: 'error', text: errText });
+        toast.error('خطا در حذف قالب فاکتور', errText);
         return;
       }
 
       setConfirmDeleteDialogOpen(false);
-      setStatusMsg({ type: 'success', text: 'قالب با موفقیت حذف شد.' });
+      const msg = 'قالب با موفقیت حذف شد.';
+      setStatusMsg({ type: 'success', text: msg });
+      toast.success('حذف قالب فاکتور', msg);
       await fetchTemplates();
     } catch {
       setStatusMsg({ type: 'error', text: 'خطا در حذف قالب.' });
+      toast.error('خطا در حذف قالب فاکتور', 'خطا در برقراری ارتباط با سرور.');
     } finally {
       setIsLoading(false);
     }
