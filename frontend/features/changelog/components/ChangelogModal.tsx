@@ -184,9 +184,16 @@ export default function ChangelogModal({ isOpen: controlledIsOpen, onClose }: Ch
                   <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white">
                     {activeRelease.title}
                   </h3>
-                  <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 font-mono">
-                    <Calendar className="w-3.5 h-3.5" />
-                    <span>{activeRelease.dateFa}</span>
+                  <div className="flex flex-col sm:items-end gap-0.5 text-xs text-slate-500 dark:text-slate-400 font-mono">
+                    <div className="flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5" />
+                      <span>{activeRelease.dateFa}</span>
+                    </div>
+                    {activeRelease.lastModifiedFa ? (
+                      <span className="text-[11px] text-amber-600 dark:text-amber-400 font-sans font-bold">
+                        {activeRelease.lastModifiedFa}
+                      </span>
+                    ) : null}
                   </div>
                 </div>
                 <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
