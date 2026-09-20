@@ -2446,7 +2446,7 @@ export default function DocumentForm({
       </section>
 
       {/* ENTRY TABS EDITOR */}
-      <section className={`dashboard-panel document-entry-panel document-draft-editor relative overflow-hidden p-3.5 space-y-3 ${editingLineId ? 'ring-2 ring-amber-500/50 shadow-xl' : ''}`}>
+      <section className={`dashboard-panel document-entry-panel document-draft-editor relative p-3.5 space-y-3 ${editingLineId ? 'ring-2 ring-amber-500/50 shadow-xl' : ''}`}>
         <div>
         {editingLineId ? (
           <div className="document-draft-editor-head flex items-center justify-between pb-2 border-b border-amber-200 dark:border-amber-900/60 bg-amber-50/50 dark:bg-amber-950/20 -mx-3.5 -mt-3.5 p-3 rounded-t-xl">

@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Plus, Search, Check, ChevronDown, Phone, MapPin, X, Building2 } from 'lucide-react';
 import {
   DEFAULT_ASSAY_LABORATORIES,
@@ -51,6 +52,100 @@ export function AssayLaboratorySelect({
 
   const containerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const [mounted, setMounted] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [openDirection, setOpenDirection] = useState<'down' | 'up'>('down');
+  const [dropdownCoords, setDropdownCoords] = useState<{
+    top?: number;
+    bottom?: number;
+    left: number;
+    width: number;
+    maxHeight: number;
+  }>({ left: 0, width: 280, maxHeight: 320 });
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Dynamically calculate whether dropdown should open upwards or downwards and calculate fixed coordinates
+  const updateDirection = useCallback(() => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+    const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+
+    // If input is scrolled completely out of viewport, close it
+    if (rect.bottom < 0 || rect.top > viewportHeight) {
+      setIsOpen(false);
+      return;
+    }
+
+    // Check if document lines are pinned and occupying space at the bottom of the viewport
+    let pinnedHeight = 0;
+    if (typeof document !== 'undefined') {
+      const heightVar = getComputedStyle(document.documentElement).getPropertyValue('--document-lines-pinned-height');
+      const parsed = parseFloat(heightVar);
+      if (!isNaN(parsed) && parsed > 0) {
+        pinnedHeight = parsed;
+      }
+    }
+
+    const effectiveBottomLimit = viewportHeight - pinnedHeight;
+    const spaceBelow = effectiveBottomLimit - rect.bottom;
+    const spaceAbove = rect.top;
+
+    const estimatedDropdownHeight = 310;
+    const shouldOpenUp = spaceBelow < estimatedDropdownHeight && spaceAbove > spaceBelow;
+
+    const width = Math.max(rect.width, 280);
+    // Align with input's right edge in RTL layout
+    let left = rect.right - width;
+    if (left < 8) {
+      left = 8;
+    }
+    if (left + width > viewportWidth - 8) {
+      left = Math.max(8, viewportWidth - width - 8);
+    }
+
+    if (shouldOpenUp) {
+      setOpenDirection('up');
+      setDropdownCoords({
+        bottom: Math.round(viewportHeight - rect.top + 6),
+        left: Math.round(left),
+        width: Math.round(width),
+        maxHeight: Math.min(360, Math.max(180, spaceAbove - 16)),
+      });
+    } else {
+      setOpenDirection('down');
+      setDropdownCoords({
+        top: Math.round(rect.bottom + 6),
+        left: Math.round(left),
+        width: Math.round(width),
+        maxHeight: Math.min(360, Math.max(180, spaceBelow - 16)),
+      });
+    }
+  }, []);
+
+  // Update placement on open and whenever user scrolls anywhere or resizes the viewport
+  useEffect(() => {
+    if (!isOpen) return;
+
+    updateDirection();
+    const animId = requestAnimationFrame(updateDirection);
+
+    const handleScrollOrResize = () => {
+      updateDirection();
+    };
+
+    window.addEventListener('scroll', handleScrollOrResize, true);
+    window.addEventListener('resize', handleScrollOrResize);
+
+    return () => {
+      cancelAnimationFrame(animId);
+      window.removeEventListener('scroll', handleScrollOrResize, true);
+      window.removeEventListener('resize', handleScrollOrResize);
+    };
+  }, [isOpen, updateDirection]);
 
   // Fetch laboratories from API on mount
   useEffect(() => {
@@ -92,11 +187,18 @@ export function AssayLaboratorySelect({
 
   // Close dropdown only when clicking outside or pressing Escape (not on scroll)
   useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (isClickOnScrollbar(event)) {
+    function handleClickOutside(event: MouseEvent | TouchEvent) {
+      if (event instanceof MouseEvent && isClickOnScrollbar(event)) {
         return;
       }
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(target) &&
+        dropdownRef.current &&
+        !dropdownRef.current.contains(target)
+      ) {
         setIsOpen(false);
       }
     }
@@ -106,12 +208,14 @@ export function AssayLaboratorySelect({
       }
     }
     if (isOpen) {
-      document.addEventListener('click', handleClickOutside);
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('touchstart', handleClickOutside);
       document.addEventListener('keydown', handleKeyDown);
       setTimeout(() => searchInputRef.current?.focus(), 50);
     }
     return () => {
-      document.removeEventListener('click', handleClickOutside);
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [isOpen]);
@@ -142,10 +246,30 @@ export function AssayLaboratorySelect({
     });
   }, [labs, provinceTab, searchQuery]);
 
-  // Group labs: Tehran first, then others
+  // Pagination: initially display 10 laboratories and load more on demand
+  const [visibleCount, setVisibleCount] = useState<number>(10);
+
+  useEffect(() => {
+    setVisibleCount(10);
+  }, [searchQuery, provinceTab, isOpen]);
+
+  const visibleLabs = useMemo(() => {
+    return filteredLabs.slice(0, visibleCount);
+  }, [filteredLabs, visibleCount]);
+
+  const hasMore = visibleCount < filteredLabs.length;
+  const remainingCount = filteredLabs.length - visibleCount;
+
+  useEffect(() => {
+    if (isOpen) {
+      updateDirection();
+    }
+  }, [visibleCount, isOpen, updateDirection]);
+
+  // Group visible labs: Tehran first, then others
   const groupedLabs = useMemo(() => {
-    const tehranLabs = filteredLabs.filter((l) => l.province === 'تهران');
-    const otherLabs = filteredLabs.filter((l) => l.province !== 'تهران');
+    const tehranLabs = visibleLabs.filter((l) => l.province === 'تهران');
+    const otherLabs = visibleLabs.filter((l) => l.province !== 'تهران');
 
     const groups: { title: string; items: AssayLaboratory[] }[] = [];
     if (tehranLabs.length > 0) {
@@ -155,7 +279,7 @@ export function AssayLaboratorySelect({
       groups.push({ title: `سایر استان‌ها (${otherLabs.length})`, items: otherLabs });
     }
     return groups;
-  }, [filteredLabs]);
+  }, [visibleLabs]);
 
   // Selected laboratory object
   const currentLab = useMemo(() => {
@@ -249,6 +373,22 @@ export function AssayLaboratorySelect({
     }
   };
 
+  const openDropdown = () => {
+    if (disabled) return;
+    updateDirection();
+    setIsOpen(true);
+  };
+
+  const toggleDropdown = () => {
+    if (disabled) return;
+    if (!isOpen) {
+      updateDirection();
+      setIsOpen(true);
+    } else {
+      setIsOpen(false);
+    }
+  };
+
   return (
     <div className={`relative ${className}`} ref={containerRef}>
       {/* Input Field with Trigger and Add button */}
@@ -263,8 +403,8 @@ export function AssayLaboratorySelect({
             placeholder={placeholder}
             title={currentLab ? `${currentLab.name} - ${currentLab.province} (${currentLab.phone || 'بدون تلفن'})` : undefined}
             onChange={(e) => onChange(e.target.value)}
-            onFocus={() => !disabled && setIsOpen(true)}
-            onClick={() => !disabled && setIsOpen(true)}
+            onFocus={openDropdown}
+            onClick={openDropdown}
             onKeyDown={onKeyDown}
             className={`assay-lab-input w-full rounded-xl border px-3 py-2 pl-7 text-xs font-semibold transition-colors focus:outline-hidden bg-white text-slate-900 focus:bg-white focus:text-slate-950 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 dark:bg-slate-800 dark:text-white dark:focus:bg-slate-800 dark:focus:text-white dark:focus:border-amber-400 dark:focus:ring-2 dark:focus:ring-amber-400/20 ${
               error ? 'border-rose-500' : 'border-slate-200 dark:border-slate-700'
@@ -274,7 +414,7 @@ export function AssayLaboratorySelect({
             type="button"
             tabIndex={-1}
             disabled={disabled}
-            onClick={() => !disabled && setIsOpen((prev) => !prev)}
+            onClick={toggleDropdown}
             className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
           >
             <ChevronDown size={14} className={`transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
@@ -310,14 +450,28 @@ export function AssayLaboratorySelect({
         </div>
       )}
 
-      {/* Sleek Compact Dropdown Menu */}
-      {isOpen && (
+      {/* Sleek Compact Dropdown Menu rendered via Portal to avoid clipping or stacking issues */}
+      {isOpen && mounted && typeof document !== 'undefined' && createPortal(
         <div
+          ref={dropdownRef}
           dir="rtl"
-          className="absolute right-0 top-full z-50 mt-1 w-full min-w-[280px] rounded-xl border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-700 dark:bg-slate-900"
+          style={{
+            position: 'fixed',
+            left: `${dropdownCoords.left}px`,
+            width: `${dropdownCoords.width}px`,
+            ...(openDirection === 'up'
+              ? { bottom: `${dropdownCoords.bottom}px` }
+              : { top: `${dropdownCoords.top}px` }),
+            maxHeight: `${dropdownCoords.maxHeight}px`,
+          }}
+          className={`z-[9999] flex flex-col rounded-xl border border-slate-200 bg-white p-2 shadow-2xl dark:border-slate-700 dark:bg-slate-900 transition-all duration-150 ${
+            openDirection === 'up'
+              ? 'origin-bottom'
+              : 'origin-top'
+          }`}
         >
           {/* Search Bar */}
-          <div className="relative mb-2">
+          <div className="relative mb-2 shrink-0">
             <Search size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400" />
             <input
               ref={searchInputRef}
@@ -339,7 +493,7 @@ export function AssayLaboratorySelect({
           </div>
 
           {/* Streamlined Province Tabs */}
-          <div className="mb-1.5 flex items-center gap-1 border-b border-slate-100 pb-1.5 dark:border-slate-800">
+          <div className="mb-1.5 flex items-center gap-1 border-b border-slate-100 pb-1.5 dark:border-slate-800 shrink-0">
             <button
               type="button"
               onClick={() => setProvinceTab('all')}
@@ -376,7 +530,7 @@ export function AssayLaboratorySelect({
           </div>
 
           {/* Scrollable Items List */}
-          <div className="max-h-48 overflow-y-auto space-y-2 pr-0.5 scrollbar-thin overscroll-contain">
+          <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-0.5 scrollbar-thin overscroll-contain">
             {groupedLabs.length === 0 ? (
               <div className="py-4 text-center">
                 <p className="text-xs text-slate-500 dark:text-slate-400">ری‌گیری یافت نشد.</p>
@@ -438,10 +592,24 @@ export function AssayLaboratorySelect({
                 </div>
               ))
             )}
+
+            {/* Load More Button */}
+            {hasMore && (
+              <div className="pt-1.5 pb-0.5 text-center">
+                <button
+                  type="button"
+                  onClick={() => setVisibleCount((prev) => prev + 10)}
+                  className="w-full py-1.5 px-3 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 dark:bg-amber-500/15 dark:hover:bg-amber-500/25 text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1.5 border border-amber-500/20"
+                >
+                  <ChevronDown size={13} />
+                  <span>بارگذاری بیشتر ({remainingCount > 10 ? '۱۰ مورد دیگر' : `${remainingCount} مورد باقیمانده`})</span>
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Quick Add Button in Dropdown Footer */}
-          <div className="mt-1.5 border-t border-slate-100 pt-1.5 dark:border-slate-800">
+          <div className="mt-1.5 shrink-0 border-t border-slate-100 pt-1.5 dark:border-slate-800">
             <button
               type="button"
               onClick={() => {
@@ -454,7 +622,8 @@ export function AssayLaboratorySelect({
               <span>افزودن نام ری‌گیری جدید</span>
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Quick Add Modal */}

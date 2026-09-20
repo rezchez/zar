@@ -166,5 +166,18 @@ describe('Assay Laboratories (ری‌گیری‌ها و آزمایشگاه‌ه�
       expect(html).toContain('تهران (تهران)');
       expect(html).toContain('021-55696782');
     });
+
+    test('AssayLaboratorySelect supports dynamic upward/downward dropdown placement structure', () => {
+      const html = renderToStaticMarkup(
+        React.createElement(AssayLaboratorySelect, {
+          value: '',
+          onChange: () => {},
+          placeholder: 'انتخاب ری‌گیری...',
+        }),
+      );
+
+      expect(html).toContain('relative');
+      expect(html).toContain('placeholder="انتخاب ری‌گیری..."');
+    });
   });
 });
