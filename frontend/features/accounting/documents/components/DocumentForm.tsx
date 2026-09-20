@@ -554,7 +554,7 @@ export default function DocumentForm({
       if (!activeCustomerOverride) return initialCustomers;
       return initialCustomers.map((c) => (c.id === activeCustomerOverride.id ? activeCustomerOverride : c));
     });
-  }, [initialCustomers, activeCustomerOverride]);
+  }, [initialCustomers]);
   const { settings } = useAppSettings();
   const weightPrecision = Number(settings.weightDecimalPlaces) || 3;
   const { goldBaseKarat, silverBaseKarat, platinumBaseKarat } = settings;
@@ -599,7 +599,6 @@ export default function DocumentForm({
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
   const [activeEntryTab, setActiveEntryTab] = useState('metals');
   const [, setSaving] = useState(false);
-  const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const toast = useToastManager();
 
@@ -634,16 +633,19 @@ export default function DocumentForm({
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  // Restore locked customer from browser storage (localStorage) on refresh
+  // Restore locked customer from browser storage (localStorage) on initial load
+  const restoredLockedCustomerRef = useRef(false);
   useEffect(() => {
+    if (restoredLockedCustomerRef.current) return;
     try {
       const savedLockedId = localStorage.getItem(LOCKED_CUSTOMER_STORAGE_KEY);
       if (savedLockedId) {
         const match = customers.find((c) => c.id === savedLockedId);
         if (match) {
+          restoredLockedCustomerRef.current = true;
           setIsCustomerLocked(true);
           chooseCustomer(match);
-        } else {
+        } else if (customers.length > 0) {
           localStorage.removeItem(LOCKED_CUSTOMER_STORAGE_KEY);
         }
       }
@@ -1044,7 +1046,7 @@ export default function DocumentForm({
       }
 
       setCommittedLines((current) => current.filter((l) => l.id !== line.id));
-      setMessage(`حواله ردیف سند به طرف‌حساب «${targetCustomer.name}» با موفقیت ثبت شد.`);
+      toast.success(`حواله ردیف سند به طرف‌حساب «${targetCustomer.name}» با موفقیت ثبت شد.`);
     } catch (err: unknown) {
       setErrorMessage(err instanceof Error ? err.message : 'خطای ثبت حواله');
     }
@@ -1052,7 +1054,7 @@ export default function DocumentForm({
 
   function cancelPendingHawala() {
     setPendingHawala(null);
-    setMessage('حواله لغو شد و هیچ تغییری در سند و طرف‌حساب ایجاد نگردید.');
+    toast.info('حواله لغو شد و هیچ تغییری در سند و طرف‌حساب ایجاد نگردید.');
   }
 
   const selectedCustomer = useMemo(() => {
@@ -1281,7 +1283,7 @@ export default function DocumentForm({
       setNewCurrencySymbol('');
       setNewCurrencyCode('');
       setShowAddCurrencyModal(false);
-      setMessage(`ارز «${created.name}» با موفقیت به فهرست اضافه و انتخاب شد.`);
+      toast.success(`ارز «${created.name}» با موفقیت به فهرست اضافه و انتخاب شد.`);
     } catch (error) {
       setAddCurrencyError(error instanceof Error ? error.message : 'ثبت ارز جدید انجام نشد.');
     } finally {
@@ -1734,7 +1736,6 @@ export default function DocumentForm({
 
   async function save(status: 'temporary' | 'final') {
     setSaving(true);
-    setMessage('');
     setErrorMessage('');
 
     try {
@@ -1816,9 +1817,6 @@ export default function DocumentForm({
       }
 
       const registeredNumber = data?.documentNumber ?? documentNumberDisplay;
-      setMessage(
-        `سند شماره ${toPersianDigits(registeredNumber)} با ${faNumber(committedLines.length)} ردیف ثبت شد.`,
-      );
 
       // Immediately update customer balances and claim/debt status
       if (data?.customer) {
@@ -1921,13 +1919,6 @@ export default function DocumentForm({
         ? createCurrencyLine(documentNature)
         : { ...createSettingsLine(documentNature, activeEntryTab), documentTab: activeEntryTab === 'gold-sale' ? 'gold-sale' : 'raw-gold' });
       setEditingLineId(null);
-
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-      if (status === 'temporary') {
-        setMessage(`سند شماره ${toPersianDigits(registeredNumber)} به صورت موقت ذخیره شد.`);
-      } else {
-        setMessage('سند با موفقیت نهایی شد.');
-      }
     } catch (error) {
       throw error instanceof Error ? error : new Error('ارتباط با سرور برقرار نشد.');
     } finally {
@@ -2017,7 +2008,6 @@ export default function DocumentForm({
       className={`document-form-page ${isLinesPinned ? 'is-pinned-page' : ''}`}
       style={isLinesPinned ? { paddingBottom: 'calc(var(--document-lines-pinned-height, 180px) + 24px)' } : undefined}
     >
-      {message ? <p className="account-message"><Check size={15} />{message}</p> : null}
       {errorMessage ? <p className="form-error">{errorMessage}</p> : null}
 
       {/* No customer notice toast */}
