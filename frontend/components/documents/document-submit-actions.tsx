@@ -1,13 +1,19 @@
 'use client';
 
-import { CheckCircle2, Clock3, LoaderCircle } from 'lucide-react';
+import { CheckCircle2, Clock3, LoaderCircle, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { useToastManager } from '@/components/ui/toast';
 
 export default function DocumentSubmitActions({
   onSubmit,
+  onCommitRow,
+  showCommitRow,
+  commitRowLabel = 'ثبت ردیف',
 }: {
   onSubmit: (status: 'temporary' | 'final') => Promise<void>;
+  onCommitRow?: () => void;
+  showCommitRow?: boolean;
+  commitRowLabel?: string;
 }) {
   const [temporaryLoading, setTemporaryLoading] = useState<boolean>(false);
   const [finalLoading, setFinalLoading] = useState<boolean>(false);
@@ -47,6 +53,18 @@ export default function DocumentSubmitActions({
   return (
     <div className="relative" dir="rtl">
       <div className="flex items-center gap-1.5">
+        {showCommitRow && onCommitRow ? (
+          <button
+            type="button"
+            onClick={onCommitRow}
+            disabled={isLoading}
+            className="inline-flex h-7.5 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-amber-500 hover:bg-amber-600 dark:bg-amber-600 dark:hover:bg-amber-500 px-2.5 text-[11px] font-black text-slate-950 dark:text-white shadow-xs transition disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
+            title={commitRowLabel}
+          >
+            <Plus size={13} strokeWidth={2.5} />
+            {commitRowLabel}
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={() => void submit('temporary')}

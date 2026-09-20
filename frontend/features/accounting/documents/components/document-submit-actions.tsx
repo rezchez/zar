@@ -1,21 +1,23 @@
 'use client';
 
-import { CheckCircle2, Clock3, LoaderCircle } from 'lucide-react';
+import { CheckCircle2, Clock3, LoaderCircle, Plus } from 'lucide-react';
 import { useState } from 'react';
-
-type Toast = {
-  tone: 'success' | 'error';
-  message: string;
-};
+import { useToastManager } from '@/components/ui/toast';
 
 export default function DocumentSubmitActions({
   onSubmit,
+  onCommitRow,
+  showCommitRow,
+  commitRowLabel = 'ثبت ردیف',
 }: {
   onSubmit: (status: 'temporary' | 'final') => Promise<void>;
+  onCommitRow?: () => void;
+  showCommitRow?: boolean;
+  commitRowLabel?: string;
 }) {
   const [temporaryLoading, setTemporaryLoading] = useState<boolean>(false);
   const [finalLoading, setFinalLoading] = useState<boolean>(false);
-  const [toast, setToast] = useState<Toast | null>(null);
+  const toast = useToastManager();
 
   async function submit(status: 'temporary' | 'final') {
     if (status === 'temporary') {
@@ -23,24 +25,19 @@ export default function DocumentSubmitActions({
     } else {
       setFinalLoading(true);
     }
-    setToast(null);
 
     try {
       await onSubmit(status);
-      setToast({
-        tone: 'success',
-        message: status === 'final'
+      toast.success(
+        status === 'final'
           ? 'سند با موفقیت نهایی شد.'
           : 'سند به‌صورت موقت ذخیره شد.',
-      });
+      );
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : 'ثبت سند انجام نشد.';
       // Don't show the customer selection notice in the document submit actions (rows panel)
       if (errMsg !== 'ابتدا طرف حساب را از فهرست انتخاب کنید') {
-        setToast({
-          tone: 'error',
-          message: errMsg,
-        });
+        toast.error(errMsg);
       }
     } finally {
       if (status === 'temporary') {
@@ -56,6 +53,18 @@ export default function DocumentSubmitActions({
   return (
     <div className="relative" dir="rtl">
       <div className="flex items-center gap-1.5">
+        {showCommitRow && onCommitRow ? (
+          <button
+            type="button"
+            onClick={onCommitRow}
+            disabled={isLoading}
+            className="inline-flex h-7.5 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-amber-500 hover:bg-amber-600 dark:bg-amber-600 dark:hover:bg-amber-500 px-2.5 text-[11px] font-black text-slate-950 dark:text-white shadow-xs transition disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
+            title={commitRowLabel}
+          >
+            <Plus size={13} strokeWidth={2.5} />
+            {commitRowLabel}
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={() => void submit('temporary')}
@@ -79,19 +88,6 @@ export default function DocumentSubmitActions({
           ثبت سند کل
         </button>
       </div>
-      {toast ? (
-        <div
-          role="status"
-          aria-live="polite"
-          className={`absolute left-0 top-full z-50 mt-2 min-w-64 rounded-xl border px-4 py-3 text-sm font-semibold shadow-lg ${
-            toast.tone === 'success'
-              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-              : 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300'
-          }`}
-        >
-          {toast.message}
-        </div>
-      ) : null}
     </div>
   );
 }

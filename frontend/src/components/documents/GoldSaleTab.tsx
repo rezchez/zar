@@ -59,6 +59,7 @@ type GoldSaleTabProps = {
   errors?: { labName?: string; stampNumber?: string };
   labInputRef?: React.RefObject<HTMLInputElement | null>;
   stampInputRef?: React.RefObject<HTMLInputElement | null>;
+  commitRowLabel?: string;
 };
 
 export default function GoldSaleTab({
@@ -81,12 +82,14 @@ export default function GoldSaleTab({
   convertedWeightFromTotal,
   actualWeightFromMoney,
   rawOperationLabel,
+  metalPriceLabel,
   toPersianDigits,
   faNumber,
   numberValue,
   errors = {},
   labInputRef,
   stampInputRef,
+  commitRowLabel,
 }: GoldSaleTabProps) {
   const { settings } = useAppSettings();
   const baseCurrency = settings.baseCurrency || 'IRR';
@@ -760,7 +763,7 @@ export default function GoldSaleTab({
             onClick={commitDraftLine}
           >
             <ListPlus size={16} />
-            {editingLineId ? 'ثبت اصلاح ردیف' : 'ثبت ردیف'}
+            {commitRowLabel || (editingLineId ? 'ثبت اصلاح ردیف' : 'ثبت ردیف')}
           </button>
         </div>
       ) : null}

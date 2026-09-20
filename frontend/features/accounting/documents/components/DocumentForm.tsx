@@ -433,6 +433,30 @@ function getLineDocumentTypeLabel(
     return nature === 'received' ? 'دریافت نقد' : 'پرداخت نقد';
   }
 
+  if (tab === 'bank') {
+    return nature === 'received' ? 'دریافت بانکی' : 'پرداخت بانکی';
+  }
+
+  if (tab === 'coin') {
+    return nature === 'received' ? 'دریافت سکه' : 'پرداخت سکه';
+  }
+
+  if (tab === 'goods') {
+    return nature === 'received' ? 'ورود کالا و جواهر' : 'خروج کالا و جواهر';
+  }
+
+  if (tab === 'stone') {
+    return nature === 'received' ? 'ورود سنگ' : 'خروج سنگ';
+  }
+
+  if (tab === 'income-expense') {
+    return nature === 'received' ? 'درآمد' : 'هزینه';
+  }
+
+  if (tab === 'claim') {
+    return nature === 'received' ? 'بدهی ما' : 'طلب ما';
+  }
+
   if (tab === 'workmanship') {
     return nature === 'received' ? 'ورود کار ساخته' : 'خروج کار ساخته';
   }
@@ -1782,6 +1806,27 @@ export default function DocumentForm({
     ? (editingLine.sourceTab || (editingLine.documentTab === 'currency' ? 'currency' : editingLine.documentTab === 'gold-sale' ? 'gold-sale' : editingLine.documentTab === 'refining' ? 'refining' : 'metals'))
     : null;
 
+  const currentTab = editingSourceTab || activeEntryTab;
+  const currentLine = editingLine || draftLine;
+  const currentNature = currentLine?.documentNature || documentNature;
+  const currentRawKind = currentLine?.details?.rawKind || 'molten';
+  const currentUnsettled = currentLine?.details?.unsettledTrade;
+  const currentRefiningOpKind = currentLine?.details?.refiningOpKind;
+
+  const currentOpLabel = (currentTab === 'bank' && currentLine?.documentTypeLabel && currentLine.documentTypeLabel !== 'عملیات بانکی')
+    ? currentLine.documentTypeLabel
+    : getLineDocumentTypeLabel(
+        currentNature,
+        currentTab,
+        currentRawKind,
+        currentUnsettled,
+        currentRefiningOpKind,
+      );
+
+  const commitRowLabel = editingLineId
+    ? (currentOpLabel ? `ویرایش ردیف ${currentOpLabel}` : 'ویرایش ردیف')
+    : (currentOpLabel ? `ثبت ردیف ${currentOpLabel}` : 'ثبت ردیف');
+
   return (
     <div className={`document-form-page ${isLinesPinned ? 'pb-36' : ''}`}>
       {message ? <p className="account-message"><Check size={15} />{message}</p> : null}
@@ -2344,6 +2389,7 @@ export default function DocumentForm({
               errors={lineValidationErrors}
               labInputRef={labInputRef}
               stampInputRef={stampInputRef}
+              commitRowLabel={commitRowLabel}
             />
           )}
           goldSaleTabContent={(
@@ -2373,6 +2419,7 @@ export default function DocumentForm({
               errors={lineValidationErrors}
               labInputRef={labInputRef}
               stampInputRef={stampInputRef}
+              commitRowLabel={commitRowLabel}
             />
           )}
           currencyTabContent={(
@@ -2503,6 +2550,9 @@ export default function DocumentForm({
               onSubmit={async (status) => {
                 await save(status);
               }}
+              onCommitRow={commitDraftLine}
+              showCommitRow={isLinesPinned}
+              commitRowLabel={commitRowLabel}
             />
 
             <span className="mx-0.5 h-5 w-px bg-slate-200 dark:bg-slate-700" aria-hidden="true" />

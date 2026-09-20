@@ -116,6 +116,7 @@ type RawGoldTabProps = {
   errors?: { labName?: string; stampNumber?: string };
   labInputRef?: React.RefObject<HTMLInputElement | null>;
   stampInputRef?: React.RefObject<HTMLInputElement | null>;
+  commitRowLabel?: string;
 };
 
 export default function RawGoldTab({
@@ -138,6 +139,7 @@ export default function RawGoldTab({
   errors = {},
   labInputRef,
   stampInputRef,
+  commitRowLabel,
 }: RawGoldTabProps) {
   const isGold = draftLine.details.metalType === 'gold';
   const isMoltenOrConditional = draftLine.details.rawKind === 'molten' || draftLine.details.rawKind === 'conditional';
@@ -325,7 +327,7 @@ export default function RawGoldTab({
       {draftReady ? (
         <div className={`sticky ${isLinesPinned ? 'bottom-32' : 'bottom-3'} z-30 flex justify-center pt-2 transition-all duration-300`}>
           <button type="button" className="document-commit-line-button shadow-lg max-w-sm" onClick={commitDraftLine}>
-            <ListPlus size={16} /> {editingLineId ? 'ثبت اصلاح ردیف' : 'ثبت ردیف'}
+            <ListPlus size={16} /> {commitRowLabel || (editingLineId ? 'ثبت اصلاح ردیف' : 'ثبت ردیف')}
           </button>
         </div>
       ) : null}
