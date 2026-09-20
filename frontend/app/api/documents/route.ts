@@ -20,6 +20,7 @@ import { jalaliDateToIso, normalizeDigits } from '@/lib/jalali';
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
 import { createRefiningCase, syncCaseTotals } from '@/features/refining/services/refining-service';
 import { postMetalSale } from '@/features/accounting/posting/posting-engine';
+import { getCustomerWithBalances } from '@/lib/customer-service';
 
 const amountFields = [
   'goldAmount',
@@ -804,6 +805,16 @@ export async function POST(request: Request) {
       authenticatedClient: context.pb,
     });
 
+    let updatedCustomer = null;
+    try {
+      const client = writer || context.pb;
+      const updatedCustomerRecord = await client.collection('customers').getOne(customer.id);
+      const res = await getCustomerWithBalances(client, updatedCustomerRecord);
+      updatedCustomer = res.customer;
+    } catch (custErr) {
+      console.error('Failed to get updated customer with balances in POST /api/documents:', custErr);
+    }
+
     return NextResponse.json({
       transactions: finalRecords.map((r) => mapDocument(r as never)),
       transaction: mapDocument(finalRecords[0] as never),
@@ -813,6 +824,7 @@ export async function POST(request: Request) {
       documentNumber: finalDocumentNumber,
       nextDocumentSequence: finalSequence + 1,
       registeredAt: finalRecords[0].created,
+      customer: updatedCustomer,
     }, { status: 201 });
   } catch (error) {
     console.error('Error submitting document:', error);

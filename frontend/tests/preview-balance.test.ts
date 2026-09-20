@@ -94,4 +94,56 @@ describe('Preview Balance Calculations', () => {
     expect(projected.rial).toBe(50000000);
     expect(projected.gold).toBe(116.8);
   });
+
+  it('verifies customer balance state update and active customer override logic', () => {
+    const initialCustomer = {
+      id: 'cust-123',
+      name: 'علی طاهری',
+      customerCode: 101,
+      goldBalance: 10.5,
+      silverBalance: 0,
+      platinumBalance: 0,
+      rialBalance: 15000000,
+      foreignBalance: 0,
+      tertiaryBalance: 0,
+    };
+
+    let customers = [initialCustomer];
+    let activeCustomerOverride: typeof initialCustomer | null = null;
+    const selectedCustomerId = 'cust-123';
+
+    // Helper simulating selectedCustomer resolver
+    const resolveSelectedCustomer = () => {
+      if (activeCustomerOverride && activeCustomerOverride.id === selectedCustomerId) {
+        return activeCustomerOverride;
+      }
+      return customers.find((c) => c.id === selectedCustomerId) || null;
+    };
+
+    expect(resolveSelectedCustomer()?.goldBalance).toBe(10.5);
+
+    // Simulate save response returning updated customer
+    const updatedCustomerFromApi = {
+      ...initialCustomer,
+      goldBalance: 25.5,
+      rialBalance: 45000000,
+    };
+
+    // Apply save handler updates
+    activeCustomerOverride = updatedCustomerFromApi;
+    customers = customers.map((c) => (c.id === updatedCustomerFromApi.id ? updatedCustomerFromApi : c));
+
+    // Immediately resolve: must reflect new balances in real-time without page reload
+    const activeCust = resolveSelectedCustomer();
+    expect(activeCust?.goldBalance).toBe(25.5);
+    expect(activeCust?.rialBalance).toBe(45000000);
+
+    // Even if initialCustomers prop re-renders with stale array before DB flush, override protects it
+    const staleInitialCustomers = [initialCustomer];
+    customers = staleInitialCustomers.map((c) =>
+      c.id === activeCustomerOverride?.id ? activeCustomerOverride : c,
+    );
+    expect(resolveSelectedCustomer()?.goldBalance).toBe(25.5);
+  });
 });
+

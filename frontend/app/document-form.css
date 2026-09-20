@@ -340,16 +340,16 @@
   align-items: center;
   justify-content: space-between;
   text-align: center;
-  width: 84px;
+  min-width: 84px;
+  width: auto;
   height: 84px;
-  flex: 0 0 84px;
-  aspect-ratio: 1 / 1;
+  flex: 0 0 auto;
   border: 1px solid #e2e8f0;
   border-radius: 12px;
   background: #ffffff;
-  padding: 6px 4px;
+  padding: 6px 12px;
   box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04);
-  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease, min-width 0.15s ease;
   user-select: none;
 }
 
@@ -383,9 +383,6 @@
   font-weight: 900;
   font-variant-numeric: tabular-nums;
   line-height: 1.15;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
   direction: ltr;
 }
@@ -1641,10 +1638,11 @@
   }
 
   .document-liquid-item {
-    width: 76px;
+    min-width: 76px;
+    width: auto;
     height: 76px;
-    flex: 0 0 76px;
-    padding: 5px 3px;
+    flex: 0 0 auto;
+    padding: 5px 8px;
     border-radius: 10px;
   }
 }

@@ -12,6 +12,7 @@ import { hasPermission } from '@/lib/authorization';
 import { recordAuditEvent } from '@/lib/audit';
 import { buildCustomerChanges } from '@/lib/customer-audit';
 import { getCustomerWithBalances } from '@/lib/customer-service';
+import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
 import {
   syncCustomerCodeInTransactions,
   syncOpeningBalanceTransaction,
@@ -58,6 +59,34 @@ function buildUpdatePayload(formData: FormData, customerCode: number) {
     payload.append('avatar', '');
   }
   return payload;
+}
+
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const context = await getServerAuthContext();
+  if (!context) return NextResponse.json({ message: 'ابتدا وارد حساب شوید.' }, { status: 401 });
+
+  if (!hasPermission(context.user, 'customer.view') && !hasPermission(context.user, 'customer.manage')) {
+    return NextResponse.json({ message: 'دسترسی غیرمجاز به اطلاعات طرف‌حساب.' }, { status: 403 });
+  }
+
+  try {
+    const { id } = await params;
+    let client = context.pb;
+    try {
+      client = await getPocketBaseServiceClient();
+    } catch {
+      // fallback
+    }
+    const record = await client.collection('customers').getOne(id);
+    const { customer } = await getCustomerWithBalances(client, record);
+    return NextResponse.json({ customer });
+  } catch (err) {
+    console.error('Error in GET /api/customers/[id]:', err);
+    return NextResponse.json({ message: 'طرف‌حساب یافت نشد.' }, { status: 404 });
+  }
 }
 
 export async function PATCH(

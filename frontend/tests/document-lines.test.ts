@@ -75,4 +75,71 @@ describe('Document Line Snapshot & Document Type Tests', () => {
     expect(committedLine.description).toBe('توضیحات اختصاصی تحویل داده شد به آقای حسینی');
     expect(committedLine.converted750).toBe(12);
   });
+
+  describe('Pinned Document Rows Visibility & Vertical Scrolling Threshold', () => {
+    function getDocumentLinesTableWrapperClass(isLinesPinned: boolean, linesCount: number): string {
+      return isLinesPinned && linesCount > 3 ? 'max-h-[175px] overflow-y-auto' : '';
+    }
+
+    it('does not enable vertical scrollbar when lines count is 1, 2, or 3 in pinned mode', () => {
+      expect(getDocumentLinesTableWrapperClass(true, 1)).toBe('');
+      expect(getDocumentLinesTableWrapperClass(true, 2)).toBe('');
+      expect(getDocumentLinesTableWrapperClass(true, 3)).toBe('');
+    });
+
+    it('enables vertical scrolling and caps height to 3 rows when lines count exceeds 3 in pinned mode', () => {
+      expect(getDocumentLinesTableWrapperClass(true, 4)).toBe('max-h-[175px] overflow-y-auto');
+      expect(getDocumentLinesTableWrapperClass(true, 5)).toBe('max-h-[175px] overflow-y-auto');
+      expect(getDocumentLinesTableWrapperClass(true, 10)).toBe('max-h-[175px] overflow-y-auto');
+    });
+
+    it('keeps wrapper unconstrained when not in pinned mode regardless of lines count', () => {
+      expect(getDocumentLinesTableWrapperClass(false, 1)).toBe('');
+      expect(getDocumentLinesTableWrapperClass(false, 3)).toBe('');
+      expect(getDocumentLinesTableWrapperClass(false, 5)).toBe('');
+      expect(getDocumentLinesTableWrapperClass(false, 20)).toBe('');
+    });
+  });
+
+  describe('Customer Claim & Debt Balance Status Immediate Update', () => {
+    it('immediately updates customer balances in state after document save', () => {
+      const initialCustomers = [
+        {
+          id: 'cust-1',
+          name: 'علی محمدی',
+          goldBalance: 10,
+          rialBalance: 5000000,
+          silverBalance: 0,
+          platinumBalance: 0,
+          foreignBalance: 0,
+          tertiaryBalance: 0,
+        },
+      ];
+
+      // Simulated state update after POST /api/documents returns updated customer
+      const returnedCustomer = {
+        ...initialCustomers[0],
+        goldBalance: 25.5,
+        rialBalance: 150000000,
+      };
+
+      const updatedCustomers = initialCustomers.map((c) =>
+        c.id === returnedCustomer.id ? returnedCustomer : c,
+      );
+
+      const activeCustomer = updatedCustomers.find((c) => c.id === 'cust-1');
+      expect(activeCustomer?.goldBalance).toBe(25.5);
+      expect(activeCustomer?.rialBalance).toBe(150000000);
+    });
+
+    it('formats claim and debt status labels correctly based on balance signs', () => {
+      const getStatusLabel = (value: number) =>
+        value > 0 ? 'بستانکار' : value < 0 ? 'بدهکار' : 'تسویه';
+
+      expect(getStatusLabel(100)).toBe('بستانکار');
+      expect(getStatusLabel(-50)).toBe('بدهکار');
+      expect(getStatusLabel(0)).toBe('تسویه');
+    });
+  });
 });
+

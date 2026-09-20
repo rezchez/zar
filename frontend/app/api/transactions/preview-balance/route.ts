@@ -4,6 +4,7 @@ import { getServerAuthContext } from '@/lib/auth';
 import { hasPermission } from '@/lib/authorization';
 import { mapTransaction, sumPostedTransactions } from '@/lib/transaction';
 import { normalizeDigits } from '@/lib/jalali';
+import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
 
 function numberValue(value: unknown): number {
   if (value === '' || value === null || value === undefined) return 0;
@@ -68,9 +69,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: 'طرف حساب انتخاب نشده است.' }, { status: 400 });
     }
 
-    const customer = await context.pb.collection('customers').getOne(customerId);
-    const records = await context.pb.collection('transactions').getFullList({
-      filter: context.pb.filter('customer = {:customerId} && is_deleted = false', { customerId }),
+    let client = context.pb;
+    try {
+      client = await getPocketBaseServiceClient();
+    } catch {
+      // fallback
+    }
+
+    const customer = await client.collection('customers').getOne(customerId);
+    const records = await client.collection('transactions').getFullList({
+      filter: client.filter('customer = {:customerId} && is_deleted = false', { customerId }),
       sort: '-transactionDate,-created',
     });
 

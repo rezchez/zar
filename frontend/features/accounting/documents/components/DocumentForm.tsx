@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useFavoriteCustomers } from '@/hooks/useFavoriteCustomers';
 
 import DatePicker from '@/components/ui/date-picker';
@@ -535,13 +536,25 @@ export const VALID_ENTRY_TABS = [
 export const LOCKED_CUSTOMER_STORAGE_KEY = 'zar_document_locked_customer_id';
 
 export default function DocumentForm({
-  customers,
+  customers: initialCustomers,
   initialCurrencies = [],
 }: {
   customers: Customer[];
   nextDocumentNumber?: number;
   initialCurrencies?: Currency[];
 }) {
+  const router = useRouter();
+  const [customers, setCustomers] = useState<Customer[]>(initialCustomers);
+  const [customerQuery, setCustomerQuery] = useState('');
+  const [selectedCustomerId, setSelectedCustomerId] = useState('');
+  const [activeCustomerOverride, setActiveCustomerOverride] = useState<Customer | null>(null);
+
+  useEffect(() => {
+    setCustomers((prev) => {
+      if (!activeCustomerOverride) return initialCustomers;
+      return initialCustomers.map((c) => (c.id === activeCustomerOverride.id ? activeCustomerOverride : c));
+    });
+  }, [initialCustomers, activeCustomerOverride]);
   const { settings } = useAppSettings();
   const weightPrecision = Number(settings.weightDecimalPlaces) || 3;
   const { goldBaseKarat, silverBaseKarat, platinumBaseKarat } = settings;
@@ -563,8 +576,6 @@ export default function DocumentForm({
     };
   }
 
-  const [customerQuery, setCustomerQuery] = useState('');
-  const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [isCustomerLocked, setIsCustomerLocked] = useState(false);
   const [showLockInfo, setShowLockInfo] = useState(false);
   const [isCustomerDropdownOpen, setIsCustomerDropdownOpen] = useState(false);
@@ -1044,9 +1055,12 @@ export default function DocumentForm({
     setMessage('حواله لغو شد و هیچ تغییری در سند و طرف‌حساب ایجاد نگردید.');
   }
 
-  const selectedCustomer = customers.find(
-    (customer) => customer.id === selectedCustomerId,
-  );
+  const selectedCustomer = useMemo(() => {
+    if (activeCustomerOverride && activeCustomerOverride.id === selectedCustomerId) {
+      return activeCustomerOverride;
+    }
+    return customers.find((customer) => customer.id === selectedCustomerId);
+  }, [customers, selectedCustomerId, activeCustomerOverride]);
 
   const effectiveDocumentNumberDisplay = selectedCustomerId
     ? documentNumberDisplay
@@ -1310,6 +1324,7 @@ export default function DocumentForm({
 
   function chooseCustomer(customer: Customer) {
     setErrorMessage('');
+    setActiveCustomerOverride(customer);
     if (selectedCustomerId === customer.id) {
       setDocumentNumberLoading(false);
     } else {
@@ -1330,6 +1345,7 @@ export default function DocumentForm({
   }
 
   function clearCustomer() {
+    setActiveCustomerOverride(null);
     setSelectedCustomerId('');
     setCustomerQuery('');
     setDocumentNumberDisplay('');
@@ -1791,6 +1807,7 @@ export default function DocumentForm({
         | {
           message?: string;
           documentNumber?: string;
+          customer?: Customer;
         }
         | null;
 
@@ -1802,6 +1819,92 @@ export default function DocumentForm({
       setMessage(
         `سند شماره ${toPersianDigits(registeredNumber)} با ${faNumber(committedLines.length)} ردیف ثبت شد.`,
       );
+
+      // Immediately update customer balances and claim/debt status
+      if (data?.customer) {
+        const updatedCust = data.customer as Customer;
+        setActiveCustomerOverride(updatedCust);
+        setCustomers((prev) =>
+          prev.map((c) => (c.id === updatedCust.id ? updatedCust : c))
+        );
+        setPreviewData({
+          previousBalance: {
+            rial: updatedCust.rialBalance,
+            gold: updatedCust.goldBalance,
+            silver: updatedCust.silverBalance,
+            platinum: updatedCust.platinumBalance,
+            foreign: updatedCust.foreignBalance,
+            tertiary: updatedCust.tertiaryBalance,
+            secondaryCurrency: updatedCust.secondaryCurrency || '',
+            secondaryCurrencySymbol: updatedCust.secondaryCurrencySymbol || '',
+            tertiaryCurrency: updatedCust.tertiaryCurrency || '',
+            tertiaryCurrencySymbol: updatedCust.tertiaryCurrencySymbol || '',
+          },
+          transactionEffect: {
+            rial: 0,
+            gold: 0,
+            silver: 0,
+            platinum: 0,
+            foreign: 0,
+            tertiary: 0,
+          },
+          projectedBalance: {
+            rial: updatedCust.rialBalance,
+            gold: updatedCust.goldBalance,
+            silver: updatedCust.silverBalance,
+            platinum: updatedCust.platinumBalance,
+            foreign: updatedCust.foreignBalance,
+            tertiary: updatedCust.tertiaryBalance,
+          },
+        });
+      }
+
+      if (selectedCustomerId) {
+        fetch(`/api/customers/${encodeURIComponent(selectedCustomerId)}`, { cache: 'no-store' })
+          .then((res) => (res.ok ? res.json() : null))
+          .then((custData) => {
+            if (custData?.customer) {
+              const updatedCust = custData.customer as Customer;
+              setActiveCustomerOverride(updatedCust);
+              setCustomers((prev) =>
+                prev.map((c) => (c.id === updatedCust.id ? updatedCust : c))
+              );
+              setPreviewData({
+                previousBalance: {
+                  rial: updatedCust.rialBalance,
+                  gold: updatedCust.goldBalance,
+                  silver: updatedCust.silverBalance,
+                  platinum: updatedCust.platinumBalance,
+                  foreign: updatedCust.foreignBalance,
+                  tertiary: updatedCust.tertiaryBalance,
+                  secondaryCurrency: updatedCust.secondaryCurrency || '',
+                  secondaryCurrencySymbol: updatedCust.secondaryCurrencySymbol || '',
+                  tertiaryCurrency: updatedCust.tertiaryCurrency || '',
+                  tertiaryCurrencySymbol: updatedCust.tertiaryCurrencySymbol || '',
+                },
+                transactionEffect: {
+                  rial: 0,
+                  gold: 0,
+                  silver: 0,
+                  platinum: 0,
+                  foreign: 0,
+                  tertiary: 0,
+                },
+                projectedBalance: {
+                  rial: updatedCust.rialBalance,
+                  gold: updatedCust.goldBalance,
+                  silver: updatedCust.silverBalance,
+                  platinum: updatedCust.platinumBalance,
+                  foreign: updatedCust.foreignBalance,
+                  tertiary: updatedCust.tertiaryBalance,
+                },
+              });
+            }
+          })
+          .catch(() => {});
+      }
+
+      router.refresh();
 
       // Refresh next document number for this customer
       if (selectedCustomerId) {
@@ -2727,8 +2830,14 @@ export default function DocumentForm({
             <p className="text-slate-500 dark:text-slate-400 text-xs font-semibold">هنوز ردیفی به سند اضافه نشده است</p>
           </div>
         ) : (
-          <Table wrapperClassName={isLinesPinned ? 'max-h-56 overflow-y-auto' : ''}>
-            <TableHeader>
+          <Table
+            wrapperClassName={
+              isLinesPinned && committedLines.length > 3
+                ? 'max-h-[175px] overflow-y-auto'
+                : ''
+            }
+          >
+            <TableHeader className={isLinesPinned ? 'sticky top-0 z-10 bg-slate-100 dark:bg-slate-800 [&_th]:bg-slate-100 dark:[&_th]:bg-slate-800' : ''}>
               <TableRow>
                 <TableHead className="w-[3%] text-center">#</TableHead>
                 <TableHead>نوع سند</TableHead>
@@ -3276,6 +3385,7 @@ function CustomerBalanceLiquid({ customer }: { customer: Customer }) {
 
           return (
             <motion.div
+              layout
               className={`document-liquid-item ${
                 balance.value > 0 ? 'is-credit' : balance.value < 0 ? 'is-debit' : 'is-zero'
               }`}
@@ -3293,7 +3403,14 @@ function CustomerBalanceLiquid({ customer }: { customer: Customer }) {
               <small className="document-liquid-item-label">{balance.label}</small>
               <div className="document-liquid-item-value-wrap">
                 <strong className="document-liquid-item-value">
-                  {faNumber(Math.abs(balance.value), balance.digits)}
+                  <motion.span
+                    key={balance.value}
+                    initial={{ scale: 1.15 }}
+                    animate={{ scale: 1 }}
+                    transition={{ duration: 0.25 }}
+                  >
+                    {faNumber(Math.abs(balance.value), balance.digits)}
+                  </motion.span>
                 </strong>
                 <span className="document-liquid-item-unit">{balance.unit}</span>
               </div>
