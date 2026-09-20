@@ -8,6 +8,7 @@ import Field from '@/src/components/documents/Field';
 import { RawMetalOperationTypeSelector } from '@/src/components/documents/DocumentOperationTypeSelector';
 import { AssayLaboratorySelect } from '@/components/AssayLaboratorySelect';
 import { getInventoryItemAvailability, type MeltedInventoryItem } from '@/lib/inventory-reservation';
+import MetalInventoryPicker from '@/src/components/documents/MetalInventoryPicker';
 
 export type RawOperationKind = 'molten' | 'misc' | 'conditional' | 'question' | 'coin' | 'unsettled';
 
@@ -207,66 +208,46 @@ export default function RawGoldTab({
       <div className="document-dynamic-fields">
         <div className="document-special-grid raw-gold-fields">
           {nature === 'paid' && draftLine.details.rawKind !== 'unsettled' ? (
-            <Field label={inventoryLabel}>
-              <select
-                value={draftLine.details.inventorySourceId}
-                onChange={(event) => {
-                  const selectedId = event.target.value;
-                  const source = meltedInventory.find((item) => item.id === selectedId);
-                  if (source) {
-                    const { availableRemaining } = getInventoryItemAvailability(source, committedLines, editingLineId);
-                    setDraftLine((current) => ({
-                      ...current,
-                      details: {
-                        ...current.details,
-                        inventorySourceId: selectedId,
-                        rawWeight: String(availableRemaining),
-                        purity: String(source.purity || 750),
-                        stampNumber: source.stampNumber ?? '',
-                        labName: source.labName ?? '',
-                      },
-                    }));
-                  } else {
-                    setDraftLine((current) => ({
-                      ...current,
-                      details: {
-                        ...current.details,
-                        inventorySourceId: '',
-                        rawWeight: '',
-                        purity: '750',
-                        stampNumber: '',
-                        labName: '',
-                      },
-                    }));
-                  }
+            <Field label={inventoryLabel} wide>
+              <MetalInventoryPicker
+                selectedId={draftLine.details.inventorySourceId}
+                rawKind={draftLine.details.rawKind}
+                inventory={meltedInventory}
+                committedLines={committedLines}
+                editingLineId={editingLineId}
+                baseKarat={baseKarat}
+                weightPrecision={weightPrecision}
+                faNumber={faNumber}
+                label={inventoryLabel}
+                placeholder={inventoryPlaceholder}
+                onSelect={(source, availableRemaining) => {
+                  setDraftLine((current) => ({
+                    ...current,
+                    details: {
+                      ...current.details,
+                      inventorySourceId: source.id,
+                      rawWeight: String(availableRemaining),
+                      purity: String(source.purity || 750),
+                      stampNumber: source.stampNumber ?? '',
+                      labName: source.labName ?? '',
+                      rawKind: source.rawKind ?? current.details.rawKind,
+                    },
+                  }));
                 }}
-              >
-                <option value="">{inventoryPlaceholder}</option>
-                {meltedInventory.map((item) => {
-                  const { initialWeight, currentReserved, availableRemaining } = getInventoryItemAvailability(
-                    item,
-                    committedLines,
-                    editingLineId,
-                  );
-                  const isDisabled = availableRemaining <= 0 && item.id !== draftLine.details.inventorySourceId;
-
-                  let labelText = `${item.stampNumber || 'بدون انگ'} · ${item.labName || 'ری‌گیری نامشخص'} · ${item.customerName}`;
-                  if (currentReserved > 0) {
-                    labelText += ` (اولیه: ${faNumber(initialWeight, 3)}g | خروج موقت: ${faNumber(currentReserved, 3)}g | قابل انتخاب: ${faNumber(availableRemaining, 3)}g)`;
-                  } else {
-                    labelText += ` (اولیه: ${faNumber(initialWeight, 3)}g | قابل انتخاب: ${faNumber(availableRemaining, 3)}g)`;
-                  }
-                  if (isDisabled) {
-                    labelText += ' - غیرقابل انتخاب (پایان موجودی)';
-                  }
-
-                  return (
-                    <option key={item.id} value={item.id} disabled={isDisabled}>
-                      {labelText}
-                    </option>
-                  );
-                })}
-              </select>
+                onClear={() => {
+                  setDraftLine((current) => ({
+                    ...current,
+                    details: {
+                      ...current.details,
+                      inventorySourceId: '',
+                      rawWeight: '',
+                      purity: '750',
+                      stampNumber: '',
+                      labName: '',
+                    },
+                  }));
+                }}
+              />
             </Field>
           ) : null}
           <Field label="وزن (گرم)">

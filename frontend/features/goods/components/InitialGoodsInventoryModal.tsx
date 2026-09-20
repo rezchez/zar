@@ -584,7 +584,7 @@ export default function InitialGoodsInventoryModal({
                   ) : (
                     currencies.map((curr) => (
                       <option key={curr.id} value={curr.id}>
-                        {getCurrencyDisplayName(curr)} ({curr.code})
+                        {getCurrencyDisplayName(curr)}
                       </option>
                     ))
                   )}

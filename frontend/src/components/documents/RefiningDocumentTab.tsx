@@ -17,6 +17,7 @@ import type { Customer } from '@/lib/customer';
 import { isRefinerGroup } from '@/lib/customer-groups';
 import Field from '@/src/components/documents/Field';
 import MoneyInputField from '@/src/components/documents/MoneyInputField';
+import MetalInventoryPicker from '@/src/components/documents/MetalInventoryPicker';
 import {
   getInventoryItemAvailability,
   type DetailState,
@@ -390,52 +391,41 @@ export default function RefiningDocumentTab({
                 {/* If molten and meltedInventory is available, allow picking */}
                 {draftLine.details.rawKind === 'molten' && meltedInventory.length > 0 ? (
                   <Field label="انتخاب از موجودی آبشده" wide>
-                    <select
-                      value={draftLine.details.inventorySourceId || ''}
-                      onChange={(event) => {
-                        const selectedId = event.target.value;
-                        const source = meltedInventory.find((item) => item.id === selectedId);
-                        if (source) {
-                          const { availableRemaining } = getInventoryItemAvailability(source, committedLines, editingLineId);
-                          setDraftLine((current) => ({
-                            ...current,
-                            details: {
-                              ...current.details,
-                              inventorySourceId: selectedId,
-                              rawWeight: String(availableRemaining),
-                              purity: String(source.purity || 750),
-                              stampNumber: source.stampNumber ?? current.details.stampNumber,
-                            },
-                          }));
-                        } else {
-                          setDraftLine((current) => ({
-                            ...current,
-                            details: {
-                              ...current.details,
-                              inventorySourceId: '',
-                              rawWeight: '',
-                              purity: '750',
-                            },
-                          }));
-                        }
+                    <MetalInventoryPicker
+                      selectedId={draftLine.details.inventorySourceId || ''}
+                      rawKind="molten"
+                      inventory={meltedInventory}
+                      committedLines={committedLines}
+                      editingLineId={editingLineId}
+                      baseKarat={750}
+                      weightPrecision={3}
+                      faNumber={faNumber}
+                      label="انتخاب از موجودی آبشده"
+                      placeholder="انتخاب از موجودی فعال آبشده..."
+                      onSelect={(source, availableRemaining) => {
+                        setDraftLine((current) => ({
+                          ...current,
+                          details: {
+                            ...current.details,
+                            inventorySourceId: source.id,
+                            rawWeight: String(availableRemaining),
+                            purity: String(source.purity || 750),
+                            stampNumber: source.stampNumber ?? current.details.stampNumber,
+                          },
+                        }));
                       }}
-                    >
-                      <option value="">انتخاب از موجودی فعال آبشده...</option>
-                      {meltedInventory.map((item) => {
-                        const { initialWeight, currentReserved, availableRemaining } = getInventoryItemAvailability(
-                          item,
-                          committedLines,
-                          editingLineId,
-                        );
-                        const isDisabled = availableRemaining <= 0 && item.id !== draftLine.details.inventorySourceId;
-
-                        return (
-                          <option key={item.id} value={item.id} disabled={isDisabled}>
-                            {item.stampNumber || 'بدون انگ'} · {item.customerName} · اولیه: {faNumber(initialWeight, 2)}g | خروج موقت: {faNumber(currentReserved, 2)}g | قابل انتخاب: {faNumber(availableRemaining, 2)}g · عیار: {item.purity || 750}
-                          </option>
-                        );
-                      })}
-                    </select>
+                      onClear={() => {
+                        setDraftLine((current) => ({
+                          ...current,
+                          details: {
+                            ...current.details,
+                            inventorySourceId: '',
+                            rawWeight: '',
+                            purity: '750',
+                          },
+                        }));
+                      }}
+                    />
                   </Field>
                 ) : null}
 

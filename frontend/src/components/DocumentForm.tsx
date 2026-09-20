@@ -5,7 +5,9 @@ import {
   Check,
   ClipboardList,
   Flame,
+  Info,
   LoaderCircle,
+  Lock,
   MapPin,
   PencilLine,
   Phone,
@@ -19,6 +21,7 @@ import {
   Star,
   Tag,
   Trash2,
+  Unlock,
   UserRound,
   X,
 } from 'lucide-react';
@@ -491,6 +494,22 @@ function getCustomerGroupBadge(groupName?: string) {
   };
 }
 
+export const VALID_ENTRY_TABS = [
+  'metals',
+  'gold-sale',
+  'goods',
+  'currency',
+  'stone',
+  'coin',
+  'cash',
+  'bank',
+  'income-expense',
+  'claim',
+  'workmanship',
+] as const;
+
+export const LOCKED_CUSTOMER_STORAGE_KEY = 'zar_document_locked_customer_id';
+
 export default function DocumentForm({
   customers,
   initialCurrencies = [],
@@ -522,6 +541,8 @@ export default function DocumentForm({
 
   const [customerQuery, setCustomerQuery] = useState('');
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
+  const [isCustomerLocked, setIsCustomerLocked] = useState(false);
+  const [showLockInfo, setShowLockInfo] = useState(false);
   const [isCustomerDropdownOpen, setIsCustomerDropdownOpen] = useState(false);
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
   const {
@@ -545,6 +566,56 @@ export default function DocumentForm({
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const toast = useToastManager();
+
+  // Sync entry tab with URL hash or search params on load & hashchange
+  useEffect(() => {
+    const getTargetTab = (): string | null => {
+      if (typeof window === 'undefined') return null;
+      const hash = window.location.hash.replace(/^#/, '');
+      if (hash && (VALID_ENTRY_TABS as readonly string[]).includes(hash)) {
+        return hash;
+      }
+      const tabParam = new URLSearchParams(window.location.search).get('tab');
+      if (tabParam && (VALID_ENTRY_TABS as readonly string[]).includes(tabParam)) {
+        return tabParam;
+      }
+      return null;
+    };
+
+    const initialTab = getTargetTab();
+    if (initialTab) {
+      changeEntryTab(initialTab);
+    }
+
+    const handleHashChange = () => {
+      const currentTab = getTargetTab();
+      if (currentTab) {
+        changeEntryTab(currentTab);
+      }
+    };
+
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  // Restore locked customer from browser storage (localStorage) on refresh
+  useEffect(() => {
+    try {
+      const savedLockedId = localStorage.getItem(LOCKED_CUSTOMER_STORAGE_KEY);
+      if (savedLockedId) {
+        const match = customers.find((c) => c.id === savedLockedId);
+        if (match) {
+          setIsCustomerLocked(true);
+          chooseCustomer(match);
+        } else {
+          localStorage.removeItem(LOCKED_CUSTOMER_STORAGE_KEY);
+        }
+      }
+    } catch {
+      // ignore storage access restrictions
+    }
+  }, [customers]);
+
   const [lineValidationErrors, setLineValidationErrors] = useState<{ labName?: string; stampNumber?: string }>({});
   const labInputRef = useRef<HTMLInputElement>(null);
   const stampInputRef = useRef<HTMLInputElement>(null);
@@ -996,14 +1067,12 @@ export default function DocumentForm({
 
   useEffect(() => {
     if (documentNature !== 'paid') return;
-    const kind = draftLine.details.rawKind;
-    if (kind === 'unsettled') return;
-    const url = `/api/documents?inventory=raw-gold&kind=${kind}`;
+    const url = '/api/documents?inventory=raw-gold';
     fetch(url, { cache: 'no-store' })
       .then((response) => response.ok ? response.json() : Promise.reject())
       .then((data: { inventory?: MeltedInventoryItem[] }) => setMeltedInventory(data.inventory ?? []))
       .catch(() => setMeltedInventory([]));
-  }, [documentNature, draftLine.details.rawKind]);
+  }, [documentNature]);
 
   const isFormDirty = Boolean(selectedCustomerId && (committedLines.length > 0 || draftReady));
 
@@ -1125,6 +1194,14 @@ export default function DocumentForm({
     setCustomerQuery(`${customer.customerCode} - ${customer.name}`);
     setIsCustomerDropdownOpen(false);
     setActiveSuggestionIndex(-1);
+
+    if (isCustomerLocked) {
+      try {
+        localStorage.setItem(LOCKED_CUSTOMER_STORAGE_KEY, customer.id);
+      } catch {
+        // ignore
+      }
+    }
   }
 
   function clearCustomer() {
@@ -1134,9 +1211,34 @@ export default function DocumentForm({
     setDocumentNumberLoading(false);
     setIsCustomerDropdownOpen(true);
     setActiveSuggestionIndex(-1);
+    setIsCustomerLocked(false);
+    try {
+      localStorage.removeItem(LOCKED_CUSTOMER_STORAGE_KEY);
+    } catch {
+      // ignore
+    }
     setTimeout(() => {
       customerInputRef.current?.focus();
     }, 50);
+  }
+
+  function handleToggleCustomerLock(checked: boolean) {
+    setIsCustomerLocked(checked);
+    try {
+      if (checked) {
+        if (selectedCustomerId) {
+          localStorage.setItem(LOCKED_CUSTOMER_STORAGE_KEY, selectedCustomerId);
+          toast.success('طرف‌حساب انتخابی در حافظه مرورگر ذخیره شد و با رفرش باقی می‌ماند');
+        } else {
+          toast.info('قفل فعال شد؛ پس از انتخاب، طرف‌حساب در حافظه مرورگر ذخیره خواهد شد');
+        }
+      } else {
+        localStorage.removeItem(LOCKED_CUSTOMER_STORAGE_KEY);
+        toast.info('قفل طرف‌حساب برداشته شد');
+      }
+    } catch {
+      // ignore
+    }
   }
 
   function handleCustomerKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
@@ -1184,6 +1286,9 @@ export default function DocumentForm({
 
   function changeEntryTab(tab: string) {
     setActiveEntryTab(tab);
+    if (typeof window !== 'undefined' && window.location.hash !== `#${tab}`) {
+      window.history.replaceState(null, '', `#${tab}`);
+    }
     if (editingLineId) return;
 
     if (draftLine.sourceTab === tab) return;
@@ -1706,36 +1811,91 @@ export default function DocumentForm({
                         </button>
                       ) : null}
                     </div>
-                    <div className="gooey-search document-search-shell relative">
-                      <Search size={16} className="text-slate-400 shrink-0" />
-                      <input
-                        ref={customerInputRef}
-                        value={customerQuery}
-                        onFocus={() => setIsCustomerDropdownOpen(true)}
-                        onChange={(event) => {
-                          setCustomerQuery(event.target.value);
-                          setIsCustomerDropdownOpen(true);
-                          setActiveSuggestionIndex(-1);
-                        }}
-                        onKeyDown={handleCustomerKeyDown}
-                        placeholder="جستجو با نام، کد، تلفن یا گروه (مثلاً ریگیر)..."
-                        autoComplete="off"
-                      />
-                      {customerQuery ? (
+
+                    <div className="flex items-center gap-2">
+                      <div className="gooey-search document-search-shell relative flex-1">
+                        <Search size={16} className="text-slate-400 shrink-0" />
+                        <input
+                          ref={customerInputRef}
+                          value={customerQuery}
+                          onFocus={() => setIsCustomerDropdownOpen(true)}
+                          onChange={(event) => {
+                            setCustomerQuery(event.target.value);
+                            setIsCustomerDropdownOpen(true);
+                            setActiveSuggestionIndex(-1);
+                          }}
+                          onKeyDown={handleCustomerKeyDown}
+                          placeholder="جستجو با نام، کد، تلفن یا گروه (مثلاً ریگیر)..."
+                          autoComplete="off"
+                        />
+                        {customerQuery ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCustomerQuery('');
+                              setActiveSuggestionIndex(-1);
+                              customerInputRef.current?.focus();
+                            }}
+                            className="p-1 text-slate-400 hover:text-rose-500 transition-colors rounded-lg shrink-0 cursor-pointer"
+                            title="پاک کردن متن جستجو"
+                            aria-label="پاک کردن"
+                          >
+                            <X size={14} />
+                          </button>
+                        ) : null}
+                      </div>
+
+                      {/* Customer Lock Button & Info Icon in front of the field */}
+                      <div className="flex items-center gap-1 shrink-0">
                         <button
                           type="button"
-                          onClick={() => {
-                            setCustomerQuery('');
-                            setActiveSuggestionIndex(-1);
-                            customerInputRef.current?.focus();
-                          }}
-                          className="p-1 text-slate-400 hover:text-rose-500 transition-colors rounded-lg shrink-0 cursor-pointer"
-                          title="پاک کردن متن جستجو"
-                          aria-label="پاک کردن"
+                          onClick={() => handleToggleCustomerLock(!isCustomerLocked)}
+                          className={`flex h-[42px] w-[42px] items-center justify-center rounded-xl border transition-all cursor-pointer shadow-2xs ${
+                            isCustomerLocked
+                              ? 'border-amber-400 bg-amber-100 text-amber-900 hover:bg-amber-200 dark:border-amber-600 dark:bg-amber-950/80 dark:text-amber-300 dark:hover:bg-amber-900/60 ring-2 ring-amber-400/40'
+                              : 'border-slate-300 bg-white text-slate-400 hover:border-slate-400 hover:text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-500 dark:hover:border-slate-600 dark:hover:text-slate-300 dark:hover:bg-slate-800'
+                          }`}
+                          title={
+                            isCustomerLocked
+                              ? 'طرف‌حساب قفل است (برای باز کردن قفل کلیک کنید)'
+                              : 'قفل کردن طرف‌حساب (برای حفظ با رفرش صفحه کلیک کنید)'
+                          }
+                          aria-label="قفل طرف‌حساب"
                         >
-                          <X size={14} />
+                          {isCustomerLocked ? (
+                            <Lock size={18} className="text-amber-700 dark:text-amber-400" />
+                          ) : (
+                            <Unlock size={18} />
+                          )}
                         </button>
-                      ) : null}
+
+                        <div className="relative group/info">
+                          <button
+                            type="button"
+                            onClick={() => setShowLockInfo((prev) => !prev)}
+                            className="flex h-7 w-7 items-center justify-center rounded-full text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/50 dark:hover:text-amber-400 transition-colors cursor-pointer"
+                            title="راهنمای عملکرد قفل طرف‌حساب"
+                            aria-label="راهنمای عملکرد قفل طرف‌حساب"
+                          >
+                            <Info size={16} />
+                          </button>
+
+                          <div
+                            className={`absolute bottom-full mb-2 left-0 z-50 w-64 p-3 bg-slate-900 text-white dark:bg-slate-800 dark:text-slate-100 rounded-xl shadow-2xl text-[11px] leading-relaxed border border-slate-700/80 text-right transition-all duration-200 ${
+                              showLockInfo ? 'block' : 'hidden group-hover/info:block'
+                            }`}
+                          >
+                            <div className="font-bold text-amber-400 mb-1 flex items-center gap-1.5 pb-1 border-b border-slate-800 dark:border-slate-700">
+                              <Lock size={13} />
+                              <span>راهنمای قفل طرف‌حساب</span>
+                            </div>
+                            <p className="text-slate-300 dark:text-slate-300 pt-1">
+                              با فعال کردن این گزینه، طرف‌حساب انتخابی در حافظه مرورگر ذخیره شده و با رفرش صفحه یا مراجعات بعدی همچنان انتخاب‌شده باقی می‌ماند.
+                            </p>
+                            <div className="absolute top-full left-3 -mt-1 border-4 border-transparent border-t-slate-900 dark:border-t-slate-800" />
+                          </div>
+                        </div>
+                      </div>
                     </div>
 
                     {isCustomerDropdownOpen ? (
@@ -1860,6 +2020,57 @@ export default function DocumentForm({
                         <strong className="text-sm font-black text-slate-900 dark:text-slate-100">
                           {selectedCustomer.name}
                         </strong>
+                        {/* Lock Toggle Button & Info Icon */}
+                        <div className="inline-flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleCustomerLock(!isCustomerLocked)}
+                            className={`inline-flex items-center justify-center h-8 w-8 rounded-xl border transition-all cursor-pointer shadow-2xs ${
+                              isCustomerLocked
+                                ? 'border-amber-400 bg-amber-100 text-amber-900 hover:bg-amber-200 dark:border-amber-600 dark:bg-amber-950/80 dark:text-amber-300 dark:hover:bg-amber-900/60 ring-2 ring-amber-400/40'
+                                : 'border-slate-300 bg-white text-slate-400 hover:border-slate-400 hover:text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-500 dark:hover:border-slate-600 dark:hover:text-slate-300 dark:hover:bg-slate-800'
+                            }`}
+                            title={
+                              isCustomerLocked
+                                ? 'طرف‌حساب قفل است (برای باز کردن قفل کلیک کنید)'
+                                : 'قفل کردن طرف‌حساب (برای حفظ با رفرش صفحه کلیک کنید)'
+                            }
+                            aria-label="قفل طرف‌حساب"
+                          >
+                            {isCustomerLocked ? (
+                              <Lock size={15} className="text-amber-700 dark:text-amber-400" />
+                            ) : (
+                              <Unlock size={15} />
+                            )}
+                          </button>
+
+                          <div className="relative group/info">
+                            <button
+                              type="button"
+                              onClick={() => setShowLockInfo((prev) => !prev)}
+                              className="inline-flex h-6 w-6 items-center justify-center rounded-full text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/50 dark:hover:text-amber-400 transition-colors cursor-pointer"
+                              title="راهنمای عملکرد قفل طرف‌حساب"
+                              aria-label="راهنمای عملکرد قفل طرف‌حساب"
+                            >
+                              <Info size={14} />
+                            </button>
+
+                            <div
+                              className={`absolute bottom-full mb-2 left-0 z-50 w-64 p-3 bg-slate-900 text-white dark:bg-slate-800 dark:text-slate-100 rounded-xl shadow-2xl text-[11px] leading-relaxed border border-slate-700/80 text-right transition-all duration-200 ${
+                                showLockInfo ? 'block' : 'hidden group-hover/info:block'
+                              }`}
+                            >
+                              <div className="font-bold text-amber-400 mb-1 flex items-center gap-1.5 pb-1 border-b border-slate-800 dark:border-slate-700">
+                                <Lock size={13} />
+                                <span>راهنمای قفل طرف‌حساب</span>
+                              </div>
+                              <p className="text-slate-300 dark:text-slate-300 pt-1">
+                                با فعال کردن این گزینه، طرف‌حساب انتخابی در حافظه مرورگر ذخیره شده و با رفرش صفحه یا مراجعات بعدی همچنان انتخاب‌شده باقی می‌ماند.
+                              </p>
+                              <div className="absolute top-full left-2 -mt-1 border-4 border-transparent border-t-slate-900 dark:border-t-slate-800" />
+                            </div>
+                          </div>
+                        </div>
                         <button
                           type="button"
                           onClick={() => toggleFavoriteCustomer(selectedCustomer.id)}
@@ -2015,7 +2226,7 @@ export default function DocumentForm({
                     </option>
                   ) : activeCurrencies.map((curr, idx) => (
                     <option key={curr.id ? `${curr.code}-${curr.id}` : `${curr.code}-${idx}`} value={curr.code}>
-                      {getCurrencyDisplayName(curr)} ({curr.code})
+                      {getCurrencyDisplayName(curr)}
                     </option>
                   ))}
                 </select>

@@ -655,6 +655,19 @@
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
+  align-items: start;
+}
+
+.document-special-grid > .account-field {
+  align-self: start;
+}
+
+.document-special-grid select,
+.raw-gold-fields select {
+  height: 40px !important;
+  min-height: 40px !important;
+  max-height: 40px !important;
+  box-sizing: border-box;
 }
 
 .document-field-wide {

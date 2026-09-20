@@ -17,6 +17,7 @@ import DatePicker from '@/components/ui/date-picker';
 import { PriceInput } from '@/components/ui/price-input';
 import { useAppSettings } from '@/src/components/SettingsProvider';
 import { dateToJalaliString, normalizeDigits } from '@/lib/jalali';
+import { getCurrencyDisplayName } from '@/lib/currencies';
 import { convertRialToToman, formatMoney, parseLocalizedAmount } from '@/lib/money';
 import {
   DEFAULT_BASE_KARATS,
@@ -641,7 +642,7 @@ export default function InitialWorkmanshipInventoryModal({
                   <option value="">پیش‌فرض سیستم ({currencySuffix})</option>
                   {currencies.map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.name || c.code} ({c.symbol || c.code})
+                      {getCurrencyDisplayName(c)}
                     </option>
                   ))}
                 </select>
@@ -907,7 +908,7 @@ export default function InitialWorkmanshipInventoryModal({
                 <option value="">پیش‌فرض سیستم ({currencySuffix})</option>
                 {currencies.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.name || c.code} ({c.symbol || c.code})
+                    {getCurrencyDisplayName(c)}
                   </option>
                 ))}
               </select>

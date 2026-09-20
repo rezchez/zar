@@ -1,3 +1,12 @@
+export type MetalInventoryMovement = {
+  id: string;
+  type: 'received' | 'paid';
+  date: string;
+  customerName: string;
+  weight: number;
+  description?: string;
+};
+
 export type MeltedInventoryItem = {
   id: string;
   weight: number;
@@ -7,6 +16,8 @@ export type MeltedInventoryItem = {
   labName?: string;
   customerName: string;
   rawKind?: 'molten' | 'conditional' | 'misc' | 'question';
+  date?: string;
+  history?: MetalInventoryMovement[];
 };
 
 export type DocumentLineMinimal = {

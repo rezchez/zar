@@ -17,6 +17,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import DatePicker from '@/components/ui/date-picker';
 import {
   formatDynamicAmountLabel,
+  getCurrencyDisplayName,
   type Currency,
 } from '@/lib/currencies';
 import { dateToJalaliString } from '@/lib/jalali';
@@ -490,7 +491,7 @@ export default function InitialBankInventoryModal({
               >
                 {currencies.map((curr) => (
                   <option key={curr.id} value={curr.id}>
-                    {curr.symbol ? `${curr.name} (${curr.symbol})` : curr.name}
+                    {getCurrencyDisplayName(curr)}
                   </option>
                 ))}
               </select>
