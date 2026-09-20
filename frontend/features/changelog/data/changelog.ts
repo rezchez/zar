@@ -19,8 +19,8 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: ChangelogRelease[] = [
   {
-    version: '0.1.4 BETA',
-    versionFa: '۰.۱.۴ بتا',
+    version: '0.0.8 BETA',
+    versionFa: '۰.۰.۸ بتا',
     date: '2026-09-20',
     dateFa: '۲۸ شهریور ماه',
     lastModifiedFa: 'آخرین تغییر در ۲۹ شهریور',
@@ -145,8 +145,8 @@ export const CHANGELOG_RELEASES: ChangelogRelease[] = [
     ],
   },
   {
-    version: '0.1.3 BETA',
-    versionFa: '۰.۱.۳ بتا',
+    version: '0.0.7 BETA 7',
+    versionFa: '۰.۰.۷ بتا',
     date: '2026-09-18',
     dateFa: '۲۸ شهریور ۱۴۰۵',
     title: 'پیاده‌سازی کامپوننت اعلان Appica UI Toast، ادغام پاکت‌های نمونه در دریافت شرطی، و ماژول جامع ری‌گیری طلا',
@@ -234,8 +234,8 @@ export const CHANGELOG_RELEASES: ChangelogRelease[] = [
     ],
   },
   {
-    version: '0.1.1',
-    versionFa: '۰.۱.۱',
+    version: '0.0.6 BETA 6',
+    versionFa: '۰.۰.۶ بتا',
     date: '2026-09-14',
     dateFa: '۲۴ شهریور ۱۴۰۵',
     title: 'تفکیک شماره چک و شناسه صیاد، کامپوننت هوشمند ورودی صیاد، مدیریت طلای شرطی و به‌روزرسانی جامع ری‌گیری‌ها',
@@ -287,8 +287,8 @@ export const CHANGELOG_RELEASES: ChangelogRelease[] = [
     ],
   },
   {
-    version: '0.1.0-beta',
-    versionFa: '۰.۱.۰ بتا',
+    version: '0.0.5 BETA 5',
+    versionFa: '۰.۰.۵ بتا',
     date: '2026-09-13',
     dateFa: '۲۳ شهریور ۱۴۰۵',
     title: 'سیستم یکپارچه موجودی اول دوره رزین‌های ریخته‌گری سه‌بعدی و مواد قالب‌گیری طلا، اتصال چندارزی و نمایش تمام‌صفحه چنج‌لاگ',
@@ -328,8 +328,8 @@ export const CHANGELOG_RELEASES: ChangelogRelease[] = [
     ],
   },
   {
-    version: '0.0.8-beta',
-    versionFa: '۰.۰.۸ بتا',
+    version: '0.0.4 BETA 4',
+    versionFa: '۰.۰.۴ بتا',
     date: '2026-09-12',
     dateFa: '۲۲ شهریور ۱۴۰۵',
     title: 'سیستم جامع مدیریت موجودی سنگ‌ها و بارخانه‌های الماس، معماری چندارزی و نقشه‌های فاست تراش',
@@ -375,7 +375,7 @@ export const CHANGELOG_RELEASES: ChangelogRelease[] = [
     ],
   },
   {
-    version: '0.0.3-beta',
+    version: '0.0.3 BETA 3',
     versionFa: '۰.۰.۳ بتا',
     date: '2026-09-09',
     dateFa: '۱۹ شهریور ۱۴۰۵',
@@ -428,7 +428,7 @@ export const CHANGELOG_RELEASES: ChangelogRelease[] = [
     ],
   },
   {
-    version: '0.0.2-beta',
+    version: '0.0.2 BETA 2',
     versionFa: '۰.۰.۲ بتا',
     date: '2026-08-30',
     dateFa: '۹ شهریور ۱۴۰۵',
@@ -451,7 +451,7 @@ export const CHANGELOG_RELEASES: ChangelogRelease[] = [
     ],
   },
   {
-    version: '0.0.1-alpha',
+    version: '0.0.1 BETA 1',
     versionFa: '۰.۰.۱ آلفا',
     date: '2026-08-15',
     dateFa: '۲۵ مرداد ۱۴۰۵',
