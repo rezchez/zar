@@ -1035,10 +1035,19 @@ export default function DocumentForm({
   // Per-customer document number querying
   useEffect(() => {
     if (!selectedCustomerId) {
+      setDocumentNumberLoading(false);
+      setDocumentNumberDisplay('');
       return;
     }
 
+    let active = true;
+    setDocumentNumberLoading(true);
+
     const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+    }, 10000);
+
     fetch(`/api/documents?customerId=${encodeURIComponent(selectedCustomerId)}`, {
       cache: 'no-store',
       signal: controller.signal,
@@ -1052,17 +1061,29 @@ export default function DocumentForm({
         if (!response.ok || !data.documentNumber) {
           throw new Error(data.message ?? 'شماره سند دریافت نشد.');
         }
-        setDocumentNumberDisplay(data.documentNumber);
+        if (active) {
+          setDocumentNumberDisplay(data.documentNumber);
+        }
       })
       .catch((error: unknown) => {
+        if (!active) return;
         if (error instanceof DOMException && error.name === 'AbortError') return;
-        setErrorMessage('استعلام شماره سند این طرف‌حساب انجام نشد؛ دوباره تلاش کنید.');
+        console.error('Failed to query customer document number:', error);
+        setErrorMessage('استعلام شماره سند این طرف‌حساب انجام نشد؛ شماره پیش‌فرض در نظر گرفته شد.');
+        setDocumentNumberDisplay((prev) => prev || 'سند-1');
       })
       .finally(() => {
-        if (!controller.signal.aborted) setDocumentNumberLoading(false);
+        clearTimeout(timeoutId);
+        if (active) {
+          setDocumentNumberLoading(false);
+        }
       });
 
-    return () => controller.abort();
+    return () => {
+      active = false;
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
   }, [selectedCustomerId]);
 
   useEffect(() => {
@@ -1189,8 +1210,12 @@ export default function DocumentForm({
 
   function chooseCustomer(customer: Customer) {
     setErrorMessage('');
-    setDocumentNumberLoading(true);
-    setSelectedCustomerId(customer.id);
+    if (selectedCustomerId === customer.id) {
+      setDocumentNumberLoading(false);
+    } else {
+      setDocumentNumberLoading(true);
+      setSelectedCustomerId(customer.id);
+    }
     setCustomerQuery(`${customer.customerCode} - ${customer.name}`);
     setIsCustomerDropdownOpen(false);
     setActiveSuggestionIndex(-1);
@@ -2634,7 +2659,7 @@ export default function DocumentForm({
             <div className="flex items-center justify-between border-b border-slate-200/70 dark:border-slate-800 pb-2">
               <span className="text-xs font-black text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
                 <Sparkles size={14} className="text-amber-500" />
-                <span>پیش‌نمایش مانده طرف‌حساب ({selectedCustomer.name})</span>
+                <span>{selectedCustomer.name}</span>
               </span>
               {previewLoading ? (
                 <span className="text-[10px] text-amber-600 dark:text-amber-400 font-bold flex items-center gap-1">

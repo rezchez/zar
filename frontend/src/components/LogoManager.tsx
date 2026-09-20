@@ -11,6 +11,7 @@ import {
   AlertCircle,
   Sparkles,
 } from 'lucide-react';
+import { useToastManager } from '@/components/ui/toast';
 import type { AppSettings } from '@/lib/settings';
 
 interface LogoManagerProps {
@@ -19,6 +20,7 @@ interface LogoManagerProps {
 }
 
 export default function LogoManager({ settings, onLogoUpdated }: LogoManagerProps) {
+  const toast = useToastManager();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -32,19 +34,22 @@ export default function LogoManager({ settings, onLogoUpdated }: LogoManagerProp
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Reset messages
     setErrorMessage(null);
     setSuccessMessage(null);
 
-    // Client-side validations
-    const allowed = ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'];
-    if (!allowed.includes(file.type)) {
-      setErrorMessage('فرمت فایل نامعتبر است. لطفاً از فرمت‌های PNG، JPG، WebP یا SVG استفاده کنید.');
+    // Validate size (max 2MB)
+    if (file.size > 2 * 1024 * 1024) {
+      const err = 'حجم فایل لوگو نباید بیشتر از ۲ مگابایت باشد.';
+      setErrorMessage(err);
+      toast.error('خطا در انتخاب فایل', err);
       return;
     }
 
-    if (file.size > 5 * 1024 * 1024) {
-      setErrorMessage('حجم فایل نباید بیش از ۵ مگابایت باشد.');
+    // Validate type
+    if (!['image/jpeg', 'image/png', 'image/webp', 'image/svg+xml'].includes(file.type)) {
+      const err = 'فرمت فایل معتبر نیست. لطفاً یک فایل PNG، JPEG، WebP یا SVG انتخاب کنید.';
+      setErrorMessage(err);
+      toast.error('فرمت نامعتبر فایل', err);
       return;
     }
 
@@ -65,9 +70,12 @@ export default function LogoManager({ settings, onLogoUpdated }: LogoManagerProp
 
       onLogoUpdated(data.logoUrl || '');
       setSuccessMessage('لوگوی فروشگاه با موفقیت بارگذاری و ذخیره شد.');
+      toast.success('بارگذاری لوگو', 'لوگوی فروشگاه با موفقیت بارگذاری و ذخیره شد.');
       setTimeout(() => setSuccessMessage(null), 4000);
     } catch (err: any) {
-      setErrorMessage(err.message || 'خطایی در ارتباط با سرور رخ داد.');
+      const errText = err.message || 'خطایی در ارتباط با سرور رخ داد.';
+      setErrorMessage(errText);
+      toast.error('خطا در بارگذاری لوگو', errText);
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -93,9 +101,12 @@ export default function LogoManager({ settings, onLogoUpdated }: LogoManagerProp
 
       onLogoUpdated('');
       setSuccessMessage('لوگو حذف شد.');
+      toast.success('حذف لوگو', 'لوگوی فروشگاه با موفقیت حذف شد.');
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (err: any) {
-      setErrorMessage(err.message || 'خطا در حذف لوگو رخ داد.');
+      const errText = err.message || 'خطا در حذف لوگو رخ داد.';
+      setErrorMessage(errText);
+      toast.error('خطا در حذف لوگو', errText);
     } finally {
       setIsDeleting(false);
     }

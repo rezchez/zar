@@ -2,7 +2,8 @@
 
 import React, { useState } from 'react';
 import { Upload, Trash2, Loader2, Check, AlertCircle, Sparkles } from 'lucide-react';
-import { useAppSettings } from './SettingsProvider';
+import { useAppSettings } from '@/components/shared/SettingsProvider';
+import { useToastManager } from '@/components/ui/toast';
 import type { CustomFontRecord } from '@/app/api/settings/fonts/route';
 
 interface CustomFontManagerProps {
@@ -12,6 +13,7 @@ interface CustomFontManagerProps {
 
 export default function CustomFontManager({ onFontUploaded, onFontDeleted }: CustomFontManagerProps) {
   const { customFonts, reloadFonts } = useAppSettings();
+  const toast = useToastManager();
 
   const [fontForm, setFontForm] = useState({
     displayName: '',
@@ -59,6 +61,7 @@ export default function CustomFontManager({ onFontUploaded, onFontDeleted }: Cus
       }
 
       setFontUploadMessage({ type: 'success', text: 'فونت سفارشی با موفقیت نصب و فعال شد.' });
+      toast.success('نصب فونت سفارشی', 'فونت سفارشی با موفقیت نصب و فعال شد.');
       setFontForm({ displayName: '', fontFamily: '', weights: [400] });
       setFontFile(null);
 
@@ -70,7 +73,9 @@ export default function CustomFontManager({ onFontUploaded, onFontDeleted }: Cus
       onFontUploaded?.();
     } catch (err: unknown) {
       const error = err as Error;
-      setFontUploadMessage({ type: 'error', text: error.message || 'خطا در بارگذاری فونت.' });
+      const errorMsg = error.message || 'خطا در بارگذاری فونت.';
+      setFontUploadMessage({ type: 'error', text: errorMsg });
+      toast.error('خطا در بارگذاری فونت', errorMsg);
     } finally {
       setIsUploadingFont(false);
     }
@@ -86,11 +91,13 @@ export default function CustomFontManager({ onFontUploaded, onFontDeleted }: Cus
         const resData = await res.json();
         throw new Error(resData.message || 'خطا در حذف فونت.');
       }
+      toast.success('حذف فونت', 'فونت سفارشی با موفقیت حذف شد.');
       await reloadFonts();
       onFontDeleted?.();
     } catch (err: unknown) {
       const error = err as Error;
-      alert(error.message || 'خطا در حذف فونت.');
+      const errorMsg = error.message || 'خطا در حذف فونت.';
+      toast.error('خطا در حذف فونت', errorMsg);
     } finally {
       setIsDeletingId(null);
     }

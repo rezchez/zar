@@ -298,7 +298,11 @@ export async function GET(request: Request) {
     return NextResponse.json({ message: 'ابتدا وارد حساب شوید.' }, { status: 401 });
   }
 
-  if (!hasPermission(context.user, 'document.view') && !hasPermission(context.user, 'document.manage')) {
+  if (
+    !hasPermission(context.user, 'document.view') &&
+    !hasPermission(context.user, 'document.manage') &&
+    !hasPermission(context.user, 'document.create')
+  ) {
     return NextResponse.json({ message: 'دسترسی غیرمجاز به اسناد.' }, { status: 403 });
   }
 
