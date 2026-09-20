@@ -211,6 +211,28 @@ export default function DashboardSidebar({
   onSelect,
 }: DashboardSidebarProps) {
   const [changelogOpen, setChangelogOpen] = useState(false);
+  const [pinnedBottomOffset, setPinnedBottomOffset] = useState<number>(0);
+
+  useEffect(() => {
+    const handlePinnedChange = (e: Event) => {
+      const customEvent = e as CustomEvent<{ isPinned: boolean; height: number }>;
+      if (customEvent.detail) {
+        setPinnedBottomOffset(customEvent.detail.isPinned ? (customEvent.detail.height || 0) : 0);
+      }
+    };
+
+    window.addEventListener('zarfolio:document_lines_pinned_change', handlePinnedChange);
+
+    if (typeof document !== 'undefined' && document.body.classList.contains('document-lines-pinned')) {
+      const heightVar = getComputedStyle(document.documentElement).getPropertyValue('--document-lines-pinned-height');
+      const parsed = parseFloat(heightVar);
+      if (parsed > 0) setPinnedBottomOffset(parsed);
+    }
+
+    return () => {
+      window.removeEventListener('zarfolio:document_lines_pinned_change', handlePinnedChange);
+    };
+  }, []);
 
   return (
     <>
@@ -226,6 +248,10 @@ export default function DashboardSidebar({
 
       {/* سایدبار اصلی چسبان */}
       <aside
+        style={pinnedBottomOffset > 0 ? {
+          height: `calc(100vh - ${pinnedBottomOffset}px)`,
+          maxHeight: `calc(100vh - ${pinnedBottomOffset}px)`,
+        } : undefined}
         className={`fixed top-0 right-0 z-50 flex h-screen flex-col border-l border-slate-200 bg-white shadow-xl transition-all duration-300 dark:border-slate-800 dark:bg-slate-900 lg:sticky lg:top-0 lg:h-screen lg:z-30 lg:shadow-none ${
           sidebarCollapsed ? 'w-[72px]' : 'w-64'
         } ${

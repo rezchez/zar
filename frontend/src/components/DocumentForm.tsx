@@ -26,7 +26,7 @@ import {
   X,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFavoriteCustomers } from '@/hooks/useFavoriteCustomers';
 
 import DatePicker from '@/components/ui/date-picker';
@@ -569,6 +569,7 @@ export default function DocumentForm({
   const [showLockInfo, setShowLockInfo] = useState(false);
   const [isCustomerDropdownOpen, setIsCustomerDropdownOpen] = useState(false);
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
+  const [visibleCustomerCount, setVisibleCustomerCount] = useState(10);
   const {
     favoriteCustomerIds,
     isFavorite: isCustomerFavorite,
@@ -869,6 +870,7 @@ export default function DocumentForm({
 
   // Document lines pin state initialized safely
   const [isLinesPinned, setIsLinesPinned] = useState<boolean>(false);
+  const pinnedPanelRef = useRef<HTMLElement | null>(null);
 
   // Keep a new draft synchronized with the global base purity settings.
   // Committed/editing lines are left untouched so historical assay values remain intact.
@@ -910,6 +912,60 @@ export default function DocumentForm({
       // ignore
     }
   }, []);
+
+  useEffect(() => {
+    if (!isLinesPinned) {
+      document.body.classList.remove('document-lines-pinned');
+      document.documentElement.style.removeProperty('--document-lines-pinned-height');
+      window.dispatchEvent(
+        new CustomEvent('zarfolio:document_lines_pinned_change', {
+          detail: { isPinned: false, height: 0 },
+        })
+      );
+      return;
+    }
+
+    document.body.classList.add('document-lines-pinned');
+
+    const updateHeight = () => {
+      const panel = pinnedPanelRef.current;
+      if (!panel) return;
+      const height = Math.round(panel.getBoundingClientRect().height);
+      if (height > 0) {
+        document.documentElement.style.setProperty('--document-lines-pinned-height', `${height}px`);
+        window.dispatchEvent(
+          new CustomEvent('zarfolio:document_lines_pinned_change', {
+            detail: { isPinned: true, height },
+          })
+        );
+      }
+    };
+
+    updateHeight();
+
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined' && pinnedPanelRef.current) {
+      resizeObserver = new ResizeObserver(() => {
+        updateHeight();
+      });
+      resizeObserver.observe(pinnedPanelRef.current);
+    }
+
+    const onWindowResize = () => updateHeight();
+    window.addEventListener('resize', onWindowResize);
+
+    return () => {
+      if (resizeObserver) resizeObserver.disconnect();
+      window.removeEventListener('resize', onWindowResize);
+      document.body.classList.remove('document-lines-pinned');
+      document.documentElement.style.removeProperty('--document-lines-pinned-height');
+      window.dispatchEvent(
+        new CustomEvent('zarfolio:document_lines_pinned_change', {
+          detail: { isPinned: false, height: 0 },
+        })
+      );
+    };
+  }, [isLinesPinned, editingLineId, committedLines.length]);
 
   const toggleLinesPin = () => {
     setIsLinesPinned((prev) => {
@@ -996,7 +1052,11 @@ export default function DocumentForm({
     ? documentNumberDisplay
     : 'انتخاب نشده';
 
-  const suggestions = useMemo(() => {
+  useEffect(() => {
+    setVisibleCustomerCount(10);
+  }, [customerQuery, filterFavoritesOnly, isCustomerDropdownOpen]);
+
+  const allMatchingCustomers = useMemo(() => {
     if (selectedCustomer) return [];
     const rawQuery = customerQuery.trim().toLocaleLowerCase();
     const normalizedQuery = normalizeDigits(rawQuery);
@@ -1013,7 +1073,7 @@ export default function DocumentForm({
         const bFav = favoriteCustomerIds.includes(b.id) ? 1 : 0;
         return bFav - aFav;
       });
-      return sorted.slice(0, 10);
+      return sorted;
     }
 
     const matched = list.filter((customer) => {
@@ -1048,8 +1108,24 @@ export default function DocumentForm({
       return bFav - aFav;
     });
 
-    return matched.slice(0, 12);
+    return matched;
   }, [customerQuery, customers, selectedCustomer, isCustomerDropdownOpen, filterFavoritesOnly, favoriteCustomerIds]);
+
+  const suggestions = useMemo(() => {
+    return allMatchingCustomers.slice(0, visibleCustomerCount);
+  }, [allMatchingCustomers, visibleCustomerCount]);
+
+  const handleCustomerSuggestionsScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
+    const { scrollTop, scrollHeight, clientHeight } = event.currentTarget;
+    if (scrollTop + clientHeight >= scrollHeight - 35) {
+      setVisibleCustomerCount((prev) => {
+        if (prev < allMatchingCustomers.length) {
+          return Math.min(prev + 10, allMatchingCustomers.length);
+        }
+        return prev;
+      });
+    }
+  }, [allMatchingCustomers.length]);
 
   const draftReady = isLineReady(draftLine);
   const currencyUnits = useMemo(() => {
@@ -1302,7 +1378,13 @@ export default function DocumentForm({
 
     if (event.key === 'ArrowDown') {
       event.preventDefault();
-      setActiveSuggestionIndex((prev) => (prev + 1) % suggestions.length);
+      setActiveSuggestionIndex((prev) => {
+        const nextIndex = prev + 1;
+        if (nextIndex >= suggestions.length && suggestions.length < allMatchingCustomers.length) {
+          setVisibleCustomerCount((c) => Math.min(c + 10, allMatchingCustomers.length));
+        }
+        return nextIndex < allMatchingCustomers.length ? nextIndex : 0;
+      });
     } else if (event.key === 'ArrowUp') {
       event.preventDefault();
       setActiveSuggestionIndex((prev) => (prev <= 0 ? suggestions.length - 1 : prev - 1));
@@ -1828,7 +1910,10 @@ export default function DocumentForm({
     : (currentOpLabel ? `ثبت ردیف ${currentOpLabel}` : 'ثبت ردیف');
 
   return (
-    <div className={`document-form-page ${isLinesPinned ? 'pb-36' : ''}`}>
+    <div
+      className={`document-form-page ${isLinesPinned ? 'is-pinned-page' : ''}`}
+      style={isLinesPinned ? { paddingBottom: 'calc(var(--document-lines-pinned-height, 180px) + 24px)' } : undefined}
+    >
       {message ? <p className="account-message"><Check size={15} />{message}</p> : null}
       {errorMessage ? <p className="form-error">{errorMessage}</p> : null}
 
@@ -1970,7 +2055,11 @@ export default function DocumentForm({
 
                     {isCustomerDropdownOpen ? (
                       suggestions.length > 0 ? (
-                        <div className="document-customer-suggestions" role="listbox">
+                        <div
+                          className="document-customer-suggestions"
+                          role="listbox"
+                          onScroll={handleCustomerSuggestionsScroll}
+                        >
                           {suggestions.map((customer, idx) => {
                             const groupBadge = getCustomerGroupBadge(customer.groupName);
                             const isHighlighted = idx === activeSuggestionIndex;
@@ -2061,6 +2150,30 @@ export default function DocumentForm({
                               </div>
                             );
                           })}
+
+                          {allMatchingCustomers.length > suggestions.length ? (
+                            <div
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => setVisibleCustomerCount((prev) => Math.min(prev + 10, allMatchingCustomers.length))}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  setVisibleCustomerCount((prev) => Math.min(prev + 10, allMatchingCustomers.length));
+                                }
+                              }}
+                              className="py-2.5 px-3 text-center text-xs font-bold text-amber-800 dark:text-amber-300 bg-amber-50/70 dark:bg-amber-950/40 rounded-xl border border-dashed border-amber-300 dark:border-amber-700/60 mt-1 cursor-pointer hover:bg-amber-100/70 dark:hover:bg-amber-900/40 transition-colors flex items-center justify-center gap-2 select-none"
+                            >
+                              <LoaderCircle size={13} className="spin text-amber-600 dark:text-amber-400 shrink-0" />
+                              <span>
+                                نمایش {toPersianDigits(suggestions.length)} از {toPersianDigits(allMatchingCustomers.length)} طرف‌حساب (اسکرول برای موارد بیشتر)
+                              </span>
+                            </div>
+                          ) : allMatchingCustomers.length > 10 ? (
+                            <div className="py-2 text-center text-[10.5px] font-semibold text-slate-400 dark:text-slate-500 border-t border-slate-100 dark:border-slate-800 select-none">
+                              تمام {toPersianDigits(allMatchingCustomers.length)} طرف‌حساب بارگذاری شد
+                            </div>
+                          ) : null}
                         </div>
                       ) : customerQuery.trim() ? (
                         <div className="document-customer-suggestions p-4 text-center">
@@ -2517,6 +2630,7 @@ export default function DocumentForm({
 
       {/* DOCUMENT LINES PANEL (with Pin / Unpin option & Folder Collapse on Edit when Pinned) */}
       <motion.section
+        ref={pinnedPanelRef}
         layout
         initial={false}
         animate={{
@@ -2534,7 +2648,7 @@ export default function DocumentForm({
         }}
         className={`dashboard-panel document-lines-panel transition-all ${
           isLinesPinned
-            ? 'is-pinned fixed bottom-0 left-0 right-0 z-40 lg:right-64 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-t-2 border-amber-500 shadow-2xl p-3 rounded-t-2xl rounded-b-none'
+            ? 'is-pinned fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-t-2 border-amber-500 shadow-2xl p-3 rounded-t-2xl rounded-b-none'
             : 'p-3'
         }`}
       >
@@ -3139,52 +3253,56 @@ function CustomerBalanceLiquid({ customer }: { customer: Customer }) {
 
   return (
     <motion.div
-      className="document-liquid-balance p-3 sm:p-4 border-amber-200/80 bg-amber-50/40 dark:bg-amber-950/20"
+      className="document-liquid-balance py-2.5 px-3 sm:py-3 sm:px-4 border-amber-200/80 bg-amber-50/40 dark:bg-amber-950/20"
       initial={{ opacity: 0, height: 0, y: -8 }}
       animate={{ opacity: 1, height: 'auto', y: 0 }}
       exit={{ opacity: 0, height: 0, y: -8 }}
       transition={{ type: 'spring', stiffness: 260, damping: 26 }}
     >
-      <div className="document-liquid-title mb-2 sm:mb-0">
-        <span className="document-liquid-orb w-9 h-9"><Sparkles size={18} /></span>
+      <div className="document-liquid-title mb-2 sm:mb-0 shrink-0">
+        <span className="document-liquid-orb w-8 h-8 sm:w-9 sm:h-9"><Sparkles size={16} /></span>
         <div>
-          <strong className="text-sm sm:text-base font-extrabold text-amber-900 dark:text-amber-200">
+          <strong className="text-xs sm:text-sm font-extrabold text-amber-900 dark:text-amber-200">
             وضعیت طلب و بدهی {customer.name}
           </strong>
         </div>
       </div>
-      <div className="document-liquid-items gap-2.5">
-        {visibleBalances.map((balance, index) => (
-          <motion.div
-            className={`document-liquid-item p-3 ${
-              balance.value > 0 ? 'is-credit' : balance.value < 0 ? 'is-debit' : 'is-zero'
-            }`}
-            key={balance.id}
-            initial={{ opacity: 0, scale: 0.7, x: 12 }}
-            animate={{ opacity: 1, scale: 1, x: 0 }}
-            transition={{
-              type: 'spring',
-              stiffness: 340,
-              damping: 22,
-              delay: index * 0.045,
-            }}
-          >
-            <span className="document-liquid-blob" />
-            <small className="text-xs font-extrabold text-slate-600 dark:text-slate-300 block mb-0.5">{balance.label}</small>
-            <strong className="text-base sm:text-lg font-black tracking-normal block my-0.5">
-              {faNumber(Math.abs(balance.value), balance.digits)}
-              {' '}
-              <span className="text-xs font-bold text-slate-500">{balance.unit}</span>
-            </strong>
-            <em className="text-xs font-black block mt-0.5">
-              {balance.value > 0
-                ? 'بستانکار از ما'
-                : balance.value < 0
-                  ? 'بدهکار به ما'
-                  : 'تسویه'}
-            </em>
-          </motion.div>
-        ))}
+      <div className="document-liquid-items gap-2 sm:gap-2.5">
+        {visibleBalances.map((balance, index) => {
+          const statusLabel = balance.value > 0 ? 'بستانکار' : balance.value < 0 ? 'بدهکار' : 'تسویه';
+          const fullTooltip = `${balance.label}: ${faNumber(Math.abs(balance.value), balance.digits)} ${balance.unit} (${
+            balance.value > 0 ? 'بستانکار از ما' : balance.value < 0 ? 'بدهکار به ما' : 'تسویه حساب'
+          })`;
+
+          return (
+            <motion.div
+              className={`document-liquid-item ${
+                balance.value > 0 ? 'is-credit' : balance.value < 0 ? 'is-debit' : 'is-zero'
+              }`}
+              key={balance.id}
+              title={fullTooltip}
+              initial={{ opacity: 0, scale: 0.7, x: 12 }}
+              animate={{ opacity: 1, scale: 1, x: 0 }}
+              transition={{
+                type: 'spring',
+                stiffness: 340,
+                damping: 22,
+                delay: index * 0.045,
+              }}
+            >
+              <small className="document-liquid-item-label">{balance.label}</small>
+              <div className="document-liquid-item-value-wrap">
+                <strong className="document-liquid-item-value">
+                  {faNumber(Math.abs(balance.value), balance.digits)}
+                </strong>
+                <span className="document-liquid-item-unit">{balance.unit}</span>
+              </div>
+              <em className="document-liquid-item-status">
+                {statusLabel}
+              </em>
+            </motion.div>
+          );
+        })}
       </div>
     </motion.div>
   );

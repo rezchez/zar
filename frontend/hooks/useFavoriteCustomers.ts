@@ -26,23 +26,21 @@ export function useFavoriteCustomers() {
       // ignore
     }
 
-    // Fetch authoritative preferences from server
-    fetch('/api/account/preferences')
+    // Fetch authoritative favorites from collection endpoint
+    fetch('/api/customers/favorites')
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (!isMounted || !data?.preferences?.favoriteCustomers) return;
-        const serverFavorites = data.preferences.favoriteCustomers;
-        if (Array.isArray(serverFavorites)) {
-          setFavoriteCustomerIds(serverFavorites);
-          try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(serverFavorites));
-          } catch {
-            // ignore
-          }
+        if (!isMounted || !Array.isArray(data?.favoriteCustomerIds)) return;
+        const serverFavorites = data.favoriteCustomerIds;
+        setFavoriteCustomerIds(serverFavorites);
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(serverFavorites));
+        } catch {
+          // ignore
         }
       })
       .catch((err) => {
-        console.warn('Failed to load user preferences:', err);
+        console.warn('Failed to load favorite customers from collection:', err);
       })
       .finally(() => {
         if (isMounted) setIsLoading(false);
@@ -73,6 +71,7 @@ export function useFavoriteCustomers() {
     async (customerId: string) => {
       if (!customerId) return;
 
+      // Optimistic update
       setFavoriteCustomerIds((prev) => {
         const isFav = prev.includes(customerId);
         const next = isFav ? prev.filter((id) => id !== customerId) : [...prev, customerId];
@@ -84,14 +83,55 @@ export function useFavoriteCustomers() {
           // ignore
         }
 
-        // Persist to user preferences endpoint
-        fetch('/api/account/preferences', {
-          method: 'PATCH',
+        // Persist to collection endpoint
+        fetch('/api/customers/favorites', {
+          method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ favoriteCustomers: next }),
-        }).catch((err) => {
-          console.error('Failed to sync favorite customer to server:', err);
-        });
+          body: JSON.stringify({ customerId }),
+        })
+          .then(async (res) => {
+            if (!res.ok) throw new Error('Failed to toggle favorite');
+            const data = await res.json();
+            if (typeof data.isFavorite === 'boolean') {
+              setFavoriteCustomerIds((current) => {
+                const hasIt = current.includes(customerId);
+                if (data.isFavorite && !hasIt) {
+                  const updated = [...current, customerId];
+                  try {
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+                    window.dispatchEvent(new CustomEvent(EVENT_KEY, { detail: updated }));
+                  } catch {
+                    // ignore
+                  }
+                  return updated;
+                } else if (!data.isFavorite && hasIt) {
+                  const updated = current.filter((id) => id !== customerId);
+                  try {
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+                    window.dispatchEvent(new CustomEvent(EVENT_KEY, { detail: updated }));
+                  } catch {
+                    // ignore
+                  }
+                  return updated;
+                }
+                return current;
+              });
+            }
+          })
+          .catch((err) => {
+            console.error('Failed to sync favorite customer to collection:', err);
+            // Rollback
+            setFavoriteCustomerIds((current) => {
+              const rolledBack = isFav ? [...current, customerId] : current.filter((id) => id !== customerId);
+              try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(rolledBack));
+                window.dispatchEvent(new CustomEvent(EVENT_KEY, { detail: rolledBack }));
+              } catch {
+                // ignore
+              }
+              return rolledBack;
+            });
+          });
 
         return next;
       });
