@@ -59,29 +59,44 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: 'شناسه طرف‌حساب الزامی است.' }, { status: 400 });
   }
 
+  const desiredFavorite =
+    typeof body.isFavorite === 'boolean'
+      ? body.isFavorite
+      : typeof body.action === 'string'
+      ? body.action === 'add'
+        ? true
+        : body.action === 'remove'
+        ? false
+        : undefined
+      : undefined;
+
   try {
     let client = context.pb;
     try {
       client = await getPocketBaseServiceClient();
     } catch {
-      // fallback
+      // fallback to user client
     }
 
     const result = await toggleFavoriteCustomerInCollection(
       context.user.id,
       customerId,
       client,
+      desiredFavorite,
     );
 
     return NextResponse.json({
       success: true,
       ...result,
     });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error toggling favorite customer:', error);
-    return NextResponse.json(
-      { message: 'خطا در تغییر وضعیت ستاره‌دار طرف‌حساب.' },
-      { status: 500 },
-    );
+    const errorRecord = error as { status?: number; message?: string };
+    const status =
+      errorRecord?.status === 400 || errorRecord?.status === 404
+        ? errorRecord.status
+        : 500;
+    const message = errorRecord?.message || 'خطا در تغییر وضعیت ستاره‌دار طرف‌حساب.';
+    return NextResponse.json({ message }, { status });
   }
 }

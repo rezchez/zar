@@ -50,6 +50,7 @@ import {
   toPersianDigits,
   actualWeightFromMoney,
   actualWeightForLine,
+  getLineDocumentTypeLabel,
 } from '../utils/document-helpers';
 
 export const VALID_ENTRY_TABS = [
@@ -248,7 +249,12 @@ export default function DocumentForm({
   useEffect(() => {
     try {
       const stored = localStorage.getItem('zarfolio_document_lines_pinned');
-      if (stored === 'true') setIsLinesPinned(true);
+      if (stored === 'true') {
+        const timer = setTimeout(() => {
+          setIsLinesPinned(true);
+        }, 0);
+        return () => clearTimeout(timer);
+      }
     } catch {}
   }, []);
 
@@ -261,6 +267,78 @@ export default function DocumentForm({
       return next;
     });
   };
+
+  // Coordinate body class, CSS variable and event for pinned lines with sidebar
+  useEffect(() => {
+    if (!isLinesPinned) {
+      if (typeof document !== 'undefined') {
+        document.body.classList.remove('document-lines-pinned');
+        document.documentElement.style.removeProperty('--document-lines-pinned-height');
+      }
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('zarfolio:document_lines_pinned_change', {
+            detail: { isPinned: false, height: 0 },
+          }),
+        );
+      }
+      return;
+    }
+
+    if (typeof document !== 'undefined') {
+      document.body.classList.add('document-lines-pinned');
+    }
+
+    const updateHeight = () => {
+      const panel = pinnedPanelRef.current;
+      if (!panel) return;
+      const height = Math.round(panel.getBoundingClientRect().height);
+      if (height > 0) {
+        if (typeof document !== 'undefined') {
+          document.documentElement.style.setProperty(
+            '--document-lines-pinned-height',
+            `${height}px`,
+          );
+        }
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('zarfolio:document_lines_pinned_change', {
+              detail: { isPinned: true, height },
+            }),
+          );
+        }
+      }
+    };
+
+    updateHeight();
+
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined' && pinnedPanelRef.current) {
+      resizeObserver = new ResizeObserver(() => {
+        updateHeight();
+      });
+      resizeObserver.observe(pinnedPanelRef.current);
+    }
+
+    const onWindowResize = () => updateHeight();
+    window.addEventListener('resize', onWindowResize);
+
+    return () => {
+      if (resizeObserver) resizeObserver.disconnect();
+      window.removeEventListener('resize', onWindowResize);
+      if (typeof document !== 'undefined') {
+        document.body.classList.remove('document-lines-pinned');
+        document.documentElement.style.removeProperty('--document-lines-pinned-height');
+      }
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('zarfolio:document_lines_pinned_change', {
+            detail: { isPinned: false, height: 0 },
+          }),
+        );
+      }
+    };
+  }, [isLinesPinned, editingLineId, committedLines.length]);
 
   // Fetch document number when customer changes
   useEffect(() => {
@@ -614,6 +692,32 @@ export default function DocumentForm({
     }
   };
 
+  const currentTab = (editingLineId ? (draftLine.sourceTab || null) : null) || activeEntryTab;
+  const currentLine = editingLineId
+    ? committedLines.find((l) => l.id === editingLineId) || draftLine
+    : draftLine;
+  const currentNature = currentLine?.documentNature || documentNature;
+  const currentRawKind = currentLine?.details?.rawKind || 'molten';
+  const currentUnsettled = currentLine?.details?.unsettledTrade;
+  const currentRefiningOpKind = currentLine?.details?.refiningOpKind;
+
+  const currentOpLabel =
+    currentTab === 'bank' &&
+    currentLine?.documentTypeLabel &&
+    currentLine.documentTypeLabel !== 'عملیات بانکی'
+      ? currentLine.documentTypeLabel
+      : getLineDocumentTypeLabel(
+          currentNature,
+          currentTab,
+          currentRawKind,
+          currentUnsettled,
+          currentRefiningOpKind,
+        );
+
+  const commitRowLabel = editingLineId
+    ? (currentOpLabel ? `ویرایش ردیف ${currentOpLabel}` : 'ویرایش ردیف')
+    : (currentOpLabel ? `ثبت ردیف ${currentOpLabel}` : 'ثبت ردیف');
+
   return (
     <div
       className={`document-form-page ${isLinesPinned ? 'is-pinned-page' : ''}`}
@@ -748,7 +852,7 @@ export default function DocumentForm({
               errors={lineValidationErrors}
               labInputRef={labInputRef}
               stampInputRef={stampInputRef}
-              commitRowLabel={editingLineId ? 'ویرایش ردیف' : 'ثبت ردیف'}
+              commitRowLabel={commitRowLabel}
             />
           )}
           goldSaleTabContent={(
@@ -789,7 +893,7 @@ export default function DocumentForm({
               errors={lineValidationErrors}
               labInputRef={labInputRef}
               stampInputRef={stampInputRef}
-              commitRowLabel={editingLineId ? 'ویرایش ردیف' : 'ثبت ردیف'}
+              commitRowLabel={commitRowLabel}
             />
           )}
           currencyTabContent={(
@@ -890,9 +994,16 @@ export default function DocumentForm({
         ref={pinnedPanelRef}
         layout
         initial={false}
-        className={`dashboard-panel document-lines-panel transition-all ${
+        transition={{
+          layout: {
+            type: 'tween',
+            ease: [0.16, 1, 0.3, 1],
+            duration: 0.42,
+          },
+        }}
+        className={`dashboard-panel document-lines-panel ${
           isLinesPinned
-            ? 'is-pinned fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-t-2 border-amber-500 shadow-2xl p-3 rounded-t-2xl rounded-b-none'
+            ? 'is-pinned fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t-2 border-amber-500 shadow-2xl p-3 rounded-t-2xl rounded-b-none'
             : 'p-3'
         }`}
       >
@@ -902,7 +1013,7 @@ export default function DocumentForm({
           onTogglePin={toggleLinesPin}
           onSave={save}
           onCommitDraftLine={handleCommitDraft}
-          commitRowLabel={editingLineId ? 'ویرایش ردیف' : 'ثبت ردیف'}
+          commitRowLabel={commitRowLabel}
           selectedCustomer={selectedCustomer}
           effectiveDocumentNumberDisplay={documentNumberDisplay}
           documentDateJalali={documentDateJalali}

@@ -1648,10 +1648,14 @@
 }
 
 /* هماهنگی سایدبار و فوتر آن با ردیف‌های پین‌شده سند */
+aside {
+  transition: height 0.42s cubic-bezier(0.16, 1, 0.3, 1), max-height 0.42s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
 body.document-lines-pinned aside {
   height: calc(100vh - var(--document-lines-pinned-height, 0px)) !important;
   max-height: calc(100vh - var(--document-lines-pinned-height, 0px)) !important;
-  transition: height 0.2s ease, max-height 0.2s ease;
+  transition: height 0.42s cubic-bezier(0.16, 1, 0.3, 1), max-height 0.42s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 body.document-lines-pinned .document-lines-panel.is-pinned {

@@ -1,13 +1,30 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 const STORAGE_KEY = 'zarfolio_favorite_customers';
 const EVENT_KEY = 'zarfolio:favorite_customers_changed';
 
+function syncLocalState(ids: string[]) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(ids));
+    window.dispatchEvent(new CustomEvent(EVENT_KEY, { detail: ids }));
+  } catch {
+    // ignore local storage errors
+  }
+}
+
 export function useFavoriteCustomers() {
   const [favoriteCustomerIds, setFavoriteCustomerIds] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  // In-flight locks and refs to avoid race conditions and stale closures
+  const inFlightRef = useRef<Set<string>>(new Set());
+  const favoriteIdsRef = useRef<string[]>([]);
+
+  useEffect(() => {
+    favoriteIdsRef.current = favoriteCustomerIds;
+  }, [favoriteCustomerIds]);
 
   // Initialize from localStorage and API
   useEffect(() => {
@@ -20,6 +37,7 @@ export function useFavoriteCustomers() {
         const parsed = JSON.parse(cached);
         if (Array.isArray(parsed) && isMounted) {
           setFavoriteCustomerIds(parsed);
+          favoriteIdsRef.current = parsed;
         }
       }
     } catch {
@@ -31,13 +49,10 @@ export function useFavoriteCustomers() {
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (!isMounted || !Array.isArray(data?.favoriteCustomerIds)) return;
-        const serverFavorites = data.favoriteCustomerIds;
+        const serverFavorites: string[] = data.favoriteCustomerIds;
         setFavoriteCustomerIds(serverFavorites);
-        try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(serverFavorites));
-        } catch {
-          // ignore
-        }
+        favoriteIdsRef.current = serverFavorites;
+        syncLocalState(serverFavorites);
       })
       .catch((err) => {
         console.warn('Failed to load favorite customers from collection:', err);
@@ -51,6 +66,7 @@ export function useFavoriteCustomers() {
       const customEvent = e as CustomEvent<string[]>;
       if (Array.isArray(customEvent.detail)) {
         setFavoriteCustomerIds(customEvent.detail);
+        favoriteIdsRef.current = customEvent.detail;
       }
     };
 
@@ -71,70 +87,73 @@ export function useFavoriteCustomers() {
     async (customerId: string) => {
       if (!customerId) return;
 
-      // Optimistic update
-      setFavoriteCustomerIds((prev) => {
-        const isFav = prev.includes(customerId);
-        const next = isFav ? prev.filter((id) => id !== customerId) : [...prev, customerId];
+      // Deduplicate rapid clicks / in-flight requests for the same customer
+      if (inFlightRef.current.has(customerId)) {
+        return;
+      }
+      inFlightRef.current.add(customerId);
 
-        try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-          window.dispatchEvent(new CustomEvent(EVENT_KEY, { detail: next }));
-        } catch {
-          // ignore
-        }
+      const currentList = favoriteIdsRef.current;
+      const wasFav = currentList.includes(customerId);
+      const targetIsFav = !wasFav;
 
-        // Persist to collection endpoint
-        fetch('/api/customers/favorites', {
+      const optimisticList = targetIsFav
+        ? [...currentList.filter((id) => id !== customerId), customerId]
+        : currentList.filter((id) => id !== customerId);
+
+      // 1. Optimistic update
+      setFavoriteCustomerIds(optimisticList);
+      favoriteIdsRef.current = optimisticList;
+      syncLocalState(optimisticList);
+
+      try {
+        // 2. Perform network request outside setState to prevent double execution in StrictMode
+        const res = await fetch('/api/customers/favorites', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ customerId }),
-        })
-          .then(async (res) => {
-            if (!res.ok) throw new Error('Failed to toggle favorite');
-            const data = await res.json();
-            if (typeof data.isFavorite === 'boolean') {
-              setFavoriteCustomerIds((current) => {
-                const hasIt = current.includes(customerId);
-                if (data.isFavorite && !hasIt) {
-                  const updated = [...current, customerId];
-                  try {
-                    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-                    window.dispatchEvent(new CustomEvent(EVENT_KEY, { detail: updated }));
-                  } catch {
-                    // ignore
-                  }
-                  return updated;
-                } else if (!data.isFavorite && hasIt) {
-                  const updated = current.filter((id) => id !== customerId);
-                  try {
-                    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-                    window.dispatchEvent(new CustomEvent(EVENT_KEY, { detail: updated }));
-                  } catch {
-                    // ignore
-                  }
-                  return updated;
-                }
-                return current;
-              });
-            }
-          })
-          .catch((err) => {
-            console.error('Failed to sync favorite customer to collection:', err);
-            // Rollback
-            setFavoriteCustomerIds((current) => {
-              const rolledBack = isFav ? [...current, customerId] : current.filter((id) => id !== customerId);
-              try {
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(rolledBack));
-                window.dispatchEvent(new CustomEvent(EVENT_KEY, { detail: rolledBack }));
-              } catch {
-                // ignore
-              }
-              return rolledBack;
-            });
-          });
+          body: JSON.stringify({ customerId, isFavorite: targetIsFav }),
+        });
 
-        return next;
-      });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => null);
+          const errorMsg =
+            errData?.message || `Failed to toggle favorite (${res.status})`;
+          throw new Error(errorMsg);
+        }
+
+        const data = await res.json();
+        if (typeof data?.isFavorite === 'boolean') {
+          const confirmedFav = data.isFavorite;
+          setFavoriteCustomerIds((current) => {
+            const has = current.includes(customerId);
+            if (confirmedFav && !has) {
+              const updated = [...current, customerId];
+              favoriteIdsRef.current = updated;
+              syncLocalState(updated);
+              return updated;
+            } else if (!confirmedFav && has) {
+              const updated = current.filter((id) => id !== customerId);
+              favoriteIdsRef.current = updated;
+              syncLocalState(updated);
+              return updated;
+            }
+            return current;
+          });
+        }
+      } catch (err) {
+        console.warn('Could not sync favorite customer with server, reverting:', err);
+        // Rollback to previous state
+        setFavoriteCustomerIds((current) => {
+          const rolledBack = wasFav
+            ? [...current.filter((id) => id !== customerId), customerId]
+            : current.filter((id) => id !== customerId);
+          favoriteIdsRef.current = rolledBack;
+          syncLocalState(rolledBack);
+          return rolledBack;
+        });
+      } finally {
+        inFlightRef.current.delete(customerId);
+      }
     },
     [],
   );

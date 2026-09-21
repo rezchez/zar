@@ -180,7 +180,11 @@ export default function RefiningCustomerPicker({
                 </span>
                 <button
                   type="button"
-                  onClick={() => toggleFavoriteCustomer(selectedCustomer.id)}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    toggleFavoriteCustomer(selectedCustomer.id);
+                  }}
                   className="p-0.5 rounded-md hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
                   title={isCustomerFavorite(selectedCustomer.id) ? 'حذف از ستاره‌دارها' : 'افزودن به طرف‌حساب‌های ستاره‌دار'}
                   aria-label="ستاره‌دار کردن طرف‌حساب"

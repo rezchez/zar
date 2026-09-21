@@ -1,7 +1,6 @@
 'use client';
 
-import React from 'react';
-import { AnimatePresence } from 'framer-motion';
+import React, { useMemo } from 'react';
 import { ClipboardList, Pin, PinOff, Printer } from 'lucide-react';
 import {
   Table,
@@ -9,6 +8,8 @@ import {
   TableBody,
   TableRow,
   TableHead,
+  TableCell,
+  TableFooter,
 } from '@/components/ui/data-table';
 import type { Customer } from '@/lib/customer';
 import type { DocumentLine } from '@/src/components/documents/RawGoldTab';
@@ -16,7 +17,12 @@ import BaleIcon from '@/src/components/documents/BaleIcon';
 import DocumentPrint from '@/src/components/documents/DocumentPrint';
 import DocumentSubmitActions from '@/components/documents/document-submit-actions';
 import CommittedLineRow from './CommittedLineRow';
-import { faNumber } from '../utils/document-helpers';
+import {
+  actualWeightFromMoney,
+  faNumber,
+  numberValue,
+  toPersianDigits,
+} from '../utils/document-helpers';
 
 interface CommittedLinesTableProps {
   committedLines: DocumentLine[];
@@ -55,12 +61,69 @@ export default function CommittedLinesTable({
   onRemoveLine,
   onHawalaLine,
 }: CommittedLinesTableProps) {
+  // Calculate Totals for Data Table Summary Footer
+  const totalBedehkarVazni = useMemo(() => {
+    return committedLines
+      .filter((l) => l.documentNature === 'paid')
+      .reduce((sum, l) => {
+        const rawW =
+          l.details.calculationMethod === 'money'
+            ? actualWeightFromMoney(l.details, Number(l.details.baseKarat || 750))
+            : numberValue(l.details.rawWeight);
+        const p = numberValue(l.details.purity) || Number(l.details.baseKarat || 750);
+        const c750 =
+          l.converted750 ??
+          (rawW > 0 && p > 0 ? (rawW * p) / Number(l.details.baseKarat || 750) : 0);
+        return sum + c750;
+      }, 0);
+  }, [committedLines]);
+
+  const totalBostankarVazni = useMemo(() => {
+    return committedLines
+      .filter((l) => l.documentNature === 'received')
+      .reduce((sum, l) => {
+        const rawW =
+          l.details.calculationMethod === 'money'
+            ? actualWeightFromMoney(l.details, Number(l.details.baseKarat || 750))
+            : numberValue(l.details.rawWeight);
+        const p = numberValue(l.details.purity) || Number(l.details.baseKarat || 750);
+        const c750 =
+          l.converted750 ??
+          (rawW > 0 && p > 0 ? (rawW * p) / Number(l.details.baseKarat || 750) : 0);
+        return sum + c750;
+      }, 0);
+  }, [committedLines]);
+
+  const totalBedehkarMali = useMemo(() => {
+    return committedLines
+      .filter((l) => l.documentNature === 'paid')
+      .reduce((sum, l) => {
+        const amount =
+          l.documentTab === 'currency'
+            ? numberValue(l.details.currencyTotalAmount)
+            : numberValue(l.details.totalAmount);
+        return sum + amount;
+      }, 0);
+  }, [committedLines]);
+
+  const totalBostankarMali = useMemo(() => {
+    return committedLines
+      .filter((l) => l.documentNature === 'received')
+      .reduce((sum, l) => {
+        const amount =
+          l.documentTab === 'currency'
+            ? numberValue(l.details.currencyTotalAmount)
+            : numberValue(l.details.totalAmount);
+        return sum + amount;
+      }, 0);
+  }, [committedLines]);
+
   return (
     <>
       <div className="document-lines-head flex flex-wrap items-center justify-between gap-2 pb-1 border-b border-slate-100 dark:border-slate-800">
         <h2 className="flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-slate-100">
           <ClipboardList size={15} />
-          <span>ردیف‌های سند ({faNumber(committedLines.length)})</span>
+          <span>ردیف‌های سند ({toPersianDigits(String(committedLines.length))})</span>
         </h2>
 
         {/* Submit actions and utility icons */}
@@ -70,7 +133,7 @@ export default function CommittedLinesTable({
               await onSave(status);
             }}
             onCommitRow={onCommitDraftLine}
-            showCommitRow={isLinesPinned}
+            showCommitRow={!!onCommitDraftLine}
             commitRowLabel={commitRowLabel}
           />
 
@@ -82,7 +145,7 @@ export default function CommittedLinesTable({
             onClick={onTogglePin}
             className={`p-1.5 rounded-lg transition-all border cursor-pointer ${
               isLinesPinned
-                ? 'bg-amber-500 border-amber-600 text-white shadow-sm ring-2 ring-amber-400/30 dark:bg-amber-600 dark:border-amber-500'
+                ? 'bg-amber-500 border-amber-600 text-white shadow-xs ring-2 ring-amber-400/30 dark:bg-amber-600 dark:border-amber-500'
                 : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'
             }`}
             title={isLinesPinned ? 'غیرفعال‌سازی حالت چسبان' : 'فعال‌سازی حالت چسبان'}
@@ -133,65 +196,103 @@ export default function CommittedLinesTable({
         </div>
       ) : (
         <Table
-          wrapperClassName={
+          className="w-full border-collapse"
+          wrapperClassName={`border border-slate-200/80 dark:border-slate-800/80 rounded-xl overflow-x-auto ${
             isLinesPinned && committedLines.length > 3
-              ? 'max-h-[175px] overflow-y-auto'
+              ? 'max-h-[190px] overflow-y-auto'
               : ''
-          }
+          }`}
         >
           <TableHeader
             className={
               isLinesPinned
                 ? 'sticky top-0 z-10 bg-slate-100 dark:bg-slate-800 [&_th]:bg-slate-100 dark:[&_th]:bg-slate-800'
-                : ''
+                : 'bg-slate-50 dark:bg-slate-800/60'
             }
           >
             <TableRow>
-              <TableHead className="w-[3%] text-center">#</TableHead>
-              <TableHead>نوع سند</TableHead>
-              <TableHead className="text-center">جنس فلز</TableHead>
-              <TableHead className="text-center">وزن</TableHead>
-              <TableHead className="text-center">عیار</TableHead>
-              <TableHead className="text-center">بدهکار وزنی</TableHead>
-              <TableHead className="text-center">بستانکار وزنی</TableHead>
+              <TableHead className="w-12 min-w-12 text-center font-bold">#</TableHead>
+              <TableHead className="min-w-[140px] text-right font-bold">نوع سند</TableHead>
+              <TableHead className="w-20 min-w-20 text-center font-bold">جنس فلز</TableHead>
+              <TableHead className="w-24 min-w-24 text-center font-bold">وزن</TableHead>
+              <TableHead className="w-20 min-w-20 text-center font-bold">عیار</TableHead>
+              <TableHead className="w-28 min-w-28 text-center font-bold text-rose-600 dark:text-rose-400">
+                بدهکار وزنی
+              </TableHead>
+              <TableHead className="w-28 min-w-28 text-center font-bold text-emerald-600 dark:text-emerald-400">
+                بستانکار وزنی
+              </TableHead>
               {hasFinancialAmounts ? (
-                <TableHead className="text-center">
+                <TableHead className="w-32 min-w-32 text-center font-bold text-rose-600 dark:text-rose-400">
                   بدهکار مالی ({baseCurrency === 'IRT' ? 'تومان' : 'ریال'})
                 </TableHead>
               ) : null}
               {hasFinancialAmounts ? (
-                <TableHead className="text-center">
+                <TableHead className="w-32 min-w-32 text-center font-bold text-emerald-600 dark:text-emerald-400">
                   بستانکار مالی ({baseCurrency === 'IRT' ? 'تومان' : 'ریال'})
                 </TableHead>
               ) : null}
               {hasAssayOrStamp ? (
-                <TableHead className="text-center">نام آزمایشگاه / ری‌گیری</TableHead>
+                <TableHead className="w-28 min-w-28 text-center font-bold">
+                  نام آزمایشگاه / ری‌گیری
+                </TableHead>
               ) : null}
               {hasAssayOrStamp ? (
-                <TableHead className="text-center">شماره پاکت / انگ</TableHead>
+                <TableHead className="w-28 min-w-28 text-center font-bold">
+                  شماره پاکت / انگ
+                </TableHead>
               ) : null}
-              <TableHead className="text-right">شرح سند</TableHead>
-              <TableHead className="w-[60px] text-center">عملیات</TableHead>
+              <TableHead className="min-w-[140px] text-right font-bold">شرح سند</TableHead>
+              <TableHead className="w-20 min-w-20 text-center font-bold">عملیات</TableHead>
             </TableRow>
           </TableHeader>
+
           <TableBody>
-            <AnimatePresence initial={false}>
-              {committedLines.map((line, index) => (
-                <CommittedLineRow
-                  key={line.id}
-                  line={line}
-                  index={index}
-                  onEdit={() => onEditLine(line)}
-                  onRemove={() => onRemoveLine(line)}
-                  onHawala={() => onHawalaLine(line)}
-                  weightPrecision={weightPrecision}
-                  hasAssayOrStamp={hasAssayOrStamp}
-                  hasFinancialAmounts={hasFinancialAmounts}
-                  hasValidCustomer={Boolean(selectedCustomer)}
-                />
-              ))}
-            </AnimatePresence>
+            {committedLines.map((line, index) => (
+              <CommittedLineRow
+                key={line.id}
+                line={line}
+                index={index}
+                onEdit={() => onEditLine(line)}
+                onRemove={() => onRemoveLine(line)}
+                onHawala={() => onHawalaLine(line)}
+                weightPrecision={weightPrecision}
+                hasAssayOrStamp={hasAssayOrStamp}
+                hasFinancialAmounts={hasFinancialAmounts}
+                hasValidCustomer={Boolean(selectedCustomer)}
+              />
+            ))}
           </TableBody>
+
+          {committedLines.length > 0 ? (
+            <TableFooter className="bg-slate-100/80 dark:bg-slate-800/80 font-bold border-t-2 border-slate-200 dark:border-slate-700">
+              <TableRow>
+                <TableCell colSpan={5} className="text-right font-black text-xs text-slate-700 dark:text-slate-200">
+                  جمع کل ردیف‌ها ({toPersianDigits(String(committedLines.length))})
+                </TableCell>
+                <TableCell className="w-28 min-w-28 text-center tabular-nums text-rose-600 dark:text-rose-400 font-extrabold text-xs">
+                  {totalBedehkarVazni > 0 ? faNumber(totalBedehkarVazni, weightPrecision) : '-'}
+                </TableCell>
+                <TableCell className="w-28 min-w-28 text-center tabular-nums text-emerald-600 dark:text-emerald-400 font-extrabold text-xs">
+                  {totalBostankarVazni > 0 ? faNumber(totalBostankarVazni, weightPrecision) : '-'}
+                </TableCell>
+                {hasFinancialAmounts ? (
+                  <TableCell className="w-32 min-w-32 text-center tabular-nums text-rose-600 dark:text-rose-400 font-extrabold text-xs">
+                    {totalBedehkarMali > 0 ? faNumber(totalBedehkarMali, 0) : '-'}
+                  </TableCell>
+                ) : null}
+                {hasFinancialAmounts ? (
+                  <TableCell className="w-32 min-w-32 text-center tabular-nums text-emerald-600 dark:text-emerald-400 font-extrabold text-xs">
+                    {totalBostankarMali > 0 ? faNumber(totalBostankarMali, 0) : '-'}
+                  </TableCell>
+                ) : null}
+                {hasAssayOrStamp ? <TableCell className="w-28 min-w-28" /> : null}
+                {hasAssayOrStamp ? <TableCell className="w-28 min-w-28" /> : null}
+                <TableCell className="min-w-[140px]" />
+                <TableCell className="w-20 min-w-20" />
+              </TableRow>
+            </TableFooter>
+          ) : null}
         </Table>
       )}
     </>

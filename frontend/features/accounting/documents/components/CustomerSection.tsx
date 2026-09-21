@@ -81,6 +81,15 @@ export default function CustomerSection({
     setVisibleCustomerCount(10);
   }, [customerQuery, filterFavoritesOnly, isCustomerDropdownOpen]);
 
+  useEffect(() => {
+    if (!selectedCustomer && isCustomerDropdownOpen) {
+      const timer = setTimeout(() => {
+        customerInputRef.current?.focus();
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [selectedCustomer, isCustomerDropdownOpen]);
+
   const allMatchingCustomers = useMemo(() => {
     if (selectedCustomer) return [];
     const rawQuery = customerQuery.trim().toLocaleLowerCase();
@@ -174,7 +183,10 @@ export default function CustomerSection({
     onToggleCustomerLock(false);
     setCustomerQuery('');
     setActiveSuggestionIndex(-1);
-    setTimeout(() => customerInputRef.current?.focus(), 50);
+    setIsCustomerDropdownOpen(true);
+    setTimeout(() => {
+      customerInputRef.current?.focus();
+    }, 50);
   };
 
   const handleCustomerKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
@@ -214,7 +226,7 @@ export default function CustomerSection({
       <div className="grid gap-2 lg:grid-cols-[1fr_auto] items-end">
         {/* Customer Selection Search / Selected Card */}
         <div className="space-y-1.5" ref={customerSearchRef}>
-          <AnimatePresence mode="wait" initial={false}>
+          <AnimatePresence initial={false}>
             {!selectedCustomer ? (
               <motion.div
                 key="search-mode"
@@ -265,6 +277,7 @@ export default function CustomerSection({
                         ref={customerInputRef}
                         value={customerQuery}
                         onFocus={() => setIsCustomerDropdownOpen(true)}
+                        onClick={() => setIsCustomerDropdownOpen(true)}
                         onChange={(event) => {
                           setCustomerQuery(event.target.value);
                           setIsCustomerDropdownOpen(true);
@@ -584,7 +597,11 @@ export default function CustomerSection({
 
                       <button
                         type="button"
-                        onClick={() => onToggleFavoriteCustomer(selectedCustomer.id)}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          onToggleFavoriteCustomer(selectedCustomer.id);
+                        }}
                         className="p-1 rounded-lg hover:bg-teal-100 dark:hover:bg-teal-900/40 transition-colors cursor-pointer"
                         title={
                           isCustomerFavorite(selectedCustomer.id)

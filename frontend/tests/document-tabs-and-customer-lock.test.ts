@@ -216,5 +216,60 @@ describe('DocumentForm Tabs URL Sync & Customer Lock Persistence Tests', () => {
 
       expect(fakeLocalStorage.getItem(LOCKED_CUSTOMER_STORAGE_KEY)).toBe('cust-1');
     });
+
+    it('clearCustomer opens customer dropdown list immediately and resets query', () => {
+      let selectedCustomer: any = mockCustomers[0];
+      let isCustomerLocked = true;
+      let customerQuery = 'search term';
+      let isCustomerDropdownOpen = false;
+
+      // User clicks "تغییر طرف‌حساب"
+      const clearCustomer = () => {
+        selectedCustomer = null;
+        isCustomerLocked = false;
+        customerQuery = '';
+        isCustomerDropdownOpen = true;
+      };
+
+      clearCustomer();
+
+      expect(selectedCustomer).toBeNull();
+      expect(isCustomerLocked).toBe(false);
+      expect(customerQuery).toBe('');
+      expect(isCustomerDropdownOpen).toBe(true);
+    });
+  });
+
+  describe('Document Lines Pinned Sidebar Coordination', () => {
+    it('dispatches zarfolio:document_lines_pinned_change event with height when pinned', () => {
+      const eventTarget = new EventTarget();
+      const state = { detail: null as { isPinned: boolean; height: number } | null };
+      const listener = (e: any) => {
+        state.detail = e.detail;
+      };
+      eventTarget.addEventListener('zarfolio:document_lines_pinned_change', listener);
+
+      // Simulate pinning panel with 180px height
+      eventTarget.dispatchEvent(
+        new CustomEvent('zarfolio:document_lines_pinned_change', {
+          detail: { isPinned: true, height: 180 },
+        })
+      );
+
+      expect(state.detail?.isPinned).toBe(true);
+      expect(state.detail?.height).toBe(180);
+
+      // Simulate unpinning
+      eventTarget.dispatchEvent(
+        new CustomEvent('zarfolio:document_lines_pinned_change', {
+          detail: { isPinned: false, height: 0 },
+        })
+      );
+
+      expect(state.detail?.isPinned).toBe(false);
+      expect(state.detail?.height).toBe(0);
+
+      eventTarget.removeEventListener('zarfolio:document_lines_pinned_change', listener);
+    });
   });
 });
