@@ -31,7 +31,7 @@ type ChangelogModalProps = {
 export default function ChangelogModal({ isOpen: controlledIsOpen, onClose }: ChangelogModalProps) {
   const [internalIsOpen, setInternalIsOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [selectedVersion, setSelectedVersion] = useState<string>(CHANGELOG_RELEASES[0]?.version || '0.0.8 BETA');
+  const [selectedVersion, setSelectedVersion] = useState<string>(CHANGELOG_RELEASES[0]?.version || '0.0.9 BETA');
 
   useEffect(() => {
     setMounted(true);

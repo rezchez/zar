@@ -1,0 +1,115 @@
+'use client';
+
+import React from 'react';
+import { motion } from 'framer-motion';
+import { Sparkles } from 'lucide-react';
+import type { Customer } from '@/lib/customer';
+import { currencyDisplay } from '@/lib/customer';
+import { convertRialToToman } from '@/lib/money';
+import { faNumber } from '../utils/document-helpers';
+
+interface CustomerBalanceLiquidProps {
+  customer: Customer;
+  baseCurrency?: 'IRR' | 'IRT';
+}
+
+export default function CustomerBalanceLiquid({
+  customer,
+  baseCurrency = 'IRR',
+}: CustomerBalanceLiquidProps) {
+  const isToman = baseCurrency === 'IRT';
+  const currencyLabel = isToman ? 'تومان' : 'ریال';
+  const currencyValue = isToman
+    ? (customer.rialBalance < 0
+        ? -convertRialToToman(Math.abs(customer.rialBalance))
+        : convertRialToToman(customer.rialBalance))
+    : customer.rialBalance;
+
+  const balances = [
+    { id: 'gold', label: 'طلا', value: customer.goldBalance, unit: 'گرم', digits: 3 },
+    { id: 'silver', label: 'نقره', value: customer.silverBalance, unit: 'گرم', digits: 3 },
+    { id: 'platinum', label: 'پلاتین', value: customer.platinumBalance, unit: 'گرم', digits: 3 },
+    { id: 'currency', label: currencyLabel, value: currencyValue, unit: currencyLabel, digits: 0 },
+    {
+      id: 'foreign',
+      label: currencyDisplay(customer.secondaryCurrency, customer.secondaryCurrencySymbol),
+      value: customer.foreignBalance,
+      unit: 'واحد',
+      digits: 2,
+    },
+    {
+      id: 'tertiary',
+      label: currencyDisplay(customer.tertiaryCurrency, customer.tertiaryCurrencySymbol),
+      value: customer.tertiaryBalance,
+      unit: 'واحد',
+      digits: 2,
+    },
+  ];
+  const visibleBalances = balances.filter(
+    (balance) => balance.value !== 0 || balance.id === 'gold' || balance.id === 'currency' || balance.id === 'rial',
+  );
+
+  return (
+    <motion.div
+      className="document-liquid-balance py-2.5 px-3 sm:py-3 sm:px-4 border-amber-200/80 bg-amber-50/40 dark:bg-amber-950/20"
+      initial={{ opacity: 0, height: 0, y: -8 }}
+      animate={{ opacity: 1, height: 'auto', y: 0 }}
+      exit={{ opacity: 0, height: 0, y: -8 }}
+      transition={{ type: 'spring', stiffness: 260, damping: 26 }}
+    >
+      <div className="document-liquid-title mb-2 sm:mb-0 shrink-0">
+        <span className="document-liquid-orb w-8 h-8 sm:w-9 sm:h-9">
+          <Sparkles size={16} />
+        </span>
+        <div>
+          <strong className="text-xs sm:text-sm font-extrabold text-amber-900 dark:text-amber-200">
+            وضعیت طلب و بدهی {customer.name}
+          </strong>
+        </div>
+      </div>
+      <div className="document-liquid-items gap-2 sm:gap-2.5">
+        {visibleBalances.map((balance, index) => {
+          const statusLabel = balance.value > 0 ? 'بستانکار' : balance.value < 0 ? 'بدهکار' : 'تسویه';
+          const fullTooltip = `${balance.label}: ${faNumber(Math.abs(balance.value), balance.digits)} ${balance.unit} (${
+            balance.value > 0 ? 'بستانکار از ما' : balance.value < 0 ? 'بدهکار به ما' : 'تسویه حساب'
+          })`;
+
+          return (
+            <motion.div
+              layout
+              className={`document-liquid-item ${
+                balance.value > 0 ? 'is-credit' : balance.value < 0 ? 'is-debit' : 'is-zero'
+              }`}
+              key={balance.id}
+              title={fullTooltip}
+              initial={{ opacity: 0, scale: 0.7, x: 12 }}
+              animate={{ opacity: 1, scale: 1, x: 0 }}
+              transition={{
+                type: 'spring',
+                stiffness: 340,
+                damping: 22,
+                delay: index * 0.045,
+              }}
+            >
+              <small className="document-liquid-item-label">{balance.label}</small>
+              <div className="document-liquid-item-value-wrap">
+                <strong className="document-liquid-item-value">
+                  <motion.span
+                    key={balance.value}
+                    initial={{ scale: 1.15 }}
+                    animate={{ scale: 1 }}
+                    transition={{ duration: 0.25 }}
+                  >
+                    {faNumber(Math.abs(balance.value), balance.digits)}
+                  </motion.span>
+                </strong>
+                <span className="document-liquid-item-unit">{balance.unit}</span>
+              </div>
+              <em className="document-liquid-item-status">{statusLabel}</em>
+            </motion.div>
+          );
+        })}
+      </div>
+    </motion.div>
+  );
+}

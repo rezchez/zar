@@ -61,6 +61,34 @@ type Notice = {
   text: string;
 };
 
+// Module-level in-memory cache for bank accounts across tab switches
+let cachedBanks: BankAccount[] | null = null;
+let banksFetchPromise: Promise<BankAccount[]> | null = null;
+
+export async function fetchBankAccounts(forceRefresh = false): Promise<BankAccount[]> {
+  if (!forceRefresh && cachedBanks) {
+    return cachedBanks;
+  }
+  if (!forceRefresh && banksFetchPromise) {
+    return banksFetchPromise;
+  }
+  banksFetchPromise = fetch('/api/banks', { cache: forceRefresh ? 'no-cache' : 'default' })
+    .then(async (response) => {
+      const data = (await response.json()) as { banks?: BankAccount[]; message?: string };
+      if (!response.ok) throw new Error(data.message ?? 'دریافت حساب‌های بانکی انجام نشد.');
+      cachedBanks = data.banks ?? [];
+      return cachedBanks;
+    })
+    .finally(() => {
+      banksFetchPromise = null;
+    });
+  return banksFetchPromise;
+}
+
+export function invalidateBankAccountsCache() {
+  cachedBanks = null;
+}
+
 export default function BankTab({
   nature,
   selectedCustomer,
@@ -73,9 +101,9 @@ export default function BankTab({
   handleKeyDownEnter,
   draftReady = false,
 }: BankTabProps) {
-  const [banks, setBanks] = useState<BankAccount[]>([]);
+  const [banks, setBanks] = useState<BankAccount[]>(() => cachedBanks || []);
   const [search, setSearch] = useState('');
-  const [selectedSource, setSelectedSource] = useState('');
+  const [selectedSource, setSelectedSource] = useState(() => (cachedBanks && cachedBanks.length > 0 ? cachedBanks[0].id : ''));
   const [selectedDestination, setSelectedDestination] = useState('');
   const [kind, setKind] = useState<BankOperationKind>('check-payment');
   const [amount, setAmount] = useState('');
@@ -117,20 +145,15 @@ export default function BankTab({
   ];
 
   async function loadBanks() {
-    const response = await fetch('/api/banks', { cache: 'no-store' });
-    const data = (await response.json()) as { banks?: BankAccount[]; message?: string };
-    if (!response.ok) throw new Error(data.message ?? 'دریافت حساب‌های بانکی انجام نشد.');
-    setBanks(data.banks ?? []);
+    const loaded = await fetchBankAccounts(true);
+    setBanks(loaded);
   }
 
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/banks', { cache: 'no-store' })
-      .then(async (response) => {
-        const data = (await response.json()) as { banks?: BankAccount[]; message?: string };
-        if (!response.ok) throw new Error(data.message ?? 'دریافت حساب‌های بانکی انجام نشد.');
+    fetchBankAccounts(false)
+      .then((loadedBanks) => {
         if (!cancelled) {
-          const loadedBanks = data.banks ?? [];
           setBanks(loadedBanks);
           if (loadedBanks.length > 0) {
             setSelectedSource((prev) => prev || loadedBanks[0].id);
@@ -138,7 +161,7 @@ export default function BankTab({
         }
       })
       .catch((error: unknown) => {
-        if (!cancelled) {
+        if (!cancelled && (!cachedBanks || cachedBanks.length === 0)) {
           setNotice({
             tone: 'error',
             text: error instanceof Error ? error.message : 'دریافت حساب‌ها انجام نشد.',
@@ -205,8 +228,10 @@ export default function BankTab({
       const data = (await response.json()) as { bank?: BankAccount; message?: string };
       if (!response.ok || !data.bank) throw new Error(data.message ?? 'ثبت حساب بانکی انجام نشد.');
 
-      setBanks((current) => [...current, data.bank as BankAccount]);
-      setSelectedSource(data.bank.id);
+      const newBank = data.bank as BankAccount;
+      setBanks((current) => [...current, newBank]);
+      cachedBanks = [...(cachedBanks || []), newBank];
+      setSelectedSource(newBank.id);
 
       // Reset Modal form
       setNewBankName('');
