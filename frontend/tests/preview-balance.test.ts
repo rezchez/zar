@@ -145,5 +145,108 @@ describe('Preview Balance Calculations', () => {
     );
     expect(resolveSelectedCustomer()?.goldBalance).toBe(25.5);
   });
+
+  it('correctly converts and displays customer debt and credit status for IRR and IRT base currencies', () => {
+    const { convertRialToToman } = require('../lib/money');
+
+    // Customer with 50,000,000 Rials credit (positive)
+    const creditorCust = { rialBalance: 50000000 };
+    // Customer with 30,000,000 Rials debt (negative)
+    const debtorCust = { rialBalance: -30000000 };
+    // Customer settled (zero)
+    const settledCust = { rialBalance: 0 };
+
+    const getLiquidCurrencyItem = (customer: { rialBalance: number }, baseCurrency: 'IRR' | 'IRT') => {
+      const isToman = baseCurrency === 'IRT';
+      const currencyLabel = isToman ? 'تومان' : 'ریال';
+      const currencyValue = isToman
+        ? (customer.rialBalance < 0
+            ? -convertRialToToman(Math.abs(customer.rialBalance))
+            : convertRialToToman(customer.rialBalance))
+        : customer.rialBalance;
+      const statusLabel = currencyValue > 0 ? 'بستانکار' : currencyValue < 0 ? 'بدهکار' : 'تسویه';
+      return {
+        label: currencyLabel,
+        value: currencyValue,
+        unit: currencyLabel,
+        status: statusLabel,
+      };
+    };
+
+    // 1. IRR Mode Checks
+    const irrCreditor = getLiquidCurrencyItem(creditorCust, 'IRR');
+    expect(irrCreditor.label).toBe('ریال');
+    expect(irrCreditor.unit).toBe('ریال');
+    expect(irrCreditor.value).toBe(50000000);
+    expect(irrCreditor.status).toBe('بستانکار');
+
+    const irrDebtor = getLiquidCurrencyItem(debtorCust, 'IRR');
+    expect(irrDebtor.label).toBe('ریال');
+    expect(irrDebtor.unit).toBe('ریال');
+    expect(irrDebtor.value).toBe(-30000000);
+    expect(irrDebtor.status).toBe('بدهکار');
+
+    const irrSettled = getLiquidCurrencyItem(settledCust, 'IRR');
+    expect(irrSettled.status).toBe('تسویه');
+
+    // 2. IRT (Toman) Mode Checks
+    const irtCreditor = getLiquidCurrencyItem(creditorCust, 'IRT');
+    expect(irtCreditor.label).toBe('تومان');
+    expect(irtCreditor.unit).toBe('تومان');
+    expect(irtCreditor.value).toBe(5000000); // 50M IRR = 5M IRT
+    expect(irtCreditor.status).toBe('بستانکار');
+
+    const irtDebtor = getLiquidCurrencyItem(debtorCust, 'IRT');
+    expect(irtDebtor.label).toBe('تومان');
+    expect(irtDebtor.unit).toBe('تومان');
+    expect(irtDebtor.value).toBe(-3000000); // -30M IRR = -3M IRT
+    expect(irtDebtor.status).toBe('بدهکار');
+
+    const irtSettled = getLiquidCurrencyItem(settledCust, 'IRT');
+    expect(irtSettled.status).toBe('تسویه');
+  });
+
+  it('correctly formats balance preview amounts (previous, effect, projected) for IRT', () => {
+    const { convertRialToToman } = require('../lib/money');
+
+    const preview = {
+      previousBalance: { rial: -100000000 }, // debtor 100M IRR
+      transactionEffect: { rial: 40000000 },  // +40M IRR
+      projectedBalance: { rial: -60000000 },  // debtor 60M IRR
+    };
+
+    const baseCurrency: 'IRR' | 'IRT' = 'IRT';
+    const isToman = baseCurrency === 'IRT';
+    const currencyUnitLabel = isToman ? 'تومان' : 'ریال';
+
+    const displayPrev = isToman
+      ? (preview.previousBalance.rial < 0
+          ? -convertRialToToman(Math.abs(preview.previousBalance.rial))
+          : convertRialToToman(preview.previousBalance.rial))
+      : preview.previousBalance.rial;
+
+    const displayEffect = isToman
+      ? (preview.transactionEffect.rial < 0
+          ? -convertRialToToman(Math.abs(preview.transactionEffect.rial))
+          : convertRialToToman(preview.transactionEffect.rial))
+      : preview.transactionEffect.rial;
+
+    const displayProjected = isToman
+      ? (preview.projectedBalance.rial < 0
+          ? -convertRialToToman(Math.abs(preview.projectedBalance.rial))
+          : convertRialToToman(preview.projectedBalance.rial))
+      : preview.projectedBalance.rial;
+
+    expect(currencyUnitLabel).toBe('تومان');
+    expect(displayPrev).toBe(-10000000);
+    expect(displayEffect).toBe(4000000);
+    expect(displayProjected).toBe(-6000000);
+
+    const prevStatus = preview.previousBalance.rial > 0 ? 'بستانکار' : preview.previousBalance.rial < 0 ? 'بدهکار' : 'تسویه';
+    const projectedStatus = preview.projectedBalance.rial > 0 ? 'بستانکار' : preview.projectedBalance.rial < 0 ? 'بدهکار' : 'تسویه';
+
+    expect(prevStatus).toBe('بدهکار');
+    expect(projectedStatus).toBe('بدهکار');
+  });
 });
 
