@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=اجرای زرفولیو (Zarfolio Dev)
+GenericName=Zarfolio Development Launcher
+Comment=اجرای همزمان فرانت‌اند و بک‌اند زرفولیو در ترمینال
+Exec=/home/reza/Desktop/Zar/start.sh
+Path=/home/reza/Desktop/Zar
+Icon=utilities-terminal
+Terminal=true
+Categories=Development;IDE;
+StartupNotify=true
