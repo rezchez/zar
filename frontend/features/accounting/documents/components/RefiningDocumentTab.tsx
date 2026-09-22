@@ -713,11 +713,9 @@ export default function RefiningDocumentTab({
       ) : null}
 
       {/* Sticky Commit Line Button */}
-      {draftReady && isRefiner ? (
+      {draftReady && isRefiner && !isLinesPinned ? (
         <div
-          className={`sticky ${
-            isLinesPinned ? 'bottom-32' : 'bottom-3'
-          } z-30 flex justify-center pt-2 transition-all duration-300`}
+          className="sticky bottom-3 z-30 flex justify-center pt-2 transition-all duration-300"
         >
           <button
             type="button"

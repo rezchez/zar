@@ -133,7 +133,7 @@ export default function CommittedLinesTable({
               await onSave(status);
             }}
             onCommitRow={onCommitDraftLine}
-            showCommitRow={!!onCommitDraftLine}
+            showCommitRow={isLinesPinned}
             commitRowLabel={commitRowLabel}
           />
 

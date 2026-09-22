@@ -105,8 +105,8 @@ export default function ClaimTab({
       </div>
 
       {/* Sticky Commit Line Button */}
-      {draftReady ? (
-        <div className={`sticky ${isLinesPinned ? 'bottom-32' : 'bottom-3'} z-30 flex justify-center pt-2 transition-all duration-300`}>
+      {draftReady && !isLinesPinned ? (
+        <div className="sticky bottom-3 z-30 flex justify-center pt-2 transition-all duration-300">
           <button type="button" className="document-commit-line-button shadow-lg max-w-sm" onClick={commitDraftLine}>
             <ListPlus size={16} /> {editingLineId ? 'ثبت اصلاح ردیف' : 'ثبت ردیف'}
           </button>

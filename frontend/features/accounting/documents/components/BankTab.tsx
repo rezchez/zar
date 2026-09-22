@@ -249,6 +249,44 @@ export default function BankTab({
     }
   }
 
+  // Keep draftLine details synchronized so external commit (e.g. from pinned lines panel) works seamlessly
+  useEffect(() => {
+    const opLabel = operationOptions.find((o) => o.value === kind)?.label || 'عملیات بانکی';
+    setDraftLine((current) => ({
+      ...current,
+      documentTab: 'cash',
+      sourceTab: 'bank',
+      documentNature: nature,
+      documentTypeLabel: opLabel,
+      description: description || current.description,
+      details: {
+        ...current.details,
+        totalAmount: String(numericAmount),
+        bankAccountId: selectedSource,
+        destinationBankId: selectedDestination,
+        bankName: selectedSourceAccount?.bankName || '',
+        bankBranch: selectedSourceAccount?.branchName || '',
+        accountNumber: selectedSourceAccount?.accountNumber || '',
+        checkNumber: checkNumber.trim(),
+        sayadId: normalizedSayad,
+        dueDateJalali,
+        bankOperationKind: kind,
+      },
+    }));
+  }, [
+    kind,
+    nature,
+    description,
+    numericAmount,
+    selectedSource,
+    selectedDestination,
+    selectedSourceAccount,
+    checkNumber,
+    normalizedSayad,
+    dueDateJalali,
+    setDraftLine,
+  ]);
+
   // Sync state into draft line when committing
   function handleCommitLine() {
     if (!commitDraftLine) return;
@@ -596,8 +634,8 @@ export default function BankTab({
       ) : null}
 
       {/* Sticky Commit Line Button */}
-      {commitDraftLine ? (
-        <div className={`sticky ${isLinesPinned ? 'bottom-32' : 'bottom-3'} z-30 flex justify-center pt-2 transition-all duration-300`}>
+      {commitDraftLine && !isLinesPinned ? (
+        <div className="sticky bottom-3 z-30 flex justify-center pt-2 transition-all duration-300">
           <button
             type="button"
             className={`document-commit-line-button shadow-lg max-w-sm ${

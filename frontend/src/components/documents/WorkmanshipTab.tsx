@@ -888,11 +888,9 @@ export default function WorkmanshipTab({
       </div>
 
       {/* 6. Sticky Action Button */}
-      {draftReady ? (
+      {draftReady && !isLinesPinned ? (
         <div
-          className={`sticky ${
-            isLinesPinned ? 'bottom-32' : 'bottom-3'
-          } z-30 flex justify-center pt-2 transition-all duration-300`}
+          className="sticky bottom-3 z-30 flex justify-center pt-2 transition-all duration-300"
         >
           <button
             type="button"

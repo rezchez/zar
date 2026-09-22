@@ -413,8 +413,8 @@ export default function CashTab({
       )}
 
       {/* Sticky Commit Line Button */}
-      {commitDraftLine && draftReady && funds.length > 0 ? (
-        <div className={`sticky ${isLinesPinned ? 'bottom-32' : 'bottom-3'} z-30 flex justify-center pt-2 transition-all duration-300`}>
+      {commitDraftLine && draftReady && funds.length > 0 && !isLinesPinned ? (
+        <div className="sticky bottom-3 z-30 flex justify-center pt-2 transition-all duration-300">
           <button
             type="button"
             className={`document-commit-line-button shadow-lg max-w-sm ${
