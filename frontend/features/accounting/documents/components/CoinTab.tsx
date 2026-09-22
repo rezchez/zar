@@ -19,6 +19,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 
 import { useAppSettings } from '@/src/components/SettingsProvider';
 import { PriceInput } from '@/components/ui/price-input';
+import { NumberField } from '@/components/ui/number-field';
 import Field from '@/src/components/documents/Field';
 import type { DetailState, DocumentLine } from '@/src/components/documents/RawGoldTab';
 import { normalizeDigits, toPersianDigits } from '@/lib/jalali';
@@ -848,21 +849,16 @@ export default function CoinTab({
 
           {/* 5. Purity (عیار) */}
           <Field label="عیار *">
-            <div className="relative">
-              <input
-                type="number"
-                min="1"
-                max="1000"
-                value={purity}
-                onChange={(e) => setPurity(e.target.value)}
-                onKeyDown={handleKeyDownEnter}
-                placeholder="۹۰۰"
-                className="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-xs font-black text-slate-950 transition-all focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-              />
-              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">
-                در هزار
-              </span>
-            </div>
+            <NumberField
+              min={1}
+              max={1000}
+              step="purity"
+              value={purity ? Number(purity) : 900}
+              onChange={(val) => setPurity(String(val))}
+              onKeyDown={handleKeyDownEnter}
+              placeholder="۹۰۰"
+              aria-label="عیار سکه"
+            />
           </Field>
 
           {/* 6. Financial Fields (Rendered only when hasFinancials is true) */}

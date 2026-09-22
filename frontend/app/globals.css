@@ -67,12 +67,27 @@
 :root {
   --background: #f6f8fb;
   --foreground: #0f172a;
+  --border: #cbd5e1;
+  --input: #cbd5e1;
+  --muted-foreground: #64748b;
+  --accent: #f1f5f9;
 }
 
 [data-theme="dark"],
 .dark {
   --background: #090d16;
   --foreground: #f8fafc;
+  --border: #334155;
+  --input: #334155;
+  --muted-foreground: #94a3b8;
+  --accent: #1e293b;
+}
+
+@theme {
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
 }
 
 * {
@@ -2832,6 +2847,38 @@ select:-webkit-autofill:active {
   background-color: #1e293b !important;
   color: #64748b !important;
   border-color: #334155 !important;
+}
+
+/* NumberField inside account-field */
+.account-field .number-field {
+  width: 100%;
+}
+.account-field .number-field input {
+  width: auto !important;
+  flex: 1 1 0% !important;
+  min-width: 0 !important;
+  border-top: none !important;
+  border-bottom: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  padding: 0 8px !important;
+  height: 100% !important;
+  min-height: unset !important;
+  max-height: unset !important;
+}
+.account-field .number-field input:focus {
+  box-shadow: none !important;
+}
+[data-theme="dark"] .number-field,
+.dark .number-field {
+  background-color: rgba(15, 23, 42, 0.6);
+  border-color: #334155;
+}
+[data-theme="dark"] .account-field .number-field input,
+.dark .account-field .number-field input {
+  background: transparent !important;
+  color: #ffffff !important;
 }
 
 .assay-lab-search-input,

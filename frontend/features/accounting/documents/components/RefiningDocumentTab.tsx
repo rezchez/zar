@@ -17,6 +17,7 @@ import type { Customer } from '@/lib/customer';
 import { isRefinerGroup } from '@/lib/customer-groups';
 import Field from '@/src/components/documents/Field';
 import MoneyInputField from '@/src/components/documents/MoneyInputField';
+import { NumberField } from '@/components/ui/number-field';
 import {
   getInventoryItemAvailability,
   type DetailState,
@@ -453,13 +454,15 @@ export default function RefiningDocumentTab({
 
                 {/* Purity */}
                 <Field label="عیار حدودی" required>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={draftLine.details.purity || '750'}
-                    onChange={(e) => updateDraftDetail('purity', e.target.value)}
+                  <NumberField
+                    min={1}
+                    max={1000}
+                    step="purity"
+                    value={draftLine.details.purity ? Number(draftLine.details.purity) : 750}
+                    onChange={(val) => updateDraftDetail('purity', String(val))}
                     onKeyDown={handleKeyDownEnter}
                     placeholder="۷۵۰"
+                    aria-label="عیار حدودی"
                   />
                 </Field>
 
@@ -563,13 +566,15 @@ export default function RefiningDocumentTab({
 
                 {/* Purity */}
                 <Field label="عیار آزمایش‌شده" required>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={draftLine.details.purity || '750'}
-                    onChange={(e) => updateDraftDetail('purity', e.target.value)}
+                  <NumberField
+                    min={1}
+                    max={1000}
+                    step="purity"
+                    value={draftLine.details.purity ? Number(draftLine.details.purity) : 750}
+                    onChange={(val) => updateDraftDetail('purity', String(val))}
                     onKeyDown={handleKeyDownEnter}
                     placeholder="۷۵۰"
+                    aria-label="عیار آزمایش‌شده"
                   />
                 </Field>
 
@@ -648,13 +653,15 @@ export default function RefiningDocumentTab({
                 </Field>
 
                 <Field label="عیار آزمایش‌شده" required>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={draftLine.details.purity || '750'}
-                    onChange={(e) => updateDraftDetail('purity', e.target.value)}
+                  <NumberField
+                    min={1}
+                    max={1000}
+                    step="purity"
+                    value={draftLine.details.purity ? Number(draftLine.details.purity) : 750}
+                    onChange={(val) => updateDraftDetail('purity', String(val))}
                     onKeyDown={handleKeyDownEnter}
                     placeholder="۷۵۰"
+                    aria-label="عیار آزمایش‌شده"
                   />
                 </Field>
 

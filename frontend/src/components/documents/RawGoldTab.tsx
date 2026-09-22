@@ -9,6 +9,7 @@ import { RawMetalOperationTypeSelector } from '@/src/components/documents/Docume
 import { AssayLaboratorySelect } from '@/components/AssayLaboratorySelect';
 import { getInventoryItemAvailability, type MeltedInventoryItem } from '@/lib/inventory-reservation';
 import MetalInventoryPicker from '@/src/components/documents/MetalInventoryPicker';
+import { NumberField } from '@/components/ui/number-field';
 
 export type RawOperationKind = 'molten' | 'misc' | 'conditional' | 'question' | 'coin' | 'unsettled';
 
@@ -253,26 +254,25 @@ export default function RawGoldTab({
             </Field>
           ) : null}
           <Field label="وزن (گرم)">
-            <input
-              type="number"
-              min="0"
+            <NumberField
+              min={0}
               step={10 ** -weightPrecision}
-              value={draftLine.details.rawWeight}
-              onChange={(event) => updateDraftDetail('rawWeight', event.target.value)}
+              value={draftLine.details.rawWeight !== '' ? Number(draftLine.details.rawWeight) : undefined}
+              onChange={(val) => updateDraftDetail('rawWeight', val !== undefined && !Number.isNaN(val) ? String(val) : '')}
               onKeyDown={handleKeyDownEnter}
               placeholder="۰"
+              aria-label="وزن (گرم)"
             />
           </Field>
           <Field label="عیار">
-            <input
-              type="number"
-              min="1"
-              max="1000"
-              step="0.1"
+            <NumberField
+              min={1}
+              max={1000}
+              step="purity"
               readOnly={isPaidRawFromInventory}
               disabled={isPaidRawFromInventory}
-              value={draftLine.details.purity}
-              onChange={(event) => updateDraftDetail('purity', event.target.value)}
+              value={draftLine.details.purity ? Number(draftLine.details.purity) : 750}
+              onChange={(val) => updateDraftDetail('purity', String(val))}
               onKeyDown={handleKeyDownEnter}
               aria-label="عیار ردیف سند"
               placeholder="۷۵۰"

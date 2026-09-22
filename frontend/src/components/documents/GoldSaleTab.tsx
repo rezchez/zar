@@ -14,6 +14,7 @@ import { useAppSettings } from '@/src/components/SettingsProvider';
 import AmountRoundingModal from '@/features/accounting/documents/components/AmountRoundingModal';
 import MetalInventoryPicker from '@/src/components/documents/MetalInventoryPicker';
 import { useToastManager } from '@/components/ui/toast';
+import { NumberField } from '@/components/ui/number-field';
 import {
   getInventoryItemAvailability,
   type DetailState,
@@ -501,16 +502,14 @@ export default function GoldSaleTab({
                 </Field>
 
                 <Field label="عیار" required>
-                  <input
-                    type="number"
-                    min="1"
-                    max="1000"
-                    step="0.1"
+                  <NumberField
+                    min={1}
+                    max={1000}
+                    step="purity"
                     readOnly={isPaidRawFromInventory}
                     disabled={isPaidRawFromInventory}
-                    inputMode="decimal"
-                    value={draftLine.details.purity}
-                    onChange={(event) => updateMetalValue('purity', event.target.value)}
+                    value={draftLine.details.purity ? Number(draftLine.details.purity) : 750}
+                    onChange={(val) => updateMetalValue('purity', String(val))}
                     onKeyDown={handleKeyDownEnter}
                     aria-label="عیار ردیف سند"
                     title={isPaidRawFromInventory ? 'عیار از موجودی انتخابی قفل شده است.' : 'عیار اول از تنظیمات برنامه خوانده می‌شود و قابل ویرایش است.'}
@@ -610,16 +609,14 @@ export default function GoldSaleTab({
                 />
 
                 <Field label="عیار" required>
-                  <input
-                    type="number"
-                    min="1"
-                    max="1000"
-                    step="0.1"
+                  <NumberField
+                    min={1}
+                    max={1000}
+                    step="purity"
                     readOnly={isPaidRawFromInventory}
                     disabled={isPaidRawFromInventory}
-                    inputMode="decimal"
-                    value={draftLine.details.purity}
-                    onChange={(event) => updateMetalValue('purity', event.target.value)}
+                    value={draftLine.details.purity ? Number(draftLine.details.purity) : 750}
+                    onChange={(val) => updateMetalValue('purity', String(val))}
                     onKeyDown={handleKeyDownEnter}
                     aria-label="عیار ردیف سند"
                     title={isPaidRawFromInventory ? 'عیار از موجودی انتخابی قفل شده است.' : 'عیار اول از تنظیمات برنامه خوانده می‌شود و قابل ویرایش است.'}
