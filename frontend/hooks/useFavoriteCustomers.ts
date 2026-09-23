@@ -45,7 +45,7 @@ export function useFavoriteCustomers() {
     }
 
     // Fetch authoritative favorites from collection endpoint
-    fetch('/api/customers/favorites')
+    fetch('/api/customers/favorites', { credentials: 'include' })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (!isMounted || !Array.isArray(data?.favoriteCustomerIds)) return;
@@ -108,11 +108,8 @@ export function useFavoriteCustomers() {
 
       try {
         // 2. Perform network request outside setState to prevent double execution in StrictMode
-        const res = await fetch('/api/customers/favorites', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ customerId, isFavorite: targetIsFav }),
-        });
+        const res = await fetch('/api/customers/favorites', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ customerId, isFavorite: targetIsFav }), credentials: 'include' });
+
 
         if (!res.ok) {
           const errData = await res.json().catch(() => null);

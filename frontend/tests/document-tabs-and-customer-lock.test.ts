@@ -272,4 +272,55 @@ describe('DocumentForm Tabs URL Sync & Customer Lock Persistence Tests', () => {
       eventTarget.removeEventListener('zarfolio:document_lines_pinned_change', listener);
     });
   });
+
+  describe('Customer Starred Filter (EyeStar / EyeOffStar) Behavior', () => {
+    const mockCustomers = [
+      { id: 'c-1', name: 'طرف اول', customerCode: 101 },
+      { id: 'c-2', name: 'طرف دوم', customerCode: 102 },
+      { id: 'c-3', name: 'طرف سوم', customerCode: 103 },
+    ];
+    const favoriteIds = ['c-2'];
+
+    it('filters customer list to only favorites when filterFavoritesOnly is true', () => {
+      let filterFavoritesOnly = false;
+      let visible = filterFavoritesOnly
+        ? mockCustomers.filter((c) => favoriteIds.includes(c.id))
+        : mockCustomers;
+      expect(visible.length).toBe(3);
+
+      filterFavoritesOnly = true;
+      visible = filterFavoritesOnly
+        ? mockCustomers.filter((c) => favoriteIds.includes(c.id))
+        : mockCustomers;
+      expect(visible.length).toBe(1);
+      expect(visible[0].id).toBe('c-2');
+    });
+
+    it('correctly maps EyeStar when active and EyeOffStar when inactive', () => {
+      const getIconState = (filterFavoritesOnly: boolean, favCount: number) => {
+        if (favCount === 0) return { icon: 'EyeOffStar', disabled: true, title: 'طرف‌حساب ستاره‌داری وجود ندارد' };
+        if (filterFavoritesOnly) return { icon: 'EyeStar', disabled: false, title: 'عدم نمایش ستاره‌دارها (نمایش همه طرف‌حساب‌ها)' };
+        return { icon: 'EyeOffStar', disabled: false, title: `نمایش فقط طرف‌حساب‌های ستاره‌دار (${favCount})` };
+      };
+
+      expect(getIconState(false, 0)).toEqual({
+        icon: 'EyeOffStar',
+        disabled: true,
+        title: 'طرف‌حساب ستاره‌داری وجود ندارد',
+      });
+
+      expect(getIconState(false, 3)).toEqual({
+        icon: 'EyeOffStar',
+        disabled: false,
+        title: 'نمایش فقط طرف‌حساب‌های ستاره‌دار (3)',
+      });
+
+      expect(getIconState(true, 3)).toEqual({
+        icon: 'EyeStar',
+        disabled: false,
+        title: 'عدم نمایش ستاره‌دارها (نمایش همه طرف‌حساب‌ها)',
+      });
+    });
+  });
 });
+

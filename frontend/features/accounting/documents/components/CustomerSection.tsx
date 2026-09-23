@@ -23,6 +23,78 @@ import Field from '@/src/components/documents/Field';
 import CustomerBalanceLiquid from './CustomerBalanceLiquid';
 import { getCustomerGroupBadge } from '../utils/document-helpers';
 
+/**
+ * Eye icon with a filled Star pupil representing active starred filter.
+ */
+function EyeStar({
+  size = 18,
+  className = '',
+}: {
+  size?: number;
+  className?: string;
+}) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" />
+      <polygon
+        points="12 7.6 13.36 10.35 16.4 10.8 14.2 12.94 14.72 15.97 12 14.54 9.28 15.97 9.8 12.94 7.6 10.8 10.64 10.35"
+        fill="currentColor"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/**
+ * Slashed eye icon with an outlined Star pupil representing inactive / do not show starred items.
+ */
+function EyeOffStar({
+  size = 18,
+  className = '',
+}: {
+  size?: number;
+  className?: string;
+}) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49" />
+      <path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143" />
+      <polygon
+        points="12 7.6 13.36 10.35 16.4 10.8 14.2 12.94 14.72 15.97 12 14.54 9.28 15.97 9.8 12.94 7.6 10.8 10.64 10.35"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinejoin="round"
+      />
+      <line x1="2" y1="2" x2="22" y2="22" />
+    </svg>
+  );
+}
+
 interface CustomerSectionProps {
   selectedCustomer: Customer | null;
   customers: Customer[];
@@ -80,6 +152,12 @@ export default function CustomerSection({
   useEffect(() => {
     setVisibleCustomerCount(10);
   }, [customerQuery, filterFavoritesOnly, isCustomerDropdownOpen]);
+
+  useEffect(() => {
+    if (favoriteCustomerIds.length === 0 && filterFavoritesOnly) {
+      setFilterFavoritesOnly(false);
+    }
+  }, [favoriteCustomerIds.length, filterFavoritesOnly]);
 
   useEffect(() => {
     if (!selectedCustomer && isCustomerDropdownOpen) {
@@ -241,33 +319,6 @@ export default function CustomerSection({
                     <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
                       طرف‌حساب
                     </span>
-                    {favoriteCustomerIds.length > 0 ? (
-                      <button
-                        type="button"
-                        onClick={() => setFilterFavoritesOnly((prev) => !prev)}
-                        className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold transition-all cursor-pointer ${
-                          filterFavoritesOnly
-                            ? 'bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-950/70 dark:text-amber-300 dark:border-amber-700 shadow-2xs'
-                            : 'text-slate-500 hover:text-amber-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-amber-400 dark:hover:bg-slate-800/60'
-                        }`}
-                        title={
-                          filterFavoritesOnly
-                            ? 'نمایش همه طرف‌حساب‌ها'
-                            : 'نمایش فقط طرف‌حساب‌های ستاره‌دار'
-                        }
-                      >
-                        <Star
-                          className={`h-3 w-3 ${
-                            filterFavoritesOnly
-                              ? 'fill-amber-400 text-amber-500'
-                              : 'text-slate-400'
-                          }`}
-                        />
-                        <span>
-                          ستاره‌دارها ({toPersianDigits(favoriteCustomerIds.length)})
-                        </span>
-                      </button>
-                    ) : null}
                   </div>
 
                   <div className="flex items-center gap-2">
@@ -304,8 +355,72 @@ export default function CustomerSection({
                       ) : null}
                     </div>
 
-                    {/* Customer Lock Button & Info Icon */}
-                    <div className="flex items-center gap-1 shrink-0">
+                    {/* Customer Action Buttons: Starred Filter & Customer Lock */}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {/* Starred Filter Button (Eye with Star) */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (favoriteCustomerIds.length === 0) return;
+                          setFilterFavoritesOnly((prev) => {
+                            const next = !prev;
+                            if (next && !isCustomerDropdownOpen) {
+                              setIsCustomerDropdownOpen(true);
+                            }
+                            return next;
+                          });
+                        }}
+                        disabled={favoriteCustomerIds.length === 0}
+                        className={`relative flex h-[42px] w-[42px] items-center justify-center rounded-xl border transition-all shadow-2xs ${
+                          favoriteCustomerIds.length === 0
+                            ? 'border-slate-200 bg-slate-50 text-slate-300 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-600 cursor-not-allowed opacity-60'
+                            : filterFavoritesOnly
+                              ? 'border-amber-400 bg-amber-100 text-amber-900 hover:bg-amber-200 dark:border-amber-600 dark:bg-amber-950/80 dark:text-amber-300 dark:hover:bg-amber-900/60 ring-2 ring-amber-400/40 cursor-pointer'
+                              : 'border-slate-300 bg-white text-slate-400 hover:border-slate-400 hover:text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-500 dark:hover:border-slate-600 dark:hover:text-slate-300 dark:hover:bg-slate-800 cursor-pointer'
+                        }`}
+                        title={
+                          favoriteCustomerIds.length === 0
+                            ? 'طرف‌حساب ستاره‌داری وجود ندارد'
+                            : filterFavoritesOnly
+                              ? 'عدم نمایش ستاره‌دارها (نمایش همه طرف‌حساب‌ها)'
+                              : `نمایش فقط طرف‌حساب‌های ستاره‌دار (${toPersianDigits(favoriteCustomerIds.length)})`
+                        }
+                        aria-label={
+                          filterFavoritesOnly
+                            ? 'عدم نمایش ستاره‌دارها'
+                            : 'نمایش فقط طرف‌حساب‌های ستاره‌دار'
+                        }
+                      >
+                        {filterFavoritesOnly ? (
+                          <EyeStar
+                            size={18}
+                            className="text-amber-700 dark:text-amber-400"
+                          />
+                        ) : (
+                          <EyeOffStar
+                            size={18}
+                            className={
+                              favoriteCustomerIds.length === 0
+                                ? 'text-slate-300 dark:text-slate-600'
+                                : 'text-slate-400 dark:text-slate-500'
+                            }
+                          />
+                        )}
+
+                        {favoriteCustomerIds.length > 0 ? (
+                          <span
+                            className={`absolute -top-1.5 -right-1.5 min-w-[17px] h-[17px] px-1 rounded-full text-[9px] font-black flex items-center justify-center pointer-events-none shadow-2xs border ${
+                              filterFavoritesOnly
+                                ? 'bg-amber-500 text-white border-white dark:border-slate-900'
+                                : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200 border-white dark:border-slate-900'
+                            }`}
+                          >
+                            {toPersianDigits(favoriteCustomerIds.length)}
+                          </span>
+                        ) : null}
+                      </button>
+
+                      {/* Customer Lock Button */}
                       <button
                         type="button"
                         onClick={() => onToggleCustomerLock(!isCustomerLocked)}
