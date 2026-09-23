@@ -1467,6 +1467,8 @@ select:-webkit-autofill:active {
 
 .dashboard-content {
   width: min(100%, 1180px);
+  max-width: 100%;
+  min-width: 0;
   flex: 1;
   margin: 0 auto;
   padding: 42px 30px 60px;
@@ -4233,6 +4235,10 @@ select:-webkit-autofill:active {
 /* Document entry */
 .document-form-page {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   gap: 18px;
 }
 

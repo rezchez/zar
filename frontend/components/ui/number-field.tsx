@@ -42,6 +42,9 @@ export interface NumberFieldProps {
   className?: string;
   "aria-label"?: string;
   onKeyDown?: React.KeyboardEventHandler<HTMLInputElement>;
+  onClick?: React.MouseEventHandler<HTMLInputElement>;
+  onFocus?: React.FocusEventHandler<HTMLInputElement>;
+  selectOnClick?: boolean;
   placeholder?: string;
   id?: string;
   title?: string;
@@ -59,6 +62,9 @@ export function NumberField({
   readOnly,
   className,
   onKeyDown,
+  onClick,
+  onFocus,
+  selectOnClick = false,
   placeholder = "۰",
   id,
   title,
@@ -137,6 +143,18 @@ export function NumberField({
         readOnly={readOnly}
         title={title}
         onKeyDown={onKeyDown}
+        onFocus={(e) => {
+          if (selectOnClick) {
+            e.currentTarget.select();
+          }
+          onFocus?.(e);
+        }}
+        onClick={(e) => {
+          if (selectOnClick) {
+            e.currentTarget.select();
+          }
+          onClick?.(e);
+        }}
         onChange={(e) => {
           if (!isInteractive) return;
           const val = e.target.value;

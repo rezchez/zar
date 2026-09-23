@@ -67,19 +67,34 @@ describe('VibeFarsi NumberField & Digit Utils', () => {
     });
   });
 
-  describe('NumberField component rendering', () => {
-    it('is a valid React component function', () => {
+  describe('NumberField component rendering & props', () => {
+    it('is a valid React component function and accepts selectOnClick', () => {
       expect(typeof NumberField).toBe('function');
       const element = React.createElement(NumberField, {
         value: 750,
         min: 1,
         max: 999.9,
         step: 'purity',
+        selectOnClick: true,
       });
       expect(element).toBeDefined();
       expect(element.type).toBe(NumberField);
       expect(element.props.value).toBe(750);
       expect(element.props.step).toBe('purity');
+      expect(element.props.selectOnClick).toBe(true);
+    });
+
+    it('defaults selectOnClick to undefined or can be explicitly false', () => {
+      const element = React.createElement(NumberField, {
+        value: 100,
+        selectOnClick: false,
+      });
+      expect(element.props.selectOnClick).toBe(false);
+
+      const defaultElement = React.createElement(NumberField, {
+        value: 100,
+      });
+      expect(defaultElement.props.selectOnClick).toBeUndefined();
     });
   });
 });

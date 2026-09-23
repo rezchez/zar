@@ -1,7 +1,15 @@
 'use client';
 
-import React, { useMemo } from 'react';
-import { ClipboardList, Pin, PinOff, Printer } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  ClipboardList,
+  Pin,
+  PinOff,
+  Printer,
+} from 'lucide-react';
 import {
   Table,
   TableHeader,
@@ -20,9 +28,159 @@ import CommittedLineRow from './CommittedLineRow';
 import {
   actualWeightFromMoney,
   faNumber,
+  getLineDocumentTypeLabel,
   numberValue,
   toPersianDigits,
 } from '../utils/document-helpers';
+
+type SortColumn =
+  | 'index'
+  | 'docType'
+  | 'metal'
+  | 'weight'
+  | 'purity'
+  | 'bedehkarVazni'
+  | 'bostankarVazni'
+  | 'bedehkarMali'
+  | 'bostankarMali'
+  | 'labName'
+  | 'stampNumber'
+  | 'description';
+
+interface SortState {
+  column: SortColumn;
+  direction: 'asc' | 'desc';
+}
+
+function getLineSortValue(
+  line: DocumentLine,
+  column: SortColumn,
+  originalIndex: number,
+): string | number {
+  switch (column) {
+    case 'index':
+      return originalIndex;
+    case 'docType': {
+      const docType =
+        line.documentTypeLabel ||
+        getLineDocumentTypeLabel(
+          line.documentNature,
+          line.sourceTab || line.documentTab,
+          line.details.rawKind,
+          line.details.unsettledTrade,
+          line.details.refiningOpKind,
+        );
+      return docType || '';
+    }
+    case 'metal': {
+      return line.documentTab === 'currency'
+        ? line.details.currencyUnit || 'ارز'
+        : line.details.metalType === 'silver'
+        ? 'نقره'
+        : line.details.metalType === 'platinum'
+        ? 'پلاتین'
+        : 'طلا';
+    }
+    case 'weight': {
+      return line.details.calculationMethod === 'money'
+        ? actualWeightFromMoney(line.details, Number(line.details.baseKarat || 750))
+        : numberValue(line.details.rawWeight);
+    }
+    case 'purity': {
+      return numberValue(line.details.purity);
+    }
+    case 'bedehkarVazni': {
+      if (line.documentNature !== 'paid') return 0;
+      const rawW =
+        line.details.calculationMethod === 'money'
+          ? actualWeightFromMoney(line.details, Number(line.details.baseKarat || 750))
+          : numberValue(line.details.rawWeight);
+      const p = numberValue(line.details.purity) || Number(line.details.baseKarat || 750);
+      return (
+        line.converted750 ??
+        (rawW > 0 && p > 0 ? (rawW * p) / Number(line.details.baseKarat || 750) : 0)
+      );
+    }
+    case 'bostankarVazni': {
+      if (line.documentNature !== 'received') return 0;
+      const rawW =
+        line.details.calculationMethod === 'money'
+          ? actualWeightFromMoney(line.details, Number(line.details.baseKarat || 750))
+          : numberValue(line.details.rawWeight);
+      const p = numberValue(line.details.purity) || Number(line.details.baseKarat || 750);
+      return (
+        line.converted750 ??
+        (rawW > 0 && p > 0 ? (rawW * p) / Number(line.details.baseKarat || 750) : 0)
+      );
+    }
+    case 'bedehkarMali': {
+      if (line.documentNature !== 'paid') return 0;
+      return line.documentTab === 'currency'
+        ? numberValue(line.details.currencyTotalAmount)
+        : numberValue(line.details.totalAmount);
+    }
+    case 'bostankarMali': {
+      if (line.documentNature !== 'received') return 0;
+      return line.documentTab === 'currency'
+        ? numberValue(line.details.currencyTotalAmount)
+        : numberValue(line.details.totalAmount);
+    }
+    case 'labName':
+      return line.details.labName?.trim() || '';
+    case 'stampNumber':
+      return line.details.stampNumber?.trim() || '';
+    case 'description':
+      return line.description?.trim() || '';
+    default:
+      return 0;
+  }
+}
+
+interface SortableHeaderProps {
+  column: SortColumn;
+  currentSort: SortState | null;
+  onSort: (column: SortColumn) => void;
+  children: React.ReactNode;
+  align?: 'center' | 'right';
+  className?: string;
+}
+
+function SortableHeader({
+  column,
+  currentSort,
+  onSort,
+  children,
+  align = 'center',
+  className = '',
+}: SortableHeaderProps) {
+  const isActive = currentSort?.column === column;
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(column)}
+      className={`group/sort flex items-center gap-1 w-full text-xs font-bold transition-colors select-none cursor-pointer ${
+        align === 'center' ? 'justify-center' : 'justify-start'
+      } ${
+        isActive
+          ? 'text-amber-600 dark:text-amber-400 font-extrabold'
+          : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100'
+      } ${className}`}
+    >
+      <span className="truncate">{children}</span>
+      <span className="shrink-0 text-slate-400 group-hover/sort:text-slate-600 dark:group-hover/sort:text-slate-200">
+        {isActive ? (
+          currentSort.direction === 'asc' ? (
+            <ArrowUp size={11} className="text-amber-600 dark:text-amber-400" />
+          ) : (
+            <ArrowDown size={11} className="text-amber-600 dark:text-amber-400" />
+          )
+        ) : (
+          <ArrowUpDown size={10} className="opacity-0 group-hover/sort:opacity-70 transition-opacity" />
+        )}
+      </span>
+    </button>
+  );
+}
 
 interface CommittedLinesTableProps {
   committedLines: DocumentLine[];
@@ -61,6 +219,37 @@ export default function CommittedLinesTable({
   onRemoveLine,
   onHawalaLine,
 }: CommittedLinesTableProps) {
+  const [sortState, setSortState] = useState<SortState | null>(null);
+
+  const handleSort = (column: SortColumn) => {
+    setSortState((prev) => {
+      if (prev?.column === column) {
+        if (prev.direction === 'asc') {
+          return { column, direction: 'desc' };
+        }
+        return null;
+      }
+      return { column, direction: 'asc' };
+    });
+  };
+
+  const sortedLines = useMemo(() => {
+    if (!sortState) return committedLines;
+    const indexed = committedLines.map((line, idx) => ({ line, originalIndex: idx }));
+    indexed.sort((a, b) => {
+      const valA = getLineSortValue(a.line, sortState.column, a.originalIndex);
+      const valB = getLineSortValue(b.line, sortState.column, b.originalIndex);
+      let comp = 0;
+      if (typeof valA === 'number' && typeof valB === 'number') {
+        comp = valA - valB;
+      } else {
+        comp = String(valA).localeCompare(String(valB), 'fa');
+      }
+      return sortState.direction === 'asc' ? comp : -comp;
+    });
+    return indexed.map((item) => item.line);
+  }, [committedLines, sortState]);
+
   // Calculate Totals for Data Table Summary Footer
   const totalBedehkarVazni = useMemo(() => {
     return committedLines
@@ -196,8 +385,8 @@ export default function CommittedLinesTable({
         </div>
       ) : (
         <Table
-          className="w-full border-collapse"
-          wrapperClassName={`border border-slate-200/80 dark:border-slate-800/80 rounded-xl overflow-x-auto ${
+          className="w-full border-collapse table-fixed text-xs"
+          wrapperClassName={`w-full min-w-0 max-w-full border border-slate-200/80 dark:border-slate-800/80 rounded-xl overflow-x-hidden ${
             isLinesPinned && committedLines.length > 3
               ? 'max-h-[190px] overflow-y-auto'
               : ''
@@ -210,45 +399,128 @@ export default function CommittedLinesTable({
                 : 'bg-slate-50 dark:bg-slate-800/60'
             }
           >
-            <TableRow>
-              <TableHead className="w-12 min-w-12 text-center font-bold">#</TableHead>
-              <TableHead className="min-w-[140px] text-right font-bold">نوع سند</TableHead>
-              <TableHead className="w-20 min-w-20 text-center font-bold">جنس فلز</TableHead>
-              <TableHead className="w-24 min-w-24 text-center font-bold">وزن</TableHead>
-              <TableHead className="w-20 min-w-20 text-center font-bold">عیار</TableHead>
-              <TableHead className="w-28 min-w-28 text-center font-bold text-rose-600 dark:text-rose-400">
-                بدهکار وزنی
+            <TableRow className="border-b border-slate-200 dark:border-slate-700">
+              {/* 1. Row Index */}
+              <TableHead className="w-9 px-1 py-1.5 text-center font-bold text-slate-600 dark:text-slate-300">
+                <SortableHeader column="index" currentSort={sortState} onSort={handleSort}>
+                  #
+                </SortableHeader>
               </TableHead>
-              <TableHead className="w-28 min-w-28 text-center font-bold text-emerald-600 dark:text-emerald-400">
-                بستانکار وزنی
+
+              {/* 2. Document Nature / Type */}
+              <TableHead className="w-[105px] px-1.5 py-1.5 text-right font-bold border-s border-slate-200/60 dark:border-slate-700/60">
+                <SortableHeader column="docType" currentSort={sortState} onSort={handleSort} align="right">
+                  نوع سند
+                </SortableHeader>
               </TableHead>
+
+              {/* 3. Metal */}
+              <TableHead className="w-14 px-1 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60">
+                <SortableHeader column="metal" currentSort={sortState} onSort={handleSort}>
+                  فلز
+                </SortableHeader>
+              </TableHead>
+
+              {/* 4. Weight */}
+              <TableHead className="w-20 px-1.5 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60">
+                <SortableHeader column="weight" currentSort={sortState} onSort={handleSort}>
+                  وزن
+                </SortableHeader>
+              </TableHead>
+
+              {/* 5. Purity */}
+              <TableHead className="w-14 px-1 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60">
+                <SortableHeader column="purity" currentSort={sortState} onSort={handleSort}>
+                  عیار
+                </SortableHeader>
+              </TableHead>
+
+              {/* 6. Weight Debit */}
+              <TableHead className="w-20 px-1.5 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60">
+                <SortableHeader
+                  column="bedehkarVazni"
+                  currentSort={sortState}
+                  onSort={handleSort}
+                  className="text-rose-600 dark:text-rose-400"
+                >
+                  بدهکار وزنی
+                </SortableHeader>
+              </TableHead>
+
+              {/* 7. Weight Credit */}
+              <TableHead className="w-20 px-1.5 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60">
+                <SortableHeader
+                  column="bostankarVazni"
+                  currentSort={sortState}
+                  onSort={handleSort}
+                  className="text-emerald-600 dark:text-emerald-400"
+                >
+                  بستانکار وزنی
+                </SortableHeader>
+              </TableHead>
+
+              {/* 8. Financial Debit */}
               {hasFinancialAmounts ? (
-                <TableHead className="w-32 min-w-32 text-center font-bold text-rose-600 dark:text-rose-400">
-                  بدهکار مالی ({baseCurrency === 'IRT' ? 'تومان' : 'ریال'})
+                <TableHead className="w-24 px-1.5 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60">
+                  <SortableHeader
+                    column="bedehkarMali"
+                    currentSort={sortState}
+                    onSort={handleSort}
+                    className="text-rose-600 dark:text-rose-400"
+                  >
+                    بدهکار ({baseCurrency === 'IRT' ? 'تومان' : 'ریال'})
+                  </SortableHeader>
                 </TableHead>
               ) : null}
+
+              {/* 9. Financial Credit */}
               {hasFinancialAmounts ? (
-                <TableHead className="w-32 min-w-32 text-center font-bold text-emerald-600 dark:text-emerald-400">
-                  بستانکار مالی ({baseCurrency === 'IRT' ? 'تومان' : 'ریال'})
+                <TableHead className="w-24 px-1.5 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60">
+                  <SortableHeader
+                    column="bostankarMali"
+                    currentSort={sortState}
+                    onSort={handleSort}
+                    className="text-emerald-600 dark:text-emerald-400"
+                  >
+                    بستانکار ({baseCurrency === 'IRT' ? 'تومان' : 'ریال'})
+                  </SortableHeader>
                 </TableHead>
               ) : null}
+
+              {/* 10. Assay Laboratory */}
               {hasAssayOrStamp ? (
-                <TableHead className="w-28 min-w-28 text-center font-bold">
-                  نام آزمایشگاه / ری‌گیری
+                <TableHead className="w-24 px-1.5 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60">
+                  <SortableHeader column="labName" currentSort={sortState} onSort={handleSort}>
+                    آزمایشگاه
+                  </SortableHeader>
                 </TableHead>
               ) : null}
+
+              {/* 11. Packet / Stamp Number */}
               {hasAssayOrStamp ? (
-                <TableHead className="w-28 min-w-28 text-center font-bold">
-                  شماره پاکت / انگ
+                <TableHead className="w-20 px-1.5 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60">
+                  <SortableHeader column="stampNumber" currentSort={sortState} onSort={handleSort}>
+                    شماره انگ
+                  </SortableHeader>
                 </TableHead>
               ) : null}
-              <TableHead className="min-w-[140px] text-right font-bold">شرح سند</TableHead>
-              <TableHead className="w-20 min-w-20 text-center font-bold">عملیات</TableHead>
+
+              {/* 12. Description */}
+              <TableHead className="px-2 py-1.5 text-right font-bold border-s border-slate-200/60 dark:border-slate-700/60">
+                <SortableHeader column="description" currentSort={sortState} onSort={handleSort} align="right">
+                  شرح ردیف
+                </SortableHeader>
+              </TableHead>
+
+              {/* 13. Actions */}
+              <TableHead className="w-16 px-1 py-1.5 text-center font-bold text-slate-600 dark:text-slate-300 border-s border-slate-200/60 dark:border-slate-700/60">
+                عملیات
+              </TableHead>
             </TableRow>
           </TableHeader>
 
           <TableBody>
-            {committedLines.map((line, index) => (
+            {sortedLines.map((line, index) => (
               <CommittedLineRow
                 key={line.id}
                 line={line}
@@ -267,29 +539,36 @@ export default function CommittedLinesTable({
           {committedLines.length > 0 ? (
             <TableFooter className="bg-slate-100/80 dark:bg-slate-800/80 font-bold border-t-2 border-slate-200 dark:border-slate-700">
               <TableRow>
-                <TableCell colSpan={5} className="text-right font-black text-xs text-slate-700 dark:text-slate-200">
+                <TableCell
+                  colSpan={5}
+                  className="px-2 py-1.5 text-right font-black text-xs text-slate-700 dark:text-slate-200"
+                >
                   جمع کل ردیف‌ها ({toPersianDigits(String(committedLines.length))})
                 </TableCell>
-                <TableCell className="w-28 min-w-28 text-center tabular-nums text-rose-600 dark:text-rose-400 font-extrabold text-xs">
+                <TableCell className="w-20 px-1.5 py-1.5 text-center tabular-nums text-rose-600 dark:text-rose-400 font-extrabold text-xs border-s border-slate-200/60 dark:border-slate-700/60">
                   {totalBedehkarVazni > 0 ? faNumber(totalBedehkarVazni, weightPrecision) : '-'}
                 </TableCell>
-                <TableCell className="w-28 min-w-28 text-center tabular-nums text-emerald-600 dark:text-emerald-400 font-extrabold text-xs">
+                <TableCell className="w-20 px-1.5 py-1.5 text-center tabular-nums text-emerald-600 dark:text-emerald-400 font-extrabold text-xs border-s border-slate-200/60 dark:border-slate-700/60">
                   {totalBostankarVazni > 0 ? faNumber(totalBostankarVazni, weightPrecision) : '-'}
                 </TableCell>
                 {hasFinancialAmounts ? (
-                  <TableCell className="w-32 min-w-32 text-center tabular-nums text-rose-600 dark:text-rose-400 font-extrabold text-xs">
+                  <TableCell className="w-24 px-1.5 py-1.5 text-center tabular-nums text-rose-600 dark:text-rose-400 font-extrabold text-xs border-s border-slate-200/60 dark:border-slate-700/60">
                     {totalBedehkarMali > 0 ? faNumber(totalBedehkarMali, 0) : '-'}
                   </TableCell>
                 ) : null}
                 {hasFinancialAmounts ? (
-                  <TableCell className="w-32 min-w-32 text-center tabular-nums text-emerald-600 dark:text-emerald-400 font-extrabold text-xs">
+                  <TableCell className="w-24 px-1.5 py-1.5 text-center tabular-nums text-emerald-600 dark:text-emerald-400 font-extrabold text-xs border-s border-slate-200/60 dark:border-slate-700/60">
                     {totalBostankarMali > 0 ? faNumber(totalBostankarMali, 0) : '-'}
                   </TableCell>
                 ) : null}
-                {hasAssayOrStamp ? <TableCell className="w-28 min-w-28" /> : null}
-                {hasAssayOrStamp ? <TableCell className="w-28 min-w-28" /> : null}
-                <TableCell className="min-w-[140px]" />
-                <TableCell className="w-20 min-w-20" />
+                {hasAssayOrStamp ? (
+                  <TableCell className="w-24 px-1.5 py-1.5 border-s border-slate-200/60 dark:border-slate-700/60" />
+                ) : null}
+                {hasAssayOrStamp ? (
+                  <TableCell className="w-20 px-1.5 py-1.5 border-s border-slate-200/60 dark:border-slate-700/60" />
+                ) : null}
+                <TableCell className="px-2 py-1.5 border-s border-slate-200/60 dark:border-slate-700/60" />
+                <TableCell className="w-16 px-1 py-1.5 border-s border-slate-200/60 dark:border-slate-700/60" />
               </TableRow>
             </TableFooter>
           ) : null}

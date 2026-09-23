@@ -4,8 +4,12 @@
 
 .document-form-page {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   gap: 12px;
-  padding-bottom: 360px;
+  padding-bottom: 24px;
 }
 
 /* دکمه‌های انصراف و حذف موقت */
@@ -513,6 +517,9 @@
   border-radius: 16px;
   background: #ffffff;
   box-shadow: 0 4px 20px rgba(15, 23, 42, 0.04);
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .document-mode-toolbar {
@@ -852,6 +859,13 @@
   border-radius: 14px;
   background: #ffffff;
   box-shadow: 0 4px 20px rgba(15, 23, 42, 0.04);
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.document-lines-panel:not(.is-pinned) {
+  overflow: hidden;
 }
 
 .document-lines-panel.is-pinned {
@@ -861,6 +875,8 @@
   right: 0;
   z-index: 40;
   box-shadow: 0 -10px 30px rgba(15, 23, 42, 0.12);
+  width: auto;
+  max-width: none;
 }
 
 .document-lines-empty {

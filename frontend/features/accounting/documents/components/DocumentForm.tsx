@@ -3,7 +3,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { PencilLine } from 'lucide-react';
-import { motion } from 'framer-motion';
 
 import { useFavoriteCustomers } from '@/hooks/useFavoriteCustomers';
 import { useToastManager } from '@/components/ui/toast';
@@ -788,7 +787,7 @@ export default function DocumentForm({
 
       {/* ENTRY TABS EDITOR */}
       <section
-        className={`dashboard-panel document-entry-panel document-draft-editor relative p-3.5 space-y-3 ${
+        className={`dashboard-panel document-entry-panel document-draft-editor w-full min-w-0 max-w-full relative p-3.5 space-y-3 ${
           editingLineId ? 'ring-2 ring-amber-500/50 shadow-xl' : ''
         }`}
       >
@@ -990,18 +989,9 @@ export default function DocumentForm({
       </section>
 
       {/* COMMITTED LINES TABLE & BALANCE PREVIEW */}
-      <motion.section
+      <section
         ref={pinnedPanelRef}
-        layout
-        initial={false}
-        transition={{
-          layout: {
-            type: 'tween',
-            ease: [0.16, 1, 0.3, 1],
-            duration: 0.42,
-          },
-        }}
-        className={`dashboard-panel document-lines-panel ${
+        className={`dashboard-panel document-lines-panel w-full min-w-0 max-w-full ${
           isLinesPinned
             ? 'is-pinned fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t-2 border-amber-500 shadow-2xl p-3 rounded-t-2xl rounded-b-none'
             : 'p-3'
@@ -1039,7 +1029,7 @@ export default function DocumentForm({
           baseCurrency={baseCurrency}
           weightPrecision={weightPrecision}
         />
-      </motion.section>
+      </section>
 
       {/* MODALS & TOASTS */}
       <DocumentModals

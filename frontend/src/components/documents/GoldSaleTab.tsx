@@ -497,6 +497,8 @@ export default function GoldSaleTab({
                     value={draftLine.details.rawWeight}
                     onChange={(event) => updateMetalValue('rawWeight', event.target.value)}
                     onKeyDown={handleKeyDownEnter}
+                    onClick={(e) => e.currentTarget.select()}
+                    onFocus={(e) => e.currentTarget.select()}
                     placeholder="۰"
                   />
                 </Field>

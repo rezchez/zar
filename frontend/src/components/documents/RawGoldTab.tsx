@@ -262,6 +262,7 @@ export default function RawGoldTab({
               onKeyDown={handleKeyDownEnter}
               placeholder="۰"
               aria-label="وزن (گرم)"
+              selectOnClick
             />
           </Field>
           <Field label="عیار">
