@@ -83,6 +83,7 @@ export default function GoldSaleTab({
   convertedWeightFromTotal,
   actualWeightFromMoney,
   rawOperationLabel,
+  metalPriceLabel,
   toPersianDigits,
   faNumber,
   numberValue,
@@ -96,6 +97,7 @@ export default function GoldSaleTab({
 
   const toast = useToastManager();
   const [isRoundingModalOpen, setIsRoundingModalOpen] = useState(false);
+  const [roundingEnabled, setRoundingEnabled] = useState<boolean>(true);
   const [roundingDigits, setRoundingDigits] = useState<number>(3);
   const [roundingMode, setRoundingMode] = useState<'round' | 'ceil' | 'floor'>('round');
   const [autoApplyRounding, setAutoApplyRounding] = useState<boolean>(false);
@@ -110,6 +112,7 @@ export default function GoldSaleTab({
       const saved = localStorage.getItem('zarfolio_gold_sale_rounding');
       if (saved) {
         const parsed = JSON.parse(saved);
+        if (typeof parsed.enabled === 'boolean') setRoundingEnabled(parsed.enabled);
         if (typeof parsed.digits === 'number') setRoundingDigits(Math.min(4, Math.max(1, parsed.digits)));
         if (parsed.mode === 'round' || parsed.mode === 'ceil' || parsed.mode === 'floor') setRoundingMode(parsed.mode);
         if (typeof parsed.autoApply === 'boolean') setAutoApplyRounding(parsed.autoApply);
@@ -124,6 +127,7 @@ export default function GoldSaleTab({
       .then((data) => {
         if (!isMounted || !data?.preferences?.goldSaleRounding) return;
         const gsr = data.preferences.goldSaleRounding;
+        if (typeof gsr.enabled === 'boolean') setRoundingEnabled(gsr.enabled);
         if (typeof gsr.digits === 'number') setRoundingDigits(Math.min(4, Math.max(1, gsr.digits)));
         if (gsr.mode === 'round' || gsr.mode === 'ceil' || gsr.mode === 'floor') setRoundingMode(gsr.mode);
         if (typeof gsr.autoApply === 'boolean') setAutoApplyRounding(gsr.autoApply);
@@ -171,6 +175,7 @@ export default function GoldSaleTab({
 
   const currentAmountNum = parseNumericValue(draftLine.details.totalAmount);
   const isAmountRounded =
+    roundingEnabled &&
     currentAmountNum > 0 &&
     ((exactCalculatedAmount > 0 && currentAmountNum !== exactCalculatedAmount) ||
       (lastRoundedAmount !== null && currentAmountNum === lastRoundedAmount));
@@ -180,7 +185,14 @@ export default function GoldSaleTab({
     digits: number,
     mode: 'round' | 'ceil' | 'floor',
     autoApply: boolean,
+    enabled: boolean = true,
   ) => {
+    if (!enabled) {
+      handleDisableRounding(digits, mode);
+      return;
+    }
+
+    setRoundingEnabled(true);
     setRoundingDigits(digits);
     setRoundingMode(mode);
     setAutoApplyRounding(autoApply);
@@ -189,7 +201,7 @@ export default function GoldSaleTab({
     try {
       localStorage.setItem(
         'zarfolio_gold_sale_rounding',
-        JSON.stringify({ digits, mode, autoApply }),
+        JSON.stringify({ enabled: true, digits, mode, autoApply }),
       );
     } catch {
       // ignore
@@ -200,7 +212,7 @@ export default function GoldSaleTab({
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        goldSaleRounding: { digits, mode, autoApply },
+        goldSaleRounding: { enabled: true, digits, mode, autoApply },
       }),
     }).catch(() => {
       // ignore network error
@@ -222,6 +234,49 @@ export default function GoldSaleTab({
     toast.success(`مبلغ کل به ${digits} رقم رند گردید.`);
   };
 
+  const handleDisableRounding = (
+    digits: number = roundingDigits,
+    mode: 'round' | 'ceil' | 'floor' = roundingMode,
+  ) => {
+    setRoundingEnabled(false);
+    setAutoApplyRounding(false);
+    setLastRoundedAmount(null);
+
+    try {
+      localStorage.setItem(
+        'zarfolio_gold_sale_rounding',
+        JSON.stringify({ enabled: false, digits, mode, autoApply: false }),
+      );
+    } catch {
+      // ignore
+    }
+
+    fetch('/api/account/preferences', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        goldSaleRounding: { enabled: false, digits, mode, autoApply: false },
+      }),
+    }).catch(() => {
+      // ignore network error
+    });
+
+    const targetAmount = exactCalculatedAmount > 0 ? exactCalculatedAmount : currentAmountNum;
+    setDraftLine((current) => ({
+      ...current,
+      details: {
+        ...current.details,
+        totalAmount: targetAmount > 0 ? String(targetAmount) : current.details.totalAmount,
+        roundingDifference: 0,
+        exactCalculatedAmount: targetAmount > 0 ? targetAmount : current.details.exactCalculatedAmount,
+        isAmountRounded: false,
+        roundingDigits: digits,
+        roundingMode: mode,
+      },
+    }));
+    toast.info('رند کردن مبلغ کل غیرفعال شد و مبلغ دقیق قرار گرفت.');
+  };
+
   const handleResetRounding = () => {
     if (exactCalculatedAmount > 0) {
       setLastRoundedAmount(null);
@@ -241,7 +296,7 @@ export default function GoldSaleTab({
 
   // Auto-round when weight or price changes if autoApplyRounding is enabled
   useEffect(() => {
-    if (!autoApplyRounding || !isWeightMode) return;
+    if (!roundingEnabled || !autoApplyRounding || !isWeightMode) return;
     if (exactCalculatedAmount <= 0) return;
     const rounded = roundAmountToDigits(exactCalculatedAmount, roundingDigits, roundingMode);
     if (rounded > 0 && String(rounded) !== draftLine.details.totalAmount) {
@@ -262,6 +317,7 @@ export default function GoldSaleTab({
     }
   }, [
     exactCalculatedAmount,
+    roundingEnabled,
     autoApplyRounding,
     isWeightMode,
     roundingDigits,
@@ -277,23 +333,33 @@ export default function GoldSaleTab({
     const currentNum = parseNumericValue(draftLine.details.totalAmount);
     if (currentNum > 0) {
       const diff = currentNum - exactCalculatedAmount;
+      const isRounded = roundingEnabled && diff !== 0;
       if (
-        draftLine.details.roundingDifference !== diff ||
+        draftLine.details.roundingDifference !== (roundingEnabled ? diff : 0) ||
         draftLine.details.exactCalculatedAmount !== exactCalculatedAmount ||
-        draftLine.details.isAmountRounded !== (diff !== 0)
+        draftLine.details.isAmountRounded !== isRounded
       ) {
         setDraftLine((current) => ({
           ...current,
           details: {
             ...current.details,
-            roundingDifference: diff,
+            roundingDifference: roundingEnabled ? diff : 0,
             exactCalculatedAmount,
-            isAmountRounded: diff !== 0,
+            isAmountRounded: isRounded,
           },
         }));
       }
     }
-  }, [exactCalculatedAmount, isWeightMode, draftLine.details.totalAmount, draftLine.details.roundingDifference, draftLine.details.exactCalculatedAmount, draftLine.details.isAmountRounded, setDraftLine]);
+  }, [
+    exactCalculatedAmount,
+    isWeightMode,
+    roundingEnabled,
+    draftLine.details.totalAmount,
+    draftLine.details.roundingDifference,
+    draftLine.details.exactCalculatedAmount,
+    draftLine.details.isAmountRounded,
+    setDraftLine,
+  ]);
 
   const isAssayRequired = isGold && isMoltenOrConditional && calculatedWeight > 0;
   const isPriceRequired = isWeightMode ? parseNumericValue(draftLine.details.rawWeight) > 0 : true;
@@ -556,6 +622,10 @@ export default function GoldSaleTab({
                         <span className="inline-flex items-center rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800 dark:bg-amber-900/60 dark:text-amber-200">
                           رند شده ({roundingDigits} رقم)
                         </span>
+                      ) : !roundingEnabled ? (
+                        <span className="inline-flex items-center rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                          رندسازی غیرفعال
+                        </span>
                       ) : null}
                     </span>
                   }
@@ -592,8 +662,10 @@ export default function GoldSaleTab({
                   initialDigits={roundingDigits}
                   initialMode={roundingMode}
                   initialAutoApply={autoApplyRounding}
+                  initialEnabled={roundingEnabled}
                   onApply={handleApplyRounding}
                   onReset={handleResetRounding}
+                  onDisable={handleDisableRounding}
                 />
               </>
             ) : (
@@ -705,7 +777,7 @@ export default function GoldSaleTab({
                     disabled={isPaidRawFromInventory}
                     onChange={(event) => {
                       if (isPaidRawFromInventory) return;
-                      const cleaned = event.target.value.replace(/[^0-9]/g, '');
+                       const cleaned = event.target.value.replace(/[^0-9]/g, '');
                       updateDraftDetail('stampNumber', cleaned);
                     }}
                     onKeyDown={handleKeyDownEnter}

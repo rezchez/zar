@@ -1,6 +1,7 @@
 import type PocketBase from 'pocketbase';
 
 export interface GoldSaleRoundingPreference {
+  enabled?: boolean;
   digits: number;
   mode: 'round' | 'ceil' | 'floor';
   autoApply: boolean;
@@ -15,6 +16,7 @@ export interface UserPreferencesData {
 export const DEFAULT_USER_PREFERENCES: UserPreferencesData = {
   favoriteCustomers: [],
   goldSaleRounding: {
+    enabled: true,
     digits: 3,
     mode: 'round',
     autoApply: false,
@@ -48,6 +50,9 @@ export async function getUserPreferences(
 
     const roundingRaw = record.goldSaleRounding;
     const goldSaleRounding: GoldSaleRoundingPreference = {
+      enabled: typeof roundingRaw?.enabled === 'boolean'
+        ? roundingRaw.enabled
+        : DEFAULT_USER_PREFERENCES.goldSaleRounding.enabled,
       digits: typeof roundingRaw?.digits === 'number' && [1, 2, 3, 4].includes(roundingRaw.digits)
         ? roundingRaw.digits
         : DEFAULT_USER_PREFERENCES.goldSaleRounding.digits,
@@ -108,6 +113,9 @@ export async function updateUserPreferences(
       ? updates.goldSaleRounding.digits
       : 3;
     payload.goldSaleRounding = {
+      enabled: updates.goldSaleRounding.enabled !== undefined
+        ? Boolean(updates.goldSaleRounding.enabled)
+        : true,
       digits: Math.min(4, Math.max(1, rawDigits)),
       mode: updates.goldSaleRounding.mode || 'round',
       autoApply: Boolean(updates.goldSaleRounding.autoApply),

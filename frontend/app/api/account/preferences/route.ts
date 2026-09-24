@@ -71,6 +71,7 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ message: 'تنظیمات گرد کردن نامعتبر است.' }, { status: 400 });
     }
 
+    const enabled = raw.enabled !== undefined ? Boolean(raw.enabled) : true;
     const digits = Number(raw.digits ?? 3);
     const mode = String(raw.mode ?? 'round');
     const autoApply = Boolean(raw.autoApply);
@@ -83,6 +84,7 @@ export async function PATCH(request: Request) {
     }
 
     updates.goldSaleRounding = {
+      enabled,
       digits,
       mode: mode as 'round' | 'ceil' | 'floor',
       autoApply,
