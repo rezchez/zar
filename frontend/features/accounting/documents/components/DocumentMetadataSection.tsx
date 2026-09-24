@@ -40,7 +40,7 @@ export default function DocumentMetadataSection({
   return (
     <div className="flex flex-wrap lg:flex-nowrap gap-3 items-end">
       {/* 1. Document Nature Switch */}
-      <div className="w-full sm:w-auto shrink-0 min-w-[190px]">
+      <div className="w-full sm:w-auto shrink-0 min-w-[190px]" id="doc-field-nature">
         <Field label="نوع سند">
           <button
             type="button"
@@ -62,7 +62,7 @@ export default function DocumentMetadataSection({
       </div>
 
       {/* 2. Metal Type Select */}
-      <div className="w-full sm:w-36 shrink-0">
+      <div className="w-full sm:w-36 shrink-0" id="doc-field-metal-type">
         <Field label="جنس فلز">
           <select
             className="text-xs h-9"
@@ -77,7 +77,7 @@ export default function DocumentMetadataSection({
       </div>
 
       {/* 3. Currency Select */}
-      <div className="w-full sm:flex-1 min-w-[200px]">
+      <div className="w-full sm:flex-1 min-w-[200px]" id="doc-field-currency">
         <Field label="نوع ارز">
           <div className="flex items-center gap-1.5">
             <select
@@ -115,7 +115,7 @@ export default function DocumentMetadataSection({
       </div>
 
       {/* 4. Document Date (Shamsi) */}
-      <div className="w-full sm:flex-1 min-w-[200px]">
+      <div className="w-full sm:flex-1 min-w-[200px]" id="doc-field-date">
         <Field label="تاریخ سند">
           <DatePicker
             value={documentDateJalali}

@@ -36,6 +36,11 @@ import DocumentBalancePreview, { type DocumentBalancePreviewData } from './Docum
 import DocumentModals from './DocumentModals';
 
 // Hooks & Services
+import {
+  useDocumentStickyHeaderActions,
+  DEFAULT_PASSED_SECTIONS,
+  type StickyPassedSections,
+} from '@/src/context/DocumentStickyHeaderContext';
 import { useDocumentLines, totalFromWeight, convertedWeightFromTotal, documentSubType } from '../hooks/useDocumentLines';
 import {
   validateDocumentSettlement,
@@ -476,18 +481,22 @@ export default function DocumentForm({
   };
 
   // Change document nature
-  const changeNature = (nextNature: DocumentNature) => {
-    setDocumentNature(nextNature);
-    setDraftLine((current) => ({
-      ...current,
-      documentNature: nextNature,
-      documentSubType: current.sourceTab === 'gold-sale' || activeEntryTab === 'gold-sale'
-        ? `${nextNature === 'received' ? 'gold-purchase' : 'gold-sale'}-${current.details?.rawKind || 'molten'}`
-        : current.sourceTab === 'metals' || activeEntryTab === 'metals'
-          ? documentSubType(nextNature, current.details?.rawKind || 'molten')
-          : current.documentSubType,
-    }));
-  };
+  const changeNature = useCallback(
+    (nextNature: DocumentNature) => {
+      setDocumentNature(nextNature);
+      setDraftLine((current) => ({
+        ...current,
+        documentNature: nextNature,
+        documentSubType:
+          current.sourceTab === 'gold-sale' || activeEntryTab === 'gold-sale'
+            ? `${nextNature === 'received' ? 'gold-purchase' : 'gold-sale'}-${current.details?.rawKind || 'molten'}`
+            : current.sourceTab === 'metals' || activeEntryTab === 'metals'
+              ? documentSubType(nextNature, current.details?.rawKind || 'molten')
+              : current.documentSubType,
+      }));
+    },
+    [activeEntryTab, setDraftLine],
+  );
 
   // Customer lock toggle
   const handleToggleCustomerLock = (locked: boolean) => {
@@ -500,6 +509,173 @@ export default function DocumentForm({
       }
     } catch {}
   };
+
+  // Sticky Context Header integration
+  const customerSectionRef = useRef<HTMLDivElement | null>(null);
+  const headerSentinelRef = useRef<HTMLDivElement | null>(null);
+  const {
+    setData: setStickyHeaderData,
+    setIsActive: setIsStickyHeaderActive,
+    setPassedSections,
+  } = useDocumentStickyHeaderActions();
+
+  const handleScrollToCustomer = useCallback(() => {
+    if (customerSectionRef.current) {
+      customerSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, []);
+
+  const handleScrollToTop = useCallback(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
+
+  // Ref storing latest closures for sticky header buttons to guarantee reference stability
+  const stickyHandlersRef = useRef({
+    onToggleNature: () => {},
+    onChangeMetalType: (_type: MetalType) => {},
+    onCurrencyChange: (_curr: string) => {},
+    onScrollToTop: handleScrollToTop,
+    onScrollToCustomer: handleScrollToCustomer,
+  });
+
+  useEffect(() => {
+    stickyHandlersRef.current = {
+      onToggleNature: () => {
+        const nextNature: DocumentNature = documentNature === 'received' ? 'paid' : 'received';
+        changeNature(nextNature);
+      },
+      onChangeMetalType: (type: MetalType) => {
+        setDraftLine((current) => ({
+          ...current,
+          details: {
+            ...current.details,
+            metalType: type,
+            purity: String(purityForMetal(type)),
+            baseKarat: purityForMetal(type),
+            metalPriceType:
+              type === 'silver'
+                ? 'gramSilver999'
+                : type === 'platinum'
+                  ? 'gramPlatinum'
+                  : 'gram18',
+          },
+        }));
+      },
+      onCurrencyChange: (curr: string) => {
+        setSelectedCurrency(curr);
+        updateDraftDetail('currencyUnit', curr);
+        updateDraftDetail('settlementCurrencyUnit', curr);
+      },
+      onScrollToTop: handleScrollToTop,
+      onScrollToCustomer: handleScrollToCustomer,
+    };
+  });
+
+  const stableToggleStickyNature = useCallback(() => stickyHandlersRef.current.onToggleNature(), []);
+  const stableChangeMetalType = useCallback((m: MetalType) => stickyHandlersRef.current.onChangeMetalType(m), []);
+  const stableStickyCurrencyChange = useCallback((c: string) => stickyHandlersRef.current.onCurrencyChange(c), []);
+  const stableScrollToTop = useCallback(() => stickyHandlersRef.current.onScrollToTop(), []);
+  const stableScrollToCustomer = useCallback(() => stickyHandlersRef.current.onScrollToCustomer(), []);
+
+  useEffect(() => {
+    setStickyHeaderData({
+      customer: selectedCustomer,
+      documentNumber: documentNumberDisplay,
+      nature: documentNature,
+      metalType: draftLine.details.metalType,
+      currency: selectedCurrency,
+      dateJalali: documentDateJalali,
+      isCustomerLocked,
+      onToggleNature: stableToggleStickyNature,
+      onChangeMetalType: stableChangeMetalType,
+      onCurrencyChange: stableStickyCurrencyChange,
+      onScrollToTop: stableScrollToTop,
+      onScrollToCustomer: stableScrollToCustomer,
+    });
+  }, [
+    selectedCustomer,
+    documentNumberDisplay,
+    documentNature,
+    draftLine.details.metalType,
+    selectedCurrency,
+    documentDateJalali,
+    isCustomerLocked,
+    stableToggleStickyNature,
+    stableChangeMetalType,
+    stableStickyCurrencyChange,
+    stableScrollToTop,
+    stableScrollToCustomer,
+    setStickyHeaderData,
+  ]);
+
+  useEffect(() => {
+    let ticking = false;
+
+    const updateSectionsPassed = () => {
+      const topbar = document.querySelector('.dashboard-topbar');
+      const threshold = topbar ? Math.round(topbar.getBoundingClientRect().height) : 68;
+
+      const checkPassed = (id: string): boolean => {
+        const el = document.getElementById(id);
+        if (!el) return false;
+        const rect = el.getBoundingClientRect();
+        if (rect.width === 0 && rect.height === 0) return false;
+        return rect.bottom <= threshold;
+      };
+
+      const nextSections: StickyPassedSections = {
+        customer: checkPassed('doc-field-customer'),
+        documentNumber: checkPassed('doc-field-document-number'),
+        nature: checkPassed('doc-field-nature'),
+        metalType: checkPassed('doc-field-metal-type'),
+        currency: checkPassed('doc-field-currency'),
+        date: checkPassed('doc-field-date'),
+      };
+
+      setPassedSections((prev) => {
+        if (
+          prev.customer === nextSections.customer &&
+          prev.documentNumber === nextSections.documentNumber &&
+          prev.nature === nextSections.nature &&
+          prev.metalType === nextSections.metalType &&
+          prev.currency === nextSections.currency &&
+          prev.date === nextSections.date
+        ) {
+          return prev;
+        }
+        return nextSections;
+      });
+    };
+
+    const handleScroll = () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          updateSectionsPassed();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    window.addEventListener('resize', handleScroll, { passive: true });
+    updateSectionsPassed();
+
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('resize', handleScroll);
+    };
+  }, [setPassedSections]);
+
+  useEffect(() => {
+    return () => {
+      setIsStickyHeaderActive(false);
+      setPassedSections(DEFAULT_PASSED_SECTIONS);
+      setStickyHeaderData(null);
+    };
+  }, [setIsStickyHeaderActive, setPassedSections, setStickyHeaderData]);
 
   // Save document (temporary or final)
   const save = async (status: 'temporary' | 'final') => {
@@ -753,21 +929,23 @@ export default function DocumentForm({
       {errorMessage ? <p className="form-error">{errorMessage}</p> : null}
 
       {/* CUSTOMER & DOCUMENT METADATA PANEL */}
-      <CustomerSection
-        selectedCustomer={selectedCustomer}
-        customers={customers}
-        onSelectCustomer={(c) => setSelectedCustomerId(c ? c.id : '')}
-        isCustomerLocked={isCustomerLocked}
-        onToggleCustomerLock={handleToggleCustomerLock}
-        showLockInfo={showLockInfo}
-        setShowLockInfo={setShowLockInfo}
-        favoriteCustomerIds={favoriteCustomerIds}
-        onToggleFavoriteCustomer={toggleFavoriteCustomer}
-        isCustomerFavorite={isCustomerFavorite}
-        effectiveDocumentNumberDisplay={documentNumberDisplay}
-        documentNumberLoading={documentNumberLoading}
-        baseCurrency={baseCurrency}
-      />
+      <div ref={customerSectionRef}>
+        <CustomerSection
+          selectedCustomer={selectedCustomer}
+          customers={customers}
+          onSelectCustomer={(c) => setSelectedCustomerId(c ? c.id : '')}
+          isCustomerLocked={isCustomerLocked}
+          onToggleCustomerLock={handleToggleCustomerLock}
+          showLockInfo={showLockInfo}
+          setShowLockInfo={setShowLockInfo}
+          favoriteCustomerIds={favoriteCustomerIds}
+          onToggleFavoriteCustomer={toggleFavoriteCustomer}
+          isCustomerFavorite={isCustomerFavorite}
+          effectiveDocumentNumberDisplay={documentNumberDisplay}
+          documentNumberLoading={documentNumberLoading}
+          baseCurrency={baseCurrency}
+        />
+      </div>
 
       {/* METADATA BAR (Nature, Metal Type, Currency, Date) */}
       <section className="dashboard-panel p-3">
@@ -808,6 +986,9 @@ export default function DocumentForm({
           onDateChange={setDocumentDateJalali}
         />
       </section>
+
+      {/* Sentinel to detect when header sections have been scrolled past */}
+      <div ref={headerSentinelRef} className="h-0 w-full pointer-events-none" id="document-header-scroll-sentinel" />
 
       {/* ENTRY TABS EDITOR */}
       <section

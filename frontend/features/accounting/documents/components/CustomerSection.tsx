@@ -303,7 +303,7 @@ export default function CustomerSection({
       {/* Top Row: Customer Selection (Right) & Document Number (Immediately After) */}
       <div className="grid gap-2 lg:grid-cols-[1fr_auto] items-end">
         {/* Customer Selection Search / Selected Card */}
-        <div className="space-y-1.5" ref={customerSearchRef}>
+        <div className="space-y-1.5" ref={customerSearchRef} id="doc-field-customer">
           <AnimatePresence initial={false}>
             {!selectedCustomer ? (
               <motion.div
@@ -787,7 +787,7 @@ export default function CustomerSection({
         </div>
 
         {/* Document Number Display */}
-        <div className="w-full lg:w-48 flex flex-col justify-end">
+        <div className="w-full lg:w-48 flex flex-col justify-end" id="doc-field-document-number">
           <Field label="شماره سند">
             <div className="document-number-field">
               <input

@@ -25,6 +25,7 @@ import DashboardSidebar, {
 } from '@/src/components/dashboard/DashboardSidebar';
 import DashboardTopbar from '@/src/components/dashboard/DashboardTopbar';
 import PriceApiSync from '@/src/components/PriceApiSync';
+import { DocumentStickyHeaderProvider } from '@/src/context/DocumentStickyHeaderContext';
 
 export type DashboardUser = {
   id: string;
@@ -323,70 +324,72 @@ export default function DashboardShell({
   }, [sidebarOpen]);
 
   return (
-    <main className="dashboard-app" dir="rtl">
-      <PriceApiSync />
-      <svg
-        className="gooey-defs"
-        width="0"
-        height="0"
-        aria-hidden="true"
-        focusable="false"
-      >
-        <defs>
-          <filter
-            id="gooey-liquid"
-            x="-50%"
-            y="-50%"
-            width="200%"
-            height="200%"
-          >
-            <feGaussianBlur
-              in="SourceGraphic"
-              stdDeviation="7"
-              result="blur"
-            />
-            <feColorMatrix
-              in="blur"
-              mode="matrix"
-              values="1 0 0 0 0  1 0 0 0 0  1 0 0 0 0  0 0 0 19 -9"
-              result="gooey"
-            />
-            <feComposite
-              in="SourceGraphic"
-              in2="gooey"
-              operator="atop"
-            />
-          </filter>
-        </defs>
-      </svg>
+    <DocumentStickyHeaderProvider>
+      <main className="dashboard-app" dir="rtl">
+        <PriceApiSync />
+        <svg
+          className="gooey-defs"
+          width="0"
+          height="0"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <defs>
+            <filter
+              id="gooey-liquid"
+              x="-50%"
+              y="-50%"
+              width="200%"
+              height="200%"
+            >
+              <feGaussianBlur
+                in="SourceGraphic"
+                stdDeviation="7"
+                result="blur"
+              />
+              <feColorMatrix
+                in="blur"
+                mode="matrix"
+                values="1 0 0 0 0  1 0 0 0 0  1 0 0 0 0  0 0 0 19 -9"
+                result="gooey"
+              />
+              <feComposite
+                in="SourceGraphic"
+                in2="gooey"
+                operator="atop"
+              />
+            </filter>
+          </defs>
+        </svg>
 
-      <DashboardSidebar
-        sidebarOpen={sidebarOpen}
-        sidebarCollapsed={sidebarCollapsed}
-        onCloseMobile={() => setSidebarOpen(false)}
-        navGroups={navGroups}
-        activeId={activeId}
-        onSelect={handleSelect}
-        user={user}
-      />
-
-      <section className="dashboard-main">
-        <DashboardTopbar
-          user={user}
+        <DashboardSidebar
+          sidebarOpen={sidebarOpen}
           sidebarCollapsed={sidebarCollapsed}
-          onMobileMenuOpen={() => setSidebarOpen(true)}
-          onSidebarToggle={toggleSidebarCollapsed}
-          topbarPinned={topbarPinned}
-          onTogglePin={toggleTopbarPin}
-          searchItems={allItems}
-          onNavigate={navigateTo}
+          onCloseMobile={() => setSidebarOpen(false)}
+          navGroups={navGroups}
+          activeId={activeId}
+          onSelect={handleSelect}
+          user={user}
         />
 
-        <div className="dashboard-content">
-          {children}
-        </div>
+        <section className="dashboard-main">
+          <DashboardTopbar
+            user={user}
+            sidebarCollapsed={sidebarCollapsed}
+            onMobileMenuOpen={() => setSidebarOpen(true)}
+            onSidebarToggle={toggleSidebarCollapsed}
+            topbarPinned={topbarPinned}
+            onTogglePin={toggleTopbarPin}
+            searchItems={allItems}
+            onNavigate={navigateTo}
+          />
 
-      </section>
-    </main>
+          <div className="dashboard-content">
+            {children}
+          </div>
+
+        </section>
+      </main>
+    </DocumentStickyHeaderProvider>
   );
 }
