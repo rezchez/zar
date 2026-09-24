@@ -19,7 +19,7 @@ import { isRefinerGroup } from '@/lib/customer-groups';
 import { jalaliDateToIso, normalizeDigits } from '@/lib/jalali';
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
 import { createRefiningCase, syncCaseTotals } from '@/features/refining/services/refining-service';
-import { postMetalSale } from '@/features/accounting/posting/posting-engine';
+import { postMetalSale, postMetalPurchase } from '@/features/accounting/posting/posting-engine';
 import { getCustomerWithBalances } from '@/lib/customer-service';
 
 const amountFields = [
@@ -432,7 +432,11 @@ export async function POST(request: Request) {
         if (amount === null) {
           throw new Error(`مقدار ${field} در ردیف ${index + 1} معتبر نیست.`);
         }
-        lineAmounts[field] = Math.abs(amount) * (lineNature === 'received' ? 1 : -1);
+        const isMetalAmount = field === 'goldAmount' || field === 'silverAmount' || field === 'platinumAmount';
+        const direction = (line.documentTab === 'gold-sale' && isMetalAmount)
+          ? (lineNature === 'received' ? -1 : 1)
+          : (lineNature === 'received' ? 1 : -1);
+        lineAmounts[field] = Math.abs(amount) * direction;
       }
 
       if (!hasAmount(lineAmounts)) {
@@ -719,14 +723,16 @@ export async function POST(request: Request) {
           }
         }
 
-        // Post double-entry journal lines for metal sales (including rounding adjustment lines)
+        // Post double-entry journal lines for metal sales and purchases (including rounding adjustment lines)
         for (let index = 0; index < preparedLines.length; index++) {
           const prepared = preparedLines[index];
           const isSale = (prepared.line.documentTab === 'gold-sale' || prepared.line.documentTab === 'raw-gold') && prepared.lineNature === 'paid';
+          const isPurchase = (prepared.line.documentTab === 'gold-sale' || prepared.line.documentTab === 'raw-gold') && prepared.lineNature === 'received';
           const rialAmount = Math.abs(prepared.lineAmounts.rialAmount ?? 0);
+
           if (isSale && rialAmount > 0) {
             const metal = String(prepared.documentDetails.metalType ?? 'gold');
-            const rawWeight = metalAmount(prepared.lineAmounts, metal);
+            const rawWeight = Number(prepared.documentDetails.rawWeight) || metalAmount(prepared.lineAmounts, metal);
             const purity = Number(prepared.documentDetails.purity) || 750;
             const convertedWeight750 = (rawWeight * purity) / 750;
             const roundingDiff = Number(prepared.documentDetails.roundingDifference ?? 0);
@@ -754,6 +760,37 @@ export async function POST(request: Request) {
               );
             } catch (journalErr) {
               console.error('Failed to post metal sale journal entry:', journalErr);
+            }
+          } else if (isPurchase && rialAmount > 0) {
+            const metal = String(prepared.documentDetails.metalType ?? 'gold');
+            const rawWeight = Number(prepared.documentDetails.rawWeight) || metalAmount(prepared.lineAmounts, metal);
+            const purity = Number(prepared.documentDetails.purity) || 750;
+            const convertedWeight750 = (rawWeight * purity) / 750;
+            const roundingDiff = Number(prepared.documentDetails.roundingDifference ?? 0);
+            const exactAmount = Number(prepared.documentDetails.exactCalculatedAmount ?? 0) || (rialAmount - roundingDiff);
+
+            try {
+              await postMetalPurchase(
+                {
+                  documentId: `${documentId}:${prepared.lineNumber}`,
+                  documentNumber: lineDocumentNumbers[index] || finalDocumentNumber,
+                  entryDateJalali: documentDateJalali,
+                  amountRials: rialAmount,
+                  exactAmountRials: exactAmount,
+                  roundingDifference: roundingDiff,
+                  weightGrams750: convertedWeight750,
+                  customer: {
+                    id: customer.id,
+                    name: customer.name,
+                    customerCode: Number(customer.customerCode ?? 0),
+                  },
+                  userId: context.user.id,
+                  description: readString(prepared.line.description ?? body.description, 500) || undefined,
+                },
+                writer,
+              );
+            } catch (journalErr) {
+              console.error('Failed to post metal purchase journal entry:', journalErr);
             }
           }
         }

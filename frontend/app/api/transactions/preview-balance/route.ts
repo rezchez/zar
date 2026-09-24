@@ -127,12 +127,16 @@ export async function POST(request: Request) {
           ? actualWeightFromMoney(details.totalAmount, String(details.metalPriceType || ''), details.metalPrice, details.purity, baseKarat)
           : numberValue(details.rawWeight);
 
+        const weightDirection = docTab === 'gold-sale'
+          ? (lineNature === 'received' ? -1 : 1)
+          : direction;
+
         if (metal === 'silver') {
-          transactionEffect.silver += direction * weight;
+          transactionEffect.silver += weightDirection * weight;
         } else if (metal === 'platinum') {
-          transactionEffect.platinum += direction * weight;
+          transactionEffect.platinum += weightDirection * weight;
         } else {
-          transactionEffect.gold += direction * weight;
+          transactionEffect.gold += weightDirection * weight;
         }
       } else if (docTab === 'workmanship') {
         const weight = numberValue(details.rawWeight);

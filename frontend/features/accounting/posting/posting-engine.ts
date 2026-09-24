@@ -1671,3 +1671,68 @@ export async function postMetalSale(
     writer,
   );
 }
+
+export async function postMetalPurchase(
+  params: {
+    documentId: string;
+    documentNumber: string;
+    entryDateJalali?: string;
+    amountRials: number;
+    exactAmountRials?: number;
+    roundingDifference?: number;
+    weightGrams750: number;
+    customer: {
+      id: string;
+      name: string;
+      customerCode?: number;
+    };
+    userId: string;
+    description?: string;
+    mapping?: Record<string, string>;
+  },
+  pb: PocketBase,
+): Promise<JournalEntryResult> {
+  const roundedAmount = Math.round(params.amountRials);
+  if (roundedAmount <= 0) {
+    throw new Error('مبلغ خرید طلا باید بزرگتر از صفر باشد.');
+  }
+
+  let writer = pb;
+  if (!(pb as any)._store) {
+    try {
+      const { getPocketBaseServiceClient } = await import('@/lib/pocketbase-service');
+      writer = await getPocketBaseServiceClient();
+    } catch {
+      writer = pb;
+    }
+  }
+
+  const { buildMetalPurchaseJournalLines, resolveMetalAccountMapping } = await import('./metal-accounting');
+  const accountMapping = await resolveMetalAccountMapping(writer);
+  const mapping = { ...accountMapping, ...params.mapping };
+
+  const lines = buildMetalPurchaseJournalLines({
+    amountRials: roundedAmount,
+    exactAmountRials: params.exactAmountRials,
+    roundingDifference: params.roundingDifference,
+    weightGrams750: params.weightGrams750,
+    customerId: params.customer.id,
+    customerName: params.customer.name,
+    mapping,
+  });
+
+  const desc = params.description || `خرید طلا به وزن ${params.weightGrams750.toFixed(3)} گرم از طرف‌حساب ${params.customer.name} (سند ${params.documentNumber})`;
+
+  return postJournalEntry(
+    {
+      description: desc,
+      sourceType: 'document',
+      sourceId: params.documentId,
+      sourceKey: `metal:purchase:${params.documentId}`,
+      entryDateJalali: params.entryDateJalali,
+      userId: params.userId,
+      lines,
+    },
+    writer,
+  );
+}

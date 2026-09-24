@@ -74,8 +74,27 @@ export default function CommittedLineRow({
   const weightDisplay = rawWeight > 0 ? faNumber(rawWeight, weightPrecision) : '-';
   const purityDisplay = purityVal > 0 ? toPersianDigits(line.details.purity) : '-';
 
-  const bedehkarVazni = isPaid && c750 > 0 ? faNumber(c750, weightPrecision) : null;
-  const bostankarVazni = isReceived && c750 > 0 ? faNumber(c750, weightPrecision) : null;
+  let bedehkarVazni: string | null = null;
+  let bostankarVazni: string | null = null;
+
+  if (line.documentTab === 'gold-sale') {
+    if (isReceived) {
+      // معامله خرید طلا: مشتری متعهد تحویل طلاست و بدهکار وزنی می‌شود
+      bedehkarVazni = c750 > 0 ? faNumber(c750, weightPrecision) : null;
+    } else if (isPaid) {
+      // معامله فروش طلا: مشتری خریدار طلاست و بستانکار وزنی می‌شود
+      bostankarVazni = c750 > 0 ? faNumber(c750, weightPrecision) : null;
+    }
+  } else {
+    // ردیف‌های فیزیکی (ورود و خروج طلا) و سایر ردیف‌ها
+    if (isPaid) {
+      // خروج فیزیکی فلز: تحویل به مشتری -> مشتری بدهکار وزنی می‌شود
+      bedehkarVazni = c750 > 0 ? faNumber(c750, weightPrecision) : null;
+    } else if (isReceived) {
+      // ورود فیزیکی فلز: تحویل توسط مشتری -> مشتری بستانکار وزنی شده و بدهی وزنی‌اش تسویه می‌شود
+      bostankarVazni = c750 > 0 ? faNumber(c750, weightPrecision) : null;
+    }
+  }
 
   const financialAmount =
     line.documentTab === 'currency'
@@ -88,53 +107,57 @@ export default function CommittedLineRow({
   return (
     <TableRow className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors group border-b border-slate-100 dark:border-slate-800">
       {/* 1. Row Index */}
-      <TableCell className="w-9 px-1 py-1.5 text-center font-bold text-slate-500 dark:text-slate-400 tabular-nums text-xs">
+      <TableCell className="px-1 py-1.5 text-center font-bold text-slate-500 dark:text-slate-400 tabular-nums text-xs">
         {toPersianDigits(String(index + 1))}
       </TableCell>
 
       {/* 2. Document Nature / Type */}
-      <TableCell className="w-[105px] px-1.5 py-1.5 text-right border-s border-slate-200/60 dark:border-slate-800/60">
-        <div className="flex items-center gap-1">
+      <TableCell className="px-1.5 py-1.5 text-right border-s border-slate-200/60 dark:border-slate-800/60">
+        <div className="flex items-center gap-1 min-w-0">
           {line.documentTab === 'refining' || line.sourceTab === 'refining' ? (
             <span className="inline-flex items-center gap-0.5 rounded bg-amber-100 px-1 py-0.5 text-[9px] font-extrabold text-amber-900 border border-amber-300/80 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800 shrink-0">
               <Flame size={10} className="text-amber-600 dark:text-amber-400 shrink-0" />
               ری‌گیری
             </span>
           ) : null}
-          <span className="font-semibold text-xs text-slate-800 dark:text-slate-200 truncate" title={docType}>
+          <span className="font-semibold text-xs text-slate-800 dark:text-slate-200 truncate block w-full" title={docType}>
             {docType}
           </span>
         </div>
       </TableCell>
 
       {/* 3. Metal / Currency Label */}
-      <TableCell className="w-14 px-1 py-1.5 text-center font-medium text-slate-700 dark:text-slate-200 text-xs border-s border-slate-200/60 dark:border-slate-800/60">
-        <span className="truncate block" title={metalLabel}>{metalLabel}</span>
+      <TableCell className="px-1 py-1.5 text-center font-medium text-slate-700 dark:text-slate-200 text-xs border-s border-slate-200/60 dark:border-slate-800/60">
+        <span className="truncate block w-full" title={metalLabel}>{metalLabel}</span>
       </TableCell>
 
       {/* 4. Raw Weight */}
-      <TableCell className="w-20 px-1.5 py-1.5 text-center font-bold tabular-nums text-slate-800 dark:text-slate-100 text-xs border-s border-slate-200/60 dark:border-slate-800/60">
-        {weightDisplay}
+      <TableCell className="px-1.5 py-1.5 text-center font-bold tabular-nums text-slate-800 dark:text-slate-100 text-xs border-s border-slate-200/60 dark:border-slate-800/60">
+        <span className="truncate block w-full" title={weightDisplay}>{weightDisplay}</span>
       </TableCell>
 
       {/* 5. Purity */}
-      <TableCell className="w-14 px-1 py-1.5 text-center font-medium tabular-nums text-slate-600 dark:text-slate-300 text-xs border-s border-slate-200/60 dark:border-slate-800/60">
-        {purityDisplay}
+      <TableCell className="px-1 py-1.5 text-center font-medium tabular-nums text-slate-600 dark:text-slate-300 text-xs border-s border-slate-200/60 dark:border-slate-800/60">
+        <span className="truncate block w-full" title={purityDisplay}>{purityDisplay}</span>
       </TableCell>
 
       {/* 6. Weight Debit (بدهکار وزنی) */}
-      <TableCell className="w-20 px-1.5 py-1.5 text-center tabular-nums text-xs border-s border-slate-200/60 dark:border-slate-800/60">
+      <TableCell className="px-1.5 py-1.5 text-center tabular-nums text-xs border-s border-slate-200/60 dark:border-slate-800/60">
         {bedehkarVazni ? (
-          <span className="text-rose-600 dark:text-rose-400 font-bold">{bedehkarVazni}</span>
+          <span className="text-rose-600 dark:text-rose-400 font-bold truncate block w-full" title={bedehkarVazni}>
+            {bedehkarVazni}
+          </span>
         ) : (
           <span className="text-slate-300 dark:text-slate-600">-</span>
         )}
       </TableCell>
 
       {/* 7. Weight Credit (بستانکار وزنی) */}
-      <TableCell className="w-20 px-1.5 py-1.5 text-center tabular-nums text-xs border-s border-slate-200/60 dark:border-slate-800/60">
+      <TableCell className="px-1.5 py-1.5 text-center tabular-nums text-xs border-s border-slate-200/60 dark:border-slate-800/60">
         {bostankarVazni ? (
-          <span className="text-emerald-600 dark:text-emerald-400 font-bold">{bostankarVazni}</span>
+          <span className="text-emerald-600 dark:text-emerald-400 font-bold truncate block w-full" title={bostankarVazni}>
+            {bostankarVazni}
+          </span>
         ) : (
           <span className="text-slate-300 dark:text-slate-600">-</span>
         )}
@@ -142,9 +165,11 @@ export default function CommittedLineRow({
 
       {/* 8. Financial Debit (بدهکار مالی) */}
       {hasFinancialAmounts ? (
-        <TableCell className="w-24 px-1.5 py-1.5 text-center tabular-nums text-xs border-s border-slate-200/60 dark:border-slate-800/60">
+        <TableCell className="px-1.5 py-1.5 text-center tabular-nums text-xs border-s border-slate-200/60 dark:border-slate-800/60">
           {bedehkarMali ? (
-            <span className="text-rose-600 dark:text-rose-400 font-bold">{bedehkarMali}</span>
+            <span className="text-rose-600 dark:text-rose-400 font-bold truncate block w-full" title={bedehkarMali}>
+              {bedehkarMali}
+            </span>
           ) : (
             <span className="text-slate-300 dark:text-slate-600">-</span>
           )}
@@ -153,9 +178,11 @@ export default function CommittedLineRow({
 
       {/* 9. Financial Credit (بستانکار مالی) */}
       {hasFinancialAmounts ? (
-        <TableCell className="w-24 px-1.5 py-1.5 text-center tabular-nums text-xs border-s border-slate-200/60 dark:border-slate-800/60">
+        <TableCell className="px-1.5 py-1.5 text-center tabular-nums text-xs border-s border-slate-200/60 dark:border-slate-800/60">
           {bostankarMali ? (
-            <span className="text-emerald-600 dark:text-emerald-400 font-bold">{bostankarMali}</span>
+            <span className="text-emerald-600 dark:text-emerald-400 font-bold truncate block w-full" title={bostankarMali}>
+              {bostankarMali}
+            </span>
           ) : (
             <span className="text-slate-300 dark:text-slate-600">-</span>
           )}
@@ -164,8 +191,8 @@ export default function CommittedLineRow({
 
       {/* 10. Assay Laboratory */}
       {hasAssayOrStamp ? (
-        <TableCell className="w-24 px-1.5 py-1.5 text-center text-slate-700 dark:text-slate-300 text-xs border-s border-slate-200/60 dark:border-slate-800/60">
-          <span className="block truncate max-w-[90px] mx-auto text-xs" title={line.details.labName || ''}>
+        <TableCell className="px-1.5 py-1.5 text-center text-slate-700 dark:text-slate-300 text-xs border-s border-slate-200/60 dark:border-slate-800/60">
+          <span className="block truncate w-full mx-auto text-xs" title={line.details.labName || ''}>
             {line.details.labName?.trim() || '-'}
           </span>
         </TableCell>
@@ -173,8 +200,8 @@ export default function CommittedLineRow({
 
       {/* 11. Packet / Stamp Number */}
       {hasAssayOrStamp ? (
-        <TableCell className="w-20 px-1.5 py-1.5 text-center tabular-nums text-slate-700 dark:text-slate-300 text-xs border-s border-slate-200/60 dark:border-slate-800/60">
-          <span className="block truncate max-w-[75px] mx-auto text-xs" title={line.details.stampNumber || ''}>
+        <TableCell className="px-1.5 py-1.5 text-center tabular-nums text-slate-700 dark:text-slate-300 text-xs border-s border-slate-200/60 dark:border-slate-800/60">
+          <span className="block truncate w-full mx-auto text-xs" title={line.details.stampNumber || ''}>
             {line.details.stampNumber?.trim() || '-'}
           </span>
         </TableCell>
@@ -182,13 +209,13 @@ export default function CommittedLineRow({
 
       {/* 12. Description */}
       <TableCell className="px-2 py-1.5 text-right border-s border-slate-200/60 dark:border-slate-800/60">
-        <span className="text-xs text-slate-600 dark:text-slate-300 block truncate max-w-[180px]" title={line.description}>
+        <span className="text-xs text-slate-600 dark:text-slate-300 block truncate w-full" title={line.description}>
           {line.description || '-'}
         </span>
       </TableCell>
 
       {/* 13. Actions */}
-      <TableCell className="w-16 px-1 py-1.5 text-center border-s border-slate-200/60 dark:border-slate-800/60 action-cell">
+      <TableCell className="px-1 py-1.5 text-center border-s border-slate-200/60 dark:border-slate-800/60 action-cell">
         <div className="flex items-center justify-center gap-1 shrink-0">
           <button
             type="button"

@@ -278,6 +278,7 @@ export default function RawGoldTab({
               aria-label="عیار ردیف سند"
               placeholder="۷۵۰"
               title={isPaidRawFromInventory ? 'عیار از موجودی انتخابی قفل شده است.' : 'عیار اول از تنظیمات برنامه خوانده می‌شود و قابل ویرایش است.'}
+              selectOnClick
             />
           </Field>
           <Field label={`تبدیل‌شده به عیار ${baseKarat.toLocaleString('fa-IR')}`}>

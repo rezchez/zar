@@ -71,7 +71,7 @@ export function convertedWeightFromTotal(
   return perGram > 0 ? numberValue(total) / perGram : 0;
 }
 
-function documentSubType(nature: DocumentNature, kind: RawOperationKind) {
+export function documentSubType(nature: DocumentNature, kind: RawOperationKind) {
   return `${nature === 'received' ? 'incoming' : 'outgoing'}-${kind}`;
 }
 
@@ -99,17 +99,21 @@ export function createLine(nature: DocumentNature = 'received', sourceTab = 'met
                     ? 'refining'
                     : 'raw-gold';
 
+  const docSubType =
+    sourceTab === 'gold-sale'
+      ? `${nature === 'received' ? 'gold-purchase' : 'gold-sale'}-molten`
+      : sourceTab === 'refining'
+        ? nature === 'paid'
+          ? 'outgoing-refining'
+          : 'incoming-refining'
+        : documentSubType(nature, 'molten');
+
   return {
     id: crypto.randomUUID(),
     documentNature: nature,
     documentTab: docTab,
     sourceTab,
-    documentSubType:
-      sourceTab === 'refining'
-        ? nature === 'paid'
-          ? 'outgoing-refining'
-          : 'incoming-refining'
-        : documentSubType(nature, 'molten'),
+    documentSubType: docSubType,
     settlementMethod: 'weight',
     balanceSource: 'current',
     description: '',
@@ -303,6 +307,7 @@ export function useDocumentLines({
   const [deleteConfirmLine, setDeleteConfirmLine] = useState<DocumentLine | null>(null);
   const [restorationState, setRestorationState] = useState<{
     line: DocumentLine;
+    linkedLine?: DocumentLine;
     index: number;
   } | null>(null);
   const [restorationTimer, setRestorationTimer] = useState(10);
@@ -463,15 +468,9 @@ export function useDocumentLines({
 
     setLineValidationErrors({});
 
-    const lineSourceTab =
-      draftLine.sourceTab ||
-      (draftLine.documentTab === 'currency'
-        ? 'currency'
-        : draftLine.documentTab === 'gold-sale'
-          ? 'gold-sale'
-          : draftLine.documentTab === 'refining'
-            ? 'refining'
-            : 'metals');
+    const lineSourceTab = editingLineId
+      ? (draftLine.sourceTab || activeEntryTab || 'metals')
+      : (activeEntryTab || draftLine.sourceTab || 'metals');
 
     const docTypeLabel = getLineDocumentTypeLabel(
       documentNature,
@@ -498,15 +497,228 @@ export function useDocumentLines({
       details: { ...draftLine.details, baseKarat },
     };
 
+    const isSettledMetalTrade =
+      (lineSourceTab === 'gold-sale' || draftLine.documentTab === 'gold-sale') &&
+      (draftLine.details.rawKind === 'molten' || draftLine.details.rawKind === 'misc') &&
+      !draftLine.details.unsettledTrade &&
+      draftLine.settlementMethod !== 'unsettled';
+
+    const tradeDocTypeLabel =
+      documentNature === 'received'
+        ? draftLine.details.rawKind === 'misc' ? 'خرید متفرقه' : 'خرید آب‌شده'
+        : draftLine.details.rawKind === 'misc' ? 'فروش متفرقه' : 'فروش آب‌شده';
+    const tradeSubType =
+      `${documentNature === 'received' ? 'gold-purchase' : 'gold-sale'}-${draftLine.details.rawKind === 'misc' ? 'misc' : 'molten'}`;
+
+    const physicalDocNature = documentNature;
+    const physicalTypeLabel =
+      physicalDocNature === 'received'
+        ? draftLine.details.rawKind === 'misc' ? 'ورود متفرقه' : 'ورود آبشده'
+        : draftLine.details.rawKind === 'misc' ? 'خروج متفرقه' : 'خروج آبشده';
+    const physicalSubType =
+      physicalDocNature === 'received'
+        ? draftLine.details.rawKind === 'misc' ? 'incoming-misc' : 'incoming-molten'
+        : draftLine.details.rawKind === 'misc' ? 'outgoing-misc' : 'outgoing-molten';
+
     if (editingLineId) {
-      setCommittedLines((current) =>
-        current.map((line) => (line.id === editingLineId ? lineToCommit : line)),
-      );
-      setEditingLineId(null);
-      toast.success('ردیف با موفقیت ویرایش شد.');
+      if (isSettledMetalTrade) {
+        setCommittedLines((current) => {
+          const tradeLine: DocumentLine = {
+            ...lineToCommit,
+            documentNature,
+            documentTab: 'gold-sale',
+            sourceTab: 'gold-sale',
+            documentTypeLabel: tradeDocTypeLabel,
+            documentSubType: tradeSubType,
+            converted750: c750,
+            details: {
+              ...lineToCommit.details,
+              baseKarat,
+            },
+          };
+          const existingPhysicalIndex = current.findIndex(
+            (l) =>
+              (tradeLine.details.linkedLineId && l.id === tradeLine.details.linkedLineId) ||
+              (l.details?.linkedLineId === editingLineId && l.documentTab === 'raw-gold'),
+          );
+
+          if (existingPhysicalIndex !== -1) {
+            const existingPhysical = current[existingPhysicalIndex];
+            const updatedPhysical: DocumentLine = {
+              ...existingPhysical,
+              documentNature: physicalDocNature,
+              converted750: c750,
+              documentTypeLabel: physicalTypeLabel,
+              documentSubType: physicalSubType,
+              details: {
+                ...existingPhysical.details,
+                metalType: draftLine.details.metalType || 'gold',
+                rawKind: draftLine.details.rawKind,
+                rawWeight: String(rawWeight),
+                purity: draftLine.details.purity,
+                baseKarat,
+                labName: draftLine.details.labName?.trim() || '',
+                stampNumber: draftLine.details.stampNumber?.trim() || '',
+                inventorySourceId: draftLine.details.inventorySourceId || '',
+                linkedLineId: tradeLine.id,
+              },
+            };
+            tradeLine.details.linkedLineId = updatedPhysical.id;
+            return current.map((l) => {
+              if (l.id === editingLineId) return tradeLine;
+              if (l.id === updatedPhysical.id) return updatedPhysical;
+              return l;
+            });
+          } else {
+            const physicalLineId = crypto.randomUUID();
+            tradeLine.details.linkedLineId = physicalLineId;
+            const newPhysical: DocumentLine = {
+              id: physicalLineId,
+              documentNature: physicalDocNature,
+              documentTab: 'raw-gold',
+              sourceTab: 'metals',
+              documentTypeLabel: physicalTypeLabel,
+              documentSubType: physicalSubType,
+              settlementMethod: 'weight',
+              balanceSource: 'current',
+              converted750: c750,
+              description: draftLine.description ? draftLine.description.trim() : '',
+              details: {
+                ...draftLine.details,
+                calculationMethod: 'weight',
+                metalType: draftLine.details.metalType || 'gold',
+                rawKind: draftLine.details.rawKind,
+                rawWeight: String(rawWeight),
+                purity: draftLine.details.purity,
+                baseKarat,
+                totalAmount: '0',
+                metalPrice: '0',
+                labName: draftLine.details.labName?.trim() || '',
+                stampNumber: draftLine.details.stampNumber?.trim() || '',
+                inventorySourceId: draftLine.details.inventorySourceId || '',
+                linkedLineId: tradeLine.id,
+              },
+            };
+            return current.map((l) => (l.id === editingLineId ? tradeLine : l)).concat(newPhysical);
+          }
+        });
+        setEditingLineId(null);
+        toast.success(
+          documentNature === 'received'
+            ? 'ردیف خرید و ردیف ورود فیزیکی با موفقیت ویرایش شدند.'
+            : 'ردیف فروش و ردیف خروج فیزیکی با موفقیت ویرایش شدند.',
+        );
+      } else if (draftLine.documentTab === 'raw-gold' && draftLine.details.linkedLineId) {
+        setCommittedLines((current) => {
+          const physicalLine = {
+            ...lineToCommit,
+            details: {
+              ...lineToCommit.details,
+              baseKarat,
+            },
+          };
+          return current.map((l) => {
+            if (l.id === editingLineId) return physicalLine;
+            if (l.id === draftLine.details.linkedLineId && l.documentTab === 'gold-sale') {
+              const updatedRawWeight = String(rawWeight);
+              const updatedPurity = draftLine.details.purity;
+              const recomputedTotal = totalFromWeight(
+                updatedRawWeight,
+                updatedPurity,
+                l.details.metalPriceType,
+                l.details.metalPrice,
+                baseKarat,
+              );
+              return {
+                ...l,
+                converted750: c750,
+                details: {
+                  ...l.details,
+                  rawWeight: updatedRawWeight,
+                  purity: updatedPurity,
+                  labName: draftLine.details.labName?.trim() || '',
+                  stampNumber: draftLine.details.stampNumber?.trim() || '',
+                  baseKarat,
+                  totalAmount: recomputedTotal ? String(recomputedTotal) : l.details.totalAmount,
+                },
+              };
+            }
+            return l;
+          });
+        });
+        setEditingLineId(null);
+        toast.success('ردیف با موفقیت ویرایش شد.');
+      } else {
+        const linkedId = draftLine.details?.linkedLineId;
+        setCommittedLines((current) => {
+          let updated = current.map((line) => (line.id === editingLineId ? lineToCommit : line));
+          if (lineToCommit.documentTab === 'gold-sale' && !isSettledMetalTrade && linkedId) {
+            updated = updated.filter((l) => l.id !== linkedId);
+          }
+          return updated;
+        });
+        setEditingLineId(null);
+        toast.success('ردیف با موفقیت ویرایش شد.');
+      }
     } else {
-      setCommittedLines((current) => [...current, lineToCommit]);
-      toast.success('ردیف به سند اضافه شد.');
+      if (isSettledMetalTrade) {
+        const tradeLineId = draftLine.id || crypto.randomUUID();
+        const physicalLineId = crypto.randomUUID();
+
+        const tradeLineToCommit: DocumentLine = {
+          ...lineToCommit,
+          id: tradeLineId,
+          documentNature,
+          documentTab: 'gold-sale',
+          sourceTab: 'gold-sale',
+          documentTypeLabel: tradeDocTypeLabel,
+          documentSubType: tradeSubType,
+          converted750: c750,
+          details: {
+            ...lineToCommit.details,
+            baseKarat,
+            linkedLineId: physicalLineId,
+          },
+        };
+
+        const physicalLineToCommit: DocumentLine = {
+          id: physicalLineId,
+          documentNature: physicalDocNature,
+          documentTab: 'raw-gold',
+          sourceTab: 'metals',
+          documentTypeLabel: physicalTypeLabel,
+          documentSubType: physicalSubType,
+          settlementMethod: 'weight',
+          balanceSource: 'current',
+          converted750: c750,
+          description: draftLine.description ? draftLine.description.trim() : '',
+          details: {
+            ...draftLine.details,
+            calculationMethod: 'weight',
+            metalType: draftLine.details.metalType || 'gold',
+            rawKind: draftLine.details.rawKind,
+            rawWeight: String(rawWeight),
+            purity: draftLine.details.purity,
+            baseKarat,
+            totalAmount: '0',
+            metalPrice: '0',
+            labName: draftLine.details.labName?.trim() || '',
+            stampNumber: draftLine.details.stampNumber?.trim() || '',
+            inventorySourceId: draftLine.details.inventorySourceId || '',
+            linkedLineId: tradeLineId,
+          },
+        };
+
+        setCommittedLines((current) => [...current, tradeLineToCommit, physicalLineToCommit]);
+        toast.success(
+          documentNature === 'received'
+            ? 'ردیف خرید و ردیف ورود فیزیکی طلا به سند اضافه شدند.'
+            : 'ردیف فروش و ردیف خروج فیزیکی طلا به سند اضافه شدند.',
+        );
+      } else {
+        setCommittedLines((current) => [...current, lineToCommit]);
+        toast.success('ردیف به سند اضافه شد.');
+      }
     }
 
     // Reset draft line
@@ -531,21 +743,37 @@ export function useDocumentLines({
   const confirmRemoveLine = () => {
     if (!deleteConfirmLine) return;
     const targetLine = deleteConfirmLine;
+    const linkedId = targetLine.details?.linkedLineId;
     const index = committedLines.findIndex((l) => l.id === targetLine.id);
     if (index !== -1) {
-      setCommittedLines((current) => current.filter((l) => l.id !== targetLine.id));
-      setRestorationState({ line: targetLine, index });
+      const linkedLine = linkedId
+        ? committedLines.find((l) => l.id === linkedId || l.details?.linkedLineId === targetLine.id)
+        : undefined;
+
+      setCommittedLines((current) =>
+        current.filter(
+          (l) =>
+            l.id !== targetLine.id &&
+            (!linkedId || l.id !== linkedId) &&
+            l.details?.linkedLineId !== targetLine.id,
+        ),
+      );
+      setRestorationState({ line: targetLine, linkedLine, index });
     }
     setDeleteConfirmLine(null);
   };
 
   const restoreLine = () => {
     if (!restorationState) return;
-    const { line, index } = restorationState;
+    const { line, linkedLine, index } = restorationState;
     setCommittedLines((current) => {
       const copy = [...current];
       const targetIndex = Math.min(index, copy.length);
-      copy.splice(targetIndex, 0, line);
+      if (linkedLine) {
+        copy.splice(targetIndex, 0, line, linkedLine);
+      } else {
+        copy.splice(targetIndex, 0, line);
+      }
       return copy;
     });
     setRestorationState(null);

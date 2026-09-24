@@ -251,5 +251,5 @@ export function buildMetalSaleJournalLines(
   return lines;
 }
 
-export { postMetalSale } from './posting-engine';
+export { postMetalSale, postMetalPurchase } from './posting-engine';
 

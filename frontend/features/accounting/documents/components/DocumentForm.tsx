@@ -36,7 +36,7 @@ import DocumentBalancePreview, { type DocumentBalancePreviewData } from './Docum
 import DocumentModals from './DocumentModals';
 
 // Hooks & Services
-import { useDocumentLines, totalFromWeight, convertedWeightFromTotal } from '../hooks/useDocumentLines';
+import { useDocumentLines, totalFromWeight, convertedWeightFromTotal, documentSubType } from '../hooks/useDocumentLines';
 import {
   validateDocumentSettlement,
   type MetalType,
@@ -217,13 +217,24 @@ export default function DocumentForm({
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '');
       if (hash && (VALID_ENTRY_TABS as readonly string[]).includes(hash)) {
-        setActiveEntryTab(hash as ValidEntryTab);
+        const validTab = hash as ValidEntryTab;
+        setActiveEntryTab(validTab);
+        setDraftLine((current) => ({
+          ...current,
+          documentTab: validTab === 'gold-sale' ? 'gold-sale' : validTab === 'currency' ? 'currency' : 'raw-gold',
+          sourceTab: validTab,
+          documentSubType: validTab === 'gold-sale'
+            ? `${documentNature === 'received' ? 'gold-purchase' : 'gold-sale'}-${current.details?.rawKind || 'molten'}`
+            : validTab === 'metals'
+              ? documentSubType(documentNature, current.details?.rawKind || 'molten')
+              : current.documentSubType,
+        }));
       }
     };
     handleHashChange();
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
-  }, []);
+  }, [documentNature]);
 
   // Restore locked customer from localStorage
   const restoredLockedCustomerRef = useRef(false);
@@ -455,6 +466,11 @@ export default function DocumentForm({
         ...current,
         documentTab: validTab === 'gold-sale' ? 'gold-sale' : validTab === 'currency' ? 'currency' : 'raw-gold',
         sourceTab: validTab,
+        documentSubType: validTab === 'gold-sale'
+          ? `${documentNature === 'received' ? 'gold-purchase' : 'gold-sale'}-${current.details?.rawKind || 'molten'}`
+          : validTab === 'metals'
+            ? documentSubType(documentNature, current.details?.rawKind || 'molten')
+            : current.documentSubType,
       }));
     }
   };
@@ -465,6 +481,11 @@ export default function DocumentForm({
     setDraftLine((current) => ({
       ...current,
       documentNature: nextNature,
+      documentSubType: current.sourceTab === 'gold-sale' || activeEntryTab === 'gold-sale'
+        ? `${nextNature === 'received' ? 'gold-purchase' : 'gold-sale'}-${current.details?.rawKind || 'molten'}`
+        : current.sourceTab === 'metals' || activeEntryTab === 'metals'
+          ? documentSubType(nextNature, current.details?.rawKind || 'molten')
+          : current.documentSubType,
     }));
   };
 
@@ -536,6 +557,8 @@ export default function DocumentForm({
                 line.documentTab === 'refining' ||
                 line.documentTab === 'workmanship') &&
               line.details.refiningOpKind !== 'fee';
+
+            const hasLinkedPhysical = line.documentTab === 'gold-sale' && Boolean(line.details?.linkedLineId);
 
             return {
               documentNature: line.documentNature,
@@ -673,6 +696,7 @@ export default function DocumentForm({
         line.documentTab === 'currency' ||
         line.documentTab === 'cash' ||
         line.documentTab === 'bank' ||
+        line.documentTab === 'gold-sale' ||
         numberValue(line.details?.totalAmount) > 0 ||
         numberValue(line.details?.currencyTotalAmount) > 0,
     );

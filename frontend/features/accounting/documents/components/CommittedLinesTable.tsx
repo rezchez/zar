@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   ArrowDown,
   ArrowUp,
@@ -9,6 +9,7 @@ import {
   Pin,
   PinOff,
   Printer,
+  RotateCcw,
 } from 'lucide-react';
 import {
   Table,
@@ -32,6 +33,55 @@ import {
   numberValue,
   toPersianDigits,
 } from '../utils/document-helpers';
+
+export type ColumnKey =
+  | 'index'
+  | 'docType'
+  | 'metal'
+  | 'weight'
+  | 'purity'
+  | 'bedehkarVazni'
+  | 'bostankarVazni'
+  | 'bedehkarMali'
+  | 'bostankarMali'
+  | 'labName'
+  | 'stampNumber'
+  | 'description'
+  | 'actions';
+
+export const DEFAULT_COLUMN_WIDTHS: Record<ColumnKey, number> = {
+  index: 38,
+  docType: 120,
+  metal: 55,
+  weight: 95,
+  purity: 60,
+  bedehkarVazni: 100,
+  bostankarVazni: 100,
+  bedehkarMali: 125,
+  bostankarMali: 125,
+  labName: 105,
+  stampNumber: 85,
+  description: 180,
+  actions: 70,
+};
+
+export const MIN_COLUMN_WIDTHS: Record<ColumnKey, number> = {
+  index: 30,
+  docType: 80,
+  metal: 45,
+  weight: 65,
+  purity: 45,
+  bedehkarVazni: 65,
+  bostankarVazni: 65,
+  bedehkarMali: 80,
+  bostankarMali: 80,
+  labName: 65,
+  stampNumber: 60,
+  description: 80,
+  actions: 55,
+};
+
+const STORAGE_KEY = 'zarfolio_committed_lines_column_widths';
 
 type SortColumn =
   | 'index'
@@ -90,28 +140,36 @@ function getLineSortValue(
       return numberValue(line.details.purity);
     }
     case 'bedehkarVazni': {
-      if (line.documentNature !== 'paid') return 0;
       const rawW =
         line.details.calculationMethod === 'money'
           ? actualWeightFromMoney(line.details, Number(line.details.baseKarat || 750))
           : numberValue(line.details.rawWeight);
       const p = numberValue(line.details.purity) || Number(line.details.baseKarat || 750);
-      return (
+      const c750 =
         line.converted750 ??
-        (rawW > 0 && p > 0 ? (rawW * p) / Number(line.details.baseKarat || 750) : 0)
-      );
+        (rawW > 0 && p > 0 ? (rawW * p) / Number(line.details.baseKarat || 750) : 0);
+
+      const isBedehkar =
+        line.documentTab === 'gold-sale'
+          ? line.documentNature === 'received'
+          : line.documentNature === 'paid';
+      return isBedehkar ? c750 : 0;
     }
     case 'bostankarVazni': {
-      if (line.documentNature !== 'received') return 0;
       const rawW =
         line.details.calculationMethod === 'money'
           ? actualWeightFromMoney(line.details, Number(line.details.baseKarat || 750))
           : numberValue(line.details.rawWeight);
       const p = numberValue(line.details.purity) || Number(line.details.baseKarat || 750);
-      return (
+      const c750 =
         line.converted750 ??
-        (rawW > 0 && p > 0 ? (rawW * p) / Number(line.details.baseKarat || 750) : 0)
-      );
+        (rawW > 0 && p > 0 ? (rawW * p) / Number(line.details.baseKarat || 750) : 0);
+
+      const isBostankar =
+        line.documentTab === 'gold-sale'
+          ? line.documentNature === 'paid'
+          : line.documentNature === 'received';
+      return isBostankar ? c750 : 0;
     }
     case 'bedehkarMali': {
       if (line.documentNature !== 'paid') return 0;
@@ -182,6 +240,38 @@ function SortableHeader({
   );
 }
 
+interface ColumnResizerProps {
+  colKey: ColumnKey;
+  onResizeStart: (
+    colKey: ColumnKey,
+    e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>,
+  ) => void;
+  onReset: (colKey: ColumnKey, e: React.MouseEvent) => void;
+  isResizing: boolean;
+}
+
+function ColumnResizer({ colKey, onResizeStart, onReset, isResizing }: ColumnResizerProps) {
+  return (
+    <div
+      onMouseDown={(e) => onResizeStart(colKey, e)}
+      onTouchStart={(e) => onResizeStart(colKey, e)}
+      onDoubleClick={(e) => onReset(colKey, e)}
+      className={`absolute top-0 bottom-0 left-0 w-3 -translate-x-1/2 cursor-col-resize select-none touch-none z-20 flex items-center justify-center group/resizer ${
+        isResizing ? 'bg-amber-400/20' : ''
+      }`}
+      title="برای تغییر عرض ستون بکشید (دوبار کلیک برای بازنشانی)"
+    >
+      <div
+        className={`w-[2.5px] h-3/5 rounded-full transition-colors ${
+          isResizing
+            ? 'bg-amber-500 ring-2 ring-amber-400/40'
+            : 'bg-transparent group-hover/resizer:bg-amber-500/80'
+        }`}
+      />
+    </div>
+  );
+}
+
 interface CommittedLinesTableProps {
   committedLines: DocumentLine[];
   isLinesPinned: boolean;
@@ -221,6 +311,149 @@ export default function CommittedLinesTable({
 }: CommittedLinesTableProps) {
   const [sortState, setSortState] = useState<SortState | null>(null);
 
+  // Column width resizing state with localStorage persistence
+  const [columnWidths, setColumnWidths] = useState<Record<ColumnKey, number>>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed && typeof parsed === 'object') {
+            return { ...DEFAULT_COLUMN_WIDTHS, ...parsed };
+          }
+        }
+      } catch {
+        // Fallback to defaults
+      }
+    }
+    return DEFAULT_COLUMN_WIDTHS;
+  });
+
+  const latestWidthsRef = useRef(columnWidths);
+  latestWidthsRef.current = columnWidths;
+
+  const [resizingCol, setResizingCol] = useState<ColumnKey | null>(null);
+
+  const hasCustomWidths = useMemo(() => {
+    return (Object.keys(DEFAULT_COLUMN_WIDTHS) as ColumnKey[]).some(
+      (k) => columnWidths[k] !== DEFAULT_COLUMN_WIDTHS[k],
+    );
+  }, [columnWidths]);
+
+  const handleResizeStart = (
+    colKey: ColumnKey,
+    e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>,
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const startX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const startWidth = latestWidthsRef.current[colKey] ?? DEFAULT_COLUMN_WIDTHS[colKey];
+    const isRtl =
+      typeof document !== 'undefined'
+        ? document.documentElement.dir === 'rtl' ||
+          document.body.dir === 'rtl' ||
+          getComputedStyle(document.body).direction === 'rtl'
+        : true;
+
+    setResizingCol(colKey);
+
+    const handlePointerMove = (moveEvt: MouseEvent | TouchEvent) => {
+      const currentX =
+        'touches' in moveEvt
+          ? moveEvt.touches[0].clientX
+          : (moveEvt as MouseEvent).clientX;
+      const delta = isRtl ? startX - currentX : currentX - startX;
+      const minW = MIN_COLUMN_WIDTHS[colKey] ?? 40;
+      const newWidth = Math.max(minW, Math.round(startWidth + delta));
+
+      const updated = {
+        ...latestWidthsRef.current,
+        [colKey]: newWidth,
+      };
+      latestWidthsRef.current = updated;
+      setColumnWidths(updated);
+    };
+
+    const handlePointerUp = () => {
+      setResizingCol(null);
+      document.removeEventListener('mousemove', handlePointerMove);
+      document.removeEventListener('mouseup', handlePointerUp);
+      document.removeEventListener('touchmove', handlePointerMove);
+      document.removeEventListener('touchend', handlePointerUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(latestWidthsRef.current));
+      } catch {
+        // Ignore quota/access errors
+      }
+    };
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', handlePointerMove);
+    document.addEventListener('mouseup', handlePointerUp);
+    document.addEventListener('touchmove', handlePointerMove);
+    document.addEventListener('touchend', handlePointerUp);
+  };
+
+  const handleResetColumnWidth = (colKey: ColumnKey, e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    const updated = {
+      ...latestWidthsRef.current,
+      [colKey]: DEFAULT_COLUMN_WIDTHS[colKey],
+    };
+    latestWidthsRef.current = updated;
+    setColumnWidths(updated);
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+    } catch {
+      // Ignore
+    }
+  };
+
+  const handleResetAllWidths = () => {
+    latestWidthsRef.current = DEFAULT_COLUMN_WIDTHS;
+    setColumnWidths(DEFAULT_COLUMN_WIDTHS);
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // Ignore
+    }
+  };
+
+  const activeColumns = useMemo(() => {
+    const cols: ColumnKey[] = [
+      'index',
+      'docType',
+      'metal',
+      'weight',
+      'purity',
+      'bedehkarVazni',
+      'bostankarVazni',
+    ];
+    if (hasFinancialAmounts) {
+      cols.push('bedehkarMali', 'bostankarMali');
+    }
+    if (hasAssayOrStamp) {
+      cols.push('labName', 'stampNumber');
+    }
+    cols.push('description', 'actions');
+    return cols;
+  }, [hasFinancialAmounts, hasAssayOrStamp]);
+
+  const totalTableWidth = useMemo(() => {
+    return activeColumns.reduce(
+      (sum, col) => sum + (columnWidths[col] ?? DEFAULT_COLUMN_WIDTHS[col]),
+      0,
+    );
+  }, [activeColumns, columnWidths]);
+
   const handleSort = (column: SortColumn) => {
     setSortState((prev) => {
       if (prev?.column === column) {
@@ -253,7 +486,11 @@ export default function CommittedLinesTable({
   // Calculate Totals for Data Table Summary Footer
   const totalBedehkarVazni = useMemo(() => {
     return committedLines
-      .filter((l) => l.documentNature === 'paid')
+      .filter((l) =>
+        l.documentTab === 'gold-sale'
+          ? l.documentNature === 'received'
+          : l.documentNature === 'paid',
+      )
       .reduce((sum, l) => {
         const rawW =
           l.details.calculationMethod === 'money'
@@ -269,7 +506,11 @@ export default function CommittedLinesTable({
 
   const totalBostankarVazni = useMemo(() => {
     return committedLines
-      .filter((l) => l.documentNature === 'received')
+      .filter((l) =>
+        l.documentTab === 'gold-sale'
+          ? l.documentNature === 'paid'
+          : l.documentNature === 'received',
+      )
       .reduce((sum, l) => {
         const rawW =
           l.details.calculationMethod === 'money'
@@ -327,6 +568,19 @@ export default function CommittedLinesTable({
           />
 
           <span className="mx-0.5 h-5 w-px bg-slate-200 dark:bg-slate-700" aria-hidden="true" />
+
+          {/* Reset Column Widths Button (appears only when customized) */}
+          {hasCustomWidths ? (
+            <button
+              type="button"
+              onClick={handleResetAllWidths}
+              className="p-1.5 rounded-lg transition-all border bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 hover:text-amber-600 dark:hover:text-amber-400 hover:border-amber-300 dark:hover:border-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/30 cursor-pointer"
+              title="بازنشانی عرض ستون‌ها به حالت پیش‌فرض"
+              aria-label="بازنشانی عرض ستون‌ها"
+            >
+              <RotateCcw size={14} />
+            </button>
+          ) : null}
 
           {/* Pin / Unpin Button */}
           <button
@@ -386,12 +640,21 @@ export default function CommittedLinesTable({
       ) : (
         <Table
           className="w-full border-collapse table-fixed text-xs"
-          wrapperClassName={`w-full min-w-0 max-w-full border border-slate-200/80 dark:border-slate-800/80 rounded-xl overflow-x-hidden ${
+          style={{
+            width: `${totalTableWidth}px`,
+            minWidth: '100%',
+          }}
+          wrapperClassName={`w-full min-w-0 max-w-full border border-slate-200/80 dark:border-slate-800/80 rounded-xl overflow-x-auto ${
             isLinesPinned && committedLines.length > 3
               ? 'max-h-[190px] overflow-y-auto'
               : ''
           }`}
         >
+          <colgroup>
+            {activeColumns.map((colKey) => (
+              <col key={colKey} style={{ width: `${columnWidths[colKey]}px` }} />
+            ))}
+          </colgroup>
           <TableHeader
             className={
               isLinesPinned
@@ -401,42 +664,90 @@ export default function CommittedLinesTable({
           >
             <TableRow className="border-b border-slate-200 dark:border-slate-700">
               {/* 1. Row Index */}
-              <TableHead className="w-9 px-1 py-1.5 text-center font-bold text-slate-600 dark:text-slate-300">
+              <TableHead
+                style={{ width: `${columnWidths.index}px` }}
+                className="relative px-1 py-1.5 text-center font-bold text-slate-600 dark:text-slate-300 select-none overflow-visible"
+              >
                 <SortableHeader column="index" currentSort={sortState} onSort={handleSort}>
                   #
                 </SortableHeader>
+                <ColumnResizer
+                  colKey="index"
+                  onResizeStart={handleResizeStart}
+                  onReset={handleResetColumnWidth}
+                  isResizing={resizingCol === 'index'}
+                />
               </TableHead>
 
               {/* 2. Document Nature / Type */}
-              <TableHead className="w-[105px] px-1.5 py-1.5 text-right font-bold border-s border-slate-200/60 dark:border-slate-700/60">
+              <TableHead
+                style={{ width: `${columnWidths.docType}px` }}
+                className="relative px-1.5 py-1.5 text-right font-bold border-s border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
+              >
                 <SortableHeader column="docType" currentSort={sortState} onSort={handleSort} align="right">
                   نوع سند
                 </SortableHeader>
+                <ColumnResizer
+                  colKey="docType"
+                  onResizeStart={handleResizeStart}
+                  onReset={handleResetColumnWidth}
+                  isResizing={resizingCol === 'docType'}
+                />
               </TableHead>
 
               {/* 3. Metal */}
-              <TableHead className="w-14 px-1 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60">
+              <TableHead
+                style={{ width: `${columnWidths.metal}px` }}
+                className="relative px-1 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
+              >
                 <SortableHeader column="metal" currentSort={sortState} onSort={handleSort}>
                   فلز
                 </SortableHeader>
+                <ColumnResizer
+                  colKey="metal"
+                  onResizeStart={handleResizeStart}
+                  onReset={handleResetColumnWidth}
+                  isResizing={resizingCol === 'metal'}
+                />
               </TableHead>
 
               {/* 4. Weight */}
-              <TableHead className="w-20 px-1.5 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60">
+              <TableHead
+                style={{ width: `${columnWidths.weight}px` }}
+                className="relative px-1.5 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
+              >
                 <SortableHeader column="weight" currentSort={sortState} onSort={handleSort}>
                   وزن
                 </SortableHeader>
+                <ColumnResizer
+                  colKey="weight"
+                  onResizeStart={handleResizeStart}
+                  onReset={handleResetColumnWidth}
+                  isResizing={resizingCol === 'weight'}
+                />
               </TableHead>
 
               {/* 5. Purity */}
-              <TableHead className="w-14 px-1 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60">
+              <TableHead
+                style={{ width: `${columnWidths.purity}px` }}
+                className="relative px-1 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
+              >
                 <SortableHeader column="purity" currentSort={sortState} onSort={handleSort}>
                   عیار
                 </SortableHeader>
+                <ColumnResizer
+                  colKey="purity"
+                  onResizeStart={handleResizeStart}
+                  onReset={handleResetColumnWidth}
+                  isResizing={resizingCol === 'purity'}
+                />
               </TableHead>
 
               {/* 6. Weight Debit */}
-              <TableHead className="w-20 px-1.5 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60">
+              <TableHead
+                style={{ width: `${columnWidths.bedehkarVazni}px` }}
+                className="relative px-1.5 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
+              >
                 <SortableHeader
                   column="bedehkarVazni"
                   currentSort={sortState}
@@ -445,10 +756,19 @@ export default function CommittedLinesTable({
                 >
                   بدهکار وزنی
                 </SortableHeader>
+                <ColumnResizer
+                  colKey="bedehkarVazni"
+                  onResizeStart={handleResizeStart}
+                  onReset={handleResetColumnWidth}
+                  isResizing={resizingCol === 'bedehkarVazni'}
+                />
               </TableHead>
 
               {/* 7. Weight Credit */}
-              <TableHead className="w-20 px-1.5 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60">
+              <TableHead
+                style={{ width: `${columnWidths.bostankarVazni}px` }}
+                className="relative px-1.5 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
+              >
                 <SortableHeader
                   column="bostankarVazni"
                   currentSort={sortState}
@@ -457,11 +777,20 @@ export default function CommittedLinesTable({
                 >
                   بستانکار وزنی
                 </SortableHeader>
+                <ColumnResizer
+                  colKey="bostankarVazni"
+                  onResizeStart={handleResizeStart}
+                  onReset={handleResetColumnWidth}
+                  isResizing={resizingCol === 'bostankarVazni'}
+                />
               </TableHead>
 
               {/* 8. Financial Debit */}
               {hasFinancialAmounts ? (
-                <TableHead className="w-24 px-1.5 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60">
+                <TableHead
+                  style={{ width: `${columnWidths.bedehkarMali}px` }}
+                  className="relative px-1.5 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
+                >
                   <SortableHeader
                     column="bedehkarMali"
                     currentSort={sortState}
@@ -470,12 +799,21 @@ export default function CommittedLinesTable({
                   >
                     بدهکار ({baseCurrency === 'IRT' ? 'تومان' : 'ریال'})
                   </SortableHeader>
+                  <ColumnResizer
+                    colKey="bedehkarMali"
+                    onResizeStart={handleResizeStart}
+                    onReset={handleResetColumnWidth}
+                    isResizing={resizingCol === 'bedehkarMali'}
+                  />
                 </TableHead>
               ) : null}
 
               {/* 9. Financial Credit */}
               {hasFinancialAmounts ? (
-                <TableHead className="w-24 px-1.5 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60">
+                <TableHead
+                  style={{ width: `${columnWidths.bostankarMali}px` }}
+                  className="relative px-1.5 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
+                >
                   <SortableHeader
                     column="bostankarMali"
                     currentSort={sortState}
@@ -484,36 +822,72 @@ export default function CommittedLinesTable({
                   >
                     بستانکار ({baseCurrency === 'IRT' ? 'تومان' : 'ریال'})
                   </SortableHeader>
+                  <ColumnResizer
+                    colKey="bostankarMali"
+                    onResizeStart={handleResizeStart}
+                    onReset={handleResetColumnWidth}
+                    isResizing={resizingCol === 'bostankarMali'}
+                  />
                 </TableHead>
               ) : null}
 
               {/* 10. Assay Laboratory */}
               {hasAssayOrStamp ? (
-                <TableHead className="w-24 px-1.5 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60">
+                <TableHead
+                  style={{ width: `${columnWidths.labName}px` }}
+                  className="relative px-1.5 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
+                >
                   <SortableHeader column="labName" currentSort={sortState} onSort={handleSort}>
                     آزمایشگاه
                   </SortableHeader>
+                  <ColumnResizer
+                    colKey="labName"
+                    onResizeStart={handleResizeStart}
+                    onReset={handleResetColumnWidth}
+                    isResizing={resizingCol === 'labName'}
+                  />
                 </TableHead>
               ) : null}
 
               {/* 11. Packet / Stamp Number */}
               {hasAssayOrStamp ? (
-                <TableHead className="w-20 px-1.5 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60">
+                <TableHead
+                  style={{ width: `${columnWidths.stampNumber}px` }}
+                  className="relative px-1.5 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
+                >
                   <SortableHeader column="stampNumber" currentSort={sortState} onSort={handleSort}>
                     شماره انگ
                   </SortableHeader>
+                  <ColumnResizer
+                    colKey="stampNumber"
+                    onResizeStart={handleResizeStart}
+                    onReset={handleResetColumnWidth}
+                    isResizing={resizingCol === 'stampNumber'}
+                  />
                 </TableHead>
               ) : null}
 
               {/* 12. Description */}
-              <TableHead className="px-2 py-1.5 text-right font-bold border-s border-slate-200/60 dark:border-slate-700/60">
+              <TableHead
+                style={{ width: `${columnWidths.description}px` }}
+                className="relative px-2 py-1.5 text-right font-bold border-s border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
+              >
                 <SortableHeader column="description" currentSort={sortState} onSort={handleSort} align="right">
                   شرح ردیف
                 </SortableHeader>
+                <ColumnResizer
+                  colKey="description"
+                  onResizeStart={handleResizeStart}
+                  onReset={handleResetColumnWidth}
+                  isResizing={resizingCol === 'description'}
+                />
               </TableHead>
 
               {/* 13. Actions */}
-              <TableHead className="w-16 px-1 py-1.5 text-center font-bold text-slate-600 dark:text-slate-300 border-s border-slate-200/60 dark:border-slate-700/60">
+              <TableHead
+                style={{ width: `${columnWidths.actions}px` }}
+                className="px-1 py-1.5 text-center font-bold text-slate-600 dark:text-slate-300 border-s border-slate-200/60 dark:border-slate-700/60 select-none"
+              >
                 عملیات
               </TableHead>
             </TableRow>
@@ -545,30 +919,30 @@ export default function CommittedLinesTable({
                 >
                   جمع کل ردیف‌ها ({toPersianDigits(String(committedLines.length))})
                 </TableCell>
-                <TableCell className="w-20 px-1.5 py-1.5 text-center tabular-nums text-rose-600 dark:text-rose-400 font-extrabold text-xs border-s border-slate-200/60 dark:border-slate-700/60">
+                <TableCell className="px-1.5 py-1.5 text-center tabular-nums text-rose-600 dark:text-rose-400 font-extrabold text-xs border-s border-slate-200/60 dark:border-slate-700/60">
                   {totalBedehkarVazni > 0 ? faNumber(totalBedehkarVazni, weightPrecision) : '-'}
                 </TableCell>
-                <TableCell className="w-20 px-1.5 py-1.5 text-center tabular-nums text-emerald-600 dark:text-emerald-400 font-extrabold text-xs border-s border-slate-200/60 dark:border-slate-700/60">
+                <TableCell className="px-1.5 py-1.5 text-center tabular-nums text-emerald-600 dark:text-emerald-400 font-extrabold text-xs border-s border-slate-200/60 dark:border-slate-700/60">
                   {totalBostankarVazni > 0 ? faNumber(totalBostankarVazni, weightPrecision) : '-'}
                 </TableCell>
                 {hasFinancialAmounts ? (
-                  <TableCell className="w-24 px-1.5 py-1.5 text-center tabular-nums text-rose-600 dark:text-rose-400 font-extrabold text-xs border-s border-slate-200/60 dark:border-slate-700/60">
+                  <TableCell className="px-1.5 py-1.5 text-center tabular-nums text-rose-600 dark:text-rose-400 font-extrabold text-xs border-s border-slate-200/60 dark:border-slate-700/60">
                     {totalBedehkarMali > 0 ? faNumber(totalBedehkarMali, 0) : '-'}
                   </TableCell>
                 ) : null}
                 {hasFinancialAmounts ? (
-                  <TableCell className="w-24 px-1.5 py-1.5 text-center tabular-nums text-emerald-600 dark:text-emerald-400 font-extrabold text-xs border-s border-slate-200/60 dark:border-slate-700/60">
+                  <TableCell className="px-1.5 py-1.5 text-center tabular-nums text-emerald-600 dark:text-emerald-400 font-extrabold text-xs border-s border-slate-200/60 dark:border-slate-700/60">
                     {totalBostankarMali > 0 ? faNumber(totalBostankarMali, 0) : '-'}
                   </TableCell>
                 ) : null}
                 {hasAssayOrStamp ? (
-                  <TableCell className="w-24 px-1.5 py-1.5 border-s border-slate-200/60 dark:border-slate-700/60" />
+                  <TableCell className="px-1.5 py-1.5 border-s border-slate-200/60 dark:border-slate-700/60" />
                 ) : null}
                 {hasAssayOrStamp ? (
-                  <TableCell className="w-20 px-1.5 py-1.5 border-s border-slate-200/60 dark:border-slate-700/60" />
+                  <TableCell className="px-1.5 py-1.5 border-s border-slate-200/60 dark:border-slate-700/60" />
                 ) : null}
                 <TableCell className="px-2 py-1.5 border-s border-slate-200/60 dark:border-slate-700/60" />
-                <TableCell className="w-16 px-1 py-1.5 border-s border-slate-200/60 dark:border-slate-700/60" />
+                <TableCell className="px-1 py-1.5 border-s border-slate-200/60 dark:border-slate-700/60" />
               </TableRow>
             </TableFooter>
           ) : null}

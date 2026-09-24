@@ -489,17 +489,15 @@ export default function GoldSaleTab({
               /* WEIGHT CALCULATION MODE LAYOUT */
               <>
                 <Field label="وزن ترازویی (گرم)" required>
-                  <input
-                    type="number"
-                    min="0"
+                  <NumberField
+                    min={0}
                     step={10 ** -weightPrecision}
-                    inputMode="decimal"
-                    value={draftLine.details.rawWeight}
-                    onChange={(event) => updateMetalValue('rawWeight', event.target.value)}
+                    value={draftLine.details.rawWeight !== '' ? Number(draftLine.details.rawWeight) : undefined}
+                    onChange={(val) => updateMetalValue('rawWeight', val !== undefined && !Number.isNaN(val) ? String(val) : '')}
                     onKeyDown={handleKeyDownEnter}
-                    onClick={(e) => e.currentTarget.select()}
-                    onFocus={(e) => e.currentTarget.select()}
                     placeholder="۰"
+                    aria-label="وزن ترازویی (گرم)"
+                    selectOnClick
                   />
                 </Field>
 
@@ -516,6 +514,7 @@ export default function GoldSaleTab({
                     aria-label="عیار ردیف سند"
                     title={isPaidRawFromInventory ? 'عیار از موجودی انتخابی قفل شده است.' : 'عیار اول از تنظیمات برنامه خوانده می‌شود و قابل ویرایش است.'}
                     placeholder="۷۵۰"
+                    selectOnClick
                   />
                 </Field>
 
@@ -623,6 +622,7 @@ export default function GoldSaleTab({
                     aria-label="عیار ردیف سند"
                     title={isPaidRawFromInventory ? 'عیار از موجودی انتخابی قفل شده است.' : 'عیار اول از تنظیمات برنامه خوانده می‌شود و قابل ویرایش است.'}
                     placeholder="۷۵۰"
+                    selectOnClick
                   />
                 </Field>
 
@@ -685,7 +685,7 @@ export default function GoldSaleTab({
             ) : null}
 
             {/* Assay Lab Name and Stamp Number */}
-            {!isMisc && isMoltenOrConditional ? (
+            {(isMoltenOrConditional || isMisc) ? (
               <>
                 <Field label="نام آزمایشگاه ری‌گیری" required={isAssayRequired} error={errors.labName}>
                   <AssayLaboratorySelect
@@ -706,10 +706,12 @@ export default function GoldSaleTab({
                     disabled={isPaidRawFromInventory}
                     onChange={(event) => {
                       if (isPaidRawFromInventory) return;
-                      const cleaned = event.target.value.replace(/[^0-9]/g, '');
+                       const cleaned = event.target.value.replace(/[^0-9]/g, '');
                       updateDraftDetail('stampNumber', cleaned);
                     }}
                     onKeyDown={handleKeyDownEnter}
+                    onClick={(e) => e.currentTarget.select()}
+                    onFocus={(e) => e.currentTarget.select()}
                     placeholder={isPaidRawFromInventory ? (draftLine.details.stampNumber || 'بدون انگ در موجودی') : 'شماره پاکت یا انگ (فقط عدد)'}
                     title={isPaidRawFromInventory ? 'شماره انگ از موجودی انتخابی قفل شده است.' : undefined}
                     className={isPaidRawFromInventory ? 'cursor-not-allowed bg-slate-100 dark:bg-slate-800/80 text-slate-500' : ''}
