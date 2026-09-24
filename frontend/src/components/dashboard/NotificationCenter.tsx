@@ -45,7 +45,15 @@ export type UserItem = {
   email: string;
 };
 
-export default function NotificationCenter({ userRole }: { userRole: 'user' | 'manager' | 'admin' }) {
+export default function NotificationCenter({
+  userRole,
+  direction = 'down',
+  buttonClassName,
+}: {
+  userRole: 'user' | 'manager' | 'admin';
+  direction?: 'up' | 'down';
+  buttonClassName?: string;
+}) {
   const [isOpen, setIsOpen] = useState(false);
   const [items, setItems] = useState<NotificationMetadata[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -340,12 +348,21 @@ export default function NotificationCenter({ userRole }: { userRole: 'user' | 'm
             void fetchNotifications();
           }
         }}
-        className="relative p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+        className={
+          buttonClassName ||
+          "relative p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+        }
         aria-label="اعلانات"
       >
-        <Bell size={18} />
+        <Bell size={buttonClassName ? 14 : 18} />
         {unreadCount > 0 && (
-          <span className="absolute -top-1 -right-1 flex items-center justify-center min-w-5 h-5 px-1 rounded-full bg-rose-500 text-white font-black text-[10px] shadow-sm animate-pulse">
+          <span
+            className={`absolute ${
+              buttonClassName
+                ? '-top-1.5 -right-1.5 min-w-4 h-4 text-[9px]'
+                : '-top-1 -right-1 min-w-5 h-5 text-[10px]'
+            } flex items-center justify-center px-1 rounded-full bg-rose-500 text-white font-black shadow-sm animate-pulse z-10`}
+          >
             {toFaDigits(unreadCount)}
           </span>
         )}
@@ -353,10 +370,19 @@ export default function NotificationCenter({ userRole }: { userRole: 'user' | 'm
 
       {/* Notifications Dropdown */}
       {isOpen && (
-        <div
-          className="absolute left-0 mt-2 w-80 sm:w-96 rounded-2xl bg-white/95 dark:bg-slate-900/95 border border-slate-200 dark:border-slate-800 shadow-2xl backdrop-blur-xl z-50 overflow-hidden"
-          dir="rtl"
-        >
+        <>
+          <button
+            type="button"
+            className="fixed inset-0 z-40 bg-transparent cursor-default"
+            aria-label="بستن منوی اعلانات"
+            onClick={() => setIsOpen(false)}
+          />
+          <div
+            className={`absolute ${
+              direction === 'up' ? 'bottom-full mb-2 right-0' : 'left-0 mt-2'
+            } w-80 sm:w-96 max-w-[calc(100vw-1rem)] rounded-2xl bg-white/95 dark:bg-slate-900/95 border border-slate-200 dark:border-slate-800 shadow-2xl backdrop-blur-xl z-50 overflow-hidden animate-in fade-in-50 zoom-in-95 duration-150`}
+            dir="rtl"
+          >
           {/* Header */}
           <div className="p-3.5 border-b border-slate-200/80 dark:border-slate-800/80 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/30">
             <div className="flex items-center gap-2">
@@ -466,7 +492,8 @@ export default function NotificationCenter({ userRole }: { userRole: 'user' | 'm
             )}
           </div>
         </div>
-      )}
+      </>
+    )}
 
       {/* Notification Detail Modal - Centered */}
       {(activeNotification || fetchingDetail || detailError) && (

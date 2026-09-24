@@ -1,29 +1,18 @@
 'use client';
 
 import {
-  ChevronDown,
   Menu,
-  Moon,
   Pin,
   PinOff,
   Search,
-  Settings,
-  Sparkles,
-  Sun,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { useState } from 'react';
 
-import { useTheme } from '@/src/components/ThemeProvider';
 import Breadcrumbs from '@/src/components/Breadcrumbs';
-import LogoutButton from '@/src/components/LogoutButton';
-import NotificationCenter from './NotificationCenter';
 import DashboardTopbarSearch, {
   type DashboardTopbarSearchItem,
 } from './DashboardTopbarSearch';
 import SidebarToggleButton from './SidebarToggleButton';
-import { APP_VERSION_FA } from '@/lib/version';
-import { openChangelogModal } from '@/features/changelog/components/ChangelogModal';
 
 export type DashboardTopbarUser = {
   id: string;
@@ -36,7 +25,7 @@ export type DashboardTopbarUser = {
 export type { DashboardTopbarSearchItem };
 
 type DashboardTopbarProps = {
-  user: DashboardTopbarUser;
+  user?: DashboardTopbarUser;
   sidebarCollapsed: boolean;
   onMobileMenuOpen: () => void;
   onSidebarToggle: () => void;
@@ -56,21 +45,7 @@ export default function DashboardTopbar({
   searchItems,
   onNavigate,
 }: DashboardTopbarProps) {
-  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-
-  useEffect(() => {
-    function handleEscape(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
-        setUserMenuOpen(false);
-      }
-    }
-
-    window.addEventListener('keydown', handleEscape);
-    return () => {
-      window.removeEventListener('keydown', handleEscape);
-    };
-  }, []);
 
   return (
     <>
@@ -129,46 +104,6 @@ export default function DashboardTopbar({
               <PinOff size={16} />
             )}
           </button>
-
-          <NotificationCenter userRole={user.role} />
-
-          <ThemeToggle />
-
-          <div className="dashboard-user-menu">
-            <button
-              type="button"
-              className="dashboard-user-chip"
-              onClick={() => setUserMenuOpen((value) => !value)}
-              aria-expanded={userMenuOpen}
-              aria-haspopup="menu"
-            >
-              <span className="dashboard-user-avatar">
-                {user.avatarUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={user.avatarUrl} alt="" />
-                ) : (
-                  (user.name || user.email || 'کاربر').charAt(0)
-                )}
-              </span>
-
-              <div>
-                <strong>{user.name || 'کاربر'}</strong>
-                <small>{user.role}</small>
-              </div>
-
-              <ChevronDown size={15} />
-            </button>
-
-            {userMenuOpen ? (
-              <UserMenu
-                onAccount={() => {
-                  setUserMenuOpen(false);
-                  onNavigate('/dashboard/account');
-                }}
-                onClose={() => setUserMenuOpen(false)}
-              />
-            ) : null}
-          </div>
         </div>
       </header>
 
@@ -178,91 +113,6 @@ export default function DashboardTopbar({
         items={searchItems}
         onNavigate={onNavigate}
       />
-    </>
-  );
-}
-
-function ThemeToggle() {
-  const { changeTheme, resolvedTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    // Delay theme-dependent icon rendering until the client has mounted.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setMounted(true);
-  }, []);
-
-  const isDark = mounted && resolvedTheme === 'dark';
-
-  return (
-    <button
-      type="button"
-      className={`dashboard-theme-toggle ${isDark ? 'is-dark' : ''}`}
-      onClick={() => changeTheme(isDark ? 'light' : 'dark')}
-      aria-label={isDark ? 'فعال کردن حالت روشن' : 'فعال کردن حالت تاریک'}
-      title={isDark ? 'فعال کردن حالت روشن' : 'فعال کردن حالت تاریک'}
-      aria-pressed={isDark}
-    >
-      <AnimatePresence mode="wait" initial={false}>
-        <motion.span
-          key={isDark ? 'dark' : 'light'}
-          className="dashboard-theme-toggle-icon"
-          initial={{ opacity: 0, rotate: -90, scale: 0.7 }}
-          animate={{ opacity: 1, rotate: 0, scale: 1 }}
-          exit={{ opacity: 0, rotate: 90, scale: 0.7 }}
-          transition={{ duration: 0.16 }}
-        >
-          {isDark ? <Sun size={16} /> : <Moon size={16} />}
-        </motion.span>
-      </AnimatePresence>
-    </button>
-  );
-}
-
-function UserMenu({
-  onAccount,
-  onClose,
-}: {
-  onAccount: () => void;
-  onClose: () => void;
-}) {
-  return (
-    <>
-      <button
-        type="button"
-        className="dashboard-user-menu-backdrop"
-        aria-label="بستن منوی حساب"
-        onClick={onClose}
-      />
-
-      <div className="dashboard-user-dropdown" role="menu">
-        <button type="button" onClick={onAccount} role="menuitem">
-          <Settings size={16} />
-          مدیریت حساب کاربری
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            onClose();
-            openChangelogModal();
-          }}
-          role="menuitem"
-          className="flex items-center justify-between w-full"
-        >
-          <span className="flex items-center gap-2">
-            <Sparkles size={16} className="text-amber-500" />
-            <span>تغییرات نسخه</span>
-          </span>
-          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold">
-            {APP_VERSION_FA}
-          </span>
-        </button>
-
-        <div className="dashboard-user-dropdown-separator" />
-
-        <LogoutButton />
-      </div>
     </>
   );
 }
