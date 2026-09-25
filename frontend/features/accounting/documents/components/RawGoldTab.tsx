@@ -79,12 +79,32 @@ export type DetailState = {
   isAmountRounded?: boolean;
   roundingDigits?: number;
   roundingMode?: 'round' | 'ceil' | 'floor';
+  // Stone fields
+  stoneOperationKind?: 'entry' | 'purchase' | 'unsettled_purchase' | 'exit' | 'sale' | 'unsettled_sale';
+  stoneCategory?: string;
+  stoneSpecies?: string;
+  stoneSpeciesName?: string;
+  stoneVariety?: string;
+  stoneShape?: string;
+  stoneShapeName?: string;
+  stoneMode?: 'single_stone' | 'parcel';
+  stoneCarats?: string;
+  stoneGrams?: string;
+  stonePieces?: string;
+  stoneValuationMethod?: 'per_carat' | 'per_piece' | 'total_sum';
+  stoneUnitPrice?: string;
+  stoneTotalAmount?: string;
+  stoneColor?: string;
+  stoneClarity?: string;
+  stoneCut?: string;
+  stoneCertificateLab?: string;
+  stoneCertificateNumber?: string;
 };
 
 export type DocumentLine = {
   id: string;
   documentNature: 'received' | 'paid';
-  documentTab: 'raw-gold' | 'gold-sale' | 'currency' | 'cash' | 'workmanship' | 'coin' | 'bank' | 'claim' | 'refining';
+  documentTab: 'raw-gold' | 'gold-sale' | 'currency' | 'cash' | 'workmanship' | 'coin' | 'bank' | 'claim' | 'refining' | 'stone' | 'goods';
   sourceTab?: string;
   documentSubType: string;
   documentTypeLabel?: string;

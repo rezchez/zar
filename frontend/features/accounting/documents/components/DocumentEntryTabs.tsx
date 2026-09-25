@@ -26,6 +26,7 @@ type DocumentEntryTabsProps = {
   goldSaleTabContent?: ReactNode;
   goldSaleTabLabel?: string;
   currencyTabContent?: ReactNode;
+  stoneTabContent?: ReactNode;
   coinTabContent?: ReactNode;
   cashTabContent?: ReactNode;
   cashTabLabel?: string;
@@ -54,6 +55,7 @@ export default function DocumentEntryTabs({
   goldSaleTabContent,
   goldSaleTabLabel,
   currencyTabContent,
+  stoneTabContent,
   coinTabContent,
   cashTabContent,
   cashTabLabel,
@@ -89,7 +91,12 @@ export default function DocumentEntryTabs({
       icon: CircleDollarSign,
       content: currencyTabContent ?? <PlaceholderTab label="عملیات ارزی" />,
     },
-    { id: 'stone', label: 'سنگ', icon: Sparkles, content: <PlaceholderTab label="عملیات سنگ" /> },
+    {
+      id: 'stone',
+      label: 'سنگ',
+      icon: Sparkles,
+      content: stoneTabContent ?? <PlaceholderTab label="عملیات سنگ" />,
+    },
     {
       id: 'coin',
       label: 'سکه',

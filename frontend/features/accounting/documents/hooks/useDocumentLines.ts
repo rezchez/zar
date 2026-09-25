@@ -83,30 +83,34 @@ export function createLine(nature: DocumentNature = 'received', sourceTab = 'met
   const docTab =
     sourceTab === 'currency'
       ? 'currency'
-      : sourceTab === 'gold-sale'
-        ? 'gold-sale'
-        : sourceTab === 'workmanship'
-          ? 'workmanship'
-          : sourceTab === 'coin'
-            ? 'coin'
-            : sourceTab === 'cash'
-              ? 'cash'
-              : sourceTab === 'bank'
-                ? 'bank'
-                : sourceTab === 'claim'
-                  ? 'claim'
-                  : sourceTab === 'refining'
-                    ? 'refining'
-                    : 'raw-gold';
+      : sourceTab === 'stone'
+        ? 'stone'
+        : sourceTab === 'gold-sale'
+          ? 'gold-sale'
+          : sourceTab === 'workmanship'
+            ? 'workmanship'
+            : sourceTab === 'coin'
+              ? 'coin'
+              : sourceTab === 'cash'
+                ? 'cash'
+                : sourceTab === 'bank'
+                  ? 'bank'
+                  : sourceTab === 'claim'
+                    ? 'claim'
+                    : sourceTab === 'refining'
+                      ? 'refining'
+                      : 'raw-gold';
 
   const docSubType =
     sourceTab === 'gold-sale'
       ? `${nature === 'received' ? 'gold-purchase' : 'gold-sale'}-molten`
-      : sourceTab === 'refining'
-        ? nature === 'paid'
-          ? 'outgoing-refining'
-          : 'incoming-refining'
-        : documentSubType(nature, 'molten');
+      : sourceTab === 'stone'
+        ? (nature === 'received' ? 'stone-purchase' : 'stone-sale')
+        : sourceTab === 'refining'
+          ? nature === 'paid'
+            ? 'outgoing-refining'
+            : 'incoming-refining'
+          : documentSubType(nature, 'molten');
 
   return {
     id: crypto.randomUUID(),
@@ -170,6 +174,21 @@ export function createCurrencyLine(
 }
 
 export function isLineReady(line: DocumentLine) {
+  if (line.documentTab === 'stone' || line.sourceTab === 'stone') {
+    const carats = numberValue(line.details.stoneCarats);
+    const grams = numberValue(line.details.stoneGrams);
+    const pieces = numberValue(line.details.stonePieces);
+    const hasWeightOrPieces = carats > 0 || grams > 0 || pieces > 0;
+    const isTrade =
+      line.details.stoneOperationKind === 'purchase' ||
+      line.details.stoneOperationKind === 'sale' ||
+      line.details.stoneOperationKind === 'unsettled_purchase' ||
+      line.details.stoneOperationKind === 'unsettled_sale';
+    if (isTrade) {
+      return hasWeightOrPieces && numberValue(line.details.totalAmount || line.details.stoneTotalAmount) > 0;
+    }
+    return hasWeightOrPieces;
+  }
   if (line.documentTab === 'currency' || line.sourceTab === 'currency') {
     return (
       numberValue(line.details.currencyQuantity) > 0 &&
@@ -234,6 +253,26 @@ export function validateLine(
   editingLineId: string | null = null,
   selectedCurrency: string = '',
 ) {
+  if (line.documentTab === 'stone' || line.sourceTab === 'stone') {
+    const carats = numberValue(line.details.stoneCarats);
+    const grams = numberValue(line.details.stoneGrams);
+    const pieces = numberValue(line.details.stonePieces);
+    if (carats <= 0 && grams <= 0 && pieces <= 0) {
+      return 'وارد کردن وزن (قیراط یا گرم) یا تعداد سنگ الزامی است.';
+    }
+    const isTrade =
+      line.details.stoneOperationKind === 'purchase' ||
+      line.details.stoneOperationKind === 'sale' ||
+      line.details.stoneOperationKind === 'unsettled_purchase' ||
+      line.details.stoneOperationKind === 'unsettled_sale';
+    if (isTrade) {
+      const amount = numberValue(line.details.totalAmount || line.details.stoneTotalAmount);
+      if (amount <= 0) {
+        return 'مبلغ کل معامله سنگ باید بیشتر از صفر باشد.';
+      }
+    }
+    return '';
+  }
   if (line.documentTab === 'currency' || line.sourceTab === 'currency') {
     const unitUpper = (line.details.currencyUnit || '').trim().toUpperCase();
     if (!unitUpper) return 'واحد ارز را انتخاب کنید.';
@@ -595,7 +634,13 @@ export function useDocumentLines({
       : documentNature;
 
     const docTypeLabel =
-      (lineSourceTab === 'cash' || lineSourceTab === 'bank' || draftLine.documentTab === 'cash' || draftLine.documentTab === 'bank') && draftLine.documentTypeLabel
+      (lineSourceTab === 'cash' ||
+        lineSourceTab === 'bank' ||
+        lineSourceTab === 'stone' ||
+        draftLine.documentTab === 'cash' ||
+        draftLine.documentTab === 'bank' ||
+        draftLine.documentTab === 'stone') &&
+      draftLine.documentTypeLabel
         ? draftLine.documentTypeLabel
         : getLineDocumentTypeLabel(
             lineNature,
@@ -610,7 +655,10 @@ export function useDocumentLines({
         ? actualWeightFromMoney(draftLine.details, purityForMetal(draftLine.details.metalType))
         : numberValue(draftLine.details.rawWeight);
     const baseKarat = purityForMetal(draftLine.details.metalType);
-    const c750 = convertedTo750(String(rawWeight), draftLine.details.purity, baseKarat);
+    const c750 =
+      lineSourceTab === 'stone' || draftLine.documentTab === 'stone'
+        ? 0
+        : convertedTo750(String(rawWeight), draftLine.details.purity, baseKarat);
 
     const effectiveCurrencyUnit =
       draftLine.details.currencyUnit ||

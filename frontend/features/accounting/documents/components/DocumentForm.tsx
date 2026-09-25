@@ -22,6 +22,7 @@ import DocumentEntryTabs from '@/src/components/documents/DocumentEntryTabs';
 import RawGoldTab from '@/src/components/documents/RawGoldTab';
 import GoldSaleTab from '@/src/components/documents/GoldSaleTab';
 import CurrencyTab from './CurrencyTab';
+import StoneTab from './StoneTab';
 import CoinTab from '@/src/components/documents/CoinTab';
 import CashTab from '@/src/components/documents/CashTab';
 import BankTab from './BankTab';
@@ -1415,6 +1416,22 @@ export default function DocumentForm({
               handleKeyDownEnter={handleKeyDownEnter}
               draftReady={draftReady}
               committedLines={committedLines}
+            />
+          )}
+          stoneTabContent={(
+            <StoneTab
+              nature={documentNature}
+              draftLine={draftLine}
+              setDraftLine={setDraftLine}
+              committedLines={committedLines}
+              editingLineId={editingLineId}
+              isLinesPinned={isLinesPinned}
+              commitDraftLine={handleCommitDraft}
+              updateDraftDetail={updateDraftDetail}
+              handleKeyDownEnter={handleKeyDownEnter}
+              draftReady={draftReady}
+              baseCurrency={baseCurrency}
+              selectedCurrency={selectedCurrency}
             />
           )}
           coinTabContent={(
