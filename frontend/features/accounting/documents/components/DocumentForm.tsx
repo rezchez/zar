@@ -160,6 +160,28 @@ export default function DocumentForm({
 
   // Live market quotes for currencies & rates
   const [quotes, setQuotes] = useState<MarketQuote[]>([]);
+  const [isSyncingQuotes, setIsSyncingQuotes] = useState(false);
+
+  const refreshQuotes = useCallback(async (forceSync = false): Promise<MarketQuote[] | null> => {
+    try {
+      setIsSyncingQuotes(true);
+      if (forceSync) {
+        await fetch('/api/price-api/sync?force=1', { method: 'POST' }).catch(() => null);
+      }
+      const response = await fetch('/api/price-api/quotes', { cache: 'no-store' });
+      if (!response.ok) return null;
+      const data = await response.json().catch(() => null);
+      if (data && Array.isArray(data.quotes)) {
+        setQuotes(data.quotes);
+        return data.quotes;
+      }
+    } catch {
+      // non-blocking
+    } finally {
+      setIsSyncingQuotes(false);
+    }
+    return null;
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -1357,6 +1379,8 @@ export default function DocumentForm({
               currencyUnits={availableCurrencies.map((c) => c.code).filter((code) => code !== 'IRR' && code !== 'IRT')}
               selectedCurrency={selectedCurrency}
               getQuoteRate={getCurrencyQuoteRate}
+              onRefreshQuotes={refreshQuotes}
+              isSyncingQuotes={isSyncingQuotes}
               editingLineId={editingLineId}
               isLinesPinned={isLinesPinned}
               commitDraftLine={handleCommitDraft}

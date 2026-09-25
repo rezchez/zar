@@ -48,6 +48,19 @@ export interface NumberFieldProps {
   placeholder?: string;
   id?: string;
   title?: string;
+  formatThousands?: boolean;
+}
+
+function formatThousandsValue(val: number | string): string {
+  const raw = en(val).replace(/,/g, '');
+  if (raw === '') return '';
+  const parts = raw.split('.');
+  const intPart = parts[0];
+  const decPart = parts[1];
+  const num = Number(intPart);
+  const formattedInt = Number.isNaN(num) ? intPart : num.toLocaleString('en-US');
+  const combined = decPart !== undefined ? `${formattedInt}.${decPart}` : formattedInt;
+  return fa(combined);
 }
 
 /** عدد. Plus sits at the inline-start (right in RTL), display uses Persian digits. */
@@ -68,6 +81,7 @@ export function NumberField({
   placeholder = "۰",
   id,
   title,
+  formatThousands = false,
   ...aria
 }: NumberFieldProps) {
   const [internal, setInternal] = React.useState(defaultValue);
@@ -113,7 +127,18 @@ export function NumberField({
   const btn =
     "flex w-10 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40";
 
-  const displayVal = typed !== null ? typed : fa(n);
+  const displayVal = React.useMemo(() => {
+    if (typed !== null) {
+      if (formatThousands) {
+        return formatThousandsValue(typed);
+      }
+      return typed;
+    }
+    if (formatThousands) {
+      return formatThousandsValue(n);
+    }
+    return fa(n);
+  }, [typed, formatThousands, n]);
 
   return (
     <div
@@ -159,7 +184,7 @@ export function NumberField({
           if (!isInteractive) return;
           const val = e.target.value;
           setTyped(val);
-          const raw = en(val).replace(/[^\d.-]/g, "");
+          const raw = en(val).replace(/,/g, '').replace(/[^\d.-]/g, "");
           if (raw === "" || raw === "-" || raw === "." || raw === "-.") {
             if (min <= 0 && max >= 0) {
               set(0);
@@ -174,7 +199,7 @@ export function NumberField({
         onBlur={() => {
           setTyped(null);
         }}
-        className="w-14 border-x border-input bg-transparent text-center text-sm font-semibold outline-none"
+        className="min-w-[3.5rem] flex-1 border-x border-input bg-transparent px-2 text-center text-sm font-semibold outline-none"
       />
       <button
         type="button"

@@ -31,13 +31,14 @@ export async function GET() {
   const latestBySymbol = new Map<string, Record<string, unknown>>();
   for (const record of records) {
     const symbol = String(record.symbol || '');
-    if (activeSet.has(symbol) && !latestBySymbol.has(symbol)) {
+    if ((activeSet.has(symbol) || record.category === 'currency') && !latestBySymbol.has(symbol)) {
       latestBySymbol.set(symbol, record as unknown as Record<string, unknown>);
     }
   }
 
   const unitBySymbol = new Map(settings.availableUnits.map((unit) => [unit.symbol, unit]));
-  const quotes = activeSymbols.flatMap((symbol) => {
+  const allSymbols = Array.from(new Set([...activeSymbols, ...latestBySymbol.keys()]));
+  const quotes = allSymbols.flatMap((symbol) => {
     const record = latestBySymbol.get(symbol);
     if (!record) return [];
     const unit = unitBySymbol.get(symbol);

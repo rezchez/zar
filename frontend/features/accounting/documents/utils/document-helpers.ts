@@ -239,17 +239,42 @@ export function findCurrencyQuote(
 ): MarketQuote | undefined {
   if (!currencyCode || !Array.isArray(quotes) || quotes.length === 0) return undefined;
   const code = currencyCode.trim().toUpperCase();
-  return quotes.find((q) => {
-    const s = String(q.symbol || '').trim().toUpperCase();
-    const t = String(q.title || '').trim().toLowerCase();
-    if (s === code) return true;
-    if (code === 'USD' && (s.includes('USD') || t.includes('دلار'))) return true;
-    if (code === 'EUR' && (s.includes('EUR') || t.includes('یورو'))) return true;
-    if (code === 'AED' && (s.includes('AED') || t.includes('درهم'))) return true;
-    if (code === 'GBP' && (s.includes('GBP') || t.includes('پوند'))) return true;
-    if ((code === 'USDT' || code === 'TETHER') && (s.includes('USDT') || t.includes('تتر'))) return true;
-    return s === code || t === code.toLowerCase();
+
+  // 1. Special Tether / USDT handling: prefer USDT_IRT (in Tomans) if available
+  if (code === 'USDT' || code === 'TETHER') {
+    const usdtIrt = quotes.find((q) => String(q.symbol || '').trim().toUpperCase() === 'USDT_IRT');
+    if (usdtIrt) return usdtIrt;
+    const usdt = quotes.find((q) => String(q.symbol || '').trim().toUpperCase() === 'USDT');
+    if (usdt) return usdt;
+  }
+
+  // 2. Direct exact symbol match (prefer currency category if multiple exist)
+  const exactMatches = quotes.filter((q) => String(q.symbol || '').trim().toUpperCase() === code);
+  if (exactMatches.length > 0) {
+    const currencyCat = exactMatches.find((q) => q.category === 'currency');
+    return currencyCat || exactMatches[0];
+  }
+
+  // 3. Exact Persian title or standard alias match (ensure XAUUSD or gold never matches USD)
+  const titleMatches = quotes.filter((q) => {
+    const t = String(q.title || '').trim();
+    if (code === 'USD' && t === 'دلار') return true;
+    if (code === 'EUR' && t === 'یورو') return true;
+    if (code === 'AED' && (t === 'درهم' || t === 'درهم امارات')) return true;
+    if (code === 'GBP' && (t === 'پوند' || t === 'پوند انگلیس')) return true;
+    if (code === 'TRY' && (t === 'لیر' || t === 'لیر ترکیه')) return true;
+    return t.toLowerCase() === code.toLowerCase();
   });
+  if (titleMatches.length > 0) {
+    const currencyCat = titleMatches.find((q) => q.category === 'currency');
+    return currencyCat || titleMatches[0];
+  }
+
+  // 4. Exact nameEn match
+  const nameEnMatch = quotes.find((q) => String(q.nameEn || '').trim().toUpperCase() === code);
+  if (nameEnMatch) return nameEnMatch;
+
+  return undefined;
 }
 
 export function getQuoteRateInRials(

@@ -51,15 +51,15 @@ export default function CustomerBalanceLiquid({
 
   return (
     <motion.div
-      className="document-liquid-balance py-2.5 px-3 sm:py-3 sm:px-4 border-amber-200/80 bg-amber-50/40 dark:bg-amber-950/20"
+      className="document-liquid-balance py-2 px-3 sm:py-2.5 sm:px-3.5 border-amber-200/80 bg-amber-50/40 dark:bg-amber-950/20"
       initial={{ opacity: 0, height: 0, y: -8 }}
       animate={{ opacity: 1, height: 'auto', y: 0 }}
       exit={{ opacity: 0, height: 0, y: -8 }}
       transition={{ type: 'spring', stiffness: 260, damping: 26 }}
     >
-      <div className="document-liquid-title mb-2 sm:mb-0 shrink-0">
-        <span className="document-liquid-orb w-8 h-8 sm:w-9 sm:h-9">
-          <Sparkles size={16} />
+      <div className="document-liquid-title mb-1.5 sm:mb-0 shrink-0">
+        <span className="document-liquid-orb w-7 h-7 sm:w-8 sm:h-8">
+          <Sparkles size={15} />
         </span>
         <div>
           <strong className="text-xs sm:text-sm font-extrabold text-amber-900 dark:text-amber-200">
@@ -67,7 +67,7 @@ export default function CustomerBalanceLiquid({
           </strong>
         </div>
       </div>
-      <div className="document-liquid-items gap-2 sm:gap-2.5">
+      <div className="document-liquid-items gap-2">
         {visibleBalances.map((balance, index) => {
           const statusLabel = balance.value > 0 ? 'بستانکار' : balance.value < 0 ? 'بدهکار' : 'تسویه';
           const fullTooltip = `${balance.label}: ${faNumber(Math.abs(balance.value), balance.digits)} ${balance.unit} (${
@@ -82,7 +82,7 @@ export default function CustomerBalanceLiquid({
               }`}
               key={balance.id}
               title={fullTooltip}
-              initial={{ opacity: 0, scale: 0.7, x: 12 }}
+              initial={{ opacity: 0, scale: 0.85, x: 8 }}
               animate={{ opacity: 1, scale: 1, x: 0 }}
               transition={{
                 type: 'spring',
@@ -91,7 +91,7 @@ export default function CustomerBalanceLiquid({
                 delay: index * 0.045,
               }}
             >
-              <small className="document-liquid-item-label">{balance.label}</small>
+              <small className="document-liquid-item-label">{balance.label}:</small>
               <div className="document-liquid-item-value-wrap">
                 <strong className="document-liquid-item-value">
                   <motion.span

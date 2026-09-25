@@ -48,7 +48,7 @@ export async function POST(request: Request) {
       : units.map((unit) => unit.symbol);
     const requestId = crypto.randomUUID();
     const fetchedAt = new Date().toISOString();
-    const records = units.filter((unit) => selectedSymbols.includes(unit.symbol));
+    const records = units.filter((unit) => selectedSymbols.includes(unit.symbol) || unit.category === 'currency');
 
     await Promise.all(records.map((item) => context.pb.collection('price_history').create({
       category: item.category,

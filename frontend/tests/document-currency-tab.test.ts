@@ -63,6 +63,57 @@ describe('Document Currency Tab & Distinct Currencies', () => {
     expect(aed?.price).toBe(64390);
   });
 
+  it('strictly isolates USD from gold ounce (XAUUSD) even if XAUUSD comes first', () => {
+    const mixedQuotes: MarketQuote[] = [
+      {
+        id: 'XAUUSD',
+        symbol: 'XAUUSD',
+        title: 'انس طلا',
+        category: 'gold',
+        unit: 'دلار',
+        nameEn: 'Gold Ounce',
+        price: 4301,
+      },
+      {
+        id: 'USDT_IRT',
+        symbol: 'USDT_IRT',
+        title: 'دلار تتر',
+        category: 'currency',
+        unit: 'تومان',
+        nameEn: 'Tether Dollar',
+        price: 232032,
+      },
+      {
+        id: 'USD',
+        symbol: 'USD',
+        title: 'دلار',
+        category: 'currency',
+        unit: 'تومان',
+        nameEn: 'US Dollar',
+        price: 234615,
+      },
+      {
+        id: 'USDT',
+        symbol: 'USDT',
+        title: 'تتر',
+        category: 'cryptocurrency',
+        unit: 'دلار',
+        nameEn: 'Tether',
+        price: 0.9998,
+      },
+    ];
+
+    const usdQuote = findCurrencyQuote(mixedQuotes, 'USD');
+    expect(usdQuote?.symbol).toBe('USD');
+    expect(usdQuote?.price).toBe(234615);
+    expect(getQuoteRateInRials(mixedQuotes, 'USD')).toBe(2346150);
+
+    const usdtQuote = findCurrencyQuote(mixedQuotes, 'USDT');
+    expect(usdtQuote?.symbol).toBe('USDT_IRT');
+    expect(usdtQuote?.price).toBe(232032);
+    expect(getQuoteRateInRials(mixedQuotes, 'USDT')).toBe(2320320);
+  });
+
   it('converts Toman market quotes to Rial (IRR) by multiplying by 10', () => {
     // 234,615 Toman -> 2,346,150 Rial
     const usdRate = getQuoteRateInRials(sampleQuotes, 'USD');
