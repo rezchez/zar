@@ -565,9 +565,9 @@ export function useDocumentLines({
       lineNature === 'received' ? 'currency-purchase' : 'currency-sale';
 
     const currencyClaimDocTypeLabel =
-      lineNature === 'received' ? 'طلب ارزی' : 'بدهی ارزی';
+      lineNature === 'received' ? 'بدهی ارزی' : 'طلب ارزی';
     const currencyClaimSubType =
-      lineNature === 'received' ? 'currency-claim' : 'currency-debt';
+      lineNature === 'received' ? 'currency-debt' : 'currency-claim';
 
     const tradeDocTypeLabel =
       lineNature === 'received'
@@ -806,8 +806,8 @@ export function useDocumentLines({
         toast.success(
           isUnsettledCurrency
             ? (lineNature === 'received'
-                ? 'ردیف خرید ارز و ردیف طلب ارزی با موفقیت ویرایش شدند.'
-                : 'ردیف فروش ارز و ردیف بدهی ارزی با موفقیت ویرایش شدند.')
+                ? 'ردیف خرید ارز و ردیف بدهی ارزی با موفقیت ویرایش شدند.'
+                : 'ردیف فروش ارز و ردیف طلب ارزی با موفقیت ویرایش شدند.')
             : (lineNature === 'received'
                 ? 'ردیف خرید ارز با تسویه آنی ویرایش شد.'
                 : 'ردیف فروش ارز با تسویه آنی ویرایش شد.')
@@ -914,8 +914,8 @@ export function useDocumentLines({
             description: draftLine.description
               ? draftLine.description.trim()
               : lineNature === 'received'
-                ? 'طلب ارزی بابت خرید بدون تسویه'
-                : 'بدهی ارزی بابت فروش بدون تسویه',
+                ? 'بدهی ارزی بابت خرید بدون تسویه'
+                : 'طلب ارزی بابت فروش بدون تسویه',
             details: {
               ...draftLine.details,
               currencyUnit: effectiveCurrencyUnit,
@@ -930,8 +930,8 @@ export function useDocumentLines({
           setCommittedLines((current) => [...current, tradeLineToCommit, claimLineToCommit]);
           toast.success(
             lineNature === 'received'
-              ? 'ردیف خرید ارز و ردیف طلب ارزی به سند اضافه شدند.'
-              : 'ردیف فروش ارز و ردیف بدهی ارزی به سند اضافه شدند.',
+              ? 'ردیف خرید ارز و ردیف بدهی ارزی به سند اضافه شدند.'
+              : 'ردیف فروش ارز و ردیف طلب ارزی به سند اضافه شدند.',
           );
         } else {
           const tradeLineToCommit: DocumentLine = {
@@ -964,7 +964,21 @@ export function useDocumentLines({
     }
 
     // Reset draft line
-    setDraftLine(createSettingsLine(documentNature, activeEntryTab));
+    const nextLine = createSettingsLine(documentNature, activeEntryTab);
+    if (isCurrencyTrade) {
+      nextLine.details.currencyQuantity = '';
+      nextLine.details.currencyTotalAmount = '';
+      if (lineToCommit.details?.currencyUnit) {
+        nextLine.details.currencyUnit = lineToCommit.details.currencyUnit;
+      }
+      if (lineToCommit.details?.currencyUnitPrice) {
+        nextLine.details.currencyUnitPrice = lineToCommit.details.currencyUnitPrice;
+      }
+      if (lineToCommit.details?.settlementCurrencyUnit) {
+        nextLine.details.settlementCurrencyUnit = lineToCommit.details.settlementCurrencyUnit;
+      }
+    }
+    setDraftLine(nextLine);
     return true;
   };
 

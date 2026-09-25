@@ -663,6 +663,7 @@ export default function GoldSaleTab({
                   initialMode={roundingMode}
                   initialAutoApply={autoApplyRounding}
                   initialEnabled={roundingEnabled}
+                  autoApplyLabel="اعمال خودکار این تنظیمات رندسازی در محاسبات بعدی فروش فلزات"
                   onApply={handleApplyRounding}
                   onReset={handleResetRounding}
                   onDisable={handleDisableRounding}

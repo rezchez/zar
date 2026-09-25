@@ -4,7 +4,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { Sparkles } from 'lucide-react';
 import type { Customer } from '@/lib/customer';
-import { currencyDisplay } from '@/lib/customer';
+import { currencyDisplay, getCurrencyMeta } from '@/lib/customer';
 import { convertRialToToman } from '@/lib/money';
 import { faNumber } from '../utils/document-helpers';
 
@@ -25,26 +25,51 @@ export default function CustomerBalanceLiquid({
         : convertRialToToman(customer.rialBalance))
     : customer.rialBalance;
 
-  const balances = [
+  const baseBalances = [
     { id: 'gold', label: 'طلا', value: customer.goldBalance, unit: 'گرم', digits: 3 },
     { id: 'silver', label: 'نقره', value: customer.silverBalance, unit: 'گرم', digits: 3 },
     { id: 'platinum', label: 'پلاتین', value: customer.platinumBalance, unit: 'گرم', digits: 3 },
     { id: 'currency', label: currencyLabel, value: currencyValue, unit: currencyLabel, digits: 0 },
-    {
-      id: 'foreign',
-      label: currencyDisplay(customer.secondaryCurrency, customer.secondaryCurrencySymbol),
-      value: customer.foreignBalance,
-      unit: 'واحد',
-      digits: 2,
-    },
-    {
-      id: 'tertiary',
-      label: currencyDisplay(customer.tertiaryCurrency, customer.tertiaryCurrencySymbol),
-      value: customer.tertiaryBalance,
-      unit: 'واحد',
-      digits: 2,
-    },
   ];
+
+  const currencyEntries = Object.entries(customer.currencyBalances || {});
+  let foreignBalances: Array<{ id: string; label: string; value: number; unit: string; digits: number }> = [];
+
+  if (currencyEntries.length > 0) {
+    foreignBalances = currencyEntries.map(([code, val]) => {
+      const meta = getCurrencyMeta(code);
+      return {
+        id: `currency-${code}`,
+        label: meta.name || code,
+        value: val,
+        unit: meta.symbol || meta.name || code,
+        digits: 2,
+      };
+    });
+  } else {
+    const foreignMeta = getCurrencyMeta(customer.secondaryCurrency, customer.secondaryCurrencySymbol);
+    const tertiaryMeta = getCurrencyMeta(customer.tertiaryCurrency, customer.tertiaryCurrencySymbol);
+    if (customer.foreignBalance !== 0 || customer.secondaryCurrency) {
+      foreignBalances.push({
+        id: 'foreign',
+        label: foreignMeta.name || 'ارز',
+        value: customer.foreignBalance,
+        unit: foreignMeta.symbol || foreignMeta.name || 'واحد',
+        digits: 2,
+      });
+    }
+    if (customer.tertiaryBalance !== 0 || customer.tertiaryCurrency) {
+      foreignBalances.push({
+        id: 'tertiary',
+        label: tertiaryMeta.name || 'ارز ۳',
+        value: customer.tertiaryBalance,
+        unit: tertiaryMeta.symbol || tertiaryMeta.name || 'واحد',
+        digits: 2,
+      });
+    }
+  }
+
+  const balances = [...baseBalances, ...foreignBalances];
   const visibleBalances = balances.filter(
     (balance) => balance.value !== 0 || balance.id === 'gold' || balance.id === 'currency' || balance.id === 'rial',
   );

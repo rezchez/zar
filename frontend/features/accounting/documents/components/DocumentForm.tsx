@@ -89,11 +89,13 @@ interface DocumentFormProps {
   customers: Customer[];
   nextDocumentNumber?: number;
   initialCurrencies?: Currency[];
+  initialQuotes?: MarketQuote[];
 }
 
 export default function DocumentForm({
   customers: initialCustomers,
   initialCurrencies = [],
+  initialQuotes = [],
 }: DocumentFormProps) {
   const router = useRouter();
   const toast = useToastManager();
@@ -159,20 +161,40 @@ export default function DocumentForm({
   );
 
   // Live market quotes for currencies & rates
-  const [quotes, setQuotes] = useState<MarketQuote[]>([]);
+  const [quotes, setQuotes] = useState<MarketQuote[]>(() => {
+    if (initialQuotes && initialQuotes.length > 0) return initialQuotes;
+    try {
+      const cached = localStorage.getItem('zarfolio_price_quotes_cache');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return [];
+  });
   const [isSyncingQuotes, setIsSyncingQuotes] = useState(false);
 
-  const refreshQuotes = useCallback(async (forceSync = false): Promise<MarketQuote[] | null> => {
+  const updateQuotes = useCallback((newQuotes: MarketQuote[]) => {
+    setQuotes(newQuotes);
+    try {
+      localStorage.setItem('zarfolio_price_quotes_cache', JSON.stringify(newQuotes));
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    if (initialQuotes && initialQuotes.length > 0) {
+      updateQuotes(initialQuotes);
+    }
+  }, [initialQuotes, updateQuotes]);
+
+  const refreshQuotes = useCallback(async (): Promise<MarketQuote[] | null> => {
     try {
       setIsSyncingQuotes(true);
-      if (forceSync) {
-        await fetch('/api/price-api/sync?force=1', { method: 'POST' }).catch(() => null);
-      }
       const response = await fetch('/api/price-api/quotes', { cache: 'no-store' });
       if (!response.ok) return null;
       const data = await response.json().catch(() => null);
       if (data && Array.isArray(data.quotes)) {
-        setQuotes(data.quotes);
+        updateQuotes(data.quotes);
         return data.quotes;
       }
     } catch {
@@ -181,7 +203,7 @@ export default function DocumentForm({
       setIsSyncingQuotes(false);
     }
     return null;
-  }, []);
+  }, [updateQuotes]);
 
   useEffect(() => {
     let isMounted = true;
@@ -191,7 +213,7 @@ export default function DocumentForm({
         if (!response.ok) return;
         const data = await response.json().catch(() => null);
         if (isMounted && data && Array.isArray(data.quotes)) {
-          setQuotes(data.quotes);
+          updateQuotes(data.quotes);
         }
       } catch {
         // non-blocking
@@ -203,7 +225,7 @@ export default function DocumentForm({
       isMounted = false;
       clearInterval(interval);
     };
-  }, []);
+  }, [updateQuotes]);
 
   const getCurrencyQuoteRate = useCallback(
     (code: string) => getQuoteRateInRials(quotes, code),
@@ -558,6 +580,7 @@ export default function DocumentForm({
           (normDoc === 'USD' ? 'EUR' : 'USD');
         const curUnit = currentUnit && currentUnit !== normDoc ? current.details.currencyUnit : fallbackAlt;
         const quoteRate = getQuoteRateInRials(quotes, curUnit);
+        const finalRate = baseCurrency === 'IRT' ? Math.round(quoteRate / 10) : quoteRate;
         const shouldFillRate =
           validTab === 'currency' &&
           quoteRate > 0 &&
@@ -565,8 +588,8 @@ export default function DocumentForm({
         const nextDetails = {
           ...current.details,
           currencyUnit: validTab === 'currency' ? curUnit : current.details?.currencyUnit,
-          settlementCurrencyUnit: validTab === 'currency' ? (selectedCurrency || 'IRR') : current.details?.settlementCurrencyUnit,
-          currencyUnitPrice: shouldFillRate ? String(quoteRate) : (current.details?.currencyUnitPrice || ''),
+          settlementCurrencyUnit: validTab === 'currency' ? (selectedCurrency || baseCurrency) : current.details?.settlementCurrencyUnit,
+          currencyUnitPrice: shouldFillRate ? String(finalRate) : (current.details?.currencyUnitPrice || ''),
         };
         const qty = numberValue(nextDetails.currencyQuantity);
         const unitPrice = numberValue(nextDetails.currencyUnitPrice);
@@ -740,7 +763,8 @@ export default function DocumentForm({
           updateDraftDetail('currencyUnit', fallbackAlt);
           const quoteRate = getQuoteRateInRials(quotes, fallbackAlt);
           if (quoteRate > 0) {
-            handleUpdateCurrencyValue('currencyUnitPrice', String(quoteRate));
+            const finalRate = baseCurrency === 'IRT' ? Math.round(quoteRate / 10) : quoteRate;
+            handleUpdateCurrencyValue('currencyUnitPrice', String(finalRate));
           }
         }
       }
@@ -752,6 +776,7 @@ export default function DocumentForm({
       activeEntryTab,
       activeCurrencies,
       quotes,
+      baseCurrency,
       updateDraftDetail,
       handleUpdateCurrencyValue,
     ],
@@ -1378,6 +1403,7 @@ export default function DocumentForm({
               setDraftLine={setDraftLine}
               currencyUnits={availableCurrencies.map((c) => c.code).filter((code) => code !== 'IRR' && code !== 'IRT')}
               selectedCurrency={selectedCurrency}
+              baseCurrency={baseCurrency}
               getQuoteRate={getCurrencyQuoteRate}
               onRefreshQuotes={refreshQuotes}
               isSyncingQuotes={isSyncingQuotes}
@@ -1388,6 +1414,7 @@ export default function DocumentForm({
               updateCurrencyValue={handleUpdateCurrencyValue}
               handleKeyDownEnter={handleKeyDownEnter}
               draftReady={draftReady}
+              committedLines={committedLines}
             />
           )}
           coinTabContent={(

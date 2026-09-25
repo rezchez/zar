@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import {
+  customerBalanceFields,
   customerDateFields,
   emptyCustomerBalances,
   customerNumberFields,
@@ -24,7 +25,7 @@ function readFormValue(formData: FormData, field: string) {
 
 function readBalanceValues(formData: FormData): CustomerBalanceValues {
   const balances = emptyCustomerBalances();
-  for (const field of Object.keys(balances) as Array<keyof CustomerBalanceValues>) {
+  for (const field of customerBalanceFields) {
     const value = Number(readFormValue(formData, field) || 0);
     balances[field] = Number.isFinite(value) ? value : 0;
   }

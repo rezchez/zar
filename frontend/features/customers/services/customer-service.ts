@@ -3,7 +3,12 @@ import 'server-only';
 import type PocketBase from 'pocketbase';
 import type { RecordModel } from 'pocketbase';
 
-import { mapCustomer, type Customer } from '@/lib/customer';
+import {
+  mapCustomer,
+  getCurrencyMeta,
+  normalizeCurrencyCode,
+  type Customer,
+} from '@/lib/customer';
 import {
   mapTransaction,
   openingTransactionToCustomerBalances,
@@ -39,7 +44,57 @@ export function mapCustomerWithTransactions(
   record: RecordModel,
   transactions: CustomerTransaction[],
 ): Customer {
-  return mapCustomer(pb, record, balancesForTransactions(transactions));
+  const customer = mapCustomer(pb, record, balancesForTransactions(transactions));
+  const currencyBalances = customer.currencyBalances || {};
+  const activeCurrencies = Object.keys(currencyBalances).filter((c) => currencyBalances[c] !== 0);
+
+  if (!customer.secondaryCurrency) {
+    if (activeCurrencies.length > 0) {
+      customer.secondaryCurrency = activeCurrencies[0];
+      customer.secondaryCurrencySymbol = getCurrencyMeta(activeCurrencies[0]).symbol;
+    } else {
+      const latestForeignTx = transactions.find(
+        (t) => t.foreignCurrency && t.foreignCurrency !== 'IRR' && t.foreignCurrency !== 'IRT',
+      );
+      if (latestForeignTx) {
+        customer.secondaryCurrency = latestForeignTx.foreignCurrency;
+        customer.secondaryCurrencySymbol =
+          latestForeignTx.foreignCurrencySymbol || latestForeignTx.foreignCurrency;
+      }
+    }
+  }
+
+  if (!customer.tertiaryCurrency) {
+    const remaining = activeCurrencies.filter((c) => c !== customer.secondaryCurrency);
+    if (remaining.length > 0) {
+      customer.tertiaryCurrency = remaining[0];
+      customer.tertiaryCurrencySymbol = getCurrencyMeta(remaining[0]).symbol;
+    } else {
+      const latestTertiaryTx = transactions.find(
+        (t) => t.tertiaryCurrency && t.tertiaryCurrency !== 'IRR' && t.tertiaryCurrency !== 'IRT',
+      );
+      if (latestTertiaryTx) {
+        customer.tertiaryCurrency = latestTertiaryTx.tertiaryCurrency;
+        customer.tertiaryCurrencySymbol =
+          latestTertiaryTx.tertiaryCurrencySymbol || latestTertiaryTx.tertiaryCurrency;
+      }
+    }
+  }
+
+  if (customer.secondaryCurrency) {
+    const secNorm = normalizeCurrencyCode(customer.secondaryCurrency);
+    if (secNorm in currencyBalances) {
+      customer.foreignBalance = currencyBalances[secNorm];
+    }
+  }
+  if (customer.tertiaryCurrency) {
+    const terNorm = normalizeCurrencyCode(customer.tertiaryCurrency);
+    if (terNorm in currencyBalances) {
+      customer.tertiaryBalance = currencyBalances[terNorm];
+    }
+  }
+
+  return customer;
 }
 
 export async function getCustomerWithBalances(

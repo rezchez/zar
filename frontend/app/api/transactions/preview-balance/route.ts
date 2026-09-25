@@ -2,7 +2,12 @@ import { NextResponse } from 'next/server';
 
 import { getServerAuthContext } from '@/lib/auth';
 import { hasPermission } from '@/lib/authorization';
-import { mapTransaction, sumPostedTransactions } from '@/lib/transaction';
+import {
+  mapTransaction,
+  sumPostedTransactions,
+  calculateCustomerCurrencyBalances,
+} from '@/lib/transaction';
+import { getCurrencyMeta, normalizeCurrencyCode } from '@/lib/customer';
 import { normalizeDigits } from '@/lib/jalali';
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
 
@@ -84,21 +89,37 @@ export async function POST(request: Request) {
 
     const transactions = records.map(mapTransaction);
     const totals = sumPostedTransactions(transactions);
+    const currencyBalances = calculateCustomerCurrencyBalances(transactions);
+
+    const linesList = Array.isArray(body.lines) ? body.lines : [];
+    const lineForeignUnit = linesList.find(
+      (l: any) => l?.documentTab === 'currency' && l?.documentDetails?.currencyUnit,
+    )?.documentDetails?.currencyUnit;
+
+    const normLineCurrency = normalizeCurrencyCode(lineForeignUnit);
+    const latestForeignTx = transactions.find(
+      (t) => t.foreignCurrency && t.foreignCurrency !== 'IRR' && t.foreignCurrency !== 'IRT',
+    );
+    const fallbackCurrency = customer.secondaryCurrency || latestForeignTx?.foreignCurrency || 'USD';
+    const activeCurrency = normLineCurrency || normalizeCurrencyCode(fallbackCurrency);
+
+    const resolvedSecondary = activeCurrency;
+    const resolvedSecondarySymbol = getCurrencyMeta(activeCurrency).symbol;
 
     const previousBalance = {
       rial: totals.rialAmount,
       gold: totals.goldAmount,
       silver: totals.silverAmount,
       platinum: totals.platinumAmount,
-      foreign: totals.foreignAmount,
+      foreign: currencyBalances[activeCurrency] ?? (activeCurrency === normalizeCurrencyCode(customer.secondaryCurrency) ? totals.foreignAmount : 0),
       tertiary: totals.tertiaryAmount,
-      secondaryCurrency: String(customer.secondaryCurrency ?? ''),
-      secondaryCurrencySymbol: String(customer.secondaryCurrencySymbol ?? ''),
+      secondaryCurrency: resolvedSecondary,
+      secondaryCurrencySymbol: resolvedSecondarySymbol,
       tertiaryCurrency: String(customer.tertiaryCurrency ?? ''),
       tertiaryCurrencySymbol: String(customer.tertiaryCurrencySymbol ?? ''),
     };
 
-    const lines = Array.isArray(body.lines) ? body.lines : [];
+    const lines = linesList;
     const transactionEffect = {
       rial: 0,
       gold: 0,

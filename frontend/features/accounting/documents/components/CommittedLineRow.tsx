@@ -114,9 +114,9 @@ export default function CommittedLineRow({
   let bostankarArzi: string | null = null;
 
   if (isCurrency && currencyQty > 0) {
-    if (isClaimLine || (isUnsettled && isReceived && !line.details.linkedLineId)) {
+    if (isDebtLine || (isClaimLine && isReceived) || (isUnsettled && isReceived && !line.details.linkedLineId)) {
       bedehkarArzi = faNumber(currencyQty, 0);
-    } else if (isDebtLine || (isUnsettled && isPaid && !line.details.linkedLineId)) {
+    } else if (isClaimLine || (isDebtLine && isPaid) || (isUnsettled && isPaid && !line.details.linkedLineId)) {
       bostankarArzi = faNumber(currencyQty, 0);
     }
   }

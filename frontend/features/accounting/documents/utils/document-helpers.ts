@@ -233,15 +233,80 @@ export type MarketQuote = {
   sourceTimestamp?: number;
 };
 
+export const CURRENCY_ALIASES: Record<string, string> = {
+  'USD': 'USD',
+  '$': 'USD',
+  'دلار': 'USD',
+  'دلار آمریکا': 'USD',
+  'EUR': 'EUR',
+  '€': 'EUR',
+  'یورو': 'EUR',
+  'AED': 'AED',
+  'د.إ': 'AED',
+  'درهم': 'AED',
+  'درهم امارات': 'AED',
+  'GBP': 'GBP',
+  '£': 'GBP',
+  'پوند': 'GBP',
+  'پوند انگلیس': 'GBP',
+  'TRY': 'TRY',
+  '₺': 'TRY',
+  'لیر': 'TRY',
+  'لیر ترکیه': 'TRY',
+  'CNY': 'CNY',
+  '¥': 'CNY',
+  'یوآن': 'CNY',
+  'یوآن چین': 'CNY',
+  'SAR': 'SAR',
+  '﷼': 'SAR',
+  'ریال عربستان': 'SAR',
+  'KWD': 'KWD',
+  'دینار کویت': 'KWD',
+  'CAD': 'CAD',
+  'دلار کانادا': 'CAD',
+  'AUD': 'AUD',
+  'دلار استرالیا': 'AUD',
+  'CHF': 'CHF',
+  'فرانک': 'CHF',
+  'فرانک سوئیس': 'CHF',
+  'IQD': 'IQD',
+  'دینار عراق': 'IQD',
+  'QAR': 'QAR',
+  'ریال قطر': 'QAR',
+  'OMR': 'OMR',
+  'ریال عمان': 'OMR',
+  'BHD': 'BHD',
+  'دینار بحرین': 'BHD',
+  'SEK': 'SEK',
+  'کرون سوئد': 'SEK',
+  'INR': 'INR',
+  'روپیه هند': 'INR',
+  'PKR': 'PKR',
+  'روپیه پاکستان': 'PKR',
+  'AFN': 'AFN',
+  'افغانی': 'AFN',
+  'RUB': 'RUB',
+  'روبل': 'RUB',
+  'روبل روسیه': 'RUB',
+  'JPY': 'JPY',
+  'ین': 'JPY',
+  'یکصد ین ژاپن': 'JPY',
+  'USDT': 'USDT',
+  'تتر': 'USDT',
+  'دلار تتر': 'USDT',
+};
+
 export function findCurrencyQuote(
   quotes: MarketQuote[],
   currencyCode: string,
 ): MarketQuote | undefined {
   if (!currencyCode || !Array.isArray(quotes) || quotes.length === 0) return undefined;
-  const code = currencyCode.trim().toUpperCase();
+  const rawCode = currencyCode.trim();
+  const upper = rawCode.toUpperCase();
+  const canonicalCode = CURRENCY_ALIASES[rawCode] || CURRENCY_ALIASES[upper] || upper;
 
   // 1. Special Tether / USDT handling: prefer USDT_IRT (in Tomans) if available
-  if (code === 'USDT' || code === 'TETHER') {
+  if (canonicalCode === 'USDT' || canonicalCode === 'TETHER') {
     const usdtIrt = quotes.find((q) => String(q.symbol || '').trim().toUpperCase() === 'USDT_IRT');
     if (usdtIrt) return usdtIrt;
     const usdt = quotes.find((q) => String(q.symbol || '').trim().toUpperCase() === 'USDT');
@@ -249,7 +314,9 @@ export function findCurrencyQuote(
   }
 
   // 2. Direct exact symbol match (prefer currency category if multiple exist)
-  const exactMatches = quotes.filter((q) => String(q.symbol || '').trim().toUpperCase() === code);
+  const exactMatches = quotes.filter(
+    (q) => String(q.symbol || '').trim().toUpperCase() === canonicalCode,
+  );
   if (exactMatches.length > 0) {
     const currencyCat = exactMatches.find((q) => q.category === 'currency');
     return currencyCat || exactMatches[0];
@@ -258,12 +325,20 @@ export function findCurrencyQuote(
   // 3. Exact Persian title or standard alias match (ensure XAUUSD or gold never matches USD)
   const titleMatches = quotes.filter((q) => {
     const t = String(q.title || '').trim();
-    if (code === 'USD' && t === 'دلار') return true;
-    if (code === 'EUR' && t === 'یورو') return true;
-    if (code === 'AED' && (t === 'درهم' || t === 'درهم امارات')) return true;
-    if (code === 'GBP' && (t === 'پوند' || t === 'پوند انگلیس')) return true;
-    if (code === 'TRY' && (t === 'لیر' || t === 'لیر ترکیه')) return true;
-    return t.toLowerCase() === code.toLowerCase();
+    if (canonicalCode === 'USD' && (t === 'دلار' || t === 'دلار آمریکا')) return true;
+    if (canonicalCode === 'EUR' && t === 'یورو') return true;
+    if (canonicalCode === 'AED' && (t === 'درهم' || t === 'درهم امارات')) return true;
+    if (canonicalCode === 'GBP' && (t === 'پوند' || t === 'پوند انگلیس')) return true;
+    if (canonicalCode === 'TRY' && (t === 'لیر' || t === 'لیر ترکیه')) return true;
+    if (canonicalCode === 'CNY' && (t === 'یوآن' || t === 'یوآن چین')) return true;
+    if (canonicalCode === 'SAR' && t === 'ریال عربستان') return true;
+    if (canonicalCode === 'CAD' && t === 'دلار کانادا') return true;
+    if (canonicalCode === 'AUD' && t === 'دلار استرالیا') return true;
+    if (canonicalCode === 'KWD' && t === 'دینار کویت') return true;
+    if (canonicalCode === 'IQD' && t === 'دینار عراق') return true;
+    if (canonicalCode === 'QAR' && t === 'ریال قطر') return true;
+    if (canonicalCode === 'CHF' && (t === 'فرانک' || t === 'فرانک سوئیس')) return true;
+    return t.toLowerCase() === rawCode.toLowerCase();
   });
   if (titleMatches.length > 0) {
     const currencyCat = titleMatches.find((q) => q.category === 'currency');
@@ -271,7 +346,7 @@ export function findCurrencyQuote(
   }
 
   // 4. Exact nameEn match
-  const nameEnMatch = quotes.find((q) => String(q.nameEn || '').trim().toUpperCase() === code);
+  const nameEnMatch = quotes.find((q) => String(q.nameEn || '').trim().toUpperCase() === canonicalCode);
   if (nameEnMatch) return nameEnMatch;
 
   return undefined;
@@ -282,11 +357,12 @@ export function getQuoteRateInRials(
   currencyCode: string,
 ): number {
   if (!currencyCode || !Array.isArray(quotes) || quotes.length === 0) return 0;
-  const code = currencyCode.trim().toUpperCase();
+  const rawCode = currencyCode.trim();
+  const code = rawCode.toUpperCase();
   if (code === 'IRR') return 1;
   if (code === 'IRT') return 10;
 
-  const found = findCurrencyQuote(quotes, code);
+  const found = findCurrencyQuote(quotes, rawCode);
   if (!found || !found.price) return 0;
   const raw = Number(found.price);
   if (raw <= 0 || Number.isNaN(raw)) return 0;
@@ -295,3 +371,46 @@ export function getQuoteRateInRials(
   }
   return Math.round(raw * 10);
 }
+
+export type CashVault = {
+  id: string;
+  name: string;
+  currencyId?: string;
+  currencyName?: string;
+  currencyCode?: string;
+  currencySymbol?: string;
+  balance?: number;
+  openingBalance?: number;
+  isBlocked?: boolean;
+};
+
+export function findCashVault<T extends { currencyCode?: string; currencyName?: string; currencySymbol?: string; currencyId?: string; id?: string; name?: string }>(
+  vaults: T[],
+  currencyUnit: string,
+): T | undefined {
+  if (!currencyUnit || !Array.isArray(vaults) || vaults.length === 0) return undefined;
+  const raw = currencyUnit.trim();
+  const upper = raw.toUpperCase();
+  const canonical = CURRENCY_ALIASES[raw] || CURRENCY_ALIASES[upper] || upper;
+
+  return vaults.find((v) => {
+    const code = String(v.currencyCode || '').trim().toUpperCase();
+    const name = String(v.currencyName || '').trim();
+    const sym = String(v.currencySymbol || '').trim().toUpperCase();
+    const vName = String(v.name || '').trim();
+    const vCanonical = CURRENCY_ALIASES[name] || CURRENCY_ALIASES[code] || code;
+
+    if (code === canonical || vCanonical === canonical) return true;
+    if (code === upper || sym === upper) return true;
+    if (name === raw || vName === raw) return true;
+    if (canonical === 'USD' && (name === 'دلار' || name === 'دلار آمریکا' || vName.includes('دلار'))) return true;
+    if (canonical === 'EUR' && (name === 'یورو' || vName.includes('یورو'))) return true;
+    if (canonical === 'AED' && (name === 'درهم' || name === 'درهم امارات' || vName.includes('درهم'))) return true;
+    if (canonical === 'GBP' && (name === 'پوند' || vName.includes('پوند'))) return true;
+    if (canonical === 'TRY' && (name === 'لیر' || vName.includes('لیر'))) return true;
+    if (canonical === 'USDT' && (name.includes('تتر') || code.includes('USDT') || vName.includes('تتر'))) return true;
+    if (v.currencyId === raw || v.id === raw) return true;
+    return false;
+  });
+}
+

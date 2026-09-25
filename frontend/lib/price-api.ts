@@ -87,3 +87,76 @@ export function extractPriceUnits(payload: unknown): Array<PriceApiUnit & Record
   }
   return result;
 }
+
+export type MarketQuoteItem = {
+  id: string;
+  category: string;
+  title: string;
+  symbol: string;
+  unit: string;
+  nameEn: string;
+  price: number;
+  changeValue?: number;
+  changePercent?: number;
+  fetchedAt?: string;
+  sourceTimestamp?: number;
+};
+
+export async function getLatestMarketQuotes(pb: {
+  collection: (name: string) => {
+    getFirstListItem: (filter: string) => Promise<unknown>;
+    getList: (page: number, perPage: number, options?: Record<string, unknown>) => Promise<{ items: unknown[] }>;
+  };
+}): Promise<MarketQuoteItem[]> {
+  try {
+    const settingsRecord = await pb.collection('price_api_settings')
+      .getFirstListItem('id != ""')
+      .catch(() => null);
+    const settings = settingsRecord
+      ? normalizePriceApiSettings(settingsRecord as Record<string, unknown>)
+      : defaultPriceApiSettings;
+
+    // Fetch the latest 150 records from price_history (instantly covers all symbols without loading 15k rows)
+    const recordsResult = await pb.collection('price_history').getList(1, 150, {
+      sort: '-fetchedAt',
+    }).catch(() => ({ items: [] }));
+
+    const records = recordsResult.items || [];
+    const latestBySymbol = new Map<string, Record<string, unknown>>();
+    for (const record of records) {
+      const rec = record as Record<string, unknown>;
+      const symbol = String(rec.symbol || '').trim();
+      if (symbol && !latestBySymbol.has(symbol)) {
+        latestBySymbol.set(symbol, rec);
+      }
+    }
+
+    const activeSymbols = settings.selectedSymbols.length > 0
+      ? settings.selectedSymbols
+      : settings.availableUnits.map((unit) => unit.symbol);
+
+    const unitBySymbol = new Map(settings.availableUnits.map((unit) => [unit.symbol, unit]));
+    const allSymbols = Array.from(new Set([...activeSymbols, ...latestBySymbol.keys()]));
+
+    return allSymbols.flatMap((symbol) => {
+      const record = latestBySymbol.get(symbol);
+      if (!record) return [];
+      const unit = unitBySymbol.get(symbol);
+      return [{
+        id: symbol,
+        category: String(record.category || unit?.category || ''),
+        title: String(record.name || unit?.name || symbol),
+        symbol,
+        unit: String(record.unit || unit?.unit || ''),
+        nameEn: String(record.nameEn || unit?.nameEn || ''),
+        price: Number(record.price) || 0,
+        changeValue: Number(record.changeValue) || 0,
+        changePercent: Number(record.changePercent) || 0,
+        fetchedAt: String(record.fetchedAt || ''),
+        sourceTimestamp: Number(record.sourceTimestamp) || 0,
+      }];
+    });
+  } catch {
+    return [];
+  }
+}

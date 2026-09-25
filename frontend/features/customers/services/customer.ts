@@ -53,6 +53,7 @@ export type CustomerBalanceValues = {
   rialBalance: number;
   foreignBalance: number;
   tertiaryBalance: number;
+  currencyBalances?: Record<string, number>;
 };
 
 export function emptyCustomerBalances(): CustomerBalanceValues {
@@ -99,6 +100,7 @@ export type Customer = {
   rialBalance: number;
   foreignBalance: number;
   tertiaryBalance: number;
+  currencyBalances?: Record<string, number>;
   discountLevel: number;
   creditCeiling: number;
   goldReturnDays: number;
@@ -166,6 +168,8 @@ export function mapCustomer(
 export const currencyOptions: Array<[string, string]> = [
   ['', 'انتخاب نشده'],
   ['rial', 'ریال (﷼)'],
+  ['irr', 'ریال (﷼)'],
+  ['irt', 'تومان'],
   ['usd', 'دلار ($)'],
   ['eur', 'یورو (€)'],
   ['aed', 'درهم (د.إ)'],
@@ -176,11 +180,102 @@ export const currencyOptions: Array<[string, string]> = [
   ['other', 'سایر'],
 ];
 
+export interface CurrencyDetails {
+  name: string;
+  symbol: string;
+  fullName: string;
+}
+
+export const CURRENCY_METADATA: Record<string, CurrencyDetails> = {
+  USD: { name: 'دلار', symbol: '$', fullName: 'دلار ($)' },
+  EUR: { name: 'یورو', symbol: '€', fullName: 'یورو (€)' },
+  AED: { name: 'درهم', symbol: 'د.إ', fullName: 'درهم (د.إ)' },
+  GBP: { name: 'پوند', symbol: '£', fullName: 'پوند (£)' },
+  TRY: { name: 'لیر', symbol: '₺', fullName: 'لیر (₺)' },
+  CNY: { name: 'یوان', symbol: '¥', fullName: 'یوان (¥)' },
+  SAR: { name: 'ریال سعودی', symbol: '﷼', fullName: 'ریال سعودی (﷼)' },
+  IRR: { name: 'ریال', symbol: 'ریال', fullName: 'ریال (﷼)' },
+  IRT: { name: 'تومان', symbol: 'تومان', fullName: 'تومان' },
+};
+
+export function getCurrencyMeta(code?: string, customSymbol = ''): CurrencyDetails {
+  const raw = (code || '').trim();
+  const norm = raw.toUpperCase();
+  if (CURRENCY_METADATA[norm]) {
+    const meta = CURRENCY_METADATA[norm];
+    return {
+      name: meta.name,
+      symbol: customSymbol.trim() || meta.symbol,
+      fullName: meta.fullName,
+    };
+  }
+
+  const lower = raw.toLowerCase();
+  const found = currencyOptions.find(([v]) => v.toLowerCase() === lower);
+  if (found && found[0] && found[0] !== 'other') {
+    const mainWord = found[1].split(' ')[0] || found[1];
+    return {
+      name: mainWord,
+      symbol: customSymbol.trim() || norm || mainWord,
+      fullName: found[1],
+    };
+  }
+
+  if (norm === 'OTHER' || lower === 'other') {
+    return {
+      name: customSymbol.trim() || 'ارز دیگر',
+      symbol: customSymbol.trim() || 'ارز',
+      fullName: customSymbol.trim() || 'ارز دیگر',
+    };
+  }
+
+  if (!raw) {
+    return {
+      name: customSymbol.trim() || 'ارز',
+      symbol: customSymbol.trim() || 'واحد',
+      fullName: customSymbol.trim() || 'ارز انتخاب‌نشده',
+    };
+  }
+
+  return {
+    name: raw,
+    symbol: customSymbol.trim() || raw,
+    fullName: customSymbol.trim() ? `${raw} (${customSymbol.trim()})` : raw,
+  };
+}
+
 export function currencyDisplay(code: string, customSymbol = '') {
-  const found = currencyOptions.find(([value]) => value === code);
-  if (code === 'other') return customSymbol.trim() || 'ارز دیگر';
-  if (!code) return 'ارز انتخاب‌نشده';
-  return found?.[1] ?? code;
+  if (!code && !customSymbol) return 'ارز انتخاب‌نشده';
+  return getCurrencyMeta(code, customSymbol).fullName;
+}
+
+export const SYMBOL_TO_CODE: Record<string, string> = {
+  '$': 'USD',
+  '€': 'EUR',
+  'د.إ': 'AED',
+  '£': 'GBP',
+  '₺': 'TRY',
+  '¥': 'CNY',
+  '﷼': 'SAR',
+};
+
+export function normalizeCurrencyCode(code?: string): string {
+  if (!code) return '';
+  const raw = String(code).trim();
+  if (SYMBOL_TO_CODE[raw]) return SYMBOL_TO_CODE[raw];
+  const upper = raw.toUpperCase();
+  if (CURRENCY_METADATA[upper]) return upper;
+  const lower = raw.toLowerCase();
+  if (lower === 'usd') return 'USD';
+  if (lower === 'eur') return 'EUR';
+  if (lower === 'aed') return 'AED';
+  if (lower === 'gbp') return 'GBP';
+  if (lower === 'try') return 'TRY';
+  if (lower === 'cny') return 'CNY';
+  if (lower === 'sar') return 'SAR';
+  if (lower === 'irr' || lower === 'rial') return 'IRR';
+  if (lower === 'irt' || lower === 'toman') return 'IRT';
+  return upper;
 }
 
 export function appendCustomerFormData(

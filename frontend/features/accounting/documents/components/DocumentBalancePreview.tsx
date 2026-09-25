@@ -3,6 +3,7 @@
 import React from 'react';
 import { LoaderCircle } from 'lucide-react';
 import type { Customer } from '@/lib/customer';
+import { getCurrencyMeta } from '@/lib/customer';
 import { convertRialToToman } from '@/lib/money';
 import { faNumber } from '../utils/document-helpers';
 
@@ -56,6 +57,11 @@ export default function DocumentBalancePreview({
 
   const isToman = baseCurrency === 'IRT';
   const currencyUnitLabel = isToman ? 'تومان' : 'ریال';
+
+  const foreignMeta = getCurrencyMeta(
+    previewData.previousBalance.secondaryCurrency,
+    previewData.previousBalance.secondaryCurrencySymbol,
+  );
 
   const displayPreviousRial = isToman
     ? (previewData.previousBalance.rial < 0
@@ -115,7 +121,7 @@ export default function DocumentBalancePreview({
           ) : null}
           {previewData.previousBalance.foreign !== 0 || previewData.transactionEffect.foreign !== 0 ? (
             <div className="text-teal-600 dark:text-teal-400 whitespace-nowrap">
-              ارز: {faNumber(Math.abs(previewData.previousBalance.foreign), 2)} {previewData.previousBalance.secondaryCurrency || 'واحد'}
+              {foreignMeta.name}: {faNumber(Math.abs(previewData.previousBalance.foreign), 2)} {foreignMeta.symbol}
             </div>
           ) : null}
         </div>
@@ -191,9 +197,9 @@ export default function DocumentBalancePreview({
                       : 'text-rose-600 dark:text-rose-400'
                   }`}
                 >
-                  ارز: {previewData.transactionEffect.foreign >= 0 ? '+' : ''}
+                  {foreignMeta.name}: {previewData.transactionEffect.foreign >= 0 ? '+' : ''}
                   {faNumber(previewData.transactionEffect.foreign, 2)}{' '}
-                  {previewData.previousBalance.secondaryCurrency || 'واحد'}
+                  {foreignMeta.symbol}
                 </div>
               ) : null}
             </>
@@ -233,8 +239,8 @@ export default function DocumentBalancePreview({
           ) : null}
           {previewData.projectedBalance.foreign !== 0 || previewData.transactionEffect.foreign !== 0 ? (
             <div className="text-teal-600 dark:text-teal-400 whitespace-nowrap">
-              ارز: {faNumber(Math.abs(previewData.projectedBalance.foreign), 2)}{' '}
-              {previewData.previousBalance.secondaryCurrency || 'واحد'}
+              {foreignMeta.name}: {faNumber(Math.abs(previewData.projectedBalance.foreign), 2)}{' '}
+              {foreignMeta.symbol}
             </div>
           ) : null}
         </div>

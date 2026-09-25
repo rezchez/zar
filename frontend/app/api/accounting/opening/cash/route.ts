@@ -443,14 +443,27 @@ export async function POST(request: Request) {
     }
 
     // MODE 2: CREATE NEW CASH FUND WITH OPENING BALANCE
-    if (!requestedCurrencyId) {
+    const requestedCurrencyCode = String(body.currencyCode || body.currency || '').trim();
+    if (!requestedCurrencyId && !requestedCurrencyCode) {
       return NextResponse.json({ message: 'انتخاب ارز الزامی است.' }, { status: 400 });
     }
 
-    let currencyRecord: CurrencyRecord;
-    try {
-      currencyRecord = await writer.collection('currencies').getOne(requestedCurrencyId);
-    } catch {
+    let currencyRecord: CurrencyRecord | null = null;
+    if (requestedCurrencyId) {
+      currencyRecord = await writer.collection('currencies').getOne(requestedCurrencyId).catch(() => null);
+    }
+    if (!currencyRecord && (requestedCurrencyCode || requestedCurrencyId)) {
+      const searchKey = requestedCurrencyCode || requestedCurrencyId;
+      currencyRecord = await writer.collection('currencies').getFirstListItem(
+        writer.filter('code = {:code} || name = {:name} || symbol = {:symbol}', {
+          code: searchKey.toUpperCase(),
+          name: searchKey,
+          symbol: searchKey,
+        }),
+      ).catch(() => null);
+    }
+
+    if (!currencyRecord) {
       return NextResponse.json({ message: 'ارز انتخاب‌شده در کالکشن ارزها یافت نشد.' }, { status: 400 });
     }
 
@@ -522,49 +535,51 @@ export async function POST(request: Request) {
 
     const sourceKey = `opening:cash:${fund.id}`;
     let createdTx: CashTxRecord | null = null;
-    try {
-      createdTx = await writer.collection('cash_transactions').create({
-        vault: fund.id,
-        currency_ref: currencyRecord.id,
-        currency: currencyCode.slice(0, 16) || 'IRT',
-        currency_name: safeCurrencyName,
-        currency_symbol: currencySymbol,
-        amount,
-        direction: 'in',
-        source_key: sourceKey,
-        transaction_type: 'opening_balance',
-        is_opening_balance: true,
-        date: dateValue,
-        description: description || `موجودی اول دوره صندوق - ${currencySymbol}`,
-        created_by: context.user.id,
-      });
+    if (amount > 0) {
+      try {
+        createdTx = await writer.collection('cash_transactions').create({
+          vault: fund.id,
+          currency_ref: currencyRecord.id,
+          currency: currencyCode.slice(0, 16) || 'IRT',
+          currency_name: safeCurrencyName,
+          currency_symbol: currencySymbol,
+          amount,
+          direction: 'in',
+          source_key: sourceKey,
+          transaction_type: 'opening_balance',
+          is_opening_balance: true,
+          date: dateValue,
+          description: description || `موجودی اول دوره صندوق - ${currencySymbol}`,
+          created_by: context.user.id,
+        });
 
-      // Generate double-entry journal entry & lines
-      await postCashOpeningBalance(
-        {
-          id: fund.id,
-          name: fundName,
-          currencyId: currencyRecord.id,
-          currencyName,
-          accountId: linkedAccountId,
-        },
-        amount,
-        dateValue,
-        context.user.id,
-        writer,
-        description || `موجودی اول دوره صندوق - ${currencySymbol}`,
-      );
-    } catch (transactionError) {
-      // Full Atomic Rollback: delete created cash_transaction & cash_fund on failure
-      if (createdTx?.id) {
-        await writer.collection('cash_transactions').delete(createdTx.id).catch(() => undefined);
+        // Generate double-entry journal entry & lines
+        await postCashOpeningBalance(
+          {
+            id: fund.id,
+            name: fundName,
+            currencyId: currencyRecord.id,
+            currencyName,
+            accountId: linkedAccountId,
+          },
+          amount,
+          dateValue,
+          context.user.id,
+          writer,
+          description || `موجودی اول دوره صندوق - ${currencySymbol}`,
+        );
+      } catch (transactionError) {
+        // Full Atomic Rollback: delete created cash_transaction & cash_fund on failure
+        if (createdTx?.id) {
+          await writer.collection('cash_transactions').delete(createdTx.id).catch(() => undefined);
+        }
+        if (fund?.id) {
+          await writer.collection('cash_funds').delete(fund.id).catch(() => undefined);
+        }
+        return NextResponse.json({
+          message: extractPbErrorMessage(transactionError, 'ثبت تراکنش و سند موجودی اولیه با خطا مواجه شد.'),
+        }, { status: 400 });
       }
-      if (fund?.id) {
-        await writer.collection('cash_funds').delete(fund.id).catch(() => undefined);
-      }
-      return NextResponse.json({
-        message: extractPbErrorMessage(transactionError, 'ثبت تراکنش و سند موجودی اولیه با خطا مواجه شد.'),
-      }, { status: 400 });
     }
 
     return NextResponse.json({

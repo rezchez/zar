@@ -1032,6 +1032,19 @@ export async function POST(request: Request) {
     let updatedCustomer = null;
     try {
       const client = writer || context.pb;
+      const docForeignUnit = preparedLines.find(
+        (p) => p.line.documentTab === 'currency' && p.documentDetails.currencyUnit,
+      )?.documentDetails.currencyUnit;
+      if (docForeignUnit && !customer.secondaryCurrency) {
+        try {
+          await client.collection('customers').update(customer.id, {
+            secondaryCurrency: String(docForeignUnit),
+            secondaryCurrencySymbol: String(docForeignUnit),
+          });
+        } catch {
+          // ignore
+        }
+      }
       const updatedCustomerRecord = await client.collection('customers').getOne(customer.id);
       const res = await getCustomerWithBalances(client, updatedCustomerRecord);
       updatedCustomer = res.customer;

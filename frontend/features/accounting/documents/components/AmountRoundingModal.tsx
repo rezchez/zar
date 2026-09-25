@@ -29,6 +29,7 @@ export interface AmountRoundingModalProps {
   initialMode?: 'round' | 'ceil' | 'floor';
   initialAutoApply?: boolean;
   initialEnabled?: boolean;
+  autoApplyLabel?: string;
   onApply: (
     roundedAmount: number,
     digits: number,
@@ -56,6 +57,7 @@ export default function AmountRoundingModal({
   initialMode = 'round',
   initialAutoApply = false,
   initialEnabled = true,
+  autoApplyLabel,
   onApply,
   onReset,
   onDisable,
@@ -500,7 +502,7 @@ export default function AmountRoundingModal({
               className="h-4 w-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500 dark:border-slate-700 dark:bg-slate-800"
             />
             <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
-              اعمال خودکار این تنظیمات رندسازی در محاسبات بعدی فروش فلزات
+              {autoApplyLabel || 'اعمال خودکار این تنظیمات رندسازی در محاسبات بعدی'}
             </span>
           </label>
         </div>

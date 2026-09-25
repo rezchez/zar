@@ -1,6 +1,7 @@
 import type { RecordModel } from 'pocketbase';
 import {
   emptyCustomerBalances,
+  normalizeCurrencyCode,
   type CustomerBalanceValues,
 } from '@/lib/customer';
 
@@ -123,10 +124,33 @@ export function sumPostedTransactions(transactions: CustomerTransaction[]) {
     );
 }
 
+export function calculateCustomerCurrencyBalances(
+  transactions: CustomerTransaction[],
+): Record<string, number> {
+  const result: Record<string, number> = {};
+  for (const t of transactions) {
+    if (t.status !== 'final' && t.status !== 'posted') continue;
+    if (t.foreignAmount) {
+      const code = normalizeCurrencyCode(t.foreignCurrency || 'USD');
+      if (code && code !== 'IRR' && code !== 'IRT') {
+        result[code] = (result[code] ?? 0) + t.foreignAmount;
+      }
+    }
+    if (t.tertiaryAmount) {
+      const code = normalizeCurrencyCode(t.tertiaryCurrency || '');
+      if (code && code !== 'IRR' && code !== 'IRT') {
+        result[code] = (result[code] ?? 0) + t.tertiaryAmount;
+      }
+    }
+  }
+  return result;
+}
+
 export function transactionBalancesToCustomerBalances(
   transactions: CustomerTransaction[],
 ): CustomerBalanceValues {
   const totals = sumPostedTransactions(transactions);
+  const currencyBalances = calculateCustomerCurrencyBalances(transactions);
   return {
     goldBalance: totals.goldAmount,
     silverBalance: totals.silverAmount,
@@ -134,6 +158,7 @@ export function transactionBalancesToCustomerBalances(
     rialBalance: totals.rialAmount,
     foreignBalance: totals.foreignAmount,
     tertiaryBalance: totals.tertiaryAmount,
+    currencyBalances,
   };
 }
 

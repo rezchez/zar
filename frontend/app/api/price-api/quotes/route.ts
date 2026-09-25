@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getServerAuthContext } from '@/lib/auth';
-import { defaultPriceApiSettings, normalizePriceApiSettings } from '@/lib/price-api';
+import { defaultPriceApiSettings, normalizePriceApiSettings, getLatestMarketQuotes } from '@/lib/price-api';
 
 export async function GET() {
   const context = await getServerAuthContext();
@@ -15,47 +15,11 @@ export async function GET() {
     ? normalizePriceApiSettings(settingsRecord as Record<string, unknown>)
     : defaultPriceApiSettings;
 
+  const quotes = await getLatestMarketQuotes(context.pb);
+
   const activeSymbols = settings.selectedSymbols.length > 0
     ? settings.selectedSymbols
     : settings.availableUnits.map((unit) => unit.symbol);
-
-  if (activeSymbols.length === 0) {
-    return NextResponse.json({ quotes: [], activeSymbols: [], intervalMinutes: settings.intervalMinutes });
-  }
-
-  const records = await context.pb.collection('price_history').getFullList({
-    sort: '-fetchedAt',
-  }).catch(() => []);
-
-  const activeSet = new Set(activeSymbols);
-  const latestBySymbol = new Map<string, Record<string, unknown>>();
-  for (const record of records) {
-    const symbol = String(record.symbol || '');
-    if ((activeSet.has(symbol) || record.category === 'currency') && !latestBySymbol.has(symbol)) {
-      latestBySymbol.set(symbol, record as unknown as Record<string, unknown>);
-    }
-  }
-
-  const unitBySymbol = new Map(settings.availableUnits.map((unit) => [unit.symbol, unit]));
-  const allSymbols = Array.from(new Set([...activeSymbols, ...latestBySymbol.keys()]));
-  const quotes = allSymbols.flatMap((symbol) => {
-    const record = latestBySymbol.get(symbol);
-    if (!record) return [];
-    const unit = unitBySymbol.get(symbol);
-    return [{
-      id: symbol,
-      category: String(record.category || unit?.category || ''),
-      title: String(record.name || unit?.name || symbol),
-      symbol,
-      unit: String(record.unit || unit?.unit || ''),
-      nameEn: String(record.nameEn || unit?.nameEn || ''),
-      price: Number(record.price) || 0,
-      changeValue: Number(record.changeValue) || 0,
-      changePercent: Number(record.changePercent) || 0,
-      fetchedAt: String(record.fetchedAt || ''),
-      sourceTimestamp: Number(record.sourceTimestamp) || 0,
-    }];
-  });
 
   return NextResponse.json({
     quotes,
