@@ -556,6 +556,28 @@ export async function POST(request: Request) {
             { status: 409 },
           );
         }
+        if (fund && (prepared.line.documentTab === 'cash' || prepared.line.sourceTab === 'cash')) {
+          if (!simulatedVaultBalances.has(fund.id)) {
+            simulatedVaultBalances.set(fund.id, Number(fund.balance ?? 0));
+          }
+          const amount = Math.abs(Number(prepared.documentDetails.totalAmount) || Math.abs(prepared.lineAmounts.rialAmount ?? 0));
+          const currentBal = simulatedVaultBalances.get(fund.id)!;
+          if (prepared.lineNature === 'paid') {
+            if (currentBal < amount) {
+              return NextResponse.json(
+                {
+                  success: false,
+                  code: 'INSUFFICIENT_BALANCE',
+                  message: `موجودی صندوق «${fund.name}» کافی نیست. (موجودی: ${currentBal.toLocaleString('fa-IR')}، درخواستی: ${amount.toLocaleString('fa-IR')})`,
+                },
+                { status: 400 },
+              );
+            }
+            simulatedVaultBalances.set(fund.id, currentBal - amount);
+          } else if (prepared.lineNature === 'received') {
+            simulatedVaultBalances.set(fund.id, currentBal + amount);
+          }
+        }
       }
 
       if (prepared.line.documentTab === 'currency') {
@@ -979,6 +1001,53 @@ export async function POST(request: Request) {
             );
           } catch (journalErr) {
             console.error('Failed to post currency trade journal entry:', journalErr);
+          }
+        }
+
+        // Update cash funds for general cash lines (CashTab)
+        for (let index = 0; index < preparedLines.length; index++) {
+          const prepared = preparedLines[index];
+          if (prepared.line.documentTab !== 'cash' && prepared.line.sourceTab !== 'cash') continue;
+          const fundId = typeof prepared.documentDetails.cashFundId === 'string' ? prepared.documentDetails.cashFundId : null;
+          if (!fundId) continue;
+          const vault = await writer.collection('cash_funds').getOne(fundId).catch(() => null);
+          if (!vault) continue;
+
+          const amount = Math.abs(Number(prepared.documentDetails.totalAmount) || Math.abs(prepared.lineAmounts.rialAmount ?? 0));
+          if (amount <= 0) continue;
+
+          const currentBal = vaultWorkingBalances.has(vault.id)
+            ? vaultWorkingBalances.get(vault.id)!
+            : Number(vault.balance ?? 0);
+          const nextBal = prepared.lineNature === 'received' ? currentBal + amount : currentBal - amount;
+          vaultWorkingBalances.set(vault.id, nextBal);
+
+          await writer.collection('cash_funds').update(vault.id, {
+            balance: nextBal,
+            updated_by: context.user.id,
+          });
+
+          const cashSourceKey = `document:${documentId}:${prepared.lineNumber}:cash_fund`;
+          const existingTx = await writer.collection('cash_transactions').getFirstListItem(
+            writer.filter('source_key = {:sourceKey}', { sourceKey: cashSourceKey }),
+          ).catch(() => null);
+
+          if (!existingTx) {
+            await writer.collection('cash_transactions').create({
+              vault: vault.id,
+              currency: vault.currency_name || 'IRR',
+              currency_name: vault.currency_name || 'ریال',
+              currency_symbol: vault.currency_symbol || 'ریال',
+              currency_ref: vault.currency || '',
+              amount,
+              direction: prepared.lineNature === 'received' ? 'in' : 'out',
+              transaction_type: prepared.lineNature === 'received' ? 'cash_in' : 'cash_out',
+              description: prepared.lineNature === 'received'
+                ? `دریافت وجه نقد از ${customer.name} (سند ${lineDocumentNumbers[index] || finalDocumentNumber})`
+                : `پرداخت وجه نقد به ${customer.name} (سند ${lineDocumentNumbers[index] || finalDocumentNumber})`,
+              source_key: cashSourceKey,
+              created_by: context.user.id,
+            });
           }
         }
 

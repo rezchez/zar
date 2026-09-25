@@ -161,10 +161,73 @@ export default function CashTab({
         : (baseCurrency === 'IRT' ? 'IRT' : 'IRR');
 
   const numericAmount = parseLocalizedAmount(draftLine.details.totalAmount || '0');
+
+  // Compute committed delta from other cash lines in this document
+  const committedDelta = useMemo(() => {
+    if (!committedLines || committedLines.length === 0 || !activeFund) return 0;
+    return committedLines.reduce((acc, line) => {
+      if (editingLineId && line.id === editingLineId) return acc;
+      if (line.documentTab !== 'cash' && line.sourceTab !== 'cash') return acc;
+      if (line.details?.cashFundId !== activeFund.id) return acc;
+      const lineAmt = parseLocalizedAmount(line.details?.totalAmount || '0');
+      if (line.documentNature === 'received') return acc + lineAmt;
+      if (line.documentNature === 'paid') return acc - lineAmt;
+      return acc;
+    }, 0);
+  }, [committedLines, editingLineId, activeFund]);
+
+  const effectiveFundBalance = (activeFund?.balance ?? 0) + committedDelta;
+
   const isFundBalanceInsufficient =
     nature === 'paid' &&
     activeFund !== null &&
-    numericAmount > (activeFund.balance ?? 0);
+    numericAmount > 0 &&
+    numericAmount > effectiveFundBalance;
+
+  const handleCommitCashLine = () => {
+    if (!activeFund) {
+      setNotice({
+        tone: 'error',
+        text: 'ابتدا یک صندوق وجه نقد انتخاب کنید.',
+      });
+      return;
+    }
+    if (activeFund.isBlocked) {
+      setNotice({
+        tone: 'error',
+        text: 'این صندوق مسدود است و امکان ثبت ورود یا خروج وجه نقد برای آن وجود ندارد.',
+      });
+      return;
+    }
+    if (isFundBalanceInsufficient) {
+      setNotice({
+        tone: 'error',
+        text: `مبلغ خروجی (${Number(numericAmount).toLocaleString('fa-IR')} ${currencySuffix}) از موجودی صندوق (${Number(effectiveFundBalance).toLocaleString('fa-IR')} ${currencySuffix}) بیشتر است و امکان خروج بیش از موجودی وجود ندارد.`,
+      });
+      return;
+    }
+    commitDraftLine?.();
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    if (e.key === 'Enter') {
+      if (isFundBalanceInsufficient) {
+        e.preventDefault();
+        setNotice({
+          tone: 'error',
+          text: `مبلغ خروجی (${Number(numericAmount).toLocaleString('fa-IR')} ${currencySuffix}) از موجودی صندوق (${Number(effectiveFundBalance).toLocaleString('fa-IR')} ${currencySuffix}) بیشتر است و امکان خروج بیش از موجودی وجود ندارد.`,
+        });
+        return;
+      }
+      if (activeFund?.isBlocked) {
+        e.preventDefault();
+        return;
+      }
+      if (handleKeyDownEnter) {
+        handleKeyDownEnter(e);
+      }
+    }
+  };
 
   function handleFundCreated(entry: { currency: string; amount: number; description: string; name?: string; date?: string; fund?: CashFundItem }) {
     setNotice({
@@ -314,9 +377,11 @@ export default function CashTab({
                   </span>
                 </div>
                 <div className="mt-1 flex items-center justify-between text-[11px]">
-                  <span className="text-slate-500 dark:text-slate-400">موجودی فعلی:</span>
-                  <strong className="font-mono text-xs font-black text-slate-900 dark:text-white">
-                    {Number(activeFund.balance || 0).toLocaleString('fa-IR')} {activeFund.currencySymbol || activeFund.currencyCode}
+                  <span className="text-slate-500 dark:text-slate-400">
+                    {committedDelta !== 0 ? 'موجودی قابل خروج در سند:' : 'موجودی فعلی:'}
+                  </span>
+                  <strong className={`font-mono text-xs font-black ${isFundBalanceInsufficient ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-white'}`}>
+                    {Number(effectiveFundBalance).toLocaleString('fa-IR')} {activeFund.currencySymbol || activeFund.currencyCode}
                   </strong>
                 </div>
               </div>
@@ -341,7 +406,7 @@ export default function CashTab({
                 }}
                 baseCurrency={effectiveBaseCurrency}
                 currencySuffix={currencySuffix}
-                onKeyDown={handleKeyDownEnter}
+                onKeyDown={onKeyDown}
                 showWords
               />
             </div>
@@ -357,10 +422,10 @@ export default function CashTab({
 
           {/* Insufficient Fund Balance Warning on Cash Out */}
           {isFundBalanceInsufficient ? (
-            <div className="flex items-center gap-2 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-200 text-xs font-bold">
-              <AlertCircle size={16} className="shrink-0 text-amber-600" />
+            <div className="flex items-center gap-2 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-900 dark:text-rose-200 text-xs font-bold">
+              <AlertCircle size={16} className="shrink-0 text-rose-600" />
               <span>
-                مبلغ پرداختی ({Number(numericAmount).toLocaleString('fa-IR')} {currencySuffix}) از موجودی فعلی صندوق ({Number(activeFund?.balance || 0).toLocaleString('fa-IR')} {currencySuffix}) بیشتر است.
+                مبلغ پرداختی ({Number(numericAmount).toLocaleString('fa-IR')} {currencySuffix}) از موجودی صندوق ({Number(effectiveFundBalance).toLocaleString('fa-IR')} {currencySuffix}) بیشتر است و امکان خروج وجه نقد بیش از موجودی وجود ندارد.
               </span>
             </div>
           ) : null}
@@ -372,7 +437,7 @@ export default function CashTab({
               onChange={(e) =>
                 setDraftLine((current) => ({ ...current, description: e.target.value }))
               }
-              onKeyDown={handleKeyDownEnter}
+              onKeyDown={onKeyDown}
               placeholder="توضیحات بابت دریافت یا پرداخت وجه نقد..."
               rows={2}
             />
@@ -418,19 +483,12 @@ export default function CashTab({
           <button
             type="button"
             className={`document-commit-line-button shadow-lg max-w-sm ${
-              activeFund?.isBlocked ? 'opacity-50 cursor-not-allowed bg-slate-400 dark:bg-slate-700' : 'cursor-pointer'
+              activeFund?.isBlocked || isFundBalanceInsufficient
+                ? 'opacity-50 cursor-not-allowed bg-slate-400 dark:bg-slate-700'
+                : 'cursor-pointer'
             }`}
-            disabled={Boolean(activeFund?.isBlocked)}
-            onClick={() => {
-              if (activeFund?.isBlocked) {
-                setNotice({
-                  tone: 'error',
-                  text: 'این صندوق مسدود است و امکان ثبت ورود یا خروج وجه نقد برای آن وجود ندارد.',
-                });
-                return;
-              }
-              commitDraftLine();
-            }}
+            disabled={Boolean(activeFund?.isBlocked) || isFundBalanceInsufficient}
+            onClick={handleCommitCashLine}
           >
             <ListPlus size={16} /> {editingLineId ? 'ثبت اصلاح ردیف' : 'ثبت ردیف'}
           </button>

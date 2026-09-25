@@ -170,18 +170,18 @@ export function createCurrencyLine(
 }
 
 export function isLineReady(line: DocumentLine) {
-  if (line.documentTab === 'currency') {
+  if (line.documentTab === 'currency' || line.sourceTab === 'currency') {
     return (
       numberValue(line.details.currencyQuantity) > 0 &&
       numberValue(line.details.currencyUnitPrice) > 0 &&
       numberValue(line.details.currencyTotalAmount) > 0
     );
   }
-  if (line.documentTab === 'workmanship') {
+  if (line.documentTab === 'workmanship' || line.sourceTab === 'workmanship') {
     const rawWeight = numberValue(line.details.rawWeight);
     return rawWeight > 0 && Boolean(line.details.workmanshipName?.trim());
   }
-  if (line.documentTab === 'refining') {
+  if (line.documentTab === 'refining' || line.sourceTab === 'refining') {
     const opKind =
       line.details.refiningOpKind || (line.documentNature === 'paid' ? 'delivery' : 'receipt');
     if (opKind === 'fee') {
@@ -189,6 +189,31 @@ export function isLineReady(line: DocumentLine) {
     }
     const rawWeight = numberValue(line.details.rawWeight);
     return rawWeight > 0;
+  }
+  if (line.documentTab === 'cash' || line.sourceTab === 'cash') {
+    const amount = numberValue(line.details.totalAmount);
+    const hasFund = Boolean(line.details.cashFundId?.trim());
+    if (amount <= 0 || !hasFund) return false;
+    if (
+      line.documentNature === 'paid' &&
+      line.details.cashFundBalance !== undefined &&
+      line.details.cashFundBalance !== null
+    ) {
+      const fundBalance = numberValue(line.details.cashFundBalance);
+      if (amount > fundBalance) return false;
+    }
+    return true;
+  }
+  if (line.documentTab === 'bank' || line.sourceTab === 'bank') {
+    return numberValue(line.details.totalAmount) > 0;
+  }
+  if (line.documentTab === 'coin' || line.sourceTab === 'coin') {
+    return numberValue(line.details.currencyQuantity) > 0 || numberValue(line.details.rawWeight) > 0;
+  }
+  if (line.documentTab === 'claim' || line.sourceTab === 'claim') {
+    const fin = numberValue(line.details.claimFinancial || line.details.totalAmount);
+    const wt = numberValue(line.details.claimWeight || line.details.rawWeight);
+    return fin > 0 || wt > 0;
   }
   const rawWeight =
     line.details.calculationMethod === 'money'
@@ -209,7 +234,7 @@ export function validateLine(
   editingLineId: string | null = null,
   selectedCurrency: string = '',
 ) {
-  if (line.documentTab === 'currency') {
+  if (line.documentTab === 'currency' || line.sourceTab === 'currency') {
     const unitUpper = (line.details.currencyUnit || '').trim().toUpperCase();
     if (!unitUpper) return 'واحد ارز را انتخاب کنید.';
     if (unitUpper === 'IRR' || unitUpper === 'IRT') {
@@ -226,13 +251,13 @@ export function validateLine(
     if (numberValue(line.details.currencyTotalAmount) <= 0) return 'مبلغ کل باید بیشتر از صفر باشد.';
     return '';
   }
-  if (line.documentTab === 'workmanship') {
+  if (line.documentTab === 'workmanship' || line.sourceTab === 'workmanship') {
     const rawWeight = numberValue(line.details.rawWeight);
     if (rawWeight <= 0) return 'وزن کار ساخته باید بیشتر از صفر باشد.';
     if (!line.details.workmanshipName?.trim()) return 'نام کار ساخته را وارد کنید.';
     return '';
   }
-  if (line.documentTab === 'refining') {
+  if (line.documentTab === 'refining' || line.sourceTab === 'refining') {
     const opKind =
       line.details.refiningOpKind || (line.documentNature === 'paid' ? 'delivery' : 'receipt');
     if (opKind === 'fee') {
@@ -244,6 +269,58 @@ export function validateLine(
     if (opKind !== 'sample_send') {
       const purityNum = numberValue(line.details.purity);
       if (purityNum <= 0 || purityNum > 1000) return 'عیار باید عددی معتبر و بین ۱ تا ۱۰۰۰ باشد.';
+    }
+    return '';
+  }
+  if (line.documentTab === 'cash' || line.sourceTab === 'cash') {
+    if (!line.details.cashFundId?.trim()) {
+      return 'انتخاب صندوق وجه نقد الزامی است.';
+    }
+    const amount = numberValue(line.details.totalAmount);
+    if (amount <= 0) {
+      return 'مبلغ وجه نقد باید بیشتر از صفر باشد.';
+    }
+    if (
+      line.documentNature === 'paid' &&
+      line.details.cashFundBalance !== undefined &&
+      line.details.cashFundBalance !== null
+    ) {
+      const fundBalance = numberValue(line.details.cashFundBalance);
+      const committedCashOutflowDelta = committedLines.reduce((acc, cl) => {
+        if (editingLineId && cl.id === editingLineId) return acc;
+        if (cl.documentTab !== 'cash' && cl.sourceTab !== 'cash') return acc;
+        if (cl.details?.cashFundId !== line.details.cashFundId) return acc;
+        const clAmt = numberValue(cl.details?.totalAmount);
+        if (cl.documentNature === 'paid') return acc + clAmt;
+        if (cl.documentNature === 'received') return acc - clAmt;
+        return acc;
+      }, 0);
+
+      const availableBalance = fundBalance - committedCashOutflowDelta;
+      if (amount > availableBalance) {
+        const unit = line.details.currencyUnit || 'ریال';
+        return `مبلغ خروج وجه نقد (${amount.toLocaleString('fa-IR')} ${unit}) از موجودی صندوق (${Math.max(0, availableBalance).toLocaleString('fa-IR')} ${unit}) بیشتر است. امکان خروج وجه نقد بیش از موجودی وجود ندارد.`;
+      }
+    }
+    return '';
+  }
+  if (line.documentTab === 'bank' || line.sourceTab === 'bank') {
+    if (numberValue(line.details.totalAmount) <= 0) {
+      return 'مبلغ تراکنش بانکی باید بیشتر از صفر باشد.';
+    }
+    return '';
+  }
+  if (line.documentTab === 'coin' || line.sourceTab === 'coin') {
+    if (numberValue(line.details.currencyQuantity) <= 0 && numberValue(line.details.rawWeight) <= 0) {
+      return 'تعداد یا وزن سکه باید بیشتر از صفر باشد.';
+    }
+    return '';
+  }
+  if (line.documentTab === 'claim' || line.sourceTab === 'claim') {
+    const fin = numberValue(line.details.claimFinancial || line.details.totalAmount);
+    const wt = numberValue(line.details.claimWeight || line.details.rawWeight);
+    if (fin <= 0 && wt <= 0) {
+      return 'حداقل یکی از مقادیر طلب/بدهی مالی یا وزنی باید بیشتر از صفر باشد.';
     }
     return '';
   }
@@ -443,6 +520,14 @@ export function useDocumentLines({
   }, []);
 
   const validateGoldAssayFields = (line: DocumentLine) => {
+    const isMetalTab =
+      line.documentTab === 'raw-gold' ||
+      line.documentTab === 'gold-sale' ||
+      line.sourceTab === 'metals' ||
+      line.sourceTab === 'gold-sale';
+    if (!isMetalTab) {
+      return { valid: true, errors: {} };
+    }
     const isGold = line.details.metalType === 'gold';
     const isMoltenOrConditional =
       line.details.rawKind === 'molten' || line.details.rawKind === 'conditional';
@@ -509,13 +594,16 @@ export function useDocumentLines({
       ? (draftLine.documentNature || documentNature)
       : documentNature;
 
-    const docTypeLabel = getLineDocumentTypeLabel(
-      lineNature,
-      lineSourceTab,
-      draftLine.details.rawKind,
-      draftLine.details.unsettledTrade,
-      draftLine.details.refiningOpKind,
-    );
+    const docTypeLabel =
+      (lineSourceTab === 'cash' || lineSourceTab === 'bank' || draftLine.documentTab === 'cash' || draftLine.documentTab === 'bank') && draftLine.documentTypeLabel
+        ? draftLine.documentTypeLabel
+        : getLineDocumentTypeLabel(
+            lineNature,
+            lineSourceTab,
+            draftLine.details.rawKind,
+            draftLine.details.unsettledTrade,
+            draftLine.details.refiningOpKind,
+          );
 
     const rawWeight =
       draftLine.details.calculationMethod === 'money'
@@ -976,6 +1064,16 @@ export function useDocumentLines({
       }
       if (lineToCommit.details?.settlementCurrencyUnit) {
         nextLine.details.settlementCurrencyUnit = lineToCommit.details.settlementCurrencyUnit;
+      }
+    } else if (lineSourceTab === 'cash' || lineToCommit.documentTab === 'cash') {
+      if (lineToCommit.details?.cashFundId) {
+        nextLine.details.cashFundId = lineToCommit.details.cashFundId;
+        nextLine.details.cashFundName = lineToCommit.details.cashFundName;
+        nextLine.details.cashFundCurrency = lineToCommit.details.cashFundCurrency;
+        nextLine.details.cashFundCurrencyId = lineToCommit.details.cashFundCurrencyId;
+        nextLine.details.cashFundBalance = lineToCommit.details.cashFundBalance;
+        nextLine.details.currencyUnit = lineToCommit.details.currencyUnit;
+        nextLine.details.isForeignCash = lineToCommit.details.isForeignCash;
       }
     }
     setDraftLine(nextLine);
