@@ -218,3 +218,55 @@ export function checkDocumentDateDiff(jalaliDateStr: string): DateDiffInfo {
     todayJalali: normToday,
   };
 }
+
+export type MarketQuote = {
+  id: string;
+  category: string;
+  title: string;
+  symbol: string;
+  unit: string;
+  nameEn: string;
+  price: number;
+  changeValue?: number;
+  changePercent?: number;
+  fetchedAt?: string;
+  sourceTimestamp?: number;
+};
+
+export function findCurrencyQuote(
+  quotes: MarketQuote[],
+  currencyCode: string,
+): MarketQuote | undefined {
+  if (!currencyCode || !Array.isArray(quotes) || quotes.length === 0) return undefined;
+  const code = currencyCode.trim().toUpperCase();
+  return quotes.find((q) => {
+    const s = String(q.symbol || '').trim().toUpperCase();
+    const t = String(q.title || '').trim().toLowerCase();
+    if (s === code) return true;
+    if (code === 'USD' && (s.includes('USD') || t.includes('دلار'))) return true;
+    if (code === 'EUR' && (s.includes('EUR') || t.includes('یورو'))) return true;
+    if (code === 'AED' && (s.includes('AED') || t.includes('درهم'))) return true;
+    if (code === 'GBP' && (s.includes('GBP') || t.includes('پوند'))) return true;
+    if ((code === 'USDT' || code === 'TETHER') && (s.includes('USDT') || t.includes('تتر'))) return true;
+    return s === code || t === code.toLowerCase();
+  });
+}
+
+export function getQuoteRateInRials(
+  quotes: MarketQuote[],
+  currencyCode: string,
+): number {
+  if (!currencyCode || !Array.isArray(quotes) || quotes.length === 0) return 0;
+  const code = currencyCode.trim().toUpperCase();
+  if (code === 'IRR') return 1;
+  if (code === 'IRT') return 10;
+
+  const found = findCurrencyQuote(quotes, code);
+  if (!found || !found.price) return 0;
+  const raw = Number(found.price);
+  if (raw <= 0 || Number.isNaN(raw)) return 0;
+  if (found.unit?.includes('ریال') || raw > 20_000_000) {
+    return Math.round(raw);
+  }
+  return Math.round(raw * 10);
+}

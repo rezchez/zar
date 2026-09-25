@@ -1,2 +1,2 @@
-export const APP_VERSION = '0.0.9 BETA';
-export const APP_VERSION_FA = '۰.۰.۹ بتا';
+export const APP_VERSION = '0.1.0 BETA';
+export const APP_VERSION_FA = '۰.۱.۰ بتا';

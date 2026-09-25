@@ -1,11 +1,12 @@
 'use client';
 
-import { ListPlus } from 'lucide-react';
-import React, { useEffect } from 'react';
+import { AlertCircle, ListPlus } from 'lucide-react';
+import React, { useEffect, useMemo } from 'react';
 
 import Field from '@/src/components/documents/Field';
 import MoneyInputField from '@/src/components/documents/MoneyInputField';
 import { NumberField } from '@/components/ui/number-field';
+import { toPersianDigits } from '@/lib/jalali';
 import type { DetailState, DocumentLine } from '@/src/components/documents/RawGoldTab';
 
 type CurrencyTabProps = {
@@ -13,6 +14,8 @@ type CurrencyTabProps = {
   draftLine: DocumentLine;
   setDraftLine: React.Dispatch<React.SetStateAction<DocumentLine>>;
   currencyUnits: string[];
+  selectedCurrency?: string;
+  getQuoteRate?: (currencyCode: string) => number;
   editingLineId: string | null;
   isLinesPinned: boolean;
   commitDraftLine: () => void;
@@ -30,6 +33,8 @@ export default function CurrencyTab({
   draftLine,
   setDraftLine,
   currencyUnits,
+  selectedCurrency = '',
+  getQuoteRate,
   editingLineId,
   isLinesPinned,
   commitDraftLine,
@@ -38,13 +43,78 @@ export default function CurrencyTab({
   handleKeyDownEnter,
   draftReady,
 }: CurrencyTabProps) {
+  // Ensure the traded currency cannot be identical to the top document currency and excludes IRR and IRT
+  const selectableUnits = useMemo(() => {
+    const normDoc = (selectedCurrency || '').trim().toUpperCase();
+    const filtered = currencyUnits.filter((u) => {
+      const norm = u.trim().toUpperCase();
+      return norm !== normDoc && norm !== 'IRR' && norm !== 'IRT';
+    });
+    if (filtered.length > 0) return filtered;
+    return ['USD', 'EUR', 'AED', 'GBP'].filter((u) => u !== normDoc);
+  }, [currencyUnits, selectedCurrency]);
+
+  const isDuplicateCurrency = Boolean(
+    selectedCurrency &&
+    draftLine.details.currencyUnit &&
+    draftLine.details.currencyUnit.trim().toUpperCase() === selectedCurrency.trim().toUpperCase(),
+  );
+
+  const isDomesticCurrency = Boolean(
+    draftLine.details.currencyUnit &&
+    ['IRR', 'IRT'].includes(draftLine.details.currencyUnit.trim().toUpperCase()),
+  );
+
+  const currentQuoteRate = useMemo(() => {
+    if (!getQuoteRate || !draftLine.details.currencyUnit || isDomesticCurrency) return 0;
+    return getQuoteRate(draftLine.details.currencyUnit);
+  }, [getQuoteRate, draftLine.details.currencyUnit, isDomesticCurrency]);
+
   useEffect(() => {
-    if (!draftLine.details.currencyUnit) {
-      const defaultUnit = currencyUnits[0] || 'USD';
-      updateDraftDetail('currencyUnit', defaultUnit);
-      updateDraftDetail('settlementCurrencyUnit', defaultUnit);
+    const normDoc = (selectedCurrency || '').trim().toUpperCase();
+    const currentUnit = (draftLine.details.currencyUnit || '').trim().toUpperCase();
+    const isSameAsDoc = Boolean(currentUnit && normDoc && currentUnit === normDoc);
+    const isDomestic = currentUnit === 'IRR' || currentUnit === 'IRT';
+
+    if (!currentUnit || isSameAsDoc || isDomestic) {
+      const fallbackUnit = selectableUnits[0] || (normDoc === 'USD' ? 'EUR' : 'USD');
+      updateDraftDetail('currencyUnit', fallbackUnit);
+      updateDraftDetail('settlementCurrencyUnit', selectedCurrency || 'IRR');
+      if (getQuoteRate) {
+        const rate = getQuoteRate(fallbackUnit);
+        if (rate > 0) {
+          updateCurrencyValue('currencyUnitPrice', String(rate));
+        }
+      }
+    } else if (
+      getQuoteRate &&
+      (!draftLine.details.currencyUnitPrice || draftLine.details.currencyUnitPrice === '0')
+    ) {
+      const rate = getQuoteRate(currentUnit);
+      if (rate > 0) {
+        updateCurrencyValue('currencyUnitPrice', String(rate));
+      }
     }
-  }, [draftLine.details.currencyUnit, currencyUnits, updateDraftDetail]);
+  }, [
+    draftLine.details.currencyUnit,
+    draftLine.details.currencyUnitPrice,
+    selectableUnits,
+    selectedCurrency,
+    getQuoteRate,
+    updateDraftDetail,
+    updateCurrencyValue,
+  ]);
+
+  const handleUnitChange = (nextUnit: string) => {
+    updateDraftDetail('currencyUnit', nextUnit);
+    updateDraftDetail('settlementCurrencyUnit', selectedCurrency || 'IRR');
+    if (getQuoteRate) {
+      const rate = getQuoteRate(nextUnit);
+      if (rate > 0) {
+        updateCurrencyValue('currencyUnitPrice', String(rate));
+      }
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -57,18 +127,35 @@ export default function CurrencyTab({
         </span>
       </div>
 
+      {isDuplicateCurrency && (
+        <div className="flex items-center gap-2 p-3 text-xs rounded-xl bg-rose-50 text-rose-800 border border-rose-200 dark:bg-rose-950/40 dark:text-rose-200 dark:border-rose-800">
+          <AlertCircle size={16} className="shrink-0 text-rose-600 dark:text-rose-400" />
+          <span>
+            واحد ارز معامله نمی‌تواند با نوع ارز سند (<strong>{selectedCurrency}</strong>) یکسان باشد. لطفاً ارز متفاوتی برای معامله انتخاب کنید.
+          </span>
+        </div>
+      )}
+
+      {isDomesticCurrency && (
+        <div className="flex items-center gap-2 p-3 text-xs rounded-xl bg-amber-50 text-amber-800 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800">
+          <AlertCircle size={16} className="shrink-0 text-amber-600 dark:text-amber-400" />
+          <span>
+            معامله ارزی تنها برای ارزهای خارجی امکان‌پذیر است. لطفاً ارز خارجی (مانند دلار، یورو یا درهم) را انتخاب کنید.
+          </span>
+        </div>
+      )}
+
       <div className="document-special-grid raw-gold-fields">
         <Field label="واحد ارز">
           <select
-            value={draftLine.details.currencyUnit || currencyUnits[0] || 'USD'}
-            onChange={(event) => {
-              updateDraftDetail('currencyUnit', event.target.value);
-              updateDraftDetail('settlementCurrencyUnit', event.target.value);
-            }}
+            value={draftLine.details.currencyUnit || selectableUnits[0] || 'USD'}
+            onChange={(event) => handleUnitChange(event.target.value)}
           >
-            {currencyUnits.length === 0 ? (
-              <option value="USD">USD</option>
-            ) : currencyUnits.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
+            {selectableUnits.map((unit) => (
+              <option key={unit} value={unit}>
+                {unit}
+              </option>
+            ))}
           </select>
         </Field>
         <Field label="تعداد">
@@ -84,13 +171,30 @@ export default function CurrencyTab({
             className="w-full"
           />
         </Field>
-        <MoneyInputField
-          label="قیمت هر واحد (ریال)"
-          value={draftLine.details.currencyUnitPrice}
-          onChange={(val) => updateCurrencyValue('currencyUnitPrice', val)}
-          baseCurrency="IRR"
-          onKeyDown={handleKeyDownEnter}
-        />
+        <div className="flex flex-col">
+          <MoneyInputField
+            label="قیمت هر واحد (ریال)"
+            value={draftLine.details.currencyUnitPrice}
+            onChange={(val) => updateCurrencyValue('currencyUnitPrice', val)}
+            baseCurrency="IRR"
+            onKeyDown={handleKeyDownEnter}
+          />
+          {currentQuoteRate > 0 && (
+            <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 mt-1 px-1">
+              <span>
+                نرخ مظنه: <strong className="text-amber-600 dark:text-amber-400 font-mono font-bold">{toPersianDigits(currentQuoteRate.toLocaleString())}</strong> ریال
+              </span>
+              <button
+                type="button"
+                onClick={() => updateCurrencyValue('currencyUnitPrice', String(currentQuoteRate))}
+                className="text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300 font-medium hover:underline cursor-pointer transition-colors"
+                title="درج خودکار نرخ مظنه بازار"
+              >
+                درج نرخ مظنه
+              </button>
+            </div>
+          )}
+        </div>
         <MoneyInputField
           label="مبلغ کل (ریال)"
           value={draftLine.details.currencyTotalAmount}
@@ -221,7 +325,7 @@ export default function CurrencyTab({
         </Field>
       </div>
 
-      {draftReady && !isLinesPinned ? (
+      {draftReady && !isDuplicateCurrency && !isDomesticCurrency && !isLinesPinned ? (
         <div className="sticky bottom-3 z-30 flex justify-center pt-2 transition-all duration-300">
           <button
             type="button"

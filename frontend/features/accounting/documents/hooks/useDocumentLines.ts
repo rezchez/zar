@@ -147,8 +147,13 @@ export function createLine(nature: DocumentNature = 'received', sourceTab = 'met
 export function createCurrencyLine(
   nature: DocumentNature = 'received',
   defaultCurrencyUnit = 'USD',
+  settlementCurrency = 'IRR',
 ): DocumentLine {
   const line = createLine(nature, 'currency');
+  const unit =
+    defaultCurrencyUnit.toUpperCase() === settlementCurrency.toUpperCase()
+      ? (settlementCurrency.toUpperCase() === 'USD' ? 'EUR' : 'USD')
+      : defaultCurrencyUnit;
   return {
     ...line,
     documentTab: 'currency',
@@ -158,8 +163,8 @@ export function createCurrencyLine(
     details: {
       ...line.details,
       currencyTradeId: line.id,
-      currencyUnit: line.details.currencyUnit || defaultCurrencyUnit,
-      settlementCurrencyUnit: line.details.settlementCurrencyUnit || defaultCurrencyUnit,
+      currencyUnit: line.details.currencyUnit || unit,
+      settlementCurrencyUnit: line.details.settlementCurrencyUnit || settlementCurrency,
     },
   };
 }
@@ -202,9 +207,20 @@ export function validateLine(
   inventory: MeltedInventoryItem[] = [],
   committedLines: DocumentLine[] = [],
   editingLineId: string | null = null,
+  selectedCurrency: string = '',
 ) {
   if (line.documentTab === 'currency') {
-    if (!line.details.currencyUnit) return 'واحد ارز را انتخاب کنید.';
+    const unitUpper = (line.details.currencyUnit || '').trim().toUpperCase();
+    if (!unitUpper) return 'واحد ارز را انتخاب کنید.';
+    if (unitUpper === 'IRR' || unitUpper === 'IRT') {
+      return 'معامله ارزی فقط برای ارزهای خارجی امکان‌پذیر است و ریال/تومان نمی‌تواند واحد ارز معامله باشد.';
+    }
+    if (
+      selectedCurrency &&
+      unitUpper === selectedCurrency.trim().toUpperCase()
+    ) {
+      return 'واحد ارز معامله و نوع ارز سند نمی‌توانند یکسان باشند.';
+    }
     if (numberValue(line.details.currencyQuantity) <= 0) return 'تعداد ارز باید بیشتر از صفر باشد.';
     if (numberValue(line.details.currencyUnitPrice) <= 0) return 'قیمت هر واحد باید بیشتر از صفر باشد.';
     if (numberValue(line.details.currencyTotalAmount) <= 0) return 'مبلغ کل باید بیشتر از صفر باشد.';
@@ -277,7 +293,11 @@ export function useDocumentLines({
     (nature: DocumentNature = 'received', sourceTab = 'metals') => {
       const line =
         sourceTab === 'currency'
-          ? createCurrencyLine(nature, selectedCurrency || 'USD')
+          ? createCurrencyLine(
+              nature,
+              selectedCurrency?.toUpperCase() === 'USD' ? 'EUR' : 'USD',
+              selectedCurrency || 'IRR',
+            )
           : createLine(nature, sourceTab);
       return {
         ...line,
@@ -452,14 +472,14 @@ export function useDocumentLines({
   const commitDraftLine = (meltedInventory: MeltedInventoryItem[] = []) => {
     if (
       (draftLine.documentTab === 'currency' || draftLine.sourceTab === 'currency' || activeEntryTab === 'currency') &&
-      !draftLine.details.currencyUnit
+      (!draftLine.details.currencyUnit || (selectedCurrency && draftLine.details.currencyUnit.trim().toUpperCase() === selectedCurrency.trim().toUpperCase()))
     ) {
-      const fallbackUnit = selectedCurrency || 'USD';
+      const fallbackUnit = selectedCurrency?.trim().toUpperCase() === 'USD' ? 'EUR' : 'USD';
       draftLine.details.currencyUnit = fallbackUnit;
-      draftLine.details.settlementCurrencyUnit = draftLine.details.settlementCurrencyUnit || fallbackUnit;
+      draftLine.details.settlementCurrencyUnit = selectedCurrency || 'IRR';
     }
 
-    const validationMessage = validateLine(draftLine, meltedInventory, committedLines, editingLineId);
+    const validationMessage = validateLine(draftLine, meltedInventory, committedLines, editingLineId, selectedCurrency);
     if (validationMessage) {
       toast.error(validationMessage);
       return false;
@@ -506,8 +526,11 @@ export function useDocumentLines({
 
     const effectiveCurrencyUnit =
       draftLine.details.currencyUnit ||
+      (selectedCurrency?.trim().toUpperCase() === 'USD' ? 'EUR' : 'USD');
+    const effectiveSettlementUnit =
+      draftLine.details.settlementCurrencyUnit ||
       selectedCurrency ||
-      'USD';
+      'IRR';
 
     const lineToCommit: DocumentLine = {
       ...draftLine,
@@ -520,7 +543,7 @@ export function useDocumentLines({
         ...draftLine.details,
         baseKarat,
         currencyUnit: lineSourceTab === 'currency' ? effectiveCurrencyUnit : draftLine.details.currencyUnit,
-        settlementCurrencyUnit: lineSourceTab === 'currency' ? (draftLine.details.settlementCurrencyUnit || effectiveCurrencyUnit) : draftLine.details.settlementCurrencyUnit,
+        settlementCurrencyUnit: lineSourceTab === 'currency' ? effectiveSettlementUnit : draftLine.details.settlementCurrencyUnit,
       },
     };
 

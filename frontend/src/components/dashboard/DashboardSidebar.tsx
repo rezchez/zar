@@ -305,7 +305,7 @@ export default function DashboardSidebar({
                     className="shrink-0 inline-flex items-center rounded bg-amber-100 dark:bg-amber-950/70 px-1.5 py-0.5 text-[9px] font-bold text-amber-800 dark:text-amber-300 border border-amber-300/40 dark:border-amber-700/40 hover:bg-amber-200/80 dark:hover:bg-amber-900/60 transition-colors cursor-pointer select-none origin-right scale-[0.8]"
                     title="مشاهده یادداشت‌های انتشار (Changelog)"
                   >
-                    Zarfolio Beta 0.0.9
+                    Zarfolio Beta 0.1.0
                   </button>
                 </div>
                 <div className="mt-0.5">

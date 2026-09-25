@@ -10,6 +10,7 @@ import type { Currency } from '@/lib/currencies';
 import { getCurrencyDisplayName } from '@/lib/currencies';
 import type { MetalType } from '../services/metal-settlement-service';
 import { checkDocumentDateDiff } from '../utils/document-helpers';
+import { toPersianDigits } from '@/lib/jalali';
 
 interface DocumentMetadataSectionProps {
   documentNature: DocumentNature;
@@ -23,6 +24,7 @@ interface DocumentMetadataSectionProps {
   onOpenAddCurrencyModal: () => void;
   documentDateJalali: string;
   onDateChange: (date: string) => void;
+  selectedCurrencyRate?: number;
 }
 
 export default function DocumentMetadataSection({
@@ -37,6 +39,7 @@ export default function DocumentMetadataSection({
   onOpenAddCurrencyModal,
   documentDateJalali,
   onDateChange,
+  selectedCurrencyRate,
 }: DocumentMetadataSectionProps) {
   return (
     <div className="flex flex-wrap lg:flex-nowrap gap-3 items-end">
@@ -79,7 +82,18 @@ export default function DocumentMetadataSection({
 
       {/* 3. Currency Select */}
       <div className="w-full sm:flex-1 min-w-[200px]" id="doc-field-currency">
-        <Field label="نوع ارز">
+        <Field
+          label={
+            <span className="flex items-center justify-between w-full">
+              <span>نوع ارز</span>
+              {selectedCurrencyRate && selectedCurrencyRate > 0 && selectedCurrency !== 'IRR' && selectedCurrency !== 'IRT' ? (
+                <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800">
+                  نرخ: {toPersianDigits(selectedCurrencyRate.toLocaleString())} ریال
+                </span>
+              ) : null}
+            </span>
+          }
+        >
           <div className="flex items-center gap-1.5">
             <select
               className="text-xs h-9 flex-1"

@@ -21,7 +21,7 @@ import type { DetailState, DocumentLine, MeltedInventoryItem } from '@/src/compo
 import DocumentEntryTabs from '@/src/components/documents/DocumentEntryTabs';
 import RawGoldTab from '@/src/components/documents/RawGoldTab';
 import GoldSaleTab from '@/src/components/documents/GoldSaleTab';
-import CurrencyTab from '@/src/components/documents/CurrencyTab';
+import CurrencyTab from './CurrencyTab';
 import CoinTab from '@/src/components/documents/CoinTab';
 import CashTab from '@/src/components/documents/CashTab';
 import BankTab from './BankTab';
@@ -63,6 +63,8 @@ import {
   getLineDocumentTypeLabel,
   checkDocumentDateDiff,
   type DateDiffInfo,
+  getQuoteRateInRials,
+  type MarketQuote,
 } from '../utils/document-helpers';
 
 export const VALID_ENTRY_TABS = [
@@ -156,6 +158,36 @@ export default function DocumentForm({
     [availableCurrencies, baseCurrency],
   );
 
+  // Live market quotes for currencies & rates
+  const [quotes, setQuotes] = useState<MarketQuote[]>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function loadMarketQuotes() {
+      try {
+        const response = await fetch('/api/price-api/quotes', { cache: 'no-store' });
+        if (!response.ok) return;
+        const data = await response.json().catch(() => null);
+        if (isMounted && data && Array.isArray(data.quotes)) {
+          setQuotes(data.quotes);
+        }
+      } catch {
+        // non-blocking
+      }
+    }
+    loadMarketQuotes();
+    const interval = setInterval(loadMarketQuotes, 60_000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  const getCurrencyQuoteRate = useCallback(
+    (code: string) => getQuoteRateInRials(quotes, code),
+    [quotes],
+  );
+
   // Custom currency creation modal
   const [showAddCurrencyModal, setShowAddCurrencyModal] = useState(false);
   const [newCurrencyName, setNewCurrencyName] = useState('');
@@ -238,7 +270,12 @@ export default function DocumentForm({
         const validTab = hash as ValidEntryTab;
         setActiveEntryTab(validTab);
         setDraftLine((current) => {
-          const curUnit = current.details?.currencyUnit || selectedCurrency || activeCurrencies[0]?.code || 'USD';
+          const normDoc = (selectedCurrency || '').trim().toUpperCase();
+          const currentUnit = (current.details?.currencyUnit || '').trim().toUpperCase();
+          const fallbackAlt =
+            activeCurrencies.find((c) => c.code.trim().toUpperCase() !== normDoc)?.code ||
+            (normDoc === 'USD' ? 'EUR' : 'USD');
+          const curUnit = currentUnit && currentUnit !== normDoc ? current.details.currencyUnit : fallbackAlt;
           return {
             ...current,
             documentTab: validTab === 'gold-sale' ? 'gold-sale' : validTab === 'currency' ? 'currency' : 'raw-gold',
@@ -253,7 +290,7 @@ export default function DocumentForm({
             details: {
               ...current.details,
               currencyUnit: validTab === 'currency' ? curUnit : current.details?.currencyUnit,
-              settlementCurrencyUnit: validTab === 'currency' ? (current.details?.settlementCurrencyUnit || curUnit) : current.details?.settlementCurrencyUnit,
+              settlementCurrencyUnit: validTab === 'currency' ? (selectedCurrency || 'IRR') : current.details?.settlementCurrencyUnit,
             },
           };
         });
@@ -492,7 +529,28 @@ export default function DocumentForm({
       setActiveEntryTab(validTab);
       window.location.hash = validTab;
       setDraftLine((current) => {
-        const curUnit = current.details?.currencyUnit || selectedCurrency || activeCurrencies[0]?.code || 'USD';
+        const normDoc = (selectedCurrency || '').trim().toUpperCase();
+        const currentUnit = (current.details?.currencyUnit || '').trim().toUpperCase();
+        const fallbackAlt =
+          activeCurrencies.find((c) => c.code.trim().toUpperCase() !== normDoc)?.code ||
+          (normDoc === 'USD' ? 'EUR' : 'USD');
+        const curUnit = currentUnit && currentUnit !== normDoc ? current.details.currencyUnit : fallbackAlt;
+        const quoteRate = getQuoteRateInRials(quotes, curUnit);
+        const shouldFillRate =
+          validTab === 'currency' &&
+          quoteRate > 0 &&
+          (!current.details?.currencyUnitPrice || current.details.currencyUnitPrice === '0' || currentUnit === normDoc);
+        const nextDetails = {
+          ...current.details,
+          currencyUnit: validTab === 'currency' ? curUnit : current.details?.currencyUnit,
+          settlementCurrencyUnit: validTab === 'currency' ? (selectedCurrency || 'IRR') : current.details?.settlementCurrencyUnit,
+          currencyUnitPrice: shouldFillRate ? String(quoteRate) : (current.details?.currencyUnitPrice || ''),
+        };
+        const qty = numberValue(nextDetails.currencyQuantity);
+        const unitPrice = numberValue(nextDetails.currencyUnitPrice);
+        if (validTab === 'currency' && qty > 0 && unitPrice > 0) {
+          nextDetails.currencyTotalAmount = String(Math.round(qty * unitPrice));
+        }
         return {
           ...current,
           documentTab: validTab === 'gold-sale' ? 'gold-sale' : validTab === 'currency' ? 'currency' : 'raw-gold',
@@ -504,11 +562,7 @@ export default function DocumentForm({
               : validTab === 'metals'
                 ? documentSubType(documentNature, current.details?.rawKind || 'molten')
                 : current.documentSubType,
-          details: {
-            ...current.details,
-            currencyUnit: validTab === 'currency' ? curUnit : current.details?.currencyUnit,
-            settlementCurrencyUnit: validTab === 'currency' ? (current.details?.settlementCurrencyUnit || curUnit) : current.details?.settlementCurrencyUnit,
-          },
+          details: nextDetails,
         };
       });
     }
@@ -620,6 +674,67 @@ export default function DocumentForm({
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
 
+  const handleUpdateCurrencyValue = useCallback(
+    (field: 'currencyQuantity' | 'currencyUnitPrice' | 'currencyTotalAmount', val: string) => {
+      updateDraftDetail(field, val);
+      setDraftLine((current) => {
+        const details = { ...current.details, [field]: val };
+        const qty = numberValue(field === 'currencyQuantity' ? val : details.currencyQuantity);
+        const unitPrice = numberValue(field === 'currencyUnitPrice' ? val : details.currencyUnitPrice);
+        if (field === 'currencyQuantity' || field === 'currencyUnitPrice') {
+          if (qty > 0 && unitPrice > 0) {
+            details.currencyTotalAmount = String(Math.round(qty * unitPrice));
+          }
+        } else if (field === 'currencyTotalAmount') {
+          const total = numberValue(val);
+          if (qty > 0 && total > 0) {
+            details.currencyUnitPrice = String(Math.round(total / qty));
+          }
+        }
+        return { ...current, details };
+      });
+    },
+    [updateDraftDetail, setDraftLine],
+  );
+
+  const handleCurrencySelect = useCallback(
+    (curr: string) => {
+      setSelectedCurrency(curr);
+      updateDraftDetail('settlementCurrencyUnit', curr);
+      const isCurrency =
+        draftLine.documentTab === 'currency' ||
+        draftLine.sourceTab === 'currency' ||
+        activeEntryTab === 'currency';
+      if (isCurrency) {
+        const normCurr = curr.trim().toUpperCase();
+        const currentUnit = (draftLine.details?.currencyUnit || '').trim().toUpperCase();
+        if (!currentUnit || currentUnit === normCurr || currentUnit === 'IRR' || currentUnit === 'IRT') {
+          const foreignCurrencies = activeCurrencies
+            .map((c) => c.code)
+            .filter((code) => code !== 'IRR' && code !== 'IRT');
+          const fallbackAlt =
+            foreignCurrencies.find((c) => c.trim().toUpperCase() !== normCurr) ||
+            (normCurr === 'USD' ? 'EUR' : 'USD');
+          updateDraftDetail('currencyUnit', fallbackAlt);
+          const quoteRate = getQuoteRateInRials(quotes, fallbackAlt);
+          if (quoteRate > 0) {
+            handleUpdateCurrencyValue('currencyUnitPrice', String(quoteRate));
+          }
+        }
+      }
+    },
+    [
+      draftLine.documentTab,
+      draftLine.sourceTab,
+      draftLine.details?.currencyUnit,
+      activeEntryTab,
+      activeCurrencies,
+      quotes,
+      updateDraftDetail,
+      handleUpdateCurrencyValue,
+    ],
+  );
+
   // Ref storing latest closures for sticky header buttons to guarantee reference stability
   const stickyHandlersRef = useRef({
     onToggleNature: () => {},
@@ -654,9 +769,7 @@ export default function DocumentForm({
         }));
       },
       onCurrencyChange: (curr: string) => {
-        setSelectedCurrency(curr);
-        updateDraftDetail('currencyUnit', curr);
-        updateDraftDetail('settlementCurrencyUnit', curr);
+        handleCurrencySelect(curr);
       },
       onDateChange: (date: string) => {
         handleDateChange(date);
@@ -1005,6 +1118,7 @@ export default function DocumentForm({
           meltedInventory,
           committedLines,
           editingLineId,
+          selectedCurrency,
         );
         if (validationMessage) {
           toast.error(validationMessage);
@@ -1109,11 +1223,8 @@ export default function DocumentForm({
             }));
           }}
           selectedCurrency={selectedCurrency}
-          onCurrencyChange={(curr) => {
-            setSelectedCurrency(curr);
-            updateDraftDetail('currencyUnit', curr);
-            updateDraftDetail('settlementCurrencyUnit', curr);
-          }}
+          onCurrencyChange={handleCurrencySelect}
+          selectedCurrencyRate={getCurrencyQuoteRate(selectedCurrency)}
           activeCurrencies={activeCurrencies}
           currenciesLoading={currenciesLoading}
           onOpenAddCurrencyModal={() => {
@@ -1243,30 +1354,14 @@ export default function DocumentForm({
               nature={documentNature}
               draftLine={draftLine}
               setDraftLine={setDraftLine}
-              currencyUnits={activeCurrencies.map((c) => c.code)}
+              currencyUnits={availableCurrencies.map((c) => c.code).filter((code) => code !== 'IRR' && code !== 'IRT')}
+              selectedCurrency={selectedCurrency}
+              getQuoteRate={getCurrencyQuoteRate}
               editingLineId={editingLineId}
               isLinesPinned={isLinesPinned}
               commitDraftLine={handleCommitDraft}
               updateDraftDetail={updateDraftDetail}
-              updateCurrencyValue={(field, val) => {
-                updateDraftDetail(field, val);
-                setDraftLine((current) => {
-                  const details = { ...current.details, [field]: val };
-                  const qty = numberValue(field === 'currencyQuantity' ? val : details.currencyQuantity);
-                  const unitPrice = numberValue(field === 'currencyUnitPrice' ? val : details.currencyUnitPrice);
-                  if (field === 'currencyQuantity' || field === 'currencyUnitPrice') {
-                    if (qty > 0 && unitPrice > 0) {
-                      details.currencyTotalAmount = String(Math.round(qty * unitPrice));
-                    }
-                  } else if (field === 'currencyTotalAmount') {
-                    const total = numberValue(val);
-                    if (qty > 0 && total > 0) {
-                      details.currencyUnitPrice = String(Math.round(total / qty));
-                    }
-                  }
-                  return { ...current, details };
-                });
-              }}
+              updateCurrencyValue={handleUpdateCurrencyValue}
               handleKeyDownEnter={handleKeyDownEnter}
               draftReady={draftReady}
             />

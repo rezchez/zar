@@ -665,7 +665,9 @@ export async function POST(request: Request) {
         documentTab: readString(prepared.line.documentTab ?? body.documentTab, 40) || 'general',
         documentSubType: readString(prepared.line.documentSubType ?? body.documentSubType, 80),
         documentDateJalali,
-        settlementMethod: readString(prepared.line.settlementMethod ?? body.settlementMethod, 20) || 'mixed',
+        settlementMethod: (['amount', 'weight', 'mixed', 'unsettled', 'cash'].includes(readString(prepared.line.settlementMethod ?? body.settlementMethod, 20)))
+          ? readString(prepared.line.settlementMethod ?? body.settlementMethod, 20)
+          : 'mixed',
         balanceSource: readString(prepared.line.balanceSource ?? body.balanceSource, 20) || 'current',
         documentDetails: serializeDocumentDetails(prepared.documentDetails),
         documentLineNumber: prepared.lineNumber,
@@ -680,7 +682,16 @@ export async function POST(request: Request) {
       const currentCreatedInventoryRecords = [];
       try {
         for (const payload of documentPayloads) {
-          currentCreatedRecords.push(await writer.collection('transactions').create(payload));
+          try {
+            currentCreatedRecords.push(await writer.collection('transactions').create(payload));
+          } catch (createErr: any) {
+            if (createErr?.data?.data?.settlementMethod || createErr?.message?.includes('settlementMethod')) {
+              payload.settlementMethod = 'mixed';
+              currentCreatedRecords.push(await writer.collection('transactions').create(payload));
+            } else {
+              throw createErr;
+            }
+          }
         }
         for (let index = 0; index < preparedLines.length; index++) {
           const prepared = preparedLines[index];

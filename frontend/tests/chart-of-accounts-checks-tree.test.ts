@@ -12,16 +12,16 @@ import { CHANGELOG_RELEASES } from '@/features/changelog/data/changelog';
 
 describe('Zarfolio — Opening Checks to Chart of Accounts Hierarchy & Versioning Tests', () => {
   describe('Version & Changelog Verification', () => {
-    it('APP_VERSION and APP_VERSION_FA are set to 0.0.9 BETA', () => {
-      expect(APP_VERSION).toBe('0.0.9 BETA');
-      expect(APP_VERSION_FA).toBe('۰.۰.۹ بتا');
+    it('APP_VERSION and APP_VERSION_FA are set to 0.1.0 BETA', () => {
+      expect(APP_VERSION).toBe('0.1.0 BETA');
+      expect(APP_VERSION_FA).toBe('۰.۱.۰ بتا');
     });
 
-    it('CHANGELOG_RELEASES contains 0.0.9 BETA as current active release', () => {
+    it('CHANGELOG_RELEASES contains 0.1.0 BETA as current active release', () => {
       expect(CHANGELOG_RELEASES.length).toBeGreaterThanOrEqual(2);
       const latest = CHANGELOG_RELEASES[0];
-      expect(latest.version).toBe('0.0.9 BETA');
-      expect(latest.versionFa).toBe('۰.۰.۹ بتا');
+      expect(latest.version).toBe('0.1.0 BETA');
+      expect(latest.versionFa).toBe('۰.۱.۰ بتا');
       expect(latest.isCurrent).toBe(true);
       expect(latest.changes.length).toBeGreaterThan(0);
 
