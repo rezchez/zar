@@ -19,7 +19,7 @@ import { isRefinerGroup } from '@/lib/customer-groups';
 import { jalaliDateToIso, normalizeDigits } from '@/lib/jalali';
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
 import { createRefiningCase, syncCaseTotals } from '@/features/refining/services/refining-service';
-import { postMetalSale, postMetalPurchase } from '@/features/accounting/posting/posting-engine';
+import { postMetalSale, postMetalPurchase, postCurrencyTrade } from '@/features/accounting/posting/posting-engine';
 import { getCustomerWithBalances } from '@/lib/customer-service';
 
 const amountFields = [
@@ -433,7 +433,8 @@ export async function POST(request: Request) {
           throw new Error(`مقدار ${field} در ردیف ${index + 1} معتبر نیست.`);
         }
         const isMetalAmount = field === 'goldAmount' || field === 'silverAmount' || field === 'platinumAmount';
-        const direction = (line.documentTab === 'gold-sale' && isMetalAmount)
+        const isCurrencyForeign = line.documentTab === 'currency' && field === 'foreignAmount';
+        const direction = (line.documentTab === 'gold-sale' && isMetalAmount) || isCurrencyForeign
           ? (lineNature === 'received' ? -1 : 1)
           : (lineNature === 'received' ? 1 : -1);
         lineAmounts[field] = Math.abs(amount) * direction;
@@ -537,7 +538,10 @@ export async function POST(request: Request) {
       // fallback
     }
 
-    // Validate that referenced cash funds and bank accounts are not blocked
+    // Validate that referenced cash funds and bank accounts are not blocked, and have sufficient balance
+    const simulatedVaultBalances = new Map<string, number>();
+    const currenciesList = await writer.collection('currencies').getFullList().catch(() => []);
+
     for (const prepared of preparedLines) {
       const fundId = typeof prepared.documentDetails.cashFundId === 'string' ? prepared.documentDetails.cashFundId : null;
       if (fundId) {
@@ -551,6 +555,59 @@ export async function POST(request: Request) {
             },
             { status: 409 },
           );
+        }
+      }
+
+      if (prepared.line.documentTab === 'currency') {
+        const isUnsettled = prepared.documentDetails.unsettledTrade === true || prepared.line.settlementMethod === 'unsettled';
+        if (!isUnsettled) {
+          const currencyUnit = String(prepared.documentDetails.currencyUnit || 'USD').trim();
+          const matchedCur = currenciesList.find(
+            (c: any) =>
+              String(c.code).toUpperCase() === currencyUnit.toUpperCase() ||
+              String(c.name).toUpperCase() === currencyUnit.toUpperCase() ||
+              String(c.id) === currencyUnit,
+          );
+          const curId = matchedCur?.id || currencyUnit;
+          const curName = matchedCur?.name || currencyUnit;
+          const curFund = await writer.collection('cash_funds').getFirstListItem(
+            writer.filter('currency = {:currencyId}', { currencyId: curId }),
+          ).catch(async () => writer.collection('cash_funds').getFirstListItem(
+            writer.filter('(currency = "" || currency = null) && currency_name = {:currency}', { currency: curName }),
+          ).catch(() => null));
+
+          if (curFund) {
+            if (curFund.isBlocked === true) {
+              return NextResponse.json(
+                {
+                  success: false,
+                  code: 'CASH_FUND_BLOCKED',
+                  message: `صندوق «${curFund.name || curName}» مسدود است و امکان پرداخت ارز از آن وجود ندارد.`,
+                },
+                { status: 409 },
+              );
+            }
+            if (!simulatedVaultBalances.has(curFund.id)) {
+              simulatedVaultBalances.set(curFund.id, Number(curFund.balance ?? 0));
+            }
+            const qty = Math.abs(Number(prepared.documentDetails.currencyQuantity) || 0);
+            const currentBal = simulatedVaultBalances.get(curFund.id)!;
+            if (prepared.lineNature === 'paid') {
+              if (currentBal < qty) {
+                return NextResponse.json(
+                  {
+                    success: false,
+                    code: 'INSUFFICIENT_BALANCE',
+                    message: `موجودی صندوق «${curFund.name || curName}» کافی نیست. (موجودی: ${currentBal}، درخواستی: ${qty})`,
+                  },
+                  { status: 400 },
+                );
+              }
+              simulatedVaultBalances.set(curFund.id, currentBal - qty);
+            } else {
+              simulatedVaultBalances.set(curFund.id, currentBal + qty);
+            }
+          }
         }
       }
 
@@ -613,8 +670,8 @@ export async function POST(request: Request) {
         documentDetails: serializeDocumentDetails(prepared.documentDetails),
         documentLineNumber: prepared.lineNumber,
         ...prepared.lineAmounts,
-        foreignCurrency: String(customer.secondaryCurrency ?? ''),
-        foreignCurrencySymbol: String(customer.secondaryCurrencySymbol ?? ''),
+        foreignCurrency: String(prepared.line.documentTab === 'currency' ? (prepared.documentDetails.currencyUnit || customer.secondaryCurrency || '') : (customer.secondaryCurrency ?? '')),
+        foreignCurrencySymbol: String(prepared.line.documentTab === 'currency' ? (prepared.documentDetails.currencyUnit || customer.secondaryCurrencySymbol || '') : (customer.secondaryCurrencySymbol ?? '')),
         tertiaryCurrency: String(customer.tertiaryCurrency ?? ''),
         tertiaryCurrencySymbol: String(customer.tertiaryCurrencySymbol ?? ''),
       }));
@@ -633,7 +690,9 @@ export async function POST(request: Request) {
           if (!isRawGold && !isRefiningDelivery) continue;
 
           const metal = String(prepared.documentDetails.metalType ?? 'gold') as keyof typeof METAL_BASE_KARATS;
-          const rawWeight = metalAmount(prepared.lineAmounts, metal);
+          const rawWeight = Number(prepared.documentDetails.rawWeight) > 0
+            ? Number(prepared.documentDetails.rawWeight)
+            : metalAmount(prepared.lineAmounts, metal);
           if (rawWeight <= 0) continue;
           const metalType = metalTypeByCode.get(metal);
           const baseKarat = Number(metalType?.base_karat ?? METAL_BASE_KARATS[metal]);
@@ -792,6 +851,123 @@ export async function POST(request: Request) {
             } catch (journalErr) {
               console.error('Failed to post metal purchase journal entry:', journalErr);
             }
+          }
+        }
+
+        // Update cash funds for settled currency transactions and create cash_transactions
+        const currencyRecords = await writer.collection('currencies').getFullList().catch(() => []);
+        const vaultWorkingBalances = new Map<string, number>();
+        for (let index = 0; index < preparedLines.length; index++) {
+          const prepared = preparedLines[index];
+          if (prepared.line.documentTab !== 'currency') continue;
+          const isUnsettled = prepared.documentDetails.unsettledTrade === true || prepared.line.settlementMethod === 'unsettled';
+          if (isUnsettled) continue;
+
+          const currencyUnit = String(prepared.documentDetails.currencyUnit || 'USD').trim();
+          const matchedCur = currencyRecords.find(
+            (c: any) =>
+              String(c.code).toUpperCase() === currencyUnit.toUpperCase() ||
+              String(c.name).toUpperCase() === currencyUnit.toUpperCase() ||
+              String(c.id) === currencyUnit,
+          );
+          const curCode = String(matchedCur?.code || currencyUnit).toUpperCase();
+          const curName = String(matchedCur?.name || currencyUnit);
+          const curSymbol = String(matchedCur?.symbol || curCode);
+          const curId = matchedCur?.id || '';
+
+          let vault = await writer.collection('cash_funds').getFirstListItem(
+            writer.filter('currency = {:currencyId}', { currencyId: curId || curCode }),
+          ).catch(async () => writer.collection('cash_funds').getFirstListItem(
+            writer.filter('(currency = "" || currency = null) && currency_name = {:currency}', { currency: curName }),
+          ).catch(() => null));
+
+          if (!vault) {
+            vault = await writer.collection('cash_funds').create({
+              name: `صندوق ${curName}`,
+              currency: curId,
+              currency_name: curName,
+              balance: 0,
+              opening_balance: 0,
+              is_active: true,
+              created_by: context.user.id,
+              updated_by: context.user.id,
+            }).catch(() => null);
+          }
+
+          if (!vault) continue;
+
+          const qty = Math.abs(Number(prepared.documentDetails.currencyQuantity) || 0);
+          const currentBal = vaultWorkingBalances.has(vault.id)
+            ? vaultWorkingBalances.get(vault.id)!
+            : Number(vault.balance ?? 0);
+          const nextBal = prepared.lineNature === 'received' ? currentBal + qty : currentBal - qty;
+          vaultWorkingBalances.set(vault.id, nextBal);
+
+          await writer.collection('cash_funds').update(vault.id, {
+            balance: nextBal,
+            updated_by: context.user.id,
+          });
+
+          const cashSourceKey = `document:${documentId}:${prepared.lineNumber}:cash_fund`;
+          const existingTx = await writer.collection('cash_transactions').getFirstListItem(
+            writer.filter('source_key = {:sourceKey}', { sourceKey: cashSourceKey }),
+          ).catch(() => null);
+
+          if (!existingTx) {
+            await writer.collection('cash_transactions').create({
+              vault: vault.id,
+              currency: curCode,
+              currency_name: curName,
+              currency_symbol: curSymbol,
+              currency_ref: curId,
+              amount: qty,
+              direction: prepared.lineNature === 'received' ? 'in' : 'out',
+              transaction_type: prepared.lineNature === 'received' ? 'currency_purchase' : 'currency_sale',
+              description: prepared.lineNature === 'received'
+                ? `دریافت نقدی ارز بابت خرید ${qty} ${curCode} از ${customer.name}`
+                : `پرداخت نقدی ارز بابت فروش ${qty} ${curCode} به ${customer.name}`,
+              source_key: cashSourceKey,
+              created_by: context.user.id,
+            });
+          }
+
+          prepared.documentDetails.vaultAccountId = vault.accountId;
+        }
+
+        // Post double-entry journal lines for currency trades
+        for (let index = 0; index < preparedLines.length; index++) {
+          const prepared = preparedLines[index];
+          if (prepared.line.documentTab !== 'currency') continue;
+          const rialAmount = Math.abs(prepared.lineAmounts.rialAmount ?? 0);
+          if (rialAmount <= 0) continue;
+          const isUnsettled = prepared.documentDetails.unsettledTrade === true || prepared.line.settlementMethod === 'unsettled';
+          const qty = Math.abs(Number(prepared.documentDetails.currencyQuantity) || 0);
+          const curCode = String(prepared.documentDetails.currencyUnit || 'USD').toUpperCase();
+
+          try {
+            await postCurrencyTrade(
+              {
+                documentId: `${documentId}:${prepared.lineNumber}`,
+                documentNumber: lineDocumentNumbers[index] || finalDocumentNumber,
+                entryDateJalali: documentDateJalali,
+                tradeType: prepared.lineNature === 'received' ? 'purchase' : 'sale',
+                isUnsettled,
+                currencyUnit: curCode,
+                currencyQuantity: qty,
+                rialTotalAmount: rialAmount,
+                customer: {
+                  id: customer.id,
+                  name: customer.name,
+                  customerCode: Number(customer.customerCode ?? 0),
+                },
+                cashFundAccountId: typeof prepared.documentDetails.vaultAccountId === 'string' ? prepared.documentDetails.vaultAccountId : undefined,
+                userId: context.user.id,
+                description: readString(prepared.line.description ?? body.description, 500) || undefined,
+              },
+              writer,
+            );
+          } catch (journalErr) {
+            console.error('Failed to post currency trade journal entry:', journalErr);
           }
         }
 

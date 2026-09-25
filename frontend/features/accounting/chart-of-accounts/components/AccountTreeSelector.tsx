@@ -57,12 +57,15 @@ export default function AccountTreeSelector({
   // Fetch accounts from API
   useEffect(() => {
     let isMounted = true;
+    const controller = new AbortController();
     async function loadAccounts() {
       setLoading(true);
       try {
         const params = new URLSearchParams();
         if (filterType && filterType !== 'all') params.set('accountType', filterType);
-        const res = await fetch(`/api/chart-of-accounts?${params.toString()}`);
+        const res = await fetch(`/api/chart-of-accounts?${params.toString()}`, {
+          signal: controller.signal,
+        });
         if (res.ok) {
           const data = await res.json();
           if (isMounted && Array.isArray(data.accounts)) {
@@ -72,7 +75,10 @@ export default function AccountTreeSelector({
             setExpandedNodes(new Set(rootIds));
           }
         }
-      } catch (err) {
+      } catch (err: unknown) {
+        if (!isMounted || controller.signal.aborted || (err as { name?: string })?.name === 'AbortError') {
+          return;
+        }
         console.error('Failed to load chart of accounts for selector:', err);
       } finally {
         if (isMounted) setLoading(false);
@@ -81,6 +87,7 @@ export default function AccountTreeSelector({
     loadAccounts();
     return () => {
       isMounted = false;
+      controller.abort();
     };
   }, [filterType]);
 

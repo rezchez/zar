@@ -22,6 +22,8 @@ interface CommittedLineRowProps {
   hasAssayOrStamp?: boolean;
   hasFinancialAmounts?: boolean;
   hasValidCustomer?: boolean;
+  hasMetalLines?: boolean;
+  hasCurrencyLines?: boolean;
 }
 
 export default function CommittedLineRow({
@@ -34,9 +36,15 @@ export default function CommittedLineRow({
   hasAssayOrStamp = false,
   hasFinancialAmounts = false,
   hasValidCustomer = false,
+  hasMetalLines = true,
+  hasCurrencyLines = false,
 }: CommittedLineRowProps) {
   const isPaid = line.documentNature === 'paid';
   const isReceived = line.documentNature === 'received';
+  const isCurrency = line.documentTab === 'currency';
+  const isClaimLine = line.documentSubType === 'currency-claim';
+  const isDebtLine = line.documentSubType === 'currency-debt';
+  const isUnsettled = line.details.unsettledTrade === true || line.settlementMethod === 'unsettled';
 
   const docType =
     line.documentTypeLabel ||
@@ -49,8 +57,8 @@ export default function CommittedLineRow({
     );
 
   const metalLabel =
-    line.documentTab === 'currency'
-      ? line.details.currencyUnit || 'ارز'
+    isCurrency
+      ? '-'
       : line.details.metalType === 'silver'
       ? 'نقره'
       : line.details.metalType === 'platinum'
@@ -58,11 +66,13 @@ export default function CommittedLineRow({
       : 'طلا';
 
   const rawWeight =
-    line.details.calculationMethod === 'money'
+    isCurrency
+      ? 0
+      : line.details.calculationMethod === 'money'
       ? actualWeightFromMoney(line.details, Number(line.details.baseKarat || 750))
       : numberValue(line.details.rawWeight);
 
-  const purityVal = numberValue(line.details.purity);
+  const purityVal = isCurrency ? 0 : numberValue(line.details.purity);
 
   // Formula: weight * purity / the base karat captured when the line was registered.
   const c750 =
@@ -77,29 +87,44 @@ export default function CommittedLineRow({
   let bedehkarVazni: string | null = null;
   let bostankarVazni: string | null = null;
 
-  if (line.documentTab === 'gold-sale') {
-    if (isReceived) {
-      // معامله خرید طلا: مشتری متعهد تحویل طلاست و بدهکار وزنی می‌شود
-      bedehkarVazni = c750 > 0 ? faNumber(c750, weightPrecision) : null;
-    } else if (isPaid) {
-      // معامله فروش طلا: مشتری خریدار طلاست و بستانکار وزنی می‌شود
-      bostankarVazni = c750 > 0 ? faNumber(c750, weightPrecision) : null;
-    }
-  } else {
-    // ردیف‌های فیزیکی (ورود و خروج طلا) و سایر ردیف‌ها
-    if (isPaid) {
-      // خروج فیزیکی فلز: تحویل به مشتری -> مشتری بدهکار وزنی می‌شود
-      bedehkarVazni = c750 > 0 ? faNumber(c750, weightPrecision) : null;
-    } else if (isReceived) {
-      // ورود فیزیکی فلز: تحویل توسط مشتری -> مشتری بستانکار وزنی شده و بدهی وزنی‌اش تسویه می‌شود
-      bostankarVazni = c750 > 0 ? faNumber(c750, weightPrecision) : null;
+  if (!isCurrency) {
+    if (line.documentTab === 'gold-sale') {
+      if (isReceived) {
+        // معامله خرید طلا: مشتری متعهد تحویل طلاست و بدهکار وزنی می‌شود
+        bedehkarVazni = c750 > 0 ? faNumber(c750, weightPrecision) : null;
+      } else if (isPaid) {
+        // معامله فروش طلا: مشتری خریدار طلاست و بستانکار وزنی می‌شود
+        bostankarVazni = c750 > 0 ? faNumber(c750, weightPrecision) : null;
+      }
+    } else {
+      // ردیف‌های فیزیکی (ورود و خروج فلزات) و سایر ردیف‌ها
+      if (isPaid) {
+        bedehkarVazni = c750 > 0 ? faNumber(c750, weightPrecision) : null;
+      } else if (isReceived) {
+        bostankarVazni = c750 > 0 ? faNumber(c750, weightPrecision) : null;
+      }
     }
   }
 
-  const financialAmount =
-    line.documentTab === 'currency'
-      ? numberValue(line.details.currencyTotalAmount)
-      : numberValue(line.details.totalAmount);
+  // Currency column values
+  const currencyQty = isCurrency ? numberValue(line.details.currencyQuantity) : 0;
+  const currencyUnit = isCurrency ? (line.details.currencyUnit || 'USD') : '-';
+
+  let bedehkarArzi: string | null = null;
+  let bostankarArzi: string | null = null;
+
+  if (isCurrency && currencyQty > 0) {
+    if (isClaimLine || (isUnsettled && isReceived && !line.details.linkedLineId)) {
+      bedehkarArzi = faNumber(currencyQty, 0);
+    } else if (isDebtLine || (isUnsettled && isPaid && !line.details.linkedLineId)) {
+      bostankarArzi = faNumber(currencyQty, 0);
+    }
+  }
+
+  // Financial amounts
+  const financialAmount = isCurrency
+    ? (isClaimLine || isDebtLine ? 0 : numberValue(line.details.currencyTotalAmount))
+    : numberValue(line.details.totalAmount);
 
   const bedehkarMali = isPaid && financialAmount > 0 ? faNumber(financialAmount, 0) : null;
   const bostankarMali = isReceived && financialAmount > 0 ? faNumber(financialAmount, 0) : null;
@@ -126,42 +151,71 @@ export default function CommittedLineRow({
         </div>
       </TableCell>
 
-      {/* 3. Metal / Currency Label */}
-      <TableCell className="px-1 py-1.5 text-center font-medium text-slate-700 dark:text-slate-200 text-xs border-s border-slate-200/60 dark:border-slate-800/60">
-        <span className="truncate block w-full" title={metalLabel}>{metalLabel}</span>
-      </TableCell>
+      {/* 3..7 Metal Cells (Only rendered if hasMetalLines) */}
+      {hasMetalLines ? (
+        <>
+          <TableCell className="px-1 py-1.5 text-center font-medium text-slate-700 dark:text-slate-200 text-xs border-s border-slate-200/60 dark:border-slate-800/60">
+            <span className="truncate block w-full" title={metalLabel}>{metalLabel}</span>
+          </TableCell>
 
-      {/* 4. Raw Weight */}
-      <TableCell className="px-1.5 py-1.5 text-center font-bold tabular-nums text-slate-800 dark:text-slate-100 text-xs border-s border-slate-200/60 dark:border-slate-800/60">
-        <span className="truncate block w-full" title={weightDisplay}>{weightDisplay}</span>
-      </TableCell>
+          <TableCell className="px-1.5 py-1.5 text-center font-bold tabular-nums text-slate-800 dark:text-slate-100 text-xs border-s border-slate-200/60 dark:border-slate-800/60">
+            <span className="truncate block w-full" title={weightDisplay}>{weightDisplay}</span>
+          </TableCell>
 
-      {/* 5. Purity */}
-      <TableCell className="px-1 py-1.5 text-center font-medium tabular-nums text-slate-600 dark:text-slate-300 text-xs border-s border-slate-200/60 dark:border-slate-800/60">
-        <span className="truncate block w-full" title={purityDisplay}>{purityDisplay}</span>
-      </TableCell>
+          <TableCell className="px-1 py-1.5 text-center font-medium tabular-nums text-slate-600 dark:text-slate-300 text-xs border-s border-slate-200/60 dark:border-slate-800/60">
+            <span className="truncate block w-full" title={purityDisplay}>{purityDisplay}</span>
+          </TableCell>
 
-      {/* 6. Weight Debit (بدهکار وزنی) */}
-      <TableCell className="px-1.5 py-1.5 text-center tabular-nums text-xs border-s border-slate-200/60 dark:border-slate-800/60">
-        {bedehkarVazni ? (
-          <span className="text-rose-600 dark:text-rose-400 font-bold truncate block w-full" title={bedehkarVazni}>
-            {bedehkarVazni}
-          </span>
-        ) : (
-          <span className="text-slate-300 dark:text-slate-600">-</span>
-        )}
-      </TableCell>
+          <TableCell className="px-1.5 py-1.5 text-center tabular-nums text-xs border-s border-slate-200/60 dark:border-slate-800/60">
+            {bedehkarVazni ? (
+              <span className="text-rose-600 dark:text-rose-400 font-bold truncate block w-full" title={bedehkarVazni}>
+                {bedehkarVazni}
+              </span>
+            ) : (
+              <span className="text-slate-300 dark:text-slate-600">-</span>
+            )}
+          </TableCell>
 
-      {/* 7. Weight Credit (بستانکار وزنی) */}
-      <TableCell className="px-1.5 py-1.5 text-center tabular-nums text-xs border-s border-slate-200/60 dark:border-slate-800/60">
-        {bostankarVazni ? (
-          <span className="text-emerald-600 dark:text-emerald-400 font-bold truncate block w-full" title={bostankarVazni}>
-            {bostankarVazni}
-          </span>
-        ) : (
-          <span className="text-slate-300 dark:text-slate-600">-</span>
-        )}
-      </TableCell>
+          <TableCell className="px-1.5 py-1.5 text-center tabular-nums text-xs border-s border-slate-200/60 dark:border-slate-800/60">
+            {bostankarVazni ? (
+              <span className="text-emerald-600 dark:text-emerald-400 font-bold truncate block w-full" title={bostankarVazni}>
+                {bostankarVazni}
+              </span>
+            ) : (
+              <span className="text-slate-300 dark:text-slate-600">-</span>
+            )}
+          </TableCell>
+        </>
+      ) : null}
+
+      {/* Currency Cells (Only rendered if hasCurrencyLines) */}
+      {hasCurrencyLines ? (
+        <>
+          <TableCell className="px-1 py-1.5 text-center font-bold text-slate-700 dark:text-slate-200 text-xs border-s border-slate-200/60 dark:border-slate-800/60">
+            <span className="truncate block w-full" title={currencyUnit}>{currencyUnit}</span>
+          </TableCell>
+
+          <TableCell className="px-1.5 py-1.5 text-center tabular-nums text-xs border-s border-slate-200/60 dark:border-slate-800/60">
+            {bedehkarArzi ? (
+              <span className="text-rose-600 dark:text-rose-400 font-bold truncate block w-full" title={bedehkarArzi}>
+                {bedehkarArzi}
+              </span>
+            ) : (
+              <span className="text-slate-300 dark:text-slate-600">-</span>
+            )}
+          </TableCell>
+
+          <TableCell className="px-1.5 py-1.5 text-center tabular-nums text-xs border-s border-slate-200/60 dark:border-slate-800/60">
+            {bostankarArzi ? (
+              <span className="text-emerald-600 dark:text-emerald-400 font-bold truncate block w-full" title={bostankarArzi}>
+                {bostankarArzi}
+              </span>
+            ) : (
+              <span className="text-slate-300 dark:text-slate-600">-</span>
+            )}
+          </TableCell>
+        </>
+      ) : null}
 
       {/* 8. Financial Debit (بدهکار مالی) */}
       {hasFinancialAmounts ? (

@@ -1,9 +1,9 @@
 import type { DocumentNature } from '@/lib/document';
 import type { RawOperationKind, DocumentLine, DetailState } from '@/src/components/documents/RawGoldTab';
 import { isRefinerGroup } from '@/lib/customer-groups';
-import { normalizeDigits, toPersianDigits } from '@/lib/jalali';
+import { normalizeDigits, toPersianDigits, parseJalaliDate, formatJalaliDate } from '@/lib/jalali';
 
-export { toPersianDigits };
+export { toPersianDigits, formatJalaliDate };
 
 export function faNumber(value: number, fractionDigits = 3): string {
   if (Number.isNaN(value) || !Number.isFinite(value)) return '۰';
@@ -175,4 +175,46 @@ export function actualWeightForLine(line: DocumentLine, baseKarat = 750): number
     return actualWeightFromMoney(line.details, baseKarat);
   }
   return numberValue(line.details.rawWeight);
+}
+
+export interface DateDiffInfo {
+  isDifferent: boolean;
+  isPast: boolean;
+  isFuture: boolean;
+  todayJalali: string;
+}
+
+/**
+ * Checks if a given Jalali date string is before, after, or equal to today's Jalali date.
+ */
+export function checkDocumentDateDiff(jalaliDateStr: string): DateDiffInfo {
+  const normSelected = normalizeDigits(jalaliDateStr).trim().replace(/[./-]/g, '/');
+  const todayRaw = formatJalaliDate();
+  const normToday = normalizeDigits(todayRaw).trim().replace(/[./-]/g, '/');
+
+  if (!normSelected) {
+    return { isDifferent: false, isPast: false, isFuture: false, todayJalali: normToday };
+  }
+
+  const parsedSelected = parseJalaliDate(normSelected);
+  const parsedToday = parseJalaliDate(normToday);
+
+  if (!parsedSelected || !parsedToday) {
+    return {
+      isDifferent: normSelected !== normToday,
+      isPast: false,
+      isFuture: false,
+      todayJalali: normToday,
+    };
+  }
+
+  const selNum = parsedSelected.year * 10000 + parsedSelected.month * 100 + parsedSelected.day;
+  const todayNum = parsedToday.year * 10000 + parsedToday.month * 100 + parsedToday.day;
+
+  return {
+    isDifferent: selNum !== todayNum,
+    isPast: selNum < todayNum,
+    isFuture: selNum > todayNum,
+    todayJalali: normToday,
+  };
 }

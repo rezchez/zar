@@ -3,7 +3,9 @@
 import React from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
+  AlertTriangle,
   ArrowLeftRight,
+  Calendar,
   Plus,
   RotateCcw,
   Trash2,
@@ -13,7 +15,7 @@ import type { Customer } from '@/lib/customer';
 import type { DocumentLine } from '@/src/components/documents/RawGoldTab';
 import Field from '@/src/components/documents/Field';
 import HawalaModal from '@/src/components/documents/HawalaModal';
-import { toPersianDigits } from '../utils/document-helpers';
+import { toPersianDigits, type DateDiffInfo } from '../utils/document-helpers';
 
 interface DocumentModalsProps {
   // Hawala modal
@@ -59,6 +61,14 @@ interface DocumentModalsProps {
     countdown: number;
   } | null;
   onCancelPendingHawala: () => void;
+
+  // Document date confirmation modal
+  showDateConfirmModal?: boolean;
+  documentDateJalali?: string;
+  dateDiffInfo?: DateDiffInfo | null;
+  onConfirmDateChange?: () => void;
+  onSetTodayAndCommit?: () => void;
+  onCancelDateChange?: () => void;
 }
 
 export default function DocumentModals({
@@ -90,6 +100,12 @@ export default function DocumentModals({
   onRestoreLine,
   pendingHawala,
   onCancelPendingHawala,
+  showDateConfirmModal = false,
+  documentDateJalali = '',
+  dateDiffInfo = null,
+  onConfirmDateChange,
+  onSetTodayAndCommit,
+  onCancelDateChange,
 }: DocumentModalsProps) {
   return (
     <>
@@ -395,6 +411,96 @@ export default function DocumentModals({
                 </button>
               </div>
             </motion.form>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      {/* 6. DOCUMENT DATE CONFIRMATION MODAL */}
+      <AnimatePresence>
+        {showDateConfirmModal && documentDateJalali ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 text-right"
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 10 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 10 }}
+              className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+                <span className="text-sm font-bold text-amber-600 dark:text-amber-400 flex items-center gap-2">
+                  <Calendar size={18} />
+                  اعلان تاریخ سند
+                </span>
+                <button
+                  type="button"
+                  onClick={onCancelDateChange}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                  title="بستن"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/80 flex items-start gap-2.5">
+                  <AlertTriangle className="size-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                  <div className="text-xs leading-relaxed space-y-1.5 flex-1">
+                    <p className="font-black text-slate-800 dark:text-slate-100 text-sm">
+                      از ثبت سند با تاریخ{' '}
+                      <span className="font-mono text-amber-700 dark:text-amber-300 font-black text-sm px-1.5 py-0.5 bg-white dark:bg-slate-800 rounded border border-amber-300 dark:border-amber-700 mx-0.5 inline-block">
+                        {toPersianDigits(documentDateJalali)}
+                      </span>{' '}
+                      مطمئنی؟
+                    </p>
+                    {dateDiffInfo && (
+                      <p className="text-[11px] text-slate-600 dark:text-slate-400 font-medium leading-relaxed">
+                        {dateDiffInfo.isPast
+                          ? `این تاریخ قبل از امروز است (تاریخ امروز: ${toPersianDigits(dateDiffInfo.todayJalali)}).`
+                          : dateDiffInfo.isFuture
+                            ? `این تاریخ بعد از امروز است (تاریخ امروز: ${toPersianDigits(dateDiffInfo.todayJalali)}).`
+                            : ''}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <p className="text-[11.5px] text-slate-500 dark:text-slate-400 font-medium leading-relaxed">
+                  ثبت سند با تاریخ گذشته یا آینده بر تراز مانده‌حساب‌ها، موجودی صندوق و گزارش‌های دوره‌ای طرف‌حساب مؤثر خواهد بود.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={onCancelDateChange}
+                  className="rounded-xl border border-slate-300 dark:border-slate-700 px-3.5 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                >
+                  انصراف
+                </button>
+                <div className="flex items-center gap-2">
+                  {onSetTodayAndCommit && (
+                    <button
+                      type="button"
+                      onClick={onSetTodayAndCommit}
+                      className="rounded-xl border border-amber-500/40 bg-amber-50 hover:bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-700 px-3 py-2 text-xs font-bold transition-colors cursor-pointer"
+                    >
+                      تنظیم به امروز و ثبت
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={onConfirmDateChange}
+                    className="rounded-xl bg-amber-500 hover:bg-amber-400 px-4 py-2 text-xs font-black text-slate-950 shadow-md transition-colors cursor-pointer"
+                  >
+                    بله، مطمئنم
+                  </button>
+                </div>
+              </div>
+            </motion.div>
           </motion.div>
         ) : null}
       </AnimatePresence>

@@ -23,18 +23,26 @@ export const DEFAULT_PASSED_SECTIONS: StickyPassedSections = {
   date: false,
 };
 
+export interface StickyCurrencyOption {
+  code: string;
+  name: string;
+  symbol?: string;
+}
+
 export interface DocumentStickyHeaderData {
   customer: Customer | null;
   documentNumber: string;
   nature: DocumentNature;
   metalType: MetalType;
   currency: string;
+  currencies?: StickyCurrencyOption[];
   dateJalali: string;
   isCustomerLocked: boolean;
   passedSections?: StickyPassedSections;
   onToggleNature?: () => void;
   onChangeMetalType?: (type: MetalType) => void;
   onCurrencyChange?: (curr: string) => void;
+  onDateChange?: (date: string) => void;
   onScrollToTop?: () => void;
   onScrollToCustomer?: () => void;
 }

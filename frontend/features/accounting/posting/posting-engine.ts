@@ -1736,3 +1736,75 @@ export async function postMetalPurchase(
     writer,
   );
 }
+
+export async function postCurrencyTrade(
+  params: {
+    documentId: string;
+    documentNumber: string;
+    entryDateJalali?: string;
+    tradeType: 'purchase' | 'sale';
+    isUnsettled: boolean;
+    currencyUnit: string;
+    currencyQuantity: number;
+    rialTotalAmount: number;
+    customer: {
+      id: string;
+      name: string;
+      customerCode?: number;
+    };
+    cashFundAccountId?: string;
+    userId: string;
+    description?: string;
+    mapping?: Record<string, string>;
+  },
+  pb: PocketBase,
+): Promise<JournalEntryResult> {
+  const roundedAmount = Math.round(params.rialTotalAmount);
+  if (roundedAmount <= 0) {
+    throw new Error('مبلغ معامله ارزی باید بزرگتر از صفر باشد.');
+  }
+
+  let writer = pb;
+  if (!(pb as any)._store) {
+    try {
+      const { getPocketBaseServiceClient } = await import('@/lib/pocketbase-service');
+      writer = await getPocketBaseServiceClient();
+    } catch {
+      writer = pb;
+    }
+  }
+
+  const { buildCurrencyJournalLines } = await import('./currency-accounting');
+
+  const lines = buildCurrencyJournalLines({
+    tradeType: params.tradeType,
+    isUnsettled: params.isUnsettled,
+    currencyUnit: params.currencyUnit,
+    currencyQuantity: params.currencyQuantity,
+    rialTotalAmount: roundedAmount,
+    customerId: params.customer.id,
+    customerName: params.customer.name,
+    cashFundAccountId: params.cashFundAccountId,
+    mapping: params.mapping as any,
+  });
+
+  const actionLabel = params.tradeType === 'purchase' ? 'خرید' : 'فروش';
+  const settleLabel = params.isUnsettled ? 'بدون تسویه' : 'نقدی';
+  const desc =
+    params.description ||
+    `${actionLabel} ارز (${settleLabel}) به تعداد ${params.currencyQuantity} ${params.currencyUnit} - طرف‌حساب ${params.customer.name} (سند ${params.documentNumber})`;
+
+  return postJournalEntry(
+    {
+      description: desc,
+      sourceType: 'document',
+      sourceId: params.documentId,
+      sourceKey: `currency:${params.tradeType}:${params.documentId}`,
+      entryDateJalali: params.entryDateJalali,
+      userId: params.userId,
+      lines,
+    },
+    writer,
+  );
+}
+

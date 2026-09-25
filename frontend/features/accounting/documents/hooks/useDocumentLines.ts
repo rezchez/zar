@@ -413,7 +413,11 @@ export function useDocumentLines({
         documentSubType: isGoldSale
           ? `${current.documentNature === 'received' ? 'gold-purchase' : 'gold-sale'}-${kind}`
           : documentSubType(current.documentNature, kind),
-        details: { ...current.details, rawKind: kind },
+        details: {
+          ...current.details,
+          rawKind: kind,
+          ...(kind === 'misc' || kind === 'question' ? { labName: '', stampNumber: '' } : {}),
+        },
       };
     });
   }, []);
@@ -446,6 +450,15 @@ export function useDocumentLines({
   };
 
   const commitDraftLine = (meltedInventory: MeltedInventoryItem[] = []) => {
+    if (
+      (draftLine.documentTab === 'currency' || draftLine.sourceTab === 'currency' || activeEntryTab === 'currency') &&
+      !draftLine.details.currencyUnit
+    ) {
+      const fallbackUnit = selectedCurrency || 'USD';
+      draftLine.details.currencyUnit = fallbackUnit;
+      draftLine.details.settlementCurrencyUnit = draftLine.details.settlementCurrencyUnit || fallbackUnit;
+    }
+
     const validationMessage = validateLine(draftLine, meltedInventory, committedLines, editingLineId);
     if (validationMessage) {
       toast.error(validationMessage);
@@ -472,8 +485,12 @@ export function useDocumentLines({
       ? (draftLine.sourceTab || activeEntryTab || 'metals')
       : (activeEntryTab || draftLine.sourceTab || 'metals');
 
+    const lineNature = editingLineId
+      ? (draftLine.documentNature || documentNature)
+      : documentNature;
+
     const docTypeLabel = getLineDocumentTypeLabel(
-      documentNature,
+      lineNature,
       lineSourceTab,
       draftLine.details.rawKind,
       draftLine.details.unsettledTrade,
@@ -487,14 +504,24 @@ export function useDocumentLines({
     const baseKarat = purityForMetal(draftLine.details.metalType);
     const c750 = convertedTo750(String(rawWeight), draftLine.details.purity, baseKarat);
 
+    const effectiveCurrencyUnit =
+      draftLine.details.currencyUnit ||
+      selectedCurrency ||
+      'USD';
+
     const lineToCommit: DocumentLine = {
       ...draftLine,
-      documentNature,
+      documentNature: lineNature,
       sourceTab: lineSourceTab,
       documentTypeLabel: docTypeLabel,
       converted750: c750,
       description: draftLine.description ? draftLine.description.trim() : '',
-      details: { ...draftLine.details, baseKarat },
+      details: {
+        ...draftLine.details,
+        baseKarat,
+        currencyUnit: lineSourceTab === 'currency' ? effectiveCurrencyUnit : draftLine.details.currencyUnit,
+        settlementCurrencyUnit: lineSourceTab === 'currency' ? (draftLine.details.settlementCurrencyUnit || effectiveCurrencyUnit) : draftLine.details.settlementCurrencyUnit,
+      },
     };
 
     const isSettledMetalTrade =
@@ -503,14 +530,30 @@ export function useDocumentLines({
       !draftLine.details.unsettledTrade &&
       draftLine.settlementMethod !== 'unsettled';
 
+    const isCurrencyTrade =
+      lineSourceTab === 'currency' || draftLine.documentTab === 'currency' || activeEntryTab === 'currency';
+    const isUnsettledCurrency =
+      isCurrencyTrade &&
+      (Boolean(draftLine.details.unsettledTrade) || draftLine.settlementMethod === 'unsettled');
+
+    const currencyTradeDocTypeLabel =
+      lineNature === 'received' ? 'خرید ارز' : 'فروش ارز';
+    const currencyTradeSubType =
+      lineNature === 'received' ? 'currency-purchase' : 'currency-sale';
+
+    const currencyClaimDocTypeLabel =
+      lineNature === 'received' ? 'طلب ارزی' : 'بدهی ارزی';
+    const currencyClaimSubType =
+      lineNature === 'received' ? 'currency-claim' : 'currency-debt';
+
     const tradeDocTypeLabel =
-      documentNature === 'received'
+      lineNature === 'received'
         ? draftLine.details.rawKind === 'misc' ? 'خرید متفرقه' : 'خرید آب‌شده'
         : draftLine.details.rawKind === 'misc' ? 'فروش متفرقه' : 'فروش آب‌شده';
     const tradeSubType =
-      `${documentNature === 'received' ? 'gold-purchase' : 'gold-sale'}-${draftLine.details.rawKind === 'misc' ? 'misc' : 'molten'}`;
+      `${lineNature === 'received' ? 'gold-purchase' : 'gold-sale'}-${draftLine.details.rawKind === 'misc' ? 'misc' : 'molten'}`;
 
-    const physicalDocNature = documentNature;
+    const physicalDocNature = lineNature;
     const physicalTypeLabel =
       physicalDocNature === 'received'
         ? draftLine.details.rawKind === 'misc' ? 'ورود متفرقه' : 'ورود آبشده'
@@ -525,7 +568,7 @@ export function useDocumentLines({
         setCommittedLines((current) => {
           const tradeLine: DocumentLine = {
             ...lineToCommit,
-            documentNature,
+            documentNature: lineNature,
             documentTab: 'gold-sale',
             sourceTab: 'gold-sale',
             documentTypeLabel: tradeDocTypeLabel,
@@ -604,7 +647,7 @@ export function useDocumentLines({
         });
         setEditingLineId(null);
         toast.success(
-          documentNature === 'received'
+          lineNature === 'received'
             ? 'ردیف خرید و ردیف ورود فیزیکی با موفقیت ویرایش شدند.'
             : 'ردیف فروش و ردیف خروج فیزیکی با موفقیت ویرایش شدند.',
         );
@@ -648,6 +691,104 @@ export function useDocumentLines({
         });
         setEditingLineId(null);
         toast.success('ردیف با موفقیت ویرایش شد.');
+      } else if (isCurrencyTrade) {
+        setCommittedLines((current) => {
+          const tradeLine: DocumentLine = {
+            ...lineToCommit,
+            documentNature: lineNature,
+            documentTab: 'currency',
+            sourceTab: 'currency',
+            documentTypeLabel: currencyTradeDocTypeLabel,
+            documentSubType: currencyTradeSubType,
+            details: {
+              ...lineToCommit.details,
+              currencyUnit: effectiveCurrencyUnit,
+              settlementCurrencyUnit: effectiveCurrencyUnit,
+              unsettledTrade: isUnsettledCurrency,
+            },
+          };
+
+          const existingClaimIndex = current.findIndex(
+            (l) =>
+              (tradeLine.details.linkedLineId && l.id === tradeLine.details.linkedLineId) ||
+              (l.details?.linkedLineId === editingLineId &&
+                (l.documentSubType === 'currency-claim' || l.documentSubType === 'currency-debt')),
+          );
+
+          if (isUnsettledCurrency) {
+            if (existingClaimIndex !== -1) {
+              const existingClaim = current[existingClaimIndex];
+              const updatedClaim: DocumentLine = {
+                ...existingClaim,
+                documentNature: lineNature,
+                documentTab: 'currency',
+                sourceTab: 'currency',
+                documentTypeLabel: currencyClaimDocTypeLabel,
+                documentSubType: currencyClaimSubType,
+                settlementMethod: 'unsettled',
+                details: {
+                  ...existingClaim.details,
+                  currencyUnit: effectiveCurrencyUnit,
+                  currencyQuantity: draftLine.details.currencyQuantity,
+                  currencyUnitPrice: '0',
+                  currencyTotalAmount: '0',
+                  unsettledTrade: true,
+                  linkedLineId: tradeLine.id,
+                },
+              };
+              tradeLine.details.linkedLineId = updatedClaim.id;
+              return current.map((l) => {
+                if (l.id === editingLineId) return tradeLine;
+                if (l.id === updatedClaim.id) return updatedClaim;
+                return l;
+              });
+            } else {
+              const claimLineId = crypto.randomUUID();
+              tradeLine.details.linkedLineId = claimLineId;
+              const newClaim: DocumentLine = {
+                id: claimLineId,
+                documentNature: lineNature,
+                documentTab: 'currency',
+                sourceTab: 'currency',
+                documentTypeLabel: currencyClaimDocTypeLabel,
+                documentSubType: currencyClaimSubType,
+                settlementMethod: 'unsettled',
+                balanceSource: 'current',
+                description: draftLine.description
+                  ? draftLine.description.trim()
+                  : lineNature === 'received'
+                    ? 'طلب ارزی بابت خرید بدون تسویه'
+                    : 'بدهی ارزی بابت فروش بدون تسویه',
+                details: {
+                  ...draftLine.details,
+                  currencyUnit: effectiveCurrencyUnit,
+                  currencyQuantity: draftLine.details.currencyQuantity,
+                  currencyUnitPrice: '0',
+                  currencyTotalAmount: '0',
+                  unsettledTrade: true,
+                  linkedLineId: tradeLine.id,
+                },
+              };
+              return current.map((l) => (l.id === editingLineId ? tradeLine : l)).concat(newClaim);
+            }
+          } else {
+            const linkedId = tradeLine.details.linkedLineId;
+            delete tradeLine.details.linkedLineId;
+            return current
+              .map((l) => (l.id === editingLineId ? tradeLine : l))
+              .filter((l) => !linkedId || l.id !== linkedId);
+          }
+        });
+        setEditingLineId(null);
+        toast.success(
+          isUnsettledCurrency
+            ? (lineNature === 'received'
+                ? 'ردیف خرید ارز و ردیف طلب ارزی با موفقیت ویرایش شدند.'
+                : 'ردیف فروش ارز و ردیف بدهی ارزی با موفقیت ویرایش شدند.')
+            : (lineNature === 'received'
+                ? 'ردیف خرید ارز با تسویه آنی ویرایش شد.'
+                : 'ردیف فروش ارز با تسویه آنی ویرایش شد.')
+        );
       } else {
         const linkedId = draftLine.details?.linkedLineId;
         setCommittedLines((current) => {
@@ -711,10 +852,88 @@ export function useDocumentLines({
 
         setCommittedLines((current) => [...current, tradeLineToCommit, physicalLineToCommit]);
         toast.success(
-          documentNature === 'received'
+          lineNature === 'received'
             ? 'ردیف خرید و ردیف ورود فیزیکی طلا به سند اضافه شدند.'
             : 'ردیف فروش و ردیف خروج فیزیکی طلا به سند اضافه شدند.',
         );
+      } else if (isCurrencyTrade) {
+        const tradeLineId = draftLine.id || crypto.randomUUID();
+
+        if (isUnsettledCurrency) {
+          const claimLineId = crypto.randomUUID();
+
+          const tradeLineToCommit: DocumentLine = {
+            ...lineToCommit,
+            id: tradeLineId,
+            documentNature: lineNature,
+            documentTab: 'currency',
+            sourceTab: 'currency',
+            documentTypeLabel: currencyTradeDocTypeLabel,
+            documentSubType: currencyTradeSubType,
+            details: {
+              ...lineToCommit.details,
+              currencyUnit: effectiveCurrencyUnit,
+              settlementCurrencyUnit: effectiveCurrencyUnit,
+              unsettledTrade: true,
+              linkedLineId: claimLineId,
+            },
+          };
+
+          const claimLineToCommit: DocumentLine = {
+            id: claimLineId,
+            documentNature: lineNature,
+            documentTab: 'currency',
+            sourceTab: 'currency',
+            documentTypeLabel: currencyClaimDocTypeLabel,
+            documentSubType: currencyClaimSubType,
+            settlementMethod: 'unsettled',
+            balanceSource: 'current',
+            description: draftLine.description
+              ? draftLine.description.trim()
+              : lineNature === 'received'
+                ? 'طلب ارزی بابت خرید بدون تسویه'
+                : 'بدهی ارزی بابت فروش بدون تسویه',
+            details: {
+              ...draftLine.details,
+              currencyUnit: effectiveCurrencyUnit,
+              currencyQuantity: draftLine.details.currencyQuantity,
+              currencyUnitPrice: '0',
+              currencyTotalAmount: '0',
+              unsettledTrade: true,
+              linkedLineId: tradeLineId,
+            },
+          };
+
+          setCommittedLines((current) => [...current, tradeLineToCommit, claimLineToCommit]);
+          toast.success(
+            lineNature === 'received'
+              ? 'ردیف خرید ارز و ردیف طلب ارزی به سند اضافه شدند.'
+              : 'ردیف فروش ارز و ردیف بدهی ارزی به سند اضافه شدند.',
+          );
+        } else {
+          const tradeLineToCommit: DocumentLine = {
+            ...lineToCommit,
+            id: tradeLineId,
+            documentNature: lineNature,
+            documentTab: 'currency',
+            sourceTab: 'currency',
+            documentTypeLabel: currencyTradeDocTypeLabel,
+            documentSubType: currencyTradeSubType,
+            settlementMethod: 'cash',
+            details: {
+              ...lineToCommit.details,
+              currencyUnit: effectiveCurrencyUnit,
+              settlementCurrencyUnit: effectiveCurrencyUnit,
+              unsettledTrade: false,
+            },
+          };
+          setCommittedLines((current) => [...current, tradeLineToCommit]);
+          toast.success(
+            lineNature === 'received'
+              ? 'ردیف خرید ارز با تسویه آنی ثبت شد.'
+              : 'ردیف فروش ارز با تسویه آنی ثبت شد.',
+          );
+        }
       } else {
         setCommittedLines((current) => [...current, lineToCommit]);
         toast.success('ردیف به سند اضافه شد.');
@@ -727,6 +946,17 @@ export function useDocumentLines({
   };
 
   const editLine = (line: DocumentLine) => {
+    if (
+      (line.documentSubType === 'currency-claim' || line.documentSubType === 'currency-debt') &&
+      line.details?.linkedLineId
+    ) {
+      const parentLine = committedLines.find((l) => l.id === line.details.linkedLineId);
+      if (parentLine) {
+        setEditingLineId(parentLine.id);
+        setDraftLine({ ...parentLine });
+        return;
+      }
+    }
     setEditingLineId(line.id);
     setDraftLine({ ...line });
   };

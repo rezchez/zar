@@ -123,23 +123,29 @@ export async function POST(request: Request) {
         const metal = String(details.metalType || 'gold');
         const calcMethod = String(details.calculationMethod || 'weight');
         const baseKarat = numberValue(details.baseKarat) || 750;
-        const weight = calcMethod === 'money'
+        const rawWeight = calcMethod === 'money'
           ? actualWeightFromMoney(details.totalAmount, String(details.metalPriceType || ''), details.metalPrice, details.purity, baseKarat)
           : numberValue(details.rawWeight);
+        const purity = numberValue(details.purity) || baseKarat;
+        const convertedWeight = typeof line.converted750 === 'number' && Number.isFinite(line.converted750)
+          ? line.converted750
+          : (rawWeight > 0 && purity > 0 ? (rawWeight * purity) / baseKarat : 0);
 
         const weightDirection = docTab === 'gold-sale'
           ? (lineNature === 'received' ? -1 : 1)
           : direction;
 
         if (metal === 'silver') {
-          transactionEffect.silver += weightDirection * weight;
+          transactionEffect.silver += weightDirection * convertedWeight;
         } else if (metal === 'platinum') {
-          transactionEffect.platinum += weightDirection * weight;
+          transactionEffect.platinum += weightDirection * convertedWeight;
         } else {
-          transactionEffect.gold += weightDirection * weight;
+          transactionEffect.gold += weightDirection * convertedWeight;
         }
       } else if (docTab === 'workmanship') {
-        const weight = numberValue(details.rawWeight);
+        const weight = typeof line.converted750 === 'number' && Number.isFinite(line.converted750)
+          ? line.converted750
+          : numberValue(details.rawWeight);
         transactionEffect.gold += direction * weight;
       } else if (docTab === 'claim' && details.claimWeight) {
         const weight = numberValue(details.claimWeight);
@@ -172,12 +178,28 @@ export async function POST(request: Request) {
       // Foreign currency calculation
       let foreignAmount = 0;
       if (docTab === 'currency') {
-        foreignAmount = numberValue(details.currencyQuantity);
+        if (!previousBalance.secondaryCurrency && details.currencyUnit) {
+          previousBalance.secondaryCurrency = String(details.currencyUnit);
+        }
+        const isUnsettled = details.unsettledTrade === true || line.settlementMethod === 'unsettled';
+        if (isUnsettled) {
+          const isTradeWithSeparateClaim =
+            Boolean(details.linkedLineId) && numberValue(details.currencyTotalAmount) > 0;
+          if (!isTradeWithSeparateClaim) {
+            foreignAmount = numberValue(details.currencyQuantity);
+            // In unsettled currency trade:
+            // If received (خرید ارز بدون تسویه): customer owes currency delivery -> -foreignAmount
+            // If paid (فروش ارز بدون تسویه): customer is owed currency delivery -> +foreignAmount
+            const currencyDirection = lineNature === 'received' ? -1 : 1;
+            transactionEffect.foreign += currencyDirection * foreignAmount;
+          }
+        }
+        // If settled: foreign currency was paid/received immediately from/to cash fund, so customer foreign balance effect is 0!
       } else if (docTab === 'cash' && details.isForeignCash) {
         foreignAmount = numberValue(details.totalAmount);
-      }
-      if (foreignAmount > 0) {
-        transactionEffect.foreign += direction * foreignAmount;
+        if (foreignAmount > 0) {
+          transactionEffect.foreign += direction * foreignAmount;
+        }
       }
     }
 

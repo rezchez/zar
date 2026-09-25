@@ -756,7 +756,7 @@ export default function GoldSaleTab({
             ) : null}
 
             {/* Assay Lab Name and Stamp Number */}
-            {(isMoltenOrConditional || isMisc) ? (
+            {isMoltenOrConditional ? (
               <>
                 <Field label="نام آزمایشگاه ری‌گیری" required={isAssayRequired} error={errors.labName}>
                   <AssayLaboratorySelect

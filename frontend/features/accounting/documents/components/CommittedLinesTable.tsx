@@ -42,6 +42,9 @@ export type ColumnKey =
   | 'purity'
   | 'bedehkarVazni'
   | 'bostankarVazni'
+  | 'currency'
+  | 'bedehkarArzi'
+  | 'bostankarArzi'
   | 'bedehkarMali'
   | 'bostankarMali'
   | 'labName'
@@ -57,6 +60,9 @@ export const DEFAULT_COLUMN_WIDTHS: Record<ColumnKey, number> = {
   purity: 60,
   bedehkarVazni: 100,
   bostankarVazni: 100,
+  currency: 60,
+  bedehkarArzi: 95,
+  bostankarArzi: 95,
   bedehkarMali: 125,
   bostankarMali: 125,
   labName: 105,
@@ -73,6 +79,9 @@ export const MIN_COLUMN_WIDTHS: Record<ColumnKey, number> = {
   purity: 45,
   bedehkarVazni: 65,
   bostankarVazni: 65,
+  currency: 45,
+  bedehkarArzi: 65,
+  bostankarArzi: 65,
   bedehkarMali: 80,
   bostankarMali: 80,
   labName: 65,
@@ -91,6 +100,9 @@ type SortColumn =
   | 'purity'
   | 'bedehkarVazni'
   | 'bostankarVazni'
+  | 'currency'
+  | 'bedehkarArzi'
+  | 'bostankarArzi'
   | 'bedehkarMali'
   | 'bostankarMali'
   | 'labName'
@@ -124,7 +136,7 @@ function getLineSortValue(
     }
     case 'metal': {
       return line.documentTab === 'currency'
-        ? line.details.currencyUnit || 'ارز'
+        ? ''
         : line.details.metalType === 'silver'
         ? 'نقره'
         : line.details.metalType === 'platinum'
@@ -132,14 +144,17 @@ function getLineSortValue(
         : 'طلا';
     }
     case 'weight': {
+      if (line.documentTab === 'currency') return 0;
       return line.details.calculationMethod === 'money'
         ? actualWeightFromMoney(line.details, Number(line.details.baseKarat || 750))
         : numberValue(line.details.rawWeight);
     }
     case 'purity': {
+      if (line.documentTab === 'currency') return 0;
       return numberValue(line.details.purity);
     }
     case 'bedehkarVazni': {
+      if (line.documentTab === 'currency') return 0;
       const rawW =
         line.details.calculationMethod === 'money'
           ? actualWeightFromMoney(line.details, Number(line.details.baseKarat || 750))
@@ -156,6 +171,7 @@ function getLineSortValue(
       return isBedehkar ? c750 : 0;
     }
     case 'bostankarVazni': {
+      if (line.documentTab === 'currency') return 0;
       const rawW =
         line.details.calculationMethod === 'money'
           ? actualWeightFromMoney(line.details, Number(line.details.baseKarat || 750))
@@ -170,6 +186,29 @@ function getLineSortValue(
           ? line.documentNature === 'paid'
           : line.documentNature === 'received';
       return isBostankar ? c750 : 0;
+    }
+    case 'currency': {
+      return line.documentTab === 'currency' ? (line.details.currencyUnit || 'USD') : '';
+    }
+    case 'bedehkarArzi': {
+      if (line.documentTab !== 'currency') return 0;
+      if (
+        line.documentSubType === 'currency-claim' ||
+        (line.details.unsettledTrade && line.documentNature === 'received' && !line.details.linkedLineId)
+      ) {
+        return numberValue(line.details.currencyQuantity);
+      }
+      return 0;
+    }
+    case 'bostankarArzi': {
+      if (line.documentTab !== 'currency') return 0;
+      if (
+        line.documentSubType === 'currency-debt' ||
+        (line.details.unsettledTrade && line.documentNature === 'paid' && !line.details.linkedLineId)
+      ) {
+        return numberValue(line.details.currencyQuantity);
+      }
+      return 0;
     }
     case 'bedehkarMali': {
       if (line.documentNature !== 'paid') return 0;
@@ -286,6 +325,7 @@ interface CommittedLinesTableProps {
   hasFinancialAmounts: boolean;
   baseCurrency?: 'IRR' | 'IRT';
   weightPrecision?: number;
+  activeTab?: string;
   onEditLine: (line: DocumentLine) => void;
   onRemoveLine: (line: DocumentLine) => void;
   onHawalaLine: (line: DocumentLine) => void;
@@ -305,6 +345,7 @@ export default function CommittedLinesTable({
   hasFinancialAmounts,
   baseCurrency = 'IRR',
   weightPrecision = 3,
+  activeTab,
   onEditLine,
   onRemoveLine,
   onHawalaLine,
@@ -427,25 +468,56 @@ export default function CommittedLinesTable({
     }
   };
 
+  const hasCurrencyLines = useMemo(() => {
+    return (
+      activeTab === 'currency' ||
+      committedLines.some((l) => l.documentTab === 'currency' || l.sourceTab === 'currency')
+    );
+  }, [committedLines, activeTab]);
+
+  const hasMetalLines = useMemo(() => {
+    return (
+      !activeTab ||
+      activeTab === 'metals' ||
+      activeTab === 'gold-sale' ||
+      activeTab === 'workmanship' ||
+      activeTab === 'refining' ||
+      committedLines.some(
+        (l) =>
+          l.documentTab !== 'currency' &&
+          (l.documentTab === 'gold-sale' ||
+            l.documentTab === 'raw-gold' ||
+            l.documentTab === 'refining' ||
+            l.documentTab === 'workmanship' ||
+            l.sourceTab === 'metals' ||
+            numberValue(l.details?.rawWeight) > 0),
+      )
+    );
+  }, [committedLines, activeTab]);
+
   const activeColumns = useMemo(() => {
-    const cols: ColumnKey[] = [
-      'index',
-      'docType',
-      'metal',
-      'weight',
-      'purity',
-      'bedehkarVazni',
-      'bostankarVazni',
-    ];
-    if (hasFinancialAmounts) {
+    const cols: ColumnKey[] = ['index', 'docType'];
+    if (hasMetalLines) {
+      cols.push('metal', 'weight', 'purity', 'bedehkarVazni', 'bostankarVazni');
+    }
+    if (hasCurrencyLines) {
+      cols.push('currency', 'bedehkarArzi', 'bostankarArzi');
+    }
+    if (
+      hasFinancialAmounts ||
+      activeTab === 'cash' ||
+      activeTab === 'bank' ||
+      activeTab === 'currency' ||
+      activeTab === 'gold-sale'
+    ) {
       cols.push('bedehkarMali', 'bostankarMali');
     }
-    if (hasAssayOrStamp) {
+    if (hasAssayOrStamp || activeTab === 'refining') {
       cols.push('labName', 'stampNumber');
     }
     cols.push('description', 'actions');
     return cols;
-  }, [hasFinancialAmounts, hasAssayOrStamp]);
+  }, [hasMetalLines, hasCurrencyLines, hasFinancialAmounts, hasAssayOrStamp, activeTab]);
 
   const totalTableWidth = useMemo(() => {
     return activeColumns.reduce(
@@ -487,9 +559,10 @@ export default function CommittedLinesTable({
   const totalBedehkarVazni = useMemo(() => {
     return committedLines
       .filter((l) =>
-        l.documentTab === 'gold-sale'
+        l.documentTab !== 'currency' &&
+        (l.documentTab === 'gold-sale'
           ? l.documentNature === 'received'
-          : l.documentNature === 'paid',
+          : l.documentNature === 'paid'),
       )
       .reduce((sum, l) => {
         const rawW =
@@ -507,9 +580,10 @@ export default function CommittedLinesTable({
   const totalBostankarVazni = useMemo(() => {
     return committedLines
       .filter((l) =>
-        l.documentTab === 'gold-sale'
+        l.documentTab !== 'currency' &&
+        (l.documentTab === 'gold-sale'
           ? l.documentNature === 'paid'
-          : l.documentNature === 'received',
+          : l.documentNature === 'received'),
       )
       .reduce((sum, l) => {
         const rawW =
@@ -524,9 +598,31 @@ export default function CommittedLinesTable({
       }, 0);
   }, [committedLines]);
 
+  const totalBedehkarArzi = useMemo(() => {
+    return committedLines
+      .filter(
+        (l) =>
+          l.documentTab === 'currency' &&
+          (l.documentSubType === 'currency-claim' ||
+            (l.details.unsettledTrade && l.documentNature === 'received' && !l.details.linkedLineId)),
+      )
+      .reduce((sum, l) => sum + numberValue(l.details.currencyQuantity), 0);
+  }, [committedLines]);
+
+  const totalBostankarArzi = useMemo(() => {
+    return committedLines
+      .filter(
+        (l) =>
+          l.documentTab === 'currency' &&
+          (l.documentSubType === 'currency-debt' ||
+            (l.details.unsettledTrade && l.documentNature === 'paid' && !l.details.linkedLineId)),
+      )
+      .reduce((sum, l) => sum + numberValue(l.details.currencyQuantity), 0);
+  }, [committedLines]);
+
   const totalBedehkarMali = useMemo(() => {
     return committedLines
-      .filter((l) => l.documentNature === 'paid')
+      .filter((l) => l.documentNature === 'paid' && l.documentSubType !== 'currency-claim' && l.documentSubType !== 'currency-debt')
       .reduce((sum, l) => {
         const amount =
           l.documentTab === 'currency'
@@ -538,7 +634,7 @@ export default function CommittedLinesTable({
 
   const totalBostankarMali = useMemo(() => {
     return committedLines
-      .filter((l) => l.documentNature === 'received')
+      .filter((l) => l.documentNature === 'received' && l.documentSubType !== 'currency-claim' && l.documentSubType !== 'currency-debt')
       .reduce((sum, l) => {
         const amount =
           l.documentTab === 'currency'
@@ -695,95 +791,155 @@ export default function CommittedLinesTable({
                 />
               </TableHead>
 
-              {/* 3. Metal */}
-              <TableHead
-                style={{ width: `${columnWidths.metal}px` }}
-                className="relative px-1 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
-              >
-                <SortableHeader column="metal" currentSort={sortState} onSort={handleSort}>
-                  فلز
-                </SortableHeader>
-                <ColumnResizer
-                  colKey="metal"
-                  onResizeStart={handleResizeStart}
-                  onReset={handleResetColumnWidth}
-                  isResizing={resizingCol === 'metal'}
-                />
-              </TableHead>
+              {/* 3..7 Metal Headers (Only if hasMetalLines) */}
+              {hasMetalLines ? (
+                <>
+                  <TableHead
+                    style={{ width: `${columnWidths.metal}px` }}
+                    className="relative px-1 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
+                  >
+                    <SortableHeader column="metal" currentSort={sortState} onSort={handleSort}>
+                      فلز
+                    </SortableHeader>
+                    <ColumnResizer
+                      colKey="metal"
+                      onResizeStart={handleResizeStart}
+                      onReset={handleResetColumnWidth}
+                      isResizing={resizingCol === 'metal'}
+                    />
+                  </TableHead>
 
-              {/* 4. Weight */}
-              <TableHead
-                style={{ width: `${columnWidths.weight}px` }}
-                className="relative px-1.5 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
-              >
-                <SortableHeader column="weight" currentSort={sortState} onSort={handleSort}>
-                  وزن
-                </SortableHeader>
-                <ColumnResizer
-                  colKey="weight"
-                  onResizeStart={handleResizeStart}
-                  onReset={handleResetColumnWidth}
-                  isResizing={resizingCol === 'weight'}
-                />
-              </TableHead>
+                  <TableHead
+                    style={{ width: `${columnWidths.weight}px` }}
+                    className="relative px-1.5 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
+                  >
+                    <SortableHeader column="weight" currentSort={sortState} onSort={handleSort}>
+                      وزن
+                    </SortableHeader>
+                    <ColumnResizer
+                      colKey="weight"
+                      onResizeStart={handleResizeStart}
+                      onReset={handleResetColumnWidth}
+                      isResizing={resizingCol === 'weight'}
+                    />
+                  </TableHead>
 
-              {/* 5. Purity */}
-              <TableHead
-                style={{ width: `${columnWidths.purity}px` }}
-                className="relative px-1 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
-              >
-                <SortableHeader column="purity" currentSort={sortState} onSort={handleSort}>
-                  عیار
-                </SortableHeader>
-                <ColumnResizer
-                  colKey="purity"
-                  onResizeStart={handleResizeStart}
-                  onReset={handleResetColumnWidth}
-                  isResizing={resizingCol === 'purity'}
-                />
-              </TableHead>
+                  <TableHead
+                    style={{ width: `${columnWidths.purity}px` }}
+                    className="relative px-1 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
+                  >
+                    <SortableHeader column="purity" currentSort={sortState} onSort={handleSort}>
+                      عیار
+                    </SortableHeader>
+                    <ColumnResizer
+                      colKey="purity"
+                      onResizeStart={handleResizeStart}
+                      onReset={handleResetColumnWidth}
+                      isResizing={resizingCol === 'purity'}
+                    />
+                  </TableHead>
 
-              {/* 6. Weight Debit */}
-              <TableHead
-                style={{ width: `${columnWidths.bedehkarVazni}px` }}
-                className="relative px-1.5 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
-              >
-                <SortableHeader
-                  column="bedehkarVazni"
-                  currentSort={sortState}
-                  onSort={handleSort}
-                  className="text-rose-600 dark:text-rose-400"
-                >
-                  بدهکار وزنی
-                </SortableHeader>
-                <ColumnResizer
-                  colKey="bedehkarVazni"
-                  onResizeStart={handleResizeStart}
-                  onReset={handleResetColumnWidth}
-                  isResizing={resizingCol === 'bedehkarVazni'}
-                />
-              </TableHead>
+                  <TableHead
+                    style={{ width: `${columnWidths.bedehkarVazni}px` }}
+                    className="relative px-1.5 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
+                  >
+                    <SortableHeader
+                      column="bedehkarVazni"
+                      currentSort={sortState}
+                      onSort={handleSort}
+                      className="text-rose-600 dark:text-rose-400"
+                    >
+                      بدهکار وزنی
+                    </SortableHeader>
+                    <ColumnResizer
+                      colKey="bedehkarVazni"
+                      onResizeStart={handleResizeStart}
+                      onReset={handleResetColumnWidth}
+                      isResizing={resizingCol === 'bedehkarVazni'}
+                    />
+                  </TableHead>
 
-              {/* 7. Weight Credit */}
-              <TableHead
-                style={{ width: `${columnWidths.bostankarVazni}px` }}
-                className="relative px-1.5 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
-              >
-                <SortableHeader
-                  column="bostankarVazni"
-                  currentSort={sortState}
-                  onSort={handleSort}
-                  className="text-emerald-600 dark:text-emerald-400"
-                >
-                  بستانکار وزنی
-                </SortableHeader>
-                <ColumnResizer
-                  colKey="bostankarVazni"
-                  onResizeStart={handleResizeStart}
-                  onReset={handleResetColumnWidth}
-                  isResizing={resizingCol === 'bostankarVazni'}
-                />
-              </TableHead>
+                  <TableHead
+                    style={{ width: `${columnWidths.bostankarVazni}px` }}
+                    className="relative px-1.5 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
+                  >
+                    <SortableHeader
+                      column="bostankarVazni"
+                      currentSort={sortState}
+                      onSort={handleSort}
+                      className="text-emerald-600 dark:text-emerald-400"
+                    >
+                      بستانکار وزنی
+                    </SortableHeader>
+                    <ColumnResizer
+                      colKey="bostankarVazni"
+                      onResizeStart={handleResizeStart}
+                      onReset={handleResetColumnWidth}
+                      isResizing={resizingCol === 'bostankarVazni'}
+                    />
+                  </TableHead>
+                </>
+              ) : null}
+
+              {/* Currency Headers (Only if hasCurrencyLines) */}
+              {hasCurrencyLines ? (
+                <>
+                  <TableHead
+                    style={{ width: `${columnWidths.currency}px` }}
+                    className="relative px-1 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
+                  >
+                    <SortableHeader column="currency" currentSort={sortState} onSort={handleSort}>
+                      ارز
+                    </SortableHeader>
+                    <ColumnResizer
+                      colKey="currency"
+                      onResizeStart={handleResizeStart}
+                      onReset={handleResetColumnWidth}
+                      isResizing={resizingCol === 'currency'}
+                    />
+                  </TableHead>
+
+                  <TableHead
+                    style={{ width: `${columnWidths.bedehkarArzi}px` }}
+                    className="relative px-1.5 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
+                  >
+                    <SortableHeader
+                      column="bedehkarArzi"
+                      currentSort={sortState}
+                      onSort={handleSort}
+                      className="text-rose-600 dark:text-rose-400"
+                    >
+                      بدهکار ارزی
+                    </SortableHeader>
+                    <ColumnResizer
+                      colKey="bedehkarArzi"
+                      onResizeStart={handleResizeStart}
+                      onReset={handleResetColumnWidth}
+                      isResizing={resizingCol === 'bedehkarArzi'}
+                    />
+                  </TableHead>
+
+                  <TableHead
+                    style={{ width: `${columnWidths.bostankarArzi}px` }}
+                    className="relative px-1.5 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
+                  >
+                    <SortableHeader
+                      column="bostankarArzi"
+                      currentSort={sortState}
+                      onSort={handleSort}
+                      className="text-emerald-600 dark:text-emerald-400"
+                    >
+                      بستانکار ارزی
+                    </SortableHeader>
+                    <ColumnResizer
+                      colKey="bostankarArzi"
+                      onResizeStart={handleResizeStart}
+                      onReset={handleResetColumnWidth}
+                      isResizing={resizingCol === 'bostankarArzi'}
+                    />
+                  </TableHead>
+                </>
+              ) : null}
 
               {/* 8. Financial Debit */}
               {hasFinancialAmounts ? (
@@ -906,6 +1062,8 @@ export default function CommittedLinesTable({
                 hasAssayOrStamp={hasAssayOrStamp}
                 hasFinancialAmounts={hasFinancialAmounts}
                 hasValidCustomer={Boolean(selectedCustomer)}
+                hasMetalLines={hasMetalLines}
+                hasCurrencyLines={hasCurrencyLines}
               />
             ))}
           </TableBody>
@@ -914,17 +1072,34 @@ export default function CommittedLinesTable({
             <TableFooter className="bg-slate-100/80 dark:bg-slate-800/80 font-bold border-t-2 border-slate-200 dark:border-slate-700">
               <TableRow>
                 <TableCell
-                  colSpan={5}
+                  colSpan={hasMetalLines ? 5 : 2}
                   className="px-2 py-1.5 text-right font-black text-xs text-slate-700 dark:text-slate-200"
                 >
                   جمع کل ردیف‌ها ({toPersianDigits(String(committedLines.length))})
                 </TableCell>
-                <TableCell className="px-1.5 py-1.5 text-center tabular-nums text-rose-600 dark:text-rose-400 font-extrabold text-xs border-s border-slate-200/60 dark:border-slate-700/60">
-                  {totalBedehkarVazni > 0 ? faNumber(totalBedehkarVazni, weightPrecision) : '-'}
-                </TableCell>
-                <TableCell className="px-1.5 py-1.5 text-center tabular-nums text-emerald-600 dark:text-emerald-400 font-extrabold text-xs border-s border-slate-200/60 dark:border-slate-700/60">
-                  {totalBostankarVazni > 0 ? faNumber(totalBostankarVazni, weightPrecision) : '-'}
-                </TableCell>
+                {hasMetalLines ? (
+                  <>
+                    <TableCell className="px-1.5 py-1.5 text-center tabular-nums text-rose-600 dark:text-rose-400 font-extrabold text-xs border-s border-slate-200/60 dark:border-slate-700/60">
+                      {totalBedehkarVazni > 0 ? faNumber(totalBedehkarVazni, weightPrecision) : '-'}
+                    </TableCell>
+                    <TableCell className="px-1.5 py-1.5 text-center tabular-nums text-emerald-600 dark:text-emerald-400 font-extrabold text-xs border-s border-slate-200/60 dark:border-slate-700/60">
+                      {totalBostankarVazni > 0 ? faNumber(totalBostankarVazni, weightPrecision) : '-'}
+                    </TableCell>
+                  </>
+                ) : null}
+                {hasCurrencyLines ? (
+                  <>
+                    <TableCell className="px-1 py-1.5 text-center font-bold text-xs text-slate-500 border-s border-slate-200/60 dark:border-slate-700/60">
+                      جمع
+                    </TableCell>
+                    <TableCell className="px-1.5 py-1.5 text-center tabular-nums text-rose-600 dark:text-rose-400 font-extrabold text-xs border-s border-slate-200/60 dark:border-slate-700/60">
+                      {totalBedehkarArzi > 0 ? faNumber(totalBedehkarArzi, 0) : '-'}
+                    </TableCell>
+                    <TableCell className="px-1.5 py-1.5 text-center tabular-nums text-emerald-600 dark:text-emerald-400 font-extrabold text-xs border-s border-slate-200/60 dark:border-slate-700/60">
+                      {totalBostankarArzi > 0 ? faNumber(totalBostankarArzi, 0) : '-'}
+                    </TableCell>
+                  </>
+                ) : null}
                 {hasFinancialAmounts ? (
                   <TableCell className="px-1.5 py-1.5 text-center tabular-nums text-rose-600 dark:text-rose-400 font-extrabold text-xs border-s border-slate-200/60 dark:border-slate-700/60">
                     {totalBedehkarMali > 0 ? faNumber(totalBedehkarMali, 0) : '-'}

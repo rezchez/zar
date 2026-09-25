@@ -9,6 +9,7 @@ import type { DocumentNature } from '@/lib/document';
 import type { Currency } from '@/lib/currencies';
 import { getCurrencyDisplayName } from '@/lib/currencies';
 import type { MetalType } from '../services/metal-settlement-service';
+import { checkDocumentDateDiff } from '../utils/document-helpers';
 
 interface DocumentMetadataSectionProps {
   documentNature: DocumentNature;
@@ -116,16 +117,37 @@ export default function DocumentMetadataSection({
 
       {/* 4. Document Date (Shamsi) */}
       <div className="w-full sm:flex-1 min-w-[200px]" id="doc-field-date">
-        <Field label="تاریخ سند">
-          <DatePicker
-            value={documentDateJalali}
-            onValueChange={(_iso, jalali) => onDateChange(jalali)}
-            calendarType="shamsi"
-            format="yyyy/MM/dd"
-            placeholder="انتخاب تاریخ سند"
-            className="w-full"
-          />
-        </Field>
+        {(() => {
+          const dateDiff = checkDocumentDateDiff(documentDateJalali);
+          return (
+            <Field
+              label={
+                <span className="flex items-center gap-1.5">
+                  <span>تاریخ سند</span>
+                  {dateDiff.isPast && (
+                    <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-100 text-amber-900 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
+                      گذشته
+                    </span>
+                  )}
+                  {dateDiff.isFuture && (
+                    <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-blue-100 text-blue-900 dark:bg-blue-950/80 dark:text-blue-300 border border-blue-300 dark:border-blue-700">
+                      آینده
+                    </span>
+                  )}
+                </span>
+              }
+            >
+              <DatePicker
+                value={documentDateJalali}
+                onValueChange={(_iso, jalali) => onDateChange(jalali)}
+                calendarType="shamsi"
+                format="yyyy/MM/dd"
+                placeholder="انتخاب تاریخ سند"
+                className="w-full"
+              />
+            </Field>
+          );
+        })()}
       </div>
     </div>
   );

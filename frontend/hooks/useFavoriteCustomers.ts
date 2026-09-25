@@ -29,6 +29,7 @@ export function useFavoriteCustomers() {
   // Initialize from localStorage and API
   useEffect(() => {
     let isMounted = true;
+    const controller = new AbortController();
 
     // Fast initial load from localStorage
     try {
@@ -45,7 +46,10 @@ export function useFavoriteCustomers() {
     }
 
     // Fetch authoritative favorites from collection endpoint
-    fetch('/api/customers/favorites', { credentials: 'include' })
+    fetch('/api/customers/favorites', {
+      credentials: 'include',
+      signal: controller.signal,
+    })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (!isMounted || !Array.isArray(data?.favoriteCustomerIds)) return;
@@ -55,6 +59,9 @@ export function useFavoriteCustomers() {
         syncLocalState(serverFavorites);
       })
       .catch((err) => {
+        if (!isMounted || controller.signal.aborted || (err as { name?: string })?.name === 'AbortError') {
+          return;
+        }
         console.warn('Failed to load favorite customers from collection:', err);
       })
       .finally(() => {
@@ -74,6 +81,7 @@ export function useFavoriteCustomers() {
 
     return () => {
       isMounted = false;
+      controller.abort();
       window.removeEventListener(EVENT_KEY, handleLocalSync);
     };
   }, []);

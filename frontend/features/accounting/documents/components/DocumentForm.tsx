@@ -41,7 +41,13 @@ import {
   DEFAULT_PASSED_SECTIONS,
   type StickyPassedSections,
 } from '@/src/context/DocumentStickyHeaderContext';
-import { useDocumentLines, totalFromWeight, convertedWeightFromTotal, documentSubType } from '../hooks/useDocumentLines';
+import {
+  useDocumentLines,
+  totalFromWeight,
+  convertedWeightFromTotal,
+  documentSubType,
+  validateLine,
+} from '../hooks/useDocumentLines';
 import {
   validateDocumentSettlement,
   type MetalType,
@@ -55,6 +61,8 @@ import {
   actualWeightFromMoney,
   actualWeightForLine,
   getLineDocumentTypeLabel,
+  checkDocumentDateDiff,
+  type DateDiffInfo,
 } from '../utils/document-helpers';
 
 export const VALID_ENTRY_TABS = [
@@ -176,6 +184,11 @@ export default function DocumentForm({
   const [showExitModal, setShowExitModal] = useState(false);
   const [pendingNavigationUrl, setPendingNavigationUrl] = useState<string | null>(null);
 
+  // Date confirmation modal state (warn when first row is committed with non-today date)
+  const [showDateConfirmModal, setShowDateConfirmModal] = useState(false);
+  const [dateWarningAcknowledged, setDateWarningAcknowledged] = useState(false);
+  const [dateDiffInfo, setDateDiffInfo] = useState<DateDiffInfo | null>(null);
+
   // Saving state & error message
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -224,16 +237,26 @@ export default function DocumentForm({
       if (hash && (VALID_ENTRY_TABS as readonly string[]).includes(hash)) {
         const validTab = hash as ValidEntryTab;
         setActiveEntryTab(validTab);
-        setDraftLine((current) => ({
-          ...current,
-          documentTab: validTab === 'gold-sale' ? 'gold-sale' : validTab === 'currency' ? 'currency' : 'raw-gold',
-          sourceTab: validTab,
-          documentSubType: validTab === 'gold-sale'
-            ? `${documentNature === 'received' ? 'gold-purchase' : 'gold-sale'}-${current.details?.rawKind || 'molten'}`
-            : validTab === 'metals'
-              ? documentSubType(documentNature, current.details?.rawKind || 'molten')
-              : current.documentSubType,
-        }));
+        setDraftLine((current) => {
+          const curUnit = current.details?.currencyUnit || selectedCurrency || activeCurrencies[0]?.code || 'USD';
+          return {
+            ...current,
+            documentTab: validTab === 'gold-sale' ? 'gold-sale' : validTab === 'currency' ? 'currency' : 'raw-gold',
+            sourceTab: validTab,
+            documentSubType: validTab === 'gold-sale'
+              ? `${documentNature === 'received' ? 'gold-purchase' : 'gold-sale'}-${current.details?.rawKind || 'molten'}`
+              : validTab === 'currency'
+                ? (documentNature === 'received' ? 'currency-purchase' : 'currency-sale')
+                : validTab === 'metals'
+                  ? documentSubType(documentNature, current.details?.rawKind || 'molten')
+                  : current.documentSubType,
+            details: {
+              ...current.details,
+              currencyUnit: validTab === 'currency' ? curUnit : current.details?.currencyUnit,
+              settlementCurrencyUnit: validTab === 'currency' ? (current.details?.settlementCurrencyUnit || curUnit) : current.details?.settlementCurrencyUnit,
+            },
+          };
+        });
       }
     };
     handleHashChange();
@@ -438,6 +461,7 @@ export default function DocumentForm({
             documentNature: line.documentNature,
             documentTab: line.documentTab,
             sourceTab: line.sourceTab,
+            converted750: line.converted750,
             details: line.details,
           })),
         }),
@@ -467,16 +491,26 @@ export default function DocumentForm({
       const validTab = tab as ValidEntryTab;
       setActiveEntryTab(validTab);
       window.location.hash = validTab;
-      setDraftLine((current) => ({
-        ...current,
-        documentTab: validTab === 'gold-sale' ? 'gold-sale' : validTab === 'currency' ? 'currency' : 'raw-gold',
-        sourceTab: validTab,
-        documentSubType: validTab === 'gold-sale'
-          ? `${documentNature === 'received' ? 'gold-purchase' : 'gold-sale'}-${current.details?.rawKind || 'molten'}`
-          : validTab === 'metals'
-            ? documentSubType(documentNature, current.details?.rawKind || 'molten')
-            : current.documentSubType,
-      }));
+      setDraftLine((current) => {
+        const curUnit = current.details?.currencyUnit || selectedCurrency || activeCurrencies[0]?.code || 'USD';
+        return {
+          ...current,
+          documentTab: validTab === 'gold-sale' ? 'gold-sale' : validTab === 'currency' ? 'currency' : 'raw-gold',
+          sourceTab: validTab,
+          documentSubType: validTab === 'gold-sale'
+            ? `${documentNature === 'received' ? 'gold-purchase' : 'gold-sale'}-${current.details?.rawKind || 'molten'}`
+            : validTab === 'currency'
+              ? (documentNature === 'received' ? 'currency-purchase' : 'currency-sale')
+              : validTab === 'metals'
+                ? documentSubType(documentNature, current.details?.rawKind || 'molten')
+                : current.documentSubType,
+          details: {
+            ...current.details,
+            currencyUnit: validTab === 'currency' ? curUnit : current.details?.currencyUnit,
+            settlementCurrencyUnit: validTab === 'currency' ? (current.details?.settlementCurrencyUnit || curUnit) : current.details?.settlementCurrencyUnit,
+          },
+        };
+      });
     }
   };
 
@@ -488,14 +522,43 @@ export default function DocumentForm({
         ...current,
         documentNature: nextNature,
         documentSubType:
-          current.sourceTab === 'gold-sale' || activeEntryTab === 'gold-sale'
-            ? `${nextNature === 'received' ? 'gold-purchase' : 'gold-sale'}-${current.details?.rawKind || 'molten'}`
-            : current.sourceTab === 'metals' || activeEntryTab === 'metals'
-              ? documentSubType(nextNature, current.details?.rawKind || 'molten')
-              : current.documentSubType,
+          current.sourceTab === 'currency' || activeEntryTab === 'currency'
+            ? (nextNature === 'received' ? 'currency-purchase' : 'currency-sale')
+            : current.sourceTab === 'gold-sale' || activeEntryTab === 'gold-sale'
+              ? `${nextNature === 'received' ? 'gold-purchase' : 'gold-sale'}-${current.details?.rawKind || 'molten'}`
+              : current.sourceTab === 'metals' || activeEntryTab === 'metals'
+                ? documentSubType(nextNature, current.details?.rawKind || 'molten')
+                : current.documentSubType,
       }));
     },
     [activeEntryTab, setDraftLine],
+  );
+
+  const handleEditLine = useCallback(
+    (line: DocumentLine) => {
+      let targetLine = line;
+      if (
+        (line.documentSubType === 'currency-claim' || line.documentSubType === 'currency-debt') &&
+        line.details?.linkedLineId
+      ) {
+        const parent = committedLines.find((l) => l.id === line.details.linkedLineId);
+        if (parent) targetLine = parent;
+      }
+
+      const targetTab = targetLine.sourceTab || targetLine.documentTab;
+      if (targetTab && (VALID_ENTRY_TABS as readonly string[]).includes(targetTab)) {
+        setActiveEntryTab(targetTab as ValidEntryTab);
+      } else if (targetLine.documentTab === 'currency') {
+        setActiveEntryTab('currency');
+      }
+
+      if (targetLine.documentNature) {
+        setDocumentNature(targetLine.documentNature);
+      }
+
+      editLine(targetLine);
+    },
+    [committedLines, editLine],
   );
 
   // Customer lock toggle
@@ -509,6 +572,32 @@ export default function DocumentForm({
       }
     } catch {}
   };
+
+  // Date selection change (updates date immediately, resets date acknowledgement)
+  const handleDateChange = useCallback((newDate: string) => {
+    if (!newDate) return;
+    setDocumentDateJalali(newDate);
+    setDateWarningAcknowledged(false);
+  }, []);
+
+  const handleConfirmDateAndCommit = useCallback(() => {
+    setDateWarningAcknowledged(true);
+    setShowDateConfirmModal(false);
+    hookCommitDraftLine(meltedInventory);
+  }, [hookCommitDraftLine, meltedInventory]);
+
+  const handleSetTodayAndCommit = useCallback(() => {
+    const today = formatJalaliDate();
+    setDocumentDateJalali(today);
+    setDateWarningAcknowledged(true);
+    setShowDateConfirmModal(false);
+    hookCommitDraftLine(meltedInventory);
+    toast.info(`تاریخ سند روی امروز (${toPersianDigits(today)}) تنظیم و ردیف ثبت شد.`);
+  }, [hookCommitDraftLine, meltedInventory]);
+
+  const handleCancelDateConfirm = useCallback(() => {
+    setShowDateConfirmModal(false);
+  }, []);
 
   // Sticky Context Header integration
   const customerSectionRef = useRef<HTMLDivElement | null>(null);
@@ -536,6 +625,7 @@ export default function DocumentForm({
     onToggleNature: () => {},
     onChangeMetalType: (_type: MetalType) => {},
     onCurrencyChange: (_curr: string) => {},
+    onDateChange: (_date: string) => {},
     onScrollToTop: handleScrollToTop,
     onScrollToCustomer: handleScrollToCustomer,
   });
@@ -568,6 +658,9 @@ export default function DocumentForm({
         updateDraftDetail('currencyUnit', curr);
         updateDraftDetail('settlementCurrencyUnit', curr);
       },
+      onDateChange: (date: string) => {
+        handleDateChange(date);
+      },
       onScrollToTop: handleScrollToTop,
       onScrollToCustomer: handleScrollToCustomer,
     };
@@ -576,6 +669,7 @@ export default function DocumentForm({
   const stableToggleStickyNature = useCallback(() => stickyHandlersRef.current.onToggleNature(), []);
   const stableChangeMetalType = useCallback((m: MetalType) => stickyHandlersRef.current.onChangeMetalType(m), []);
   const stableStickyCurrencyChange = useCallback((c: string) => stickyHandlersRef.current.onCurrencyChange(c), []);
+  const stableDateChange = useCallback((d: string) => stickyHandlersRef.current.onDateChange?.(d), []);
   const stableScrollToTop = useCallback(() => stickyHandlersRef.current.onScrollToTop(), []);
   const stableScrollToCustomer = useCallback(() => stickyHandlersRef.current.onScrollToCustomer(), []);
 
@@ -586,11 +680,13 @@ export default function DocumentForm({
       nature: documentNature,
       metalType: draftLine.details.metalType,
       currency: selectedCurrency,
+      currencies: activeCurrencies.map((c) => ({ code: c.code, name: c.name, symbol: c.symbol })),
       dateJalali: documentDateJalali,
       isCustomerLocked,
       onToggleNature: stableToggleStickyNature,
       onChangeMetalType: stableChangeMetalType,
       onCurrencyChange: stableStickyCurrencyChange,
+      onDateChange: stableDateChange,
       onScrollToTop: stableScrollToTop,
       onScrollToCustomer: stableScrollToCustomer,
     });
@@ -600,11 +696,13 @@ export default function DocumentForm({
     documentNature,
     draftLine.details.metalType,
     selectedCurrency,
+    activeCurrencies,
     documentDateJalali,
     isCustomerLocked,
     stableToggleStickyNature,
     stableChangeMetalType,
     stableStickyCurrencyChange,
+    stableDateChange,
     stableScrollToTop,
     stableScrollToCustomer,
     setStickyHeaderData,
@@ -723,10 +821,19 @@ export default function DocumentForm({
           status,
           lines: committedLines.map((line) => {
             const metalType = line.details.metalType || 'gold';
-            const weightValue =
+            const baseKarat = purityForMetal(metalType);
+            const rawWeight =
               line.details.calculationMethod === 'money'
-                ? actualWeightForLine(line, goldBaseKarat)
+                ? actualWeightForLine(line, baseKarat)
                 : numberValue(line.details.rawWeight);
+            const purity = numberValue(line.details.purity) || baseKarat;
+            const convertedWeight =
+              typeof line.converted750 === 'number' && Number.isFinite(line.converted750)
+                ? line.converted750
+                : (rawWeight > 0 && purity > 0 ? (rawWeight * purity) / baseKarat : 0);
+            const weightValue = (line.documentTab === 'gold-sale' || line.documentTab === 'raw-gold')
+              ? convertedWeight
+              : (line.details.calculationMethod === 'money' ? actualWeightForLine(line, baseKarat) : numberValue(line.details.rawWeight));
             const isMetalRow =
               (line.documentTab === 'raw-gold' ||
                 line.documentTab === 'gold-sale' ||
@@ -750,7 +857,9 @@ export default function DocumentForm({
               platinumAmount: isMetalRow && metalType === 'platinum' ? weightValue : 0,
               rialAmount:
                 line.documentTab === 'currency'
-                  ? numberValue(line.details.currencyTotalAmount)
+                  ? (line.documentSubType === 'currency-claim' || line.documentSubType === 'currency-debt'
+                      ? 0
+                      : numberValue(line.details.currencyTotalAmount))
                   : line.documentTab === 'cash' && !line.details.isForeignCash
                     ? numberValue(line.details.totalAmount)
                     : line.documentTab === 'gold-sale'
@@ -760,7 +869,11 @@ export default function DocumentForm({
                         : numberValue(line.details.totalAmount || ''),
               foreignAmount:
                 line.documentTab === 'currency'
-                  ? numberValue(line.details.currencyQuantity)
+                  ? (line.details.unsettledTrade || line.settlementMethod === 'unsettled'
+                      ? (line.documentSubType === 'currency-claim' || line.documentSubType === 'currency-debt' || !line.details.linkedLineId
+                          ? numberValue(line.details.currencyQuantity)
+                          : 0)
+                      : 0)
                   : line.documentTab === 'cash' && line.details.isForeignCash
                     ? numberValue(line.details.totalAmount)
                     : 0,
@@ -793,6 +906,7 @@ export default function DocumentForm({
       setCommittedLines([]);
       setDocumentId(crypto.randomUUID());
       setDraftLine(createSettingsLine(documentNature, activeEntryTab));
+      setDateWarningAcknowledged(false);
     } catch (error) {
       throw error instanceof Error ? error : new Error('ارتباط با سرور برقرار نشد.');
     } finally {
@@ -879,6 +993,30 @@ export default function DocumentForm({
   }, [committedLines]);
 
   const handleCommitDraft = () => {
+    // Check if this is the first committed row
+    const isFirstRow = committedLines.length === 0 && !editingLineId;
+
+    if (isFirstRow && !dateWarningAcknowledged) {
+      const diff = checkDocumentDateDiff(documentDateJalali);
+      if (diff.isDifferent) {
+        // Validate draft line before showing modal so we don't prompt on invalid rows
+        const validationMessage = validateLine(
+          draftLine,
+          meltedInventory,
+          committedLines,
+          editingLineId,
+        );
+        if (validationMessage) {
+          toast.error(validationMessage);
+          return;
+        }
+
+        setDateDiffInfo(diff);
+        setShowDateConfirmModal(true);
+        return;
+      }
+    }
+
     hookCommitDraftLine(meltedInventory);
   };
 
@@ -983,7 +1121,7 @@ export default function DocumentForm({
             setShowAddCurrencyModal(true);
           }}
           documentDateJalali={documentDateJalali}
-          onDateChange={setDocumentDateJalali}
+          onDateChange={handleDateChange}
         />
       </section>
 
@@ -1110,7 +1248,25 @@ export default function DocumentForm({
               isLinesPinned={isLinesPinned}
               commitDraftLine={handleCommitDraft}
               updateDraftDetail={updateDraftDetail}
-              updateCurrencyValue={(field, val) => updateDraftDetail(field, val)}
+              updateCurrencyValue={(field, val) => {
+                updateDraftDetail(field, val);
+                setDraftLine((current) => {
+                  const details = { ...current.details, [field]: val };
+                  const qty = numberValue(field === 'currencyQuantity' ? val : details.currencyQuantity);
+                  const unitPrice = numberValue(field === 'currencyUnitPrice' ? val : details.currencyUnitPrice);
+                  if (field === 'currencyQuantity' || field === 'currencyUnitPrice') {
+                    if (qty > 0 && unitPrice > 0) {
+                      details.currencyTotalAmount = String(Math.round(qty * unitPrice));
+                    }
+                  } else if (field === 'currencyTotalAmount') {
+                    const total = numberValue(val);
+                    if (qty > 0 && total > 0) {
+                      details.currencyUnitPrice = String(Math.round(total / qty));
+                    }
+                  }
+                  return { ...current, details };
+                });
+              }}
               handleKeyDownEnter={handleKeyDownEnter}
               draftReady={draftReady}
             />
@@ -1203,6 +1359,7 @@ export default function DocumentForm({
         }`}
       >
         <CommittedLinesTable
+          activeTab={activeEntryTab}
           committedLines={committedLines}
           isLinesPinned={isLinesPinned}
           onTogglePin={toggleLinesPin}
@@ -1216,7 +1373,7 @@ export default function DocumentForm({
           hasFinancialAmounts={hasFinancialAmounts}
           baseCurrency={baseCurrency}
           weightPrecision={weightPrecision}
-          onEditLine={editLine}
+          onEditLine={handleEditLine}
           onRemoveLine={requestRemoveLine}
           onHawalaLine={(line) => {
             if (!selectedCustomer) {
@@ -1278,7 +1435,17 @@ export default function DocumentForm({
         restorationTimer={restorationTimer}
         onRestoreLine={restoreLine}
         pendingHawala={pendingHawala}
-        onCancelPendingHawala={() => setPendingHawala(null)}
+        onCancelPendingHawala={() => {
+          if (hawalaTimerRef.current) clearInterval(hawalaTimerRef.current);
+          setPendingHawala(null);
+          toast.info('حواله لغو شد.');
+        }}
+        showDateConfirmModal={showDateConfirmModal}
+        documentDateJalali={documentDateJalali}
+        dateDiffInfo={dateDiffInfo}
+        onConfirmDateChange={handleConfirmDateAndCommit}
+        onSetTodayAndCommit={handleSetTodayAndCommit}
+        onCancelDateChange={handleCancelDateConfirm}
       />
     </div>
   );

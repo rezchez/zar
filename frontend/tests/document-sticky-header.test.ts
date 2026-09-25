@@ -214,4 +214,51 @@ describe('Document Sticky Header Integration Tests', () => {
     expect(toggleNature('received')).toBe('paid');
     expect(toggleNature('paid')).toBe('received');
   });
+
+  it('supports currency switching and date change handlers in DocumentStickyHeaderData', () => {
+    let currentCurrency = 'IRT';
+    let currentDate = '1403/07/04';
+
+    const sampleCurrencies = [
+      { code: 'IRT', name: 'تومان' },
+      { code: 'IRR', name: 'ریال' },
+      { code: 'USD', name: 'دلار' },
+      { code: 'EUR', name: 'یورو' },
+    ];
+
+    const stickyData: DocumentStickyHeaderData = {
+      customer: null,
+      documentNumber: '101',
+      nature: 'received',
+      metalType: 'gold',
+      currency: currentCurrency,
+      currencies: sampleCurrencies,
+      dateJalali: currentDate,
+      isCustomerLocked: false,
+      onCurrencyChange: (newCurr) => {
+        currentCurrency = newCurr;
+      },
+      onDateChange: (newDate) => {
+        currentDate = newDate;
+      },
+    };
+
+    expect(stickyData.currencies).toHaveLength(4);
+    expect(stickyData.currency).toBe('IRT');
+    expect(stickyData.dateJalali).toBe('1403/07/04');
+
+    // Test currency change
+    stickyData.onCurrencyChange?.('USD');
+    expect(currentCurrency).toBe('USD');
+
+    stickyData.onCurrencyChange?.('EUR');
+    expect(currentCurrency).toBe('EUR');
+
+    // Test date change
+    stickyData.onDateChange?.('1404/01/01');
+    expect(currentDate).toBe('1404/01/01');
+
+    stickyData.onDateChange?.('1405/12/29');
+    expect(currentDate).toBe('1405/12/29');
+  });
 });

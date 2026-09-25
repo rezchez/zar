@@ -1,10 +1,11 @@
 'use client';
 
 import { ListPlus } from 'lucide-react';
-import type React from 'react';
+import React, { useEffect } from 'react';
 
 import Field from '@/src/components/documents/Field';
 import MoneyInputField from '@/src/components/documents/MoneyInputField';
+import { NumberField } from '@/components/ui/number-field';
 import type { DetailState, DocumentLine } from '@/src/components/documents/RawGoldTab';
 
 type CurrencyTabProps = {
@@ -37,6 +38,14 @@ export default function CurrencyTab({
   handleKeyDownEnter,
   draftReady,
 }: CurrencyTabProps) {
+  useEffect(() => {
+    if (!draftLine.details.currencyUnit) {
+      const defaultUnit = currencyUnits[0] || 'USD';
+      updateDraftDetail('currencyUnit', defaultUnit);
+      updateDraftDetail('settlementCurrencyUnit', defaultUnit);
+    }
+  }, [draftLine.details.currencyUnit, currencyUnits, updateDraftDetail]);
+
   return (
     <div className="space-y-4">
       <div className="document-operation-title">
@@ -56,23 +65,23 @@ export default function CurrencyTab({
               updateDraftDetail('currencyUnit', event.target.value);
               updateDraftDetail('settlementCurrencyUnit', event.target.value);
             }}
-            disabled={currencyUnits.length === 0}
           >
             {currencyUnits.length === 0 ? (
-              <option value="">در حال بارگذاری ارزها...</option>
+              <option value="USD">USD</option>
             ) : currencyUnits.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
           </select>
         </Field>
         <Field label="تعداد">
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            inputMode="decimal"
-            value={draftLine.details.currencyQuantity}
-            onChange={(event) => updateCurrencyValue('currencyQuantity', event.target.value)}
+          <NumberField
+            min={0}
+            step={1}
+            value={draftLine.details.currencyQuantity !== '' ? Number(draftLine.details.currencyQuantity) : undefined}
+            onChange={(val) => updateCurrencyValue('currencyQuantity', val !== undefined && !Number.isNaN(val) ? String(val) : '')}
             onKeyDown={handleKeyDownEnter}
             placeholder="۰"
+            aria-label="تعداد ارز"
+            selectOnClick
+            className="w-full"
           />
         </Field>
         <MoneyInputField
@@ -89,23 +98,116 @@ export default function CurrencyTab({
           baseCurrency="IRR"
           onKeyDown={handleKeyDownEnter}
         />
-        <label className="flex min-h-12 items-center gap-3 rounded-xl border border-amber-300/70 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900 dark:border-amber-700/60 dark:bg-amber-950/30 dark:text-amber-200">
-          <input
-            type="checkbox"
-            checked={draftLine.details.unsettledTrade}
-            onChange={(event) => setDraftLine((current) => ({
-              ...current,
-              settlementMethod: event.target.checked ? 'unsettled' : 'cash',
-              details: { ...current.details, unsettledTrade: event.target.checked },
-            }))}
-          />
-          <span>
-            بدون تسویه
-            <small className="mt-1 block text-xs font-normal opacity-80">
-              مبلغ نقدی اکنون ثبت نمی‌شود و بدهی/بستانکاری ارز در حساب طرف‌حساب می‌ماند.
-            </small>
+        <div className="col-span-1 md:col-span-2 flex flex-col justify-end">
+          <span className="text-xs font-bold text-slate-800 dark:text-slate-200 mb-1.5 flex items-center justify-between">
+            <span>روش تسویه ارزی</span>
+            <span
+              className={`text-[11px] font-bold px-2 py-0.5 rounded-full border transition-colors ${
+                draftLine.details.unsettledTrade
+                  ? 'bg-amber-100/90 text-amber-800 border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-700'
+                  : 'bg-emerald-100/90 text-emerald-800 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-700'
+              }`}
+            >
+              {draftLine.details.unsettledTrade ? 'نسیه / دفتری' : 'نقدی / صندوق'}
+            </span>
           </span>
-        </label>
+
+          <div
+            className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border p-3 transition-all duration-200 ${
+              draftLine.details.unsettledTrade
+                ? 'border-amber-400 bg-amber-50/90 text-amber-950 dark:border-amber-600/70 dark:bg-amber-950/40 dark:text-amber-100 shadow-xs'
+                : 'border-emerald-400 bg-emerald-50/90 text-emerald-950 dark:border-emerald-600/70 dark:bg-emerald-950/40 dark:text-emerald-100 shadow-xs'
+            }`}
+          >
+            {/* Description */}
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span
+                className={`w-2.5 h-2.5 rounded-full shrink-0 transition-colors ${
+                  draftLine.details.unsettledTrade
+                    ? 'bg-amber-500 ring-2 ring-amber-300 dark:ring-amber-700'
+                    : 'bg-emerald-500 ring-2 ring-emerald-300 dark:ring-emerald-700'
+                }`}
+              />
+              <div className="flex flex-col text-right">
+                <span className="text-xs font-extrabold">
+                  {draftLine.details.unsettledTrade ? 'بدون تسویه (نسیه)' : 'تسویه آنی (نقد / صندوق)'}
+                </span>
+                <span className="text-[11px] font-normal opacity-85 leading-normal">
+                  {draftLine.details.unsettledTrade
+                    ? 'معامله حسابی ثبت شده و بدهی یا طلب مالی و ارزی روی حساب طرف‌حساب باقی می‌ماند.'
+                    : 'دریافت یا پرداخت ارز در لحظه از موجودی صندوق ارزی انجام می‌شود.'}
+                </span>
+              </div>
+            </div>
+
+            {/* Switch Control with Two Labels and Toggle */}
+            <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setDraftLine((current) => ({
+                    ...current,
+                    settlementMethod: 'cash',
+                    details: { ...current.details, unsettledTrade: false },
+                  }));
+                }}
+                className={`text-xs font-bold px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
+                  !draftLine.details.unsettledTrade
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                }`}
+              >
+                تسویه آنی
+              </button>
+
+              <button
+                type="button"
+                role="switch"
+                aria-checked={Boolean(draftLine.details.unsettledTrade)}
+                aria-label="تغییر بین تسویه آنی و بدون تسویه"
+                onClick={() => {
+                  const nextUnsettled = !draftLine.details.unsettledTrade;
+                  setDraftLine((current) => ({
+                    ...current,
+                    settlementMethod: nextUnsettled ? 'unsettled' : 'cash',
+                    details: { ...current.details, unsettledTrade: nextUnsettled },
+                  }));
+                }}
+                className={`relative inline-flex h-7 w-14 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${
+                  draftLine.details.unsettledTrade
+                    ? 'bg-amber-500 focus-visible:ring-amber-400'
+                    : 'bg-emerald-500 focus-visible:ring-emerald-400'
+                }`}
+                title={draftLine.details.unsettledTrade ? 'تغییر به تسویه آنی' : 'تغییر به بدون تسویه'}
+              >
+                <span
+                  aria-hidden="true"
+                  className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                    draftLine.details.unsettledTrade ? '-translate-x-7' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setDraftLine((current) => ({
+                    ...current,
+                    settlementMethod: 'unsettled',
+                    details: { ...current.details, unsettledTrade: true },
+                  }));
+                }}
+                className={`text-xs font-bold px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
+                  draftLine.details.unsettledTrade
+                    ? 'bg-amber-500 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                }`}
+              >
+                بدون تسویه
+              </button>
+            </div>
+          </div>
+        </div>
         <Field label="توضیحات" wide>
           <textarea
             value={draftLine.description}
