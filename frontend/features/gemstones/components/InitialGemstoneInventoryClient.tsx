@@ -30,6 +30,9 @@ import {
   GEMSTONE_SHAPES,
   GEMSTONE_SPECIES,
   ROOT_CATEGORIES,
+  cleanSpeciesNameFa,
+  findSpeciesItem,
+  normalizeSpeciesId,
   type GemstoneInventorySummary,
   type GemstoneOpeningRecord,
 } from '@/lib/gemstone';
@@ -568,11 +571,28 @@ export default function InitialGemstoneInventoryClient({
               ) : (
                 paginatedItems.map((item) => {
                   const isDiamond = item.category === 'diamond';
+                  const normalizedSpecies = normalizeSpeciesId(
+                    item.species,
+                    item.rootCategory as any,
+                    backendSpecies
+                  );
                   const speciesObj = (backendSpecies.length > 0 ? backendSpecies : GEMSTONE_SPECIES).find(
-                    (s: any) => s.id === item.species || s.code === item.species || s.species === item.species
+                    (s: any) =>
+                      s.id === normalizedSpecies ||
+                      s.code === normalizedSpecies ||
+                      s.species === normalizedSpecies ||
+                      s.id === item.species ||
+                      s.code === item.species ||
+                      s.recordId === item.species
                   );
                   const shapeObj = (backendShapes.length > 0 ? backendShapes : GEMSTONE_SHAPES).find(
                     (sh: any) => sh.id === item.shape || sh.code === item.shape
+                  );
+                  const resolvedSpeciesName = cleanSpeciesNameFa(
+                    speciesObj?.nameFa ||
+                      findSpeciesItem(normalizedSpecies)?.nameFa ||
+                      item.species,
+                    speciesObj?.nameEn || findSpeciesItem(normalizedSpecies)?.nameEn,
                   );
 
                   return (
@@ -606,7 +626,7 @@ export default function InitialGemstoneInventoryClient({
                         <div className="flex items-center gap-2">
                           <div>
                             <div className="font-black text-slate-900 dark:text-white">
-                              {item.itemName || speciesObj?.nameFa || 'سنگ بدون نام'}
+                              {item.itemName || resolvedSpeciesName || 'سنگ بدون نام'}
                             </div>
                             <div className="flex flex-wrap items-center gap-1.5 mt-1">
                               {item.internalCode && (
@@ -660,7 +680,7 @@ export default function InitialGemstoneInventoryClient({
                                 : 'الماس طبیعی'}
                             </span>
                           ) : (
-                            <span>{speciesObj?.nameFa || item.species}</span>
+                            <span>{resolvedSpeciesName}</span>
                           )}
                         </div>
                         {item.variety && (

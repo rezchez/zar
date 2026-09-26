@@ -416,6 +416,70 @@ describe('Document Currency Tab & Distinct Currencies', () => {
     expect(draftAfterCommit.details.currencyTotalAmount).toBe('');
     expect(numberValue(draftAfterCommit.details.currencyQuantity)).toBe(0);
   });
+
+  it('strictly isolates currency tab from coins: rejects coin names as currency unit', () => {
+    const coinNames = [
+      'تمام سکه بانکی (بهار آزادی/امامی)',
+      'نیم سکه',
+      'ربع سکه',
+      'سکه گرمی',
+      'سکه امامی',
+      'سکه تمام بهار آزادی',
+      'سکه پهلوی',
+      'سکه پارسیان ۱ گرمی',
+      'شمش طلا ۱۰ گرمی',
+    ];
+
+    for (const coinName of coinNames) {
+      const line = createCurrencyLine('received', 'USD', 'IRR');
+      line.details.currencyUnit = coinName;
+      line.details.currencyQuantity = '1';
+      line.details.currencyUnitPrice = '50000000';
+      line.details.currencyTotalAmount = '50000000';
+
+      const validationError = validateLine(line, [], [], null, 'IRR');
+      expect(validationError).toBe(
+        'تب ارز فقط مخصوص ارزهای خارجی است و امکان ثبت سکه یا مسکوکات در این بخش وجود ندارد.',
+      );
+    }
+  });
+
+  it('filters out coin names from currency units list in currency tab', () => {
+    const mixedUnits = [
+      'USD',
+      'EUR',
+      'تمام سکه بانکی (بهار آزادی/امامی)',
+      'نیم سکه',
+      'AED',
+      'IRR',
+      'IRT',
+      'شمش سوئیسی',
+      'GBP',
+    ];
+    const selectedCurrency = 'IRR';
+    const normDoc = selectedCurrency.trim().toUpperCase();
+
+    const selectableUnits = mixedUnits.filter((u) => {
+      const norm = u.trim().toUpperCase();
+      return (
+        norm !== normDoc &&
+        norm !== 'IRR' &&
+        norm !== 'IRT' &&
+        !norm.includes('سکه') &&
+        !norm.includes('بهار') &&
+        !norm.includes('امامی') &&
+        !norm.includes('پارسیان') &&
+        !norm.includes('پهلوی') &&
+        !norm.includes('شمش')
+      );
+    });
+
+    expect(selectableUnits).toEqual(['USD', 'EUR', 'AED', 'GBP']);
+    expect(selectableUnits).not.toContain('تمام سکه بانکی (بهار آزادی/امامی)');
+    expect(selectableUnits).not.toContain('نیم سکه');
+    expect(selectableUnits).not.toContain('شمش سوئیسی');
+  });
 });
+
 
 

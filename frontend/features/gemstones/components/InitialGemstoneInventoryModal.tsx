@@ -43,10 +43,19 @@ import {
   TRANSPARENCIES,
   ROOT_CATEGORIES,
   LAB_GROWTH_METHODS,
+  SYNTHETIC_METHODS,
+  CUBIC_ZIRCONIA_ADVISORY,
+  cleanSpeciesNameFa,
+  formatSpeciesOptionLabel,
+  formatRootCategoryShortFa,
+  buildSpeciesListForRoot,
+  resolveSpeciesForRootChange,
   POST_GROWTH_TREATMENTS,
   isLondonBlueTopaz,
   validateColorRange,
   validateClarityRange,
+  getAllowedColorEndGrades,
+  getAllowedClarityEndGrades,
   generatePoolIdentityKey,
   areParcelsHomogeneous,
   DIAMOND_SIEVE_CHART,
@@ -62,6 +71,7 @@ import {
   type GemstoneSpeciesItem,
   getSpeciesForRootCategory,
   findSpeciesItem,
+  normalizeSpeciesId,
 } from '@/lib/gemstone';
 import {
   calculateValuationTotalCost,
@@ -340,9 +350,15 @@ export default function InitialGemstoneInventoryModal({
   useEffect(() => {
     if (editingItem) {
       const isParcel = editingItem.mode === 'parcel' || editingItem.inventoryMode === 'parcel';
+      const initialRoot: RootCategory =
+        editingItem.rootCategory ||
+        (editingItem.diamondType === 'lab_grown' || editingItem.diamondOriginType === 'laboratory_grown'
+          ? 'laboratory_grown'
+          : 'natural');
       setMode(isParcel ? 'parcel' : 'single_stone');
-      setCategory(editingItem.category || 'diamond');
-      setSpecies(editingItem.species || 'diamond');
+      setRootCategory(initialRoot);
+      setCategory(editingItem.category || (initialRoot === 'laboratory_grown' || initialRoot === 'natural' ? 'diamond' : 'colored_gemstone'));
+      setSpecies(normalizeSpeciesId(editingItem.species, initialRoot, availableSpeciesForRoot));
       setVariety(editingItem.variety || '');
       setItemName(editingItem.itemName || editingItem.tradeName || '');
       setDiamondType(
@@ -453,10 +469,7 @@ export default function InitialGemstoneInventoryModal({
       setDescription(editingItem.description || '');
 
       // Classification sync
-      setRootCategory(
-        editingItem.rootCategory ||
-          (editingItem.diamondType === 'lab_grown' ? 'laboratory_grown' : 'natural')
-      );
+      setRootCategory(initialRoot);
       setGrowthMethod(editingItem.growthMethod || 'CVD');
       setPostGrowthTreatment(editingItem.postGrowthTreatment || 'none_detected');
       setLaserInscription(editingItem.laserInscription || '');
@@ -573,14 +586,15 @@ export default function InitialGemstoneInventoryModal({
   };
 
   // Apply species selection and preset attributes
-  const applySpeciesSelection = (item: GemstoneSpeciesItem) => {
+  const applySpeciesSelection = (item: GemstoneSpeciesItem | any, targetRoot?: RootCategory) => {
+    const effectiveRoot = targetRoot || item.rootCategory || rootCategory;
     setSpecies(item.id);
     setCategory(item.category);
 
     if (item.diamondType) {
       setDiamondType(item.diamondType);
     } else if (item.category === 'diamond') {
-      setDiamondType(rootCategory === 'laboratory_grown' ? 'lab_grown' : 'natural');
+      setDiamondType(effectiveRoot === 'laboratory_grown' ? 'lab_grown' : 'natural');
     }
 
     if (item.growthMethod) {
@@ -591,12 +605,18 @@ export default function InitialGemstoneInventoryModal({
     }
     if (item.chemicalBasis !== undefined) {
       setChemicalBasis(item.chemicalBasis);
+    } else {
+      setChemicalBasis('');
     }
     if (item.treatments !== undefined) {
       setTreatments(item.treatments);
+    } else if (effectiveRoot === 'natural' || effectiveRoot === 'laboratory_grown') {
+      setTreatments('none_detected');
     }
     if (item.treatmentMethod !== undefined) {
       setTreatmentMethod(item.treatmentMethod);
+    } else if (effectiveRoot !== 'treated_natural') {
+      setTreatmentMethod('');
     }
     if (item.locality !== undefined) {
       setLocality(item.locality);
@@ -609,6 +629,8 @@ export default function InitialGemstoneInventoryModal({
     }
     if (item.defaultVariety) {
       setVariety(item.defaultVariety);
+    } else if (item.nameFa) {
+      setVariety(cleanSpeciesNameFa(item.nameFa, item.nameEn));
     }
     if (item.defaultItemName) {
       setItemName(item.defaultItemName);
@@ -621,76 +643,50 @@ export default function InitialGemstoneInventoryModal({
     if (item) {
       applySpeciesSelection(item);
     } else {
-      setSpecies(newSpeciesId);
-      if (newSpeciesId === 'diamond' || newSpeciesId.includes('diamond')) {
-        setCategory('diamond');
+      const fromList = availableSpeciesForRoot.find((s) => s.id === newSpeciesId);
+      if (fromList) {
+        applySpeciesSelection(fromList as any);
       } else {
-        setCategory('colored_gemstone');
+        const norm = normalizeSpeciesId(newSpeciesId, rootCategory, availableSpeciesForRoot);
+        setSpecies(norm);
+        if (norm === 'diamond' || norm.includes('diamond')) {
+          setCategory('diamond');
+        } else {
+          setCategory('colored_gemstone');
+        }
       }
     }
   };
 
-  // Dynamic species list filtered by rootCategory from backend collection with fallback
+  // Dynamic species list filtered by rootCategory merging authoritative GIA species and backend records
   const availableSpeciesForRoot = useMemo(() => {
-    if (gemstoneTypes.length > 0) {
-      const fromBackend = gemstoneTypes.filter((t) => (t as any).rootCategory === rootCategory);
-      if (fromBackend.length > 0) {
-        const seen = new Set<string>();
-        const list: Array<{
-          id: string;
-          nameFa: string;
-          nameEn: string;
-          category: GemstoneCategory;
-          rootCategory: RootCategory;
-          diamondType?: 'natural' | 'lab_grown';
-          growthMethod?: LabGrowthMethod;
-          syntheticMethod?: string;
-          chemicalBasis?: string;
-          treatments?: string;
-          treatmentMethod?: string;
-        }> = [];
+    return buildSpeciesListForRoot(rootCategory, gemstoneTypes);
+  }, [gemstoneTypes, rootCategory]);
 
-        for (const t of fromBackend) {
-          const resolvedId = (t as any).code || t.id;
-          if (!seen.has(resolvedId)) {
-            seen.add(resolvedId);
-            list.push({
-              id: resolvedId,
-              nameFa: t.nameFa || t.name || '',
-              nameEn: t.nameEn || '',
-              category: t.category,
-              rootCategory: (t as any).rootCategory || rootCategory,
-              diamondType: (t as any).diamondType,
-              growthMethod: (t as any).growthMethod,
-              syntheticMethod: (t as any).syntheticMethod,
-              chemicalBasis: (t as any).chemicalBasis,
-              treatments: (t as any).treatments,
-              treatmentMethod: (t as any).treatmentMethod,
-            });
+  // Keep species synchronized with rootCategory and availableSpeciesForRoot
+  useEffect(() => {
+    if (species && availableSpeciesForRoot.length > 0) {
+      const existsInCurrent = availableSpeciesForRoot.some((s) => s.id === species);
+      if (!existsInCurrent) {
+        const knownItem = findSpeciesItem(species);
+        if (knownItem && knownItem.rootCategory !== rootCategory) {
+          const nextItem = resolveSpeciesForRootChange(species, rootCategory, availableSpeciesForRoot);
+          if (nextItem) {
+            applySpeciesSelection(nextItem, rootCategory);
           }
         }
-        if (list.length > 0) return list;
       }
     }
-    return getSpeciesForRootCategory(rootCategory);
-  }, [gemstoneTypes, rootCategory]);
+  }, [rootCategory, availableSpeciesForRoot, species]);
 
   // Root Category selection change with dynamic cascading stone update
   const handleRootCategoryChange = (newRoot: RootCategory) => {
+    if (newRoot === rootCategory) return;
     setRootCategory(newRoot);
-    const available = gemstoneTypes.length > 0
-      ? gemstoneTypes.filter((t) => (t as any).rootCategory === newRoot)
-      : getSpeciesForRootCategory(newRoot);
-    const currentBelongs = available.some((s) => (s as any).id === species || (s as any).species === species);
-
-    if (!currentBelongs && available.length > 0) {
-      applySpeciesSelection(available[0] as any);
-    } else {
-      if (newRoot === 'laboratory_grown' && (category === 'diamond' || species.includes('diamond'))) {
-        setDiamondType('lab_grown');
-      } else if (newRoot === 'natural' && (category === 'diamond' || species.includes('diamond'))) {
-        setDiamondType('natural');
-      }
+    const nextList = buildSpeciesListForRoot(newRoot, gemstoneTypes);
+    const nextSpeciesItem = resolveSpeciesForRootChange(species, newRoot, nextList);
+    if (nextSpeciesItem) {
+      applySpeciesSelection(nextSpeciesItem, newRoot);
     }
   };
 
@@ -912,34 +908,225 @@ export default function InitialGemstoneInventoryModal({
             )}
 
             {/* Root Classification Selector (GIA & CIBJO Standards) */}
-            <div className="rounded-2xl border border-cyan-100 bg-cyan-50/40 p-3.5 dark:border-cyan-900/40 dark:bg-cyan-950/20">
-              <div className="mb-2 flex items-center justify-between">
-                <label className="font-bold text-slate-800 dark:text-slate-200">
-                  منشأ و خاستگاه گوهرشناسی (GIA Root Category) <span className="text-rose-500">*</span>
+            <div className="rounded-2xl border border-cyan-100 bg-cyan-50/40 p-3.5 transition-all duration-300 dark:border-cyan-900/40 dark:bg-cyan-950/20 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                  <Sparkles size={14} className="text-cyan-600 dark:text-cyan-400" />
+                  <span>منشأ و خاستگاه گوهرشناسی (GIA Root Category)</span>
+                  <span className="text-rose-500">*</span>
                 </label>
                 <span className="text-[11px] font-medium text-cyan-700 dark:text-cyan-300">
-                  فهرست سنگ‌ها مستقیماً بر اساس این گزینه تغییر می‌کند
+                  فهرست سنگ‌ها و پارامترهای تخصصی به صورت هوشمند با تغییر تب به‌روز می‌شوند
                 </span>
               </div>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-                {ROOT_CATEGORIES.map((rc) => (
-                  <button
-                    key={rc.id}
-                    type="button"
-                    onClick={() => handleRootCategoryChange(rc.id as RootCategory)}
-                    className={`flex flex-col items-center justify-center rounded-xl p-2.5 text-center transition ${
-                      rootCategory === rc.id
-                        ? 'border-2 border-cyan-500 bg-white font-black text-cyan-950 shadow-md dark:border-cyan-400 dark:bg-slate-800 dark:text-cyan-100'
-                        : 'border border-slate-200/80 bg-white/70 text-slate-600 hover:bg-white dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300'
-                    }`}
-                  >
-                    <span className="text-xs">{rc.labelFa}</span>
-                    <span className="mt-0.5 line-clamp-1 text-[10px] text-slate-400 dark:text-slate-400">
-                      {rc.id === 'natural' ? 'معدنی دست‌نخورده' : rc.id === 'laboratory_grown' ? 'CVD / HPHT' : rc.id === 'synthetic' ? 'بلور سنتتیک' : rc.id === 'simulant' ? 'نگین اتمی و CZ' : 'پرتودیده و بهسازی'}
-                    </span>
-                  </button>
-                ))}
+
+              <div role="tablist" aria-label="منشأ و خاستگاه گوهرشناسی" className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+                {ROOT_CATEGORIES.map((rc) => {
+                  const isActive = rootCategory === rc.id;
+                  const tabSpeciesCount = buildSpeciesListForRoot(rc.id as RootCategory, gemstoneTypes).length;
+                  const activeStyles =
+                    rc.id === 'natural'
+                      ? 'border-2 border-emerald-500 bg-white text-emerald-950 shadow-md ring-2 ring-emerald-500/15 dark:border-emerald-400 dark:bg-slate-800 dark:text-emerald-100'
+                      : rc.id === 'laboratory_grown'
+                      ? 'border-2 border-purple-500 bg-white text-purple-950 shadow-md ring-2 ring-purple-500/15 dark:border-purple-400 dark:bg-slate-800 dark:text-purple-100'
+                      : rc.id === 'synthetic'
+                      ? 'border-2 border-indigo-500 bg-white text-indigo-950 shadow-md ring-2 ring-indigo-500/15 dark:border-indigo-400 dark:bg-slate-800 dark:text-indigo-100'
+                      : rc.id === 'simulant'
+                      ? 'border-2 border-amber-500 bg-white text-amber-950 shadow-md ring-2 ring-amber-500/15 dark:border-amber-400 dark:bg-slate-800 dark:text-amber-100'
+                      : 'border-2 border-teal-500 bg-white text-teal-950 shadow-md ring-2 ring-teal-500/15 dark:border-teal-400 dark:bg-slate-800 dark:text-teal-100';
+
+                  return (
+                    <button
+                      key={rc.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={isActive}
+                      onClick={() => handleRootCategoryChange(rc.id as RootCategory)}
+                      className={`group relative flex flex-col items-center justify-center rounded-xl p-2.5 text-center transition-all duration-300 ease-out cursor-pointer ${
+                        isActive
+                          ? `${activeStyles} -translate-y-0.5 font-black`
+                          : 'border border-slate-200/80 bg-white/75 text-slate-600 hover:-translate-y-0.5 hover:border-cyan-300 hover:bg-white hover:shadow-xs dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs">{rc.labelFa}</span>
+                        <span
+                          className={`rounded-full px-1.5 py-0.2 text-[9px] font-bold transition-colors ${
+                            isActive
+                              ? 'bg-cyan-600 text-white dark:bg-cyan-500 dark:text-slate-950'
+                              : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-300'
+                          }`}
+                        >
+                          {tabSpeciesCount.toLocaleString('fa-IR')}
+                        </span>
+                      </div>
+                      <span className="mt-0.5 line-clamp-1 text-[10px] text-slate-400 dark:text-slate-400">
+                        {rc.id === 'natural'
+                          ? 'معدنی دست‌نخورده'
+                          : rc.id === 'laboratory_grown'
+                          ? 'CVD / HPHT'
+                          : rc.id === 'synthetic'
+                          ? 'بلور سنتتیک'
+                          : rc.id === 'simulant'
+                          ? 'نگین اتمی و CZ'
+                          : 'پرتودیده و بهسازی'}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
+
+              {/* Smooth Contextual GIA Root Category Dossier Strip (for non-natural categories) */}
+              {rootCategory !== 'natural' && (
+                <div className="rounded-xl border border-white/80 bg-white/90 p-3 shadow-2xs transition-all duration-300 ease-out dark:border-slate-800 dark:bg-slate-900/80">
+                  {rootCategory === 'laboratory_grown' && (
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                      <div>
+                        <label className="mb-1 block text-[11px] font-bold text-purple-900 dark:text-purple-300">
+                          متد رشد آزمایشگاهی (Lab Growth Method) *
+                        </label>
+                        <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+                          {LAB_GROWTH_METHODS.map((gm) => (
+                            <button
+                              key={gm.id}
+                              type="button"
+                              onClick={() => setGrowthMethod(gm.id as LabGrowthMethod)}
+                              className={`rounded-lg py-1.5 text-center text-[11px] font-black transition-all cursor-pointer ${
+                                growthMethod === gm.id
+                                  ? 'bg-purple-600 text-white shadow-2xs'
+                                  : 'border border-purple-200 bg-purple-50/50 text-purple-900 hover:bg-purple-100 dark:border-purple-800 dark:bg-slate-800 dark:text-purple-200'
+                              }`}
+                            >
+                              {gm.id}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                          بهسازی پس از رشد (Post-Growth)
+                        </label>
+                        <select
+                          value={postGrowthTreatment}
+                          onChange={(e) => setPostGrowthTreatment(e.target.value as PostGrowthTreatment)}
+                          className="w-full rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                        >
+                          {POST_GROWTH_TREATMENTS.map((pgt) => (
+                            <option key={pgt.id} value={pgt.id}>
+                              {pgt.labelFa}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                          حکاکی لیزری کمربند (Laser Inscription)
+                        </label>
+                        <input
+                          type="text"
+                          value={laserInscription}
+                          onChange={(e) => setLaserInscription(e.target.value)}
+                          placeholder="مثال: LG12345678"
+                          className="w-full rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 font-mono text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {rootCategory === 'synthetic' && (
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-1 block text-[11px] font-bold text-indigo-900 dark:text-indigo-300">
+                          فرآیند تبلور سنتتیک (Synthesis Method) *
+                        </label>
+                        <select
+                          value={syntheticMethod}
+                          onChange={(e) => setSyntheticMethod(e.target.value)}
+                          className="w-full rounded-xl border border-indigo-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-800 dark:border-indigo-800 dark:bg-slate-800 dark:text-slate-200"
+                        >
+                          {SYNTHETIC_METHODS.map((sm) => (
+                            <option key={sm.id} value={sm.id}>
+                              {sm.nameFa}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                          پایه و ساختار شیمیایی بلور (Chemical Basis)
+                        </label>
+                        <input
+                          type="text"
+                          value={chemicalBasis}
+                          onChange={(e) => setChemicalBasis(e.target.value)}
+                          placeholder="مثال: Al2O3:Cr یا SiC (Silicon Carbide)"
+                          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-1.5 font-mono text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {rootCategory === 'simulant' && (
+                    <div className="space-y-2.5">
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div>
+                          <label className="mb-1 block text-[11px] font-bold text-amber-900 dark:text-amber-300">
+                            فرمول و ترکیب شیمیایی بدل (Simulant Chemical Basis) *
+                          </label>
+                          <input
+                            type="text"
+                            value={chemicalBasis}
+                            onChange={(e) => setChemicalBasis(e.target.value)}
+                            placeholder="مثال: ZrO2 (Cubic Zirconia) یا SiO2 Lead Glass"
+                            className="w-full rounded-xl border border-amber-200 bg-white px-3 py-1.5 font-mono text-xs font-bold text-slate-800 dark:border-amber-800 dark:bg-slate-800 dark:text-slate-200"
+                          />
+                        </div>
+                        <div className="flex items-center rounded-xl border border-amber-200/80 bg-amber-50/70 px-3 py-2 text-[11px] font-medium leading-relaxed text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-200">
+                          <Info size={15} className="ml-2 shrink-0 text-amber-600 dark:text-amber-400" />
+                          <span>
+                            {species === 'cubic_zirconia'
+                              ? CUBIC_ZIRCONIA_ADVISORY
+                              : 'سنگ‌های مشابه (Simulants) از نظر ظاهری شبیه سنگ اصلی هستند اما ساختار شیمیایی و بلوری متفاوتی دارند.'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {rootCategory === 'treated_natural' && (
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-1 block text-[11px] font-bold text-teal-900 dark:text-teal-300">
+                          نوع فرآیند بهسازی (GIA Treatment Type) *
+                        </label>
+                        <select
+                          value={treatments}
+                          onChange={(e) => setTreatments(e.target.value)}
+                          className="w-full rounded-xl border border-teal-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-800 dark:border-teal-800 dark:bg-slate-800 dark:text-slate-200"
+                        >
+                          {GEMSTONE_TREATMENTS.map((tr) => (
+                            <option key={tr.id} value={tr.id}>
+                              {tr.nameFa}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                          متد و شرح دقیق بهسازی (Treatment Method Details)
+                        </label>
+                        <input
+                          type="text"
+                          value={treatmentMethod}
+                          onChange={(e) => setTreatmentMethod(e.target.value)}
+                          placeholder="مثال: پرتودهی الکترونی + حرارت یا پرشدگی شکاف با شیشه سرب"
+                          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Mode & Dynamic Cascading Species Controls */}
@@ -979,7 +1166,7 @@ export default function InitialGemstoneInventoryModal({
               <div>
                 <div className="mb-1.5 flex items-center justify-between">
                   <label className="font-bold text-slate-700 dark:text-slate-300">
-                    گونه / سنگ ({ROOT_CATEGORIES.find((r) => r.id === rootCategory)?.labelFa.split(' ')[0] || 'سنگ'})
+                    گونه / سنگ ({formatRootCategoryShortFa(rootCategory)}) <span className="text-rose-500">*</span>
                   </label>
                   <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                     {availableSpeciesForRoot.length} گونه معتبر
@@ -992,13 +1179,18 @@ export default function InitialGemstoneInventoryModal({
                 >
                   {availableSpeciesForRoot.map((s, idx) => (
                     <option key={s.id || `species-${idx}`} value={s.id}>
-                      {s.nameFa} ({s.nameEn})
+                      {formatSpeciesOptionLabel(s.nameFa, s.nameEn)}
                     </option>
                   ))}
                   {/* Keep legacy/custom species visible if editing an item not currently in active list */}
                   {!availableSpeciesForRoot.some((s) => s.id === species) && species && (
                     <option key={`custom-species-${species}`} value={species}>
-                      {species} (ثبت‌شده پیشین)
+                      {findSpeciesItem(species)?.nameFa
+                        ? formatSpeciesOptionLabel(
+                            findSpeciesItem(species)?.nameFa,
+                            findSpeciesItem(species)?.nameEn
+                          )
+                        : species}
                     </option>
                   )}
                 </select>
@@ -1056,7 +1248,7 @@ export default function InitialGemstoneInventoryModal({
                   const shapesPool = shapesList.length > 0
                     ? shapesList.map((s: any) => ({
                         id: s.code || s.id,
-                        nameFa: s.nameFa,
+                        nameFa: cleanSpeciesNameFa(s.nameFa || '', s.nameEn || ''),
                         nameEn: s.nameEn,
                         svgIcon: s.svgIcon,
                       }))
@@ -1183,7 +1375,9 @@ export default function InitialGemstoneInventoryModal({
                         checked={diamondType === 'natural'}
                         onChange={() => {
                           setDiamondType('natural');
-                          if (rootCategory === 'laboratory_grown') setRootCategory('natural');
+                          if (rootCategory === 'laboratory_grown') {
+                            handleRootCategoryChange('natural');
+                          }
                         }}
                         className="text-cyan-600 focus:ring-cyan-500"
                       />
@@ -1196,7 +1390,7 @@ export default function InitialGemstoneInventoryModal({
                         checked={diamondType === 'lab_grown'}
                         onChange={() => {
                           setDiamondType('lab_grown');
-                          setRootCategory('laboratory_grown');
+                          handleRootCategoryChange('laboratory_grown');
                         }}
                         className="text-cyan-600 focus:ring-cyan-500"
                       />
@@ -1420,23 +1614,33 @@ export default function InitialGemstoneInventoryModal({
                             {validateColorRange(colorMin, colorMax).label}
                           </span>
                         </div>
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5" dir="rtl" style={{ direction: 'rtl' }}>
+                          <span className="text-xs font-bold text-slate-500 dark:text-slate-400 shrink-0">از:</span>
                           <select
                             value={colorMin}
-                            onChange={(e) => setColorMin(e.target.value)}
+                            onChange={(e) => {
+                              const newMin = e.target.value;
+                              setColorMin(newMin);
+                              const allowed = getAllowedColorEndGrades(newMin);
+                              if (!allowed.includes(colorMax)) {
+                                setColorMax(allowed[0] || newMin);
+                              }
+                            }}
                             className="w-1/2 rounded-xl border border-slate-200 bg-white p-2 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                            title="شروع بازه رنگ (از)"
                           >
                             {D_Z_COLORS.map((c) => (
                               <option key={c} value={c}>{c}</option>
                             ))}
                           </select>
-                          <span className="text-slate-400">تا</span>
+                          <span className="text-xs font-bold text-slate-500 dark:text-slate-400 shrink-0">تا:</span>
                           <select
                             value={colorMax}
                             onChange={(e) => setColorMax(e.target.value)}
                             className="w-1/2 rounded-xl border border-slate-200 bg-white p-2 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                            title="پایان بازه رنگ (تا)"
                           >
-                            {D_Z_COLORS.map((c) => (
+                            {getAllowedColorEndGrades(colorMin).map((c) => (
                               <option key={c} value={c}>{c}</option>
                             ))}
                           </select>
@@ -1453,23 +1657,33 @@ export default function InitialGemstoneInventoryModal({
                             {validateClarityRange(clarityMin, clarityMax).label}
                           </span>
                         </div>
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5" dir="rtl" style={{ direction: 'rtl' }}>
+                          <span className="text-xs font-bold text-slate-500 dark:text-slate-400 shrink-0">از:</span>
                           <select
                             value={clarityMin}
-                            onChange={(e) => setClarityMin(e.target.value)}
+                            onChange={(e) => {
+                              const newMin = e.target.value;
+                              setClarityMin(newMin);
+                              const allowed = getAllowedClarityEndGrades(newMin);
+                              if (!allowed.includes(clarityMax)) {
+                                setClarityMax(allowed[0] || newMin);
+                              }
+                            }}
                             className="w-1/2 rounded-xl border border-slate-200 bg-white p-2 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                            title="شروع بازه پاکی (از)"
                           >
                             {CLARITY_GRADES.map((cl) => (
                               <option key={cl} value={cl}>{cl}</option>
                             ))}
                           </select>
-                          <span className="text-slate-400">تا</span>
+                          <span className="text-xs font-bold text-slate-500 dark:text-slate-400 shrink-0">تا:</span>
                           <select
                             value={clarityMax}
                             onChange={(e) => setClarityMax(e.target.value)}
                             className="w-1/2 rounded-xl border border-slate-200 bg-white p-2 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                            title="پایان بازه پاکی (تا)"
                           >
-                            {CLARITY_GRADES.map((cl) => (
+                            {getAllowedClarityEndGrades(clarityMin).map((cl) => (
                               <option key={cl} value={cl}>{cl}</option>
                             ))}
                           </select>
@@ -1499,7 +1713,7 @@ export default function InitialGemstoneInventoryModal({
                         <div className="flex h-8 items-center rounded-xl bg-slate-100 px-3 font-mono text-[11px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300 overflow-hidden text-ellipsis whitespace-nowrap">
                           {generatePoolIdentityKey({
                             rootCategory,
-                            species: 'diamond',
+                            species: species || 'diamond',
                             shape,
                             sizeMin: sizeMin ? parseFloat(sizeMin) : undefined,
                             sizeMax: sizeMax ? parseFloat(sizeMax) : undefined,

@@ -19,6 +19,10 @@ import {
   validateClarityRange,
   validateColorRange,
   validatePoolConsumption,
+  getAllowedColorEndGrades,
+  getAllowedClarityEndGrades,
+  parseColorRangeString,
+  parseClarityRangeString,
   getSpeciesForRootCategory,
   findSpeciesItem,
 } from '@/lib/gemstone';
@@ -225,11 +229,16 @@ describe('Gemstone Classification & Diamond Parcel Pool Architecture', () => {
   });
 
   describe('Melee Diamond Bar-Khaneh Parcel Pool Architecture', () => {
-    it('validates color ranges with standard GIA D-to-Z hierarchy order', () => {
-      // Valid range: G to H (G comes before or equals H)
+    it('validates color ranges with standard GIA D-to-Z hierarchy and quality tier restrictions', () => {
+      // Valid range: G to H (both Near Colorless)
       const validGH = validateColorRange('G', 'H');
       expect(validGH.valid).toBe(true);
       expect(validGH.label).toBe('G–H');
+
+      // Valid range: D to F (all Colorless tier)
+      const validDF = validateColorRange('D', 'F');
+      expect(validDF.valid).toBe(true);
+      expect(validDF.label).toBe('D–F');
 
       // Valid single grade range: F to F
       const validFF = validateColorRange('F', 'F');
@@ -240,23 +249,73 @@ describe('Gemstone Classification & Diamond Parcel Pool Architecture', () => {
       const invalidHG = validateColorRange('H', 'G');
       expect(invalidHG.valid).toBe(false);
       expect(invalidHG.error).toBeDefined();
+
+      // Invalid cross-tier range: H to I (H is Near Colorless, I is Faint Tint - lower tier)
+      // Exact user requirement: اگر رنگ اچ انتخاب شد برای شروع بازه رنگ نباید اجازه بدی تا آی انتخاب بشه
+      const invalidHI = validateColorRange('H', 'I');
+      expect(invalidHI.valid).toBe(false);
+      expect(invalidHI.error).toContain('لِوِل کیفی پایین‌تر');
+
+      // Invalid cross-tier range: D to G (D is Colorless, G is Near Colorless)
+      const invalidDG = validateColorRange('D', 'G');
+      expect(invalidDG.valid).toBe(false);
+      expect(invalidDG.error).toContain('لِوِل کیفی پایین‌تر');
     });
 
-    it('validates clarity ranges with standard GIA hierarchy order', () => {
-      // Valid range: VS1 to VS2
+    it('validates clarity ranges with standard hierarchy and quality tier restrictions', () => {
+      // Valid range: VS1 to VS2 (both in VS tier)
       const validVS = validateClarityRange('VS1', 'VS2');
       expect(validVS.valid).toBe(true);
       expect(validVS.label).toBe('VS1–VS2');
 
-      // Valid range: VVS2 to SI1
-      const validVVS_SI = validateClarityRange('VVS2', 'SI1');
-      expect(validVVS_SI.valid).toBe(true);
-      expect(validVVS_SI.label).toBe('VVS2–SI1');
+      // Valid range: VVS1 to VVS2 (both in VVS tier)
+      const validVVS = validateClarityRange('VVS1', 'VVS2');
+      expect(validVVS.valid).toBe(true);
+      expect(validVVS.label).toBe('VVS1–VVS2');
+
+      // Invalid cross-tier range: VVS2 to SI1 (crosses into lower SI tier)
+      const invalidVVS_SI = validateClarityRange('VVS2', 'SI1');
+      expect(invalidVVS_SI.valid).toBe(false);
+      expect(invalidVVS_SI.error).toContain('لِوِل کیفی پایین‌تر');
+
+      // Invalid cross-tier range: VS2 to SI1 (crosses into lower SI tier)
+      const invalidVS_SI = validateClarityRange('VS2', 'SI1');
+      expect(invalidVS_SI.valid).toBe(false);
+      expect(invalidVS_SI.error).toContain('لِوِل کیفی پایین‌تر');
 
       // Invalid inverted range: VS2 to VS1
       const invalidVS = validateClarityRange('VS2', 'VS1');
       expect(invalidVS.valid).toBe(false);
       expect(invalidVS.error).toBeDefined();
+    });
+
+    it('provides filtered end grades and robust string parsing for color and clarity ranges', () => {
+      // For color 'H', end grade can only be 'H' (cannot select 'I' or anything in lower tiers)
+      const allowedH = getAllowedColorEndGrades('H');
+      expect(allowedH).toEqual(['H']);
+
+      // For color 'G', end grades can be 'G' or 'H'
+      const allowedG = getAllowedColorEndGrades('G');
+      expect(allowedG).toEqual(['G', 'H']);
+
+      // For color 'D', end grades can be 'D', 'E', or 'F'
+      const allowedD = getAllowedColorEndGrades('D');
+      expect(allowedD).toEqual(['D', 'E', 'F']);
+
+      // For clarity 'VS1', end grades can be 'VS1' or 'VS2'
+      const allowedVS1 = getAllowedClarityEndGrades('VS1');
+      expect(allowedVS1).toEqual(['VS1', 'VS2']);
+
+      // For clarity 'VS2', end grade can only be 'VS2' (cannot select 'SI1')
+      const allowedVS2 = getAllowedClarityEndGrades('VS2');
+      expect(allowedVS2).toEqual(['VS2']);
+
+      // Parsers correctly parse various string formats
+      expect(parseColorRangeString('G-H')).toEqual({ min: 'G', max: 'H' });
+      expect(parseColorRangeString('G–H')).toEqual({ min: 'G', max: 'H' });
+      expect(parseColorRangeString('H-I')).toEqual({ min: 'H', max: 'H' }); // auto-corrected because 'I' is not allowed for 'H'
+      expect(parseClarityRangeString('VS1-VS2')).toEqual({ min: 'VS1', max: 'VS2' });
+      expect(parseClarityRangeString('VS2-SI1')).toEqual({ min: 'VS2', max: 'VS2' }); // auto-corrected
     });
 
     it('generates deterministic and unique pool identity keys for homogeneous parcels', () => {

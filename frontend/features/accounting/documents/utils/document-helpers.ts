@@ -32,7 +32,7 @@ export function convertedTo750(weight: string | number, purity: string | number,
 export function getLineDocumentTypeLabel(
   nature: 'received' | 'paid',
   tab: string,
-  rawKind: RawOperationKind,
+  rawKind?: RawOperationKind,
   unsettledTrade?: boolean,
   refiningOpKind?: string,
 ): string {
@@ -71,6 +71,9 @@ export function getLineDocumentTypeLabel(
   }
 
   if (tab === 'stone') {
+    if (unsettledTrade) {
+      return nature === 'received' ? 'خرید سنگ (بدون تسویه)' : 'فروش سنگ (بدون تسویه)';
+    }
     return nature === 'received' ? 'ورود سنگ' : 'خروج سنگ';
   }
 

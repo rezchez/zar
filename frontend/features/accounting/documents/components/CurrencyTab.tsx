@@ -233,32 +233,51 @@ export default function CurrencyTab({
     setDraftLine,
   ]);
 
-  // Ensure the traded currency cannot be identical to the top document currency and excludes IRR and IRT
+  // Ensure the traded currency cannot be identical to the top document currency and excludes IRR, IRT and coin names
   const selectableUnits = useMemo(() => {
     const normDoc = (selectedCurrency || '').trim().toUpperCase();
     const filtered = currencyUnits.filter((u) => {
       const norm = u.trim().toUpperCase();
-      return norm !== normDoc && norm !== 'IRR' && norm !== 'IRT';
+      return (
+        norm !== normDoc &&
+        norm !== 'IRR' &&
+        norm !== 'IRT' &&
+        !norm.includes('سکه') &&
+        !norm.includes('بهار') &&
+        !norm.includes('امامی') &&
+        !norm.includes('پارسیان') &&
+        !norm.includes('پهلوی') &&
+        !norm.includes('شمش')
+      );
     });
     if (filtered.length > 0) return filtered;
     return ['USD', 'EUR', 'AED', 'GBP'].filter((u) => u !== normDoc);
   }, [currencyUnits, selectedCurrency]);
 
+  const isCurrentUnitValid = useMemo(() => {
+    const raw = (draftLine.details?.currencyUnit || '').trim().toUpperCase();
+    return Boolean(raw && selectableUnits.some((u) => u.trim().toUpperCase() === raw));
+  }, [draftLine.details?.currencyUnit, selectableUnits]);
+
+  const currentUnit = isCurrentUnitValid
+    ? (draftLine.details.currencyUnit || '').trim().toUpperCase()
+    : (selectableUnits[0] || 'USD');
+
   const isDuplicateCurrency = Boolean(
     selectedCurrency &&
-    draftLine.details.currencyUnit &&
-    draftLine.details.currencyUnit.trim().toUpperCase() === selectedCurrency.trim().toUpperCase(),
+    currentUnit &&
+    currentUnit === selectedCurrency.trim().toUpperCase(),
   );
 
   const isDomesticCurrency = Boolean(
-    draftLine.details.currencyUnit &&
-    ['IRR', 'IRT'].includes(draftLine.details.currencyUnit.trim().toUpperCase()),
+    currentUnit &&
+    ['IRR', 'IRT'].includes(currentUnit),
   );
 
   const currentQuoteRate = useMemo(() => {
-    if (!getQuoteRate || !draftLine.details.currencyUnit || isDomesticCurrency) return 0;
-    return getQuoteRate(draftLine.details.currencyUnit);
-  }, [getQuoteRate, draftLine.details.currencyUnit, isDomesticCurrency]);
+    if (!getQuoteRate || !currentUnit || isDomesticCurrency) return 0;
+    return getQuoteRate(currentUnit);
+  }, [getQuoteRate, currentUnit, isDomesticCurrency]);
 
   const displayQuoteRate = useMemo(() => {
     if (currentQuoteRate <= 0) return 0;
@@ -267,11 +286,10 @@ export default function CurrencyTab({
 
   useEffect(() => {
     const normDoc = (selectedCurrency || '').trim().toUpperCase();
-    const currentUnit = (draftLine.details.currencyUnit || '').trim().toUpperCase();
-    const isSameAsDoc = Boolean(currentUnit && normDoc && currentUnit === normDoc);
-    const isDomestic = currentUnit === 'IRR' || currentUnit === 'IRT';
+    const currentUnitUpper = (draftLine.details.currencyUnit || '').trim().toUpperCase();
+    const isValidForeignUnit = selectableUnits.some((u) => u.trim().toUpperCase() === currentUnitUpper);
 
-    if (!currentUnit || isSameAsDoc || isDomestic) {
+    if (!isValidForeignUnit) {
       const fallbackUnit = selectableUnits[0] || (normDoc === 'USD' ? 'EUR' : 'USD');
       updateDraftDetail('currencyUnit', fallbackUnit);
       updateDraftDetail('settlementCurrencyUnit', selectedCurrency || (isToman ? 'IRT' : 'IRR'));
@@ -287,7 +305,7 @@ export default function CurrencyTab({
       getQuoteRate &&
       (!draftLine.details.currencyUnitPrice || draftLine.details.currencyUnitPrice === '0')
     ) {
-      const rate = getQuoteRate(currentUnit);
+      const rate = getQuoteRate(currentUnitUpper);
       if (rate > 0) {
         const finalRate = isToman ? Math.round(rate / 10) : rate;
         updateCurrencyValue('currencyUnitPrice', String(finalRate));
@@ -317,7 +335,6 @@ export default function CurrencyTab({
     }
   };
 
-  const currentUnit = (draftLine.details.currencyUnit || selectableUnits[0] || 'USD').trim();
   const matchingVault = useMemo(() => {
     return findCashVault(vaults, currentUnit);
   }, [vaults, currentUnit]);
@@ -421,7 +438,7 @@ export default function CurrencyTab({
         <div className="flex flex-col gap-2.5">
           <Field label="واحد ارز">
             <select
-              value={draftLine.details.currencyUnit || selectableUnits[0] || 'USD'}
+              value={currentUnit}
               onChange={(event) => handleUnitChange(event.target.value)}
             >
               {selectableUnits.map((unit) => (

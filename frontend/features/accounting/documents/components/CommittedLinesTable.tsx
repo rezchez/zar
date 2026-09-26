@@ -135,7 +135,7 @@ function getLineSortValue(
       return docType || '';
     }
     case 'metal': {
-      return line.documentTab === 'currency'
+      return line.documentTab === 'currency' || line.documentTab === 'stone'
         ? ''
         : line.details.metalType === 'silver'
         ? 'نقره'
@@ -144,17 +144,17 @@ function getLineSortValue(
         : 'طلا';
     }
     case 'weight': {
-      if (line.documentTab === 'currency') return 0;
+      if (line.documentTab === 'currency' || line.documentTab === 'stone') return 0;
       return line.details.calculationMethod === 'money'
         ? actualWeightFromMoney(line.details, Number(line.details.baseKarat || 750))
         : numberValue(line.details.rawWeight);
     }
     case 'purity': {
-      if (line.documentTab === 'currency') return 0;
+      if (line.documentTab === 'currency' || line.documentTab === 'stone') return 0;
       return numberValue(line.details.purity);
     }
     case 'bedehkarVazni': {
-      if (line.documentTab === 'currency') return 0;
+      if (line.documentTab === 'currency' || line.documentTab === 'stone') return 0;
       const rawW =
         line.details.calculationMethod === 'money'
           ? actualWeightFromMoney(line.details, Number(line.details.baseKarat || 750))
@@ -171,7 +171,7 @@ function getLineSortValue(
       return isBedehkar ? c750 : 0;
     }
     case 'bostankarVazni': {
-      if (line.documentTab === 'currency') return 0;
+      if (line.documentTab === 'currency' || line.documentTab === 'stone') return 0;
       const rawW =
         line.details.calculationMethod === 'money'
           ? actualWeightFromMoney(line.details, Number(line.details.baseKarat || 750))
@@ -214,13 +214,13 @@ function getLineSortValue(
       if (line.documentNature !== 'paid') return 0;
       return line.documentTab === 'currency'
         ? numberValue(line.details.currencyTotalAmount)
-        : numberValue(line.details.totalAmount);
+        : numberValue(line.details.totalAmount || line.details.stoneTotalAmount);
     }
     case 'bostankarMali': {
       if (line.documentNature !== 'received') return 0;
       return line.documentTab === 'currency'
         ? numberValue(line.details.currencyTotalAmount)
-        : numberValue(line.details.totalAmount);
+        : numberValue(line.details.totalAmount || line.details.stoneTotalAmount);
     }
     case 'labName':
       return line.details.labName?.trim() || '';
@@ -508,7 +508,8 @@ export default function CommittedLinesTable({
       activeTab === 'cash' ||
       activeTab === 'bank' ||
       activeTab === 'currency' ||
-      activeTab === 'gold-sale'
+      activeTab === 'gold-sale' ||
+      activeTab === 'stone'
     ) {
       cols.push('bedehkarMali', 'bostankarMali');
     }

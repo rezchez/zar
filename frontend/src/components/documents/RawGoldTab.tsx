@@ -58,6 +58,8 @@ export type DetailState = {
   workmanshipOptionId?: number;
   workmanshipOptionLabel?: string;
   quantity?: string;
+  coinType?: string;
+  coinName?: string;
   wage?: string;
   wageMode?: 'per_gram' | 'per_item';
   goldenPercentage?: string;
@@ -81,6 +83,7 @@ export type DetailState = {
   roundingMode?: 'round' | 'ceil' | 'floor';
   // Stone fields
   stoneOperationKind?: 'entry' | 'purchase' | 'unsettled_purchase' | 'exit' | 'sale' | 'unsettled_sale';
+  stoneRootCategory?: string;
   stoneCategory?: string;
   stoneSpecies?: string;
   stoneSpeciesName?: string;
@@ -91,7 +94,7 @@ export type DetailState = {
   stoneCarats?: string;
   stoneGrams?: string;
   stonePieces?: string;
-  stoneValuationMethod?: 'per_carat' | 'per_piece' | 'total_sum';
+  stoneValuationMethod?: 'per_carat' | 'per_gram' | 'per_piece' | 'total_sum';
   stoneUnitPrice?: string;
   stoneTotalAmount?: string;
   stoneColor?: string;
@@ -99,6 +102,40 @@ export type DetailState = {
   stoneCut?: string;
   stoneCertificateLab?: string;
   stoneCertificateNumber?: string;
+  stoneSieveSize?: string;
+  stoneColorRange?: string;
+  stoneClarityRange?: string;
+  stoneLotNumber?: string;
+  stoneTreatment?: string;
+  stoneOrigin?: string;
+  stoneItemName?: string;
+  stoneDiamondType?: 'natural' | 'lab_grown';
+  stoneGrowthMethod?: string;
+  stonePostGrowthTreatment?: string;
+  stoneLaserInscription?: string;
+  stoneColorMode?: 'd_z' | 'fancy';
+  stoneFancyIntensity?: string;
+  stoneFancyHue?: string;
+  stoneFancyOrigin?: string;
+  stonePolish?: string;
+  stoneSymmetry?: string;
+  stoneFluorescence?: string;
+  stoneMeasurementsLength?: string;
+  stoneMeasurementsWidth?: string;
+  stoneMeasurementsDepth?: string;
+  stoneColorHue?: string;
+  stoneTone?: string;
+  stoneSaturation?: string;
+  stoneTransparency?: string;
+  stoneOriginSource?: string;
+  stoneChemicalBasis?: string;
+  stoneTreatmentMethod?: string;
+  stoneSizeUnit?: 'ct' | 'mm' | 'sieve';
+  stoneSizeMin?: string;
+  stoneSizeMax?: string;
+  stoneStorageLocation?: string;
+  stoneInternalCode?: string;
+  stoneVerificationStatus?: string;
 };
 
 export type DocumentLine = {

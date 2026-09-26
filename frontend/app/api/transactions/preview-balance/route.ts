@@ -191,6 +191,15 @@ export async function POST(request: Request) {
         rialAmount = numberValue(details.totalAmount || details.metalTotalPrice);
       } else if (docTab === 'claim' && details.claimFinancial) {
         rialAmount = numberValue(details.claimFinancial);
+      } else if (docTab === 'stone') {
+        const isTrade =
+          details.stoneOperationKind === 'purchase' ||
+          details.stoneOperationKind === 'sale' ||
+          details.stoneOperationKind === 'unsettled_purchase' ||
+          details.stoneOperationKind === 'unsettled_sale';
+        if (isTrade) {
+          rialAmount = numberValue(details.totalAmount || details.stoneTotalAmount);
+        }
       }
       if (rialAmount > 0) {
         transactionEffect.rial += direction * rialAmount;

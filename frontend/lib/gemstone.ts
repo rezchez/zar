@@ -172,7 +172,7 @@ export const GEMSTONE_SPECIES_BY_ROOT: Record<RootCategory, GemstoneSpeciesItem[
     },
     {
       id: 'corundum_ruby_songea',
-      nameFa: 'یاقوت سونگی تانزانیا (Songea)',
+      nameFa: 'یاقوت سونگی تانزانیا',
       nameEn: 'Songea Ruby (Natural)',
       category: 'colored_gemstone',
       rootCategory: 'natural',
@@ -414,7 +414,7 @@ export const GEMSTONE_SPECIES_BY_ROOT: Record<RootCategory, GemstoneSpeciesItem[
   synthetic: [
     {
       id: 'synthetic_opal_gilson',
-      nameFa: 'اوپال سنتتیک ژیلسون (Gilson)',
+      nameFa: 'اوپال سنتتیک ژیلسون',
       nameEn: 'Gilson Synthetic Opal',
       category: 'colored_gemstone',
       rootCategory: 'synthetic',
@@ -484,7 +484,7 @@ export const GEMSTONE_SPECIES_BY_ROOT: Record<RootCategory, GemstoneSpeciesItem[
     },
     {
       id: 'synthetic_moissanite',
-      nameFa: 'موزانایت سنتتیک (کاربید سیلیسیم - SiC)',
+      nameFa: 'موزانایت سنتتیک (کاربید سیلیسیم)',
       nameEn: 'Synthetic Moissanite (SiC)',
       category: 'other_gemstone',
       rootCategory: 'synthetic',
@@ -516,7 +516,7 @@ export const GEMSTONE_SPECIES_BY_ROOT: Record<RootCategory, GemstoneSpeciesItem[
   simulant: [
     {
       id: 'cubic_zirconia',
-      nameFa: 'کیوبیک زیرکونیا / نگین اتمی برلیان (CZ)',
+      nameFa: 'کیوبیک زیرکونیا / نگین اتمی برلیان',
       nameEn: 'Cubic Zirconia (CZ)',
       category: 'other_gemstone',
       rootCategory: 'simulant',
@@ -546,7 +546,7 @@ export const GEMSTONE_SPECIES_BY_ROOT: Record<RootCategory, GemstoneSpeciesItem[
     },
     {
       id: 'glass_paste',
-      nameFa: 'شیشه و خمیر شیشه‌ای (Paste)',
+      nameFa: 'شیشه و خمیر شیشه‌ای',
       nameEn: 'Glass / Paste Simulant',
       category: 'other_gemstone',
       rootCategory: 'simulant',
@@ -606,7 +606,7 @@ export const GEMSTONE_SPECIES_BY_ROOT: Record<RootCategory, GemstoneSpeciesItem[
   treated_natural: [
     {
       id: 'topaz_london_blue',
-      nameFa: 'توپاز لندن بلو (London Blue - پرتودیده)',
+      nameFa: 'توپاز لندن بلو (پرتودیده)',
       nameEn: 'London Blue Topaz (Irradiated)',
       category: 'colored_gemstone',
       rootCategory: 'treated_natural',
@@ -617,7 +617,7 @@ export const GEMSTONE_SPECIES_BY_ROOT: Record<RootCategory, GemstoneSpeciesItem[
     },
     {
       id: 'topaz_swiss_blue',
-      nameFa: 'توپاز سوئیس بلو (Swiss Blue - پرتودیده)',
+      nameFa: 'توپاز سوئیس بلو (پرتودیده)',
       nameEn: 'Swiss Blue Topaz (Irradiated)',
       category: 'colored_gemstone',
       rootCategory: 'treated_natural',
@@ -650,7 +650,7 @@ export const GEMSTONE_SPECIES_BY_ROOT: Record<RootCategory, GemstoneSpeciesItem[
     },
     {
       id: 'corundum_ruby_lead_glass',
-      nameFa: 'یاقوت سرخ پرشده با شیشه سربی (Lead-Glass)',
+      nameFa: 'یاقوت سرخ پرشده با شیشه سربی',
       nameEn: 'Lead-Glass Filled Ruby',
       category: 'colored_gemstone',
       rootCategory: 'treated_natural',
@@ -672,7 +672,7 @@ export const GEMSTONE_SPECIES_BY_ROOT: Record<RootCategory, GemstoneSpeciesItem[
     },
     {
       id: 'diamond_irradiated',
-      nameFa: 'الماس طبیعی پرتودیده (Irradiated)',
+      nameFa: 'الماس طبیعی پرتودیده',
       nameEn: 'Irradiated Natural Diamond',
       category: 'diamond',
       rootCategory: 'treated_natural',
@@ -684,7 +684,7 @@ export const GEMSTONE_SPECIES_BY_ROOT: Record<RootCategory, GemstoneSpeciesItem[
     },
     {
       id: 'turquoise_stabilized',
-      nameFa: 'فیروزه طبیعی تثبیت‌شده با رزین (Stabilized)',
+      nameFa: 'فیروزه طبیعی تثبیت‌شده با رزین',
       nameEn: 'Stabilized Turquoise',
       category: 'colored_gemstone',
       rootCategory: 'treated_natural',
@@ -695,7 +695,7 @@ export const GEMSTONE_SPECIES_BY_ROOT: Record<RootCategory, GemstoneSpeciesItem[
     },
     {
       id: 'agate_dyed',
-      nameFa: 'عقیق رنگ‌آمیزی‌شده (Dyed Agate)',
+      nameFa: 'عقیق رنگ‌آمیزی‌شده',
       nameEn: 'Dyed Agate',
       category: 'colored_gemstone',
       rootCategory: 'treated_natural',
@@ -717,6 +717,79 @@ export const GEMSTONE_SPECIES_BY_ROOT: Record<RootCategory, GemstoneSpeciesItem[
 };
 
 /**
+ * Strips redundant English parentheticals from a Persian species name
+ * (e.g. "الماس (Diamond)" -> "الماس", "یاقوت کبود (Blue Sapphire)" -> "یاقوت کبود").
+ */
+export function cleanSpeciesNameFa(nameFa: string, nameEn?: string): string {
+  if (!nameFa) return '';
+  let cleaned = String(nameFa).trim();
+
+  // If nameEn is explicitly provided, remove exact `(nameEn)` case-insensitively
+  if (nameEn && nameEn.trim()) {
+    const escapedEn = nameEn.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    cleaned = cleaned.replace(new RegExp(`\\s*\\(${escapedEn}\\)\\s*`, 'gi'), ' ').trim();
+  }
+
+  // Remove any parenthetical that contains only Latin/ASCII characters (e.g. "(Diamond)", "(Neyshabur Turquoise)", "(CZ)")
+  cleaned = cleaned.replace(/\s*\([A-Za-z0-9\s/.,&-]+\)\s*/g, ' ').trim();
+
+  // Handle mixed parentheticals like "(London Blue - پرتودیده)" -> "(پرتودیده)"
+  cleaned = cleaned.replace(/\(([A-Za-z0-9\s/.,&-]+)\s*-\s*([^)]+)\)/g, '($2)').trim();
+
+  return cleaned.replace(/\s{2,}/g, ' ');
+}
+
+/**
+ * Formats a species dropdown/display label so the English name appears at most once,
+ * preventing duplicates like "الماس (Diamond) (Diamond)" or "الماس آزمایشگاهی CVD (Lab-Grown Diamond (CVD))".
+ */
+export function formatSpeciesOptionLabel(nameFa?: string, nameEn?: string): string {
+  const cleanedFa = cleanSpeciesNameFa(nameFa || '', nameEn);
+  const rawEn = String(nameEn || '').trim();
+  if (!rawEn) return cleanedFa;
+  if (!cleanedFa) return rawEn;
+
+  // If cleanedFa already contains the full English name, don't append it again
+  if (cleanedFa.toLowerCase().includes(rawEn.toLowerCase())) {
+    return cleanedFa;
+  }
+
+  // If rawEn has a parenthetical abbreviation like "(CVD)" or "(HPHT)" that is already in cleanedFa, strip it from rawEn
+  const cleanEn = rawEn
+    .replace(/\s*\(([A-Za-z0-9-]+)\)\s*/g, (match, token) => {
+      return cleanedFa.toUpperCase().includes(String(token).toUpperCase()) ? '' : match;
+    })
+    .trim();
+
+  if (!cleanEn || cleanedFa.toLowerCase().includes(cleanEn.toLowerCase())) {
+    return cleanedFa;
+  }
+
+  return `${cleanedFa} (${cleanEn})`;
+}
+
+/**
+ * Returns a clean Persian qualifier for a RootCategory without repeating "سنگ",
+ * preventing labels like "گونه / سنگ (سنگ) *".
+ */
+export function formatRootCategoryShortFa(rootCategory?: RootCategory | string): string {
+  switch (rootCategory) {
+    case 'natural':
+      return 'طبیعی';
+    case 'laboratory_grown':
+      return 'آزمایشگاهی';
+    case 'synthetic':
+      return 'سنتتیک';
+    case 'simulant':
+      return 'بدل / شبیه‌ساز';
+    case 'treated_natural':
+      return 'طبیعی بهسازی‌شده';
+    default:
+      return 'طبیعی';
+  }
+}
+
+/**
  * Returns available species strictly filtered by GIA root category.
  * When root is 'natural', synthetic, lab-grown, or simulants are completely excluded.
  */
@@ -728,12 +801,323 @@ export function getSpeciesForRootCategory(root: RootCategory): GemstoneSpeciesIt
  * Searches for a species definition across all root categories.
  */
 export function findSpeciesItem(speciesId: string): GemstoneSpeciesItem | undefined {
+  const id = speciesId === 'topaz_irradiated_london_blue' ? 'topaz_london_blue' : speciesId;
   for (const root of Object.keys(GEMSTONE_SPECIES_BY_ROOT) as RootCategory[]) {
-    const found = GEMSTONE_SPECIES_BY_ROOT[root].find((s) => s.id === speciesId);
+    const found = GEMSTONE_SPECIES_BY_ROOT[root].find((s) => s.id === id);
     if (found) return found;
   }
   return undefined;
 }
+
+/**
+ * Merges authoritative GIA species for a given RootCategory with any custom/backend species records,
+ * guaranteeing that all 5 GIA Root Category tabs always have a complete, rich list of species.
+ */
+export function buildSpeciesListForRoot(
+  rootCategory: RootCategory,
+  backendTypes?: Array<Record<string, any>>,
+): GemstoneSpeciesItem[] {
+  const baseList = getSpeciesForRootCategory(rootCategory);
+  const map = new Map<string, GemstoneSpeciesItem>();
+
+  for (const item of baseList) {
+    map.set(item.id, {
+      ...item,
+      nameFa: cleanSpeciesNameFa(item.nameFa, item.nameEn),
+    });
+  }
+
+  if (Array.isArray(backendTypes) && backendTypes.length > 0) {
+    const fromBackend = backendTypes.filter((t) => (t.rootCategory || 'natural') === rootCategory);
+    for (const t of fromBackend) {
+      const rawId = t.code || t.species || t.id;
+      const resolvedId = normalizeSpeciesId(rawId, rootCategory) || rawId;
+      const cleanId = resolvedId === 'topaz_irradiated_london_blue' ? 'topaz_london_blue' : resolvedId;
+
+      if (!map.has(cleanId)) {
+        const rawEn = String(t.nameEn || '');
+        const rawFa = cleanSpeciesNameFa(String(t.nameFa || t.name || ''), rawEn);
+        if (rawFa) {
+          map.set(cleanId, {
+            id: cleanId,
+            nameFa: rawFa,
+            nameEn: rawEn,
+            category: (t.category || 'colored_gemstone') as GemstoneCategory,
+            rootCategory,
+            diamondType: t.diamondType,
+            growthMethod: t.growthMethod,
+            syntheticMethod: t.syntheticMethod,
+            chemicalBasis: t.chemicalBasis,
+            treatments: t.treatments,
+            treatmentMethod: t.treatmentMethod,
+            defaultVariety: t.defaultVariety || rawFa,
+            defaultItemName: t.defaultItemName || rawFa,
+          });
+        }
+      }
+    }
+  }
+
+  return Array.from(map.values());
+}
+
+/**
+ * Intelligently resolves the corresponding species item when switching between the 5 GIA Root Category tabs.
+ * Maps equivalent gem families across tabs (e.g. Natural Diamond <-> Lab CVD <-> Synthetic Moissanite <-> CZ <-> Irradiated Diamond,
+ * Natural Ruby <-> Lab Ruby <-> Verneuil Synthetic Ruby <-> Beryllium Ruby) or falls back to the first species of the target tab.
+ */
+export function resolveSpeciesForRootChange(
+  currentSpeciesId: string,
+  newRoot: RootCategory,
+  availableList?: GemstoneSpeciesItem[],
+): GemstoneSpeciesItem {
+  const list = availableList && availableList.length > 0 ? availableList : getSpeciesForRootCategory(newRoot);
+  const cur = String(currentSpeciesId || '').toLowerCase();
+
+  // 1. Direct match in target list
+  const direct = list.find((s) => s.id === currentSpeciesId);
+  if (direct) return direct;
+
+  // 2. Family-aware cross-root mapping
+  let targetId = '';
+  const isDiamondFamily =
+    cur.includes('diamond') || cur === 'cubic_zirconia' || cur.includes('moissanite');
+  const isRubyFamily = cur.includes('ruby');
+  const isSapphireFamily = cur.includes('sapphire');
+  const isEmeraldFamily = cur.includes('emerald');
+  const isOpalFamily = cur.includes('opal');
+  const isTopazFamily = cur.includes('topaz');
+  const isTurquoiseFamily = cur.includes('turquoise');
+  const isAlexandriteFamily = cur.includes('alexandrite');
+  const isSpinelFamily = cur.includes('spinel');
+  const isQuartzFamily = cur.includes('quartz') || cur.includes('amethyst');
+
+  if (newRoot === 'natural') {
+    if (isDiamondFamily) targetId = 'diamond';
+    else if (isRubyFamily) targetId = 'corundum_ruby';
+    else if (isSapphireFamily) targetId = 'corundum_sapphire';
+    else if (isEmeraldFamily) targetId = 'beryl_emerald';
+    else if (isOpalFamily) targetId = 'opal';
+    else if (isTopazFamily) targetId = 'topaz';
+    else if (isTurquoiseFamily) targetId = 'turquoise';
+    else if (isAlexandriteFamily) targetId = 'chrysoberyl_alexandrite';
+    else if (isSpinelFamily) targetId = 'spinel';
+    else if (isQuartzFamily) targetId = 'quartz_amethyst';
+  } else if (newRoot === 'laboratory_grown') {
+    if (isDiamondFamily) targetId = 'lab_diamond_cvd';
+    else if (isRubyFamily) targetId = 'lab_ruby';
+    else if (isSapphireFamily) targetId = 'lab_sapphire';
+    else if (isEmeraldFamily) targetId = 'lab_emerald';
+    else if (isAlexandriteFamily) targetId = 'lab_alexandrite';
+  } else if (newRoot === 'synthetic') {
+    if (isOpalFamily) targetId = 'synthetic_opal_gilson';
+    else if (isRubyFamily) targetId = 'synthetic_ruby_verneuil';
+    else if (isSapphireFamily) targetId = 'synthetic_sapphire_verneuil';
+    else if (isEmeraldFamily) targetId = 'synthetic_emerald_hydrothermal';
+    else if (isAlexandriteFamily) targetId = 'synthetic_alexandrite';
+    else if (isSpinelFamily) targetId = 'synthetic_spinel';
+    else if (isQuartzFamily) targetId = 'synthetic_quartz';
+    else if (isDiamondFamily) targetId = 'synthetic_moissanite';
+  } else if (newRoot === 'simulant') {
+    if (isDiamondFamily) targetId = 'cubic_zirconia';
+    else if (isOpalFamily) targetId = 'opalite';
+    else if (isTurquoiseFamily) targetId = 'turquoise_imitation';
+    else if (isRubyFamily || isSapphireFamily || isEmeraldFamily) targetId = 'colored_cubic_zirconia';
+  } else if (newRoot === 'treated_natural') {
+    if (isTopazFamily) targetId = 'topaz_london_blue';
+    else if (isRubyFamily) targetId = 'corundum_ruby_beryllium';
+    else if (isSapphireFamily) targetId = 'corundum_sapphire_beryllium';
+    else if (isEmeraldFamily) targetId = 'emerald_oiled_resin';
+    else if (isDiamondFamily) targetId = 'diamond_irradiated';
+    else if (isTurquoiseFamily) targetId = 'turquoise_stabilized';
+  }
+
+  if (targetId) {
+    const found = list.find((s) => s.id === targetId);
+    if (found) return found;
+  }
+
+  return list[0];
+}
+
+/**
+ * Known PocketBase record IDs mapped to canonical species codes.
+ * Ensures legacy or raw PocketBase IDs (e.g. nqwsnntxd8fkvts for Diamond)
+ * are seamlessly resolved to canonical IDs and Persian labels.
+ */
+export const KNOWN_PB_SPECIES_IDS: Record<string, string> = {
+  nqwsnntxd8fkvts: 'diamond',
+  nqwsnntxdfkvts: 'diamond',
+  '9bdhbnt6tbmdcz6': 'corundum_ruby',
+  '5gej6tdoftobj85': 'corundum_sapphire',
+  '5altfrda7apwwkx': 'corundum_yellow_sapphire',
+  lz9gmy68bd547zr: 'beryl_emerald',
+  gio1a4c56swfvpi: 'spinel',
+  hl8mpv9lb1kczye: 'tourmaline',
+  '8wl47j0bzy7m6hn': 'beryl_aquamarine',
+  hbck4tdhoc2q9r4: 'topaz',
+  '5f20l4l30irmd85': 'garnet',
+  ncc6cj0ovtox6az: 'quartz_amethyst',
+  '17ybopihgiqrge2': 'opal',
+  '8rtegw2fshaq0l6': 'turquoise',
+  ts5uot3jaoh7tbb: 'peridot',
+  '5ythhcwc0htz7q9': 'tanzanite',
+  '1s48k456qh4ret3': 'natural_zircon',
+  fyyia53mh9qbhue: 'beryl_morganite',
+  qm8bm5vrv2qlkdh: 'other',
+};
+
+/**
+ * Normalizes any species identifier, code, Persian name, or legacy key into a valid canonical species ID.
+ * Prevents displaying unmapped IDs or "(ثبت‌شده پیشین)" in dropdowns.
+ */
+export function normalizeSpeciesId(
+  raw: string | undefined | null,
+  rootCategory?: RootCategory,
+  availableSpecies?: Array<{ id: string; nameFa?: string; nameEn?: string; species?: string; code?: string; recordId?: string }>,
+): string {
+  if (!raw) {
+    if (rootCategory === 'laboratory_grown') return 'lab_diamond_cvd';
+    if (rootCategory === 'synthetic') return 'synthetic_opal_gilson';
+    if (rootCategory === 'simulant') return 'cubic_zirconia';
+    if (rootCategory === 'treated_natural') return 'topaz_irradiated_london_blue';
+    return 'diamond';
+  }
+
+  const val = String(raw).trim();
+  if (!val) {
+    if (rootCategory === 'laboratory_grown') return 'lab_diamond_cvd';
+    return 'diamond';
+  }
+
+  // 0. Check known PocketBase record IDs
+  if (KNOWN_PB_SPECIES_IDS[val]) {
+    return normalizeSpeciesId(KNOWN_PB_SPECIES_IDS[val], rootCategory, availableSpecies);
+  }
+
+  // 1. Check direct match in availableSpecies
+  if (availableSpecies && availableSpecies.length > 0) {
+    const direct = availableSpecies.find(
+      (s: any) =>
+        s.id === val ||
+        s.code === val ||
+        s.species === val ||
+        s.recordId === val,
+    );
+    if (direct) return direct.code || direct.id || direct.species || val;
+
+    // Match by Persian name or English name in availableSpecies
+    const byName = availableSpecies.find(
+      (s: any) =>
+        s.nameFa?.trim().toLowerCase() === val.toLowerCase() ||
+        s.nameEn?.trim().toLowerCase() === val.toLowerCase() ||
+        (val.includes('الماس') && (s.id === 'diamond' || s.code === 'diamond' || s.id === 'lab_diamond_cvd')) ||
+        (val.includes('برلیان') && (s.id === 'diamond' || s.code === 'diamond' || s.id === 'lab_diamond_cvd')),
+    );
+    if (byName) return byName.code || byName.id || byName.species || val;
+  }
+
+  // 2. Direct match in GEMSTONE_SPECIES_BY_ROOT
+  const directItem = findSpeciesItem(val);
+  if (directItem) {
+    if (!rootCategory || directItem.rootCategory === rootCategory) {
+      return directItem.id;
+    }
+  }
+
+  // 3. Known aliases & legacy values
+  const lower = val.toLowerCase();
+  if (
+    lower === 'natural_diamond' ||
+    lower === 'diamond' ||
+    val.includes('الماس طبیعی') ||
+    val === 'برلیان' ||
+    val === 'برلیان طبیعی'
+  ) {
+    return rootCategory === 'laboratory_grown' ? 'lab_diamond_cvd' : 'diamond';
+  }
+  if (
+    lower === 'lab_diamond' ||
+    lower === 'lab_diamond_cvd' ||
+    lower === 'cvd' ||
+    val.includes('الماس آزمایشگاهی')
+  ) {
+    return rootCategory === 'natural' ? 'diamond' : 'lab_diamond_cvd';
+  }
+  if (lower === 'lab_diamond_hpht' || lower === 'hpht') {
+    return rootCategory === 'natural' ? 'diamond' : 'lab_diamond_hpht';
+  }
+  if (lower === 'corundum_ruby' || lower === 'ruby' || val.includes('یاقوت سرخ')) {
+    return rootCategory === 'laboratory_grown' ? 'lab_ruby' : 'corundum_ruby';
+  }
+  if (lower === 'corundum_sapphire' || lower === 'sapphire' || val.includes('یاقوت کبود')) {
+    return rootCategory === 'laboratory_grown' ? 'lab_sapphire' : 'corundum_sapphire';
+  }
+  if (lower === 'beryl_emerald' || lower === 'emerald' || val.includes('زمرد')) {
+    return rootCategory === 'laboratory_grown' ? 'lab_emerald' : 'beryl_emerald';
+  }
+  if (lower === 'moissanite' || lower === 'moissanite_simulant' || val.includes('موزانایت')) {
+    return 'moissanite_simulant';
+  }
+  if (lower === 'cubic_zirconia' || lower === 'cz' || val.includes('اتمی')) {
+    return 'cubic_zirconia';
+  }
+  if (lower === 'topaz' || val.includes('توپاز')) {
+    return rootCategory === 'treated_natural' ? 'topaz_irradiated_london_blue' : 'topaz';
+  }
+  if (lower === 'spinel' || val.includes('اسپینل') || val.includes('لعل')) {
+    return 'spinel';
+  }
+  if (lower === 'tanzanite' || val.includes('تانزانیت')) {
+    return 'tanzanite';
+  }
+  if (lower === 'tourmaline' || val.includes('تورمالین')) {
+    return 'tourmaline';
+  }
+  if (lower === 'garnet' || val.includes('گارنت')) {
+    return 'garnet';
+  }
+  if (lower === 'peridot' || val.includes('زبرجد')) {
+    return 'peridot';
+  }
+  if (lower === 'quartz_amethyst' || lower === 'amethyst' || val.includes('آمتیست')) {
+    return 'quartz_amethyst';
+  }
+  if (lower === 'turquoise' || val.includes('فیروزه')) {
+    return rootCategory === 'treated_natural' ? 'turquoise_stabilized' : 'turquoise';
+  }
+  if (lower === 'opal' || val.includes('اوپال')) {
+    return rootCategory === 'synthetic' ? 'synthetic_opal_gilson' : 'opal';
+  }
+  if (lower === 'pearl' || val.includes('مروارید')) {
+    return 'pearl';
+  }
+
+  // 4. Search within target rootCategory first, then across all
+  if (rootCategory && GEMSTONE_SPECIES_BY_ROOT[rootCategory]) {
+    const rootFound = GEMSTONE_SPECIES_BY_ROOT[rootCategory].find(
+      (s) =>
+        s.nameFa.toLowerCase() === lower ||
+        s.nameEn.toLowerCase() === lower ||
+        s.id.toLowerCase() === lower,
+    );
+    if (rootFound) return rootFound.id;
+  }
+
+  for (const root of Object.keys(GEMSTONE_SPECIES_BY_ROOT) as RootCategory[]) {
+    const found = GEMSTONE_SPECIES_BY_ROOT[root].find(
+      (s) =>
+        s.nameFa.toLowerCase() === lower ||
+        s.nameEn.toLowerCase() === lower ||
+        s.id.toLowerCase() === lower,
+    );
+    if (found) return found.id;
+  }
+
+  if (directItem) return directItem.id;
+  return val;
+}
+
 
 /**
  * Unified master list of all gemstone species for backwards compatibility and display lookups.
@@ -786,37 +1170,37 @@ export interface GemstoneShapeItem {
 }
 
 export const GEMSTONE_SHAPES: readonly GemstoneShapeItem[] = [
-  { id: 'round', nameFa: 'گرد (Round Brilliant)', nameEn: 'Round' },
-  { id: 'oval', nameFa: 'بیضی (Oval)', nameEn: 'Oval' },
-  { id: 'cushion', nameFa: 'کوشن (Cushion)', nameEn: 'Cushion' },
-  { id: 'emerald', nameFa: 'زمردی (Emerald Cut)', nameEn: 'Emerald' },
-  { id: 'pear', nameFa: 'اشکی (Pear)', nameEn: 'Pear' },
-  { id: 'marquise', nameFa: 'مارکیز (Marquise)', nameEn: 'Marquise' },
-  { id: 'princess', nameFa: 'پرنسس (Princess)', nameEn: 'Princess' },
-  { id: 'radiant', nameFa: 'رادیانت (Radiant)', nameEn: 'Radiant' },
-  { id: 'asscher', nameFa: 'اشر (Asscher)', nameEn: 'Asscher' },
-  { id: 'heart', nameFa: 'قلب (Heart)', nameEn: 'Heart' },
+  { id: 'round', nameFa: 'گرد', nameEn: 'Round Brilliant' },
+  { id: 'oval', nameFa: 'بیضی', nameEn: 'Oval' },
+  { id: 'cushion', nameFa: 'کوشن', nameEn: 'Cushion' },
+  { id: 'emerald', nameFa: 'زمردی', nameEn: 'Emerald Cut' },
+  { id: 'pear', nameFa: 'اشکی', nameEn: 'Pear' },
+  { id: 'marquise', nameFa: 'مارکیز', nameEn: 'Marquise' },
+  { id: 'princess', nameFa: 'پرنسس', nameEn: 'Princess' },
+  { id: 'radiant', nameFa: 'رادیانت', nameEn: 'Radiant' },
+  { id: 'asscher', nameFa: 'اشر', nameEn: 'Asscher' },
+  { id: 'heart', nameFa: 'قلب', nameEn: 'Heart' },
   // Baguette Family
-  { id: 'baguette', nameFa: 'باگت (عمومی)', nameEn: 'Baguette' },
-  { id: 'baguette_calibre', nameFa: 'باگت کالیبر (Straight Baguette)', nameEn: 'Calibre Baguette', parentId: 'baguette' },
-  { id: 'baguette_taper', nameFa: 'باگت تیپر (Tapered Baguette)', nameEn: 'Tapered Baguette', parentId: 'baguette' },
-  { id: 'triangle', nameFa: 'مثلثی / ترای‌انگل (Triangle / Trilliant)', nameEn: 'Triangle' },
-  { id: 'trilliant', nameFa: 'تریلیانت (Trilliant)', nameEn: 'Trilliant' },
-  { id: 'trapezoid', nameFa: 'ذوزنقه‌ای / تراپز (Trapezoid / Trapeze)', nameEn: 'Trapezoid' },
-  { id: 'shield', nameFa: 'شیلد / سپر (Shield)', nameEn: 'Shield' },
-  { id: 'kite', nameFa: 'کایت / بادبادکی (Kite)', nameEn: 'Kite' },
-  { id: 'half_moon', nameFa: 'نیم‌ماه (Half Moon)', nameEn: 'Half Moon' },
-  { id: 'rose_cut', nameFa: 'رز کات (Rose Cut)', nameEn: 'Rose Cut' },
-  { id: 'briolette', nameFa: 'بریولت (Briolette)', nameEn: 'Briolette' },
-  { id: 'lozenge', nameFa: 'لوزی / لوزنج (Lozenge)', nameEn: 'Lozenge' },
-  { id: 'bullet', nameFa: 'گلوله‌ای / بولت (Bullet)', nameEn: 'Bullet' },
-  { id: 'old_european', nameFa: 'اروپایی قدیم (Old European)', nameEn: 'Old European' },
-  { id: 'old_mine', nameFa: 'ماین قدیم (Old Mine)', nameEn: 'Old Mine' },
-  { id: 'hexagonal', nameFa: 'شش‌ضلعی (Hexagonal)', nameEn: 'Hexagonal' },
-  { id: 'octagonal', nameFa: 'هشت‌ضلعی (Octagonal)', nameEn: 'Octagonal' },
-  { id: 'cabochon', nameFa: 'دامله / کابوشون (Cabochon)', nameEn: 'Cabochon' },
-  { id: 'rough', nameFa: 'راف / نتراشیده (Rough)', nameEn: 'Rough' },
-  { id: 'other', nameFa: 'سایر اشکال (Other)', nameEn: 'Other' },
+  { id: 'baguette', nameFa: 'باگت', nameEn: 'Baguette' },
+  { id: 'baguette_calibre', nameFa: 'باگت کالیبر', nameEn: 'Calibre Baguette', parentId: 'baguette' },
+  { id: 'baguette_taper', nameFa: 'باگت تیپر', nameEn: 'Tapered Baguette', parentId: 'baguette' },
+  { id: 'triangle', nameFa: 'مثلثی / ترای‌انگل', nameEn: 'Triangle / Trilliant' },
+  { id: 'trilliant', nameFa: 'تریلیانت', nameEn: 'Trilliant' },
+  { id: 'trapezoid', nameFa: 'ذوزنقه‌ای / تراپز', nameEn: 'Trapezoid' },
+  { id: 'shield', nameFa: 'شیلد / سپر', nameEn: 'Shield' },
+  { id: 'kite', nameFa: 'کایت / بادبادکی', nameEn: 'Kite' },
+  { id: 'half_moon', nameFa: 'نیم‌ماه', nameEn: 'Half Moon' },
+  { id: 'rose_cut', nameFa: 'رز کات', nameEn: 'Rose Cut' },
+  { id: 'briolette', nameFa: 'بریولت', nameEn: 'Briolette' },
+  { id: 'lozenge', nameFa: 'لوزی / لوزنج', nameEn: 'Lozenge' },
+  { id: 'bullet', nameFa: 'گلوله‌ای / بولت', nameEn: 'Bullet' },
+  { id: 'old_european', nameFa: 'اروپایی قدیم', nameEn: 'Old European' },
+  { id: 'old_mine', nameFa: 'ماین قدیم', nameEn: 'Old Mine' },
+  { id: 'hexagonal', nameFa: 'شش‌ضلعی', nameEn: 'Hexagonal' },
+  { id: 'octagonal', nameFa: 'هشت‌ضلعی', nameEn: 'Octagonal' },
+  { id: 'cabochon', nameFa: 'دامله / کابوشون', nameEn: 'Cabochon' },
+  { id: 'rough', nameFa: 'راف / نتراشیده', nameEn: 'Rough' },
+  { id: 'other', nameFa: 'سایر اشکال', nameEn: 'Other' },
 ] as const;
 
 export const DIAMOND_SHAPES = [
@@ -1233,13 +1617,144 @@ export function calculateGemstoneSummary(items: GemstoneOpeningRecord[]): Gemsto
 export const D_Z_RANK: Record<string, number> = {
   'D': 1, 'E': 2, 'F': 3, 'G': 4, 'H': 5, 'I': 6, 'J': 7, 'K': 8, 'L': 9, 'M': 10,
   'N': 11, 'O': 12, 'P': 13, 'Q': 14, 'R': 15, 'S': 16, 'T': 17, 'U': 18, 'V': 19,
-  'W': 20, 'X': 21, 'Y': 22, 'Z': 23,
+  'W': 20, 'X': 21, 'Y': 22, 'Z': 23, 'N-Z': 24,
 };
 
 export const CLARITY_RANK: Record<string, number> = {
   'FL': 1, 'IF': 2, 'VVS1': 3, 'VVS2': 4, 'VS1': 5, 'VS2': 6,
   'SI1': 7, 'SI2': 8, 'I1': 9, 'I2': 10, 'I3': 11,
 };
+
+export interface ColorTier {
+  tier: number;
+  name: string;
+  nameFa: string;
+  grades: string[];
+}
+
+export const DIAMOND_COLOR_TIERS: ColorTier[] = [
+  { tier: 1, name: 'Colorless', nameFa: 'بی‌رنگ', grades: ['D', 'E', 'F'] },
+  { tier: 2, name: 'Near Colorless', nameFa: 'سفید تجاری', grades: ['G', 'H'] },
+  { tier: 3, name: 'Faint Tint', nameFa: 'ته‌رنگ / کریستال', grades: ['I', 'J'] },
+  { tier: 4, name: 'Faint Yellow', nameFa: 'کاپ / زرد کم‌رنگ', grades: ['K', 'L', 'M'] },
+  { tier: 5, name: 'Light', nameFa: 'زرد مشخص', grades: ['N-Z', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'] },
+];
+
+export interface ClarityTier {
+  tier: number;
+  name: string;
+  nameFa: string;
+  grades: string[];
+}
+
+export const DIAMOND_CLARITY_TIERS: ClarityTier[] = [
+  { tier: 1, name: 'Flawless', nameFa: 'پاک کامل (لوپ‌پاک)', grades: ['FL', 'IF'] },
+  { tier: 2, name: 'VVS', nameFa: 'بسیار بسیار کم ناپاکی (VVS)', grades: ['VVS1', 'VVS2', 'VVS'] },
+  { tier: 3, name: 'VS', nameFa: 'بسیار کم ناپاکی (VS)', grades: ['VS1', 'VS2', 'VS'] },
+  { tier: 4, name: 'SI', nameFa: 'کم ناپاکی (SI)', grades: ['SI1', 'SI2', 'SI'] },
+  { tier: 5, name: 'Included', nameFa: 'دارای ناپاکی (پی‌که / I)', grades: ['I1', 'I2', 'I3', 'I', 'P1', 'P2', 'P3'] },
+];
+
+export function getColorTier(color?: string): ColorTier | undefined {
+  if (!color) return undefined;
+  const upper = color.toUpperCase().trim();
+  return DIAMOND_COLOR_TIERS.find((t) => t.grades.includes(upper));
+}
+
+export function getClarityTier(clarity?: string): ClarityTier | undefined {
+  if (!clarity) return undefined;
+  const upper = clarity.toUpperCase().trim();
+  return DIAMOND_CLARITY_TIERS.find((t) => t.grades.includes(upper));
+}
+
+/**
+ * Returns allowed end grades ("تا") for a given start color ("از").
+ * Strictly prohibits selecting a lower quality tier in the parcel range.
+ * Example: 'H' (Near Colorless) cannot end in 'I' (Faint Tint / Crystal).
+ */
+export function getAllowedColorEndGrades(fromColor?: string): string[] {
+  if (!fromColor) return [...D_Z_COLORS];
+  const upperFrom = fromColor.toUpperCase().trim();
+  const tier = getColorTier(upperFrom);
+  const fromRank = D_Z_RANK[upperFrom] ?? 0;
+
+  if (!tier) {
+    return [upperFrom];
+  }
+
+  const allowed = D_Z_COLORS.filter((c) => {
+    const cTier = getColorTier(c);
+    const cRank = D_Z_RANK[c] ?? 0;
+    return cTier?.tier === tier.tier && cRank >= fromRank;
+  });
+
+  return allowed.length > 0 ? allowed : [upperFrom];
+}
+
+/**
+ * Returns allowed end grades ("تا") for a given start clarity ("از").
+ * Strictly prohibits selecting a lower clarity tier in the parcel range.
+ * Example: 'VS2' cannot end in 'SI1'.
+ */
+export function getAllowedClarityEndGrades(fromClarity?: string): string[] {
+  if (!fromClarity) return [...CLARITY_GRADES];
+  const upperFrom = fromClarity.toUpperCase().trim();
+  const tier = getClarityTier(upperFrom);
+  const fromRank = CLARITY_RANK[upperFrom] ?? 0;
+
+  if (!tier) {
+    return [upperFrom];
+  }
+
+  const allowed = CLARITY_GRADES.filter((cl) => {
+    const clTier = getClarityTier(cl);
+    const clRank = CLARITY_RANK[cl] ?? 0;
+    return clTier?.tier === tier.tier && clRank >= fromRank;
+  });
+
+  return allowed.length > 0 ? allowed : [upperFrom];
+}
+
+export function parseColorRangeString(rangeStr?: string): { min: string; max: string } {
+  if (!rangeStr || !rangeStr.trim()) {
+    return { min: 'G', max: 'H' };
+  }
+  const clean = rangeStr.trim();
+  const parts = clean.split(/[–\-—/]|تا/).map((s) => s.trim().toUpperCase()).filter(Boolean);
+  if (parts.length >= 2) {
+    const min = parts[0];
+    const rawMax = parts[1];
+    const allowed = getAllowedColorEndGrades(min);
+    const max = allowed.includes(rawMax) ? rawMax : (allowed[allowed.length - 1] || min);
+    return { min, max };
+  }
+  if (parts.length === 1) {
+    const min = parts[0];
+    const allowed = getAllowedColorEndGrades(min);
+    return { min, max: min };
+  }
+  return { min: 'G', max: 'H' };
+}
+
+export function parseClarityRangeString(rangeStr?: string): { min: string; max: string } {
+  if (!rangeStr || !rangeStr.trim()) {
+    return { min: 'VS1', max: 'VS2' };
+  }
+  const clean = rangeStr.trim();
+  const parts = clean.split(/[–\-—/]|تا/).map((s) => s.trim().toUpperCase()).filter(Boolean);
+  if (parts.length >= 2) {
+    const min = parts[0];
+    const rawMax = parts[1];
+    const allowed = getAllowedClarityEndGrades(min);
+    const max = allowed.includes(rawMax) ? rawMax : (allowed[allowed.length - 1] || min);
+    return { min, max };
+  }
+  if (parts.length === 1) {
+    const min = parts[0];
+    return { min, max: min };
+  }
+  return { min: 'VS1', max: 'VS2' };
+}
 
 export function validateColorRange(min?: string, max?: string): { valid: boolean; label: string; error?: string } {
   if (!min && !max) return { valid: true, label: '' };
@@ -1261,6 +1776,17 @@ export function validateColorRange(min?: string, max?: string): { valid: boolean
       valid: false,
       label: `${upperMin}–${upperMax}`,
       error: `محدوده رنگ نامعتبر است: رنگ ${upperMin} باید از نظر درجه بالاتر یا برابر با ${upperMax} باشد (ترتیب D تا Z).`,
+    };
+  }
+
+  const tierMin = getColorTier(upperMin);
+  const tierMax = getColorTier(upperMax);
+
+  if (tierMin && tierMax && tierMin.tier !== tierMax.tier) {
+    return {
+      valid: false,
+      label: `${upperMin}–${upperMax}`,
+      error: `محدوده رنگ نامعتبر است: رنگ انتخابی ${upperMax} در لِوِل کیفی پایین‌تر از ${upperMin} (${tierMin.nameFa}) قرار دارد و امکان قرارگیری در یک بارخانه را ندارد.`,
     };
   }
 
@@ -1287,6 +1813,17 @@ export function validateClarityRange(min?: string, max?: string): { valid: boole
       valid: false,
       label: `${upperMin}–${upperMax}`,
       error: `محدوده پاکی نامعتبر است: درجه ${upperMin} باید بالاتر یا برابر با ${upperMax} باشد (ترتیب FL تا I3).`,
+    };
+  }
+
+  const tierMin = getClarityTier(upperMin);
+  const tierMax = getClarityTier(upperMax);
+
+  if (tierMin && tierMax && tierMin.tier !== tierMax.tier) {
+    return {
+      valid: false,
+      label: `${upperMin}–${upperMax}`,
+      error: `محدوده پاکی نامعتبر است: درجه پاکی ${upperMax} در لِوِل کیفی پایین‌تر از ${upperMin} (${tierMin.nameFa}) قرار دارد و امکان قرارگیری در یک بارخانه را ندارد.`,
     };
   }
 

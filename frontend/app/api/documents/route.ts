@@ -440,10 +440,17 @@ export async function POST(request: Request) {
         lineAmounts[field] = Math.abs(amount) * direction;
       }
 
-      if (!hasAmount(lineAmounts)) {
+      const details = normalizeDetails(line.documentDetails);
+      const isStoneLine = line.documentTab === 'stone' || line.sourceTab === 'stone';
+      const hasStoneQuantity =
+        isStoneLine &&
+        (Number(details.stoneCarats || 0) > 0 ||
+          Number(details.stoneGrams || 0) > 0 ||
+          Number(details.stonePieces || 0) > 0);
+
+      if (!hasAmount(lineAmounts) && !hasStoneQuantity) {
         throw new Error(`ردیف ${index + 1} باید حداقل یک مبلغ یا وزن غیرصفر داشته باشد.`);
       }
-      const details = normalizeDetails(line.documentDetails);
 
       if (details.stampNumber) {
         const stampStr = normalizeDigits(String(details.stampNumber).trim());

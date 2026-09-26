@@ -124,7 +124,7 @@ export default function CommittedLineRow({
   // Financial amounts
   const financialAmount = isCurrency
     ? (isClaimLine || isDebtLine ? 0 : numberValue(line.details.currencyTotalAmount))
-    : numberValue(line.details.totalAmount);
+    : numberValue(line.details.totalAmount || line.details.stoneTotalAmount);
 
   const bedehkarMali = isPaid && financialAmount > 0 ? faNumber(financialAmount, 0) : null;
   const bostankarMali = isReceived && financialAmount > 0 ? faNumber(financialAmount, 0) : null;

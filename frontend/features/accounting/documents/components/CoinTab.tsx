@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import {
   Coins,
   Plus,
@@ -328,7 +328,9 @@ export interface CoinTabProps {
 
 export default function CoinTab({
   nature = 'paid',
+  draftLine,
   setDraftLine,
+  committedLines = [],
   editingLineId = null,
   isLinesPinned = false,
   commitDraftLine,
@@ -341,6 +343,18 @@ export default function CoinTab({
   const weightPrecision = Number(settings.weightDecimalPlaces) || 3;
   const effectiveCurrency = baseCurrency || (settings.baseCurrency as 'IRR' | 'IRT') || 'IRR';
   const currencySuffix = effectiveCurrency === 'IRT' ? 'تومان' : 'ریال';
+
+  // Reset fields when row is committed
+  const prevCommittedLengthRef = useRef(committedLines.length);
+  useEffect(() => {
+    if (committedLines.length > prevCommittedLengthRef.current) {
+      setQuantity('1');
+      setUnitPrice('');
+      setTotalPrice('');
+      setDescription('');
+    }
+    prevCommittedLengthRef.current = committedLines.length;
+  }, [committedLines.length]);
 
   // Available Operation Types based on nature
   const operationOptions = useMemo(() => {
@@ -586,10 +600,13 @@ export default function CoinTab({
           rawWeight: totalWeight.toFixed(weightPrecision),
           purity: String(numericPurity),
           totalAmount: totalPrice,
+          quantity: String(numericQuantity),
           currencyQuantity: String(numericQuantity),
-          currencyUnitPrice: unitPrice,
-          currencyTotalAmount: totalPrice,
-          currencyUnit: selectedPreset.name,
+          currencyUnitPrice: '',
+          currencyTotalAmount: '',
+          currencyUnit: '',
+          coinType: selectedPreset.id,
+          coinName: selectedPreset.name,
           unsettledTrade: selectedOperation.includes('unsettled'),
         },
       }));
@@ -597,12 +614,12 @@ export default function CoinTab({
   }, [
     selectedOperation,
     currentOp.label,
+    selectedPreset.id,
     selectedPreset.name,
     numericQuantity,
     totalWeight,
     numericPurity,
     convertedToX,
-    unitPrice,
     totalPrice,
     description,
     weightPrecision,

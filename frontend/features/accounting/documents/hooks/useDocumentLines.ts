@@ -110,7 +110,11 @@ export function createLine(nature: DocumentNature = 'received', sourceTab = 'met
           ? nature === 'paid'
             ? 'outgoing-refining'
             : 'incoming-refining'
-          : documentSubType(nature, 'molten');
+          : sourceTab === 'currency'
+            ? currencyDocumentSubType(nature)
+            : sourceTab === 'coin'
+              ? (nature === 'received' ? 'incoming-coin' : 'outgoing-coin')
+              : documentSubType(nature, 'molten');
 
   return {
     id: crypto.randomUUID(),
@@ -227,7 +231,7 @@ export function isLineReady(line: DocumentLine) {
     return numberValue(line.details.totalAmount) > 0;
   }
   if (line.documentTab === 'coin' || line.sourceTab === 'coin') {
-    return numberValue(line.details.currencyQuantity) > 0 || numberValue(line.details.rawWeight) > 0;
+    return numberValue(line.details.currencyQuantity || line.details.quantity) > 0 || numberValue(line.details.rawWeight) > 0;
   }
   if (line.documentTab === 'claim' || line.sourceTab === 'claim') {
     const fin = numberValue(line.details.claimFinancial || line.details.totalAmount);
@@ -278,6 +282,16 @@ export function validateLine(
     if (!unitUpper) return 'واحد ارز را انتخاب کنید.';
     if (unitUpper === 'IRR' || unitUpper === 'IRT') {
       return 'معامله ارزی فقط برای ارزهای خارجی امکان‌پذیر است و ریال/تومان نمی‌تواند واحد ارز معامله باشد.';
+    }
+    if (
+      unitUpper.includes('سکه') ||
+      unitUpper.includes('بهار آزادی') ||
+      unitUpper.includes('امامی') ||
+      unitUpper.includes('پارسیان') ||
+      unitUpper.includes('پهلوی') ||
+      unitUpper.includes('شمش')
+    ) {
+      return 'تب ارز فقط مخصوص ارزهای خارجی است و امکان ثبت سکه یا مسکوکات در این بخش وجود ندارد.';
     }
     if (
       selectedCurrency &&
@@ -350,7 +364,7 @@ export function validateLine(
     return '';
   }
   if (line.documentTab === 'coin' || line.sourceTab === 'coin') {
-    if (numberValue(line.details.currencyQuantity) <= 0 && numberValue(line.details.rawWeight) <= 0) {
+    if (numberValue(line.details.currencyQuantity || line.details.quantity) <= 0 && numberValue(line.details.rawWeight) <= 0) {
       return 'تعداد یا وزن سکه باید بیشتر از صفر باشد.';
     }
     return '';
@@ -678,7 +692,7 @@ export function useDocumentLines({
       details: {
         ...draftLine.details,
         baseKarat,
-        currencyUnit: lineSourceTab === 'currency' ? effectiveCurrencyUnit : draftLine.details.currencyUnit,
+        currencyUnit: lineSourceTab === 'currency' ? effectiveCurrencyUnit : (lineSourceTab === 'cash' ? draftLine.details.currencyUnit : ''),
         settlementCurrencyUnit: lineSourceTab === 'currency' ? effectiveSettlementUnit : draftLine.details.settlementCurrencyUnit,
       },
     };

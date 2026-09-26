@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { getServerAuthContext } from '@/lib/auth';
 import { hasPermission } from '@/lib/authorization';
 import {
+  cleanSpeciesNameFa,
   GEMSTONE_SPECIES_BY_ROOT,
   type GemstoneCategory,
   type GemstoneSpeciesItem,
@@ -17,25 +18,33 @@ function resolveGemstoneCode(r: Record<string, unknown>): string {
   if (r.code && typeof r.code === 'string' && r.code.trim()) {
     return r.code.trim();
   }
+  if (r.species && typeof r.species === 'string' && r.species.trim()) {
+    return r.species.trim();
+  }
   const nameEn = String(r.name_en || '').toLowerCase().trim();
+  const nameFa = String(r.name_fa || '').toLowerCase().trim();
   const variety = String(r.variety || '').toLowerCase().trim();
-  if (nameEn === 'ruby' || variety === 'ruby') return 'corundum_ruby';
-  if (nameEn.includes('blue sapphire') || variety.includes('blue sapphire')) return 'corundum_sapphire';
+  if (nameEn.includes('cvd') || nameFa.includes('cvd')) return 'lab_diamond_cvd';
+  if (nameEn.includes('hpht') || nameFa.includes('hpht')) return 'lab_diamond_hpht';
+  if (nameEn === 'ruby' || variety === 'ruby' || nameFa.includes('یاقوت سرخ')) return 'corundum_ruby';
+  if (nameEn.includes('blue sapphire') || variety.includes('blue sapphire') || nameFa.includes('یاقوت کبود')) return 'corundum_sapphire';
   if (nameEn.includes('yellow sapphire') || variety.includes('yellow sapphire')) return 'corundum_yellow_sapphire';
-  if (nameEn === 'emerald' || variety === 'emerald') return 'beryl_emerald';
-  if (nameEn === 'aquamarine' || variety === 'aquamarine') return 'beryl_aquamarine';
+  if (nameEn === 'emerald' || variety === 'emerald' || nameFa.includes('زمرد')) return 'beryl_emerald';
+  if (nameEn === 'aquamarine' || variety === 'aquamarine' || nameFa.includes('آکوامارین')) return 'beryl_aquamarine';
   if (nameEn === 'morganite' || variety === 'morganite') return 'beryl_morganite';
-  if (nameEn.includes('diamond')) return 'diamond';
-  if (nameEn.includes('spinel')) return 'spinel';
-  if (nameEn.includes('tourmaline')) return 'tourmaline';
-  if (nameEn.includes('topaz')) return 'topaz';
-  if (nameEn.includes('garnet')) return 'garnet';
-  if (nameEn.includes('amethyst')) return 'quartz_amethyst';
-  if (nameEn.includes('opal')) return 'opal';
-  if (nameEn.includes('turquoise')) return 'turquoise';
-  if (nameEn.includes('peridot')) return 'peridot';
-  if (nameEn.includes('tanzanite')) return 'tanzanite';
-  if (nameEn.includes('zircon')) return 'natural_zircon';
+  if (nameEn.includes('diamond') || nameFa.includes('الماس') || nameFa.includes('برلیان')) return 'diamond';
+  if (nameEn.includes('spinel') || nameFa.includes('اسپینل')) return 'spinel';
+  if (nameEn.includes('tourmaline') || nameFa.includes('تورمالین')) return 'tourmaline';
+  if (nameEn.includes('topaz') || nameFa.includes('توپاز')) return 'topaz';
+  if (nameEn.includes('garnet') || nameFa.includes('گارنت')) return 'garnet';
+  if (nameEn.includes('amethyst') || nameFa.includes('آمتیست')) return 'quartz_amethyst';
+  if (nameEn.includes('opal') || nameFa.includes('اوپال')) return 'opal';
+  if (nameEn.includes('turquoise') || nameFa.includes('فیروزه')) return 'turquoise';
+  if (nameEn.includes('peridot') || nameFa.includes('زبرجد')) return 'peridot';
+  if (nameEn.includes('tanzanite') || nameFa.includes('تانزانیت')) return 'tanzanite';
+  if (nameEn.includes('cubic') || nameFa.includes('اتمی') || nameFa.includes('زیرکونیا')) return 'cubic_zirconia';
+  if (nameEn.includes('moissanite') || nameFa.includes('موزانایت')) return 'moissanite_simulant';
+  if (nameEn.includes('zircon') || nameFa.includes('زیرکن')) return 'natural_zircon';
   if (nameEn.includes('other')) return 'other';
   return String(r.id || '');
 }
@@ -70,10 +79,10 @@ export async function GET(request: Request) {
         let order = 1;
         for (const sp of ALL_SPECIES) {
           const rec = await context.pb.collection('gemstone_types').create({
-            name_fa: sp.nameFa,
+            name_fa: cleanSpeciesNameFa(sp.nameFa, sp.nameEn),
             name_en: sp.nameEn,
             species: sp.id,
-            variety: sp.nameFa,
+            variety: cleanSpeciesNameFa(sp.nameFa, sp.nameEn),
             category: sp.category,
             root_category: sp.rootCategory,
             diamond_type: sp.diamondType || null,
@@ -100,59 +109,71 @@ export async function GET(request: Request) {
       }
     }
 
-    const items = records.length > 0
-      ? records.map((r: Record<string, unknown>) => ({
-          id: String(r.id || ''),
-          code: resolveGemstoneCode(r),
-          nameFa: String(r.name_fa || ''),
-          nameEn: String(r.name_en || ''),
-          species: String(r.species || ''),
-          variety: String(r.variety || ''),
-          category: (r.category || 'colored_gemstone') as GemstoneCategory,
-          rootCategory: (r.root_category || 'natural') as RootCategory,
-          diamondType: r.diamond_type as 'natural' | 'lab_grown' | undefined,
-          growthMethod: r.growth_method as any,
-          syntheticMethod: r.synthetic_method ? String(r.synthetic_method) : undefined,
-          chemicalBasis: r.chemical_basis ? String(r.chemical_basis) : undefined,
-          treatments: r.treatments ? String(r.treatments) : undefined,
-          treatmentMethod: r.treatment_method ? String(r.treatment_method) : undefined,
-          defaultWeightUnit: (r.default_weight_unit || 'ct') as 'ct' | 'g',
-          supportsGia: Boolean(r.supports_gia),
-          supportsOrigin: Boolean(r.supports_origin),
-          supportsTreatment: Boolean(r.supports_treatment),
-          supportsDiamondGrading: Boolean(r.supports_diamond_grading),
-          isActive: Boolean(r.is_active),
-          sortOrder: Number(r.sort_order || 0),
-          created: String(r.created || ''),
-          updated: String(r.updated || ''),
-        }))
-      : ALL_SPECIES.filter((sp) => {
-          if (category && sp.category !== category) return false;
-          if (rootCategory && sp.rootCategory !== rootCategory) return false;
-          return true;
-        }).map((sp, idx) => ({
-          id: sp.id,
-          code: sp.id,
-          nameFa: sp.nameFa,
-          nameEn: sp.nameEn,
-          species: sp.id,
-          variety: sp.nameFa,
-          category: sp.category,
-          rootCategory: sp.rootCategory,
-          diamondType: sp.diamondType,
-          growthMethod: sp.growthMethod,
-          syntheticMethod: sp.syntheticMethod,
-          chemicalBasis: sp.chemicalBasis,
-          treatments: sp.treatments,
-          treatmentMethod: sp.treatmentMethod,
-          defaultWeightUnit: 'ct' as const,
-          supportsGia: sp.category === 'diamond',
-          supportsOrigin: true,
-          supportsTreatment: Boolean(sp.treatments),
-          supportsDiamondGrading: sp.category === 'diamond',
-          isActive: true,
-          sortOrder: idx + 1,
-        }));
+    const dbItems = records.map((r: Record<string, unknown>) => {
+      const resolvedCode = resolveGemstoneCode(r);
+      const rawNameEn = String(r.name_en || '');
+      const cleanNameFa = cleanSpeciesNameFa(String(r.name_fa || ''), rawNameEn);
+      return {
+        id: resolvedCode || String(r.id || ''),
+        recordId: String(r.id || ''),
+        code: resolvedCode,
+        nameFa: cleanNameFa,
+        nameEn: rawNameEn,
+        species: resolvedCode || String(r.species || ''),
+        variety: String(r.variety || ''),
+        category: (r.category || 'colored_gemstone') as GemstoneCategory,
+        rootCategory: (r.root_category || 'natural') as RootCategory,
+        diamondType: r.diamond_type as 'natural' | 'lab_grown' | undefined,
+        growthMethod: r.growth_method as any,
+        syntheticMethod: r.synthetic_method ? String(r.synthetic_method) : undefined,
+        chemicalBasis: r.chemical_basis ? String(r.chemical_basis) : undefined,
+        treatments: r.treatments ? String(r.treatments) : undefined,
+        treatmentMethod: r.treatment_method ? String(r.treatment_method) : undefined,
+        defaultWeightUnit: (r.default_weight_unit || 'ct') as 'ct' | 'g',
+        supportsGia: Boolean(r.supports_gia),
+        supportsOrigin: Boolean(r.supports_origin),
+        supportsTreatment: Boolean(r.supports_treatment),
+        supportsDiamondGrading: Boolean(r.supports_diamond_grading),
+        isActive: Boolean(r.is_active),
+        sortOrder: Number(r.sort_order || 0),
+        created: String(r.created || ''),
+        updated: String(r.updated || ''),
+      };
+    });
+
+    const seenKeys = new Set<string>(
+      dbItems.map((it) => `${it.rootCategory}::${it.id}`),
+    );
+
+    const staticItems = ALL_SPECIES.filter((sp) => {
+      if (category && sp.category !== category) return false;
+      if (rootCategory && sp.rootCategory !== rootCategory) return false;
+      return !seenKeys.has(`${sp.rootCategory}::${sp.id}`);
+    }).map((sp, idx) => ({
+      id: sp.id,
+      code: sp.id,
+      nameFa: cleanSpeciesNameFa(sp.nameFa, sp.nameEn),
+      nameEn: sp.nameEn,
+      species: sp.id,
+      variety: cleanSpeciesNameFa(sp.nameFa, sp.nameEn),
+      category: sp.category,
+      rootCategory: sp.rootCategory,
+      diamondType: sp.diamondType,
+      growthMethod: sp.growthMethod,
+      syntheticMethod: sp.syntheticMethod,
+      chemicalBasis: sp.chemicalBasis,
+      treatments: sp.treatments,
+      treatmentMethod: sp.treatmentMethod,
+      defaultWeightUnit: 'ct' as const,
+      supportsGia: sp.category === 'diamond',
+      supportsOrigin: true,
+      supportsTreatment: Boolean(sp.treatments),
+      supportsDiamondGrading: sp.category === 'diamond',
+      isActive: true,
+      sortOrder: 100 + idx + 1,
+    }));
+
+    const items = [...dbItems, ...staticItems];
 
     return NextResponse.json({ items });
   } catch (error) {

@@ -1415,7 +1415,7 @@ migrate((app) => {
   // 4. Seed Standard Master Data for Gemstone Species and Varieties
   const defaultGemstoneTypes = [
     {
-      name_fa: "الماس (Diamond)",
+      name_fa: "الماس",
       name_en: "Diamond",
       species: "Diamond",
       variety: "Diamond",
@@ -1429,7 +1429,7 @@ migrate((app) => {
       is_active: true,
     },
     {
-      name_fa: "یاقوت سرخ (Ruby)",
+      name_fa: "یاقوت سرخ",
       name_en: "Ruby",
       species: "Corundum",
       variety: "Ruby",
@@ -1443,7 +1443,7 @@ migrate((app) => {
       is_active: true,
     },
     {
-      name_fa: "یاقوت کبود (Blue Sapphire)",
+      name_fa: "یاقوت کبود",
       name_en: "Blue Sapphire",
       species: "Corundum",
       variety: "Blue Sapphire",
@@ -1457,7 +1457,7 @@ migrate((app) => {
       is_active: true,
     },
     {
-      name_fa: "یاقوت زرد (Yellow Sapphire)",
+      name_fa: "یاقوت زرد",
       name_en: "Yellow Sapphire",
       species: "Corundum",
       variety: "Yellow Sapphire",
@@ -1471,7 +1471,7 @@ migrate((app) => {
       is_active: true,
     },
     {
-      name_fa: "زمرد (Emerald)",
+      name_fa: "زمرد",
       name_en: "Emerald",
       species: "Beryl",
       variety: "Emerald",
@@ -1485,7 +1485,7 @@ migrate((app) => {
       is_active: true,
     },
     {
-      name_fa: "اسپینل (Spinel)",
+      name_fa: "اسپینل",
       name_en: "Spinel",
       species: "Spinel",
       variety: "Spinel",
@@ -1499,7 +1499,7 @@ migrate((app) => {
       is_active: true,
     },
     {
-      name_fa: "تورمالین (Tourmaline)",
+      name_fa: "تورمالین",
       name_en: "Tourmaline",
       species: "Tourmaline",
       variety: "Tourmaline",
@@ -1513,7 +1513,7 @@ migrate((app) => {
       is_active: true,
     },
     {
-      name_fa: "آکوامارین (Aquamarine)",
+      name_fa: "آکوامارین",
       name_en: "Aquamarine",
       species: "Beryl",
       variety: "Aquamarine",
@@ -1527,7 +1527,7 @@ migrate((app) => {
       is_active: true,
     },
     {
-      name_fa: "توپاز (Topaz)",
+      name_fa: "توپاز",
       name_en: "Topaz",
       species: "Topaz",
       variety: "Topaz",
@@ -1541,7 +1541,7 @@ migrate((app) => {
       is_active: true,
     },
     {
-      name_fa: "گارنت (Garnet)",
+      name_fa: "گارنت",
       name_en: "Garnet",
       species: "Garnet",
       variety: "Garnet",
@@ -1555,7 +1555,7 @@ migrate((app) => {
       is_active: true,
     },
     {
-      name_fa: "آمتیست (Amethyst)",
+      name_fa: "آمتیست",
       name_en: "Amethyst",
       species: "Quartz",
       variety: "Amethyst",
@@ -1569,7 +1569,7 @@ migrate((app) => {
       is_active: true,
     },
     {
-      name_fa: "اوپال قیمتی (Precious Opal)",
+      name_fa: "اوپال قیمتی",
       name_en: "Precious Opal",
       species: "Opal",
       variety: "Precious Opal",
@@ -1583,7 +1583,7 @@ migrate((app) => {
       is_active: true,
     },
     {
-      name_fa: "فیروزه نیشابور (Neyshabur Turquoise)",
+      name_fa: "فیروزه نیشابور",
       name_en: "Turquoise",
       species: "Turquoise",
       variety: "Turquoise",
@@ -1597,7 +1597,7 @@ migrate((app) => {
       is_active: true,
     },
     {
-      name_fa: "زبرجد / پریدوت (Peridot)",
+      name_fa: "زبرجد / پریدوت",
       name_en: "Peridot",
       species: "Olivine",
       variety: "Peridot",
@@ -1611,7 +1611,7 @@ migrate((app) => {
       is_active: true,
     },
     {
-      name_fa: "تانزانیت (Tanzanite)",
+      name_fa: "تانزانیت",
       name_en: "Tanzanite",
       species: "Zoisite",
       variety: "Tanzanite",
@@ -1625,7 +1625,7 @@ migrate((app) => {
       is_active: true,
     },
     {
-      name_fa: "زیرکون طبیعی (Natural Zircon)",
+      name_fa: "زیرکون طبیعی",
       name_en: "Natural Zircon",
       species: "Zircon",
       variety: "Zircon",
@@ -1639,7 +1639,7 @@ migrate((app) => {
       is_active: true,
     },
     {
-      name_fa: "مورگانیت (Morganite)",
+      name_fa: "مورگانیت",
       name_en: "Morganite",
       species: "Beryl",
       variety: "Morganite",

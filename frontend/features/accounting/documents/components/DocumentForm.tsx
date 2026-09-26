@@ -316,26 +316,46 @@ export default function DocumentForm({
         setActiveEntryTab(validTab);
         setDraftLine((current) => {
           const normDoc = (selectedCurrency || '').trim().toUpperCase();
+          const validForeignCurrencies = activeCurrencies
+            .map((c) => c.code.trim().toUpperCase())
+            .filter((code) => code !== 'IRR' && code !== 'IRT' && code !== normDoc);
+          const fallbackAlt = validForeignCurrencies[0] || (normDoc === 'USD' ? 'EUR' : 'USD');
           const currentUnit = (current.details?.currencyUnit || '').trim().toUpperCase();
-          const fallbackAlt =
-            activeCurrencies.find((c) => c.code.trim().toUpperCase() !== normDoc)?.code ||
-            (normDoc === 'USD' ? 'EUR' : 'USD');
-          const curUnit = currentUnit && currentUnit !== normDoc ? current.details.currencyUnit : fallbackAlt;
+          const isValidForeignUnit = validForeignCurrencies.includes(currentUnit);
+          const curUnit = isValidForeignUnit ? current.details.currencyUnit : fallbackAlt;
+          const isFromCurrencyTab = current.sourceTab === 'currency' || current.documentTab === 'currency';
           return {
             ...current,
-            documentTab: validTab === 'gold-sale' ? 'gold-sale' : validTab === 'currency' ? 'currency' : 'raw-gold',
+            documentTab:
+              validTab === 'gold-sale'
+                ? 'gold-sale'
+                : validTab === 'currency'
+                  ? 'currency'
+                  : validTab === 'coin'
+                    ? 'coin'
+                    : validTab === 'stone'
+                      ? 'stone'
+                      : 'raw-gold',
             sourceTab: validTab,
-            documentSubType: validTab === 'gold-sale'
-              ? `${documentNature === 'received' ? 'gold-purchase' : 'gold-sale'}-${current.details?.rawKind || 'molten'}`
-              : validTab === 'currency'
-                ? (documentNature === 'received' ? 'currency-purchase' : 'currency-sale')
-                : validTab === 'metals'
-                  ? documentSubType(documentNature, current.details?.rawKind || 'molten')
-                  : current.documentSubType,
+            documentSubType:
+              validTab === 'gold-sale'
+                ? `${documentNature === 'received' ? 'gold-purchase' : 'gold-sale'}-${current.details?.rawKind || 'molten'}`
+                : validTab === 'currency'
+                  ? (documentNature === 'received' ? 'currency-purchase' : 'currency-sale')
+                  : validTab === 'coin'
+                    ? (documentNature === 'received' ? 'incoming-coin' : 'outgoing-coin')
+                    : validTab === 'stone'
+                      ? (documentNature === 'received' ? 'stone-purchase' : 'stone-sale')
+                      : validTab === 'metals'
+                        ? documentSubType(documentNature, current.details?.rawKind || 'molten')
+                        : current.documentSubType,
             details: {
               ...current.details,
               currencyUnit: validTab === 'currency' ? curUnit : current.details?.currencyUnit,
               settlementCurrencyUnit: validTab === 'currency' ? (selectedCurrency || 'IRR') : current.details?.settlementCurrencyUnit,
+              currencyQuantity: validTab === 'currency' && !isFromCurrencyTab && !editingLineId ? '' : current.details?.currencyQuantity,
+              currencyUnitPrice: validTab === 'currency' && !isFromCurrencyTab && !editingLineId ? '' : current.details?.currencyUnitPrice,
+              currencyTotalAmount: validTab === 'currency' && !isFromCurrencyTab && !editingLineId ? '' : current.details?.currencyTotalAmount,
             },
           };
         });
@@ -575,22 +595,27 @@ export default function DocumentForm({
       window.location.hash = validTab;
       setDraftLine((current) => {
         const normDoc = (selectedCurrency || '').trim().toUpperCase();
+        const validForeignCurrencies = activeCurrencies
+          .map((c) => c.code.trim().toUpperCase())
+          .filter((code) => code !== 'IRR' && code !== 'IRT' && code !== normDoc);
+        const fallbackAlt = validForeignCurrencies[0] || (normDoc === 'USD' ? 'EUR' : 'USD');
         const currentUnit = (current.details?.currencyUnit || '').trim().toUpperCase();
-        const fallbackAlt =
-          activeCurrencies.find((c) => c.code.trim().toUpperCase() !== normDoc)?.code ||
-          (normDoc === 'USD' ? 'EUR' : 'USD');
-        const curUnit = currentUnit && currentUnit !== normDoc ? current.details.currencyUnit : fallbackAlt;
+        const isValidForeignUnit = validForeignCurrencies.includes(currentUnit);
+        const curUnit = isValidForeignUnit ? current.details.currencyUnit : fallbackAlt;
         const quoteRate = getQuoteRateInRials(quotes, curUnit);
         const finalRate = baseCurrency === 'IRT' ? Math.round(quoteRate / 10) : quoteRate;
         const shouldFillRate =
           validTab === 'currency' &&
           quoteRate > 0 &&
-          (!current.details?.currencyUnitPrice || current.details.currencyUnitPrice === '0' || currentUnit === normDoc);
+          (!current.details?.currencyUnitPrice || current.details.currencyUnitPrice === '0' || !isValidForeignUnit);
+        const isFromCurrencyTab = current.sourceTab === 'currency' || current.documentTab === 'currency';
         const nextDetails = {
           ...current.details,
           currencyUnit: validTab === 'currency' ? curUnit : current.details?.currencyUnit,
           settlementCurrencyUnit: validTab === 'currency' ? (selectedCurrency || baseCurrency) : current.details?.settlementCurrencyUnit,
-          currencyUnitPrice: shouldFillRate ? String(finalRate) : (current.details?.currencyUnitPrice || ''),
+          currencyQuantity: validTab === 'currency' && !isFromCurrencyTab && !editingLineId ? '' : current.details?.currencyQuantity,
+          currencyUnitPrice: shouldFillRate ? String(finalRate) : (validTab === 'currency' && !isFromCurrencyTab && !editingLineId ? '' : current.details?.currencyUnitPrice || ''),
+          currencyTotalAmount: validTab === 'currency' && !isFromCurrencyTab && !editingLineId ? '' : current.details?.currencyTotalAmount,
         };
         const qty = numberValue(nextDetails.currencyQuantity);
         const unitPrice = numberValue(nextDetails.currencyUnitPrice);
@@ -599,15 +624,29 @@ export default function DocumentForm({
         }
         return {
           ...current,
-          documentTab: validTab === 'gold-sale' ? 'gold-sale' : validTab === 'currency' ? 'currency' : 'raw-gold',
+          documentTab:
+            validTab === 'gold-sale'
+              ? 'gold-sale'
+              : validTab === 'currency'
+                ? 'currency'
+                : validTab === 'coin'
+                  ? 'coin'
+                  : validTab === 'stone'
+                    ? 'stone'
+                    : 'raw-gold',
           sourceTab: validTab,
-          documentSubType: validTab === 'gold-sale'
-            ? `${documentNature === 'received' ? 'gold-purchase' : 'gold-sale'}-${current.details?.rawKind || 'molten'}`
-            : validTab === 'currency'
-              ? (documentNature === 'received' ? 'currency-purchase' : 'currency-sale')
-              : validTab === 'metals'
-                ? documentSubType(documentNature, current.details?.rawKind || 'molten')
-                : current.documentSubType,
+          documentSubType:
+            validTab === 'gold-sale'
+              ? `${documentNature === 'received' ? 'gold-purchase' : 'gold-sale'}-${current.details?.rawKind || 'molten'}`
+              : validTab === 'currency'
+                ? (documentNature === 'received' ? 'currency-purchase' : 'currency-sale')
+                : validTab === 'coin'
+                  ? (documentNature === 'received' ? 'incoming-coin' : 'outgoing-coin')
+                  : validTab === 'stone'
+                    ? (documentNature === 'received' ? 'stone-purchase' : 'stone-sale')
+                    : validTab === 'metals'
+                      ? documentSubType(documentNature, current.details?.rawKind || 'molten')
+                      : current.documentSubType,
           details: nextDetails,
         };
       });
@@ -753,14 +792,13 @@ export default function DocumentForm({
         activeEntryTab === 'currency';
       if (isCurrency) {
         const normCurr = curr.trim().toUpperCase();
+        const foreignCurrencies = activeCurrencies
+          .map((c) => c.code.trim().toUpperCase())
+          .filter((code) => code !== 'IRR' && code !== 'IRT' && code !== normCurr);
         const currentUnit = (draftLine.details?.currencyUnit || '').trim().toUpperCase();
-        if (!currentUnit || currentUnit === normCurr || currentUnit === 'IRR' || currentUnit === 'IRT') {
-          const foreignCurrencies = activeCurrencies
-            .map((c) => c.code)
-            .filter((code) => code !== 'IRR' && code !== 'IRT');
-          const fallbackAlt =
-            foreignCurrencies.find((c) => c.trim().toUpperCase() !== normCurr) ||
-            (normCurr === 'USD' ? 'EUR' : 'USD');
+        const isValid = foreignCurrencies.includes(currentUnit);
+        if (!isValid) {
+          const fallbackAlt = foreignCurrencies[0] || (normCurr === 'USD' ? 'EUR' : 'USD');
           updateDraftDetail('currencyUnit', fallbackAlt);
           const quoteRate = getQuoteRateInRials(quotes, fallbackAlt);
           if (quoteRate > 0) {
@@ -1201,9 +1239,10 @@ export default function DocumentForm({
   const currentRefiningOpKind = currentLine?.details?.refiningOpKind;
 
   const currentOpLabel =
-    currentTab === 'bank' &&
+    (currentTab === 'bank' || currentTab === 'stone') &&
     currentLine?.documentTypeLabel &&
-    currentLine.documentTypeLabel !== 'عملیات بانکی'
+    currentLine.documentTypeLabel !== 'عملیات بانکی' &&
+    currentLine.documentTypeLabel !== 'عملیات سنگ'
       ? currentLine.documentTypeLabel
       : getLineDocumentTypeLabel(
           currentNature,
@@ -1402,7 +1441,21 @@ export default function DocumentForm({
               nature={documentNature}
               draftLine={draftLine}
               setDraftLine={setDraftLine}
-              currencyUnits={availableCurrencies.map((c) => c.code).filter((code) => code !== 'IRR' && code !== 'IRT')}
+              currencyUnits={availableCurrencies
+                .map((c) => c.code)
+                .filter((code) => {
+                  const norm = code.trim().toUpperCase();
+                  return (
+                    norm !== 'IRR' &&
+                    norm !== 'IRT' &&
+                    !norm.includes('سکه') &&
+                    !norm.includes('بهار') &&
+                    !norm.includes('امامی') &&
+                    !norm.includes('پارسیان') &&
+                    !norm.includes('پهلوی') &&
+                    !norm.includes('شمش')
+                  );
+                })}
               selectedCurrency={selectedCurrency}
               baseCurrency={baseCurrency}
               getQuoteRate={getCurrencyQuoteRate}
