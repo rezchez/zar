@@ -182,8 +182,8 @@ describe('Zarfolio — Professional Gemstone Opening Inventory Tests', () => {
       expect(D_Z_COLORS).toContain('F');
       expect(D_Z_COLORS).toContain('G');
       expect(D_Z_COLORS).toContain('H');
-      expect(D_Z_COLORS).toContain('N-Z');
-      expect(D_Z_COLORS.length).toBe(11);
+      expect(D_Z_COLORS).toContain('Z');
+      expect(D_Z_COLORS.length).toBe(23);
     });
 
     it('verifies Fancy color intensities coverage', () => {

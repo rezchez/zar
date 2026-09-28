@@ -59,7 +59,8 @@ export const SONGEA_LOCALITY = {
 };
 
 export const D_Z_COLORS = [
-  'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N-Z',
+  'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
+  'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
 ] as const;
 
 export const DIAMOND_COLOR_GRADES = [
@@ -1221,6 +1222,23 @@ export const CUT_GRADES = [
 ] as const;
 export type CutGrade = typeof CUT_GRADES[number]['id'];
 
+export function getShapeNameFa(shapeId?: string): string {
+  if (!shapeId) return '';
+  const found = GEMSTONE_SHAPES.find(
+    (s) => s.id === shapeId || s.id.toLowerCase() === shapeId.toLowerCase(),
+  );
+  return found?.nameFa || shapeId;
+}
+
+export function getCutGradeNameFa(cutId?: string): string {
+  if (!cutId) return '';
+  const found = CUT_GRADES.find(
+    (c) => c.id === cutId || c.id.toLowerCase() === cutId.toLowerCase(),
+  );
+  return found?.nameFa || cutId;
+}
+
+
 export const POLISH_SYMMETRY_GRADES = [
   { id: 'excellent', nameFa: 'عالی (Excellent)' },
   { id: 'very_good', nameFa: 'خیلی خوب (Very Good)' },
@@ -1669,25 +1687,21 @@ export function getClarityTier(clarity?: string): ClarityTier | undefined {
 
 /**
  * Returns allowed end grades ("تا") for a given start color ("از").
- * Strictly prohibits selecting a lower quality tier in the parcel range.
- * Example: 'H' (Near Colorless) cannot end in 'I' (Faint Tint / Crystal).
+ * Based on the GIA D-Z standard: when "از" is chosen from the letters towards Z,
+ * "تا" contains the preceding letters going back up to D (inclusive of the start grade).
+ * Example: 'H' -> ['H', 'G', 'F', 'E', 'D']; 'Z' -> ['Z', 'Y', ..., 'D']; 'D' -> ['D'].
  */
 export function getAllowedColorEndGrades(fromColor?: string): string[] {
   if (!fromColor) return [...D_Z_COLORS];
   const upperFrom = fromColor.toUpperCase().trim();
-  const tier = getColorTier(upperFrom);
-  const fromRank = D_Z_RANK[upperFrom] ?? 0;
+  const fromIdx = D_Z_COLORS.indexOf(upperFrom as (typeof D_Z_COLORS)[number]);
 
-  if (!tier) {
+  if (fromIdx === -1) {
     return [upperFrom];
   }
 
-  const allowed = D_Z_COLORS.filter((c) => {
-    const cTier = getColorTier(c);
-    const cRank = D_Z_RANK[c] ?? 0;
-    return cTier?.tier === tier.tier && cRank >= fromRank;
-  });
-
+  // Return letters from fromColor backwards up to 'D' (index <= fromIdx, reversed so preceding letters towards D come in order)
+  const allowed = D_Z_COLORS.slice(0, fromIdx + 1).reverse();
   return allowed.length > 0 ? allowed : [upperFrom];
 }
 
@@ -1717,23 +1731,29 @@ export function getAllowedClarityEndGrades(fromClarity?: string): string[] {
 
 export function parseColorRangeString(rangeStr?: string): { min: string; max: string } {
   if (!rangeStr || !rangeStr.trim()) {
-    return { min: 'G', max: 'H' };
+    return { min: 'H', max: 'G' };
   }
   const clean = rangeStr.trim();
   const parts = clean.split(/[–\-—/]|تا/).map((s) => s.trim().toUpperCase()).filter(Boolean);
   if (parts.length >= 2) {
-    const min = parts[0];
-    const rawMax = parts[1];
+    const p0 = parts[0];
+    const p1 = parts[1];
+    const r0 = D_Z_RANK[p0];
+    const r1 = D_Z_RANK[p1];
+    // Ensure min ("از") is the letter towards Z (higher rank index) and max ("تا") is towards D (lower rank index)
+    if (r0 !== undefined && r1 !== undefined && r0 < r1) {
+      return { min: p1, max: p0 };
+    }
+    const min = p0;
     const allowed = getAllowedColorEndGrades(min);
-    const max = allowed.includes(rawMax) ? rawMax : (allowed[allowed.length - 1] || min);
+    const max = allowed.includes(p1) ? p1 : (allowed[1] || allowed[0] || min);
     return { min, max };
   }
   if (parts.length === 1) {
     const min = parts[0];
-    const allowed = getAllowedColorEndGrades(min);
     return { min, max: min };
   }
-  return { min: 'G', max: 'H' };
+  return { min: 'H', max: 'G' };
 }
 
 export function parseClarityRangeString(rangeStr?: string): { min: string; max: string } {
@@ -1771,26 +1791,112 @@ export function validateColorRange(min?: string, max?: string): { valid: boolean
     return { valid: true, label: `${upperMin}–${upperMax}` };
   }
 
-  if (rankMin > rankMax) {
+  // "از" (upperMin) must be towards Z (rankMin >= rankMax) and "تا" (upperMax) must be preceding letters towards D
+  if (rankMax > rankMin) {
     return {
       valid: false,
       label: `${upperMin}–${upperMax}`,
-      error: `محدوده رنگ نامعتبر است: رنگ ${upperMin} باید از نظر درجه بالاتر یا برابر با ${upperMax} باشد (ترتیب D تا Z).`,
-    };
-  }
-
-  const tierMin = getColorTier(upperMin);
-  const tierMax = getColorTier(upperMax);
-
-  if (tierMin && tierMax && tierMin.tier !== tierMax.tier) {
-    return {
-      valid: false,
-      label: `${upperMin}–${upperMax}`,
-      error: `محدوده رنگ نامعتبر است: رنگ انتخابی ${upperMax} در لِوِل کیفی پایین‌تر از ${upperMin} (${tierMin.nameFa}) قرار دارد و امکان قرارگیری در یک بارخانه را ندارد.`,
+      error: `محدوده رنگ نامعتبر است: برای شروع از رنگ ${upperMin}، پایان بازه (تا) باید از حروف قبلی تا D باشد (امکان انتخاب ${upperMax} که به سمت Z است وجود ندارد).`,
     };
   }
 
   return { valid: true, label: `${upperMin}–${upperMax}` };
+}
+
+export interface ResolvedStoneCurrency {
+  code: string;
+  unitLabel: string;
+  displayName: string;
+  effectiveBaseCurrency: 'IRR' | 'IRT';
+  isDomestic: boolean;
+}
+
+const STANDARD_CURRENCY_NAMES_FA: Record<string, { name: string; symbol: string }> = {
+  IRR: { name: 'ریال ایران', symbol: 'ریال' },
+  IRT: { name: 'تومان', symbol: 'تومان' },
+  USD: { name: 'دلار آمریکا', symbol: '$' },
+  EUR: { name: 'یورو', symbol: '€' },
+  AED: { name: 'درهم امارات', symbol: 'د.إ' },
+  GBP: { name: 'پوند انگلیس', symbol: '£' },
+  TRY: { name: 'لیر ترکیه', symbol: '₺' },
+  CHF: { name: 'فرانک سوئیس', symbol: 'CHF' },
+  CAD: { name: 'دلار کانادا', symbol: 'C$' },
+  AUD: { name: 'دلار استرالیا', symbol: 'A$' },
+  CNY: { name: 'یوان چین', symbol: '¥' },
+};
+
+/**
+ * Accurately resolves the transaction currency unit, Persian label, and base currency
+ * for the Stone valuation section based on the document's selected currency.
+ */
+export function resolveStoneTransactionCurrency(
+  selectedCurrency?: string,
+  baseCurrency: 'IRR' | 'IRT' = 'IRR',
+  currencyLabel?: string,
+  currenciesList?: { code: string; name: string; symbol?: string }[],
+): ResolvedStoneCurrency {
+  const raw = (selectedCurrency || '').trim();
+  const upper = raw.toUpperCase();
+
+  const matched = currenciesList?.find(
+    (c) =>
+      c.code?.trim().toUpperCase() === upper ||
+      c.name?.trim() === raw ||
+      c.symbol?.trim() === raw,
+  );
+
+  const effectiveCode = matched?.code?.trim().toUpperCase() || upper || baseCurrency;
+  const effectiveName = (currencyLabel || matched?.name || STANDARD_CURRENCY_NAMES_FA[effectiveCode]?.name || '').trim();
+
+  const isToman =
+    effectiveCode === 'IRT' ||
+    effectiveCode === 'TOMAN' ||
+    raw.includes('تومان') ||
+    effectiveName.includes('تومان') ||
+    (!raw && baseCurrency === 'IRT');
+
+  if (isToman) {
+    return {
+      code: 'IRT',
+      unitLabel: 'تومان',
+      displayName: 'تومان (IRT)',
+      effectiveBaseCurrency: 'IRT',
+      isDomestic: true,
+    };
+  }
+
+  const isRial =
+    effectiveCode === 'IRR' ||
+    effectiveCode === 'RIAL' ||
+    raw.includes('ریال') ||
+    effectiveName.includes('ریال') ||
+    (!raw && baseCurrency === 'IRR');
+
+  if (isRial) {
+    return {
+      code: 'IRR',
+      unitLabel: 'ریال',
+      displayName: 'ریال ایران (IRR)',
+      effectiveBaseCurrency: 'IRR',
+      isDomestic: true,
+    };
+  }
+
+  // Foreign or custom currency
+  const cleanUnitLabel = effectiveName || effectiveCode;
+  const stdSymbol = matched?.symbol || STANDARD_CURRENCY_NAMES_FA[effectiveCode]?.symbol || effectiveCode;
+  const displayName =
+    effectiveName && effectiveName.toUpperCase() !== effectiveCode
+      ? `${effectiveName} (${stdSymbol && stdSymbol !== effectiveName ? stdSymbol : effectiveCode})`
+      : effectiveCode;
+
+  return {
+    code: effectiveCode,
+    unitLabel: cleanUnitLabel,
+    displayName,
+    effectiveBaseCurrency: baseCurrency === 'IRT' ? 'IRT' : 'IRR',
+    isDomestic: false,
+  };
 }
 
 export function validateClarityRange(min?: string, max?: string): { valid: boolean; label: string; error?: string } {

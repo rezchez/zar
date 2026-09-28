@@ -3,7 +3,12 @@ import {
   emptyCustomerBalances,
   normalizeCurrencyCode,
   type CustomerBalanceValues,
+  type CustomerStoneSpeciesBalance,
+  type CustomerStoneItemDetail,
 } from '@/lib/customer';
+import { caratsToGrams, gramsToCarats } from '@/lib/gemstone-weight';
+import { getShapeNameFa, getCutGradeNameFa } from '@/lib/gemstone';
+
 
 export type TransactionType =
   | 'opening_balance'
@@ -51,19 +56,95 @@ export type CustomerTransaction = {
   updated: string;
 };
 
-function readText(record: RecordModel, field: string) {
-  return typeof record[field] === 'string' ? record[field] : '';
+function readText(record: RecordModel | Record<string, unknown>, field: string) {
+  return typeof record[field] === 'string' ? (record[field] as string) : '';
 }
 
-function readNumber(record: RecordModel, field: string) {
-  return typeof record[field] === 'number' && Number.isFinite(record[field])
-    ? record[field]
+function readNumber(record: RecordModel | Record<string, unknown>, field: string) {
+  return typeof record[field] === 'number' && Number.isFinite(record[field] as number)
+    ? (record[field] as number)
     : 0;
 }
 
-export function mapTransaction(record: RecordModel): CustomerTransaction {
+export function mapTransaction(record: RecordModel | Record<string, unknown>): CustomerTransaction {
+  const documentTab = readText(record, 'documentTab');
+  const documentSubType = readText(record, 'documentSubType');
+  const documentNature = readText(record, 'documentNature') as 'received' | 'paid' | '';
+  const settlementMethod = readText(record, 'settlementMethod');
+  const rawDetailsField = record.documentDetails;
+  const documentDetails =
+    typeof rawDetailsField === 'string'
+      ? rawDetailsField
+      : rawDetailsField && typeof rawDetailsField === 'object'
+      ? JSON.stringify(rawDetailsField)
+      : '';
+
+  let rialAmount = readNumber(record, 'rialAmount');
+  let foreignAmount = readNumber(record, 'foreignAmount');
+  let foreignCurrency = readText(record, 'foreignCurrency');
+  let foreignCurrencySymbol = readText(record, 'foreignCurrencySymbol');
+
+  if (documentTab === 'stone') {
+    let parsedDetails: Record<string, unknown> = {};
+    if (rawDetailsField && typeof rawDetailsField === 'object' && !Array.isArray(rawDetailsField)) {
+      parsedDetails = rawDetailsField as Record<string, unknown>;
+    } else if (documentDetails) {
+      try {
+        const parsed = JSON.parse(documentDetails);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          parsedDetails = parsed as Record<string, unknown>;
+        }
+      } catch {
+        // ignore invalid JSON
+      }
+    }
+
+    const opKind = String(parsedDetails.stoneOperationKind || '');
+    const isUnsettledStone =
+      opKind === 'unsettled_purchase' ||
+      opKind === 'unsettled_sale' ||
+      documentSubType === 'stone-unsettled-purchase' ||
+      documentSubType === 'stone-unsettled-sale' ||
+      parsedDetails.unsettledTrade === true ||
+      settlementMethod === 'unsettled';
+
+    const rawSettlementUnit = String(
+      parsedDetails.settlementCurrencyUnit || foreignCurrency || '',
+    ).trim();
+    const normUnit = normalizeCurrencyCode(rawSettlementUnit);
+    const isForeignStone = Boolean(normUnit && normUnit !== 'IRR' && normUnit !== 'IRT');
+    const direction = documentNature === 'paid' ? -1 : 1;
+
+    if (!isUnsettledStone) {
+      // Settled stone purchase/sale (با تسویه آنی) or physical entry/exit: no open debt/claim remains
+      rialAmount = 0;
+      foreignAmount = 0;
+    } else {
+      const detailTotal =
+        Number(String(parsedDetails.stoneTotalAmount ?? parsedDetails.totalAmount ?? '0').replace(/,/g, '')) || 0;
+      const baseAbsAmount = Math.abs(foreignAmount || rialAmount || detailTotal);
+
+      if (isForeignStone) {
+        rialAmount = 0;
+        foreignAmount = baseAbsAmount * direction;
+        foreignCurrency = normUnit;
+        if (!foreignCurrencySymbol || foreignCurrencySymbol === 'IRR' || foreignCurrencySymbol === 'IRT') {
+          foreignCurrencySymbol = normUnit === 'USD' ? '$' : normUnit === 'EUR' ? '€' : normUnit === 'GBP' ? '£' : normUnit;
+        }
+      } else {
+        foreignAmount = 0;
+        const alreadyInIrr = parsedDetails.rialAmountInIrr === true;
+        const effectiveAbsRial =
+          normUnit === 'IRT' && !alreadyInIrr && Math.abs(rialAmount) === Math.abs(detailTotal)
+            ? Math.round(baseAbsAmount * 10)
+            : Math.round(baseAbsAmount);
+        rialAmount = effectiveAbsRial * direction;
+      }
+    }
+  }
+
   return {
-    id: record.id,
+    id: readText(record, 'id'),
     customerId: readText(record, 'customer'),
     customerCode: readNumber(record, 'customerCode'),
     createdBy: readText(record, 'createdBy'),
@@ -81,20 +162,20 @@ export function mapTransaction(record: RecordModel): CustomerTransaction {
     goldAmount: readNumber(record, 'goldAmount'),
     silverAmount: readNumber(record, 'silverAmount'),
     platinumAmount: readNumber(record, 'platinumAmount'),
-    rialAmount: readNumber(record, 'rialAmount'),
-    foreignAmount: readNumber(record, 'foreignAmount'),
+    rialAmount,
+    foreignAmount,
     tertiaryAmount: readNumber(record, 'tertiaryAmount'),
-    foreignCurrency: readText(record, 'foreignCurrency'),
-    foreignCurrencySymbol: readText(record, 'foreignCurrencySymbol'),
+    foreignCurrency,
+    foreignCurrencySymbol,
     tertiaryCurrency: readText(record, 'tertiaryCurrency'),
     tertiaryCurrencySymbol: readText(record, 'tertiaryCurrencySymbol'),
-    documentNature: readText(record, 'documentNature') as 'received' | 'paid' | '',
-    documentTab: readText(record, 'documentTab'),
-    documentSubType: readText(record, 'documentSubType'),
+    documentNature,
+    documentTab,
+    documentSubType,
     documentDateJalali: readText(record, 'documentDateJalali'),
-    settlementMethod: readText(record, 'settlementMethod'),
+    settlementMethod,
     balanceSource: readText(record, 'balanceSource'),
-    documentDetails: readText(record, 'documentDetails'),
+    documentDetails,
     documentLineNumber: readNumber(record, 'documentLineNumber'),
     created: readText(record, 'created'),
     updated: readText(record, 'updated'),
@@ -146,11 +227,188 @@ export function calculateCustomerCurrencyBalances(
   return result;
 }
 
+export function calculateCustomerStoneBalances(
+  transactions: CustomerTransaction[],
+): {
+  carats: number;
+  grams: number;
+  pieces: number;
+  bySpecies: Record<string, CustomerStoneSpeciesBalance>;
+  items: CustomerStoneItemDetail[];
+} {
+  let totalCarats = 0;
+  let totalGrams = 0;
+  let totalPieces = 0;
+  const bySpecies: Record<string, CustomerStoneSpeciesBalance> = {};
+  const byDetail: Record<string, CustomerStoneItemDetail> = {};
+
+  for (const t of transactions) {
+    if (t.status !== 'final' && t.status !== 'posted') continue;
+    if (t.documentTab !== 'stone' && t.documentSubType !== 'stone-entry' && t.documentSubType !== 'stone-exit') continue;
+
+    let details: Record<string, unknown> = {};
+    if (t.documentDetails) {
+      if (typeof t.documentDetails === 'object' && t.documentDetails !== null) {
+        details = t.documentDetails as Record<string, unknown>;
+      } else if (typeof t.documentDetails === 'string') {
+        try {
+          details = JSON.parse(t.documentDetails);
+        } catch {}
+      }
+    }
+
+    const opKind = String(details.stoneOperationKind || '');
+    const subType = String(t.documentSubType || '');
+    const isTradeSettled = (opKind === 'purchase' || opKind === 'sale') && t.settlementMethod === 'cash';
+
+    const isWeightOp =
+      opKind === 'entry' ||
+      opKind === 'exit' ||
+      subType === 'stone-entry' ||
+      subType === 'stone-exit' ||
+      t.settlementMethod === 'weight' ||
+      (!isTradeSettled &&
+        (Number(details.stoneCarats || 0) > 0 ||
+          Number(details.stoneGrams || 0) > 0 ||
+          Number(details.stonePieces || 0) > 0));
+
+    if (!isWeightOp) continue;
+
+    const direction = t.documentNature === 'paid' ? -1 : 1;
+    const rawCarats = Number(String(details.stoneCarats || '0').replace(/,/g, '')) || 0;
+    const rawGrams = Number(String(details.stoneGrams || '0').replace(/,/g, '')) || 0;
+    const rawPieces = Math.round(Number(String(details.stonePieces || '0').replace(/,/g, '')) || 0);
+
+    const carats = rawCarats || (rawGrams > 0 ? gramsToCarats(rawGrams) : 0);
+    const grams = rawGrams || (rawCarats > 0 ? caratsToGrams(rawCarats) : 0);
+    const pieces = rawPieces;
+
+    totalCarats += carats * direction;
+    totalGrams += grams * direction;
+    totalPieces += pieces * direction;
+
+    const speciesId = String(details.stoneSpecies || details.stoneCategory || 'other_gemstone');
+    const speciesName = String(details.stoneSpeciesName || details.stoneItemName || details.stoneCategory || 'سنگ');
+    const category = String(details.stoneCategory || 'colored_gemstone');
+
+    const shape = String(details.stoneShape || '');
+    const shapeName = String(details.stoneShapeName || (shape ? getShapeNameFa(shape) : ''));
+    const mode = details.stoneMode === 'parcel' ? ('parcel' as const) : ('single_stone' as const);
+
+    let color = '';
+    if (details.stoneColorMode === 'fancy') {
+      color = [details.stoneFancyIntensity, details.stoneFancyHue].filter(Boolean).join(' ') || String(details.stoneColor || '');
+    } else if (details.stoneColorRange) {
+      color = String(details.stoneColorRange);
+    } else if (details.stoneColor) {
+      color = String(details.stoneColor);
+    } else if (details.stoneColorHue) {
+      color = String(details.stoneColorHue);
+    }
+
+    let clarity = '';
+    if (details.stoneClarityRange) {
+      clarity = String(details.stoneClarityRange);
+    } else if (details.stoneClarity) {
+      clarity = String(details.stoneClarity);
+    }
+
+    const rawCut = String(details.stoneCut || '');
+    const cut = rawCut ? getCutGradeNameFa(rawCut) : '';
+    const certLab = details.stoneCertificateLab && details.stoneCertificateLab !== 'none' ? String(details.stoneCertificateLab) : '';
+    const certNumber = String(details.stoneCertificateNumber || details.stoneCertificateReportNumber || '');
+    const laser = String(details.stoneLaserInscription || '');
+    const lotNumber = String(details.stoneLotNumber || '');
+    const sieveSize = String(details.stoneSieveSize || '');
+    const measurements =
+      details.stoneMeasurementsLength || details.stoneMeasurementsWidth
+        ? `${details.stoneMeasurementsLength || '—'} × ${details.stoneMeasurementsWidth || '—'}${details.stoneMeasurementsDepth ? ` × ${details.stoneMeasurementsDepth}` : ''} mm`
+        : '';
+    const description = t.description || String(details.claimPurpose || '');
+
+    // 1. Group by species (for backwards compatibility and summary)
+    if (!bySpecies[speciesId]) {
+      bySpecies[speciesId] = {
+        speciesId,
+        speciesName,
+        category,
+        shape,
+        shapeName,
+        color,
+        clarity,
+        cut,
+        certificateLab: certLab,
+        certificateNumber: certNumber,
+        carats: 0,
+        grams: 0,
+        pieces: 0,
+        items: [],
+      };
+    }
+    bySpecies[speciesId].carats = Math.round((bySpecies[speciesId].carats + carats * direction) * 1000) / 1000;
+    bySpecies[speciesId].grams = Math.round((bySpecies[speciesId].grams + grams * direction) * 10000) / 10000;
+    bySpecies[speciesId].pieces += pieces * direction;
+
+    // 2. Group by exact stone specification (ریز طلب سنگ با مشخصات، کیفیت و رنگ)
+    const detailKey = `${speciesId}__${shape}__${color}__${clarity}__${rawCut}__${certLab}_${certNumber}__${mode}__${lotNumber}`;
+    if (!byDetail[detailKey]) {
+      byDetail[detailKey] = {
+        key: detailKey,
+        speciesId,
+        speciesName,
+        category,
+        shape,
+        shapeName,
+        mode,
+        color,
+        clarity,
+        cut,
+        certificateLab: certLab,
+        certificateNumber: certNumber,
+        laserInscription: laser,
+        lotNumber,
+        sieveSize,
+        measurements,
+        description,
+        carats: 0,
+        grams: 0,
+        pieces: 0,
+        transactionsCount: 0,
+        lastDate: t.documentDateJalali || t.transactionDate?.slice(0, 10),
+        lastDocumentNumber: t.documentNumber,
+      };
+    }
+    byDetail[detailKey].carats = Math.round((byDetail[detailKey].carats + carats * direction) * 1000) / 1000;
+    byDetail[detailKey].grams = Math.round((byDetail[detailKey].grams + grams * direction) * 10000) / 10000;
+    byDetail[detailKey].pieces += pieces * direction;
+    byDetail[detailKey].transactionsCount = (byDetail[detailKey].transactionsCount || 0) + 1;
+    if (t.documentDateJalali) byDetail[detailKey].lastDate = t.documentDateJalali;
+    if (t.documentNumber) byDetail[detailKey].lastDocumentNumber = t.documentNumber;
+  }
+
+  // Populate items in bySpecies
+  for (const item of Object.values(byDetail)) {
+    if (bySpecies[item.speciesId]) {
+      bySpecies[item.speciesId].items = bySpecies[item.speciesId].items || [];
+      bySpecies[item.speciesId].items!.push(item);
+    }
+  }
+
+  return {
+    carats: Math.round(totalCarats * 1000) / 1000,
+    grams: Math.round(totalGrams * 10000) / 10000,
+    pieces: totalPieces,
+    bySpecies,
+    items: Object.values(byDetail),
+  };
+}
+
 export function transactionBalancesToCustomerBalances(
   transactions: CustomerTransaction[],
 ): CustomerBalanceValues {
   const totals = sumPostedTransactions(transactions);
   const currencyBalances = calculateCustomerCurrencyBalances(transactions);
+  const stoneBalances = calculateCustomerStoneBalances(transactions);
   return {
     goldBalance: totals.goldAmount,
     silverBalance: totals.silverAmount,
@@ -159,6 +417,11 @@ export function transactionBalancesToCustomerBalances(
     foreignBalance: totals.foreignAmount,
     tertiaryBalance: totals.tertiaryAmount,
     currencyBalances,
+    stoneCaratBalance: stoneBalances.carats,
+    stoneGramBalance: stoneBalances.grams,
+    stonePiecesBalance: stoneBalances.pieces,
+    stoneBalancesBySpecies: stoneBalances.bySpecies,
+    stoneItemBalances: stoneBalances.items,
   };
 }
 
@@ -173,6 +436,11 @@ export function openingTransactionToCustomerBalances(
     rialBalance: transaction.rialAmount,
     foreignBalance: transaction.foreignAmount,
     tertiaryBalance: transaction.tertiaryAmount,
+    stoneCaratBalance: 0,
+    stoneGramBalance: 0,
+    stonePiecesBalance: 0,
+    stoneBalancesBySpecies: {},
+    stoneItemBalances: [],
   };
 }
 

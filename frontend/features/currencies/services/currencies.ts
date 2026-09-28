@@ -83,7 +83,11 @@ export function getCurrenciesForBaseCurrency(
 ): Currency[] {
   const filtered = currencies.filter((currency) => {
     const code = (currency.code || currency.symbol || '').toUpperCase();
-    return (code !== 'IRR' && code !== 'IRT') || code === baseCurrency;
+    const isIrt = code === 'IRT' || code === 'TOMAN' || currency.name?.includes('تومان');
+    const isIrr = code === 'IRR' || code === 'RIAL' || (currency.name?.includes('ریال') && !isIrt);
+    if (isIrt) return baseCurrency === 'IRT';
+    if (isIrr) return baseCurrency === 'IRR';
+    return true;
   });
 
   const seen = new Set<string>();
@@ -93,6 +97,23 @@ export function getCurrenciesForBaseCurrency(
     if (key && !seen.has(key)) {
       seen.add(key);
       uniqueCurrencies.push(curr);
+    }
+  }
+
+  // Ensure the active domestic baseCurrency (IRR or IRT) is always present in the returned list
+  const hasBaseCurrency = uniqueCurrencies.some((c) => {
+    const code = (c.code || c.symbol || '').trim().toUpperCase();
+    return (
+      code === baseCurrency ||
+      (baseCurrency === 'IRT' && c.name?.includes('تومان')) ||
+      (baseCurrency === 'IRR' && c.name?.includes('ریال'))
+    );
+  });
+
+  if (!hasBaseCurrency) {
+    const fallbackDomestic = DEFAULT_STANDARD_CURRENCIES.find((c) => c.code === baseCurrency);
+    if (fallbackDomestic) {
+      uniqueCurrencies.unshift(fallbackDomestic);
     }
   }
 

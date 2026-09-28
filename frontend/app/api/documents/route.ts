@@ -21,6 +21,8 @@ import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
 import { createRefiningCase, syncCaseTotals } from '@/features/refining/services/refining-service';
 import { postMetalSale, postMetalPurchase, postCurrencyTrade } from '@/features/accounting/posting/posting-engine';
 import { getCustomerWithBalances } from '@/lib/customer-service';
+import { getCurrencyMeta, normalizeCurrencyCode } from '@/lib/customer';
+import { convertTomanToRial } from '@/lib/money';
 
 const amountFields = [
   'goldAmount',
@@ -442,6 +444,47 @@ export async function POST(request: Request) {
 
       const details = normalizeDetails(line.documentDetails);
       const isStoneLine = line.documentTab === 'stone' || line.sourceTab === 'stone';
+      if (isStoneLine) {
+        const opKind = String(details.stoneOperationKind || '');
+        const subType = String(line.documentSubType || '');
+        const isUnsettledStone =
+          opKind === 'unsettled_purchase' ||
+          opKind === 'unsettled_sale' ||
+          subType === 'stone-unsettled-purchase' ||
+          subType === 'stone-unsettled-sale' ||
+          details.unsettledTrade === true ||
+          line.settlementMethod === 'unsettled';
+        const stoneCurrency = normalizeCurrencyCode(String(details.settlementCurrencyUnit || ''));
+        const isForeignStone = Boolean(stoneCurrency && stoneCurrency !== 'IRR' && stoneCurrency !== 'IRT');
+        const stoneDirection = lineNature === 'received' ? 1 : -1;
+        const detailTotal = Math.abs(
+          readAmount(details.stoneTotalAmount) || readAmount(details.totalAmount) || 0,
+        );
+        const incomingForeign = Math.abs(readAmount(line.foreignAmount) || 0);
+        const incomingRial = Math.abs(readAmount(line.rialAmount) || 0);
+        const baseStoneAmount = detailTotal || incomingForeign || incomingRial;
+
+        if (!isUnsettledStone) {
+          lineAmounts.rialAmount = 0;
+          lineAmounts.foreignAmount = 0;
+        } else if (isForeignStone) {
+          lineAmounts.rialAmount = 0;
+          lineAmounts.foreignAmount = baseStoneAmount * stoneDirection;
+          details.settlementCurrencyUnit = stoneCurrency;
+        } else {
+          lineAmounts.foreignAmount = 0;
+          const alreadyInIrr = details.rialAmountInIrr === true;
+          const effectiveAbsRial =
+            stoneCurrency === 'IRT'
+              ? (alreadyInIrr && incomingRial > 0 && incomingRial !== detailTotal
+                  ? incomingRial
+                  : convertTomanToRial(baseStoneAmount))
+              : (incomingRial || baseStoneAmount);
+          lineAmounts.rialAmount = Math.round(effectiveAbsRial) * stoneDirection;
+        }
+        details.rialAmountInIrr = true;
+      }
+
       const hasStoneQuantity =
         isStoneLine &&
         (Number(details.stoneCarats || 0) > 0 ||
@@ -675,37 +718,57 @@ export async function POST(request: Request) {
       }
       finalDocumentNumber = lineDocumentNumbers[0] || '';
 
-      const documentPayloads = preparedLines.map((prepared, idx) => ({
-        customer: customer.id,
-        customerCode: Number(customer.customerCode ?? 0),
-        createdBy: context.user.id,
-        updatedBy: context.user.id,
-        transactionType: 'document',
-        status: requestedStatus,
-        isOpeningBalance: false,
-        sourceKey: `document:${documentId}:${prepared.lineNumber}`,
-        transactionDate,
-        documentId,
-        documentSequence: finalSequence,
-        documentNumberPrefixSnapshot: activePrefix,
-        documentNumber: lineDocumentNumbers[idx],
-        description: readString(prepared.line.description ?? body.description, 2000),
-        documentNature: prepared.lineNature,
-        documentTab: readString(prepared.line.documentTab ?? body.documentTab, 40) || 'general',
-        documentSubType: readString(prepared.line.documentSubType ?? body.documentSubType, 80),
-        documentDateJalali,
-        settlementMethod: (['amount', 'weight', 'mixed', 'unsettled', 'cash'].includes(readString(prepared.line.settlementMethod ?? body.settlementMethod, 20)))
-          ? readString(prepared.line.settlementMethod ?? body.settlementMethod, 20)
-          : 'mixed',
-        balanceSource: readString(prepared.line.balanceSource ?? body.balanceSource, 20) || 'current',
-        documentDetails: serializeDocumentDetails(prepared.documentDetails),
-        documentLineNumber: prepared.lineNumber,
-        ...prepared.lineAmounts,
-        foreignCurrency: String(prepared.line.documentTab === 'currency' ? (prepared.documentDetails.currencyUnit || customer.secondaryCurrency || '') : (customer.secondaryCurrency ?? '')),
-        foreignCurrencySymbol: String(prepared.line.documentTab === 'currency' ? (prepared.documentDetails.currencyUnit || customer.secondaryCurrencySymbol || '') : (customer.secondaryCurrencySymbol ?? '')),
-        tertiaryCurrency: String(customer.tertiaryCurrency ?? ''),
-        tertiaryCurrencySymbol: String(customer.tertiaryCurrencySymbol ?? ''),
-      }));
+      const documentPayloads = preparedLines.map((prepared, idx) => {
+        const isStone = prepared.line.documentTab === 'stone' || prepared.line.sourceTab === 'stone';
+        const stoneCur = isStone
+          ? normalizeCurrencyCode(String(prepared.documentDetails.settlementCurrencyUnit || ''))
+          : '';
+        const isForeignStone = Boolean(stoneCur && stoneCur !== 'IRR' && stoneCur !== 'IRT');
+        const resolvedForeignCur =
+          prepared.line.documentTab === 'currency'
+            ? String(prepared.documentDetails.currencyUnit || customer.secondaryCurrency || '')
+            : isForeignStone
+              ? stoneCur
+              : String(customer.secondaryCurrency ?? '');
+        const resolvedForeignSym =
+          prepared.line.documentTab === 'currency'
+            ? String(prepared.documentDetails.currencyUnit || customer.secondaryCurrencySymbol || '')
+            : isForeignStone
+              ? String(getCurrencyMeta(stoneCur).symbol || stoneCur)
+              : String(customer.secondaryCurrencySymbol ?? '');
+
+        return {
+          customer: customer.id,
+          customerCode: Number(customer.customerCode ?? 0),
+          createdBy: context.user.id,
+          updatedBy: context.user.id,
+          transactionType: 'document',
+          status: requestedStatus,
+          isOpeningBalance: false,
+          sourceKey: `document:${documentId}:${prepared.lineNumber}`,
+          transactionDate,
+          documentId,
+          documentSequence: finalSequence,
+          documentNumberPrefixSnapshot: activePrefix,
+          documentNumber: lineDocumentNumbers[idx],
+          description: readString(prepared.line.description ?? body.description, 2000),
+          documentNature: prepared.lineNature,
+          documentTab: readString(prepared.line.documentTab ?? body.documentTab, 40) || 'general',
+          documentSubType: readString(prepared.line.documentSubType ?? body.documentSubType, 80),
+          documentDateJalali,
+          settlementMethod: (['amount', 'weight', 'mixed', 'unsettled', 'cash'].includes(readString(prepared.line.settlementMethod ?? body.settlementMethod, 20)))
+            ? readString(prepared.line.settlementMethod ?? body.settlementMethod, 20)
+            : 'mixed',
+          balanceSource: readString(prepared.line.balanceSource ?? body.balanceSource, 20) || 'current',
+          documentDetails: serializeDocumentDetails(prepared.documentDetails),
+          documentLineNumber: prepared.lineNumber,
+          ...prepared.lineAmounts,
+          foreignCurrency: resolvedForeignCur,
+          foreignCurrencySymbol: resolvedForeignSym,
+          tertiaryCurrency: String(customer.tertiaryCurrency ?? ''),
+          tertiaryCurrencySymbol: String(customer.tertiaryCurrencySymbol ?? ''),
+        };
+      });
 
       const currentCreatedRecords = [];
       const currentCreatedInventoryRecords = [];
@@ -1108,14 +1171,26 @@ export async function POST(request: Request) {
     let updatedCustomer = null;
     try {
       const client = writer || context.pb;
-      const docForeignUnit = preparedLines.find(
-        (p) => p.line.documentTab === 'currency' && p.documentDetails.currencyUnit,
-      )?.documentDetails.currencyUnit;
+      const docForeignLine = preparedLines.find((p) => {
+        if (p.line.documentTab === 'currency' && p.documentDetails.currencyUnit) return true;
+        if (p.line.documentTab === 'stone' || p.line.sourceTab === 'stone') {
+          const cur = normalizeCurrencyCode(String(p.documentDetails.settlementCurrencyUnit || ''));
+          return Boolean(cur && cur !== 'IRR' && cur !== 'IRT');
+        }
+        return false;
+      });
+      const docForeignUnit =
+        docForeignLine?.line.documentTab === 'currency'
+          ? docForeignLine.documentDetails.currencyUnit
+          : docForeignLine
+            ? normalizeCurrencyCode(String(docForeignLine.documentDetails.settlementCurrencyUnit || ''))
+            : null;
       if (docForeignUnit && !customer.secondaryCurrency) {
         try {
+          const normDocForeign = normalizeCurrencyCode(String(docForeignUnit));
           await client.collection('customers').update(customer.id, {
-            secondaryCurrency: String(docForeignUnit),
-            secondaryCurrencySymbol: String(docForeignUnit),
+            secondaryCurrency: normDocForeign || String(docForeignUnit),
+            secondaryCurrencySymbol: getCurrencyMeta(normDocForeign).symbol || String(docForeignUnit),
           });
         } catch {
           // ignore

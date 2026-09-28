@@ -444,7 +444,11 @@ export default function CashTab({
           </Field>
 
           {/* Optional Trade Settlement Selector */}
-          {committedLines.some((line) => line.documentTab === 'currency' && line.details.unsettledTrade) && (
+          {committedLines.some(
+            (line) =>
+              (line.documentTab === 'currency' || line.documentTab === 'stone') &&
+              line.details.unsettledTrade,
+          ) && (
             <div className="p-3 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-900/50 space-y-1">
               <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block">
                 تسویه معامله بدون تسویه (اختیاری)
@@ -459,18 +463,39 @@ export default function CashTab({
                     details: {
                       ...current.details,
                       settlesTradeId: event.target.value,
-                      settlementCurrencyUnit: trade?.details.currencyUnit ?? current.details.settlementCurrencyUnit,
-                      settlementQuantity: trade?.details.currencyQuantity ?? current.details.settlementQuantity,
+                      settlementCurrencyUnit:
+                        trade?.documentTab === 'stone'
+                          ? (trade.details.settlementCurrencyUnit ?? current.details.settlementCurrencyUnit)
+                          : (trade?.details.currencyUnit ?? current.details.settlementCurrencyUnit),
+                      settlementQuantity:
+                        trade?.documentTab === 'stone'
+                          ? (trade.details.stoneTotalAmount ?? current.details.settlementQuantity)
+                          : (trade?.details.currencyQuantity ?? current.details.settlementQuantity),
                     },
                   }));
                 }}
               >
                 <option value="">انتخاب معامله باز برای تسویه...</option>
-                {committedLines.filter((line) => line.documentTab === 'currency' && line.details.unsettledTrade).map((line) => (
-                  <option key={line.id} value={line.id}>
-                    {line.details.currencyQuantity || '۰'} {line.details.currencyUnit} · {line.details.currencyTotalAmount || '۰'} ریال
-                  </option>
-                ))}
+                {committedLines
+                  .filter(
+                    (line) =>
+                      (line.documentTab === 'currency' || line.documentTab === 'stone') &&
+                      line.details.unsettledTrade,
+                  )
+                  .map((line) =>
+                    line.documentTab === 'stone' ? (
+                      <option key={line.id} value={line.id}>
+                        سنگ ({line.details.stoneCarats || '۰'} قیراط) ·{' '}
+                        {line.details.stoneTotalAmount || '۰'}{' '}
+                        {line.details.settlementCurrencyUnit || 'USD'}
+                      </option>
+                    ) : (
+                      <option key={line.id} value={line.id}>
+                        {line.details.currencyQuantity || '۰'} {line.details.currencyUnit} ·{' '}
+                        {line.details.currencyTotalAmount || '۰'} ریال
+                      </option>
+                    ),
+                  )}
               </select>
             </div>
           )}

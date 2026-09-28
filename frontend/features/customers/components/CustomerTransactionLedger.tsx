@@ -6,6 +6,7 @@ import { useMemo, useState } from 'react';
 import { currencyDisplay } from '@/lib/customer';
 import {
   type CustomerTransaction,
+  calculateCustomerCurrencyBalances,
   sumPostedTransactions,
 } from '@/lib/transaction';
 import { useAppSettings } from '@/components/shared/SettingsProvider';
@@ -87,6 +88,15 @@ export default function CustomerTransactionLedger({
     () => sumPostedTransactions(transactions),
     [transactions],
   );
+  const currencyBalances = useMemo(
+    () => calculateCustomerCurrencyBalances(transactions),
+    [transactions],
+  );
+  const foreignCurrencies = useMemo(() => {
+    return Object.entries(currencyBalances).filter(
+      ([code, amt]) => code !== 'IRR' && code !== 'IRT' && Math.abs(amt) > 0,
+    );
+  }, [currencyBalances]);
   const foreignCurrency = firstCurrency(transactions, 'foreignCurrency');
   const foreignCurrencySymbol = firstCurrencySymbol(
     transactions,
@@ -151,22 +161,34 @@ export default function CustomerTransactionLedger({
         <BalanceItem label="نقره" formattedValue={formatWeight(balances.silverAmount)} value={balances.silverAmount} unit="گرم" />
         <BalanceItem label="پلاتین" formattedValue={formatWeight(balances.platinumAmount)} value={balances.platinumAmount} unit="گرم" />
         <BalanceItem label="ارز پایه" formattedValue={formatMoney(balances.rialAmount)} value={balances.rialAmount} unit={baseCurrencySymbol} />
-        <BalanceItem
-          label="ارز دوم"
-          formattedValue={balances.foreignAmount.toLocaleString('fa-IR')}
-          value={balances.foreignAmount}
-          unit={foreignCurrency
-            ? currencyDisplay(foreignCurrency, foreignCurrencySymbol)
-            : 'واحد'}
-        />
-        <BalanceItem
-          label="ارز سوم"
-          formattedValue={balances.tertiaryAmount.toLocaleString('fa-IR')}
-          value={balances.tertiaryAmount}
-          unit={tertiaryCurrency
-            ? currencyDisplay(tertiaryCurrency, tertiaryCurrencySymbol)
-            : 'واحد'}
-        />
+        {foreignCurrencies.length > 0 ? (
+          foreignCurrencies.map(([code, amt]) => (
+            <BalanceItem
+              key={code}
+              label={`ارز (${code})`}
+              formattedValue={amt.toLocaleString('fa-IR')}
+              value={amt}
+              unit={currencyDisplay(code, '')}
+            />
+          ))
+        ) : (
+          <BalanceItem
+            label="ارز دوم"
+            formattedValue={balances.foreignAmount.toLocaleString('fa-IR')}
+            value={balances.foreignAmount}
+            unit={foreignCurrency
+              ? currencyDisplay(foreignCurrency, foreignCurrencySymbol)
+              : 'واحد'}
+          />
+        )}
+        {tertiaryCurrency ? (
+          <BalanceItem
+            label="ارز سوم"
+            formattedValue={balances.tertiaryAmount.toLocaleString('fa-IR')}
+            value={balances.tertiaryAmount}
+            unit={currencyDisplay(tertiaryCurrency, tertiaryCurrencySymbol)}
+          />
+        ) : null}
       </div>
 
       <div className="users-table-wrap">

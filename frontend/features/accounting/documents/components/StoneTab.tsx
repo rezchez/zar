@@ -88,6 +88,7 @@ import {
   parseClarityRangeString,
   getColorTier,
   getClarityTier,
+  resolveStoneTransactionCurrency,
 } from '@/lib/gemstone';
 import {
   DIAMOND_SIEVE_CHART,
@@ -121,6 +122,8 @@ type StoneTabProps = {
   draftReady?: boolean;
   baseCurrency?: 'IRR' | 'IRT';
   selectedCurrency?: string;
+  currencyLabel?: string;
+  activeCurrencies?: { code: string; name: string; symbol?: string }[];
 };
 
 export default function StoneTab({
@@ -136,6 +139,8 @@ export default function StoneTab({
   draftReady = false,
   baseCurrency = 'IRR',
   selectedCurrency,
+  currencyLabel,
+  activeCurrencies,
 }: StoneTabProps) {
   const isReceived = nature === 'received';
 
@@ -303,11 +308,13 @@ export default function StoneTab({
   }, [isShapeDropdownOpen]);
 
   // Weights & counts
+  const weightCtInputRef = useRef<HTMLInputElement>(null);
   const [weightCt, setWeightCt] = useState<string>(draftLine.details.stoneCarats || '');
   const [weightG, setWeightG] = useState<string>(draftLine.details.stoneGrams || '');
   const [pieces, setPieces] = useState<string>(
-    draftLine.details.stonePieces || (stoneMode === 'single_stone' ? '1' : '10'),
+    draftLine.details.stonePieces || (stoneMode === 'single_stone' ? '1' : ''),
   );
+  const [sieveCalcHint, setSieveCalcHint] = useState<string>('');
 
   // Certificate
   const [certificateLab, setCertificateLab] = useState<string>(draftLine.details.stoneCertificateLab || 'none');
@@ -327,6 +334,7 @@ export default function StoneTab({
   const [newLocationName, setNewLocationName] = useState('');
   const [isSubmittingLocation, setIsSubmittingLocation] = useState(false);
   const [internalCode, setInternalCode] = useState<string>(draftLine.details.stoneInternalCode || '');
+  const [showSkuInfo, setShowSkuInfo] = useState(false);
 
   // Financials & Valuation
   const [valuationMethod, setValuationMethod] = useState<'per_carat' | 'per_gram' | 'per_piece' | 'total_sum'>(() => {
@@ -690,16 +698,43 @@ export default function StoneTab({
     return sievesList.length > 0 ? sievesList : DIAMOND_SIEVE_CHART;
   }, [sievesList]);
 
+  const activeSieveForCalc = sieveSize || '+1.5-2';
+
   const currentSieveRec = useMemo(() => {
-    return findSieveBySize(sieveSize, effectiveSieves);
-  }, [sieveSize, effectiveSieves]);
+    return findSieveBySize(activeSieveForCalc, effectiveSieves);
+  }, [activeSieveForCalc, effectiveSieves]);
+
+  const estimatedPiecesBySieve = useMemo(() => {
+    const ct = parseFloat(normalizeDigits(weightCt));
+    if (isNaN(ct) || ct <= 0) return 0;
+    return estimatePiecesFromCarats(activeSieveForCalc, ct, effectiveSieves);
+  }, [activeSieveForCalc, weightCt, effectiveSieves]);
+
+  const handleCalculatePiecesBySieve = () => {
+    if (stoneMode !== 'parcel') return;
+    if (!sieveSize) {
+      setSieveSize('+1.5-2');
+    }
+    setSizeUnit('sieve');
+    const ct = parseFloat(normalizeDigits(weightCt));
+    if (!isNaN(ct) && ct > 0) {
+      const est = estimatePiecesFromCarats(activeSieveForCalc, ct, effectiveSieves);
+      if (est > 0) {
+        setPieces(String(est));
+        setSieveCalcHint('');
+      }
+    } else {
+      setSieveCalcHint('برای محاسبه حدودی تعداد بر اساس الک، ابتدا وزن قیراط را وارد نمایید.');
+      weightCtInputRef.current?.focus();
+    }
+  };
 
   // Color & Clarity range controls for parcels
   const handleColorMinChange = (newMin: string) => {
     setColorMin(newMin);
     const allowed = getAllowedColorEndGrades(newMin);
     if (!allowed.includes(colorMax)) {
-      setColorMax(allowed[0] || newMin);
+      setColorMax(allowed[1] || allowed[0] || newMin);
     }
   };
 
@@ -723,6 +758,7 @@ export default function StoneTab({
   const handleCaratsChange = (val: string) => {
     const rawVal = normalizeDigits(val);
     setWeightCt(rawVal);
+    setSieveCalcHint('');
     const num = parseFloat(rawVal);
     if (!isNaN(num) && num > 0) {
       const g = String(caratsToGrams(num, 4));
@@ -742,6 +778,7 @@ export default function StoneTab({
   const handleGramsChange = (val: string) => {
     const rawVal = normalizeDigits(val);
     setWeightG(rawVal);
+    setSieveCalcHint('');
     const num = parseFloat(rawVal);
     if (!isNaN(num) && num > 0) {
       const ct = String(gramsToCarats(num, 3));
@@ -768,6 +805,7 @@ export default function StoneTab({
   const handlePiecesChange = (val: string) => {
     const rawVal = normalizeDigits(val);
     setPieces(rawVal);
+    setSieveCalcHint('');
     const pNum = parseInt(rawVal, 10);
     if (valuationMethod === 'per_piece' && !isNaN(pNum) && pNum > 0) {
       const up = parseLocalizedAmount(unitPrice);
@@ -849,7 +887,12 @@ export default function StoneTab({
     return match ? match.label : isReceived ? 'ورود سنگ' : 'خروج سنگ';
   }, [availableOperations, currentOp, isReceived]);
 
-  const currencySuffix = selectedCurrency || (baseCurrency === 'IRT' ? 'تومان' : 'ریال');
+  const resolvedCurrency = useMemo(
+    () => resolveStoneTransactionCurrency(selectedCurrency, baseCurrency, currencyLabel, activeCurrencies),
+    [selectedCurrency, baseCurrency, currencyLabel, activeCurrencies],
+  );
+  const currencySuffix = resolvedCurrency.unitLabel;
+  const effectiveBaseCurrency = resolvedCurrency.effectiveBaseCurrency;
 
   // Species active item & display names
   const activeSpeciesItem = useMemo(() => {
@@ -913,6 +956,7 @@ export default function StoneTab({
       description: description || curr.description,
       details: {
         ...curr.details,
+        settlementCurrencyUnit: resolvedCurrency.code,
         stoneOperationKind: currentOp,
         stoneRootCategory: rootCategory,
         stoneCategory: category,
@@ -923,7 +967,10 @@ export default function StoneTab({
         stoneShape: shape,
         stoneShapeName: currentDisplayNameFa,
         stoneMode: stoneMode,
-        stonePieces: stoneMode === 'single_stone' ? '1' : pieces,
+        stonePieces:
+          stoneMode === 'single_stone'
+            ? '1'
+            : pieces || (estimatedPiecesBySieve > 0 ? String(estimatedPiecesBySieve) : ''),
         stoneCarats: weightCt,
         stoneGrams: weightG,
         stoneValuationMethod: valuationMethod,
@@ -950,7 +997,7 @@ export default function StoneTab({
         stoneSizeUnit: sizeUnit,
         stoneSizeMin: sizeMin,
         stoneSizeMax: sizeMax,
-        stoneSieveSize: stoneMode === 'parcel' ? sieveSize : '',
+        stoneSieveSize: stoneMode === 'parcel' ? activeSieveForCalc : '',
         stoneColorRange: stoneMode === 'parcel' ? colorRange : '',
         stoneClarityRange: stoneMode === 'parcel' ? clarityRange : '',
         stoneLotNumber: stoneMode === 'parcel' ? lotNumber : '',
@@ -990,6 +1037,8 @@ export default function StoneTab({
     currentDisplayNameFa,
     stoneMode,
     pieces,
+    estimatedPiecesBySieve,
+    activeSieveForCalc,
     weightCt,
     weightG,
     valuationMethod,
@@ -1037,6 +1086,7 @@ export default function StoneTab({
     roundingEnabled,
     roundingDigits,
     roundingMode,
+    resolvedCurrency.code,
     setDraftLine,
   ]);
 
@@ -1107,12 +1157,9 @@ export default function StoneTab({
           <div className="flex flex-wrap items-center justify-between gap-2">
             <label className="font-bold text-slate-800 dark:text-slate-200 text-xs flex items-center gap-1.5">
               <Sparkles size={14} className="text-cyan-600 dark:text-cyan-400" />
-              <span>منشأ و خاستگاه گوهرشناسی (GIA Root Category)</span>
+              <span>منشأ و خاستگاه گوهرشناسی (بر مبنای استاندارد GIA)</span>
               <span className="text-rose-500">*</span>
             </label>
-            <span className="text-[11px] font-medium text-cyan-700 dark:text-cyan-300">
-              فهرست گونه‌ها و پارامترهای تخصصی به صورت هوشمند با تغییر تب به‌روز می‌شوند
-            </span>
           </div>
 
           <div role="tablist" aria-label="منشأ و خاستگاه گوهرشناسی" className="grid grid-cols-2 gap-2 sm:grid-cols-5">
@@ -1155,207 +1202,49 @@ export default function StoneTab({
                       {toPersianDigits(String(tabSpeciesCount))}
                     </span>
                   </div>
-                  <span className="mt-0.5 line-clamp-1 text-[10px] text-slate-400 dark:text-slate-400">
-                    {rc.id === 'natural'
-                      ? 'معدنی دست‌نخورده'
-                      : rc.id === 'laboratory_grown'
-                      ? 'CVD / HPHT'
-                      : rc.id === 'synthetic'
-                      ? 'بلور سنتتیک'
-                      : rc.id === 'simulant'
-                      ? 'نگین اتمی و CZ'
-                      : 'پرتودیده و بهسازی'}
-                  </span>
                 </button>
               );
             })}
           </div>
-
-          {/* Smooth Contextual GIA Root Category Dossier Strip (for non-natural categories) */}
-          {rootCategory !== 'natural' && (
-            <div className="rounded-xl border border-white/80 bg-white/90 p-3 shadow-2xs transition-all duration-300 ease-out dark:border-slate-800 dark:bg-slate-900/80">
-              {rootCategory === 'laboratory_grown' && (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div>
-                    <label className="mb-1 block text-[11px] font-bold text-purple-900 dark:text-purple-300">
-                      متد رشد آزمایشگاهی (Lab Growth Method) *
-                    </label>
-                    <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
-                      {LAB_GROWTH_METHODS.map((gm) => (
-                        <button
-                          key={gm.id}
-                          type="button"
-                          onClick={() => setGrowthMethod(gm.id as LabGrowthMethod)}
-                          className={`rounded-lg py-1.5 text-center text-[11px] font-black transition-all cursor-pointer ${
-                            growthMethod === gm.id
-                              ? 'bg-purple-600 text-white shadow-2xs'
-                              : 'border border-purple-200 bg-purple-50/50 text-purple-900 hover:bg-purple-100 dark:border-purple-800 dark:bg-slate-800 dark:text-purple-200'
-                          }`}
-                        >
-                          {gm.id}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-[11px] font-bold text-slate-700 dark:text-slate-300">
-                      بهسازی پس از رشد (Post-Growth)
-                    </label>
-                    <select
-                      value={postGrowthTreatment}
-                      onChange={(e) => setPostGrowthTreatment(e.target.value as PostGrowthTreatment)}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                    >
-                      {POST_GROWTH_TREATMENTS.map((pgt) => (
-                        <option key={pgt.id} value={pgt.id}>
-                          {pgt.labelFa}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-[11px] font-bold text-slate-700 dark:text-slate-300">
-                      حکاکی لیزری کمربند (Laser Inscription)
-                    </label>
-                    <input
-                      type="text"
-                      value={laserInscription}
-                      onChange={(e) => setLaserInscription(e.target.value)}
-                      placeholder="مثال: LG12345678"
-                      className="w-full rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 font-mono text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {rootCategory === 'synthetic' && (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div>
-                    <label className="mb-1 block text-[11px] font-bold text-indigo-900 dark:text-indigo-300">
-                      فرآیند تبلور سنتتیک (Synthesis Method) *
-                    </label>
-                    <select
-                      value={syntheticMethod}
-                      onChange={(e) => setSyntheticMethod(e.target.value)}
-                      className="w-full rounded-xl border border-indigo-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-800 dark:border-indigo-800 dark:bg-slate-800 dark:text-slate-200"
-                    >
-                      {SYNTHETIC_METHODS.map((sm) => (
-                        <option key={sm.id} value={sm.id}>
-                          {sm.nameFa}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-[11px] font-bold text-slate-700 dark:text-slate-300">
-                      پایه و ساختار شیمیایی بلور (Chemical Basis)
-                    </label>
-                    <input
-                      type="text"
-                      value={chemicalBasis}
-                      onChange={(e) => setChemicalBasis(e.target.value)}
-                      placeholder="مثال: Al2O3:Cr یا SiC (Silicon Carbide)"
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-1.5 font-mono text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {rootCategory === 'simulant' && (
-                <div className="space-y-2.5">
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <div>
-                      <label className="mb-1 block text-[11px] font-bold text-amber-900 dark:text-amber-300">
-                        فرمول و ترکیب شیمیایی بدل (Simulant Chemical Basis) *
-                      </label>
-                      <input
-                        type="text"
-                        value={chemicalBasis}
-                        onChange={(e) => setChemicalBasis(e.target.value)}
-                        placeholder="مثال: ZrO2 (Cubic Zirconia) یا SiO2 Lead Glass"
-                        className="w-full rounded-xl border border-amber-200 bg-white px-3 py-1.5 font-mono text-xs font-bold text-slate-800 dark:border-amber-800 dark:bg-slate-800 dark:text-slate-200"
-                      />
-                    </div>
-                    <div className="flex items-center rounded-xl border border-amber-200/80 bg-amber-50/70 px-3 py-2 text-[11px] font-medium leading-relaxed text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-200">
-                      <Info size={15} className="ml-2 shrink-0 text-amber-600 dark:text-amber-400" />
-                      <span>
-                        {species === 'cubic_zirconia'
-                          ? CUBIC_ZIRCONIA_ADVISORY
-                          : 'سنگ‌های مشابه (Simulants) از نظر ظاهری شبیه سنگ اصلی هستند اما ساختار شیمیایی و بلوری متفاوتی دارند.'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {rootCategory === 'treated_natural' && (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div>
-                    <label className="mb-1 block text-[11px] font-bold text-teal-900 dark:text-teal-300">
-                      نوع فرآیند بهسازی (GIA Treatment Type) *
-                    </label>
-                    <select
-                      value={treatments}
-                      onChange={(e) => setTreatments(e.target.value)}
-                      className="w-full rounded-xl border border-teal-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-800 dark:border-teal-800 dark:bg-slate-800 dark:text-slate-200"
-                    >
-                      {GEMSTONE_TREATMENTS.map((tr) => (
-                        <option key={tr.id} value={tr.id}>
-                          {tr.nameFa}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-[11px] font-bold text-slate-700 dark:text-slate-300">
-                      متد و شرح دقیق بهسازی (Treatment Method Details)
-                    </label>
-                    <input
-                      type="text"
-                      value={treatmentMethod}
-                      onChange={(e) => setTreatmentMethod(e.target.value)}
-                      placeholder="مثال: پرتودهی الکترونی + حرارت یا پرشدگی شکاف با شیشه سرب"
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
         </div>
 
         {/* Section B: Mode & Dynamic Cascading Species Controls */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
           {/* Mode Toggle */}
-          <div>
-            <label className="mb-1.5 block font-bold text-slate-700 dark:text-slate-300 text-xs">
+          <div className="shrink-0">
+            <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300 text-[11px]">
               نوع عرضه و نگهداری *
             </label>
-            <div className="grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-1 dark:border-slate-800 dark:bg-slate-800/40">
+            <div className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 p-0.5 dark:border-slate-800 dark:bg-slate-800/40">
               <button
                 type="button"
                 onClick={() => {
                   setStoneMode('single_stone');
                   setPieces('1');
                 }}
-                className={`rounded-xl py-2 text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                className={`rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition-all cursor-pointer flex items-center justify-center gap-1 whitespace-nowrap ${
                   stoneMode === 'single_stone'
                     ? 'bg-white text-cyan-700 shadow-xs dark:bg-slate-700 dark:text-cyan-300 font-black'
                     : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
                 }`}
               >
-                <Gem size={14} />
+                <Gem size={12} />
                 <span>تک سنگ (Single Stone)</span>
               </button>
               <button
                 type="button"
                 onClick={() => {
                   setStoneMode('parcel');
-                  if (!pieces || pieces === '1') setPieces('10');
+                  const ct = parseFloat(normalizeDigits(weightCt));
+                  if (!isNaN(ct) && ct > 0) {
+                    const est = estimatePiecesFromCarats(activeSieveForCalc, ct, effectiveSieves);
+                    if (est > 0) setPieces(String(est));
+                  } else if (pieces === '1' || pieces === '10') {
+                    setPieces('');
+                  }
                   if (valuationMethod === 'per_piece') {
                     setValuationMethod('per_carat');
                     const up = parseLocalizedAmount(unitPrice);
-                    const ct = parseFloat(normalizeDigits(weightCt));
                     if (!isNaN(ct) && ct > 0 && up > 0) {
                       setTotalAmount(String(Math.round(ct * up)));
                     } else {
@@ -1363,20 +1252,20 @@ export default function StoneTab({
                     }
                   }
                 }}
-                className={`rounded-xl py-2 text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                className={`rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition-all cursor-pointer flex items-center justify-center gap-1 whitespace-nowrap ${
                   stoneMode === 'parcel'
                     ? 'bg-white text-cyan-700 shadow-xs dark:bg-slate-700 dark:text-cyan-300 font-black'
                     : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
                 }`}
               >
-                <Layers size={14} />
+                <Layers size={12} />
                 <span>بسته‌ای / بار سنگ (Parcel)</span>
               </button>
             </div>
           </div>
 
           {/* Dynamic Cascading Species Selector */}
-          <div>
+          <div className="min-w-0 flex-1">
             <div className="mb-1.5 flex items-center justify-between">
               <label className="font-bold text-slate-700 dark:text-slate-300 text-xs">
                 گونه / سنگ ({formatRootCategoryShortFa(rootCategory)}) *
@@ -1409,9 +1298,9 @@ export default function StoneTab({
           </div>
         </div>
 
-        {/* Section C: Item Title, Pieces & Visual Shape Selector */}
+        {/* Section C: Item Title & Visual Shape Selector */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div className={stoneMode === 'parcel' ? 'sm:col-span-2' : ''}>
+          <div className="sm:col-span-2">
             <label className="mb-1.5 block font-bold text-slate-700 dark:text-slate-300 text-xs">
               عنوان نمایشی سنگ
             </label>
@@ -1424,24 +1313,8 @@ export default function StoneTab({
             />
           </div>
 
-          {stoneMode === 'single_stone' && (
-            <div>
-              <label className="mb-1.5 block font-bold text-slate-700 dark:text-slate-300 text-xs">
-                تعداد سنگ (عدد)
-              </label>
-              <input
-                type="number"
-                min="1"
-                value={pieces}
-                onChange={(e) => handlePiecesChange(e.target.value)}
-                placeholder="۱"
-                className="w-full rounded-2xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-800 placeholder:text-slate-400 focus:border-cyan-500 focus:outline-hidden dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-              />
-            </div>
-          )}
-
           {/* Visual Shape Selector with Hierarchy and Preferences Modal */}
-          <div className={stoneMode === 'parcel' ? 'sm:col-span-1' : ''}>
+          <div className="sm:col-span-1">
             <div className="mb-1.5 flex items-center justify-between">
               <label className="font-bold text-slate-700 dark:text-slate-300 text-xs">
                 تراش و شکل هندسی *
@@ -1556,101 +1429,7 @@ export default function StoneTab({
                 <Sparkles size={16} className="text-cyan-600 dark:text-cyan-400" />
                 مشخصات تخصصی الماس (4Cs & Grading)
               </span>
-
-              <div className="flex items-center gap-3">
-                <label className="flex items-center gap-1.5 cursor-pointer text-slate-700 dark:text-slate-300 font-bold text-xs">
-                  <input
-                    type="radio"
-                    name="diamondType"
-                    checked={diamondType === 'natural'}
-                    onChange={() => {
-                      setDiamondType('natural');
-                      if (rootCategory === 'laboratory_grown') {
-                        handleRootCategoryChange('natural');
-                      }
-                    }}
-                    className="text-cyan-600 focus:ring-cyan-500"
-                  />
-                  طبیعی (Natural)
-                </label>
-                <label className="flex items-center gap-1.5 cursor-pointer text-slate-700 dark:text-slate-300 font-bold text-xs">
-                  <input
-                    type="radio"
-                    name="diamondType"
-                    checked={diamondType === 'lab_grown'}
-                    onChange={() => {
-                      setDiamondType('lab_grown');
-                      handleRootCategoryChange('laboratory_grown');
-                    }}
-                    className="text-cyan-600 focus:ring-cyan-500"
-                  />
-                  آزمایشگاهی (Lab-Grown)
-                </label>
-              </div>
             </div>
-
-            {/* Lab-Grown Diamond Dossier (CVD / HPHT / Post-Growth / Laser Inscription) */}
-            {(diamondType === 'lab_grown' || rootCategory === 'laboratory_grown') && (
-              <div className="rounded-2xl border border-purple-200 bg-purple-50/70 p-3.5 space-y-3 dark:border-purple-900/60 dark:bg-purple-950/20">
-                <span className="flex items-center gap-1.5 text-xs font-black text-purple-900 dark:text-purple-300">
-                  <Sparkles size={14} className="text-purple-600" />
-                  شناسنامه و متد رشد الماس آزمایشگاهی (Lab-Grown Diamond Dossier)
-                </span>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div>
-                    <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300 text-[11px]">
-                      روش رشد سنتز (Growth Method) <span className="text-rose-500">*</span>
-                    </label>
-                    <div className="flex items-center gap-2">
-                      {LAB_GROWTH_METHODS.map((gm) => (
-                        <button
-                          key={gm.id}
-                          type="button"
-                          onClick={() => setGrowthMethod(gm.id as LabGrowthMethod)}
-                          className={`flex-1 rounded-xl py-1.5 text-center text-xs font-black transition cursor-pointer ${
-                            growthMethod === gm.id
-                              ? 'border-2 border-purple-600 bg-purple-600 text-white shadow-xs'
-                              : 'border border-purple-200 bg-white text-purple-900 hover:bg-purple-100 dark:border-purple-800 dark:bg-slate-800 dark:text-purple-200'
-                          }`}
-                        >
-                          {gm.labelFa} ({gm.id})
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300 text-[11px]">
-                      بهسازی پس از رشد (Post-Growth Treatment)
-                    </label>
-                    <select
-                      value={postGrowthTreatment}
-                      onChange={(e) => setPostGrowthTreatment(e.target.value as PostGrowthTreatment)}
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                    >
-                      {POST_GROWTH_TREATMENTS.map((pgt) => (
-                        <option key={pgt.id} value={pgt.id}>
-                          {pgt.labelFa}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300 text-[11px]">
-                      حکاکی لیزری شناسه (Laser Inscription)
-                    </label>
-                    <input
-                      type="text"
-                      value={laserInscription}
-                      onChange={(e) => setLaserInscription(e.target.value)}
-                      placeholder="مثال: LG12345678 یا GIA LG"
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-mono font-bold text-slate-800 focus:border-purple-500 focus:outline-hidden dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
 
             {/* Melee Diamond Bar-Khaneh Parcel Pool Configuration */}
             {stoneMode === 'parcel' && (
@@ -2272,44 +2051,6 @@ export default function StoneTab({
                 </div>
               )}
             </div>
-
-            {/* Specific Gemological Context Attributes */}
-            {(species === 'topaz' || isLondonBlueTopaz(species, variety, itemName) || rootCategory === 'simulant') && (
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 border-t border-purple-100/60 pt-3 dark:border-purple-900/40">
-                {(species === 'topaz' || isLondonBlueTopaz(species, variety, itemName)) && (
-                  <div>
-                    <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300 text-[11px]">
-                      متد بهسازی و نام تجاری توپاز
-                    </label>
-                    <input
-                      type="text"
-                      value={treatmentMethod || 'irradiation'}
-                      onChange={(e) => setTreatmentMethod(e.target.value)}
-                      placeholder="پرتودیده (irradiation)"
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                    />
-                    <span className="mt-1 block text-[10px] text-sky-600 dark:text-sky-400 font-bold">
-                      توپاز لندن بلو سنگ طبیعی پرتودیده (Irradiated) است، نه گونه یا سنگ آزمایشگاهی مستقل.
-                    </span>
-                  </div>
-                )}
-
-                {rootCategory === 'simulant' && (
-                  <div>
-                    <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300 text-[11px]">
-                      پایه شیمیایی بدل (Chemical Basis)
-                    </label>
-                    <input
-                      type="text"
-                      value={chemicalBasis || 'zirconium_dioxide'}
-                      onChange={(e) => setChemicalBasis(e.target.value)}
-                      placeholder="zirconium_dioxide (دی‌اکسید زیرکونیوم)"
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                    />
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         )}
 
@@ -2332,6 +2073,7 @@ export default function StoneTab({
                 وزن {stoneMode === 'parcel' ? 'کل ' : ''}به قیراط (Carat - ct) <span className="text-rose-500">*</span>
               </label>
               <input
+                ref={weightCtInputRef}
                 type="number"
                 step="0.001"
                 value={weightCt}
@@ -2359,34 +2101,133 @@ export default function StoneTab({
 
             {stoneMode === 'parcel' && (
               <div>
-                <div className="mb-1 flex items-center justify-between">
+                <div className="mb-1 flex flex-wrap items-center justify-between gap-1">
                   <label className="block font-bold text-slate-700 dark:text-slate-300 text-xs">
                     تعداد قطعات موجود در بسته (عدد)
                   </label>
-                  {sizeUnit === 'sieve' && sieveSize && Number(weightCt) > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const est = estimatePiecesFromCarats(sieveSize, Number(weightCt), effectiveSieves);
-                        if (est > 0) setPieces(String(est));
-                      }}
-                      className="inline-flex items-center gap-1 text-[11px] font-bold text-cyan-600 hover:text-cyan-700 dark:text-cyan-400 cursor-pointer"
-                      title="محاسبه تخمینی تعداد بر اساس الک انتخابی"
-                    >
-                      <Sparkles size={13} />
-                      <span>تخمین با الک ({estimatePiecesFromCarats(sieveSize, Number(weightCt), effectiveSieves)} عدد)</span>
-                    </button>
+                  <span className="inline-flex items-center gap-1 rounded-md bg-amber-100/80 px-1.5 py-0.5 text-[10px] font-bold text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                    ≈ عدد حدودی و غیردقیق (فقط نمایشی)
+                  </span>
+                </div>
+
+                <div className="flex items-stretch gap-1.5">
+                  <div className="relative flex-1 min-w-0">
+                    {pieces && (
+                      <span
+                        className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 dark:bg-amber-950/70 dark:text-amber-300"
+                        title="این عدد حدودی بوده و صرفاً جهت نمایش است"
+                      >
+                        ≈ حدودی
+                      </span>
+                    )}
+                    <input
+                      type="number"
+                      min="1"
+                      value={pieces}
+                      onChange={(e) => handlePiecesChange(e.target.value)}
+                      onKeyDown={onKeyDown}
+                      placeholder={
+                        estimatedPiecesBySieve > 0
+                          ? `حدود ${toPersianDigits(String(estimatedPiecesBySieve))} (محاسبه با الک)`
+                          : 'محاسبه با دکمه الک...'
+                      }
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-800 focus:border-cyan-500 focus:outline-hidden dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleCalculatePiecesBySieve}
+                    className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-2xl bg-cyan-600 px-3 py-2 text-[11px] font-black text-white shadow-xs transition hover:bg-cyan-700 active:scale-[0.99] dark:bg-cyan-500 dark:text-slate-950 dark:hover:bg-cyan-400 cursor-pointer"
+                    title="محاسبه حدودی تعداد سنگ بارخانه بر اساس الک انتخابی و وزن قیراط (صرفاً جهت نمایش و محاسبه تعدادی نمایشی)"
+                  >
+                    <Calculator size={14} className="shrink-0" />
+                    <span>محاسبه بر اساس الک</span>
+                    {estimatedPiecesBySieve > 0 && (
+                      <span className="rounded-md bg-white/20 px-1.5 py-0.5 font-mono text-[10px] font-black">
+                        ≈{toPersianDigits(String(estimatedPiecesBySieve))}
+                      </span>
+                    )}
+                  </button>
+                </div>
+
+                {/* Inline Sieve Selector for Quick Count Estimation in Parcel Mode */}
+                <div className="mt-1.5 flex items-center gap-1.5">
+                  <span className="shrink-0 text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                    الک مبنای محاسبه:
+                  </span>
+                  <select
+                    value={activeSieveForCalc}
+                    onChange={(e) => {
+                      const selected = e.target.value;
+                      setSieveSize(selected);
+                      setSizeUnit('sieve');
+                      const sRec = findSieveBySize(selected, effectiveSieves);
+                      if (sRec) {
+                        setSizeMin(String(sRec.mmSize));
+                        setSizeMax(String(sRec.mmSize));
+                      }
+                      const ct = parseFloat(normalizeDigits(weightCt));
+                      if (!isNaN(ct) && ct > 0) {
+                        const est = estimatePiecesFromCarats(selected, ct, effectiveSieves);
+                        if (est > 0) {
+                          setPieces(String(est));
+                          setSieveCalcHint('');
+                        }
+                      }
+                    }}
+                    className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-700 focus:border-cyan-500 focus:outline-hidden dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                  >
+                    {effectiveSieves.map((s) => (
+                      <option key={s.sieveSize} value={s.sieveSize}>
+                        الک {s.sieveSize} ({s.mmSize} mm — ≈{s.piecesPerCarat} عدد/قیراط)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {sieveCalcHint && (
+                  <p className="mt-1 text-[10px] font-bold text-rose-600 dark:text-rose-400">
+                    {sieveCalcHint}
+                  </p>
+                )}
+
+                <div className="mt-1.5 rounded-xl border border-amber-200/70 bg-amber-50/60 px-2.5 py-1.5 text-[10px] leading-relaxed text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+                  <p className="font-bold">
+                    این عدد بر اساس الک ({activeSieveForCalc}) حدودی بوده و دقیق نیست و فقط برای نمایش و محاسبه تعدادی نمایشی کاربرد دارد (ملاک قطعی محاسبه مالی و انبار، وزن قیراط است).
+                  </p>
+                  {(parseInt(pieces, 10) > 0 || estimatedPiecesBySieve > 0) && (
+                    <div className="mt-1 flex flex-wrap items-center gap-2 border-t border-amber-200/60 pt-1 font-mono text-[10px] font-black text-cyan-800 dark:border-amber-800/40 dark:text-cyan-300">
+                      <span>
+                        تعداد نمایشی: ≈ {toPersianDigits(String(parseInt(pieces, 10) || estimatedPiecesBySieve))} عدد
+                      </span>
+                      {parseFloat(normalizeDigits(weightCt)) > 0 && (
+                        <span>
+                          | هر قطعه: ≈{' '}
+                          {toPersianDigits(
+                            (
+                              parseFloat(normalizeDigits(weightCt)) /
+                              (parseInt(pieces, 10) || estimatedPiecesBySieve || 1)
+                            ).toFixed(4),
+                          )}{' '}
+                          ct
+                        </span>
+                      )}
+                      {isTrade && parseLocalizedAmount(totalAmount) > 0 && (
+                        <span>
+                          | فی حدودی هر عدد (نمایشی): ≈{' '}
+                          {formatNumberWithCommas(
+                            Math.round(
+                              parseLocalizedAmount(totalAmount) /
+                                (parseInt(pieces, 10) || estimatedPiecesBySieve || 1),
+                            ),
+                          )}{' '}
+                          {currencySuffix}
+                        </span>
+                      )}
+                    </div>
                   )}
                 </div>
-                <input
-                  type="number"
-                  min="1"
-                  value={pieces}
-                  onChange={(e) => handlePiecesChange(e.target.value)}
-                  onKeyDown={onKeyDown}
-                  placeholder="۱۰"
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-800 focus:border-cyan-500 focus:outline-hidden dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                />
               </div>
             )}
           </div>
@@ -2458,10 +2299,16 @@ export default function StoneTab({
         {isTrade && (
           <div className="p-4 rounded-3xl border border-emerald-100 bg-emerald-50/30 dark:border-emerald-900/50 dark:bg-emerald-950/10 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-200/60 dark:border-emerald-800/40 pb-2">
-              <span className="flex items-center gap-1.5 text-xs font-black text-emerald-950 dark:text-emerald-200">
-                <Calculator size={16} className="text-emerald-600 dark:text-emerald-400" />
-                ارزش‌گذاری و مبنای محاسبه نرخ معامله سنگ
-              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="flex items-center gap-1.5 text-xs font-black text-emerald-950 dark:text-emerald-200">
+                  <Calculator size={16} className="text-emerald-600 dark:text-emerald-400" />
+                  ارزش‌گذاری و مبنای محاسبه نرخ معامله سنگ
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-lg border border-emerald-300/80 bg-emerald-100/80 px-2 py-0.5 text-[11px] font-bold text-emerald-900 dark:border-emerald-700/60 dark:bg-emerald-900/50 dark:text-emerald-200">
+                  <span>واحد پول معامله (ارز سند):</span>
+                  <strong className="font-black">{resolvedCurrency.displayName}</strong>
+                </span>
+              </div>
 
               {/* Valuation Method Switcher */}
               <div className="inline-flex rounded-xl bg-emerald-100/70 p-1 dark:bg-emerald-900/40 text-xs font-bold">
@@ -2497,7 +2344,7 @@ export default function StoneTab({
                         : 'text-emerald-900 dark:text-emerald-200 hover:text-emerald-950'
                     }`}
                   >
-                    فی هر دانه
+                    فی هر عدد
                   </button>
                 )}
                 <button
@@ -2523,12 +2370,12 @@ export default function StoneTab({
                       ? `قیمت هر قیراط (${currencySuffix}) *`
                       : valuationMethod === 'per_gram'
                       ? `قیمت هر گرم (${currencySuffix}) *`
-                      : `قیمت هر دانه (${currencySuffix}) *`}
+                      : `قیمت هر عدد (${currencySuffix}) *`}
                   </label>
                   <PriceInput
                     value={unitPrice}
                     onValueChange={(_parsed, rawVal) => handleUnitPriceChange(rawVal)}
-                    baseCurrency={baseCurrency}
+                    baseCurrency={effectiveBaseCurrency}
                     currencySuffix={currencySuffix}
                     placeholder="۰"
                     showWords
@@ -2557,7 +2404,7 @@ export default function StoneTab({
                   label=""
                   value={totalAmount}
                   onChange={handleTotalAmountChange}
-                  baseCurrency={baseCurrency}
+                  baseCurrency={effectiveBaseCurrency}
                   currencySuffix={currencySuffix}
                   onKeyDown={onKeyDown}
                   showWords
@@ -2566,26 +2413,31 @@ export default function StoneTab({
             </div>
 
             {/* Weighted Average Cost (WAC) display for parcels */}
-            {stoneMode === 'parcel' && Number(totalAmount) > 0 && (
+            {stoneMode === 'parcel' && parseLocalizedAmount(totalAmount) > 0 && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-emerald-200/60 dark:border-emerald-900/40">
                 <div className="flex items-center justify-between rounded-xl bg-emerald-500/10 px-3 py-2 text-xs">
                   <span className="font-bold text-emerald-900 dark:text-emerald-300">
-                    میانگین موزون بهای هر قیراط (WAC / ct):
+                    میانگین موزون بهای هر قیراط (WAC / ct - قطعی):
                   </span>
                   <span className="font-mono font-black text-emerald-800 dark:text-emerald-200">
-                    {parseFloat(weightCt) > 0
-                      ? `${formatNumberWithCommas(Math.round(parseLocalizedAmount(totalAmount) / parseFloat(weightCt)))} ${currencySuffix}`
+                    {parseFloat(normalizeDigits(weightCt)) > 0
+                      ? `${formatNumberWithCommas(Math.round(parseLocalizedAmount(totalAmount) / parseFloat(normalizeDigits(weightCt))))} ${currencySuffix}`
                       : '—'}
                   </span>
                 </div>
 
-                <div className="flex items-center justify-between rounded-xl bg-emerald-500/10 px-3 py-2 text-xs">
-                  <span className="font-bold text-emerald-900 dark:text-emerald-300">
-                    میانگین موزون بهای هر عدد (WAC / pc):
+                <div className="flex items-center justify-between rounded-xl bg-amber-500/10 border border-amber-500/20 px-3 py-2 text-xs">
+                  <span className="font-bold text-amber-900 dark:text-amber-300">
+                    بهای حدودی هر عدد (محاسبه تعدادی نمایشی - غیردقیق):
                   </span>
-                  <span className="font-mono font-black text-emerald-800 dark:text-emerald-200">
-                    {parseInt(pieces || '1', 10) > 0
-                      ? `${formatNumberWithCommas(Math.round(parseLocalizedAmount(totalAmount) / parseInt(pieces || '1', 10)))} ${currencySuffix}`
+                  <span className="font-mono font-black text-amber-800 dark:text-amber-200">
+                    {(parseInt(pieces, 10) || estimatedPiecesBySieve) > 0
+                      ? `≈ ${formatNumberWithCommas(
+                          Math.round(
+                            parseLocalizedAmount(totalAmount) /
+                              (parseInt(pieces, 10) || estimatedPiecesBySieve || 1),
+                          ),
+                        )} ${currencySuffix}`
                       : '—'}
                   </span>
                 </div>
@@ -2655,10 +2507,50 @@ export default function StoneTab({
             </div>
           </div>
 
-          <div>
-            <label className="mb-1 block font-bold text-slate-700 dark:text-slate-300 text-xs">
-              کد شناسایی داخلی (SKU / Code)
-            </label>
+          <div className="relative">
+            <div className="mb-1 flex items-center gap-1.5">
+              <label className="block font-bold text-slate-700 dark:text-slate-300 text-xs">
+                کد شناسایی داخلی (SKU / Code)
+              </label>
+              <button
+                type="button"
+                onClick={() => setShowSkuInfo((prev) => !prev)}
+                onMouseEnter={() => setShowSkuInfo(true)}
+                onMouseLeave={() => setShowSkuInfo(false)}
+                className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-slate-400 hover:text-cyan-600 hover:bg-cyan-50 dark:hover:bg-cyan-950/50 dark:hover:text-cyan-400 transition-colors cursor-pointer"
+                title="راهنمای کد شناسایی داخلی (SKU)"
+                aria-label="راهنمای کد شناسایی داخلی (SKU)"
+              >
+                <Info size={14} />
+              </button>
+            </div>
+
+            {showSkuInfo && (
+              <div
+                onMouseEnter={() => setShowSkuInfo(true)}
+                onMouseLeave={() => setShowSkuInfo(false)}
+                className="absolute bottom-full inset-x-0 mb-2 z-50 w-full max-w-full box-border p-3 bg-slate-900 text-white dark:bg-slate-800 dark:text-slate-100 rounded-xl shadow-2xl text-[11px] leading-relaxed border border-slate-700/80 text-right break-words"
+              >
+                <div className="font-bold text-cyan-400 mb-1.5 flex items-center gap-1.5 pb-1 border-b border-slate-800 dark:border-slate-700">
+                  <Info size={13} className="shrink-0" />
+                  <span>هدف و کاربرد کد شناسایی داخلی (SKU)</span>
+                </div>
+                <p className="text-slate-200 mb-1.5">
+                  این فیلد برای اختصاص یک <strong>شناسه یا کد رهگیری یکتای فروشگاهی/خزانه‌داری</strong> به هر تک‌سنگ یا بسته سنگ (پاکت بارخانه) استفاده می‌شود.
+                </p>
+                <ul className="list-disc pr-3.5 space-y-1 text-slate-300">
+                  <li>
+                    <strong>تطبیق با پاکت فیزیکی:</strong> درج کد نوشته شده روی پاکت سنگ یا اتیکت جواهر برای شناسایی سریع در گاوصندوق و ویترین.
+                  </li>
+                  <li>
+                    <strong>رهگیری و جستجوی فوری:</strong> امکان یافتن سریع سنگ در لیست موجودی و اسناد حسابداری بدون نیاز به مرور تمام مشخصات فنی.
+                  </li>
+                  <li>
+                    <strong>تفکیک سنگ‌های مشابه:</strong> متمایز کردن سنگ‌هایی که قیراط، رنگ و پاکی یکسانی دارند اما از بارها یا خریدهای متفاوتی تامین شده‌اند.
+                  </li>
+                </ul>
+              </div>
+            )}
             <input
               type="text"
               value={internalCode}

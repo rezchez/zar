@@ -13,6 +13,7 @@ export interface DocumentBalancePreviewData {
     gold: number;
     silver: number;
     platinum: number;
+    stone?: number;
     foreign: number;
     tertiary: number;
     secondaryCurrency?: string;
@@ -25,6 +26,7 @@ export interface DocumentBalancePreviewData {
     gold: number;
     silver: number;
     platinum: number;
+    stone?: number;
     foreign: number;
     tertiary: number;
   };
@@ -33,6 +35,7 @@ export interface DocumentBalancePreviewData {
     gold: number;
     silver: number;
     platinum: number;
+    stone?: number;
     foreign: number;
     tertiary: number;
   };
@@ -119,6 +122,15 @@ export default function DocumentBalancePreview({
               پلاتین: {faNumber(Math.abs(previewData.previousBalance.platinum), weightPrecision)} گرم
             </div>
           ) : null}
+          {previewData.previousBalance.stone !== undefined &&
+          (previewData.previousBalance.stone !== 0 || (previewData.transactionEffect.stone && previewData.transactionEffect.stone !== 0)) ? (
+            <div className="text-amber-600 dark:text-amber-400 whitespace-nowrap">
+              سنگ: {faNumber(Math.abs(previewData.previousBalance.stone), 2)} قیراط
+              <small className="text-[10px] text-slate-500 font-bold mr-1">
+                ({previewData.previousBalance.stone > 0 ? 'بستانکار' : previewData.previousBalance.stone < 0 ? 'بدهکار' : 'تسویه'})
+              </small>
+            </div>
+          ) : null}
           {previewData.previousBalance.foreign !== 0 || previewData.transactionEffect.foreign !== 0 ? (
             <div className="text-teal-600 dark:text-teal-400 whitespace-nowrap">
               {foreignMeta.name}: {faNumber(Math.abs(previewData.previousBalance.foreign), 2)} {foreignMeta.symbol}
@@ -137,7 +149,8 @@ export default function DocumentBalancePreview({
           previewData.transactionEffect.gold === 0 &&
           previewData.transactionEffect.silver === 0 &&
           previewData.transactionEffect.platinum === 0 &&
-          previewData.transactionEffect.foreign === 0 ? (
+          previewData.transactionEffect.foreign === 0 &&
+          (!previewData.transactionEffect.stone || previewData.transactionEffect.stone === 0) ? (
             <div className="text-slate-400 font-medium whitespace-nowrap">بدون اثر</div>
           ) : (
             <>
@@ -189,6 +202,18 @@ export default function DocumentBalancePreview({
                   {faNumber(previewData.transactionEffect.platinum, weightPrecision)} گرم
                 </div>
               ) : null}
+              {previewData.transactionEffect.stone !== undefined && previewData.transactionEffect.stone !== 0 ? (
+                <div
+                  className={`whitespace-nowrap ${
+                    previewData.transactionEffect.stone >= 0
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : 'text-rose-600 dark:text-rose-400'
+                  }`}
+                >
+                  سنگ: {previewData.transactionEffect.stone >= 0 ? '+' : ''}
+                  {faNumber(previewData.transactionEffect.stone, 2)} قیراط
+                </div>
+              ) : null}
               {previewData.transactionEffect.foreign !== 0 ? (
                 <div
                   className={`whitespace-nowrap ${
@@ -235,6 +260,15 @@ export default function DocumentBalancePreview({
           {previewData.projectedBalance.platinum !== 0 || previewData.transactionEffect.platinum !== 0 ? (
             <div className="text-purple-600 dark:text-purple-300 whitespace-nowrap">
               پلاتین: {faNumber(Math.abs(previewData.projectedBalance.platinum), weightPrecision)} گرم
+            </div>
+          ) : null}
+          {previewData.projectedBalance.stone !== undefined &&
+          (previewData.projectedBalance.stone !== 0 || (previewData.previousBalance.stone && previewData.previousBalance.stone !== 0)) ? (
+            <div className="text-amber-600 dark:text-amber-400 whitespace-nowrap">
+              سنگ: {faNumber(Math.abs(previewData.projectedBalance.stone), 2)} قیراط
+              <small className="text-[10px] text-slate-500 font-bold mr-1">
+                ({previewData.projectedBalance.stone > 0 ? 'بستانکار' : previewData.projectedBalance.stone < 0 ? 'بدهکار' : 'تسویه'})
+              </small>
             </div>
           ) : null}
           {previewData.projectedBalance.foreign !== 0 || previewData.transactionEffect.foreign !== 0 ? (

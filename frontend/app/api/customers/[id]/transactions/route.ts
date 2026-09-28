@@ -4,7 +4,11 @@ import { NextResponse } from 'next/server';
 import { recordAuditEvent } from '@/lib/audit';
 import { getServerAuthContext } from '@/lib/auth';
 import { generateUniqueZfDocumentNumber } from '@/lib/document-number';
-import { mapTransaction, sumPostedTransactions } from '@/lib/transaction';
+import {
+  mapTransaction,
+  sumPostedTransactions,
+  calculateCustomerStoneBalances,
+} from '@/lib/transaction';
 
 const allowedTransactionTypes = new Set(['document', 'adjustment', 'reversal']);
 const amountFields = [
@@ -64,6 +68,7 @@ export async function GET(
     return NextResponse.json({
       transactions,
       balances: sumPostedTransactions(transactions),
+      stoneBalances: calculateCustomerStoneBalances(transactions),
     });
   } catch {
     return NextResponse.json(

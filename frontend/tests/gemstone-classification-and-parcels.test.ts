@@ -229,37 +229,36 @@ describe('Gemstone Classification & Diamond Parcel Pool Architecture', () => {
   });
 
   describe('Melee Diamond Bar-Khaneh Parcel Pool Architecture', () => {
-    it('validates color ranges with standard GIA D-to-Z hierarchy and quality tier restrictions', () => {
-      // Valid range: G to H (both Near Colorless)
-      const validGH = validateColorRange('G', 'H');
-      expect(validGH.valid).toBe(true);
-      expect(validGH.label).toBe('G–H');
+    it('validates color ranges with standard GIA D-to-Z hierarchy (from letters towards Z back to preceding letters up to D)', () => {
+      // Valid range: H to G (from H back towards D)
+      const validHG = validateColorRange('H', 'G');
+      expect(validHG.valid).toBe(true);
+      expect(validHG.label).toBe('H–G');
 
-      // Valid range: D to F (all Colorless tier)
-      const validDF = validateColorRange('D', 'F');
-      expect(validDF.valid).toBe(true);
-      expect(validDF.label).toBe('D–F');
+      // Valid range: F to D (from F back to D)
+      const validFD = validateColorRange('F', 'D');
+      expect(validFD.valid).toBe(true);
+      expect(validFD.label).toBe('F–D');
 
       // Valid single grade range: F to F
       const validFF = validateColorRange('F', 'F');
       expect(validFF.valid).toBe(true);
       expect(validFF.label).toBe('F');
 
-      // Invalid inverted range: H to G (H is lower rank than G in GIA scale)
-      const invalidHG = validateColorRange('H', 'G');
-      expect(invalidHG.valid).toBe(false);
-      expect(invalidHG.error).toBeDefined();
+      // Invalid direction: G to H (H is towards Z, not towards D)
+      const invalidGH = validateColorRange('G', 'H');
+      expect(invalidGH.valid).toBe(false);
+      expect(invalidGH.error).toBeDefined();
 
-      // Invalid cross-tier range: H to I (H is Near Colorless, I is Faint Tint - lower tier)
-      // Exact user requirement: اگر رنگ اچ انتخاب شد برای شروع بازه رنگ نباید اجازه بدی تا آی انتخاب بشه
+      // Invalid range: H to I (I is towards Z, not preceding towards D)
       const invalidHI = validateColorRange('H', 'I');
       expect(invalidHI.valid).toBe(false);
-      expect(invalidHI.error).toContain('لِوِل کیفی پایین‌تر');
+      expect(invalidHI.error).toContain('حروف قبلی تا D');
 
-      // Invalid cross-tier range: D to G (D is Colorless, G is Near Colorless)
+      // Invalid range: D to G (G is towards Z)
       const invalidDG = validateColorRange('D', 'G');
       expect(invalidDG.valid).toBe(false);
-      expect(invalidDG.error).toContain('لِوِل کیفی پایین‌تر');
+      expect(invalidDG.error).toContain('حروف قبلی تا D');
     });
 
     it('validates clarity ranges with standard hierarchy and quality tier restrictions', () => {
@@ -290,17 +289,17 @@ describe('Gemstone Classification & Diamond Parcel Pool Architecture', () => {
     });
 
     it('provides filtered end grades and robust string parsing for color and clarity ranges', () => {
-      // For color 'H', end grade can only be 'H' (cannot select 'I' or anything in lower tiers)
+      // For color 'H', end grades are preceding letters up to 'D'
       const allowedH = getAllowedColorEndGrades('H');
-      expect(allowedH).toEqual(['H']);
+      expect(allowedH).toEqual(['H', 'G', 'F', 'E', 'D']);
 
-      // For color 'G', end grades can be 'G' or 'H'
+      // For color 'G', end grades are 'G', 'F', 'E', 'D'
       const allowedG = getAllowedColorEndGrades('G');
-      expect(allowedG).toEqual(['G', 'H']);
+      expect(allowedG).toEqual(['G', 'F', 'E', 'D']);
 
-      // For color 'D', end grades can be 'D', 'E', or 'F'
+      // For color 'D', end grade can only be 'D'
       const allowedD = getAllowedColorEndGrades('D');
-      expect(allowedD).toEqual(['D', 'E', 'F']);
+      expect(allowedD).toEqual(['D']);
 
       // For clarity 'VS1', end grades can be 'VS1' or 'VS2'
       const allowedVS1 = getAllowedClarityEndGrades('VS1');
@@ -310,10 +309,10 @@ describe('Gemstone Classification & Diamond Parcel Pool Architecture', () => {
       const allowedVS2 = getAllowedClarityEndGrades('VS2');
       expect(allowedVS2).toEqual(['VS2']);
 
-      // Parsers correctly parse various string formats
-      expect(parseColorRangeString('G-H')).toEqual({ min: 'G', max: 'H' });
-      expect(parseColorRangeString('G–H')).toEqual({ min: 'G', max: 'H' });
-      expect(parseColorRangeString('H-I')).toEqual({ min: 'H', max: 'H' }); // auto-corrected because 'I' is not allowed for 'H'
+      // Parsers correctly parse and normalize various string formats so min is towards Z and max is towards D
+      expect(parseColorRangeString('H-G')).toEqual({ min: 'H', max: 'G' });
+      expect(parseColorRangeString('G-H')).toEqual({ min: 'H', max: 'G' });
+      expect(parseColorRangeString('H–I')).toEqual({ min: 'I', max: 'H' });
       expect(parseClarityRangeString('VS1-VS2')).toEqual({ min: 'VS1', max: 'VS2' });
       expect(parseClarityRangeString('VS2-SI1')).toEqual({ min: 'VS2', max: 'VS2' }); // auto-corrected
     });

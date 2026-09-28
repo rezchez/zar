@@ -7,9 +7,10 @@ import { PencilLine } from 'lucide-react';
 import { useFavoriteCustomers } from '@/hooks/useFavoriteCustomers';
 import { useToastManager } from '@/components/ui/toast';
 import { useAppSettings } from '@/src/components/SettingsProvider';
-import type { Customer } from '@/lib/customer';
+import { normalizeCurrencyCode, type Customer } from '@/lib/customer';
 import type { DocumentNature } from '@/lib/document';
 import { formatJalaliDate } from '@/lib/jalali';
+import { convertTomanToRial } from '@/lib/money';
 import {
   DEFAULT_STANDARD_CURRENCIES,
   getCurrenciesForBaseCurrency,
@@ -160,6 +161,21 @@ export default function DocumentForm({
     () => getCurrenciesForBaseCurrency(availableCurrencies, baseCurrency),
     [availableCurrencies, baseCurrency],
   );
+
+  // Keep selectedCurrency synchronized with baseCurrency when settings load or domestic currency changes
+  useEffect(() => {
+    setSelectedCurrency((prev) => {
+      const normPrev = (prev || '').trim().toUpperCase();
+      if (!normPrev || ((normPrev === 'IRR' || normPrev === 'IRT') && normPrev !== baseCurrency)) {
+        return baseCurrency;
+      }
+      const exists = activeCurrencies.some((c) => c.code.trim().toUpperCase() === normPrev);
+      if (!exists) {
+        return activeCurrencies.find((c) => c.code === baseCurrency)?.code ?? activeCurrencies[0]?.code ?? baseCurrency;
+      }
+      return prev;
+    });
+  }, [baseCurrency, activeCurrencies]);
 
   // Live market quotes for currencies & rates
   const [quotes, setQuotes] = useState<MarketQuote[]>(() => {
@@ -1042,6 +1058,30 @@ export default function DocumentForm({
 
             const hasLinkedPhysical = line.documentTab === 'gold-sale' && Boolean(line.details?.linkedLineId);
 
+            const isStoneRow = line.documentTab === 'stone' || line.sourceTab === 'stone';
+            const isUnsettledStone =
+              isStoneRow &&
+              (line.details.stoneOperationKind === 'unsettled_purchase' ||
+                line.details.stoneOperationKind === 'unsettled_sale' ||
+                line.documentSubType === 'stone-unsettled-purchase' ||
+                line.documentSubType === 'stone-unsettled-sale' ||
+                line.details.unsettledTrade === true ||
+                line.settlementMethod === 'unsettled');
+            const stoneCurrency = isStoneRow
+              ? normalizeCurrencyCode(line.details.settlementCurrencyUnit || selectedCurrency || baseCurrency)
+              : '';
+            const isForeignStone = Boolean(
+              isStoneRow && stoneCurrency && stoneCurrency !== 'IRR' && stoneCurrency !== 'IRT',
+            );
+            const rawStoneAmount = isStoneRow
+              ? numberValue(line.details.totalAmount || line.details.stoneTotalAmount)
+              : 0;
+            const stoneRialAmount =
+              isUnsettledStone && !isForeignStone
+                ? (stoneCurrency === 'IRT' ? convertTomanToRial(rawStoneAmount) : Math.round(rawStoneAmount))
+                : 0;
+            const stoneForeignAmount = isUnsettledStone && isForeignStone ? rawStoneAmount : 0;
+
             return {
               documentNature: line.documentNature,
               documentTab: line.documentTab,
@@ -1050,32 +1090,42 @@ export default function DocumentForm({
               settlementMethod: line.settlementMethod,
               balanceSource: line.balanceSource,
               description: line.description,
-              documentDetails: line.details,
+              documentDetails: isStoneRow
+                ? {
+                    ...line.details,
+                    settlementCurrencyUnit: stoneCurrency || line.details.settlementCurrencyUnit || baseCurrency,
+                    rialAmountInIrr: true,
+                  }
+                : line.details,
               goldAmount: isMetalRow && metalType === 'gold' ? weightValue : 0,
               silverAmount: isMetalRow && metalType === 'silver' ? weightValue : 0,
               platinumAmount: isMetalRow && metalType === 'platinum' ? weightValue : 0,
               rialAmount:
-                line.documentTab === 'currency'
-                  ? (line.documentSubType === 'currency-claim' || line.documentSubType === 'currency-debt'
-                      ? 0
-                      : numberValue(line.details.currencyTotalAmount))
-                  : line.documentTab === 'cash' && !line.details.isForeignCash
-                    ? numberValue(line.details.totalAmount)
-                    : line.documentTab === 'gold-sale'
+                isStoneRow
+                  ? stoneRialAmount
+                  : line.documentTab === 'currency'
+                    ? (line.documentSubType === 'currency-claim' || line.documentSubType === 'currency-debt'
+                        ? 0
+                        : numberValue(line.details.currencyTotalAmount))
+                    : line.documentTab === 'cash' && !line.details.isForeignCash
                       ? numberValue(line.details.totalAmount)
-                      : line.documentTab === 'refining' && line.details.refiningOpKind === 'fee'
+                      : line.documentTab === 'gold-sale'
                         ? numberValue(line.details.totalAmount)
-                        : numberValue(line.details.totalAmount || ''),
+                        : line.documentTab === 'refining' && line.details.refiningOpKind === 'fee'
+                          ? numberValue(line.details.totalAmount)
+                          : numberValue(line.details.totalAmount || ''),
               foreignAmount:
-                line.documentTab === 'currency'
-                  ? (line.details.unsettledTrade || line.settlementMethod === 'unsettled'
-                      ? (line.documentSubType === 'currency-claim' || line.documentSubType === 'currency-debt' || !line.details.linkedLineId
-                          ? numberValue(line.details.currencyQuantity)
-                          : 0)
-                      : 0)
-                  : line.documentTab === 'cash' && line.details.isForeignCash
-                    ? numberValue(line.details.totalAmount)
-                    : 0,
+                isStoneRow
+                  ? stoneForeignAmount
+                  : line.documentTab === 'currency'
+                    ? (line.details.unsettledTrade || line.settlementMethod === 'unsettled'
+                        ? (line.documentSubType === 'currency-claim' || line.documentSubType === 'currency-debt' || !line.details.linkedLineId
+                            ? numberValue(line.details.currencyQuantity)
+                            : 0)
+                        : 0)
+                    : line.documentTab === 'cash' && line.details.isForeignCash
+                      ? numberValue(line.details.totalAmount)
+                      : 0,
               tertiaryAmount: 0,
             };
           }),
@@ -1283,6 +1333,7 @@ export default function DocumentForm({
           effectiveDocumentNumberDisplay={documentNumberDisplay}
           documentNumberLoading={documentNumberLoading}
           baseCurrency={baseCurrency}
+          committedLines={committedLines}
         />
       </div>
 
@@ -1485,6 +1536,8 @@ export default function DocumentForm({
               draftReady={draftReady}
               baseCurrency={baseCurrency}
               selectedCurrency={selectedCurrency}
+              currencyLabel={activeCurrencies.find((c) => c.code.toUpperCase() === (selectedCurrency || '').toUpperCase())?.name}
+              activeCurrencies={activeCurrencies}
             />
           )}
           coinTabContent={(

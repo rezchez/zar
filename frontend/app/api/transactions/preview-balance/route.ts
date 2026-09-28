@@ -6,9 +6,12 @@ import {
   mapTransaction,
   sumPostedTransactions,
   calculateCustomerCurrencyBalances,
+  calculateCustomerStoneBalances,
 } from '@/lib/transaction';
+import { gramsToCarats } from '@/lib/gemstone-weight';
 import { getCurrencyMeta, normalizeCurrencyCode } from '@/lib/customer';
 import { normalizeDigits } from '@/lib/jalali';
+import { convertTomanToRial } from '@/lib/money';
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
 
 function numberValue(value: unknown): number {
@@ -90,13 +93,29 @@ export async function POST(request: Request) {
     const transactions = records.map(mapTransaction);
     const totals = sumPostedTransactions(transactions);
     const currencyBalances = calculateCustomerCurrencyBalances(transactions);
+    const stoneBalances = calculateCustomerStoneBalances(transactions);
 
     const linesList = Array.isArray(body.lines) ? body.lines : [];
-    const lineForeignUnit = linesList.find(
-      (l: any) => l?.documentTab === 'currency' && l?.documentDetails?.currencyUnit,
-    )?.documentDetails?.currencyUnit;
+    let detectedForeignUnit = '';
+    for (const l of linesList as any[]) {
+      const det = l?.details || l?.documentDetails || {};
+      if (l?.documentTab === 'currency' && det?.currencyUnit) {
+        const norm = normalizeCurrencyCode(det.currencyUnit);
+        if (norm && norm !== 'IRR' && norm !== 'IRT') {
+          detectedForeignUnit = norm;
+          break;
+        }
+      }
+      if ((l?.documentTab === 'stone' || l?.sourceTab === 'stone') && det?.settlementCurrencyUnit) {
+        const norm = normalizeCurrencyCode(det.settlementCurrencyUnit);
+        if (norm && norm !== 'IRR' && norm !== 'IRT') {
+          detectedForeignUnit = norm;
+          break;
+        }
+      }
+    }
 
-    const normLineCurrency = normalizeCurrencyCode(lineForeignUnit);
+    const normLineCurrency = normalizeCurrencyCode(detectedForeignUnit);
     const latestForeignTx = transactions.find(
       (t) => t.foreignCurrency && t.foreignCurrency !== 'IRR' && t.foreignCurrency !== 'IRT',
     );
@@ -111,6 +130,7 @@ export async function POST(request: Request) {
       gold: totals.goldAmount,
       silver: totals.silverAmount,
       platinum: totals.platinumAmount,
+      stone: stoneBalances.carats || 0,
       foreign: currencyBalances[activeCurrency] ?? (activeCurrency === normalizeCurrencyCode(customer.secondaryCurrency) ? totals.foreignAmount : 0),
       tertiary: totals.tertiaryAmount,
       secondaryCurrency: resolvedSecondary,
@@ -125,6 +145,7 @@ export async function POST(request: Request) {
       gold: 0,
       silver: 0,
       platinum: 0,
+      stone: 0,
       foreign: 0,
       tertiary: 0,
     };
@@ -192,13 +213,16 @@ export async function POST(request: Request) {
       } else if (docTab === 'claim' && details.claimFinancial) {
         rialAmount = numberValue(details.claimFinancial);
       } else if (docTab === 'stone') {
-        const isTrade =
-          details.stoneOperationKind === 'purchase' ||
-          details.stoneOperationKind === 'sale' ||
+        const isUnsettledStone =
           details.stoneOperationKind === 'unsettled_purchase' ||
-          details.stoneOperationKind === 'unsettled_sale';
-        if (isTrade) {
-          rialAmount = numberValue(details.totalAmount || details.stoneTotalAmount);
+          details.stoneOperationKind === 'unsettled_sale' ||
+          details.unsettledTrade === true ||
+          line.settlementMethod === 'unsettled';
+        const stoneCur = normalizeCurrencyCode(String(details.settlementCurrencyUnit || ''));
+        const isForeignStone = Boolean(stoneCur && stoneCur !== 'IRR' && stoneCur !== 'IRT');
+        if (isUnsettledStone && !isForeignStone) {
+          const rawVal = numberValue(details.totalAmount || details.stoneTotalAmount);
+          rialAmount = stoneCur === 'IRT' && !details.rialAmountInIrr ? convertTomanToRial(rawVal) : rawVal;
         }
       }
       if (rialAmount > 0) {
@@ -225,6 +249,42 @@ export async function POST(request: Request) {
           }
         }
         // If settled: foreign currency was paid/received immediately from/to cash fund, so customer foreign balance effect is 0!
+      } else if (docTab === 'stone') {
+        const opKind = String(details.stoneOperationKind || '');
+        const subType = String(line.documentSubType || '');
+        const isTradeSettled = (opKind === 'purchase' || opKind === 'sale') && line.settlementMethod === 'cash';
+        const isWeightOp =
+          opKind === 'entry' ||
+          opKind === 'exit' ||
+          subType === 'stone-entry' ||
+          subType === 'stone-exit' ||
+          line.settlementMethod === 'weight' ||
+          (!isTradeSettled &&
+            (Number(details.stoneCarats || 0) > 0 || Number(details.stoneGrams || 0) > 0));
+
+        if (isWeightOp) {
+          const rawCarats = numberValue(details.stoneCarats);
+          const rawGrams = numberValue(details.stoneGrams);
+          const weightCt = rawCarats || (rawGrams > 0 ? gramsToCarats(rawGrams) : 0);
+          transactionEffect.stone += direction * weightCt;
+        }
+
+        const isUnsettledStone =
+          details.stoneOperationKind === 'unsettled_purchase' ||
+          details.stoneOperationKind === 'unsettled_sale' ||
+          details.unsettledTrade === true ||
+          line.settlementMethod === 'unsettled';
+        const stoneCur = normalizeCurrencyCode(String(details.settlementCurrencyUnit || ''));
+        const isForeignStone = Boolean(stoneCur && stoneCur !== 'IRR' && stoneCur !== 'IRT');
+        if (isUnsettledStone && isForeignStone) {
+          if (!previousBalance.secondaryCurrency) {
+            previousBalance.secondaryCurrency = stoneCur;
+          }
+          foreignAmount = numberValue(details.totalAmount || details.stoneTotalAmount);
+          if (foreignAmount > 0) {
+            transactionEffect.foreign += direction * foreignAmount;
+          }
+        }
       } else if (docTab === 'cash' && details.isForeignCash) {
         foreignAmount = numberValue(details.totalAmount);
         if (foreignAmount > 0) {
@@ -238,6 +298,7 @@ export async function POST(request: Request) {
       gold: previousBalance.gold + transactionEffect.gold,
       silver: previousBalance.silver + transactionEffect.silver,
       platinum: previousBalance.platinum + transactionEffect.platinum,
+      stone: previousBalance.stone + transactionEffect.stone,
       foreign: previousBalance.foreign + transactionEffect.foreign,
       tertiary: previousBalance.tertiary + transactionEffect.tertiary,
     };

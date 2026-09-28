@@ -72,10 +72,52 @@ export default function DocumentStickyBar({ data }: DocumentStickyBarProps) {
   const [isDateModalOpen, setIsDateModalOpen] = useState(false);
   const [tempDate, setTempDate] = useState(dateJalali);
   const [mounted, setMounted] = useState(false);
+  const [isCurrencyMenuOpen, setIsCurrencyMenuOpen] = useState(false);
+  const [currencyMenuPos, setCurrencyMenuPos] = useState<{ top: number; right: number }>({ top: 0, right: 0 });
+  const currencyBtnRef = React.useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (!isCurrencyMenuOpen) return;
+    const handleOutside = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (currencyBtnRef.current && currencyBtnRef.current.contains(target)) return;
+      const menuEl = document.getElementById('sticky-currency-portal-menu');
+      if (menuEl && menuEl.contains(target)) return;
+      setIsCurrencyMenuOpen(false);
+    };
+    const handleScrollOrResize = () => {
+      if (currencyBtnRef.current) {
+        const rect = currencyBtnRef.current.getBoundingClientRect();
+        setCurrencyMenuPos({
+          top: rect.bottom + 6,
+          right: Math.max(8, window.innerWidth - rect.right),
+        });
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    window.addEventListener('scroll', handleScrollOrResize, true);
+    window.addEventListener('resize', handleScrollOrResize);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      window.removeEventListener('scroll', handleScrollOrResize, true);
+      window.removeEventListener('resize', handleScrollOrResize);
+    };
+  }, [isCurrencyMenuOpen]);
+
+  const toggleCurrencyMenu = () => {
+    if (!isCurrencyMenuOpen && currencyBtnRef.current) {
+      const rect = currencyBtnRef.current.getBoundingClientRect();
+      setCurrencyMenuPos({
+        top: rect.bottom + 6,
+        right: Math.max(8, window.innerWidth - rect.right),
+      });
+    }
+    setIsCurrencyMenuOpen((prev) => !prev);
+  };
 
   const metalInfo = METAL_LABELS[metalType] || METAL_LABELS.gold;
 
@@ -98,6 +140,9 @@ export default function DocumentStickyBar({ data }: DocumentStickyBarProps) {
           { code: 'EUR', name: 'یورو' },
           { code: 'AED', name: 'درهم' },
         ];
+
+  const activeCurrencyItem =
+    currencyList.find((c) => c.code.toUpperCase() === (currency || '').toUpperCase()) || currencyList[0];
 
   const dateDiff = checkDocumentDateDiff(dateJalali);
 
@@ -226,40 +271,42 @@ export default function DocumentStickyBar({ data }: DocumentStickyBarProps) {
             </motion.div>
           )}
 
-          {/* ۵. نوع ارز (با قابلیت تغییر مستقیم ارزها) */}
+          {/* ۵. نوع ارز (با قابلیت تغییر مستقیم ارزها با یک کلیک روی کل دکمه) */}
           {passedSections.currency && (
             <motion.div
               key="sticky-currency"
-              initial={{ opacity: 0, scale: 0.85, filter: 'blur(3px)' }}
-              animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
-              exit={{ opacity: 0, scale: 0.85, filter: 'blur(3px)' }}
+              initial={{ opacity: 0, scale: 0.85 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.85 }}
               transition={{ duration: 0.18, ease: 'easeOut' }}
               className="shrink-0 flex items-center"
             >
-              <div
-                className="relative flex items-center gap-1 shrink-0 px-2 py-1 rounded-xl bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800/80 dark:hover:bg-slate-700/80 border border-slate-200/90 dark:border-slate-700/80 hover:border-amber-500/50 text-xs font-bold text-slate-700 dark:text-slate-200 transition-all shadow-xs"
-                title="تغییر نوع ارز مبنا"
+              <button
+                ref={currencyBtnRef}
+                type="button"
+                onClick={toggleCurrencyMenu}
+                className={`flex items-center gap-1.5 shrink-0 px-2.5 py-1 rounded-xl border text-xs font-bold transition-all cursor-pointer select-none shadow-xs ${
+                  isCurrencyMenuOpen
+                    ? 'bg-amber-50 dark:bg-amber-950/60 border-amber-500 text-amber-900 dark:text-amber-200 ring-2 ring-amber-500/20'
+                    : 'bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800/80 dark:hover:bg-slate-700/80 border-slate-200/90 dark:border-slate-700/80 hover:border-amber-500/50 text-slate-800 dark:text-slate-200'
+                }`}
+                title="تغییر نوع ارز مبنا (کلیک کنید)"
+                aria-label="تغییر نوع ارز"
+                aria-expanded={isCurrencyMenuOpen}
               >
                 <Coins size={12} className="text-amber-500 shrink-0 pointer-events-none" />
-                <select
-                  value={currency}
-                  onChange={(e) => onCurrencyChange?.(e.target.value)}
-                  className="bg-transparent font-bold text-[11px] text-slate-800 dark:text-slate-200 cursor-pointer focus:outline-none pr-0.5 appearance-none select-none pl-3.5"
-                  title="تغییر نوع ارز مبنا"
-                  aria-label="تغییر نوع ارز"
-                >
-                  {currencyList.map((curr) => (
-                    <option
-                      key={curr.code}
-                      value={curr.code}
-                      className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
-                    >
-                      {curr.name ? `${curr.name} (${curr.code})` : curr.code}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown size={10} className="text-slate-400 absolute left-1.5 pointer-events-none" />
-              </div>
+                <span className="font-bold text-[11px] pointer-events-none">
+                  {activeCurrencyItem?.name
+                    ? `${activeCurrencyItem.name} (${activeCurrencyItem.code})`
+                    : activeCurrencyItem?.code || currency}
+                </span>
+                <ChevronDown
+                  size={11}
+                  className={`text-slate-400 shrink-0 pointer-events-none transition-transform duration-200 ${
+                    isCurrencyMenuOpen ? 'rotate-180 text-amber-500' : ''
+                  }`}
+                />
+              </button>
             </motion.div>
           )}
 
@@ -443,6 +490,48 @@ export default function DocumentStickyBar({ data }: DocumentStickyBarProps) {
                   </button>
                 </div>
               </motion.div>
+            </div>,
+            document.body,
+          )
+        : null}
+
+      {/* منوی انتخاب سریع ارز در نوار چسبان (Portal) */}
+      {mounted && isCurrencyMenuOpen && currencyList.length > 0
+        ? createPortal(
+            <div
+              id="sticky-currency-portal-menu"
+              dir="rtl"
+              style={{
+                top: `${currencyMenuPos.top}px`,
+                right: `${currencyMenuPos.right}px`,
+              }}
+              className="fixed z-[9999] min-w-[160px] max-w-[240px] rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl p-1.5 space-y-0.5 animate-in fade-in zoom-in-95 duration-150"
+            >
+              <div className="px-2.5 py-1 text-[10px] font-bold text-slate-400 dark:text-slate-500 border-b border-slate-100 dark:border-slate-800 mb-1 flex items-center justify-between">
+                <span>انتخاب واحد پول سند</span>
+                <Coins size={12} className="text-indigo-500" />
+              </div>
+              {currencyList.map((curr) => {
+                const isSelected = curr.code === currency;
+                return (
+                  <button
+                    key={curr.code}
+                    type="button"
+                    onClick={() => {
+                      onCurrencyChange?.(curr.code);
+                      setIsCurrencyMenuOpen(false);
+                    }}
+                    className={`w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer text-right ${
+                      isSelected
+                        ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/80 dark:text-indigo-300'
+                        : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    <span className="truncate">{curr.name}</span>
+                    <span className="text-[10px] font-mono opacity-75 shrink-0">{curr.code}</span>
+                  </button>
+                );
+              })}
             </div>,
             document.body,
           )

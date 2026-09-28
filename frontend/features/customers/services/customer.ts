@@ -46,6 +46,49 @@ export const customerBalanceFields = [
 
 export const customerNumberFields = customerProfileNumberFields;
 
+export type CustomerStoneItemDetail = {
+  key: string;
+  speciesId: string;
+  speciesName: string;
+  category?: string;
+  shape?: string;
+  shapeName?: string;
+  mode?: 'single_stone' | 'parcel';
+  color?: string;
+  clarity?: string;
+  cut?: string;
+  certificateLab?: string;
+  certificateNumber?: string;
+  laserInscription?: string;
+  lotNumber?: string;
+  sieveSize?: string;
+  measurements?: string;
+  description?: string;
+  carats: number;
+  grams: number;
+  pieces: number;
+  transactionsCount?: number;
+  lastDate?: string;
+  lastDocumentNumber?: string;
+};
+
+export type CustomerStoneSpeciesBalance = {
+  speciesId: string;
+  speciesName: string;
+  category?: string;
+  shape?: string;
+  shapeName?: string;
+  color?: string;
+  clarity?: string;
+  cut?: string;
+  certificateLab?: string;
+  certificateNumber?: string;
+  carats: number;
+  grams: number;
+  pieces: number;
+  items?: CustomerStoneItemDetail[];
+};
+
 export type CustomerBalanceValues = {
   goldBalance: number;
   silverBalance: number;
@@ -54,6 +97,11 @@ export type CustomerBalanceValues = {
   foreignBalance: number;
   tertiaryBalance: number;
   currencyBalances?: Record<string, number>;
+  stoneCaratBalance?: number;
+  stoneGramBalance?: number;
+  stonePiecesBalance?: number;
+  stoneBalancesBySpecies?: Record<string, CustomerStoneSpeciesBalance>;
+  stoneItemBalances?: CustomerStoneItemDetail[];
 };
 
 export function emptyCustomerBalances(): CustomerBalanceValues {
@@ -64,8 +112,14 @@ export function emptyCustomerBalances(): CustomerBalanceValues {
     rialBalance: 0,
     foreignBalance: 0,
     tertiaryBalance: 0,
+    stoneCaratBalance: 0,
+    stoneGramBalance: 0,
+    stonePiecesBalance: 0,
+    stoneBalancesBySpecies: {},
+    stoneItemBalances: [],
   };
 }
+
 
 export const customerDateFields = ['birthDate'] as const;
 
@@ -101,7 +155,13 @@ export type Customer = {
   foreignBalance: number;
   tertiaryBalance: number;
   currencyBalances?: Record<string, number>;
+  stoneCaratBalance?: number;
+  stoneGramBalance?: number;
+  stonePiecesBalance?: number;
+  stoneBalancesBySpecies?: Record<string, CustomerStoneSpeciesBalance>;
+  stoneItemBalances?: CustomerStoneItemDetail[];
   discountLevel: number;
+
   creditCeiling: number;
   goldReturnDays: number;
   showBalanceByUnit: boolean;

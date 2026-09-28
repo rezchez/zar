@@ -42,9 +42,17 @@ export default function CommittedLineRow({
   const isPaid = line.documentNature === 'paid';
   const isReceived = line.documentNature === 'received';
   const isCurrency = line.documentTab === 'currency';
+  const isStone = line.documentTab === 'stone';
   const isClaimLine = line.documentSubType === 'currency-claim';
   const isDebtLine = line.documentSubType === 'currency-debt';
   const isUnsettled = line.details.unsettledTrade === true || line.settlementMethod === 'unsettled';
+  const stoneCurrency = isStone
+    ? String(line.details.settlementCurrencyUnit || 'USD').trim().toUpperCase()
+    : '';
+  const isForeignStone = isStone && stoneCurrency !== 'IRR' && stoneCurrency !== 'IRT';
+  const stoneAmount = isStone
+    ? numberValue(line.details.stoneTotalAmount || line.details.totalAmount)
+    : 0;
 
   const docType =
     line.documentTypeLabel ||
@@ -57,7 +65,7 @@ export default function CommittedLineRow({
     );
 
   const metalLabel =
-    isCurrency
+    isCurrency || isStone
       ? '-'
       : line.details.metalType === 'silver'
       ? 'نقره'
@@ -66,13 +74,13 @@ export default function CommittedLineRow({
       : 'طلا';
 
   const rawWeight =
-    isCurrency
+    isCurrency || isStone
       ? 0
       : line.details.calculationMethod === 'money'
       ? actualWeightFromMoney(line.details, Number(line.details.baseKarat || 750))
       : numberValue(line.details.rawWeight);
 
-  const purityVal = isCurrency ? 0 : numberValue(line.details.purity);
+  const purityVal = isCurrency || isStone ? 0 : numberValue(line.details.purity);
 
   // Formula: weight * purity / the base karat captured when the line was registered.
   const c750 =
@@ -87,7 +95,7 @@ export default function CommittedLineRow({
   let bedehkarVazni: string | null = null;
   let bostankarVazni: string | null = null;
 
-  if (!isCurrency) {
+  if (!isCurrency && !isStone) {
     if (line.documentTab === 'gold-sale') {
       if (isReceived) {
         // معامله خرید طلا: مشتری متعهد تحویل طلاست و بدهکار وزنی می‌شود
@@ -108,7 +116,11 @@ export default function CommittedLineRow({
 
   // Currency column values
   const currencyQty = isCurrency ? numberValue(line.details.currencyQuantity) : 0;
-  const currencyUnit = isCurrency ? (line.details.currencyUnit || 'USD') : '-';
+  const currencyUnit = isCurrency
+    ? (line.details.currencyUnit || 'USD')
+    : isForeignStone
+    ? stoneCurrency
+    : '-';
 
   let bedehkarArzi: string | null = null;
   let bostankarArzi: string | null = null;
@@ -119,12 +131,21 @@ export default function CommittedLineRow({
     } else if (isClaimLine || (isDebtLine && isPaid) || (isUnsettled && isPaid && !line.details.linkedLineId)) {
       bostankarArzi = faNumber(currencyQty, 0);
     }
+  } else if (isForeignStone && stoneAmount > 0) {
+    const decimals = Number.isInteger(stoneAmount) ? 0 : 2;
+    if (isPaid) {
+      bedehkarArzi = faNumber(stoneAmount, decimals);
+    } else if (isReceived) {
+      bostankarArzi = faNumber(stoneAmount, decimals);
+    }
   }
 
   // Financial amounts
   const financialAmount = isCurrency
     ? (isClaimLine || isDebtLine ? 0 : numberValue(line.details.currencyTotalAmount))
-    : numberValue(line.details.totalAmount || line.details.stoneTotalAmount);
+    : isStone
+    ? (isForeignStone ? 0 : stoneAmount)
+    : numberValue(line.details.totalAmount);
 
   const bedehkarMali = isPaid && financialAmount > 0 ? faNumber(financialAmount, 0) : null;
   const bostankarMali = isReceived && financialAmount > 0 ? faNumber(financialAmount, 0) : null;

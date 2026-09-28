@@ -188,9 +188,21 @@ function getLineSortValue(
       return isBostankar ? c750 : 0;
     }
     case 'currency': {
-      return line.documentTab === 'currency' ? (line.details.currencyUnit || 'USD') : '';
+      if (line.documentTab === 'currency') return line.details.currencyUnit || 'USD';
+      if (line.documentTab === 'stone') {
+        const sc = String(line.details.settlementCurrencyUnit || 'USD').trim().toUpperCase();
+        return sc !== 'IRR' && sc !== 'IRT' ? sc : '';
+      }
+      return '';
     }
     case 'bedehkarArzi': {
+      if (line.documentTab === 'stone') {
+        const sc = String(line.details.settlementCurrencyUnit || 'USD').trim().toUpperCase();
+        if (sc !== 'IRR' && sc !== 'IRT' && line.documentNature === 'paid') {
+          return numberValue(line.details.stoneTotalAmount || line.details.totalAmount);
+        }
+        return 0;
+      }
       if (line.documentTab !== 'currency') return 0;
       if (
         line.documentSubType === 'currency-claim' ||
@@ -201,6 +213,13 @@ function getLineSortValue(
       return 0;
     }
     case 'bostankarArzi': {
+      if (line.documentTab === 'stone') {
+        const sc = String(line.details.settlementCurrencyUnit || 'USD').trim().toUpperCase();
+        if (sc !== 'IRR' && sc !== 'IRT' && line.documentNature === 'received') {
+          return numberValue(line.details.stoneTotalAmount || line.details.totalAmount);
+        }
+        return 0;
+      }
       if (line.documentTab !== 'currency') return 0;
       if (
         line.documentSubType === 'currency-debt' ||
@@ -212,15 +231,27 @@ function getLineSortValue(
     }
     case 'bedehkarMali': {
       if (line.documentNature !== 'paid') return 0;
+      if (line.documentTab === 'stone') {
+        const sc = String(line.details.settlementCurrencyUnit || 'USD').trim().toUpperCase();
+        return sc === 'IRR' || sc === 'IRT'
+          ? numberValue(line.details.stoneTotalAmount || line.details.totalAmount)
+          : 0;
+      }
       return line.documentTab === 'currency'
         ? numberValue(line.details.currencyTotalAmount)
-        : numberValue(line.details.totalAmount || line.details.stoneTotalAmount);
+        : numberValue(line.details.totalAmount);
     }
     case 'bostankarMali': {
       if (line.documentNature !== 'received') return 0;
+      if (line.documentTab === 'stone') {
+        const sc = String(line.details.settlementCurrencyUnit || 'USD').trim().toUpperCase();
+        return sc === 'IRR' || sc === 'IRT'
+          ? numberValue(line.details.stoneTotalAmount || line.details.totalAmount)
+          : 0;
+      }
       return line.documentTab === 'currency'
         ? numberValue(line.details.currencyTotalAmount)
-        : numberValue(line.details.totalAmount || line.details.stoneTotalAmount);
+        : numberValue(line.details.totalAmount);
     }
     case 'labName':
       return line.details.labName?.trim() || '';
@@ -471,7 +502,14 @@ export default function CommittedLinesTable({
   const hasCurrencyLines = useMemo(() => {
     return (
       activeTab === 'currency' ||
-      committedLines.some((l) => l.documentTab === 'currency' || l.sourceTab === 'currency')
+      committedLines.some((l) => {
+        if (l.documentTab === 'currency' || l.sourceTab === 'currency') return true;
+        if (l.documentTab === 'stone') {
+          const sc = String(l.details?.settlementCurrencyUnit || 'USD').trim().toUpperCase();
+          return sc !== 'IRR' && sc !== 'IRT';
+        }
+        return false;
+      })
     );
   }, [committedLines, activeTab]);
 
@@ -485,6 +523,7 @@ export default function CommittedLinesTable({
       committedLines.some(
         (l) =>
           l.documentTab !== 'currency' &&
+          l.documentTab !== 'stone' &&
           (l.documentTab === 'gold-sale' ||
             l.documentTab === 'raw-gold' ||
             l.documentTab === 'refining' ||
@@ -561,6 +600,7 @@ export default function CommittedLinesTable({
     return committedLines
       .filter((l) =>
         l.documentTab !== 'currency' &&
+        l.documentTab !== 'stone' &&
         (l.documentTab === 'gold-sale'
           ? l.documentNature === 'received'
           : l.documentNature === 'paid'),
@@ -582,6 +622,7 @@ export default function CommittedLinesTable({
     return committedLines
       .filter((l) =>
         l.documentTab !== 'currency' &&
+        l.documentTab !== 'stone' &&
         (l.documentTab === 'gold-sale'
           ? l.documentNature === 'paid'
           : l.documentNature === 'received'),
@@ -600,31 +641,55 @@ export default function CommittedLinesTable({
   }, [committedLines]);
 
   const totalBedehkarArzi = useMemo(() => {
-    return committedLines
-      .filter(
-        (l) =>
-          l.documentTab === 'currency' &&
-          (l.documentSubType === 'currency-claim' ||
-            (l.details.unsettledTrade && l.documentNature === 'received' && !l.details.linkedLineId)),
-      )
-      .reduce((sum, l) => sum + numberValue(l.details.currencyQuantity), 0);
+    return committedLines.reduce((sum, l) => {
+      if (l.documentTab === 'stone') {
+        const sc = String(l.details.settlementCurrencyUnit || 'USD').trim().toUpperCase();
+        if (sc !== 'IRR' && sc !== 'IRT' && l.documentNature === 'paid') {
+          return sum + numberValue(l.details.stoneTotalAmount || l.details.totalAmount);
+        }
+        return sum;
+      }
+      if (
+        l.documentTab === 'currency' &&
+        (l.documentSubType === 'currency-claim' ||
+          (l.details.unsettledTrade && l.documentNature === 'received' && !l.details.linkedLineId))
+      ) {
+        return sum + numberValue(l.details.currencyQuantity);
+      }
+      return sum;
+    }, 0);
   }, [committedLines]);
 
   const totalBostankarArzi = useMemo(() => {
-    return committedLines
-      .filter(
-        (l) =>
-          l.documentTab === 'currency' &&
-          (l.documentSubType === 'currency-debt' ||
-            (l.details.unsettledTrade && l.documentNature === 'paid' && !l.details.linkedLineId)),
-      )
-      .reduce((sum, l) => sum + numberValue(l.details.currencyQuantity), 0);
+    return committedLines.reduce((sum, l) => {
+      if (l.documentTab === 'stone') {
+        const sc = String(l.details.settlementCurrencyUnit || 'USD').trim().toUpperCase();
+        if (sc !== 'IRR' && sc !== 'IRT' && l.documentNature === 'received') {
+          return sum + numberValue(l.details.stoneTotalAmount || l.details.totalAmount);
+        }
+        return sum;
+      }
+      if (
+        l.documentTab === 'currency' &&
+        (l.documentSubType === 'currency-debt' ||
+          (l.details.unsettledTrade && l.documentNature === 'paid' && !l.details.linkedLineId))
+      ) {
+        return sum + numberValue(l.details.currencyQuantity);
+      }
+      return sum;
+    }, 0);
   }, [committedLines]);
 
   const totalBedehkarMali = useMemo(() => {
     return committedLines
       .filter((l) => l.documentNature === 'paid' && l.documentSubType !== 'currency-claim' && l.documentSubType !== 'currency-debt')
       .reduce((sum, l) => {
+        if (l.documentTab === 'stone') {
+          const sc = String(l.details.settlementCurrencyUnit || 'USD').trim().toUpperCase();
+          return sc === 'IRR' || sc === 'IRT'
+            ? sum + numberValue(l.details.stoneTotalAmount || l.details.totalAmount)
+            : sum;
+        }
         const amount =
           l.documentTab === 'currency'
             ? numberValue(l.details.currencyTotalAmount)
@@ -637,6 +702,12 @@ export default function CommittedLinesTable({
     return committedLines
       .filter((l) => l.documentNature === 'received' && l.documentSubType !== 'currency-claim' && l.documentSubType !== 'currency-debt')
       .reduce((sum, l) => {
+        if (l.documentTab === 'stone') {
+          const sc = String(l.details.settlementCurrencyUnit || 'USD').trim().toUpperCase();
+          return sc === 'IRR' || sc === 'IRT'
+            ? sum + numberValue(l.details.stoneTotalAmount || l.details.totalAmount)
+            : sum;
+        }
         const amount =
           l.documentTab === 'currency'
             ? numberValue(l.details.currencyTotalAmount)

@@ -20,6 +20,7 @@ import type { Customer } from '@/lib/customer';
 import { isRefinerGroup } from '@/lib/customer-groups';
 import { normalizeDigits, toPersianDigits } from '@/lib/jalali';
 import Field from '@/src/components/documents/Field';
+import type { DocumentLine } from '@/src/components/documents/RawGoldTab';
 import CustomerBalanceLiquid from './CustomerBalanceLiquid';
 import { getCustomerGroupBadge } from '../utils/document-helpers';
 
@@ -109,6 +110,7 @@ interface CustomerSectionProps {
   effectiveDocumentNumberDisplay: string;
   documentNumberLoading: boolean;
   baseCurrency?: 'IRR' | 'IRT';
+  committedLines?: DocumentLine[];
 }
 
 export default function CustomerSection({
@@ -125,6 +127,7 @@ export default function CustomerSection({
   effectiveDocumentNumberDisplay,
   documentNumberLoading,
   baseCurrency = 'IRR',
+  committedLines = [],
 }: CustomerSectionProps) {
   const [customerQuery, setCustomerQuery] = useState('');
   const [isCustomerDropdownOpen, setIsCustomerDropdownOpen] = useState(false);
@@ -817,6 +820,7 @@ export default function CustomerSection({
             key={selectedCustomer.id}
             customer={selectedCustomer}
             baseCurrency={baseCurrency}
+            committedLines={committedLines}
           />
         ) : null}
       </AnimatePresence>
