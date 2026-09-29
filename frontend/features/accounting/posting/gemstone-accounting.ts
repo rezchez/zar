@@ -96,7 +96,7 @@ export interface BuildStonePurchaseJournalLinesParams {
  * Prepares planned Double-Entry Journal template lines for Gemstone Purchase Transactions.
  *
  * خرید سنگ از مشتری:
- * طبق قاعده بازار: خرید سنگ از مشتری یعنی مشتری سنگ رو به ما بدهکاره (طرف‌حساب بدهکار می‌شود)
+ * طبق قاعده بازار: خرید سنگ از مشتری یعنی مشتری سنگ را به ما بدهکار می‌شود (طرف‌حساب بدهکار می‌شود)
  * ۱. بدهکار: حساب‌ها و اسناد دریافتنی تجاری / طرف‌حساب‌ها (کد ۱۱۲۰) - بدهی مشتری به ما
  * ۲. بستانکار: موجودی کالا و سنگ‌های قیمتی (کد ۱۱۳۰)
  * ۳. در صورت اختلاف گرد کردن: حساب‌های هزینه/درآمد گرد کردن (۶۵۰۰ / ۴۳۰۰)
@@ -117,21 +117,21 @@ export function buildStonePurchaseJournalLines(
   const lines: JournalLineInput[] = [];
 
   const weightDesc = params.carats && params.carats > 0
-    ? ` به وزن ${params.carats.toFixed(3)} قیراط`
+    ? ` به وزن ${Number(params.carats.toFixed(8)).toString()} قیراط`
     : params.grams && params.grams > 0
-      ? ` به وزن ${params.grams.toFixed(4)} گرم`
+      ? ` به وزن ${Number(params.grams.toFixed(8)).toString()} گرم`
       : params.pieces && params.pieces > 0
         ? ` به تعداد ${params.pieces} عدد`
         : '';
 
-  // 1. Counterparty Debit recognition - مشتری سنگ رو به ما بدهکاره (طرف‌حساب بدهکار می‌شود)
+  // 1. Counterparty Debit recognition - مشتری سنگ را به ما بدهکار می‌شود (طرف‌حساب بدهکار می‌شود)
   lines.push({
     accountId: map.counterpartyReceivableAccountId,
     accountCode: SYSTEM_ACCOUNT_CODES.NOTES_RECEIVABLE,
     accountName: 'حساب‌ها و اسناد دریافتنی تجاری',
     debit: customerDebtorAmount,
     credit: 0,
-    description: `بدهکار طرف‌حساب ${params.customerName} بابت خرید سنگ (${params.speciesName}${weightDesc}) - مشتری سنگ رو به ما بدهکاره`,
+    description: `بدهکار طرف‌حساب ${params.customerName} بابت خرید سنگ (${params.speciesName}${weightDesc}) - مشتری سنگ را به ما بدهکار می‌شود`,
     partyId: params.customerId,
   });
 
@@ -193,7 +193,7 @@ export interface BuildStoneSaleJournalLinesParams {
  * Prepares planned Double-Entry Journal template lines for Gemstone Sale Transactions.
  *
  * فروش سنگ به مشتری:
- * طبق قاعده بازار: فروش سنگ به مشتری یعنی مشتری از ما طلب کاره (طرف‌حساب بستانکار می‌شود)
+ * طبق قاعده بازار: فروش سنگ به مشتری یعنی مشتری سنگ را از ما طلبکار می‌شود (طرف‌حساب بستانکار می‌شود)
  * ۱. بستانکار: بستانکاران تجاری / طرف‌حساب‌ها (کد ۲۱۲۰) - طلب مشتری از ما
  * ۲. بدهکار: موجودی سنگ و نگین (کد ۱۱۳۰)
  * ۳. در صورت اختلاف گرد کردن: حساب‌های هزینه/درآمد گرد کردن (۶۵۰۰ / ۴۳۰۰)
@@ -214,9 +214,9 @@ export function buildStoneSaleJournalLines(
   const lines: JournalLineInput[] = [];
 
   const weightDesc = params.carats && params.carats > 0
-    ? ` (${params.carats.toFixed(3)} ct)`
+    ? ` (${Number(params.carats.toFixed(8)).toString()} ct)`
     : params.grams && params.grams > 0
-      ? ` (${params.grams.toFixed(4)} g)`
+      ? ` (${Number(params.grams.toFixed(8)).toString()} g)`
       : params.pieces && params.pieces > 0
         ? ` (${params.pieces} عدد)`
         : '';
@@ -245,14 +245,14 @@ export function buildStoneSaleJournalLines(
     });
   }
 
-  // 3. Customer Creditor recognition (Credit) - مشتری از ما طلب‌کاره (طرف‌حساب بستانکار می‌شود)
+  // 3. Customer Creditor recognition (Credit) - مشتری سنگ را از ما طلبکار می‌شود (طرف‌حساب بستانکار می‌شود)
   lines.push({
     accountId: map.counterpartyLiabilityAccountId,
     accountCode: SYSTEM_ACCOUNT_CODES.COUNTERPARTY_LIABILITY,
     accountName: 'بستانکاران تجاری / طرف‌حساب‌ها',
     debit: 0,
     credit: customerCreditorAmount,
-    description: `بستانکاری طرف‌حساب ${params.customerName} بابت فروش سنگ (${params.speciesName}${weightDesc}) - مشتری از ما طلب‌کاره`,
+    description: `بستانکاری طرف‌حساب ${params.customerName} بابت فروش سنگ (${params.speciesName}${weightDesc}) - مشتری سنگ را از ما طلبکار می‌شود`,
     partyId: params.customerId,
   });
 

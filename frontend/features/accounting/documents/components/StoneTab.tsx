@@ -3,9 +3,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
+  ArrowUpRight,
   Award,
   Calculator,
   Check,
+  CheckCircle2,
   ChevronDown,
   DollarSign,
   Gem,
@@ -14,8 +16,10 @@ import {
   ListPlus,
   Package,
   Plus,
+  RefreshCw,
   RotateCcw,
   Scale,
+  Search,
   Settings,
   Sparkles,
   Tag,
@@ -34,11 +38,17 @@ import MoneyInputField from '@/src/components/documents/MoneyInputField';
 import { PriceInput } from '@/components/ui/price-input';
 import { NumberField } from '@/components/ui/number-field';
 import type { DetailState, DocumentLine } from '@/src/components/documents/RawGoldTab';
+import type { Customer, CustomerStoneItemDetail } from '@/lib/customer';
+import type { CustomerTransaction } from '@/lib/transaction';
+import { calculateCustomerDetailedStonePositions } from '@/features/accounting/transactions/services/transaction';
 import {
-  caratsToGrams,
-  formatCarat,
-  formatGemGram,
-  gramsToCarats,
+  matchUnsettledStoneWithInventory,
+  type GemstoneInventoryRecord,
+} from '@/lib/gemstone-inventory-matching';
+import {
+  caratsToExactGrams,
+  formatExactGemWeight,
+  gramsToExactCarats,
   parseWeight,
 } from '@/lib/gemstone-weight';
 import {
@@ -111,6 +121,8 @@ export type StoneOperationKind =
 
 type StoneTabProps = {
   nature: 'received' | 'paid';
+  onChangeNature?: (nature: 'received' | 'paid') => void;
+  selectedCustomer?: Customer | null;
   draftLine: DocumentLine;
   setDraftLine: React.Dispatch<React.SetStateAction<DocumentLine>>;
   committedLines?: DocumentLine[];
@@ -128,6 +140,8 @@ type StoneTabProps = {
 
 export default function StoneTab({
   nature,
+  onChangeNature,
+  selectedCustomer,
   draftLine,
   setDraftLine,
   committedLines = [],
@@ -459,6 +473,343 @@ export default function StoneTab({
       setIsSubmittingLocation(false);
     }
   };
+
+  // Customer unsettled stones & inventory delivery states
+  const [customerTransactions, setCustomerTransactions] = useState<CustomerTransaction[]>([]);
+  const [customerTxLoading, setCustomerTxLoading] = useState(false);
+  const [inventoryItems, setInventoryItems] = useState<GemstoneInventoryRecord[]>([]);
+  const [inventoryLoading, setInventoryLoading] = useState(false);
+  const [showUnsettledPicker, setShowUnsettledPicker] = useState(false);
+  const [unsettledPickerTab, setUnsettledPickerTab] = useState<'sold' | 'purchased' | 'inventory'>('sold');
+  const [selectedUnsettledKey, setSelectedUnsettledKey] = useState<string | null>(null);
+  const [selectionNotice, setSelectionNotice] = useState<string>('');
+  const [inventorySearchQuery, setInventorySearchQuery] = useState<string>('');
+
+  // Fetch gemstone inventory from /api/gemstones
+  const fetchGemstoneInventory = useCallback(async () => {
+    try {
+      setInventoryLoading(true);
+      const res = await fetch('/api/gemstones', { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data?.items)) {
+          setInventoryItems(data.items);
+        }
+      }
+    } catch {
+      // non-blocking
+    } finally {
+      setInventoryLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchGemstoneInventory();
+  }, [fetchGemstoneInventory]);
+
+  // Fetch customer transaction history when customer changes
+  useEffect(() => {
+    if (!selectedCustomer?.id) {
+      setCustomerTransactions([]);
+      return;
+    }
+    let cancelled = false;
+    setCustomerTxLoading(true);
+    fetch(`/api/customers/${encodeURIComponent(selectedCustomer.id)}/transactions`, {
+      cache: 'no-store',
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!cancelled && Array.isArray(data?.transactions)) {
+          setCustomerTransactions(data.transactions);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setCustomerTxLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCustomer?.id]);
+
+  // Calculate customer detailed stone positions (transactions + live committed draft lines)
+  const detailedCustomerStones = useMemo(() => {
+    if (!selectedCustomer?.id && customerTransactions.length === 0 && committedLines.length === 0) {
+      return [];
+    }
+    return calculateCustomerDetailedStonePositions(
+      customerTransactions,
+      committedLines,
+      selectedCustomer?.stoneItemBalances,
+    );
+  }, [selectedCustomer, customerTransactions, committedLines]);
+
+  // Stones sold to customer on credit/unsettled basis: customer is creditor of stone (مشتری سنگ را از ما طلبکار می‌شود)
+  const unsettledSoldStones = useMemo(() => {
+    return detailedCustomerStones.filter(
+      (it) => it.carats > 0 || (it.carats === 0 && it.pieces > 0),
+    );
+  }, [detailedCustomerStones]);
+
+  // Stones bought from customer on credit/unsettled basis: customer is debtor of stone (مشتری سنگ را به ما بدهکار می‌شود)
+  const unsettledPurchasedStones = useMemo(() => {
+    return detailedCustomerStones.filter(
+      (it) => it.carats < 0 || (it.carats === 0 && it.pieces < 0),
+    );
+  }, [detailedCustomerStones]);
+
+  // Filtered direct inventory items for warehouse search
+  const filteredInventoryItems = useMemo(() => {
+    if (!inventorySearchQuery.trim()) return inventoryItems;
+    const q = inventorySearchQuery.trim().toLowerCase();
+    return inventoryItems.filter((item) => {
+      const code = String(item.inventory_code || '').toLowerCase();
+      const sp = String(item.species || item.category || '').toLowerCase();
+      const sh = String(item.shape || '').toLowerCase();
+      const cert = String(item.report_number || '').toLowerCase();
+      return code.includes(q) || sp.includes(q) || sh.includes(q) || cert.includes(q);
+    });
+  }, [inventoryItems, inventorySearchQuery]);
+
+  // Select an unsettled sold stone for delivery / exit (خروج سنگ)
+  const handleSelectUnsettledStone = useCallback(
+    (item: CustomerStoneItemDetail, matchedInv?: GemstoneInventoryRecord) => {
+      if (nature !== 'paid' && onChangeNature) {
+        onChangeNature('paid');
+      }
+      setCurrentOp('exit');
+
+      const targetSpecies = normalizeSpeciesId(
+        item.speciesId || item.category || 'diamond',
+        rootCategory,
+      );
+      setSpecies(targetSpecies);
+      if (item.category) setCategory(item.category as GemstoneCategory);
+      if (item.shape) setShape(item.shape);
+      if (item.mode) setStoneMode(item.mode);
+      if (item.color) setColorGrade(item.color);
+      if (item.clarity) setClarityGrade(item.clarity);
+      if (item.cut) setCutGrade(item.cut);
+      if (item.certificateLab) setCertificateLab(item.certificateLab);
+      if (item.certificateNumber) setCertificateReportNumber(item.certificateNumber);
+      if (item.laserInscription) setLaserInscription(item.laserInscription);
+      if (item.sieveSize) setSieveSize(item.sieveSize);
+
+      const targetCt = String(Math.abs(item.carats || 0));
+      const exactG = item.grams ? Math.abs(item.grams) : (Math.abs(item.carats || 0) * 0.2);
+      const targetG = String(Number(Math.round(Number(exactG + 'e8')) + 'e-8'));
+      const targetPcs = String(Math.max(1, Math.abs(item.pieces || 1)));
+
+      setWeightCt(targetCt);
+      setWeightG(targetG);
+      setPieces(targetPcs);
+
+      const codeOrLot = matchedInv?.inventory_code || item.lotNumber || '';
+      if (codeOrLot) setLotNumber(codeOrLot);
+      if (matchedInv?.storage_location) setStorageLocation(matchedInv.storage_location);
+
+      const desc = `خروج و تحویل سنگ فروخته‌شده بدون تسویه${item.lastDocumentNumber ? ` (سند ${item.lastDocumentNumber})` : ''}`;
+      setDescription(desc);
+
+      setDraftLine((prev) => ({
+        ...prev,
+        documentNature: 'paid',
+        documentTab: 'stone',
+        sourceTab: 'stone',
+        details: {
+          ...prev.details,
+          stoneOperationKind: 'exit',
+          stoneRootCategory: rootCategory,
+          stoneMode: item.mode || 'single_stone',
+          stoneCategory: (item.category as GemstoneCategory) || 'diamond',
+          stoneSpecies: targetSpecies,
+          stoneSpeciesName: item.speciesName,
+          stoneShape: item.shape || 'round',
+          stoneShapeName: item.shapeName || '',
+          stoneColor: item.color || '',
+          stoneClarity: item.clarity || '',
+          stoneCut: item.cut || '',
+          stoneCertificateLab: item.certificateLab || '',
+          stoneCertificateNumber: item.certificateNumber || '',
+          stoneLaserInscription: item.laserInscription || '',
+          stoneCarats: targetCt,
+          stoneGrams: targetG,
+          stonePieces: targetPcs,
+          stoneLotNumber: codeOrLot,
+          stoneSieveSize: item.sieveSize || '',
+          inventorySourceId: matchedInv?.id || '',
+          stoneInventorySourceId: matchedInv?.id || '',
+          unsettledReferenceId: item.key,
+        },
+        description: desc,
+      }));
+
+      setSelectedUnsettledKey(item.key);
+      setSelectionNotice(`سنگ «${item.speciesName}» با موفقیت جهت خروج از انبار بارگذاری شد.`);
+      setTimeout(() => setSelectionNotice(''), 4000);
+    },
+    [nature, onChangeNature, rootCategory, setDraftLine],
+  );
+
+  // Select an unsettled purchased stone for entry (ورود سنگ)
+  const handleSelectUnsettledPurchaseStone = useCallback(
+    (item: CustomerStoneItemDetail) => {
+      if (nature !== 'received' && onChangeNature) {
+        onChangeNature('received');
+      }
+      setCurrentOp('entry');
+
+      const targetSpecies = normalizeSpeciesId(
+        item.speciesId || item.category || 'diamond',
+        rootCategory,
+      );
+      setSpecies(targetSpecies);
+      if (item.category) setCategory(item.category as GemstoneCategory);
+      if (item.shape) setShape(item.shape);
+      if (item.mode) setStoneMode(item.mode);
+      if (item.color) setColorGrade(item.color);
+      if (item.clarity) setClarityGrade(item.clarity);
+      if (item.cut) setCutGrade(item.cut);
+      if (item.certificateLab) setCertificateLab(item.certificateLab);
+      if (item.certificateNumber) setCertificateReportNumber(item.certificateNumber);
+      if (item.laserInscription) setLaserInscription(item.laserInscription);
+      if (item.sieveSize) setSieveSize(item.sieveSize);
+
+      const targetCt = String(Math.abs(item.carats || 0));
+      const exactG = item.grams ? Math.abs(item.grams) : (Math.abs(item.carats || 0) * 0.2);
+      const targetG = String(Number(Math.round(Number(exactG + 'e8')) + 'e-8'));
+      const targetPcs = String(Math.max(1, Math.abs(item.pieces || 1)));
+
+      setWeightCt(targetCt);
+      setWeightG(targetG);
+      setPieces(targetPcs);
+
+      if (item.lotNumber) setLotNumber(item.lotNumber);
+
+      const desc = `ورود سنگ خریداری‌شده بدون تسویه جهت تسویه بدهی${item.lastDocumentNumber ? ` (سند ${item.lastDocumentNumber})` : ''}`;
+      setDescription(desc);
+
+      setDraftLine((prev) => ({
+        ...prev,
+        documentNature: 'received',
+        documentTab: 'stone',
+        sourceTab: 'stone',
+        details: {
+          ...prev.details,
+          stoneOperationKind: 'entry',
+          stoneRootCategory: rootCategory,
+          stoneMode: item.mode || 'single_stone',
+          stoneCategory: (item.category as GemstoneCategory) || 'diamond',
+          stoneSpecies: targetSpecies,
+          stoneSpeciesName: item.speciesName,
+          stoneShape: item.shape || 'round',
+          stoneShapeName: item.shapeName || '',
+          stoneColor: item.color || '',
+          stoneClarity: item.clarity || '',
+          stoneCut: item.cut || '',
+          stoneCertificateLab: item.certificateLab || '',
+          stoneCertificateNumber: item.certificateNumber || '',
+          stoneLaserInscription: item.laserInscription || '',
+          stoneCarats: targetCt,
+          stoneGrams: targetG,
+          stonePieces: targetPcs,
+          stoneLotNumber: item.lotNumber || '',
+          unsettledReferenceId: item.key,
+        },
+        description: desc,
+      }));
+
+      setSelectedUnsettledKey(item.key);
+      setSelectionNotice(`سنگ بدهی طرف‌حساب با موفقیت جهت ورود به انبار بارگذاری شد.`);
+      setTimeout(() => setSelectionNotice(''), 4000);
+    },
+    [nature, onChangeNature, rootCategory, setDraftLine],
+  );
+
+  // Select direct warehouse stone for exit
+  const handleSelectInventoryDirect = useCallback(
+    (inv: GemstoneInventoryRecord) => {
+      if (nature !== 'paid' && onChangeNature) {
+        onChangeNature('paid');
+      }
+      setCurrentOp('exit');
+
+      const rawSpecies = String(
+        inv.species ||
+        (typeof inv.gemstone_type === 'string' ? inv.gemstone_type : (inv.gemstone_type as any)?.id) ||
+        inv.category ||
+        'diamond',
+      );
+      const targetSpecies = normalizeSpeciesId(
+        rawSpecies,
+        (inv.root_category as RootCategory) || rootCategory,
+      );
+      if (inv.root_category) setRootCategory(inv.root_category as RootCategory);
+      setSpecies(targetSpecies);
+      if (inv.category) setCategory(inv.category as GemstoneCategory);
+      if (inv.shape) setShape(inv.shape);
+      if (inv.inventory_mode === 'parcel') {
+        setStoneMode('parcel');
+      } else {
+        setStoneMode('single_stone');
+      }
+      if (inv.diamond_color_grade) setColorGrade(inv.diamond_color_grade);
+      if (inv.diamond_clarity_grade) setClarityGrade(inv.diamond_clarity_grade);
+      if (inv.cut_grade) setCutGrade(inv.cut_grade);
+      if (inv.certificate_lab) setCertificateLab(inv.certificate_lab);
+      if (inv.report_number) setCertificateReportNumber(inv.report_number);
+
+      const targetCt = String(inv.weight_ct || 0);
+      const exactG = inv.weight_g ? Number(inv.weight_g) : (Number(inv.weight_ct || 0) * 0.2);
+      const targetG = String(Number(Math.round(Number(exactG + 'e8')) + 'e-8'));
+      const targetPcs = String(inv.quantity || 1);
+
+      setWeightCt(targetCt);
+      setWeightG(targetG);
+      setPieces(targetPcs);
+
+      if (inv.inventory_code) setLotNumber(inv.inventory_code);
+      if (inv.storage_location) setStorageLocation(inv.storage_location);
+
+      const desc = `خروج سنگ از انبار (کد ${inv.inventory_code || ''})`;
+      setDescription(desc);
+
+      setDraftLine((prev) => ({
+        ...prev,
+        documentNature: 'paid',
+        documentTab: 'stone',
+        sourceTab: 'stone',
+        details: {
+          ...prev.details,
+          stoneOperationKind: 'exit',
+          stoneRootCategory: (inv.root_category as RootCategory) || rootCategory,
+          stoneMode: inv.inventory_mode === 'parcel' ? 'parcel' : 'single_stone',
+          stoneCategory: (inv.category as GemstoneCategory) || 'diamond',
+          stoneSpecies: targetSpecies,
+          stoneShape: inv.shape || 'round',
+          stoneColor: inv.diamond_color_grade || '',
+          stoneClarity: inv.diamond_clarity_grade || '',
+          stoneCut: inv.cut_grade || '',
+          stoneCertificateLab: inv.certificate_lab || '',
+          stoneCertificateNumber: inv.report_number || '',
+          stoneCarats: targetCt,
+          stoneGrams: targetG,
+          stonePieces: targetPcs,
+          stoneLotNumber: inv.inventory_code || '',
+          inventorySourceId: inv.id,
+          stoneInventorySourceId: inv.id,
+        },
+        description: desc,
+      }));
+
+      setSelectedUnsettledKey(`inv_${inv.id}`);
+      setSelectionNotice(`سنگ با کد انبار «${inv.inventory_code}» انتخاب و در سند بارگذاری شد.`);
+      setTimeout(() => setSelectionNotice(''), 4000);
+    },
+    [nature, onChangeNature, rootCategory, setDraftLine],
+  );
 
   // Synchronize state when draftLine changes (e.g. user selects a different line to edit)
   useEffect(() => {
@@ -803,7 +1154,7 @@ export default function StoneTab({
     setSieveCalcHint('');
     const num = parseFloat(rawVal);
     if (!isNaN(num) && num > 0) {
-      const g = String(caratsToGrams(num, 4));
+      const g = String(caratsToExactGrams(num));
       setWeightG(g);
       if (valuationMethod === 'per_carat') {
         const up = parseLocalizedAmount(unitPrice);
@@ -823,7 +1174,7 @@ export default function StoneTab({
     setSieveCalcHint('');
     const num = parseFloat(rawVal);
     if (!isNaN(num) && num > 0) {
-      const ct = String(gramsToCarats(num, 3));
+      const ct = String(gramsToExactCarats(num));
       setWeightCt(ct);
       if (valuationMethod === 'per_gram') {
         const up = parseLocalizedAmount(unitPrice);
@@ -1185,30 +1536,550 @@ export default function StoneTab({
           )}
         </div>
 
-        {/* Operation Mode Buttons */}
-        <div className="inline-flex rounded-xl bg-slate-100 p-1 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60">
-          {availableOperations.map((op) => {
-            const isSelected = currentOp === op.id;
-            return (
-              <button
-                key={op.id}
-                type="button"
-                onClick={() => setCurrentOp(op.id)}
-                title={op.desc}
-                className={`relative px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                  isSelected
-                    ? isReceived
-                      ? 'bg-emerald-500 text-white shadow-sm font-black'
-                      : 'bg-rose-500 text-white shadow-sm font-black'
-                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
-                }`}
-              >
-                {op.label}
-              </button>
-            );
-          })}
+        {/* Operation Mode Buttons & Unsettled Picker Button */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex rounded-xl bg-slate-100 p-1 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60">
+            {availableOperations.map((op) => {
+              const isSelected = currentOp === op.id;
+              return (
+                <button
+                  key={op.id}
+                  type="button"
+                  onClick={() => setCurrentOp(op.id)}
+                  title={op.desc}
+                  className={`relative px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    isSelected
+                      ? isReceived
+                        ? 'bg-emerald-500 text-white shadow-sm font-black'
+                        : 'bg-rose-500 text-white shadow-sm font-black'
+                      : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
+                  }`}
+                >
+                  {op.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Unsettled Stones (Purchased / Sold) Smart Picker Button */}
+          <div className="inline-flex items-center gap-1 bg-amber-50/80 dark:bg-amber-950/40 p-1 rounded-xl border border-amber-200/90 dark:border-amber-800/70 shadow-2xs">
+            <button
+              type="button"
+              onClick={() => {
+                const nextState = !showUnsettledPicker;
+                setShowUnsettledPicker(nextState);
+                if (nextState) {
+                  if (currentOp === 'entry' || isReceived) {
+                    setUnsettledPickerTab('purchased');
+                  } else {
+                    setUnsettledPickerTab('sold');
+                  }
+                }
+              }}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                showUnsettledPicker
+                  ? 'bg-amber-500 text-white shadow-xs font-black'
+                  : 'text-amber-950 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-900/40'
+              }`}
+              title="اقلام سنگ تسویه‌نشده طرف‌حساب (سنگ‌های خریداری‌شده یا فروخته‌شده بدون تسویه)"
+            >
+              <Package size={14} className="text-amber-600 dark:text-amber-300" />
+              <span>سنگ‌های بدون تسویه (خریداری‌شده / فروخته‌شده)</span>
+              {(unsettledSoldStones.length > 0 || unsettledPurchasedStones.length > 0) && (
+                <span className="rounded-full bg-amber-600 text-white dark:bg-amber-400 dark:text-slate-950 text-[10px] font-black px-1.5 py-0.2">
+                  {toPersianDigits(String(unsettledSoldStones.length + unsettledPurchasedStones.length))} قلم
+                </span>
+              )}
+            </button>
+
+            {/* Quick Filter: سنگ‌های خریداری‌شده از مشتری (ورود) */}
+            <button
+              type="button"
+              onClick={() => {
+                setShowUnsettledPicker(true);
+                setUnsettledPickerTab('purchased');
+              }}
+              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                showUnsettledPicker && unsettledPickerTab === 'purchased'
+                  ? 'bg-emerald-600 text-white shadow-xs font-black'
+                  : 'text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100/70 dark:hover:bg-emerald-950/60'
+              }`}
+              title="سنگ‌های خریداری‌شده بدون تسویه (مشتری سنگ را به ما بدهکار می‌شود · ثبت ورود به انبار)"
+            >
+              <span>خریداری‌شده (ورود)</span>
+              {unsettledPurchasedStones.length > 0 && (
+                <span className="rounded-full bg-emerald-100 text-emerald-900 dark:bg-emerald-900 dark:text-emerald-100 text-[10px] font-black px-1.5 py-0.2 border border-emerald-300/50">
+                  {toPersianDigits(String(unsettledPurchasedStones.length))}
+                </span>
+              )}
+            </button>
+
+            {/* Quick Filter: سنگ‌های فروخته‌شده به مشتری (خروج) */}
+            <button
+              type="button"
+              onClick={() => {
+                setShowUnsettledPicker(true);
+                setUnsettledPickerTab('sold');
+              }}
+              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                showUnsettledPicker && unsettledPickerTab === 'sold'
+                  ? 'bg-amber-600 text-white shadow-xs font-black'
+                  : 'text-amber-800 dark:text-amber-300 hover:bg-amber-100/70 dark:hover:bg-amber-900/50'
+              }`}
+              title="سنگ‌های فروخته‌شده بدون تسویه (مشتری سنگ را از ما طلبکار می‌شود · بررسی انبار و ثبت خروج)"
+            >
+              <span>فروخته‌شده (خروج)</span>
+              {unsettledSoldStones.length > 0 && (
+                <span className="rounded-full bg-amber-100 text-amber-900 dark:bg-amber-900 dark:text-amber-100 text-[10px] font-black px-1.5 py-0.2 border border-amber-300/50">
+                  {toPersianDigits(String(unsettledSoldStones.length))}
+                </span>
+              )}
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* Feedback Toast */}
+      {selectionNotice && (
+        <div className="flex items-center gap-2 p-2.5 rounded-xl bg-emerald-50 text-emerald-900 border border-emerald-300 dark:bg-emerald-950/80 dark:text-emerald-200 dark:border-emerald-700 text-xs font-bold animate-in fade-in">
+          <CheckCircle2 size={16} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+          <span>{selectionNotice}</span>
+        </div>
+      )}
+
+      {/* 1.5 Unsettled (Purchased & Sold) Stones & Inventory Delivery Section */}
+      {(showUnsettledPicker ||
+        (currentOp === 'exit' && unsettledSoldStones.length > 0) ||
+        (currentOp === 'entry' && unsettledPurchasedStones.length > 0)) && (
+        <div className="p-4 rounded-2xl border border-amber-200 bg-amber-50/40 dark:border-amber-900/50 dark:bg-amber-950/20 space-y-3.5 shadow-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-200/80 dark:border-amber-900/60 pb-2.5">
+            <div className="flex items-center gap-2">
+              <Package size={18} className="text-amber-600 dark:text-amber-400" />
+              <div>
+                <h4 className="text-xs font-black text-amber-950 dark:text-amber-100">
+                  {unsettledPickerTab === 'purchased'
+                    ? 'اقلام سنگ خریداری‌شده از طرف‌حساب (خرید بدون تسویه)'
+                    : unsettledPickerTab === 'sold'
+                    ? 'اقلام سنگ فروخته‌شده به طرف‌حساب (فروش بدون تسویه)'
+                    : 'موجودی کل انبار گوهرها'}
+                </h4>
+                <p className="text-[11px] text-amber-800/80 dark:text-amber-300/80">
+                  {unsettledPickerTab === 'purchased'
+                    ? 'انتخاب قلم جهت ثبت ورود فیزیکی سنگ به انبار (مشتری سنگ را به ما بدهکار می‌شود)'
+                    : unsettledPickerTab === 'sold'
+                    ? 'بررسی موجودی در انبار و انتخاب قلم جهت ثبت خروج فیزیکی سنگ (مشتری سنگ را از ما طلبکار می‌شود)'
+                    : 'جستجو و انتخاب مستقیم سنگ از انبار گوهرسنگ‌ها جهت خروج یا مصرف'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {/* Tab Switcher inside Panel */}
+              <div className="inline-flex rounded-lg bg-white/80 dark:bg-slate-900/80 p-0.5 border border-amber-200/60 dark:border-amber-900/40 text-[11px] font-bold">
+                <button
+                  type="button"
+                  onClick={() => setUnsettledPickerTab('sold')}
+                  className={`px-2 py-1 rounded-md transition-all cursor-pointer ${
+                    unsettledPickerTab === 'sold'
+                      ? 'bg-amber-500 text-white font-black shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                  }`}
+                >
+                  فروخته‌شده (خروج) {unsettledSoldStones.length > 0 && `(${toPersianDigits(String(unsettledSoldStones.length))})`}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUnsettledPickerTab('purchased')}
+                  className={`px-2 py-1 rounded-md transition-all cursor-pointer ${
+                    unsettledPickerTab === 'purchased'
+                      ? 'bg-emerald-600 text-white font-black shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                  }`}
+                >
+                  خریداری‌شده (ورود) {unsettledPurchasedStones.length > 0 && `(${toPersianDigits(String(unsettledPurchasedStones.length))})`}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUnsettledPickerTab('inventory')}
+                  className={`px-2 py-1 rounded-md transition-all cursor-pointer ${
+                    unsettledPickerTab === 'inventory'
+                      ? 'bg-slate-700 text-white font-black shadow-xs dark:bg-slate-600'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                  }`}
+                >
+                  کل انبار گوهرها
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={fetchGemstoneInventory}
+                disabled={inventoryLoading}
+                className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-amber-100 dark:hover:bg-amber-900/40 cursor-pointer transition-colors"
+                title="به‌روزرسانی موجودی انبار سنگ"
+              >
+                <RefreshCw size={14} className={inventoryLoading ? 'animate-spin' : ''} />
+              </button>
+              {showUnsettledPicker && (
+                <button
+                  type="button"
+                  onClick={() => setShowUnsettledPicker(false)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
+                  title="بستن پنل"
+                >
+                  <X size={15} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {!selectedCustomer ? (
+            <div className="p-3.5 rounded-xl bg-white/90 dark:bg-slate-900/90 border border-amber-200/60 dark:border-amber-900/40 text-center text-xs text-amber-900 dark:text-amber-200 font-medium">
+              برای مشاهده اقلام سنگ تسویه‌نشده (خریداری‌شده یا فروخته‌شده)، لطفاً ابتدا طرف‌حساب را انتخاب نمایید.
+            </div>
+          ) : customerTxLoading ? (
+            <div className="p-4 text-center text-xs text-slate-500 dark:text-slate-400 flex items-center justify-center gap-2 font-medium">
+              <RefreshCw size={15} className="animate-spin text-amber-600" />
+              <span>در حال استعلام اقلام سنگ تسویه‌نشده طرف‌حساب و تطبیق با موجودی انبار...</span>
+            </div>
+          ) : unsettledPickerTab === 'sold' ? (
+            unsettledSoldStones.length === 0 ? (
+              <div className="p-3.5 rounded-xl bg-white/90 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 text-center text-xs text-slate-600 dark:text-slate-400 font-medium">
+                هیچ قلم سنگ فروخته‌شده بدون تسویه‌ای برای این طرف‌حساب ثبت نشده است.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {unsettledSoldStones.map((item) => {
+                  const match = matchUnsettledStoneWithInventory(item, inventoryItems);
+                  const isSelected = selectedUnsettledKey === item.key;
+
+                  return (
+                    <div
+                      key={item.key}
+                      className={`p-3.5 rounded-xl border transition-all flex flex-col justify-between gap-3 ${
+                        isSelected
+                          ? 'border-emerald-500 bg-white dark:bg-slate-900 shadow-md ring-2 ring-emerald-500/20'
+                          : match.isAvailable
+                          ? 'border-emerald-200 bg-white/95 hover:border-emerald-300 dark:border-emerald-900/50 dark:bg-slate-900/80 shadow-2xs'
+                          : 'border-slate-200 bg-white/70 dark:border-slate-800 dark:bg-slate-900/40'
+                      }`}
+                    >
+                      <div>
+                        {/* Top Bar: Species, Shape, Mode & Status Badge */}
+                        <div className="flex items-center justify-between gap-2 mb-2 pb-1.5 border-b border-slate-100 dark:border-slate-800">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <Gem size={14} className={match.isAvailable ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'} />
+                            <strong className="text-xs font-black text-slate-900 dark:text-slate-100">
+                              {item.speciesName}
+                            </strong>
+                            {item.shapeName && (
+                              <span className="text-[11px] text-slate-600 dark:text-slate-300">
+                                · {item.shapeName}
+                              </span>
+                            )}
+                            <span className="text-[10px] text-slate-400 dark:text-slate-500">
+                              ({item.mode === 'parcel' ? 'بسته‌ای' : 'تک‌سنگ'})
+                            </span>
+                          </div>
+
+                          {/* Availability Badge: موجود در انبار VS ناموجود */}
+                          {match.isAvailable ? (
+                            <span className="px-2.5 py-0.5 rounded-md text-[11px] font-black bg-emerald-100 text-emerald-900 border border-emerald-300 dark:bg-emerald-950/90 dark:text-emerald-300 dark:border-emerald-600 flex items-center gap-1 shrink-0">
+                              <CheckCircle2 size={12} />
+                              <span>موجود در انبار</span>
+                            </span>
+                          ) : (
+                            <span className="px-2.5 py-0.5 rounded-md text-[11px] font-black bg-rose-100 text-rose-900 border border-rose-300 dark:bg-rose-950/90 dark:text-rose-300 dark:border-rose-600 flex items-center gap-1 shrink-0">
+                              <AlertCircle size={12} />
+                              <span>ناموجود</span>
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Specifications Grid */}
+                        <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-[11px]">
+                          <div>
+                            <span className="text-slate-500 dark:text-slate-400">وزن: </span>
+                            <strong className="text-slate-900 dark:text-slate-100 font-mono">
+                              {formatExactGemWeight(Math.abs(item.carats))}
+                            </strong>
+                            <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 mr-0.5"> ct</span>
+                            <span className="text-slate-400 text-[10px] mr-1">
+                              (<span className="font-mono">{formatExactGemWeight(Math.abs(item.grams || (item.carats ? item.carats * 0.2 : 0)))}</span> g)
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500 dark:text-slate-400">تعداد: </span>
+                            <strong className="text-slate-900 dark:text-slate-100">
+                              {toPersianDigits(String(item.pieces || 1))} عدد
+                            </strong>
+                          </div>
+                          {item.color && (
+                            <div>
+                              <span className="text-slate-500 dark:text-slate-400">رنگ: </span>
+                              <span className="font-bold text-slate-800 dark:text-slate-200">{item.color}</span>
+                            </div>
+                          )}
+                          {item.clarity && (
+                            <div>
+                              <span className="text-slate-500 dark:text-slate-400">پاکی: </span>
+                              <span className="font-bold text-slate-800 dark:text-slate-200">{item.clarity}</span>
+                            </div>
+                          )}
+                          {item.cut && (
+                            <div>
+                              <span className="text-slate-500 dark:text-slate-400">تراش: </span>
+                              <span className="font-bold text-slate-800 dark:text-slate-200">{item.cut}</span>
+                            </div>
+                          )}
+                          {item.certificateLab && (
+                            <div>
+                              <span className="text-slate-500 dark:text-slate-400">شناسنامه: </span>
+                              <span className="font-mono text-[10px] text-slate-800 dark:text-slate-200">
+                                {item.certificateLab.toUpperCase()} {item.certificateNumber || ''}
+                              </span>
+                            </div>
+                          )}
+                          {item.lastDocumentNumber && (
+                            <div className="col-span-2 text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                              <span>آخرین سند: </span>
+                              <span className="font-mono font-bold text-slate-700 dark:text-slate-300">{item.lastDocumentNumber}</span>
+                              {item.lastDate && <span> · تاریخ: {toPersianDigits(item.lastDate)}</span>}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Matched Warehouse Stock Info */}
+                        {match.isAvailable && match.matchedItem && (
+                          <div className="mt-2 p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/70 text-[10px] text-emerald-950 dark:text-emerald-200 flex items-center justify-between">
+                            <span>
+                              کد انبار: <strong className="font-mono font-bold">{match.matchedItem.inventory_code || '—'}</strong>
+                            </span>
+                            <span>
+                              موجودی انبار: <strong className="font-black font-mono">{formatExactGemWeight(match.availableCarats)}</strong> قیراط
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Action Button */}
+                      <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                        {match.isAvailable ? (
+                          <button
+                            type="button"
+                            onClick={() => handleSelectUnsettledStone(item, match.matchedItem)}
+                            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-2 px-3 rounded-xl flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                          >
+                            <ArrowUpRight size={14} />
+                            <span>انتخاب و خروج سنگ</span>
+                          </button>
+                        ) : (
+                          <div className="flex items-center justify-between gap-2">
+                            <button
+                              type="button"
+                              disabled
+                              className="bg-slate-200/80 dark:bg-slate-800 text-slate-400 dark:text-slate-500 font-bold text-xs py-1.5 px-3 rounded-xl cursor-not-allowed flex items-center gap-1 border border-slate-300 dark:border-slate-700"
+                            >
+                              <AlertCircle size={13} />
+                              <span>ناموجود</span>
+                            </button>
+                            <span className="text-[10px] text-rose-600 dark:text-rose-400 font-medium">
+                              در انبار موجود نیست و امکان خروج ندارد.
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )
+          ) : unsettledPickerTab === 'purchased' ? (
+            unsettledPurchasedStones.length === 0 ? (
+              <div className="p-3.5 rounded-xl bg-white/90 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 text-center text-xs text-slate-600 dark:text-slate-400 font-medium">
+                هیچ قلم سنگ خریداری‌شده بدون تسویه‌ای برای این طرف‌حساب ثبت نشده است.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {unsettledPurchasedStones.map((item) => {
+                  const isSelected = selectedUnsettledKey === item.key;
+                  return (
+                    <div
+                      key={item.key}
+                      className={`p-3.5 rounded-xl border transition-all flex flex-col justify-between gap-3 ${
+                        isSelected
+                          ? 'border-emerald-500 bg-white dark:bg-slate-900 shadow-md ring-2 ring-emerald-500/20'
+                          : 'border-slate-200 bg-white/90 dark:border-slate-800 dark:bg-slate-900/70 hover:border-emerald-300'
+                      }`}
+                    >
+                      <div>
+                        {/* Top Bar: Species, Shape, Mode & Customer Debt Badge */}
+                        <div className="flex items-center justify-between gap-2 mb-2 pb-1.5 border-b border-slate-100 dark:border-slate-800">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <Gem size={14} className="text-emerald-600 dark:text-emerald-400" />
+                            <strong className="text-xs font-black text-slate-900 dark:text-slate-100">
+                              {item.speciesName}
+                            </strong>
+                            {item.shapeName && (
+                              <span className="text-[11px] text-slate-600 dark:text-slate-300">
+                                · {item.shapeName}
+                              </span>
+                            )}
+                            <span className="text-[10px] text-slate-400 dark:text-slate-500">
+                              ({item.mode === 'parcel' ? 'بسته‌ای' : 'تک‌سنگ'})
+                            </span>
+                          </div>
+                          <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-cyan-100 text-cyan-900 border border-cyan-300 dark:bg-cyan-950/90 dark:text-cyan-300 dark:border-cyan-600">
+                            مشتری سنگ را به ما بدهکار می‌شود
+                          </span>
+                        </div>
+
+                        {/* Specifications Grid */}
+                        <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-[11px]">
+                          <div>
+                            <span className="text-slate-500 dark:text-slate-400">وزن: </span>
+                            <strong className="text-slate-900 dark:text-slate-100 font-mono">
+                              {formatExactGemWeight(Math.abs(item.carats))}
+                            </strong>
+                            <span className="text-[11px] font-bold text-cyan-600 dark:text-cyan-400 mr-0.5"> ct</span>
+                            <span className="text-slate-400 text-[10px] mr-1">
+                              (<span className="font-mono">{formatExactGemWeight(Math.abs(item.grams || (item.carats ? item.carats * 0.2 : 0)))}</span> g)
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500 dark:text-slate-400">تعداد: </span>
+                            <strong className="text-slate-900 dark:text-slate-100">
+                              {toPersianDigits(String(Math.abs(item.pieces || 1)))} عدد
+                            </strong>
+                          </div>
+                          {item.color && (
+                            <div>
+                              <span className="text-slate-500 dark:text-slate-400">رنگ: </span>
+                              <span className="font-bold text-slate-800 dark:text-slate-200">{item.color}</span>
+                            </div>
+                          )}
+                          {item.clarity && (
+                            <div>
+                              <span className="text-slate-500 dark:text-slate-400">پاکی: </span>
+                              <span className="font-bold text-slate-800 dark:text-slate-200">{item.clarity}</span>
+                            </div>
+                          )}
+                          {item.cut && (
+                            <div>
+                              <span className="text-slate-500 dark:text-slate-400">تراش: </span>
+                              <span className="font-bold text-slate-800 dark:text-slate-200">{item.cut}</span>
+                            </div>
+                          )}
+                          {item.certificateLab && (
+                            <div>
+                              <span className="text-slate-500 dark:text-slate-400">شناسنامه: </span>
+                              <span className="font-mono text-[10px] text-slate-800 dark:text-slate-200">
+                                {item.certificateLab.toUpperCase()} {item.certificateNumber || ''}
+                              </span>
+                            </div>
+                          )}
+                          {item.lastDocumentNumber && (
+                            <div className="col-span-2 text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                              <span>آخرین سند: </span>
+                              <span className="font-mono font-bold text-slate-700 dark:text-slate-300">
+                                {item.lastDocumentNumber}
+                              </span>
+                              {item.lastDate && <span> · {toPersianDigits(item.lastDate)}</span>}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleSelectUnsettledPurchaseStone(item)}
+                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-2 px-3 rounded-xl flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                      >
+                        <Plus size={14} />
+                        <span>انتخاب و ورود سنگ</span>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )
+          ) : (
+            /* General Warehouse Inventory Picker */
+            <div className="space-y-3">
+              <div className="relative">
+                <Search size={14} className="absolute right-3 top-2.5 text-slate-400" />
+                <input
+                  type="text"
+                  value={inventorySearchQuery}
+                  onChange={(e) => setInventorySearchQuery(e.target.value)}
+                  placeholder="جستجو در انبار سنگ (کد، گونه، تراش، شناسنامه)..."
+                  className="w-full pr-8 pl-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-hidden focus:border-amber-500"
+                />
+              </div>
+
+              {filteredInventoryItems.length === 0 ? (
+                <div className="p-3 text-center text-xs text-slate-500 dark:text-slate-400 font-medium">
+                  موردی در انبار گوهرها یافت نشد.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 max-h-80 overflow-y-auto pr-0.5">
+                  {filteredInventoryItems.map((inv) => {
+                    const ct = Number(inv.weight_ct) || 0;
+                    const inStock = ct > 0 || (Number(inv.quantity) || 0) > 0;
+
+                    return (
+                      <div
+                        key={inv.id}
+                        className={`p-3 rounded-xl border transition-all flex items-center justify-between gap-2 ${
+                          inStock
+                            ? 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900'
+                            : 'border-slate-100 bg-slate-50/60 dark:border-slate-800/40 dark:bg-slate-900/30'
+                        }`}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 text-xs font-bold">
+                            <span className="font-mono text-[11px] text-slate-500 dark:text-slate-400">
+                              {inv.inventory_code || '—'}
+                            </span>
+                            <strong className="text-slate-800 dark:text-slate-200 truncate">
+                              {String(inv.species || inv.category || 'سنگ')}
+                            </strong>
+                            {inv.shape ? (
+                              <span className="text-[11px] text-slate-500 truncate">· {String(inv.shape)}</span>
+                            ) : null}
+                          </div>
+                          <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-2">
+                            <span>موجودی: <strong className="font-mono">{formatExactGemWeight(ct)}</strong> ct</span>
+                            <span>تعداد: <strong>{toPersianDigits(String(inv.quantity || 1))}</strong> عدد</span>
+                            {inv.diamond_color_grade ? <span>رنگ: {String(inv.diamond_color_grade)}</span> : null}
+                            {inv.diamond_clarity_grade ? <span>پاکی: {String(inv.diamond_clarity_grade)}</span> : null}
+                          </div>
+                        </div>
+
+                        <div>
+                          {inStock ? (
+                            <button
+                              type="button"
+                              onClick={() => handleSelectInventoryDirect(inv)}
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-1.5 px-2.5 rounded-lg flex items-center gap-1 cursor-pointer shadow-2xs transition-colors shrink-0"
+                            >
+                              <ArrowUpRight size={13} />
+                              <span>خروج</span>
+                            </button>
+                          ) : (
+                            <span className="px-2 py-1 rounded-md text-[10px] font-black bg-rose-100 text-rose-900 border border-rose-300 dark:bg-rose-950/80 dark:text-rose-300 dark:border-rose-600 shrink-0">
+                              ناموجود
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* 2. Main Parameters Card (Strictly Mirrored from InitialGemstoneInventoryModal) */}
       <div className="p-4 rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/50 space-y-4 shadow-xs">
@@ -2135,7 +3006,7 @@ export default function StoneTab({
               <input
                 ref={weightCtInputRef}
                 type="number"
-                step="0.001"
+                step="any"
                 value={weightCt}
                 onChange={(e) => handleCaratsChange(e.target.value)}
                 onKeyDown={onKeyDown}
@@ -2150,7 +3021,7 @@ export default function StoneTab({
               </label>
               <input
                 type="number"
-                step="0.0001"
+                step="any"
                 value={weightG}
                 onChange={(e) => handleGramsChange(e.target.value)}
                 onKeyDown={onKeyDown}

@@ -6,7 +6,13 @@ import {
 } from '@/features/accounting/documents/hooks/useDocumentLines';
 import { getLineDocumentTypeLabel } from '@/features/accounting/documents/utils/document-helpers';
 import type { DocumentLine } from '@/src/components/documents/RawGoldTab';
-import { caratsToGrams, gramsToCarats } from '@/lib/gemstone-weight';
+import {
+  caratsToGrams,
+  gramsToCarats,
+  caratsToExactGrams,
+  gramsToExactCarats,
+  formatExactGemWeight,
+} from '@/lib/gemstone-weight';
 import {
   getAllowedColorEndGrades,
   getAllowedClarityEndGrades,
@@ -33,6 +39,7 @@ import {
 } from '@/lib/transaction';
 import {
   calculateCustomerStoneBalances,
+  calculateCustomerDetailedStonePositions,
   transactionBalancesToCustomerBalances,
 } from '@/features/accounting/transactions/services/transaction';
 import {
@@ -649,7 +656,7 @@ describe('Stone Tab Validation & Accounting Operations', () => {
   });
 
   describe('Customer Stone Weight Debt & Liquid Balance Modal', () => {
-    it('calculates customer stone weight debt (بدهکار وزنی سنگ: مشتری سنگ رو به ما بدهکاره) on purchase/received', () => {
+    it('calculates customer stone weight debt (بدهکار وزنی سنگ: مشتری سنگ را به ما بدهکار می‌شود) on purchase/received', () => {
       const tx = mapTransaction({
         id: 'stone-entry-tx-1',
         customer: 'cust-10',
@@ -684,7 +691,7 @@ describe('Stone Tab Validation & Accounting Operations', () => {
       expect(balances.bySpecies['natural_diamond'].speciesName).toBe('الماس طبیعی');
     });
 
-    it('calculates customer stone claim (بستانکار وزنی سنگ: مشتری از ما طلب‌کاره) on sale/paid', () => {
+    it('calculates customer stone claim (بستانکار وزنی سنگ: مشتری سنگ را از ما طلبکار می‌شود) on sale/paid', () => {
       const saleTx = mapTransaction({
         id: 'stone-sale-tx-2',
         customer: 'cust-10',
@@ -761,7 +768,7 @@ describe('Stone Tab Validation & Accounting Operations', () => {
 
       const balances = calculateCustomerStoneBalances([unsettledPurchaseTx]);
 
-      // خرید سنگ بدون تسویه یعنی مشتری سنگ رو به ما بدهکاره (-1 carats net, debitCarats = 1.0 ct)
+      // خرید سنگ بدون تسویه یعنی مشتری سنگ را به ما بدهکار می‌شود (-1 carats net, debitCarats = 1.0 ct)
       expect(balances.carats).toBe(-1.0);
       expect(balances.grams).toBe(-0.2);
       expect(balances.pieces).toBe(-1);
@@ -1079,7 +1086,7 @@ describe('Stone Tab Validation & Accounting Operations', () => {
     });
 
     it('segregates opposing credit and debit stone balances into non-fungible positions without netting', () => {
-      // فروش سنگ به مشتری -> مشتری از ما طلب‌کاره (Credit: 1.0 ct)
+      // فروش سنگ به مشتری -> مشتری سنگ را از ما طلبکار می‌شود (Credit: 1.0 ct)
       const diamondCreditTx = mapTransaction({
         id: 'stone-tx-diamond-credit',
         customer: 'cust-opposing-1',
@@ -1104,7 +1111,7 @@ describe('Stone Tab Validation & Accounting Operations', () => {
         },
       });
 
-      // خرید سنگ از مشتری -> مشتری سنگ رو به ما بدهکاره (Debit: 0.5 ct)
+      // خرید سنگ از مشتری -> مشتری سنگ را به ما بدهکار می‌شود (Debit: 0.5 ct)
       const rubyDebitTx = mapTransaction({
         id: 'stone-tx-ruby-debit',
         customer: 'cust-opposing-1',
@@ -1152,7 +1159,7 @@ describe('Stone Tab Validation & Accounting Operations', () => {
 
     it('generates correct double-entry journal lines for stone purchase and sale', () => {
       // 1. Stone Purchase (خرید سنگ از مشتری)
-      // طبق قاعده بازار: خرید سنگ از مشتری یعنی مشتری سنگ رو به ما بدهکاره (طرف‌حساب بدهکار می‌شود)
+      // طبق قاعده بازار: خرید سنگ از مشتری یعنی مشتری سنگ را به ما بدهکار می‌شود (طرف‌حساب بدهکار می‌شود)
       // Debit: Counterparty Receivable (1120) - بدهی مشتری به ما
       // Credit: Gemstone Inventory (1130)
       const purchaseLines = buildStonePurchaseJournalLines({
@@ -1180,7 +1187,7 @@ describe('Stone Tab Validation & Accounting Operations', () => {
       expect(purchaseCredit!.debit).toBe(0);
 
       // 2. Stone Sale (فروش سنگ به مشتری)
-      // طبق قاعده بازار: فروش سنگ به مشتری یعنی مشتری از ما طلب کاره (طرف‌حساب بستانکار می‌شود)
+      // طبق قاعده بازار: فروش سنگ به مشتری یعنی مشتری سنگ را از ما طلبکار می‌شود (طرف‌حساب بستانکار می‌شود)
       // Debit: Gemstone Inventory (1130)
       // Credit: Counterparty Liability (2120) - طلب مشتری از ما
       const saleLines = buildStoneSaleJournalLines({
@@ -1219,14 +1226,14 @@ describe('Stone Tab Validation & Accounting Operations', () => {
       // Verify operation accounting nature badges and impacts
       expect(tabSrc).toContain('natureBadge:');
       expect(tabSrc).toContain('accountingImpact:');
-      expect(tabSrc).toContain('مشتری سنگ رو به ما بدهکاره (بدهکار به ما)');
-      expect(tabSrc).toContain('مشتری از ما طلب‌کاره (بستانکار از ما)');
+      expect(tabSrc).toContain('مشتری سنگ را به ما بدهکار می‌شود');
+      expect(tabSrc).toContain('مشتری سنگ را از ما طلبکار می‌شود');
       expect(tabSrc).toContain('بدهی سنگ مشتری به ما (تسویه وزنی)');
       expect(tabSrc).toContain('طلب سنگ مشتری از ما (تحویل/تسویه)');
 
       // Verify educational market rule is attached as tooltip/title on badge rather than bulky card above GIA origin
       expect(tabSrc).toContain('قاعده ماهیت معامله سنگ و عدم تهاتر');
-      expect(tabSrc).toContain('خرید سنگ از مشتری یعنی مشتری سنگ رو به ما بدهکاره (بدهکار به ما) · فروش سنگ به مشتری یعنی مشتری از ما طلب‌کاره (بستانکار از ما)');
+      expect(tabSrc).toContain('خرید سنگ از مشتری یعنی مشتری سنگ را به ما بدهکار می‌شود · فروش سنگ به مشتری یعنی مشتری سنگ را از ما طلبکار می‌شود');
     });
 
     it('validates StoneBalanceModal renders (i) info button at the top of stone balance header and expandable banner', async () => {
@@ -1243,7 +1250,7 @@ describe('Stone Tab Validation & Accounting Operations', () => {
       expect(modalSrc).toContain('<Info size={13} />');
       expect(modalSrc).toContain('showInfoBanner &&');
       expect(modalSrc).toContain('قاعده ماهیت معامله سنگ و عدم تهاتر:');
-      expect(modalSrc).toContain('خرید سنگ از مشتری یعنی مشتری سنگ رو به ما بدهکاره (بدهکار به ما) · فروش سنگ به مشتری یعنی مشتری از ما طلب‌کاره (بستانکار از ما)');
+      expect(modalSrc).toContain('خرید سنگ از مشتری یعنی مشتری سنگ را به ما بدهکار می‌شود · فروش سنگ به مشتری یعنی مشتری سنگ را از ما طلبکار می‌شود');
     });
 
     it('validates CustomerBalanceLiquid displays segregated items when customer has opposing stone balances', async () => {
@@ -1300,8 +1307,150 @@ describe('Stone Tab Validation & Accounting Operations', () => {
       const hookMatch = codeAfterEarlyReturn.match(/\b(useMemo|useState|useEffect|useCallback|useRef|useContext)\b/);
       expect(hookMatch).toBeNull();
     });
+
+    it('validates StoneTab contains unsettled stone picker supporting both purchased and sold stones (سنگ‌های خریداری‌شده / فروخته‌شده) and inventory availability badges (موجود در انبار / ناموجود)', async () => {
+      const fs = await import('fs');
+      const path = await import('path');
+      const tabSrc = fs.readFileSync(
+        path.resolve(__dirname, '../features/accounting/documents/components/StoneTab.tsx'),
+        'utf8',
+      );
+
+      // Verify the option buttons for both purchased and sold unsettled stones
+      expect(tabSrc).toContain('سنگ‌های بدون تسویه (خریداری‌شده / فروخته‌شده)');
+      expect(tabSrc).toContain('سنگ‌های خریداری‌شده بدون تسویه');
+      expect(tabSrc).toContain('سنگ‌های فروخته‌شده بدون تسویه');
+      expect(tabSrc).toContain('setShowUnsettledPicker');
+
+      // Verify the panel, debt badges, and warehouse status badges
+      expect(tabSrc).toContain('اقلام سنگ فروخته‌شده به طرف‌حساب (فروش بدون تسویه)');
+      expect(tabSrc).toContain('اقلام سنگ خریداری‌شده از طرف‌حساب (خرید بدون تسویه)');
+      expect(tabSrc).toContain('مشتری سنگ را به ما بدهکار می‌شود');
+      expect(tabSrc).toContain('موجود در انبار');
+      expect(tabSrc).toContain('ناموجود');
+      expect(tabSrc).toContain('انتخاب و خروج سنگ');
+      expect(tabSrc).toContain('انتخاب و ورود سنگ');
+      expect(tabSrc).toContain('در انبار موجود نیست و امکان خروج ندارد');
+
+      // Verify no colloquial "دانه" is used
+      expect(tabSrc).not.toContain('دانه');
+      expect(tabSrc).toContain('عدد');
+    });
+
+    describe('Exact Unrounded Stone Weights (No Premature Rounding)', () => {
+      it('performs exact caratsToExactGrams without rounding precision loss', () => {
+        expect(caratsToExactGrams(1)).toBe(0.2);
+        expect(caratsToExactGrams(2.5)).toBe(0.5);
+        // Micro-weight: 0.0026 ct must convert exactly to 0.00052 g without losing decimals
+        expect(caratsToExactGrams(0.0026)).toBe(0.00052);
+        // Multi-decimal carats: 1.23456 ct -> 0.246912 g
+        expect(caratsToExactGrams(1.23456)).toBe(0.246912);
+      });
+
+      it('performs exact gramsToExactCarats without rounding precision loss', () => {
+        expect(gramsToExactCarats(0.2)).toBe(1);
+        expect(gramsToExactCarats(0.5)).toBe(2.5);
+        // Micro-weight: 0.00052 g must convert back to 0.0026 ct
+        expect(gramsToExactCarats(0.00052)).toBe(0.0026);
+        // Multi-decimal grams: 0.246912 g -> 1.23456 ct
+        expect(gramsToExactCarats(0.246912)).toBe(1.23456);
+      });
+
+      it('formats exact stone weight strings in Persian digits preserving all significant decimals', () => {
+        // Preserves 4 decimal places
+        expect(formatExactGemWeight(0.0026)).toBe('۰.۰۰۲۶');
+        // Preserves 5 decimal places
+        expect(formatExactGemWeight(0.00052)).toBe('۰.۰۰۰۵۲');
+        // Preserves 6 decimal places
+        expect(formatExactGemWeight('1.234567')).toBe('۱.۲۳۴۵۶۷');
+        // Clean integer representation
+        expect(formatExactGemWeight(5)).toBe('۵');
+      });
+
+      it('preserves micro-weights and avoids rounding to zero in calculateCustomerStoneBalances', () => {
+        const tx = mapTransaction({
+          id: 'tx-micro-1',
+          customer: 'c1',
+          transactionType: 'document',
+          status: 'posted',
+          documentNature: 'paid',
+          documentTab: 'stone',
+          documentSubType: 'stone-sale',
+          documentDetails: {
+            stoneOperationKind: 'sale',
+            stoneCategory: 'diamond',
+            stoneSpecies: 'natural_diamond',
+            stoneCarats: '0.0026',
+            stoneGrams: '0.00052',
+            stonePieces: '1',
+          },
+        });
+
+        const balance = calculateCustomerStoneBalances([tx]);
+        // Must maintain exact carats and grams without rounding to 0
+        expect(balance.carats).toBe(0.0026);
+        expect(balance.grams).toBe(0.00052);
+        expect(balance.creditCarats).toBe(0.0026);
+        expect(balance.creditGrams).toBe(0.00052);
+      });
+
+      it('preserves micro-weights in calculateCustomerDetailedStonePositions without premature zero-filtering', () => {
+        const tx = mapTransaction({
+          id: 'tx-micro-pos-1',
+          customer: 'cust-xyz',
+          transactionType: 'document',
+          status: 'posted',
+          documentNature: 'paid',
+          documentTab: 'stone',
+          documentSubType: 'stone-sale',
+          documentDetails: {
+            stoneOperationKind: 'sale',
+            stoneCategory: 'diamond',
+            stoneSpecies: 'natural_diamond',
+            stoneShape: 'round',
+            stoneColor: 'D',
+            stoneClarity: 'VVS1',
+            stoneCarats: '0.0034',
+            stoneGrams: '0.00068',
+            stonePieces: '2',
+          },
+        });
+
+        const positions = calculateCustomerDetailedStonePositions([tx]);
+        expect(positions.length).toBe(1);
+        expect(positions[0].carats).toBe(0.0034);
+        expect(positions[0].grams).toBe(0.00068);
+        expect(positions[0].pieces).toBe(2);
+      });
+
+      it('verifies that StoneTab, StoneBalanceModal, and CustomerBalanceLiquid use formatExactGemWeight for stone display', async () => {
+        const fs = await import('fs');
+        const path = await import('path');
+
+        const tabSrc = fs.readFileSync(
+          path.resolve(__dirname, '../features/accounting/documents/components/StoneTab.tsx'),
+          'utf8',
+        );
+        expect(tabSrc).toContain('formatExactGemWeight');
+        expect(tabSrc).toContain('caratsToExactGrams');
+        expect(tabSrc).toContain('gramsToExactCarats');
+
+        const modalSrc = fs.readFileSync(
+          path.resolve(__dirname, '../features/accounting/documents/components/StoneBalanceModal.tsx'),
+          'utf8',
+        );
+        expect(modalSrc).toContain('formatExactGemWeight');
+
+        const liquidSrc = fs.readFileSync(
+          path.resolve(__dirname, '../features/accounting/documents/components/CustomerBalanceLiquid.tsx'),
+          'utf8',
+        );
+        expect(liquidSrc).toContain('formatExactGemWeight');
+      });
+    });
   });
 });
+
 
 
 

@@ -1,4 +1,4 @@
-import { normalizeDigits } from './jalali';
+import { normalizeDigits, toPersianDigits } from './jalali';
 
 export const GRAMS_PER_CARAT = 0.2;
 export const CARATS_PER_GRAM = 5;
@@ -23,6 +23,72 @@ export function gramsToCarats(grams: number, precision = 3): number {
   if (!Number.isFinite(grams) || grams <= 0) return 0;
   const rawCarats = grams * CARATS_PER_GRAM;
   return Number(Math.round(Number(rawCarats + 'e' + precision)) + 'e-' + precision);
+}
+
+/**
+ * Exact conversion of carats to grams without rounding off precision:
+ * 1 ct = 0.2 g exactly.
+ * Eliminates floating point noise (up to 8 decimals) while preserving exact decimals.
+ */
+export function caratsToExactGrams(carats: number): number {
+  if (!Number.isFinite(carats) || carats <= 0) return 0;
+  const rawGrams = carats * GRAMS_PER_CARAT;
+  return Number(Math.round(Number(rawGrams + 'e8')) + 'e-8');
+}
+
+/**
+ * Exact conversion of grams to carats without rounding off precision:
+ * 1 g = 5 ct exactly.
+ * Eliminates floating point noise (up to 8 decimals) while preserving exact decimals.
+ */
+export function gramsToExactCarats(grams: number): number {
+  if (!Number.isFinite(grams) || grams <= 0) return 0;
+  const rawCarats = grams * CARATS_PER_GRAM;
+  return Number(Math.round(Number(rawCarats + 'e8')) + 'e-8');
+}
+
+/**
+ * Formats a gemstone weight (carats or grams) without artificial rounding.
+ * Preserves the exact significant decimal digits entered or stored,
+ * removes floating-point epsilon noise, and formats with Persian numerals.
+ */
+export function formatExactGemWeight(
+  value: number | string | null | undefined,
+  fallback = '۰',
+): string {
+  if (value === null || value === undefined || value === '') return fallback;
+
+  if (typeof value === 'string') {
+    const trimmed = normalizeDigits(value).replace(/,/g, '').trim();
+    if (!trimmed) return fallback;
+    const num = parseFloat(trimmed);
+    if (isNaN(num)) return fallback;
+    if (num === 0) return '۰';
+
+    const parts = trimmed.split('.');
+    const intNum = parseInt(parts[0], 10);
+    const formattedInt = (isNaN(intNum) ? 0 : intNum).toLocaleString('en-US');
+    if (parts.length > 1) {
+      return toPersianDigits(`${formattedInt}.${parts[1]}`);
+    }
+    return toPersianDigits(formattedInt);
+  }
+
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value) || value === 0) return fallback;
+    const absVal = Math.abs(value);
+    const cleanNum = Number(Math.round(Number(absVal + 'e8')) + 'e-8');
+    const str = cleanNum.toString();
+    const parts = str.split('.');
+    const intNum = parseInt(parts[0], 10);
+    const formattedInt = (isNaN(intNum) ? 0 : intNum).toLocaleString('en-US');
+    if (parts.length > 1) {
+      return toPersianDigits(`${formattedInt}.${parts[1]}`);
+    }
+    return toPersianDigits(formattedInt);
+  }
+
+  return fallback;
 }
 
 /**

@@ -1525,6 +1525,8 @@ export default function DocumentForm({
           stoneTabContent={(
             <StoneTab
               nature={documentNature}
+              onChangeNature={changeNature}
+              selectedCustomer={selectedCustomer}
               draftLine={draftLine}
               setDraftLine={setDraftLine}
               committedLines={committedLines}

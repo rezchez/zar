@@ -8,6 +8,7 @@ import { currencyDisplay, getCurrencyMeta } from '@/lib/customer';
 import { convertRialToToman } from '@/lib/money';
 import type { DocumentLine } from '@/src/components/documents/RawGoldTab';
 import { faNumber } from '../utils/document-helpers';
+import { formatExactGemWeight } from '@/lib/gemstone-weight';
 import StoneBalanceModal from './StoneBalanceModal';
 
 interface CustomerBalanceLiquidProps {
@@ -47,20 +48,20 @@ export default function CustomerBalanceLiquid({
             label: 'سنگ (طلب)',
             value: creditCarats,
             unit: 'قیراط',
-            digits: 2,
+            exactDisplay: formatExactGemWeight(creditCarats),
             isStone: true,
             statusLabel: 'بستانکار' as const,
-            tooltip: `طلب سنگ مشتری از ما: ${faNumber(creditCarats, 2)} قیراط (بستانکار از ما) · تفکیک اقلام غیرهمگن بر اساس نوع و کیفیت · کلیک برای مشاهده تمام وزن‌ها به صورت دقیق`,
+            tooltip: `طلب سنگ مشتری از ما: ${formatExactGemWeight(creditCarats)} قیراط (بستانکار از ما) · تفکیک اقلام غیرهمگن بر اساس نوع و کیفیت · کلیک برای مشاهده تمام وزن‌ها به صورت دقیق`,
           },
           {
             id: 'stone-debit',
             label: 'سنگ (بدهی)',
             value: -debitCarats,
             unit: 'قیراط',
-            digits: 2,
+            exactDisplay: formatExactGemWeight(debitCarats),
             isStone: true,
             statusLabel: 'بدهکار' as const,
-            tooltip: `بدهی سنگ مشتری به ما: ${faNumber(debitCarats, 2)} قیراط (بدهکار به ما) · تفکیک اقلام غیرهمگن بر اساس نوع و کیفیت · کلیک برای مشاهده تمام وزن‌ها به صورت دقیق`,
+            tooltip: `بدهی سنگ مشتری به ما: ${formatExactGemWeight(debitCarats)} قیراط (بدهکار به ما) · تفکیک اقلام غیرهمگن بر اساس نوع و کیفیت · کلیک برای مشاهده تمام وزن‌ها به صورت دقیق`,
           },
         ]
       : [
@@ -69,7 +70,7 @@ export default function CustomerBalanceLiquid({
             label: 'سنگ',
             value: stoneCarats,
             unit: 'قیراط',
-            digits: 2,
+            exactDisplay: formatExactGemWeight(Math.abs(stoneCarats)),
             isStone: true,
             statusLabel: undefined,
             tooltip: undefined,
@@ -151,7 +152,7 @@ export default function CustomerBalanceLiquid({
             const isStone = balance.id === 'stone' || balance.id === 'stone-credit' || balance.id === 'stone-debit';
             const statusLabel = balance.statusLabel || (balance.value > 0 ? 'بستانکار' : balance.value < 0 ? 'بدهکار' : 'تسویه');
             const fullTooltip = balance.tooltip || (isStone
-              ? `${balance.label}: ${faNumber(Math.abs(balance.value), balance.digits)} ${balance.unit} (${
+              ? `${balance.label}: ${balance.exactDisplay || formatExactGemWeight(Math.abs(balance.value))} ${balance.unit} (${
                   balance.value > 0 ? 'بستانکار از ما' : balance.value < 0 ? 'بدهکار به ما' : 'تسویه حساب'
                 }) · کلیک برای مشاهده تمام وزن‌ها به صورت دقیق`
               : `${balance.label}: ${faNumber(Math.abs(balance.value), balance.digits)} ${balance.unit} (${
@@ -201,7 +202,7 @@ export default function CustomerBalanceLiquid({
                       animate={{ scale: 1 }}
                       transition={{ duration: 0.25 }}
                     >
-                      {faNumber(Math.abs(balance.value), balance.digits)}
+                      {balance.exactDisplay ? balance.exactDisplay : faNumber(Math.abs(balance.value), balance.digits)}
                     </motion.span>
                   </strong>
                   <span className="document-liquid-item-unit">{balance.unit}</span>

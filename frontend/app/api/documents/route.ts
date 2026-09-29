@@ -456,7 +456,7 @@ export async function POST(request: Request) {
           line.settlementMethod === 'unsettled';
         const stoneCurrency = normalizeCurrencyCode(String(details.settlementCurrencyUnit || ''));
         const isForeignStone = Boolean(stoneCurrency && stoneCurrency !== 'IRR' && stoneCurrency !== 'IRT');
-        // قاعده بازار سنگ: خرید از مشتری یعنی مشتری سنگ رو به ما بدهکاره (-1)، فروش به مشتری یعنی مشتری از ما طلب‌کاره (+1)
+        // قاعده بازار سنگ: خرید از مشتری یعنی مشتری سنگ را به ما بدهکار می‌شود (-1)، فروش به مشتری یعنی مشتری سنگ را از ما طلبکار می‌شود (+1)
         const stoneDirection = lineNature === 'received' ? -1 : 1;
         const detailTotal = Math.abs(
           readAmount(details.stoneTotalAmount) || readAmount(details.totalAmount) || 0,

@@ -70,6 +70,7 @@ export type CustomerStoneItemDetail = {
   transactionsCount?: number;
   lastDate?: string;
   lastDocumentNumber?: string;
+  inventorySourceId?: string;
 };
 
 export type CustomerStoneSpeciesBalance = {

@@ -18,7 +18,7 @@ import {
 import type { Customer, CustomerStoneItemDetail } from '@/lib/customer';
 import type { DocumentLine } from '@/src/components/documents/RawGoldTab';
 import type { CustomerTransaction } from '@/lib/transaction';
-import { caratsToGrams, gramsToCarats } from '@/lib/gemstone-weight';
+import { caratsToGrams, gramsToCarats, formatExactGemWeight } from '@/lib/gemstone-weight';
 import { getShapeNameFa, getCutGradeNameFa } from '@/lib/gemstone';
 import { toPersianDigits } from '@/lib/jalali';
 import { faNumber } from '../utils/document-helpers';
@@ -579,11 +579,11 @@ export default function StoneBalanceModal({
   const settledItems = useMemo(() => detailedItems.filter((it) => it.carats === 0), [detailedItems]);
 
   const totalCreditCarats = useMemo(
-    () => Math.round(creditItems.reduce((acc, it) => acc + it.carats, 0) * 1000) / 1000,
+    () => Math.round(creditItems.reduce((acc, it) => acc + it.carats, 0) * 1e8) / 1e8,
     [creditItems],
   );
   const totalCreditGrams = useMemo(
-    () => Math.round(creditItems.reduce((acc, it) => acc + (it.grams || caratsToGrams(it.carats)), 0) * 10000) / 10000,
+    () => Math.round(creditItems.reduce((acc, it) => acc + (it.grams || (it.carats ? it.carats * 0.2 : 0)), 0) * 1e8) / 1e8,
     [creditItems],
   );
   const totalCreditPieces = useMemo(
@@ -592,11 +592,11 @@ export default function StoneBalanceModal({
   );
 
   const totalDebitCarats = useMemo(
-    () => Math.round(debitItems.reduce((acc, it) => acc + Math.abs(it.carats), 0) * 1000) / 1000,
+    () => Math.round(debitItems.reduce((acc, it) => acc + Math.abs(it.carats), 0) * 1e8) / 1e8,
     [debitItems],
   );
   const totalDebitGrams = useMemo(
-    () => Math.round(debitItems.reduce((acc, it) => acc + Math.abs(it.grams || caratsToGrams(it.carats)), 0) * 10000) / 10000,
+    () => Math.round(debitItems.reduce((acc, it) => acc + Math.abs(it.grams || (it.carats ? it.carats * 0.2 : 0)), 0) * 1e8) / 1e8,
     [debitItems],
   );
   const totalDebitPieces = useMemo(
@@ -774,7 +774,7 @@ export default function StoneBalanceModal({
             <span className="text-xs font-bold text-slate-700 dark:text-slate-200">مجموع وزن به قیراط:</span>
             <div className="flex items-baseline gap-1 mt-1">
               <strong className="text-base sm:text-lg font-black text-slate-900 dark:text-white font-mono tracking-tight">
-                {faNumber(Math.abs(item.carats), 3)}
+                {formatExactGemWeight(Math.abs(item.carats))}
               </strong>
               <span className="text-xs font-black text-amber-600 dark:text-amber-400">قیراط (ct)</span>
             </div>
@@ -785,7 +785,7 @@ export default function StoneBalanceModal({
             <span className="text-xs font-bold text-slate-700 dark:text-slate-200">معادل دقیق به گرم:</span>
             <div className="flex items-baseline gap-1 mt-1">
               <strong className="text-base sm:text-lg font-black text-slate-900 dark:text-white font-mono tracking-tight">
-                {faNumber(Math.abs(item.grams || caratsToGrams(item.carats)), 4)}
+                {formatExactGemWeight(Math.abs(item.grams || (item.carats ? item.carats * 0.2 : 0)))}
               </strong>
               <span className="text-xs font-black text-teal-600 dark:text-teal-400">گرم (g)</span>
             </div>
@@ -816,13 +816,13 @@ export default function StoneBalanceModal({
               <span className="text-slate-600 dark:text-slate-300">اثر: </span>
               <span className={(item.draftCarats ?? 0) > 0 ? 'text-emerald-700 dark:text-emerald-300 font-black' : 'text-rose-700 dark:text-rose-300 font-black'}>
                 {(item.draftCarats ?? 0) > 0 ? '+' : ''}
-                {faNumber(item.draftCarats ?? 0, 3)} ct
+                {formatExactGemWeight(item.draftCarats ?? 0)} ct
               </span>
               <span className="mx-1.5 text-slate-400 dark:text-slate-500">←</span>
               <span className="text-slate-700 dark:text-slate-200">
                 مانده پس از ثبت سند:{' '}
                 <strong className="font-mono text-slate-950 dark:text-white font-black">
-                  {faNumber(Math.abs(netCarats), 3)} ct
+                  {formatExactGemWeight(Math.abs(netCarats))} ct
                 </strong>
               </span>
             </div>
@@ -1020,7 +1020,7 @@ export default function StoneBalanceModal({
                           </span>
                         </div>
                         <div className="text-xs font-mono font-black text-emerald-900 dark:text-emerald-200">
-                          مجموع طلب: {faNumber(totalCreditCarats, 3)} ct · {faNumber(totalCreditGrams, 4)} g {totalCreditPieces > 0 ? `· ${toPersianDigits(totalCreditPieces)} عدد` : ''}
+                          مجموع طلب: {formatExactGemWeight(totalCreditCarats)} ct · {formatExactGemWeight(totalCreditGrams)} g {totalCreditPieces > 0 ? `· ${toPersianDigits(String(totalCreditPieces))} عدد` : ''}
                         </div>
                       </div>
                       <div className="space-y-3">
@@ -1043,7 +1043,7 @@ export default function StoneBalanceModal({
                           </span>
                         </div>
                         <div className="text-xs font-mono font-black text-rose-900 dark:text-rose-200">
-                          مجموع بدهی: {faNumber(totalDebitCarats, 3)} ct · {faNumber(totalDebitGrams, 4)} g {totalDebitPieces > 0 ? `· ${toPersianDigits(totalDebitPieces)} عدد` : ''}
+                          مجموع بدهی: {formatExactGemWeight(totalDebitCarats)} ct · {formatExactGemWeight(totalDebitGrams)} g {totalDebitPieces > 0 ? `· ${toPersianDigits(String(totalDebitPieces))} عدد` : ''}
                         </div>
                       </div>
                       <div className="space-y-3">
@@ -1105,8 +1105,8 @@ export default function StoneBalanceModal({
                           <Gem size={15} className="text-amber-500" />
                         </div>
                         <div className="mt-2 flex items-baseline gap-1.5">
-                          <strong className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-                            {faNumber(totalCreditCarats, 3)}
+                          <strong className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight font-mono">
+                            {formatExactGemWeight(totalCreditCarats)}
                           </strong>
                           <span className="text-xs font-black text-amber-600 dark:text-amber-400">قیراط (ct)</span>
                         </div>
@@ -1117,8 +1117,8 @@ export default function StoneBalanceModal({
                           <Scale size={15} className="text-teal-500" />
                         </div>
                         <div className="mt-2 flex items-baseline gap-1.5">
-                          <strong className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-                            {faNumber(totalCreditGrams, 4)}
+                          <strong className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight font-mono">
+                            {formatExactGemWeight(totalCreditGrams)}
                           </strong>
                           <span className="text-xs font-black text-teal-600 dark:text-teal-400">گرم (g)</span>
                         </div>
@@ -1129,8 +1129,8 @@ export default function StoneBalanceModal({
                           <Package size={15} className="text-indigo-500" />
                         </div>
                         <div className="mt-2 flex items-baseline gap-1.5">
-                          <strong className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-                            {totalCreditPieces !== 0 ? faNumber(totalCreditPieces, 0) : '—'}
+                          <strong className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight font-mono">
+                            {totalCreditPieces !== 0 ? toPersianDigits(String(totalCreditPieces)) : '—'}
                           </strong>
                           <span className="text-xs font-black text-indigo-600 dark:text-indigo-400">عدد</span>
                         </div>
@@ -1153,8 +1153,8 @@ export default function StoneBalanceModal({
                           <Gem size={15} className="text-amber-500" />
                         </div>
                         <div className="mt-2 flex items-baseline gap-1.5">
-                          <strong className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-                            {faNumber(totalDebitCarats, 3)}
+                          <strong className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight font-mono">
+                            {formatExactGemWeight(totalDebitCarats)}
                           </strong>
                           <span className="text-xs font-black text-amber-600 dark:text-amber-400">قیراط (ct)</span>
                         </div>
@@ -1165,8 +1165,8 @@ export default function StoneBalanceModal({
                           <Scale size={15} className="text-teal-500" />
                         </div>
                         <div className="mt-2 flex items-baseline gap-1.5">
-                          <strong className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-                            {faNumber(totalDebitGrams, 4)}
+                          <strong className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight font-mono">
+                            {formatExactGemWeight(totalDebitGrams)}
                           </strong>
                           <span className="text-xs font-black text-teal-600 dark:text-teal-400">گرم (g)</span>
                         </div>
@@ -1177,8 +1177,8 @@ export default function StoneBalanceModal({
                           <Package size={15} className="text-indigo-500" />
                         </div>
                         <div className="mt-2 flex items-baseline gap-1.5">
-                          <strong className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-                            {totalDebitPieces !== 0 ? faNumber(totalDebitPieces, 0) : '—'}
+                          <strong className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight font-mono">
+                            {totalDebitPieces !== 0 ? toPersianDigits(String(totalDebitPieces)) : '—'}
                           </strong>
                           <span className="text-xs font-black text-indigo-600 dark:text-indigo-400">عدد</span>
                         </div>
@@ -1200,8 +1200,8 @@ export default function StoneBalanceModal({
                       </span>
                     </div>
                     <div className="mt-2 flex items-baseline gap-1.5">
-                      <strong className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-                        {faNumber(Math.abs(baseCarats), 3)}
+                      <strong className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight font-mono">
+                        {formatExactGemWeight(Math.abs(baseCarats))}
                       </strong>
                       <span className="text-xs font-black text-amber-600 dark:text-amber-400">قیراط (ct)</span>
                     </div>
@@ -1223,8 +1223,8 @@ export default function StoneBalanceModal({
                       </span>
                     </div>
                     <div className="mt-2 flex items-baseline gap-1.5">
-                      <strong className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-                        {faNumber(Math.abs(baseGrams), 4)}
+                      <strong className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight font-mono">
+                        {formatExactGemWeight(Math.abs(baseGrams))}
                       </strong>
                       <span className="text-xs font-black text-teal-600 dark:text-teal-400">گرم (g)</span>
                     </div>
@@ -1268,27 +1268,27 @@ export default function StoneBalanceModal({
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
                     <div className="rounded-lg bg-white dark:bg-slate-900/80 p-2.5 border border-amber-200/80 dark:border-amber-800/60">
                       <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300 block">مانده قبل:</span>
-                      <strong className="text-sm font-black text-slate-900 dark:text-slate-100 mt-0.5 block">
-                        {faNumber(Math.abs(baseCarats), 3)} ct ({getStatusText(baseCarats)})
+                      <strong className="text-sm font-black text-slate-900 dark:text-slate-100 mt-0.5 block font-mono">
+                        {formatExactGemWeight(Math.abs(baseCarats))} ct ({getStatusText(baseCarats)})
                       </strong>
                     </div>
                     <div className="rounded-lg bg-white dark:bg-slate-900/80 p-2.5 border border-amber-200/80 dark:border-amber-800/60">
                       <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300 block">اثر این سند:</span>
                       <strong
-                        className={`text-sm font-black mt-0.5 block ${
+                        className={`text-sm font-black mt-0.5 block font-mono ${
                           draftEffect.deltaCarats >= 0
                             ? 'text-emerald-700 dark:text-emerald-300'
                             : 'text-rose-700 dark:text-rose-300'
                         }`}
                       >
                         {draftEffect.deltaCarats > 0 ? '+' : ''}
-                        {faNumber(draftEffect.deltaCarats, 3)} ct ({faNumber(draftEffect.deltaGrams, 4)} g)
+                        {formatExactGemWeight(draftEffect.deltaCarats)} ct ({formatExactGemWeight(draftEffect.deltaGrams)} g)
                       </strong>
                     </div>
                     <div className="rounded-lg bg-white dark:bg-slate-900/80 p-2.5 border border-amber-200/80 dark:border-amber-800/60">
                       <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300 block">مانده پس از ثبت سند:</span>
-                      <strong className="text-sm font-black text-slate-950 dark:text-white mt-0.5 block">
-                        {faNumber(Math.abs(projectedCarats), 3)} ct ({getStatusText(projectedCarats)})
+                      <strong className="text-sm font-black text-slate-950 dark:text-white mt-0.5 block font-mono">
+                        {formatExactGemWeight(Math.abs(projectedCarats))} ct ({getStatusText(projectedCarats)})
                       </strong>
                     </div>
                   </div>
@@ -1369,10 +1369,10 @@ export default function StoneBalanceModal({
                             {item.certLab ? `${item.certLab} ${item.certNumber ? `(${item.certNumber})` : ''}` : '—'}
                           </td>
                           <td className="p-2.5 whitespace-nowrap text-center font-mono font-bold text-amber-700 dark:text-amber-300">
-                            {faNumber(item.carats, 3)}
+                            {formatExactGemWeight(item.carats)}
                           </td>
                           <td className="p-2.5 whitespace-nowrap text-center font-mono font-bold text-teal-700 dark:text-teal-300">
-                            {faNumber(item.grams, 4)}
+                            {formatExactGemWeight(item.grams)}
                           </td>
                           <td className="p-2.5 whitespace-nowrap text-center font-bold text-slate-900 dark:text-white">
                             {item.pieces !== 0 ? `${faNumber(Math.abs(Math.round(item.pieces)), 0)} عدد` : '—'}
@@ -1394,12 +1394,12 @@ export default function StoneBalanceModal({
               <span className="flex items-center gap-1.5 flex-wrap">
                 <span>طلب سنگ:</span>
                 <strong className="font-mono text-emerald-700 dark:text-emerald-300 font-black">
-                  {faNumber(totalCreditCarats, 3)} ct
+                  {formatExactGemWeight(totalCreditCarats)} ct
                 </strong>
                 <span className="mx-1 text-slate-400 dark:text-slate-500">|</span>
                 <span>بدهی سنگ:</span>
                 <strong className="font-mono text-rose-700 dark:text-rose-300 font-black">
-                  {faNumber(totalDebitCarats, 3)} ct
+                  {formatExactGemWeight(totalDebitCarats)} ct
                 </strong>
                 <span className="text-[11px] text-amber-800 dark:text-amber-300 bg-amber-100/70 dark:bg-amber-950/60 px-2 py-0.5 rounded-md border border-amber-300/60 dark:border-amber-700/60 font-medium">
                   (اقلام تفکیکی - عدم تهاتر کور)
@@ -1409,11 +1409,11 @@ export default function StoneBalanceModal({
               <>
                 <span>تراز نهایی: </span>
                 <span className="font-mono text-slate-900 dark:text-white font-black">
-                  {faNumber(Math.abs(baseCarats), 3)} ct
+                  {formatExactGemWeight(Math.abs(baseCarats))} ct
                 </span>
                 <span className="mx-1 text-slate-400 dark:text-slate-500">|</span>
                 <span className="font-mono text-slate-900 dark:text-white font-black">
-                  {faNumber(Math.abs(baseGrams), 4)} g
+                  {formatExactGemWeight(Math.abs(baseGrams))} g
                 </span>
                 <span className="mx-1 text-slate-400 dark:text-slate-500">|</span>
                 <span className="font-mono text-slate-900 dark:text-white font-black">
