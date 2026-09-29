@@ -100,6 +100,13 @@ export type CustomerBalanceValues = {
   stoneCaratBalance?: number;
   stoneGramBalance?: number;
   stonePiecesBalance?: number;
+  stoneCreditCarats?: number;
+  stoneDebitCarats?: number;
+  stoneCreditGrams?: number;
+  stoneDebitGrams?: number;
+  stoneCreditPieces?: number;
+  stoneDebitPieces?: number;
+  hasOpposingStoneBalances?: boolean;
   stoneBalancesBySpecies?: Record<string, CustomerStoneSpeciesBalance>;
   stoneItemBalances?: CustomerStoneItemDetail[];
 };
@@ -115,6 +122,13 @@ export function emptyCustomerBalances(): CustomerBalanceValues {
     stoneCaratBalance: 0,
     stoneGramBalance: 0,
     stonePiecesBalance: 0,
+    stoneCreditCarats: 0,
+    stoneDebitCarats: 0,
+    stoneCreditGrams: 0,
+    stoneDebitGrams: 0,
+    stoneCreditPieces: 0,
+    stoneDebitPieces: 0,
+    hasOpposingStoneBalances: false,
     stoneBalancesBySpecies: {},
     stoneItemBalances: [],
   };
@@ -158,6 +172,13 @@ export type Customer = {
   stoneCaratBalance?: number;
   stoneGramBalance?: number;
   stonePiecesBalance?: number;
+  stoneCreditCarats?: number;
+  stoneDebitCarats?: number;
+  stoneCreditGrams?: number;
+  stoneDebitGrams?: number;
+  stoneCreditPieces?: number;
+  stoneDebitPieces?: number;
+  hasOpposingStoneBalances?: boolean;
   stoneBalancesBySpecies?: Record<string, CustomerStoneSpeciesBalance>;
   stoneItemBalances?: CustomerStoneItemDetail[];
   discountLevel: number;

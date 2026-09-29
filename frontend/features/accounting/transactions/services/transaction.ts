@@ -233,6 +233,16 @@ export function calculateCustomerStoneBalances(
   carats: number;
   grams: number;
   pieces: number;
+  creditCarats: number;
+  debitCarats: number;
+  creditGrams: number;
+  debitGrams: number;
+  creditPieces: number;
+  debitPieces: number;
+  creditItemsCount: number;
+  debitItemsCount: number;
+  totalActiveItems: number;
+  hasOpposingBalances: boolean;
   bySpecies: Record<string, CustomerStoneSpeciesBalance>;
   items: CustomerStoneItemDetail[];
 } {
@@ -244,7 +254,17 @@ export function calculateCustomerStoneBalances(
 
   for (const t of transactions) {
     if (t.status !== 'final' && t.status !== 'posted') continue;
-    if (t.documentTab !== 'stone' && t.documentSubType !== 'stone-entry' && t.documentSubType !== 'stone-exit') continue;
+    const isStoneTx =
+      t.documentTab === 'stone' ||
+      t.documentSubType === 'stone-entry' ||
+      t.documentSubType === 'stone-exit' ||
+      t.documentSubType === 'stone-purchase' ||
+      t.documentSubType === 'stone-sale' ||
+      t.documentSubType === 'stone-unsettled-purchase' ||
+      t.documentSubType === 'stone-unsettled-sale' ||
+      (typeof t.documentSubType === 'string' && t.documentSubType.startsWith('stone-'));
+
+    if (!isStoneTx) continue;
 
     let details: Record<string, unknown> = {};
     if (t.documentDetails) {
@@ -261,23 +281,40 @@ export function calculateCustomerStoneBalances(
     const subType = String(t.documentSubType || '');
     const isTradeSettled = (opKind === 'purchase' || opKind === 'sale') && t.settlementMethod === 'cash';
 
-    const isWeightOp =
-      opKind === 'entry' ||
-      opKind === 'exit' ||
-      subType === 'stone-entry' ||
-      subType === 'stone-exit' ||
-      t.settlementMethod === 'weight' ||
-      (!isTradeSettled &&
-        (Number(details.stoneCarats || 0) > 0 ||
-          Number(details.stoneGrams || 0) > 0 ||
-          Number(details.stonePieces || 0) > 0));
-
-    if (!isWeightOp) continue;
-
-    const direction = t.documentNature === 'paid' ? -1 : 1;
     const rawCarats = Number(String(details.stoneCarats || '0').replace(/,/g, '')) || 0;
     const rawGrams = Number(String(details.stoneGrams || '0').replace(/,/g, '')) || 0;
     const rawPieces = Math.round(Number(String(details.stonePieces || '0').replace(/,/g, '')) || 0);
+
+    const hasWeight = rawCarats > 0 || rawGrams > 0 || rawPieces > 0;
+    const isWeightOp =
+      opKind === 'entry' ||
+      opKind === 'exit' ||
+      opKind === 'purchase' ||
+      opKind === 'sale' ||
+      opKind === 'unsettled_purchase' ||
+      opKind === 'unsettled_sale' ||
+      subType === 'stone-entry' ||
+      subType === 'stone-exit' ||
+      subType === 'stone-purchase' ||
+      subType === 'stone-sale' ||
+      subType === 'stone-unsettled-purchase' ||
+      subType === 'stone-unsettled-sale' ||
+      t.settlementMethod === 'weight' ||
+      t.settlementMethod === 'unsettled' ||
+      (!isTradeSettled && hasWeight);
+
+    if (!isWeightOp) continue;
+
+    // قاعده بازار سنگ: خرید از مشتری یعنی مشتری سنگ رو به ما بدهکاره (-1: بدهکار به ما)، فروش به مشتری یعنی مشتری از ما طلب‌کاره (+1: بستانکار از ما)
+    const isPurchase =
+      t.documentNature === 'received' ||
+      opKind === 'purchase' ||
+      opKind === 'unsettled_purchase' ||
+      opKind === 'entry' ||
+      subType === 'stone-purchase' ||
+      subType === 'stone-unsettled-purchase' ||
+      subType === 'stone-entry';
+    const direction = isPurchase ? -1 : 1;
 
     const carats = rawCarats || (rawGrams > 0 ? gramsToCarats(rawGrams) : 0);
     const grams = rawGrams || (rawCarats > 0 ? caratsToGrams(rawCarats) : 0);
@@ -326,7 +363,7 @@ export function calculateCustomerStoneBalances(
         : '';
     const description = t.description || String(details.claimPurpose || '');
 
-    // 1. Group by species (for backwards compatibility and summary)
+    // 1. Group by species (for summary and backwards compatibility)
     if (!bySpecies[speciesId]) {
       bySpecies[speciesId] = {
         speciesId,
@@ -349,8 +386,8 @@ export function calculateCustomerStoneBalances(
     bySpecies[speciesId].grams = Math.round((bySpecies[speciesId].grams + grams * direction) * 10000) / 10000;
     bySpecies[speciesId].pieces += pieces * direction;
 
-    // 2. Group by exact stone specification (ریز طلب سنگ با مشخصات، کیفیت و رنگ)
-    const detailKey = `${speciesId}__${shape}__${color}__${clarity}__${rawCut}__${certLab}_${certNumber}__${mode}__${lotNumber}`;
+    // 2. Group by exact stone specification (ریز طلب و بدهی سنگ با مشخصات، کیفیت، رنگ و سایز)
+    const detailKey = `${speciesId}__${shape}__${color}__${clarity}__${rawCut}__${certLab}_${certNumber}__${mode}__${lotNumber}__${sieveSize}`;
     if (!byDetail[detailKey]) {
       byDetail[detailKey] = {
         key: detailKey,
@@ -394,10 +431,52 @@ export function calculateCustomerStoneBalances(
     }
   }
 
+  // Calculate distinct credit and debit totals across non-fungible stone types
+  let totalCreditCarats = 0;
+  let totalDebitCarats = 0;
+  let totalCreditGrams = 0;
+  let totalDebitGrams = 0;
+  let totalCreditPieces = 0;
+  let totalDebitPieces = 0;
+  let creditItemsCount = 0;
+  let debitItemsCount = 0;
+
+  for (const item of Object.values(byDetail)) {
+    if (Math.abs(item.carats) > 0.0001 || Math.abs(item.grams) > 0.00001 || Math.abs(item.pieces) > 0) {
+      if (item.carats > 0) {
+        totalCreditCarats += item.carats;
+        totalCreditGrams += item.grams;
+        totalCreditPieces += item.pieces;
+        creditItemsCount++;
+      } else if (item.carats < 0) {
+        totalDebitCarats += Math.abs(item.carats);
+        totalDebitGrams += Math.abs(item.grams);
+        totalDebitPieces += Math.abs(item.pieces);
+        debitItemsCount++;
+      }
+    }
+  }
+
+  totalCreditCarats = Math.round(totalCreditCarats * 1000) / 1000;
+  totalDebitCarats = Math.round(totalDebitCarats * 1000) / 1000;
+  totalCreditGrams = Math.round(totalCreditGrams * 10000) / 10000;
+  totalDebitGrams = Math.round(totalDebitGrams * 10000) / 10000;
+  const hasOpposingBalances = creditItemsCount > 0 && debitItemsCount > 0;
+
   return {
     carats: Math.round(totalCarats * 1000) / 1000,
     grams: Math.round(totalGrams * 10000) / 10000,
     pieces: totalPieces,
+    creditCarats: totalCreditCarats,
+    debitCarats: totalDebitCarats,
+    creditGrams: totalCreditGrams,
+    debitGrams: totalDebitGrams,
+    creditPieces: totalCreditPieces,
+    debitPieces: totalDebitPieces,
+    creditItemsCount,
+    debitItemsCount,
+    totalActiveItems: creditItemsCount + debitItemsCount,
+    hasOpposingBalances,
     bySpecies,
     items: Object.values(byDetail),
   };
@@ -420,6 +499,13 @@ export function transactionBalancesToCustomerBalances(
     stoneCaratBalance: stoneBalances.carats,
     stoneGramBalance: stoneBalances.grams,
     stonePiecesBalance: stoneBalances.pieces,
+    stoneCreditCarats: stoneBalances.creditCarats,
+    stoneDebitCarats: stoneBalances.debitCarats,
+    stoneCreditGrams: stoneBalances.creditGrams,
+    stoneDebitGrams: stoneBalances.debitGrams,
+    stoneCreditPieces: stoneBalances.creditPieces,
+    stoneDebitPieces: stoneBalances.debitPieces,
+    hasOpposingStoneBalances: stoneBalances.hasOpposingBalances,
     stoneBalancesBySpecies: stoneBalances.bySpecies,
     stoneItemBalances: stoneBalances.items,
   };

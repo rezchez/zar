@@ -19,7 +19,7 @@ import { isRefinerGroup } from '@/lib/customer-groups';
 import { jalaliDateToIso, normalizeDigits } from '@/lib/jalali';
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
 import { createRefiningCase, syncCaseTotals } from '@/features/refining/services/refining-service';
-import { postMetalSale, postMetalPurchase, postCurrencyTrade } from '@/features/accounting/posting/posting-engine';
+import { postMetalSale, postMetalPurchase, postCurrencyTrade, postStoneSale, postStonePurchase } from '@/features/accounting/posting/posting-engine';
 import { getCustomerWithBalances } from '@/lib/customer-service';
 import { getCurrencyMeta, normalizeCurrencyCode } from '@/lib/customer';
 import { convertTomanToRial } from '@/lib/money';
@@ -456,7 +456,8 @@ export async function POST(request: Request) {
           line.settlementMethod === 'unsettled';
         const stoneCurrency = normalizeCurrencyCode(String(details.settlementCurrencyUnit || ''));
         const isForeignStone = Boolean(stoneCurrency && stoneCurrency !== 'IRR' && stoneCurrency !== 'IRT');
-        const stoneDirection = lineNature === 'received' ? 1 : -1;
+        // قاعده بازار سنگ: خرید از مشتری یعنی مشتری سنگ رو به ما بدهکاره (-1)، فروش به مشتری یعنی مشتری از ما طلب‌کاره (+1)
+        const stoneDirection = lineNature === 'received' ? -1 : 1;
         const detailTotal = Math.abs(
           readAmount(details.stoneTotalAmount) || readAmount(details.totalAmount) || 0,
         );
@@ -953,6 +954,81 @@ export async function POST(request: Request) {
               );
             } catch (journalErr) {
               console.error('Failed to post metal purchase journal entry:', journalErr);
+            }
+          }
+
+          const isStone = prepared.line.documentTab === 'stone' || prepared.line.sourceTab === 'stone';
+          const stoneOpKind = String(prepared.documentDetails.stoneOperationKind || '');
+          const isStoneSale = isStone && (stoneOpKind === 'sale' || stoneOpKind === 'unsettled_sale' || (prepared.lineNature === 'paid' && stoneOpKind !== 'exit'));
+          const isStonePurchase = isStone && (stoneOpKind === 'purchase' || stoneOpKind === 'unsettled_purchase' || (prepared.lineNature === 'received' && stoneOpKind !== 'entry'));
+
+          if (isStoneSale && rialAmount > 0) {
+            const speciesName = String(prepared.documentDetails.stoneSpeciesName || prepared.documentDetails.stoneItemName || prepared.documentDetails.stoneCategory || 'سنگ');
+            const carats = Number(prepared.documentDetails.stoneCarats) || 0;
+            const grams = Number(prepared.documentDetails.stoneGrams) || 0;
+            const pieces = Number(prepared.documentDetails.stonePieces) || 0;
+            const roundingDiff = Number(prepared.documentDetails.roundingDifference ?? 0);
+            const exactAmount = Number(prepared.documentDetails.exactCalculatedAmount ?? 0) || (rialAmount - roundingDiff);
+
+            try {
+              await postStoneSale(
+                {
+                  documentId: `${documentId}:${prepared.lineNumber}`,
+                  documentNumber: lineDocumentNumbers[index] || finalDocumentNumber,
+                  entryDateJalali: documentDateJalali,
+                  salesRevenueRials: rialAmount,
+                  exactRevenueRials: exactAmount,
+                  roundingDifference: roundingDiff,
+                  speciesName,
+                  carats,
+                  grams,
+                  pieces,
+                  customer: {
+                    id: customer.id,
+                    name: customer.name,
+                    customerCode: Number(customer.customerCode ?? 0),
+                  },
+                  userId: context.user.id,
+                  description: readString(prepared.line.description ?? body.description, 500) || undefined,
+                },
+                writer,
+              );
+            } catch (journalErr) {
+              console.error('Failed to post stone sale journal entry:', journalErr);
+            }
+          } else if (isStonePurchase && rialAmount > 0) {
+            const speciesName = String(prepared.documentDetails.stoneSpeciesName || prepared.documentDetails.stoneItemName || prepared.documentDetails.stoneCategory || 'سنگ');
+            const carats = Number(prepared.documentDetails.stoneCarats) || 0;
+            const grams = Number(prepared.documentDetails.stoneGrams) || 0;
+            const pieces = Number(prepared.documentDetails.stonePieces) || 0;
+            const roundingDiff = Number(prepared.documentDetails.roundingDifference ?? 0);
+            const exactAmount = Number(prepared.documentDetails.exactCalculatedAmount ?? 0) || (rialAmount - roundingDiff);
+
+            try {
+              await postStonePurchase(
+                {
+                  documentId: `${documentId}:${prepared.lineNumber}`,
+                  documentNumber: lineDocumentNumbers[index] || finalDocumentNumber,
+                  entryDateJalali: documentDateJalali,
+                  amountRials: rialAmount,
+                  exactAmountRials: exactAmount,
+                  roundingDifference: roundingDiff,
+                  speciesName,
+                  carats,
+                  grams,
+                  pieces,
+                  customer: {
+                    id: customer.id,
+                    name: customer.name,
+                    customerCode: Number(customer.customerCode ?? 0),
+                  },
+                  userId: context.user.id,
+                  description: readString(prepared.line.description ?? body.description, 500) || undefined,
+                },
+                writer,
+              );
+            } catch (journalErr) {
+              console.error('Failed to post stone purchase journal entry:', journalErr);
             }
           }
         }

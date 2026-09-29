@@ -1808,3 +1808,151 @@ export async function postCurrencyTrade(
   );
 }
 
+export async function postStoneSale(
+  params: {
+    documentId: string;
+    documentNumber: string;
+    entryDateJalali?: string;
+    salesRevenueRials: number;
+    exactRevenueRials?: number;
+    roundingDifference?: number;
+    speciesName: string;
+    carats?: number;
+    grams?: number;
+    pieces?: number;
+    customer: {
+      id: string;
+      name: string;
+      customerCode?: number;
+    };
+    userId: string;
+    description?: string;
+    mapping?: Record<string, string>;
+  },
+  pb: PocketBase,
+): Promise<JournalEntryResult> {
+  const roundedAmount = Math.round(params.salesRevenueRials);
+  if (roundedAmount <= 0) {
+    throw new Error('مبلغ فروش سنگ باید بزرگتر از صفر باشد.');
+  }
+
+  let writer = pb;
+  if (!(pb as any)._store) {
+    try {
+      const { getPocketBaseServiceClient } = await import('@/lib/pocketbase-service');
+      writer = await getPocketBaseServiceClient();
+    } catch {
+      writer = pb;
+    }
+  }
+
+  const { buildStoneSaleJournalLines, resolveGemstoneAccountMapping } = await import('./gemstone-accounting');
+  const accountMapping = await resolveGemstoneAccountMapping(writer);
+  const mapping = { ...accountMapping, ...params.mapping };
+
+  const lines = buildStoneSaleJournalLines({
+    salesRevenueRials: roundedAmount,
+    exactRevenueRials: params.exactRevenueRials,
+    roundingDifference: params.roundingDifference,
+    speciesName: params.speciesName,
+    carats: params.carats,
+    grams: params.grams,
+    pieces: params.pieces,
+    customerId: params.customer.id,
+    customerName: params.customer.name,
+    mapping,
+  });
+
+  const weightDesc = params.carats && params.carats > 0 ? ` (${params.carats.toFixed(3)} ct)` : '';
+  const desc =
+    params.description ||
+    `فروش سنگ ${params.speciesName}${weightDesc} به طرف‌حساب ${params.customer.name} (سند ${params.documentNumber})`;
+
+  return postJournalEntry(
+    {
+      description: desc,
+      sourceType: 'document',
+      sourceId: params.documentId,
+      sourceKey: `stone:sale:${params.documentId}`,
+      entryDateJalali: params.entryDateJalali,
+      userId: params.userId,
+      lines,
+    },
+    writer,
+  );
+}
+
+export async function postStonePurchase(
+  params: {
+    documentId: string;
+    documentNumber: string;
+    entryDateJalali?: string;
+    amountRials: number;
+    exactAmountRials?: number;
+    roundingDifference?: number;
+    speciesName: string;
+    carats?: number;
+    grams?: number;
+    pieces?: number;
+    customer: {
+      id: string;
+      name: string;
+      customerCode?: number;
+    };
+    userId: string;
+    description?: string;
+    mapping?: Record<string, string>;
+  },
+  pb: PocketBase,
+): Promise<JournalEntryResult> {
+  const roundedAmount = Math.round(params.amountRials);
+  if (roundedAmount <= 0) {
+    throw new Error('مبلغ خرید سنگ باید بزرگتر از صفر باشد.');
+  }
+
+  let writer = pb;
+  if (!(pb as any)._store) {
+    try {
+      const { getPocketBaseServiceClient } = await import('@/lib/pocketbase-service');
+      writer = await getPocketBaseServiceClient();
+    } catch {
+      writer = pb;
+    }
+  }
+
+  const { buildStonePurchaseJournalLines, resolveGemstoneAccountMapping } = await import('./gemstone-accounting');
+  const accountMapping = await resolveGemstoneAccountMapping(writer);
+  const mapping = { ...accountMapping, ...params.mapping };
+
+  const lines = buildStonePurchaseJournalLines({
+    amountRials: roundedAmount,
+    exactAmountRials: params.exactAmountRials,
+    roundingDifference: params.roundingDifference,
+    speciesName: params.speciesName,
+    carats: params.carats,
+    grams: params.grams,
+    pieces: params.pieces,
+    customerId: params.customer.id,
+    customerName: params.customer.name,
+    mapping,
+  });
+
+  const weightDesc = params.carats && params.carats > 0 ? ` به وزن ${params.carats.toFixed(3)} قیراط` : '';
+  const desc =
+    params.description ||
+    `خرید سنگ ${params.speciesName}${weightDesc} از طرف‌حساب ${params.customer.name} (سند ${params.documentNumber})`;
+
+  return postJournalEntry(
+    {
+      description: desc,
+      sourceType: 'document',
+      sourceId: params.documentId,
+      sourceKey: `stone:purchase:${params.documentId}`,
+      entryDateJalali: params.entryDateJalali,
+      userId: params.userId,
+      lines,
+    },
+    writer,
+  );
+}
+

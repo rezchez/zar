@@ -145,18 +145,60 @@ export default function StoneTab({
   const isReceived = nature === 'received';
 
   // Available operations based on document nature
-  const availableOperations: { id: StoneOperationKind; label: string; desc: string }[] = useMemo(() => {
+  const availableOperations: {
+    id: StoneOperationKind;
+    label: string;
+    desc: string;
+    natureBadge: string;
+    accountingImpact: string;
+  }[] = useMemo(() => {
     if (isReceived) {
       return [
-        { id: 'entry', label: 'ورود سنگ', desc: 'تحویل فیزیکی سنگ بدون اثر مالی بر حساب طرف‌حساب' },
-        { id: 'purchase', label: 'خرید سنگ', desc: 'خرید قطعی سنگ با تسویه آنی (نقد یا بانک متناظر)' },
-        { id: 'unsettled_purchase', label: 'خرید سنگ (بدون تسویه)', desc: 'خرید اعتباری/دفتری بدون تسویه آنی (افزایش طلب مشتری)' },
+        {
+          id: 'purchase',
+          label: 'خرید سنگ',
+          desc: 'خرید سنگ از مشتری (مشتری سنگ را به ما بدهکار می‌شود)',
+          natureBadge: 'مشتری سنگ رو به ما بدهکاره (بدهکار به ما)',
+          accountingImpact: 'خرید سنگ از مشتری · مشتری سنگ را به ما بدهکار می‌شود (بدهکاری سنگ به عهده مشتری)',
+        },
+        {
+          id: 'unsettled_purchase',
+          label: 'خرید سنگ (بدون تسویه)',
+          desc: 'خرید اعتباری/دفتری سنگ از مشتری (مشتری سنگ را به ما بدهکار می‌شود)',
+          natureBadge: 'مشتری سنگ رو به ما بدهکاره (بدهکار به ما)',
+          accountingImpact: 'خرید دفتری سنگ از مشتری · مشتری سنگ را به ما بدهکار می‌شود (بدهکاری سنگ به عهده مشتری)',
+        },
+        {
+          id: 'entry',
+          label: 'ورود سنگ',
+          desc: 'ورود فیزیکی سنگ / تحویل جهت تسویه بدهی سنگ مشتری',
+          natureBadge: 'بدهی سنگ مشتری به ما (تسویه وزنی)',
+          accountingImpact: 'تراز وزنی سنگ: ثبت ردیف وزنی در جهت تسویه بدهی سنگ مشتری به ما',
+        },
       ];
     }
     return [
-      { id: 'exit', label: 'خروج سنگ', desc: 'تحویل فیزیکی سنگ بدون اثر مالی بر حساب طرف‌حساب' },
-      { id: 'sale', label: 'فروش سنگ', desc: 'فروش قطعی سنگ با تسویه آنی (نقد یا بانک متناظر)' },
-      { id: 'unsettled_sale', label: 'فروش سنگ (بدون تسویه)', desc: 'فروش اعتباری/دفتری بدون تسویه آنی (افزایش بدهی مشتری)' },
+      {
+        id: 'sale',
+        label: 'فروش سنگ',
+        desc: 'فروش سنگ به مشتری (مشتری از ما سنگ طلبکار می‌شود)',
+        natureBadge: 'مشتری از ما طلب‌کاره (بستانکار از ما)',
+        accountingImpact: 'فروش سنگ به مشتری · مشتری از ما سنگ طلبکار می‌شود (بستانکاری سنگ برای مشتری)',
+      },
+      {
+        id: 'unsettled_sale',
+        label: 'فروش سنگ (بدون تسویه)',
+        desc: 'فروش اعتباری/دفتری سنگ به مشتری (مشتری از ما سنگ طلبکار می‌شود)',
+        natureBadge: 'مشتری از ما طلب‌کاره (بستانکار از ما)',
+        accountingImpact: 'فروش دفتری سنگ به مشتری · مشتری از ما سنگ طلبکار می‌شود (بستانکاری سنگ برای مشتری)',
+      },
+      {
+        id: 'exit',
+        label: 'خروج سنگ',
+        desc: 'خروج فیزیکی سنگ / تحویل سنگ در جهت تسویه طلب سنگ مشتری',
+        natureBadge: 'طلب سنگ مشتری از ما (تحویل/تسویه)',
+        accountingImpact: 'تراز وزنی سنگ: ثبت ردیف وزنی در جهت تحویل یا تسویه طلب سنگ مشتری از ما',
+      },
     ];
   }, [isReceived]);
 
@@ -887,6 +929,10 @@ export default function StoneTab({
     return match ? match.label : isReceived ? 'ورود سنگ' : 'خروج سنگ';
   }, [availableOperations, currentOp, isReceived]);
 
+  const activeOp = useMemo(() => {
+    return availableOperations.find((o) => o.id === currentOp) || availableOperations[0];
+  }, [availableOperations, currentOp]);
+
   const resolvedCurrency = useMemo(
     () => resolveStoneTransactionCurrency(selectedCurrency, baseCurrency, currencyLabel, activeCurrencies),
     [selectedCurrency, baseCurrency, currencyLabel, activeCurrencies],
@@ -1115,14 +1161,28 @@ export default function StoneTab({
     <div className="space-y-4" dir="rtl">
       {/* 1. Operation Kind Switcher Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
-        <div className="document-operation-title m-0">
-          <div className="flex items-center gap-2">
-            <Sparkles className={isReceived ? 'text-emerald-600' : 'text-rose-600'} size={20} />
-            <h3 className="text-xs font-black">{opLabel}</h3>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="document-operation-title m-0">
+            <div className="flex items-center gap-2">
+              <Sparkles className={isReceived ? 'text-emerald-600' : 'text-rose-600'} size={20} />
+              <h3 className="text-xs font-black">{opLabel}</h3>
+            </div>
+            <span className={`document-nature-badge ${nature}`}>
+              {isReceived ? 'سند دریافتی (ورود / خرید)' : 'سند پرداختی (خروج / فروش)'}
+            </span>
           </div>
-          <span className={`document-nature-badge ${nature}`}>
-            {isReceived ? 'سند دریافتی (ورود / خرید)' : 'سند پرداختی (خروج / فروش)'}
-          </span>
+          {activeOp?.natureBadge && (
+            <span
+              title={`قاعده ماهیت معامله سنگ و عدم تهاتر: خرید سنگ از مشتری یعنی مشتری سنگ رو به ما بدهکاره (بدهکار به ما) · فروش سنگ به مشتری یعنی مشتری از ما طلب‌کاره (بستانکار از ما) · اثر: ${activeOp?.accountingImpact || ''}`}
+              className={`text-[11px] font-black px-2.5 py-0.5 rounded-lg border ${
+                currentOp === 'purchase' || currentOp === 'entry' || currentOp === 'unsettled_purchase'
+                  ? 'bg-emerald-100 text-emerald-950 border-emerald-300 dark:bg-emerald-500/20 dark:text-emerald-200 dark:border-emerald-400/50'
+                  : 'bg-rose-100 text-rose-950 border-rose-300 dark:bg-rose-500/20 dark:text-rose-200 dark:border-rose-400/50'
+              }`}
+            >
+              {activeOp.natureBadge}
+            </span>
+          )}
         </div>
 
         {/* Operation Mode Buttons */}

@@ -35,6 +35,11 @@ import {
   calculateCustomerStoneBalances,
   transactionBalancesToCustomerBalances,
 } from '@/features/accounting/transactions/services/transaction';
+import {
+  buildStonePurchaseJournalLines,
+  buildStoneSaleJournalLines,
+  DEFAULT_GEMSTONE_ACCOUNT_MAPPING,
+} from '@/features/accounting/posting/gemstone-accounting';
 
 
 describe('Stone Tab Validation & Accounting Operations', () => {
@@ -644,7 +649,7 @@ describe('Stone Tab Validation & Accounting Operations', () => {
   });
 
   describe('Customer Stone Weight Debt & Liquid Balance Modal', () => {
-    it('calculates positive stone weight debt (بستانکار وزنی سنگ) on physical stone entry', () => {
+    it('calculates customer stone weight debt (بدهکار وزنی سنگ: مشتری سنگ رو به ما بدهکاره) on purchase/received', () => {
       const tx = mapTransaction({
         id: 'stone-entry-tx-1',
         customer: 'cust-10',
@@ -666,38 +671,22 @@ describe('Stone Tab Validation & Accounting Operations', () => {
       });
 
       const balances = calculateCustomerStoneBalances([tx]);
-      expect(balances.carats).toBe(12.5);
-      expect(balances.grams).toBe(2.5);
-      expect(balances.pieces).toBe(5);
+      expect(balances.carats).toBe(-12.5);
+      expect(balances.grams).toBe(-2.5);
+      expect(balances.pieces).toBe(-5);
+      expect(balances.debitCarats).toBe(12.5);
+      expect(balances.debitGrams).toBe(2.5);
+      expect(balances.debitPieces).toBe(5);
       expect(balances.bySpecies['natural_diamond']).toBeDefined();
-      expect(balances.bySpecies['natural_diamond'].carats).toBe(12.5);
-      expect(balances.bySpecies['natural_diamond'].grams).toBe(2.5);
-      expect(balances.bySpecies['natural_diamond'].pieces).toBe(5);
+      expect(balances.bySpecies['natural_diamond'].carats).toBe(-12.5);
+      expect(balances.bySpecies['natural_diamond'].grams).toBe(-2.5);
+      expect(balances.bySpecies['natural_diamond'].pieces).toBe(-5);
       expect(balances.bySpecies['natural_diamond'].speciesName).toBe('الماس طبیعی');
     });
 
-    it('calculates negative stone weight debt (بدهکار وزنی سنگ / طلب ما) on physical stone exit', () => {
-      const entryTx = mapTransaction({
-        id: 'stone-entry-tx-2',
-        customer: 'cust-10',
-        transactionType: 'document',
-        status: 'posted',
-        documentNature: 'received',
-        documentTab: 'stone',
-        documentSubType: 'stone-entry',
-        settlementMethod: 'weight',
-        documentDetails: {
-          stoneOperationKind: 'entry',
-          stoneCategory: 'diamond',
-          stoneSpecies: 'natural_diamond',
-          stoneCarats: '20.0',
-          stoneGrams: '4.000',
-          stonePieces: '10',
-        },
-      });
-
-      const exitTx = mapTransaction({
-        id: 'stone-exit-tx-2',
+    it('calculates customer stone claim (بستانکار وزنی سنگ: مشتری از ما طلب‌کاره) on sale/paid', () => {
+      const saleTx = mapTransaction({
+        id: 'stone-sale-tx-2',
         customer: 'cust-10',
         transactionType: 'document',
         status: 'posted',
@@ -709,24 +698,14 @@ describe('Stone Tab Validation & Accounting Operations', () => {
           stoneOperationKind: 'exit',
           stoneCategory: 'diamond',
           stoneSpecies: 'natural_diamond',
-          stoneCarats: '7.5',
-          stoneGrams: '1.500',
-          stonePieces: '3',
+          stoneCarats: '20.0',
+          stoneGrams: '4.000',
+          stonePieces: '10',
         },
       });
 
-      const balances = calculateCustomerStoneBalances([entryTx, exitTx]);
-      expect(balances.carats).toBe(12.5);
-      expect(balances.grams).toBe(2.5);
-      expect(balances.pieces).toBe(7);
-      expect(balances.bySpecies['natural_diamond'].carats).toBe(12.5);
-      expect(balances.bySpecies['natural_diamond'].grams).toBe(2.5);
-      expect(balances.bySpecies['natural_diamond'].pieces).toBe(7);
-    });
-
-    it('tracks distinct balances per gemstone species and sums overall totals', () => {
-      const diamondTx = mapTransaction({
-        id: 'stone-tx-diamond',
+      const purchaseTx = mapTransaction({
+        id: 'stone-purchase-tx-2',
         customer: 'cust-10',
         transactionType: 'document',
         status: 'posted',
@@ -736,6 +715,80 @@ describe('Stone Tab Validation & Accounting Operations', () => {
         settlementMethod: 'weight',
         documentDetails: {
           stoneOperationKind: 'entry',
+          stoneCategory: 'diamond',
+          stoneSpecies: 'natural_diamond',
+          stoneCarats: '7.5',
+          stoneGrams: '1.500',
+          stonePieces: '3',
+        },
+      });
+
+      const balances = calculateCustomerStoneBalances([saleTx, purchaseTx]);
+      expect(balances.carats).toBe(12.5);
+      expect(balances.grams).toBe(2.5);
+      expect(balances.pieces).toBe(7);
+      expect(balances.bySpecies['natural_diamond'].carats).toBe(12.5);
+      expect(balances.bySpecies['natural_diamond'].grams).toBe(2.5);
+      expect(balances.bySpecies['natural_diamond'].pieces).toBe(7);
+    });
+
+    it('correctly classifies unsettled stone purchase (خرید سنگ بدون تسویه) as customer stone debt (بدهکار وزنی سنگ به ما)', () => {
+      const unsettledPurchaseTx = mapTransaction({
+        id: 'stone-tx-unsettled-purchase-1',
+        customer: 'cust-vendor-unsettled',
+        transactionType: 'document',
+        status: 'posted',
+        documentNature: 'received',
+        documentTab: 'stone',
+        documentSubType: 'stone-unsettled-purchase',
+        settlementMethod: 'unsettled',
+        documentDetails: {
+          stoneOperationKind: 'unsettled_purchase',
+          stoneCategory: 'diamond',
+          stoneSpecies: 'natural_diamond',
+          stoneSpeciesName: 'برلیان طبیعی',
+          stoneShape: 'round',
+          stoneColor: 'G',
+          stoneClarity: 'VS1',
+          stoneCut: 'excellent',
+          stoneCarats: '1.000',
+          stoneGrams: '0.2000',
+          stonePieces: '1',
+          stoneCertificateLab: 'gia',
+          stoneCertificateNumber: '123456789',
+        },
+      });
+
+      const balances = calculateCustomerStoneBalances([unsettledPurchaseTx]);
+
+      // خرید سنگ بدون تسویه یعنی مشتری سنگ رو به ما بدهکاره (-1 carats net, debitCarats = 1.0 ct)
+      expect(balances.carats).toBe(-1.0);
+      expect(balances.grams).toBe(-0.2);
+      expect(balances.pieces).toBe(-1);
+      expect(balances.debitCarats).toBe(1.0);
+      expect(balances.debitGrams).toBe(0.2);
+      expect(balances.debitPieces).toBe(1);
+      expect(balances.creditCarats).toBe(0);
+      expect(balances.creditGrams).toBe(0);
+      expect(balances.creditPieces).toBe(0);
+      expect(balances.items.length).toBe(1);
+      expect(balances.items[0].carats).toBe(-1.0); // negative = debit (بدهکار به ما)
+      expect(balances.items[0].clarity).toBe('VS1');
+      expect(balances.items[0].color).toBe('G');
+    });
+
+    it('tracks distinct balances per gemstone species and sums overall totals', () => {
+      const diamondTx = mapTransaction({
+        id: 'stone-tx-diamond',
+        customer: 'cust-10',
+        transactionType: 'document',
+        status: 'posted',
+        documentNature: 'paid',
+        documentTab: 'stone',
+        documentSubType: 'stone-exit',
+        settlementMethod: 'weight',
+        documentDetails: {
+          stoneOperationKind: 'exit',
           stoneCategory: 'diamond',
           stoneSpecies: 'natural_diamond',
           stoneSpeciesName: 'برلیان سفید پاک',
@@ -750,12 +803,12 @@ describe('Stone Tab Validation & Accounting Operations', () => {
         customer: 'cust-10',
         transactionType: 'document',
         status: 'posted',
-        documentNature: 'received',
+        documentNature: 'paid',
         documentTab: 'stone',
-        documentSubType: 'stone-entry',
+        documentSubType: 'stone-exit',
         settlementMethod: 'weight',
         documentDetails: {
-          stoneOperationKind: 'entry',
+          stoneOperationKind: 'exit',
           stoneCategory: 'colored_gemstone',
           stoneSpecies: 'emerald_colombian',
           stoneSpeciesName: 'زمرد کلمبیا',
@@ -782,12 +835,12 @@ describe('Stone Tab Validation & Accounting Operations', () => {
         customer: 'cust-10',
         transactionType: 'document',
         status: 'posted',
-        documentNature: 'received',
+        documentNature: 'paid',
         documentTab: 'stone',
-        documentSubType: 'stone-entry',
+        documentSubType: 'stone-exit',
         settlementMethod: 'weight',
         documentDetails: {
-          stoneOperationKind: 'entry',
+          stoneOperationKind: 'exit',
           stoneCategory: 'colored_gemstone',
           stoneSpecies: 'ruby_burma',
           stoneGrams: '1.0',
@@ -800,12 +853,12 @@ describe('Stone Tab Validation & Accounting Operations', () => {
         customer: 'cust-10',
         transactionType: 'document',
         status: 'posted',
-        documentNature: 'received',
+        documentNature: 'paid',
         documentTab: 'stone',
-        documentSubType: 'stone-entry',
+        documentSubType: 'stone-exit',
         settlementMethod: 'weight',
         documentDetails: {
-          stoneOperationKind: 'entry',
+          stoneOperationKind: 'exit',
           stoneCategory: 'diamond',
           stoneSpecies: 'natural_diamond',
           stoneCarats: '10.0',
@@ -849,12 +902,12 @@ describe('Stone Tab Validation & Accounting Operations', () => {
         customer: 'cust-10',
         transactionType: 'document',
         status: 'posted',
-        documentNature: 'received',
+        documentNature: 'paid',
         documentTab: 'stone',
-        documentSubType: 'stone-entry',
+        documentSubType: 'stone-exit',
         settlementMethod: 'weight',
         documentDetails: {
-          stoneOperationKind: 'entry',
+          stoneOperationKind: 'exit',
           stoneCategory: 'diamond',
           stoneSpecies: 'natural_diamond',
           stoneCarats: '6.25',
@@ -935,16 +988,17 @@ describe('Stone Tab Validation & Accounting Operations', () => {
       expect(diamondItem!.clarity).toBe('VVS1');
       expect(diamondItem!.certificateLab).toBe('GIA');
       expect(diamondItem!.certificateNumber).toBe('245891234');
-      expect(diamondItem!.carats).toBe(1.0);
-      expect(diamondItem!.grams).toBe(0.2);
-      expect(diamondItem!.pieces).toBe(1);
+      expect(diamondItem!.carats).toBe(-1.0);
+      expect(diamondItem!.grams).toBe(-0.2);
+      expect(diamondItem!.pieces).toBe(-1);
 
       const emeraldItem = balances.items.find((it) => it.speciesId === 'emerald_colombian');
       expect(emeraldItem).toBeDefined();
       expect(emeraldItem!.speciesName).toBe('زمرد کلمبیا');
       expect(emeraldItem!.color).toBe('سبز درخشان سیر');
-      expect(emeraldItem!.carats).toBe(2.5);
-      expect(emeraldItem!.pieces).toBe(1);
+      expect(emeraldItem!.carats).toBe(-2.5);
+      expect(emeraldItem!.grams).toBe(-0.5);
+      expect(emeraldItem!.pieces).toBe(-1);
     });
 
     it('validates CustomerBalanceLiquid component structure: stone element is identical to other elements but clickable', async () => {
@@ -1003,7 +1057,7 @@ describe('Stone Tab Validation & Accounting Operations', () => {
       expect(modalSrc).toContain('عدد / دانه');
 
       // Verify tabs for detailed inspection
-      expect(modalSrc).toContain('ریز طلب و مشخصات سنگ');
+      expect(modalSrc).toContain('ریز طلب و بدهی سنگ');
       expect(modalSrc).toContain('خلاصه و تراز کلی');
       expect(modalSrc).toContain('ریز سوابق و گردش اسناد');
 
@@ -1023,6 +1077,228 @@ describe('Stone Tab Validation & Accounting Operations', () => {
       expect(modalSrc).toContain('onClose()');
     });
 
+    it('segregates opposing credit and debit stone balances into non-fungible positions without netting', () => {
+      // فروش سنگ به مشتری -> مشتری از ما طلب‌کاره (Credit: 1.0 ct)
+      const diamondCreditTx = mapTransaction({
+        id: 'stone-tx-diamond-credit',
+        customer: 'cust-opposing-1',
+        transactionType: 'document',
+        status: 'posted',
+        documentNature: 'paid',
+        documentTab: 'stone',
+        documentSubType: 'stone-exit',
+        settlementMethod: 'weight',
+        documentDetails: {
+          stoneOperationKind: 'sale',
+          stoneCategory: 'diamond',
+          stoneSpecies: 'natural_diamond',
+          stoneSpeciesName: 'برلیان طبیعی',
+          stoneShape: 'round',
+          stoneColor: 'G',
+          stoneClarity: 'VS1',
+          stoneCut: 'excellent',
+          stoneCarats: '1.000',
+          stoneGrams: '0.2000',
+          stonePieces: '1',
+        },
+      });
+
+      // خرید سنگ از مشتری -> مشتری سنگ رو به ما بدهکاره (Debit: 0.5 ct)
+      const rubyDebitTx = mapTransaction({
+        id: 'stone-tx-ruby-debit',
+        customer: 'cust-opposing-1',
+        transactionType: 'document',
+        status: 'posted',
+        documentNature: 'received',
+        documentTab: 'stone',
+        documentSubType: 'stone-entry',
+        settlementMethod: 'weight',
+        documentDetails: {
+          stoneOperationKind: 'purchase',
+          stoneCategory: 'colored_gemstone',
+          stoneSpecies: 'ruby_burma',
+          stoneSpeciesName: 'یاقوت سرخ برمه',
+          stoneShape: 'oval',
+          stoneColor: 'Pigeon Blood',
+          stoneClarity: 'Eye Clean',
+          stoneCarats: '0.500',
+          stoneGrams: '0.1000',
+          stonePieces: '1',
+        },
+      });
+
+      const balances = calculateCustomerStoneBalances([diamondCreditTx, rubyDebitTx]);
+
+      // Verify that balances are strictly NOT netted out into 0.5 ct without distinction
+      expect(balances.hasOpposingBalances).toBe(true);
+      expect(balances.creditCarats).toBe(1.0);
+      expect(balances.debitCarats).toBe(0.5);
+      expect(balances.creditGrams).toBe(0.2);
+      expect(balances.debitGrams).toBe(0.1);
+      expect(balances.creditPieces).toBe(1);
+      expect(balances.debitPieces).toBe(1);
+      expect(balances.items.length).toBe(2);
+
+      const customerBalances = transactionBalancesToCustomerBalances([diamondCreditTx, rubyDebitTx]);
+      expect(customerBalances.hasOpposingStoneBalances).toBe(true);
+      expect(customerBalances.stoneCreditCarats).toBe(1.0);
+      expect(customerBalances.stoneDebitCarats).toBe(0.5);
+      expect(customerBalances.stoneCreditGrams).toBe(0.2);
+      expect(customerBalances.stoneDebitGrams).toBe(0.1);
+      expect(customerBalances.stoneCreditPieces).toBe(1);
+      expect(customerBalances.stoneDebitPieces).toBe(1);
+    });
+
+    it('generates correct double-entry journal lines for stone purchase and sale', () => {
+      // 1. Stone Purchase (خرید سنگ از مشتری)
+      // طبق قاعده بازار: خرید سنگ از مشتری یعنی مشتری سنگ رو به ما بدهکاره (طرف‌حساب بدهکار می‌شود)
+      // Debit: Counterparty Receivable (1120) - بدهی مشتری به ما
+      // Credit: Gemstone Inventory (1130)
+      const purchaseLines = buildStonePurchaseJournalLines({
+        amountRials: 150_000_000,
+        speciesName: 'برلیان طبیعی',
+        carats: 1.5,
+        grams: 0.3,
+        pieces: 1,
+        customerId: 'cust-vendor-1',
+        customerName: 'فروشنده سنگ زمردیان',
+      });
+
+      expect(purchaseLines.length).toBe(2);
+      const purchaseDebit = purchaseLines.find((l) => l.debit > 0);
+      const purchaseCredit = purchaseLines.find((l) => l.credit > 0);
+
+      expect(purchaseDebit).toBeDefined();
+      expect(purchaseDebit!.accountId).toBe(DEFAULT_GEMSTONE_ACCOUNT_MAPPING.counterpartyReceivableAccountId); // 1120
+      expect(purchaseDebit!.debit).toBe(150_000_000);
+      expect(purchaseDebit!.credit).toBe(0);
+
+      expect(purchaseCredit).toBeDefined();
+      expect(purchaseCredit!.accountId).toBe(DEFAULT_GEMSTONE_ACCOUNT_MAPPING.gemstoneInventoryAccountId); // 1130
+      expect(purchaseCredit!.credit).toBe(150_000_000);
+      expect(purchaseCredit!.debit).toBe(0);
+
+      // 2. Stone Sale (فروش سنگ به مشتری)
+      // طبق قاعده بازار: فروش سنگ به مشتری یعنی مشتری از ما طلب کاره (طرف‌حساب بستانکار می‌شود)
+      // Debit: Gemstone Inventory (1130)
+      // Credit: Counterparty Liability (2120) - طلب مشتری از ما
+      const saleLines = buildStoneSaleJournalLines({
+        amountRials: 220_000_000,
+        speciesName: 'برلیان تراش پرنسس',
+        carats: 2.0,
+        grams: 0.4,
+        pieces: 1,
+        customerId: 'cust-buyer-1',
+        customerName: 'خریدار جواهر رضایی',
+      });
+
+      expect(saleLines.length).toBe(2);
+      const saleDebit = saleLines.find((l) => l.debit > 0);
+      const saleCredit = saleLines.find((l) => l.credit > 0);
+
+      expect(saleDebit).toBeDefined();
+      expect(saleDebit!.accountId).toBe(DEFAULT_GEMSTONE_ACCOUNT_MAPPING.gemstoneInventoryAccountId); // 1130
+      expect(saleDebit!.debit).toBe(220_000_000);
+      expect(saleDebit!.credit).toBe(0);
+
+      expect(saleCredit).toBeDefined();
+      expect(saleCredit!.accountId).toBe(DEFAULT_GEMSTONE_ACCOUNT_MAPPING.counterpartyLiabilityAccountId); // 2120
+      expect(saleCredit!.credit).toBe(220_000_000);
+      expect(saleCredit!.debit).toBe(0);
+    });
+
+    it('validates StoneTab displays operation accounting nature badge and keeps GIA origin section clean', async () => {
+      const fs = await import('fs');
+      const path = await import('path');
+      const tabSrc = fs.readFileSync(
+        path.resolve(__dirname, '../features/accounting/documents/components/StoneTab.tsx'),
+        'utf8',
+      );
+
+      // Verify operation accounting nature badges and impacts
+      expect(tabSrc).toContain('natureBadge:');
+      expect(tabSrc).toContain('accountingImpact:');
+      expect(tabSrc).toContain('مشتری سنگ رو به ما بدهکاره (بدهکار به ما)');
+      expect(tabSrc).toContain('مشتری از ما طلب‌کاره (بستانکار از ما)');
+      expect(tabSrc).toContain('بدهی سنگ مشتری به ما (تسویه وزنی)');
+      expect(tabSrc).toContain('طلب سنگ مشتری از ما (تحویل/تسویه)');
+
+      // Verify educational market rule is attached as tooltip/title on badge rather than bulky card above GIA origin
+      expect(tabSrc).toContain('قاعده ماهیت معامله سنگ و عدم تهاتر');
+      expect(tabSrc).toContain('خرید سنگ از مشتری یعنی مشتری سنگ رو به ما بدهکاره (بدهکار به ما) · فروش سنگ به مشتری یعنی مشتری از ما طلب‌کاره (بستانکار از ما)');
+    });
+
+    it('validates StoneBalanceModal renders (i) info button at the top of stone balance header and expandable banner', async () => {
+      const fs = await import('fs');
+      const path = await import('path');
+      const modalSrc = fs.readFileSync(
+        path.resolve(__dirname, '../features/accounting/documents/components/StoneBalanceModal.tsx'),
+        'utf8',
+      );
+
+      // Verify (i) info button right next to stone-modal-title
+      expect(modalSrc).toContain('id="stone-modal-title"');
+      expect(modalSrc).toContain('setShowInfoBanner');
+      expect(modalSrc).toContain('<Info size={13} />');
+      expect(modalSrc).toContain('showInfoBanner &&');
+      expect(modalSrc).toContain('قاعده ماهیت معامله سنگ و عدم تهاتر:');
+      expect(modalSrc).toContain('خرید سنگ از مشتری یعنی مشتری سنگ رو به ما بدهکاره (بدهکار به ما) · فروش سنگ به مشتری یعنی مشتری از ما طلب‌کاره (بستانکار از ما)');
+    });
+
+    it('validates CustomerBalanceLiquid displays segregated items when customer has opposing stone balances', async () => {
+      const fs = await import('fs');
+      const path = await import('path');
+      const liquidSrc = fs.readFileSync(
+        path.resolve(__dirname, '../features/accounting/documents/components/CustomerBalanceLiquid.tsx'),
+        'utf8',
+      );
+
+      expect(liquidSrc).toContain('hasOpposingStones');
+      expect(liquidSrc).toContain("id: 'stone-credit'");
+      expect(liquidSrc).toContain("label: 'سنگ (طلب)'");
+      expect(liquidSrc).toContain("id: 'stone-debit'");
+      expect(liquidSrc).toContain("label: 'سنگ (بدهی)'");
+    });
+
+    it('validates StoneBalanceModal renders segregated credit and debit sections and educational non-fungibility alert', async () => {
+      const fs = await import('fs');
+      const path = await import('path');
+      const modalSrc = fs.readFileSync(
+        path.resolve(__dirname, '../features/accounting/documents/components/StoneBalanceModal.tsx'),
+        'utf8',
+      );
+
+      // Verify segregation in Tab 1
+      expect(modalSrc).toContain('اقلام طلب سنگ مشتری از ما (بستانکار از ما)');
+      expect(modalSrc).toContain('اقلام بدهی سنگ مشتری به ما (بدهکار به ما)');
+      expect(modalSrc).toContain('قاعده اساسی معامله و تفکیک گوهرها');
+
+      // Verify segregation in Tab 2
+      expect(modalSrc).toContain('تفکیک وضعیت‌های ناهمگن (طلب و بدهی همزمان)');
+
+      // Verify segregated footer
+      expect(modalSrc).toContain('طلب سنگ:');
+      expect(modalSrc).toContain('بدهی سنگ:');
+      expect(modalSrc).toContain('(اقلام تفکیکی - عدم تهاتر کور)');
+    });
+
+    it('enforces React Rules of Hooks: no hooks are declared after conditional returns in StoneBalanceModal', async () => {
+      const fs = await import('fs');
+      const path = await import('path');
+      const modalSrc = fs.readFileSync(
+        path.resolve(__dirname, '../features/accounting/documents/components/StoneBalanceModal.tsx'),
+        'utf8',
+      );
+
+      // Locate the early return: if (!isOpen || !mounted) return null;
+      const earlyReturnIndex = modalSrc.indexOf('if (!isOpen || !mounted) return null;');
+      expect(earlyReturnIndex).toBeGreaterThan(0);
+
+      // After earlyReturnIndex, there must NOT be any hook calls like useMemo, useState, useEffect, useCallback
+      const codeAfterEarlyReturn = modalSrc.slice(earlyReturnIndex);
+      const hookMatch = codeAfterEarlyReturn.match(/\b(useMemo|useState|useEffect|useCallback|useRef|useContext)\b/);
+      expect(hookMatch).toBeNull();
+    });
   });
 });
 

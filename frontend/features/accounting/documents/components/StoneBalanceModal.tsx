@@ -41,6 +41,8 @@ export default function StoneBalanceModal({
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [historyError, setHistoryError] = useState('');
   const [activeTab, setActiveTab] = useState<'details' | 'summary' | 'history'>('details');
+  const [showInfoBanner, setShowInfoBanner] = useState(false);
+  const [serverStoneBalances, setServerStoneBalances] = useState<any>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -65,6 +67,9 @@ export default function StoneBalanceModal({
         if (cancelled) return;
         if (Array.isArray(data?.transactions)) {
           setHistoryTransactions(data.transactions);
+        }
+        if (data?.stoneBalances) {
+          setServerStoneBalances(data.stoneBalances);
         }
       })
       .catch((err) => {
@@ -102,25 +107,43 @@ export default function StoneBalanceModal({
     for (const line of stoneLines) {
       const details = line.details || {};
       const opKind = String(details.stoneOperationKind || '');
+      const subType = String(line.documentSubType || '');
       const isTradeSettled = (opKind === 'purchase' || opKind === 'sale') && line.settlementMethod === 'cash';
 
-      const isWeightOp =
-        opKind === 'entry' ||
-        opKind === 'exit' ||
-        line.documentSubType === 'stone-entry' ||
-        line.documentSubType === 'stone-exit' ||
-        line.settlementMethod === 'weight' ||
-        (!isTradeSettled &&
-          (Number(details.stoneCarats || 0) > 0 ||
-            Number(details.stoneGrams || 0) > 0 ||
-            Number(details.stonePieces || 0) > 0));
-
-      if (!isWeightOp) continue;
-
-      const direction = line.documentNature === 'paid' ? -1 : 1;
       const rawCarats = Number(String(details.stoneCarats || '0').replace(/,/g, '')) || 0;
       const rawGrams = Number(String(details.stoneGrams || '0').replace(/,/g, '')) || 0;
       const rawPieces = Math.round(Number(String(details.stonePieces || '0').replace(/,/g, '')) || 0);
+
+      const hasWeight = rawCarats > 0 || rawGrams > 0 || rawPieces > 0;
+      const isWeightOp =
+        opKind === 'entry' ||
+        opKind === 'exit' ||
+        opKind === 'purchase' ||
+        opKind === 'sale' ||
+        opKind === 'unsettled_purchase' ||
+        opKind === 'unsettled_sale' ||
+        subType === 'stone-entry' ||
+        subType === 'stone-exit' ||
+        subType === 'stone-purchase' ||
+        subType === 'stone-sale' ||
+        subType === 'stone-unsettled-purchase' ||
+        subType === 'stone-unsettled-sale' ||
+        line.settlementMethod === 'weight' ||
+        line.settlementMethod === 'unsettled' ||
+        (!isTradeSettled && hasWeight);
+
+      if (!isWeightOp) continue;
+
+      // قاعده بازار سنگ: خرید از مشتری یعنی مشتری سنگ رو به ما بدهکاره (-1: بدهکار به ما)، فروش به مشتری یعنی مشتری از ما طلب‌کاره (+1: بستانکار از ما)
+      const isPurchase =
+        line.documentNature === 'received' ||
+        opKind === 'purchase' ||
+        opKind === 'unsettled_purchase' ||
+        opKind === 'entry' ||
+        line.documentSubType === 'stone-purchase' ||
+        line.documentSubType === 'stone-unsettled-purchase' ||
+        line.documentSubType === 'stone-entry';
+      const direction = isPurchase ? -1 : 1;
 
       const carats = rawCarats || (rawGrams > 0 ? gramsToCarats(rawGrams) : 0);
       const grams = rawGrams || (rawCarats > 0 ? caratsToGrams(rawCarats) : 0);
@@ -156,7 +179,17 @@ export default function StoneBalanceModal({
     if (historyTransactions.length > 0) {
       for (const t of historyTransactions) {
         if (t.status !== 'final' && t.status !== 'posted') continue;
-        if (t.documentTab !== 'stone' && t.documentSubType !== 'stone-entry' && t.documentSubType !== 'stone-exit') continue;
+        const isStoneTx =
+          t.documentTab === 'stone' ||
+          t.documentSubType === 'stone-entry' ||
+          t.documentSubType === 'stone-exit' ||
+          t.documentSubType === 'stone-purchase' ||
+          t.documentSubType === 'stone-sale' ||
+          t.documentSubType === 'stone-unsettled-purchase' ||
+          t.documentSubType === 'stone-unsettled-sale' ||
+          (typeof t.documentSubType === 'string' && t.documentSubType.startsWith('stone-'));
+
+        if (!isStoneTx) continue;
 
         let details: Record<string, unknown> = {};
         if (t.documentDetails) {
@@ -173,23 +206,40 @@ export default function StoneBalanceModal({
         const subType = String(t.documentSubType || '');
         const isTradeSettled = (opKind === 'purchase' || opKind === 'sale') && t.settlementMethod === 'cash';
 
-        const isWeightOp =
-          opKind === 'entry' ||
-          opKind === 'exit' ||
-          subType === 'stone-entry' ||
-          subType === 'stone-exit' ||
-          t.settlementMethod === 'weight' ||
-          (!isTradeSettled &&
-            (Number(details.stoneCarats || 0) > 0 ||
-              Number(details.stoneGrams || 0) > 0 ||
-              Number(details.stonePieces || 0) > 0));
-
-        if (!isWeightOp) continue;
-
-        const direction = t.documentNature === 'paid' ? -1 : 1;
         const rawCarats = Number(String(details.stoneCarats || '0').replace(/,/g, '')) || 0;
         const rawGrams = Number(String(details.stoneGrams || '0').replace(/,/g, '')) || 0;
         const rawPieces = Math.round(Number(String(details.stonePieces || '0').replace(/,/g, '')) || 0);
+
+        const hasWeight = rawCarats > 0 || rawGrams > 0 || rawPieces > 0;
+        const isWeightOp =
+          opKind === 'entry' ||
+          opKind === 'exit' ||
+          opKind === 'purchase' ||
+          opKind === 'sale' ||
+          opKind === 'unsettled_purchase' ||
+          opKind === 'unsettled_sale' ||
+          subType === 'stone-entry' ||
+          subType === 'stone-exit' ||
+          subType === 'stone-purchase' ||
+          subType === 'stone-sale' ||
+          subType === 'stone-unsettled-purchase' ||
+          subType === 'stone-unsettled-sale' ||
+          t.settlementMethod === 'weight' ||
+          t.settlementMethod === 'unsettled' ||
+          (!isTradeSettled && hasWeight);
+
+        if (!isWeightOp) continue;
+
+        // قاعده بازار سنگ: خرید از مشتری یعنی مشتری سنگ رو به ما بدهکاره (-1: بدهکار به ما)، فروش به مشتری یعنی مشتری از ما طلب‌کاره (+1: بستانکار از ما)
+        const isPurchase =
+          t.documentNature === 'received' ||
+          opKind === 'purchase' ||
+          opKind === 'unsettled_purchase' ||
+          opKind === 'entry' ||
+          subType === 'stone-purchase' ||
+          subType === 'stone-unsettled-purchase' ||
+          subType === 'stone-entry';
+        const direction = isPurchase ? -1 : 1;
 
         const carats = rawCarats || (rawGrams > 0 ? gramsToCarats(rawGrams) : 0);
         const grams = rawGrams || (rawCarats > 0 ? caratsToGrams(rawCarats) : 0);
@@ -273,13 +323,18 @@ export default function StoneBalanceModal({
         if (t.documentDateJalali) itemsMap[detailKey].lastDate = t.documentDateJalali;
         if (t.documentNumber) itemsMap[detailKey].lastDocumentNumber = t.documentNumber;
       }
+    } else if (serverStoneBalances?.items && Array.isArray(serverStoneBalances.items) && serverStoneBalances.items.length > 0) {
+      // 2. From serverStoneBalances
+      for (const it of serverStoneBalances.items) {
+        itemsMap[it.key] = { ...it, draftCarats: 0, draftGrams: 0, draftPieces: 0 };
+      }
     } else if (Array.isArray(customer.stoneItemBalances) && customer.stoneItemBalances.length > 0) {
-      // 2. From customer.stoneItemBalances
+      // 3. From customer.stoneItemBalances
       for (const it of customer.stoneItemBalances) {
         itemsMap[it.key] = { ...it, draftCarats: 0, draftGrams: 0, draftPieces: 0 };
       }
     } else if (customer.stoneBalancesBySpecies) {
-      // 3. Fallback from customer.stoneBalancesBySpecies
+      // 4. Fallback from customer.stoneBalancesBySpecies
       for (const sp of Object.values(customer.stoneBalancesBySpecies)) {
         if (sp.items && sp.items.length > 0) {
           for (const it of sp.items) {
@@ -309,30 +364,48 @@ export default function StoneBalanceModal({
       }
     }
 
-    // 4. Merge live draft lines from committedLines
+    // 5. Merge live draft lines from committedLines
     for (const line of committedLines) {
       if (line.documentTab !== 'stone' && line.sourceTab !== 'stone') continue;
       const details = line.details || {};
       const opKind = String(details.stoneOperationKind || '');
+      const subType = String(line.documentSubType || '');
       const isTradeSettled = (opKind === 'purchase' || opKind === 'sale') && line.settlementMethod === 'cash';
 
-      const isWeightOp =
-        opKind === 'entry' ||
-        opKind === 'exit' ||
-        line.documentSubType === 'stone-entry' ||
-        line.documentSubType === 'stone-exit' ||
-        line.settlementMethod === 'weight' ||
-        (!isTradeSettled &&
-          (Number(details.stoneCarats || 0) > 0 ||
-            Number(details.stoneGrams || 0) > 0 ||
-            Number(details.stonePieces || 0) > 0));
-
-      if (!isWeightOp) continue;
-
-      const direction = line.documentNature === 'paid' ? -1 : 1;
       const rawCarats = Number(String(details.stoneCarats || '0').replace(/,/g, '')) || 0;
       const rawGrams = Number(String(details.stoneGrams || '0').replace(/,/g, '')) || 0;
       const rawPieces = Math.round(Number(String(details.stonePieces || '0').replace(/,/g, '')) || 0);
+
+      const hasWeight = rawCarats > 0 || rawGrams > 0 || rawPieces > 0;
+      const isWeightOp =
+        opKind === 'entry' ||
+        opKind === 'exit' ||
+        opKind === 'purchase' ||
+        opKind === 'sale' ||
+        opKind === 'unsettled_purchase' ||
+        opKind === 'unsettled_sale' ||
+        subType === 'stone-entry' ||
+        subType === 'stone-exit' ||
+        subType === 'stone-purchase' ||
+        subType === 'stone-sale' ||
+        subType === 'stone-unsettled-purchase' ||
+        subType === 'stone-unsettled-sale' ||
+        line.settlementMethod === 'weight' ||
+        line.settlementMethod === 'unsettled' ||
+        (!isTradeSettled && hasWeight);
+
+      if (!isWeightOp) continue;
+
+      // قاعده بازار سنگ: خرید از مشتری یعنی مشتری سنگ رو به ما بدهکاره (-1: بدهکار به ما)، فروش به مشتری یعنی مشتری از ما طلب‌کاره (+1: بستانکار از ما)
+      const isPurchase =
+        line.documentNature === 'received' ||
+        opKind === 'purchase' ||
+        opKind === 'unsettled_purchase' ||
+        opKind === 'entry' ||
+        line.documentSubType === 'stone-purchase' ||
+        line.documentSubType === 'stone-unsettled-purchase' ||
+        line.documentSubType === 'stone-entry';
+      const direction = isPurchase ? -1 : 1;
 
       const carats = rawCarats || (rawGrams > 0 ? gramsToCarats(rawGrams) : 0);
       const grams = rawGrams || (rawCarats > 0 ? caratsToGrams(rawCarats) : 0);
@@ -495,17 +568,50 @@ export default function StoneBalanceModal({
       });
   }, [historyTransactions]);
 
-  if (!isOpen || !mounted) return null;
-
   // Base customer balances
   const baseCarats = customer.stoneCaratBalance ?? 0;
   const baseGrams = customer.stoneGramBalance ?? caratsToGrams(baseCarats);
   const basePieces = customer.stonePiecesBalance ?? 0;
 
+  // Segregated credit and debit items across non-fungible types
+  const creditItems = useMemo(() => detailedItems.filter((it) => it.carats > 0), [detailedItems]);
+  const debitItems = useMemo(() => detailedItems.filter((it) => it.carats < 0), [detailedItems]);
+  const settledItems = useMemo(() => detailedItems.filter((it) => it.carats === 0), [detailedItems]);
+
+  const totalCreditCarats = useMemo(
+    () => Math.round(creditItems.reduce((acc, it) => acc + it.carats, 0) * 1000) / 1000,
+    [creditItems],
+  );
+  const totalCreditGrams = useMemo(
+    () => Math.round(creditItems.reduce((acc, it) => acc + (it.grams || caratsToGrams(it.carats)), 0) * 10000) / 10000,
+    [creditItems],
+  );
+  const totalCreditPieces = useMemo(
+    () => creditItems.reduce((acc, it) => acc + (it.pieces || 0), 0),
+    [creditItems],
+  );
+
+  const totalDebitCarats = useMemo(
+    () => Math.round(debitItems.reduce((acc, it) => acc + Math.abs(it.carats), 0) * 1000) / 1000,
+    [debitItems],
+  );
+  const totalDebitGrams = useMemo(
+    () => Math.round(debitItems.reduce((acc, it) => acc + Math.abs(it.grams || caratsToGrams(it.carats)), 0) * 10000) / 10000,
+    [debitItems],
+  );
+  const totalDebitPieces = useMemo(
+    () => debitItems.reduce((acc, it) => acc + Math.abs(it.pieces || 0), 0),
+    [debitItems],
+  );
+
+  const hasOpposing = creditItems.length > 0 && debitItems.length > 0;
+
   // Projected balances including current draft lines
   const projectedCarats = Math.round((baseCarats + draftEffect.deltaCarats) * 1000) / 1000;
   const projectedGrams = Math.round((baseGrams + draftEffect.deltaGrams) * 10000) / 10000;
   const projectedPieces = basePieces + draftEffect.deltaPieces;
+
+  if (!isOpen || !mounted) return null;
 
   // Status text helpers
   const getStatusText = (val: number) =>
@@ -513,10 +619,218 @@ export default function StoneBalanceModal({
 
   const getStatusBadgeClass = (val: number) =>
     val > 0
-      ? 'bg-emerald-50 text-emerald-900 border-emerald-300 dark:bg-emerald-950/80 dark:text-emerald-100 dark:border-emerald-500/70 font-black'
+      ? 'bg-emerald-50 text-emerald-950 border-emerald-300 dark:bg-emerald-500/20 dark:text-emerald-200 dark:border-emerald-400/60 font-black'
       : val < 0
-      ? 'bg-rose-50 text-rose-900 border-rose-300 dark:bg-rose-950/80 dark:text-rose-100 dark:border-rose-500/70 font-black'
+      ? 'bg-rose-50 text-rose-950 border-rose-300 dark:bg-rose-500/20 dark:text-rose-200 dark:border-rose-400/60 font-black'
       : 'bg-slate-100 text-slate-800 border-slate-300 dark:bg-slate-800 dark:text-slate-100 dark:border-slate-600 font-bold';
+
+  const renderStoneItemCard = (item: (typeof detailedItems)[0]) => {
+    const isCredit = item.carats > 0;
+    const isDebit = item.carats < 0;
+    const netCarats = item.carats + (item.draftCarats || 0);
+
+    return (
+      <div
+        key={item.key}
+        className={`rounded-2xl border p-4 sm:p-5 shadow-xs transition-all space-y-3.5 ${
+          isCredit
+            ? 'border-emerald-300 dark:border-emerald-500/50 bg-white dark:bg-slate-800/95 hover:border-emerald-500 dark:hover:border-emerald-400'
+            : isDebit
+            ? 'border-rose-300 dark:border-rose-500/50 bg-white dark:bg-slate-800/95 hover:border-rose-500 dark:hover:border-rose-400'
+            : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/90'
+        }`}
+      >
+        {/* 1. Header: Title, Shape, Mode & Status */}
+        <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-100 dark:border-slate-700 pb-3">
+          <div className="flex items-center gap-3">
+            <div
+              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${
+                isCredit
+                  ? 'bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 border-emerald-300/60 dark:border-emerald-500/60'
+                  : isDebit
+                  ? 'bg-rose-500/10 text-rose-800 dark:text-rose-300 border-rose-300/60 dark:border-rose-500/60'
+                  : 'bg-slate-100 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-600'
+              }`}
+            >
+              <Gem className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h4 className="text-sm sm:text-base font-black text-slate-900 dark:text-white">
+                  {item.speciesName}
+                </h4>
+                {item.shapeName ? (
+                  <span className="text-xs font-bold text-slate-800 dark:text-slate-100 bg-slate-100 dark:bg-slate-700/80 px-2 py-0.5 rounded-md border border-slate-300 dark:border-slate-600">
+                    تراش {item.shapeName}
+                  </span>
+                ) : null}
+                <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                  {item.mode === 'parcel' ? '(بارخانه / ملّه)' : '(تک‌سنگ)'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5 font-medium">
+                {item.lastDocumentNumber ? `آخرین سند ثبت‌شده: ${item.lastDocumentNumber}` : ''}
+                {item.lastDate ? ` · تاریخ: ${item.lastDate}` : ''}
+              </p>
+            </div>
+          </div>
+
+          {/* Status Badge */}
+          <span
+            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-black border shadow-2xs ${
+              isCredit
+                ? 'bg-emerald-50 text-emerald-950 border-emerald-300 dark:bg-emerald-500/20 dark:text-emerald-200 dark:border-emerald-400/60'
+                : isDebit
+                ? 'bg-rose-50 text-rose-950 border-rose-300 dark:bg-rose-500/20 dark:text-rose-200 dark:border-rose-400/60'
+                : 'bg-slate-100 text-slate-800 border-slate-300 dark:bg-slate-800 dark:text-slate-100 dark:border-slate-600'
+            }`}
+          >
+            {isCredit ? (
+              <ArrowDownLeft size={13} className="text-emerald-700 dark:text-emerald-300" />
+            ) : isDebit ? (
+              <ArrowUpRight size={13} className="text-rose-700 dark:text-rose-300" />
+            ) : null}
+            <span>{getStatusText(item.carats)}</span>
+          </span>
+        </div>
+
+        {/* 2. 4Cs & Specifications Badges Row (رنگ، پاکی / کیفیت، کیفیت تراش، شناسنامه، ابعاد) */}
+        <div className="flex flex-wrap items-center gap-2 pt-0.5">
+          {/* Color Badge */}
+          {item.color ? (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-500/20 border border-amber-300 dark:border-amber-400/70 text-amber-950 dark:text-amber-100 text-xs font-bold shadow-2xs">
+              <span className="w-2 h-2 rounded-full bg-amber-500 dark:bg-amber-400 shrink-0"></span>
+              <span className="text-amber-800 dark:text-amber-300 font-bold">رنگ:</span>
+              <span className="font-black font-mono text-xs sm:text-sm text-amber-950 dark:text-white">{item.color}</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-700/80 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 text-xs font-semibold">
+              <span>رنگ: مشخص‌نشده</span>
+            </div>
+          )}
+
+          {/* Clarity & Quality Badge */}
+          {item.clarity ? (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-sky-50 dark:bg-sky-500/20 border border-sky-300 dark:border-sky-400/70 text-sky-950 dark:text-sky-100 text-xs font-bold shadow-2xs">
+              <Sparkles size={12} className="text-sky-600 dark:text-sky-300 shrink-0" />
+              <span className="text-sky-800 dark:text-sky-300 font-bold">پاکی / کیفیت:</span>
+              <span className="font-black font-mono text-xs sm:text-sm text-sky-950 dark:text-white">{item.clarity}</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-700/80 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 text-xs font-semibold">
+              <span>پاکی: مشخص‌نشده</span>
+            </div>
+          )}
+
+          {/* Cut Grade Badge */}
+          {item.cut ? (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-purple-50 dark:bg-purple-500/20 border border-purple-300 dark:border-purple-400/70 text-purple-950 dark:text-purple-100 text-xs font-bold shadow-2xs">
+              <span className="text-purple-800 dark:text-purple-300 font-bold">کیفیت تراش:</span>
+              <span className="font-black text-purple-950 dark:text-white">{item.cut}</span>
+            </div>
+          ) : null}
+
+          {/* Certificate Badge */}
+          {item.certificateLab ? (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-teal-50 dark:bg-teal-500/20 border border-teal-300 dark:border-teal-400/70 text-teal-950 dark:text-teal-100 text-xs font-bold shadow-2xs">
+              <CheckCircle2 size={12} className="text-teal-600 dark:text-teal-300 shrink-0" />
+              <span className="text-teal-800 dark:text-teal-300 font-bold">شناسنامه:</span>
+              <span className="font-black font-mono text-teal-950 dark:text-white">
+                {item.certificateLab}
+                {item.certificateNumber ? ` · ${toPersianDigits(item.certificateNumber)}` : ''}
+              </span>
+            </div>
+          ) : null}
+
+          {/* Laser Inscription */}
+          {item.laserInscription ? (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-700/80 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-slate-100 text-xs font-bold">
+              <span className="text-slate-700 dark:text-slate-300 font-bold">کد لیزر:</span>
+              <span className="font-mono font-black text-slate-900 dark:text-white">{toPersianDigits(item.laserInscription)}</span>
+            </div>
+          ) : null}
+
+          {/* Sieve Size */}
+          {item.sieveSize ? (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-500/20 border border-indigo-300 dark:border-indigo-400/70 text-indigo-950 dark:text-indigo-100 text-xs font-bold">
+              <span className="text-indigo-800 dark:text-indigo-300 font-bold">الک:</span>
+              <span className="font-mono font-black text-indigo-950 dark:text-white">{item.sieveSize}</span>
+            </div>
+          ) : null}
+
+          {/* Measurements */}
+          {item.measurements ? (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-700/80 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-slate-100 text-xs font-bold">
+              <span className="text-slate-700 dark:text-slate-300 font-bold">ابعاد:</span>
+              <span className="font-mono font-black text-slate-900 dark:text-white">{toPersianDigits(item.measurements)}</span>
+            </div>
+          ) : null}
+        </div>
+
+        {/* 3. Numerical Weights & Piece Count */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-2 border-t border-slate-100 dark:border-slate-700/80">
+          {/* Carats */}
+          <div className="flex items-center justify-between sm:flex-col sm:items-start p-3 rounded-xl bg-slate-50 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-700 shadow-2xs">
+            <span className="text-xs font-bold text-slate-700 dark:text-slate-200">مجموع وزن به قیراط:</span>
+            <div className="flex items-baseline gap-1 mt-1">
+              <strong className="text-base sm:text-lg font-black text-slate-900 dark:text-white font-mono tracking-tight">
+                {faNumber(Math.abs(item.carats), 3)}
+              </strong>
+              <span className="text-xs font-black text-amber-600 dark:text-amber-400">قیراط (ct)</span>
+            </div>
+          </div>
+
+          {/* Grams */}
+          <div className="flex items-center justify-between sm:flex-col sm:items-start p-3 rounded-xl bg-slate-50 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-700 shadow-2xs">
+            <span className="text-xs font-bold text-slate-700 dark:text-slate-200">معادل دقیق به گرم:</span>
+            <div className="flex items-baseline gap-1 mt-1">
+              <strong className="text-base sm:text-lg font-black text-slate-900 dark:text-white font-mono tracking-tight">
+                {faNumber(Math.abs(item.grams || caratsToGrams(item.carats)), 4)}
+              </strong>
+              <span className="text-xs font-black text-teal-600 dark:text-teal-400">گرم (g)</span>
+            </div>
+          </div>
+
+          {/* Pieces */}
+          <div className="flex items-center justify-between sm:flex-col sm:items-start p-3 rounded-xl bg-slate-50 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-700 shadow-2xs">
+            <span className="text-xs font-bold text-slate-700 dark:text-slate-200">تعداد کل نگین / دانه:</span>
+            <div className="flex items-baseline gap-1 mt-1">
+              <strong className="text-base sm:text-lg font-black text-slate-900 dark:text-white font-mono tracking-tight">
+                {item.pieces !== 0 ? faNumber(Math.abs(Math.round(item.pieces)), 0) : '—'}
+              </strong>
+              <span className="text-xs font-black text-indigo-600 dark:text-indigo-400">
+                {item.pieces !== 0 ? 'عدد / دانه' : ''}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Live Draft Impact */}
+        {item.hasDraftEffect && item.draftCarats !== 0 && (
+          <div className="rounded-xl bg-amber-50/90 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-600/70 p-2.5 text-xs flex items-center justify-between text-amber-950 dark:text-amber-100 font-bold">
+            <div className="flex items-center gap-1.5">
+              <Sparkles size={13} className="text-amber-600 dark:text-amber-300" />
+              <span className="text-amber-900 dark:text-amber-200">گردش این قلم در سند جاری:</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="text-slate-600 dark:text-slate-300">اثر: </span>
+              <span className={(item.draftCarats ?? 0) > 0 ? 'text-emerald-700 dark:text-emerald-300 font-black' : 'text-rose-700 dark:text-rose-300 font-black'}>
+                {(item.draftCarats ?? 0) > 0 ? '+' : ''}
+                {faNumber(item.draftCarats ?? 0, 3)} ct
+              </span>
+              <span className="mx-1.5 text-slate-400 dark:text-slate-500">←</span>
+              <span className="text-slate-700 dark:text-slate-200">
+                مانده پس از ثبت سند:{' '}
+                <strong className="font-mono text-slate-950 dark:text-white font-black">
+                  {faNumber(Math.abs(netCarats), 3)} ct
+                </strong>
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return createPortal(
     <div
@@ -543,6 +857,19 @@ export default function StoneBalanceModal({
                 <h3 id="stone-modal-title" className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
                   وضعیت و تراز وزنی سنگ
                 </h3>
+                <button
+                  type="button"
+                  onClick={() => setShowInfoBanner((prev) => !prev)}
+                  title="قاعده ماهیت معامله سنگ و عدم تهاتر: خرید سنگ از مشتری یعنی مشتری سنگ رو به ما بدهکاره (بدهکار به ما) · فروش سنگ به مشتری یعنی مشتری از ما طلب‌کاره (بستانکار از ما)"
+                  className={`flex size-6 shrink-0 items-center justify-center rounded-full border transition-all cursor-pointer ${
+                    showInfoBanner
+                      ? 'bg-amber-500 text-white border-amber-600 shadow-xs ring-2 ring-amber-400/40'
+                      : 'bg-amber-100/90 hover:bg-amber-200 text-amber-900 border-amber-300/80 dark:bg-amber-950/80 dark:text-amber-200 dark:border-amber-700 dark:hover:bg-amber-900/90'
+                  }`}
+                  aria-label="راهنمای قاعده ماهیت معامله سنگ و عدم تهاتر"
+                >
+                  <Info size={13} />
+                </button>
                 <span className="text-xs font-black px-2.5 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950/80 text-amber-950 dark:text-amber-100 border border-amber-300/60 dark:border-amber-500/60">
                   {customer.name}
                 </span>
@@ -562,6 +889,33 @@ export default function StoneBalanceModal({
           </button>
         </div>
 
+        {/* Expandable Info Banner Toggled by (i) */}
+        {showInfoBanner && (
+          <div className="border-b border-amber-300/80 bg-amber-50/95 dark:border-amber-700/80 dark:bg-amber-950/90 px-4 py-3 sm:px-6 transition-all text-xs text-amber-950 dark:text-amber-100 shadow-2xs">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-2.5">
+                <Sparkles size={16} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-black text-amber-950 dark:text-amber-100 text-xs">
+                    قاعده ماهیت معامله سنگ و عدم تهاتر:
+                  </p>
+                  <p className="text-[11px] sm:text-xs leading-relaxed text-amber-900 dark:text-amber-200 font-medium">
+                    خرید سنگ از مشتری یعنی مشتری سنگ رو به ما بدهکاره (بدهکار به ما) · فروش سنگ به مشتری یعنی مشتری از ما طلب‌کاره (بستانکار از ما). همچنین سنگ‌ها غیرهمگن هستند و ارزش هر سنگ مستقیماً به گونه، رنگ، پاکی، تراش و شناسنامه آن وابسته است و اقلام طلب و بدهی هرگز با یکدیگر جمع یا تهاتر کور نمی‌شوند.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowInfoBanner(false)}
+                className="text-amber-800 dark:text-amber-300 hover:text-amber-950 dark:hover:text-white p-1 rounded-md transition-colors cursor-pointer"
+                title="بستن راهنما"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Modal Navigation Tabs */}
         <div className="flex items-center gap-1 border-b border-slate-200 dark:border-slate-800 bg-slate-100/70 dark:bg-slate-900/90 px-4 pt-2">
           <button
@@ -574,7 +928,7 @@ export default function StoneBalanceModal({
             }`}
           >
             <Sparkles className="h-4 w-4 text-amber-500" />
-            <span>ریز طلب و مشخصات سنگ</span>
+            <span>ریز طلب و بدهی سنگ</span>
             {detailedItems.length > 0 ? (
               <span className="rounded-full bg-amber-500/20 text-amber-800 dark:text-amber-200 border border-amber-500/30 px-2 py-0.2 text-[11px] font-black">
                 {toPersianDigits(detailedItems.length)}
@@ -630,7 +984,8 @@ export default function StoneBalanceModal({
                   </p>
                 </div>
               ) : (
-                <div className="space-y-3.5">
+                <div className="space-y-4">
+                  {/* Header info bar */}
                   <div className="flex items-center justify-between text-xs text-slate-700 dark:text-slate-200 font-bold px-1">
                     <span>فهرست تفکیکی اقلام سنگ طلبکار / بدهکار با جزئیات کامل:</span>
                     <span className="bg-amber-100 dark:bg-amber-950/70 text-amber-900 dark:text-amber-200 px-2 py-0.5 rounded-md border border-amber-300/60 dark:border-amber-700/60 font-black">
@@ -638,192 +993,78 @@ export default function StoneBalanceModal({
                     </span>
                   </div>
 
-                  {detailedItems.map((item) => {
-                    const statusClass = getStatusBadgeClass(item.carats);
-                    const netCarats = item.carats + (item.draftCarats || 0);
+                  {/* Educational Non-Fungibility Guidance Alert */}
+                  <div className="rounded-xl border border-amber-300/80 bg-amber-50/70 dark:border-amber-500/50 dark:bg-amber-950/40 p-3 sm:p-3.5 text-xs text-amber-950 dark:text-amber-100 flex items-start gap-2.5 shadow-2xs">
+                    <Sparkles size={16} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <p className="font-black text-amber-950 dark:text-amber-200">
+                        قاعده اساسی معامله و تفکیک گوهرها:
+                      </p>
+                      <p className="text-[11px] leading-relaxed text-amber-900/90 dark:text-amber-200/90 font-medium">
+                        خرید سنگ از مشتری یعنی مشتری سنگ رو به ما بدهکاره (بدهکار به ما)، و فروش سنگ به مشتری یعنی مشتری از ما طلب‌کاره (بستانکار از ما). همچنین بر خلاف طلا، سنگ‌ها غیرهمگن هستند و ارزش هر گوهر کاملاً وابسته به مشخصات ۴Cs (رنگ، پاکی، تراش و وزن)، گونه و شناسنامه آن است؛ بنابراین اقلام طلب و بدهی هرگز با یکدیگر جمع یا تهاتر کور نمی‌شوند و به تفکیک نگهداری می‌گردند.
+                      </p>
+                    </div>
+                  </div>
 
-                    return (
-                      <div
-                        key={item.key}
-                        className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/90 p-4 sm:p-5 shadow-xs dark:shadow-md dark:shadow-black/20 hover:border-amber-400/50 dark:hover:border-slate-600 transition-all space-y-3.5"
-                      >
-                        {/* 1. Header: Title, Shape, Mode & Status */}
-                        <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-100 dark:border-slate-700/80 pb-3">
-                          <div className="flex items-center gap-3">
-                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-300/40 dark:border-amber-600/50">
-                              <Gem className="h-5 w-5" />
-                            </div>
-                            <div>
-                              <div className="flex flex-wrap items-center gap-2">
-                                <h4 className="text-sm sm:text-base font-black text-slate-900 dark:text-white">
-                                  {item.speciesName}
-                                </h4>
-                                {item.shapeName ? (
-                                  <span className="text-xs font-bold text-slate-700 dark:text-slate-100 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-md border border-slate-200/80 dark:border-slate-600">
-                                    تراش {item.shapeName}
-                                  </span>
-                                ) : null}
-                                <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
-                                  {item.mode === 'parcel' ? '(بارخانه / ملّه)' : '(تک‌سنگ)'}
-                                </span>
-                              </div>
-                              <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5 font-medium">
-                                {item.lastDocumentNumber ? `آخرین سند ثبت‌شده: ${item.lastDocumentNumber}` : ''}
-                                {item.lastDate ? ` · تاریخ: ${item.lastDate}` : ''}
-                              </p>
-                            </div>
-                          </div>
-
-                          {/* Status Badge */}
-                          <span
-                            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-black border shadow-2xs ${statusClass}`}
-                          >
-                            {item.carats > 0 ? (
-                              <ArrowDownLeft size={13} className="text-emerald-700 dark:text-emerald-300" />
-                            ) : item.carats < 0 ? (
-                              <ArrowUpRight size={13} className="text-rose-700 dark:text-rose-300" />
-                            ) : null}
-                            <span>{getStatusText(item.carats)}</span>
+                  {/* SECTION 1: اقلام طلب سنگ مشتری از ما (بستانکار از ما) */}
+                  {creditItems.length > 0 && (
+                    <div className="space-y-3 pt-1">
+                      <div className="flex flex-wrap items-center justify-between gap-2 bg-emerald-50 dark:bg-emerald-950/60 p-2.5 px-3.5 rounded-xl border border-emerald-200 dark:border-emerald-700/60 shadow-2xs">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></div>
+                          <span className="text-xs sm:text-sm font-black text-emerald-950 dark:text-emerald-100">
+                            اقلام طلب سنگ مشتری از ما (بستانکار از ما)
+                          </span>
+                          <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
+                            ({toPersianDigits(creditItems.length)} قلم مجزا)
                           </span>
                         </div>
-
-                        {/* 2. 4Cs & Specifications Badges Row (رنگ، کیفیت و پاکی، تراش، سرتیفیکیت) */}
-                        <div className="flex flex-wrap items-center gap-2 pt-0.5">
-                          {/* Color Badge */}
-                          {item.color ? (
-                            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-950/70 border border-amber-300 dark:border-amber-500/70 text-amber-950 dark:text-amber-100 text-xs font-bold shadow-2xs">
-                              <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0"></span>
-                              <span className="text-amber-800 dark:text-amber-300 font-bold">رنگ:</span>
-                              <span className="font-black font-mono text-xs sm:text-sm text-amber-950 dark:text-amber-100">{item.color}</span>
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-700/60 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 text-xs font-semibold">
-                              <span>رنگ: مشخص‌نشده</span>
-                            </div>
-                          )}
-
-                          {/* Clarity & Quality Badge */}
-                          {item.clarity ? (
-                            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-sky-50 dark:bg-sky-950/70 border border-sky-300 dark:border-sky-500/70 text-sky-950 dark:text-sky-100 text-xs font-bold shadow-2xs">
-                              <Sparkles size={12} className="text-sky-600 dark:text-sky-300 shrink-0" />
-                              <span className="text-sky-800 dark:text-sky-300 font-bold">پاکی / کیفیت:</span>
-                              <span className="font-black font-mono text-xs sm:text-sm text-sky-950 dark:text-sky-100">{item.clarity}</span>
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-700/60 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 text-xs font-semibold">
-                              <span>پاکی: مشخص‌نشده</span>
-                            </div>
-                          )}
-
-                          {/* Cut Grade Badge */}
-                          {item.cut ? (
-                            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-purple-50 dark:bg-purple-950/70 border border-purple-300 dark:border-purple-500/70 text-purple-950 dark:text-purple-100 text-xs font-bold shadow-2xs">
-                              <span className="text-purple-800 dark:text-purple-300 font-bold">کیفیت تراش:</span>
-                              <span className="font-black text-purple-950 dark:text-purple-100">{item.cut}</span>
-                            </div>
-                          ) : null}
-
-                          {/* Certificate Badge */}
-                          {item.certificateLab ? (
-                            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-teal-50 dark:bg-teal-950/70 border border-teal-300 dark:border-teal-500/70 text-teal-950 dark:text-teal-100 text-xs font-bold shadow-2xs">
-                              <CheckCircle2 size={12} className="text-teal-600 dark:text-teal-300 shrink-0" />
-                              <span className="text-teal-800 dark:text-teal-300 font-bold">شناسنامه:</span>
-                              <span className="font-black font-mono text-teal-950 dark:text-teal-100">
-                                {item.certificateLab}
-                                {item.certificateNumber ? ` · ${toPersianDigits(item.certificateNumber)}` : ''}
-                              </span>
-                            </div>
-                          ) : null}
-
-                          {/* Laser Inscription */}
-                          {item.laserInscription ? (
-                            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-700/70 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-slate-100 text-xs font-bold">
-                              <span className="text-slate-600 dark:text-slate-300 font-medium">کد لیزر:</span>
-                              <span className="font-mono font-black text-slate-900 dark:text-white">{toPersianDigits(item.laserInscription)}</span>
-                            </div>
-                          ) : null}
-
-                          {/* Sieve Size */}
-                          {item.sieveSize ? (
-                            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/70 border border-indigo-300 dark:border-indigo-500/70 text-indigo-950 dark:text-indigo-100 text-xs font-bold">
-                              <span className="text-indigo-800 dark:text-indigo-300 font-bold">الک:</span>
-                              <span className="font-mono font-black text-indigo-950 dark:text-indigo-100">{item.sieveSize}</span>
-                            </div>
-                          ) : null}
-
-                          {/* Measurements */}
-                          {item.measurements ? (
-                            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-700/70 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-slate-100 text-xs font-bold">
-                              <span className="text-slate-600 dark:text-slate-300 font-medium">ابعاد:</span>
-                              <span className="font-mono font-black text-slate-900 dark:text-white">{toPersianDigits(item.measurements)}</span>
-                            </div>
-                          ) : null}
+                        <div className="text-xs font-mono font-black text-emerald-900 dark:text-emerald-200">
+                          مجموع طلب: {faNumber(totalCreditCarats, 3)} ct · {faNumber(totalCreditGrams, 4)} g {totalCreditPieces > 0 ? `· ${toPersianDigits(totalCreditPieces)} دانه` : ''}
                         </div>
-
-                        {/* 3. Numerical Weights & Piece Count (کاملاً واضح و ارقام خوانا) */}
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-2 border-t border-slate-100 dark:border-slate-700/70">
-                          {/* Carats */}
-                          <div className="flex items-center justify-between sm:flex-col sm:items-start p-3 rounded-xl bg-slate-50 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-700 shadow-2xs">
-                            <span className="text-xs font-bold text-slate-700 dark:text-slate-200">مجموع وزن به قیراط:</span>
-                            <div className="flex items-baseline gap-1 mt-1">
-                              <strong className="text-base sm:text-lg font-black text-slate-900 dark:text-white font-mono tracking-tight">
-                                {faNumber(Math.abs(item.carats), 3)}
-                              </strong>
-                              <span className="text-xs font-black text-amber-600 dark:text-amber-300">قیراط (ct)</span>
-                            </div>
-                          </div>
-
-                          {/* Grams */}
-                          <div className="flex items-center justify-between sm:flex-col sm:items-start p-3 rounded-xl bg-slate-50 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-700 shadow-2xs">
-                            <span className="text-xs font-bold text-slate-700 dark:text-slate-200">معادل دقیق به گرم:</span>
-                            <div className="flex items-baseline gap-1 mt-1">
-                              <strong className="text-base sm:text-lg font-black text-slate-900 dark:text-white font-mono tracking-tight">
-                                {faNumber(Math.abs(item.grams || caratsToGrams(item.carats)), 4)}
-                              </strong>
-                              <span className="text-xs font-black text-teal-600 dark:text-teal-300">گرم (g)</span>
-                            </div>
-                          </div>
-
-                          {/* Pieces - Integer format! */}
-                          <div className="flex items-center justify-between sm:flex-col sm:items-start p-3 rounded-xl bg-slate-50 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-700 shadow-2xs">
-                            <span className="text-xs font-bold text-slate-700 dark:text-slate-200">تعداد کل نگین / دانه:</span>
-                            <div className="flex items-baseline gap-1 mt-1">
-                              <strong className="text-base sm:text-lg font-black text-slate-900 dark:text-white font-mono tracking-tight">
-                                {item.pieces !== 0 ? faNumber(Math.abs(Math.round(item.pieces)), 0) : '—'}
-                              </strong>
-                              <span className="text-xs font-black text-indigo-600 dark:text-indigo-300">
-                                {item.pieces !== 0 ? 'عدد / دانه' : ''}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Live Draft Impact on this specific item */}
-                        {item.hasDraftEffect && item.draftCarats !== 0 && (
-                          <div className="rounded-xl bg-amber-50/90 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-600/70 p-2.5 text-xs flex items-center justify-between text-amber-950 dark:text-amber-100 font-bold">
-                            <div className="flex items-center gap-1.5">
-                              <Sparkles size={13} className="text-amber-600 dark:text-amber-300" />
-                              <span className="text-amber-900 dark:text-amber-200">گردش این قلم در سند جاری:</span>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <span className="text-slate-600 dark:text-slate-300">اثر: </span>
-                              <span className={(item.draftCarats ?? 0) > 0 ? 'text-emerald-700 dark:text-emerald-300 font-black' : 'text-rose-700 dark:text-rose-300 font-black'}>
-                                {(item.draftCarats ?? 0) > 0 ? '+' : ''}
-                                {faNumber(item.draftCarats ?? 0, 3)} ct
-                              </span>
-                              <span className="mx-1.5 text-slate-400 dark:text-slate-500">←</span>
-                              <span className="text-slate-700 dark:text-slate-200">
-                                مانده پس از ثبت سند:{' '}
-                                <strong className="font-mono text-slate-950 dark:text-white font-black">
-                                  {faNumber(Math.abs(netCarats), 3)} ct
-                                </strong>
-                              </span>
-                            </div>
-                          </div>
-                        )}
                       </div>
-                    );
-                  })}
+                      <div className="space-y-3">
+                        {creditItems.map(renderStoneItemCard)}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* SECTION 2: اقلام بدهی سنگ مشتری به ما (بدهکار به ما) */}
+                  {debitItems.length > 0 && (
+                    <div className="space-y-3 pt-1">
+                      <div className="flex flex-wrap items-center justify-between gap-2 bg-rose-50 dark:bg-rose-950/60 p-2.5 px-3.5 rounded-xl border border-rose-200 dark:border-rose-700/60 shadow-2xs">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse"></div>
+                          <span className="text-xs sm:text-sm font-black text-rose-950 dark:text-rose-100">
+                            اقلام بدهی سنگ مشتری به ما (بدهکار به ما)
+                          </span>
+                          <span className="text-[11px] font-bold text-rose-700 dark:text-rose-300">
+                            ({toPersianDigits(debitItems.length)} قلم مجزا)
+                          </span>
+                        </div>
+                        <div className="text-xs font-mono font-black text-rose-900 dark:text-rose-200">
+                          مجموع بدهی: {faNumber(totalDebitCarats, 3)} ct · {faNumber(totalDebitGrams, 4)} g {totalDebitPieces > 0 ? `· ${toPersianDigits(totalDebitPieces)} دانه` : ''}
+                        </div>
+                      </div>
+                      <div className="space-y-3">
+                        {debitItems.map(renderStoneItemCard)}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* SECTION 3: اقلام تسویه‌شده وزنی سنگ */}
+                  {settledItems.length > 0 && (
+                    <div className="space-y-3 pt-1">
+                      <div className="flex items-center justify-between bg-slate-100 dark:bg-slate-800/80 p-2.5 px-3.5 rounded-xl border border-slate-200 dark:border-slate-700">
+                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                          اقلام تسویه‌شده وزنی سنگ (مانده صفر - {toPersianDigits(settledItems.length)} قلم)
+                        </span>
+                      </div>
+                      <div className="space-y-3">
+                        {settledItems.map(renderStoneItemCard)}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -832,73 +1073,188 @@ export default function StoneBalanceModal({
           {/* TAB 2: Summary KPIs & Overall Balance */}
           {activeTab === 'summary' && (
             <div className="space-y-4">
-              {/* Primary KPI Cards Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {/* 1. Carats Total */}
-                <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/90 p-4 shadow-2xs">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
-                      مجموع وزن به قیراط
-                    </span>
-                    <span className="text-amber-500">
-                      <Gem size={15} />
-                    </span>
-                  </div>
-                  <div className="mt-2 flex items-baseline gap-1.5">
-                    <strong className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-                      {faNumber(Math.abs(baseCarats), 3)}
-                    </strong>
-                    <span className="text-xs font-black text-amber-600 dark:text-amber-300">قیراط (ct)</span>
-                  </div>
-                  <div className="mt-2">
-                    <span className={`inline-block border px-2 py-0.5 rounded-md text-[11px] font-black ${getStatusBadgeClass(baseCarats)}`}>
-                      {getStatusText(baseCarats)}
-                    </span>
+              {hasOpposing && (
+                <div className="rounded-xl border border-amber-300/80 bg-amber-50/70 dark:border-amber-500/50 dark:bg-amber-950/40 p-3 sm:p-3.5 text-xs text-amber-950 dark:text-amber-100 flex items-start gap-2.5 shadow-2xs">
+                  <Sparkles size={16} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <p className="font-black text-amber-950 dark:text-amber-200">
+                      تفکیک وضعیت‌های ناهمگن (طلب و بدهی همزمان):
+                    </p>
+                    <p className="text-[11px] leading-relaxed text-amber-900/90 dark:text-amber-200/90 font-medium">
+                      این طرف‌حساب به طور همزمان دارای اقلام طلب سنگ و اقلام بدهی سنگ با مشخصات کیفی متفاوت است. به دلیل غیرهمگن بودن گوهرها، این دو مانده با یکدیگر تهاتر کور نمی‌شوند و هر یک به صورت مستقل پیگیری و تسویه می‌گردد.
+                    </p>
                   </div>
                 </div>
+              )}
 
-                {/* 2. Grams Equivalent */}
-                <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/90 p-4 shadow-2xs">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
-                      معادل دقیق به گرم
-                    </span>
-                    <span className="text-teal-500">
-                      <Scale size={15} />
-                    </span>
+              {/* Segregated Opposing KPI Cards */}
+              {hasOpposing ? (
+                <div className="space-y-4">
+                  {/* Credit Stones KPI Group */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs font-bold text-emerald-900 dark:text-emerald-200 px-1">
+                      <span>مجموع طلب‌های سنگ مشتری از ما (بستانکار از ما - {toPersianDigits(creditItems.length)} قلم مجزا):</span>
+                      <span className="bg-emerald-100 dark:bg-emerald-950/80 text-emerald-900 dark:text-emerald-200 px-2 py-0.5 rounded-md border border-emerald-300 dark:border-emerald-600 font-black">
+                        بستانکار از ما
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="rounded-xl border border-emerald-200 dark:border-emerald-700/60 bg-white dark:bg-slate-800/90 p-4 shadow-2xs">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-slate-700 dark:text-slate-200">مجموع وزن به قیراط</span>
+                          <Gem size={15} className="text-amber-500" />
+                        </div>
+                        <div className="mt-2 flex items-baseline gap-1.5">
+                          <strong className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+                            {faNumber(totalCreditCarats, 3)}
+                          </strong>
+                          <span className="text-xs font-black text-amber-600 dark:text-amber-400">قیراط (ct)</span>
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-emerald-200 dark:border-emerald-700/60 bg-white dark:bg-slate-800/90 p-4 shadow-2xs">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-slate-700 dark:text-slate-200">معادل دقیق به گرم</span>
+                          <Scale size={15} className="text-teal-500" />
+                        </div>
+                        <div className="mt-2 flex items-baseline gap-1.5">
+                          <strong className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+                            {faNumber(totalCreditGrams, 4)}
+                          </strong>
+                          <span className="text-xs font-black text-teal-600 dark:text-teal-400">گرم (g)</span>
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-emerald-200 dark:border-emerald-700/60 bg-white dark:bg-slate-800/90 p-4 shadow-2xs">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-slate-700 dark:text-slate-200">تعداد کل نگین / دانه</span>
+                          <Package size={15} className="text-indigo-500" />
+                        </div>
+                        <div className="mt-2 flex items-baseline gap-1.5">
+                          <strong className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+                            {totalCreditPieces !== 0 ? faNumber(totalCreditPieces, 0) : '—'}
+                          </strong>
+                          <span className="text-xs font-black text-indigo-600 dark:text-indigo-400">عدد / دانه</span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  <div className="mt-2 flex items-baseline gap-1.5">
-                    <strong className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-                      {faNumber(Math.abs(baseGrams), 4)}
-                    </strong>
-                    <span className="text-xs font-black text-teal-600 dark:text-teal-300">گرم (g)</span>
-                  </div>
-                  <div className="mt-2 text-[11px] text-slate-600 dark:text-slate-300 font-medium">
-                    مبنا: ۱ قیراط = ۰.۲ گرم استاندارد
-                  </div>
-                </div>
 
-                {/* 3. Pieces Total - Integer! */}
-                <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/90 p-4 shadow-2xs">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
-                      تعداد کل نگین / دانه
-                    </span>
-                    <span className="text-indigo-500">
-                      <Package size={15} />
-                    </span>
-                  </div>
-                  <div className="mt-2 flex items-baseline gap-1.5">
-                    <strong className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-                      {faNumber(Math.abs(Math.round(basePieces)), 0)}
-                    </strong>
-                    <span className="text-xs font-black text-indigo-600 dark:text-indigo-300">عدد / دانه</span>
-                  </div>
-                  <div className="mt-2 text-[11px] text-slate-600 dark:text-slate-300 font-medium">
-                    {basePieces !== 0 ? 'مجموع دانه‌های ثبت‌شده در دفاتر' : 'بدون ثبت تعداد دانه'}
+                  {/* Debit Stones KPI Group */}
+                  <div className="space-y-2 pt-1">
+                    <div className="flex items-center justify-between text-xs font-bold text-rose-900 dark:text-rose-200 px-1">
+                      <span>مجموع بدهی‌های سنگ مشتری به ما (بدهکار به ما - {toPersianDigits(debitItems.length)} قلم مجزا):</span>
+                      <span className="bg-rose-100 dark:bg-rose-950/80 text-rose-900 dark:text-rose-200 px-2 py-0.5 rounded-md border border-rose-300 dark:border-rose-600 font-black">
+                        بدهکار به ما
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="rounded-xl border border-rose-200 dark:border-rose-700/60 bg-white dark:bg-slate-800/90 p-4 shadow-2xs">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-slate-700 dark:text-slate-200">مجموع وزن به قیراط</span>
+                          <Gem size={15} className="text-amber-500" />
+                        </div>
+                        <div className="mt-2 flex items-baseline gap-1.5">
+                          <strong className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+                            {faNumber(totalDebitCarats, 3)}
+                          </strong>
+                          <span className="text-xs font-black text-amber-600 dark:text-amber-400">قیراط (ct)</span>
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-rose-200 dark:border-rose-700/60 bg-white dark:bg-slate-800/90 p-4 shadow-2xs">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-slate-700 dark:text-slate-200">معادل دقیق به گرم</span>
+                          <Scale size={15} className="text-teal-500" />
+                        </div>
+                        <div className="mt-2 flex items-baseline gap-1.5">
+                          <strong className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+                            {faNumber(totalDebitGrams, 4)}
+                          </strong>
+                          <span className="text-xs font-black text-teal-600 dark:text-teal-400">گرم (g)</span>
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-rose-200 dark:border-rose-700/60 bg-white dark:bg-slate-800/90 p-4 shadow-2xs">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-slate-700 dark:text-slate-200">تعداد کل نگین / دانه</span>
+                          <Package size={15} className="text-indigo-500" />
+                        </div>
+                        <div className="mt-2 flex items-baseline gap-1.5">
+                          <strong className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+                            {totalDebitPieces !== 0 ? faNumber(totalDebitPieces, 0) : '—'}
+                          </strong>
+                          <span className="text-xs font-black text-indigo-600 dark:text-indigo-400">عدد / دانه</span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
+              ) : (
+                /* Primary KPI Cards Grid */
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {/* 1. Carats Total */}
+                  <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/90 p-4 shadow-2xs">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                        مجموع وزن به قیراط
+                      </span>
+                      <span className="text-amber-500">
+                        <Gem size={15} />
+                      </span>
+                    </div>
+                    <div className="mt-2 flex items-baseline gap-1.5">
+                      <strong className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+                        {faNumber(Math.abs(baseCarats), 3)}
+                      </strong>
+                      <span className="text-xs font-black text-amber-600 dark:text-amber-400">قیراط (ct)</span>
+                    </div>
+                    <div className="mt-2">
+                      <span className={`inline-block border px-2 py-0.5 rounded-md text-[11px] font-black ${getStatusBadgeClass(baseCarats)}`}>
+                        {getStatusText(baseCarats)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* 2. Grams Equivalent */}
+                  <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/90 p-4 shadow-2xs">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                        معادل دقیق به گرم
+                      </span>
+                      <span className="text-teal-500">
+                        <Scale size={15} />
+                      </span>
+                    </div>
+                    <div className="mt-2 flex items-baseline gap-1.5">
+                      <strong className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+                        {faNumber(Math.abs(baseGrams), 4)}
+                      </strong>
+                      <span className="text-xs font-black text-teal-600 dark:text-teal-400">گرم (g)</span>
+                    </div>
+                    <div className="mt-2 text-[11px] text-slate-600 dark:text-slate-300 font-medium">
+                      مبنا: ۱ قیراط = ۰.۲ گرم استاندارد
+                    </div>
+                  </div>
+
+                  {/* 3. Pieces Total - Integer! */}
+                  <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/90 p-4 shadow-2xs">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                        تعداد کل نگین / دانه
+                      </span>
+                      <span className="text-indigo-500">
+                        <Package size={15} />
+                      </span>
+                    </div>
+                    <div className="mt-2 flex items-baseline gap-1.5">
+                      <strong className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+                        {basePieces !== 0 ? faNumber(Math.abs(Math.round(basePieces)), 0) : '—'}
+                      </strong>
+                      <span className="text-xs font-black text-indigo-600 dark:text-indigo-400">عدد / دانه</span>
+                    </div>
+                    <div className="mt-2 text-[11px] text-slate-600 dark:text-slate-300 font-medium">
+                      {basePieces !== 0 ? 'مجموع دانه‌های ثبت‌شده در دفاتر' : 'بدون ثبت تعداد دانه'}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Current Document Live Effect Box (if document lines exist) */}
               {draftEffect.hasDraft ? (
@@ -1034,23 +1390,42 @@ export default function StoneBalanceModal({
         {/* Modal Footer */}
         <div className="border-t border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/90 px-4 py-3 sm:px-6 flex items-center justify-between">
           <div className="text-xs font-bold text-slate-600 dark:text-slate-300">
-            <span>تراز نهایی: </span>
-            <span className="font-mono text-slate-900 dark:text-white font-black">
-              {faNumber(Math.abs(baseCarats), 3)} ct
-            </span>
-            <span className="mx-1 text-slate-400 dark:text-slate-500">|</span>
-            <span className="font-mono text-slate-900 dark:text-white font-black">
-              {faNumber(Math.abs(baseGrams), 4)} g
-            </span>
-            <span className="mx-1 text-slate-400 dark:text-slate-500">|</span>
-            <span className="font-mono text-slate-900 dark:text-white font-black">
-              {faNumber(Math.abs(Math.round(basePieces)), 0)} دانه
-            </span>
+            {hasOpposing ? (
+              <span className="flex items-center gap-1.5 flex-wrap">
+                <span>طلب سنگ:</span>
+                <strong className="font-mono text-emerald-700 dark:text-emerald-300 font-black">
+                  {faNumber(totalCreditCarats, 3)} ct
+                </strong>
+                <span className="mx-1 text-slate-400 dark:text-slate-500">|</span>
+                <span>بدهی سنگ:</span>
+                <strong className="font-mono text-rose-700 dark:text-rose-300 font-black">
+                  {faNumber(totalDebitCarats, 3)} ct
+                </strong>
+                <span className="text-[11px] text-amber-800 dark:text-amber-300 bg-amber-100/70 dark:bg-amber-950/60 px-2 py-0.5 rounded-md border border-amber-300/60 dark:border-amber-700/60 font-medium">
+                  (اقلام تفکیکی - عدم تهاتر کور)
+                </span>
+              </span>
+            ) : (
+              <>
+                <span>تراز نهایی: </span>
+                <span className="font-mono text-slate-900 dark:text-white font-black">
+                  {faNumber(Math.abs(baseCarats), 3)} ct
+                </span>
+                <span className="mx-1 text-slate-400 dark:text-slate-500">|</span>
+                <span className="font-mono text-slate-900 dark:text-white font-black">
+                  {faNumber(Math.abs(baseGrams), 4)} g
+                </span>
+                <span className="mx-1 text-slate-400 dark:text-slate-500">|</span>
+                <span className="font-mono text-slate-900 dark:text-white font-black">
+                  {faNumber(Math.abs(Math.round(basePieces)), 0)} دانه
+                </span>
+              </>
+            )}
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 px-4 py-2 text-xs font-bold text-slate-800 dark:text-slate-100 transition-colors"
+            className="rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 px-4 py-2 text-xs font-bold text-slate-800 dark:text-slate-100 transition-colors cursor-pointer"
           >
             بستن پنجره
           </button>

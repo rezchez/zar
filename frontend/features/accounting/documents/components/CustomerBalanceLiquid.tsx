@@ -32,13 +32,50 @@ export default function CustomerBalanceLiquid({
     : customer.rialBalance;
 
   const stoneCarats = customer.stoneCaratBalance ?? 0;
+  const creditCarats = customer.stoneCreditCarats ?? 0;
+  const debitCarats = customer.stoneDebitCarats ?? 0;
+  const hasOpposingStones = customer.hasOpposingStoneBalances || (creditCarats > 0 && debitCarats > 0);
 
   const baseBalances = [
-    { id: 'gold', label: 'طلا', value: customer.goldBalance, unit: 'گرم', digits: 3 },
-    { id: 'silver', label: 'نقره', value: customer.silverBalance, unit: 'گرم', digits: 3 },
-    { id: 'platinum', label: 'پلاتین', value: customer.platinumBalance, unit: 'گرم', digits: 3 },
-    { id: 'stone', label: 'سنگ', value: stoneCarats, unit: 'قیراط', digits: 2, isStone: true },
-    { id: 'currency', label: currencyLabel, value: currencyValue, unit: currencyLabel, digits: 0 },
+    { id: 'gold', label: 'طلا', value: customer.goldBalance, unit: 'گرم', digits: 3, isStone: false },
+    { id: 'silver', label: 'نقره', value: customer.silverBalance, unit: 'گرم', digits: 3, isStone: false },
+    { id: 'platinum', label: 'پلاتین', value: customer.platinumBalance, unit: 'گرم', digits: 3, isStone: false },
+    ...(hasOpposingStones
+      ? [
+          {
+            id: 'stone-credit',
+            label: 'سنگ (طلب)',
+            value: creditCarats,
+            unit: 'قیراط',
+            digits: 2,
+            isStone: true,
+            statusLabel: 'بستانکار' as const,
+            tooltip: `طلب سنگ مشتری از ما: ${faNumber(creditCarats, 2)} قیراط (بستانکار از ما) · تفکیک اقلام غیرهمگن بر اساس نوع و کیفیت · کلیک برای مشاهده تمام وزن‌ها به صورت دقیق`,
+          },
+          {
+            id: 'stone-debit',
+            label: 'سنگ (بدهی)',
+            value: -debitCarats,
+            unit: 'قیراط',
+            digits: 2,
+            isStone: true,
+            statusLabel: 'بدهکار' as const,
+            tooltip: `بدهی سنگ مشتری به ما: ${faNumber(debitCarats, 2)} قیراط (بدهکار به ما) · تفکیک اقلام غیرهمگن بر اساس نوع و کیفیت · کلیک برای مشاهده تمام وزن‌ها به صورت دقیق`,
+          },
+        ]
+      : [
+          {
+            id: 'stone',
+            label: 'سنگ',
+            value: stoneCarats,
+            unit: 'قیراط',
+            digits: 2,
+            isStone: true,
+            statusLabel: undefined,
+            tooltip: undefined,
+          },
+        ]),
+    { id: 'currency', label: currencyLabel, value: currencyValue, unit: currencyLabel, digits: 0, isStone: false },
   ];
 
   const currencyEntries = Object.entries(customer.currencyBalances || {});
@@ -85,7 +122,9 @@ export default function CustomerBalanceLiquid({
       balance.id === 'gold' ||
       balance.id === 'currency' ||
       balance.id === 'rial' ||
-      balance.id === 'stone',
+      balance.id === 'stone' ||
+      balance.id === 'stone-credit' ||
+      balance.id === 'stone-debit',
   );
 
   return (
@@ -108,16 +147,16 @@ export default function CustomerBalanceLiquid({
           </div>
         </div>
         <div className="document-liquid-items gap-2">
-          {visibleBalances.map((balance, index) => {
-            const isStone = balance.id === 'stone';
-            const statusLabel = balance.value > 0 ? 'بستانکار' : balance.value < 0 ? 'بدهکار' : 'تسویه';
-            const fullTooltip = isStone
+          {visibleBalances.map((balance: any, index) => {
+            const isStone = balance.id === 'stone' || balance.id === 'stone-credit' || balance.id === 'stone-debit';
+            const statusLabel = balance.statusLabel || (balance.value > 0 ? 'بستانکار' : balance.value < 0 ? 'بدهکار' : 'تسویه');
+            const fullTooltip = balance.tooltip || (isStone
               ? `${balance.label}: ${faNumber(Math.abs(balance.value), balance.digits)} ${balance.unit} (${
                   balance.value > 0 ? 'بستانکار از ما' : balance.value < 0 ? 'بدهکار به ما' : 'تسویه حساب'
                 }) · کلیک برای مشاهده تمام وزن‌ها به صورت دقیق`
               : `${balance.label}: ${faNumber(Math.abs(balance.value), balance.digits)} ${balance.unit} (${
                   balance.value > 0 ? 'بستانکار از ما' : balance.value < 0 ? 'بدهکار به ما' : 'تسویه حساب'
-                })`;
+                })`);
 
             return (
               <motion.div
