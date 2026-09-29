@@ -134,7 +134,7 @@ export default function StoneBalanceModal({
 
       if (!isWeightOp) continue;
 
-      // قاعده بازار سنگ: خرید از مشتری یعنی مشتری سنگ رو به ما بدهکاره (-1: بدهکار به ما)، فروش به مشتری یعنی مشتری از ما طلب‌کاره (+1: بستانکار از ما)
+      // قاعده بازار سنگ: خرید از مشتری یعنی مشتری سنگ را به ما بدهکار می‌شود (-1: بدهکار به ما)، فروش به مشتری یعنی مشتری سنگ را از ما طلبکار می‌شود (+1: بستانکار از ما)
       const isPurchase =
         line.documentNature === 'received' ||
         opKind === 'purchase' ||
@@ -230,7 +230,7 @@ export default function StoneBalanceModal({
 
         if (!isWeightOp) continue;
 
-        // قاعده بازار سنگ: خرید از مشتری یعنی مشتری سنگ رو به ما بدهکاره (-1: بدهکار به ما)، فروش به مشتری یعنی مشتری از ما طلب‌کاره (+1: بستانکار از ما)
+        // قاعده بازار سنگ: خرید از مشتری یعنی مشتری سنگ را به ما بدهکار می‌شود (-1: بدهکار به ما)، فروش به مشتری یعنی مشتری سنگ را از ما طلبکار می‌شود (+1: بستانکار از ما)
         const isPurchase =
           t.documentNature === 'received' ||
           opKind === 'purchase' ||
@@ -396,7 +396,7 @@ export default function StoneBalanceModal({
 
       if (!isWeightOp) continue;
 
-      // قاعده بازار سنگ: خرید از مشتری یعنی مشتری سنگ رو به ما بدهکاره (-1: بدهکار به ما)، فروش به مشتری یعنی مشتری از ما طلب‌کاره (+1: بستانکار از ما)
+      // قاعده بازار سنگ: خرید از مشتری یعنی مشتری سنگ را به ما بدهکار می‌شود (-1: بدهکار به ما)، فروش به مشتری یعنی مشتری سنگ را از ما طلبکار می‌شود (+1: بستانکار از ما)
       const isPurchase =
         line.documentNature === 'received' ||
         opKind === 'purchase' ||
@@ -793,13 +793,13 @@ export default function StoneBalanceModal({
 
           {/* Pieces */}
           <div className="flex items-center justify-between sm:flex-col sm:items-start p-3 rounded-xl bg-slate-50 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-700 shadow-2xs">
-            <span className="text-xs font-bold text-slate-700 dark:text-slate-200">تعداد کل نگین / دانه:</span>
+            <span className="text-xs font-bold text-slate-700 dark:text-slate-200">تعداد کل نگین:</span>
             <div className="flex items-baseline gap-1 mt-1">
               <strong className="text-base sm:text-lg font-black text-slate-900 dark:text-white font-mono tracking-tight">
                 {item.pieces !== 0 ? faNumber(Math.abs(Math.round(item.pieces)), 0) : '—'}
               </strong>
               <span className="text-xs font-black text-indigo-600 dark:text-indigo-400">
-                {item.pieces !== 0 ? 'عدد / دانه' : ''}
+                {item.pieces !== 0 ? 'عدد' : ''}
               </span>
             </div>
           </div>
@@ -860,7 +860,7 @@ export default function StoneBalanceModal({
                 <button
                   type="button"
                   onClick={() => setShowInfoBanner((prev) => !prev)}
-                  title="قاعده ماهیت معامله سنگ و عدم تهاتر: خرید سنگ از مشتری یعنی مشتری سنگ رو به ما بدهکاره (بدهکار به ما) · فروش سنگ به مشتری یعنی مشتری از ما طلب‌کاره (بستانکار از ما)"
+                  title="قاعده ماهیت معامله سنگ و عدم تهاتر: خرید سنگ از مشتری یعنی مشتری سنگ را به ما بدهکار می‌شود · فروش سنگ به مشتری یعنی مشتری سنگ را از ما طلبکار می‌شود"
                   className={`flex size-6 shrink-0 items-center justify-center rounded-full border transition-all cursor-pointer ${
                     showInfoBanner
                       ? 'bg-amber-500 text-white border-amber-600 shadow-xs ring-2 ring-amber-400/40'
@@ -900,7 +900,7 @@ export default function StoneBalanceModal({
                     قاعده ماهیت معامله سنگ و عدم تهاتر:
                   </p>
                   <p className="text-[11px] sm:text-xs leading-relaxed text-amber-900 dark:text-amber-200 font-medium">
-                    خرید سنگ از مشتری یعنی مشتری سنگ رو به ما بدهکاره (بدهکار به ما) · فروش سنگ به مشتری یعنی مشتری از ما طلب‌کاره (بستانکار از ما). همچنین سنگ‌ها غیرهمگن هستند و ارزش هر سنگ مستقیماً به گونه، رنگ، پاکی، تراش و شناسنامه آن وابسته است و اقلام طلب و بدهی هرگز با یکدیگر جمع یا تهاتر کور نمی‌شوند.
+                    خرید سنگ از مشتری یعنی مشتری سنگ را به ما بدهکار می‌شود · فروش سنگ به مشتری یعنی مشتری سنگ را از ما طلبکار می‌شود. همچنین سنگ‌ها غیرهمگن هستند و ارزش هر سنگ مستقیماً به گونه، رنگ، پاکی، تراش و شناسنامه آن وابسته است و اقلام طلب و بدهی هرگز با یکدیگر جمع یا تهاتر کور نمی‌شوند.
                   </p>
                 </div>
               </div>
@@ -1001,7 +1001,7 @@ export default function StoneBalanceModal({
                         قاعده اساسی معامله و تفکیک گوهرها:
                       </p>
                       <p className="text-[11px] leading-relaxed text-amber-900/90 dark:text-amber-200/90 font-medium">
-                        خرید سنگ از مشتری یعنی مشتری سنگ رو به ما بدهکاره (بدهکار به ما)، و فروش سنگ به مشتری یعنی مشتری از ما طلب‌کاره (بستانکار از ما). همچنین بر خلاف طلا، سنگ‌ها غیرهمگن هستند و ارزش هر گوهر کاملاً وابسته به مشخصات ۴Cs (رنگ، پاکی، تراش و وزن)، گونه و شناسنامه آن است؛ بنابراین اقلام طلب و بدهی هرگز با یکدیگر جمع یا تهاتر کور نمی‌شوند و به تفکیک نگهداری می‌گردند.
+                        خرید سنگ از مشتری یعنی مشتری سنگ را به ما بدهکار می‌شود، و فروش سنگ به مشتری یعنی مشتری سنگ را از ما طلبکار می‌شود. همچنین بر خلاف طلا، سنگ‌ها غیرهمگن هستند و ارزش هر گوهر کاملاً وابسته به مشخصات ۴Cs (رنگ، پاکی، تراش و وزن)، گونه و شناسنامه آن است؛ بنابراین اقلام طلب و بدهی هرگز با یکدیگر جمع یا تهاتر کور نمی‌شوند و به تفکیک نگهداری می‌گردند.
                       </p>
                     </div>
                   </div>
@@ -1020,7 +1020,7 @@ export default function StoneBalanceModal({
                           </span>
                         </div>
                         <div className="text-xs font-mono font-black text-emerald-900 dark:text-emerald-200">
-                          مجموع طلب: {faNumber(totalCreditCarats, 3)} ct · {faNumber(totalCreditGrams, 4)} g {totalCreditPieces > 0 ? `· ${toPersianDigits(totalCreditPieces)} دانه` : ''}
+                          مجموع طلب: {faNumber(totalCreditCarats, 3)} ct · {faNumber(totalCreditGrams, 4)} g {totalCreditPieces > 0 ? `· ${toPersianDigits(totalCreditPieces)} عدد` : ''}
                         </div>
                       </div>
                       <div className="space-y-3">
@@ -1043,7 +1043,7 @@ export default function StoneBalanceModal({
                           </span>
                         </div>
                         <div className="text-xs font-mono font-black text-rose-900 dark:text-rose-200">
-                          مجموع بدهی: {faNumber(totalDebitCarats, 3)} ct · {faNumber(totalDebitGrams, 4)} g {totalDebitPieces > 0 ? `· ${toPersianDigits(totalDebitPieces)} دانه` : ''}
+                          مجموع بدهی: {faNumber(totalDebitCarats, 3)} ct · {faNumber(totalDebitGrams, 4)} g {totalDebitPieces > 0 ? `· ${toPersianDigits(totalDebitPieces)} عدد` : ''}
                         </div>
                       </div>
                       <div className="space-y-3">
@@ -1125,14 +1125,14 @@ export default function StoneBalanceModal({
                       </div>
                       <div className="rounded-xl border border-emerald-200 dark:border-emerald-700/60 bg-white dark:bg-slate-800/90 p-4 shadow-2xs">
                         <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-slate-700 dark:text-slate-200">تعداد کل نگین / دانه</span>
+                          <span className="text-xs font-bold text-slate-700 dark:text-slate-200">تعداد کل نگین</span>
                           <Package size={15} className="text-indigo-500" />
                         </div>
                         <div className="mt-2 flex items-baseline gap-1.5">
                           <strong className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
                             {totalCreditPieces !== 0 ? faNumber(totalCreditPieces, 0) : '—'}
                           </strong>
-                          <span className="text-xs font-black text-indigo-600 dark:text-indigo-400">عدد / دانه</span>
+                          <span className="text-xs font-black text-indigo-600 dark:text-indigo-400">عدد</span>
                         </div>
                       </div>
                     </div>
@@ -1173,14 +1173,14 @@ export default function StoneBalanceModal({
                       </div>
                       <div className="rounded-xl border border-rose-200 dark:border-rose-700/60 bg-white dark:bg-slate-800/90 p-4 shadow-2xs">
                         <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-slate-700 dark:text-slate-200">تعداد کل نگین / دانه</span>
+                          <span className="text-xs font-bold text-slate-700 dark:text-slate-200">تعداد کل نگین</span>
                           <Package size={15} className="text-indigo-500" />
                         </div>
                         <div className="mt-2 flex items-baseline gap-1.5">
                           <strong className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
                             {totalDebitPieces !== 0 ? faNumber(totalDebitPieces, 0) : '—'}
                           </strong>
-                          <span className="text-xs font-black text-indigo-600 dark:text-indigo-400">عدد / دانه</span>
+                          <span className="text-xs font-black text-indigo-600 dark:text-indigo-400">عدد</span>
                         </div>
                       </div>
                     </div>
@@ -1237,7 +1237,7 @@ export default function StoneBalanceModal({
                   <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/90 p-4 shadow-2xs">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
-                        تعداد کل نگین / دانه
+                        تعداد کل نگین
                       </span>
                       <span className="text-indigo-500">
                         <Package size={15} />
@@ -1247,10 +1247,10 @@ export default function StoneBalanceModal({
                       <strong className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
                         {basePieces !== 0 ? faNumber(Math.abs(Math.round(basePieces)), 0) : '—'}
                       </strong>
-                      <span className="text-xs font-black text-indigo-600 dark:text-indigo-400">عدد / دانه</span>
+                      <span className="text-xs font-black text-indigo-600 dark:text-indigo-400">عدد</span>
                     </div>
                     <div className="mt-2 text-[11px] text-slate-600 dark:text-slate-300 font-medium">
-                      {basePieces !== 0 ? 'مجموع دانه‌های ثبت‌شده در دفاتر' : 'بدون ثبت تعداد دانه'}
+                      {basePieces !== 0 ? 'مجموع تعداد ثبت‌شده در دفاتر' : 'بدون ثبت تعداد'}
                     </div>
                   </div>
                 </div>
@@ -1375,7 +1375,7 @@ export default function StoneBalanceModal({
                             {faNumber(item.grams, 4)}
                           </td>
                           <td className="p-2.5 whitespace-nowrap text-center font-bold text-slate-900 dark:text-white">
-                            {item.pieces !== 0 ? `${faNumber(Math.abs(Math.round(item.pieces)), 0)} دانه` : '—'}
+                            {item.pieces !== 0 ? `${faNumber(Math.abs(Math.round(item.pieces)), 0)} عدد` : '—'}
                           </td>
                         </tr>
                       ))}
@@ -1417,7 +1417,7 @@ export default function StoneBalanceModal({
                 </span>
                 <span className="mx-1 text-slate-400 dark:text-slate-500">|</span>
                 <span className="font-mono text-slate-900 dark:text-white font-black">
-                  {faNumber(Math.abs(Math.round(basePieces)), 0)} دانه
+                  {faNumber(Math.abs(Math.round(basePieces)), 0)} عدد
                 </span>
               </>
             )}

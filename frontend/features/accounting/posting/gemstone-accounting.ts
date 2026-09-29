@@ -121,7 +121,7 @@ export function buildStonePurchaseJournalLines(
     : params.grams && params.grams > 0
       ? ` به وزن ${params.grams.toFixed(4)} گرم`
       : params.pieces && params.pieces > 0
-        ? ` به تعداد ${params.pieces} دانه`
+        ? ` به تعداد ${params.pieces} عدد`
         : '';
 
   // 1. Counterparty Debit recognition - مشتری سنگ رو به ما بدهکاره (طرف‌حساب بدهکار می‌شود)
@@ -218,7 +218,7 @@ export function buildStoneSaleJournalLines(
     : params.grams && params.grams > 0
       ? ` (${params.grams.toFixed(4)} g)`
       : params.pieces && params.pieces > 0
-        ? ` (${params.pieces} دانه)`
+        ? ` (${params.pieces} عدد)`
         : '';
 
   // 1. Inventory Asset recognition (Debit)

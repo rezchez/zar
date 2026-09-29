@@ -153,7 +153,7 @@ export default function DocumentStickyBar({ data }: DocumentStickyBarProps) {
 
   return (
     <div className="flex items-center justify-between gap-2 sm:gap-3 w-full min-w-0 py-1" dir="rtl">
-      {/* سمت راست: بخش‌های فرم که اسکرول شده‌اند به صورت دانه‌ای و تدریجی با انیمیشن اضافه می‌شوند */}
+      {/* سمت راست: بخش‌های فرم که اسکرول شده‌اند به صورت مجزا و تدریجی با انیمیشن اضافه می‌شوند */}
       <div className="flex items-center gap-2 sm:gap-2.5 min-w-0 overflow-x-auto no-scrollbar py-0.5">
         <AnimatePresence>
           {/* ۱. طرف‌حساب */}

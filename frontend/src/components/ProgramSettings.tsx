@@ -48,6 +48,7 @@ import ReportPrintDesigner from '@/src/components/ReportPrintDesigner';
 import CustomFontManager from '@/src/components/CustomFontManager';
 import ChartOfAccounts from '@/src/components/accounting/ChartOfAccounts';
 import DatabaseBackupSection from '@/src/components/settings/DatabaseBackupSection';
+import TahesabMigrationSection from '@/src/components/settings/TahesabMigrationSection';
 
 const ALL_CUSTOMER_COLUMNS = [
   { id: 'customerCode', label: 'کد حساب' },
@@ -123,6 +124,12 @@ const SETTINGS_TABS = [
     icon: Database,
   },
   {
+    id: 'data_migration',
+    label: 'مهاجرت اطلاعات (Migration)',
+    description: 'انتقال اسناد، طرف‌حساب‌ها و موجودی‌ها از ته‌حساب به زرفولیو',
+    icon: Database,
+  },
+  {
     id: 'accounting_chart',
     label: 'سرفصل‌های حسابداری (COA)',
     description: 'درختواره سرفصل‌ها، گروه، کل، معین و تفصیلی با ساختار استاندارد طلا و جواهر',
@@ -164,6 +171,7 @@ const VALID_TABS = [
   'general',
   'document_numbering',
   'database_backup',
+  'data_migration',
   'accounting_chart',
   'print_customization',
   'manager_notifications',
@@ -708,6 +716,11 @@ export default function ProgramSettings() {
           {/* TAB: Database Backup & Restore */}
           {activeTab === 'database_backup' && (
             <DatabaseBackupSection />
+          )}
+
+          {/* TAB: Tahesab Data Migration */}
+          {activeTab === 'data_migration' && (
+            <TahesabMigrationSection />
           )}
 
           {/* TAB: Accounting Chart of Accounts */}

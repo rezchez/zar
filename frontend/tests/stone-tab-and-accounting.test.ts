@@ -355,7 +355,7 @@ describe('Stone Tab Validation & Accounting Operations', () => {
     });
   });
 
-  describe('Melee Diamond Sieve Estimation (تخمین دانه و قیراط بر اساس الک)', () => {
+  describe('Melee Diamond Sieve Estimation (تخمین تعداد و قیراط بر اساس الک)', () => {
     it('estimates pieces from carats accurately using sieve specs', () => {
       // Sieve +1.5-2 has around 50-70 pieces per carat
       const pieces = estimatePiecesFromCarats('+1.5-2', 2.0);
@@ -1051,10 +1051,11 @@ describe('Stone Tab Validation & Accounting Operations', () => {
       // Verify display of all weight metrics (carats, grams, pieces)
       expect(modalSrc).toContain('مجموع وزن به قیراط');
       expect(modalSrc).toContain('معادل دقیق به گرم');
-      expect(modalSrc).toContain('تعداد کل نگین / دانه');
+      expect(modalSrc).toContain('تعداد کل نگین');
+      expect(modalSrc).not.toContain('دانه');
       expect(modalSrc).toContain('قیراط (ct)');
       expect(modalSrc).toContain('گرم (g)');
-      expect(modalSrc).toContain('عدد / دانه');
+      expect(modalSrc).toContain('عدد');
 
       // Verify tabs for detailed inspection
       expect(modalSrc).toContain('ریز طلب و بدهی سنگ');
