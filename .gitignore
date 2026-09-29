@@ -102,3 +102,5 @@ coverage/
 # Misc
 # =========================
 *.pem
+# Tahesab migration fixtures
+migration/tahesab/fixtures/*.Mcbk
