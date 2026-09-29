@@ -104,3 +104,4 @@ coverage/
 *.pem
 # Tahesab migration fixtures
 migration/tahesab/fixtures/*.Mcbk
+migration/tahesab/fixtures/1.mcbk
