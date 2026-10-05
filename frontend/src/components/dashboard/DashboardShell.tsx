@@ -1,13 +1,16 @@
 'use client';
 
 import {
+  ArrowDownLeft,
   BarChart3,
   Boxes,
+  CreditCard,
   FileSpreadsheet,
   Flame,
   FlaskConical,
   HandCoins,
   History,
+  Landmark,
   LayoutDashboard,
   PackageOpen,
   Settings,
@@ -38,7 +41,7 @@ export type DashboardUser = {
 const TOPBAR_PIN_STORAGE_KEY = 'zarfolio-topbar-pinned';
 const SIDEBAR_STATE_STORAGE_KEY = 'zar-sidebar-state';
 
-const navGroupsBase: NavGroupData[] = [
+export const navGroupsBase: NavGroupData[] = [
   {
     heading: 'عملیات و حسابداری',
     items: [
@@ -83,6 +86,31 @@ const navGroupsBase: NavGroupData[] = [
             title: 'تعریف موجودی اول دوره',
             icon: Boxes,
             href: '/dashboard/documents/initial-inventory',
+          },
+        ],
+      },
+      {
+        id: 'bank',
+        title: 'بانک',
+        icon: Landmark,
+        children: [
+          {
+            id: 'bank-accounts',
+            title: 'حساب‌های بانکی',
+            icon: Landmark,
+            href: '/dashboard/documents/initial-inventory/bank',
+          },
+          {
+            id: 'bank-checks-issued',
+            title: 'چک‌های پرداختی',
+            icon: CreditCard,
+            href: '/dashboard/documents/initial-inventory/checks',
+          },
+          {
+            id: 'bank-checks-received',
+            title: 'چک‌های دریافتی',
+            icon: ArrowDownLeft,
+            href: '/dashboard/documents/initial-inventory/checks-received',
           },
         ],
       },
@@ -282,6 +310,12 @@ export default function DashboardShell({
             ? 'refining-management'
           : pathname === '/dashboard/documents/new'
             ? 'document-new'
+            : pathname === '/dashboard/documents/initial-inventory/bank' || pathname === '/dashboard/banks' || pathname === '/dashboard/bank'
+              ? 'bank-accounts'
+            : pathname === '/dashboard/documents/initial-inventory/checks'
+              ? 'bank-checks-issued'
+            : pathname === '/dashboard/documents/initial-inventory/checks-received'
+              ? 'bank-checks-received'
             : pathname === '/dashboard/documents/initial-inventory' || pathname === '/dashboard/documents/opening-balance'
               ? 'document-initial-inventory'
               : pathname === '/dashboard/customers'

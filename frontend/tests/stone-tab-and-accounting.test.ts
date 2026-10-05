@@ -1268,6 +1268,38 @@ describe('Stone Tab Validation & Accounting Operations', () => {
       expect(liquidSrc).toContain("label: 'سنگ (بدهی)'");
     });
 
+    it('validates CustomerBalanceLiquid displays both stone credit (طلب) and stone debit (بدهی) inside one unified item and factors in draft lines', async () => {
+      const fs = await import('fs');
+      const path = await import('path');
+      const liquidSrc = fs.readFileSync(
+        path.resolve(__dirname, '../features/accounting/documents/components/CustomerBalanceLiquid.tsx'),
+        'utf8',
+      );
+
+      // Verify dual stone unified in one element with both credit and debit
+      expect(liquidSrc).toContain("id: 'stone'");
+      expect(liquidSrc).toContain("label: 'سنگ'");
+      expect(liquidSrc).toContain('isDualStone');
+      expect(liquidSrc).toContain('طلب:');
+      expect(liquidSrc).toContain('بدهی:');
+
+      // Verify draft committedLines processing
+      expect(liquidSrc).toContain('draftCreditCarats');
+      expect(liquidSrc).toContain('draftDebitCarats');
+      expect(liquidSrc).toContain('effectiveCreditCarats');
+      expect(liquidSrc).toContain('effectiveDebitCarats');
+
+      // Verify DocumentBalancePreview interface and render logic for stone credit and debit
+      const previewSrc = fs.readFileSync(
+        path.resolve(__dirname, '../features/accounting/documents/components/DocumentBalancePreview.tsx'),
+        'utf8',
+      );
+      expect(previewSrc).toContain('stoneCredit?: number;');
+      expect(previewSrc).toContain('stoneDebit?: number;');
+      expect(previewSrc).toContain('طلب');
+      expect(previewSrc).toContain('بدهی');
+    });
+
     it('validates StoneBalanceModal renders segregated credit and debit sections and educational non-fungibility alert', async () => {
       const fs = await import('fs');
       const path = await import('path');

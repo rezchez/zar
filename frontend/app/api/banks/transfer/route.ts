@@ -26,8 +26,11 @@ export async function POST(request: Request) {
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
   const kind = text(body?.kind) as TransferKind;
   const amount = positiveAmount(body?.amount);
+  const transferFee = positiveAmount(body?.transferFee) || 0;
   const sourceBankId = text(body?.sourceBankId);
   const destinationBankId = text(body?.destinationBankId);
+  const cashFundId = text(body?.cashFundId);
+  const trackingNumber = text(body?.trackingNumber);
   const description = text(body?.description).slice(0, 500);
   const idempotencyKey = text(body?.idempotencyKey) || `transfer:${randomUUID()}`;
 
@@ -76,12 +79,32 @@ export async function POST(request: Request) {
       );
     }
 
-    if (sourceBank && Number(sourceBank.balance ?? 0) < amount) {
-      return NextResponse.json({ message: 'موجودی حساب مبدأ کافی نیست.' }, { status: 400 });
+    const totalRequiredSource = amount + transferFee;
+    if (sourceBank && Number(sourceBank.balance ?? 0) < totalRequiredSource) {
+      return NextResponse.json({ message: 'موجودی حساب مبدأ با احتساب کارمزد کافی نیست.' }, { status: 400 });
     }
 
     if (kind === 'bank-to-bank' && (!sourceBank || !destinationBank)) {
       return NextResponse.json({ message: 'حساب‌های بانکی انتخاب‌شده معتبر نیستند.' }, { status: 400 });
+    }
+
+    // Cash Fund resolution & validation for cash-to-bank or bank-to-cash
+    let cashFund: any = null;
+    if (cashFundId) {
+      cashFund = await writer.collection('cash_funds').getOne(cashFundId).catch(() => null);
+    }
+    if (kind === 'cash-to-bank') {
+      if (cashFund && cashFund.isBlocked) {
+        return NextResponse.json({ message: 'صندوق وجه نقد مبدأ مسدود است.' }, { status: 409 });
+      }
+      if (cashFund && Number(cashFund.balance ?? 0) < amount) {
+        return NextResponse.json({ message: 'موجودی صندوق وجه نقد مبدأ کافی نیست.' }, { status: 400 });
+      }
+    }
+    if (kind === 'bank-to-cash') {
+      if (cashFund && cashFund.isBlocked) {
+        return NextResponse.json({ message: 'صندوق وجه نقد مقصد مسدود است.' }, { status: 409 });
+      }
     }
 
     // isBlocked guard — Backend enforcement for blocked bank accounts
@@ -156,7 +179,10 @@ export async function POST(request: Request) {
       kind,
       sourceBankId,
       destinationBankId,
+      cashFundId,
       amount,
+      transferFee,
+      trackingNumber,
     };
 
     const outgoingDocNum = await generateUniqueZfDocumentNumber(writer);
@@ -189,7 +215,7 @@ export async function POST(request: Request) {
 
     if (sourceBank) {
       await writer.collection('bank_accounts').update(sourceBank.id, {
-        balance: Number(sourceBank.balance ?? 0) - amount,
+        balance: Number(sourceBank.balance ?? 0) - totalRequiredSource,
         updatedBy: context.user.id,
       }).catch(() => null);
     }
@@ -198,6 +224,18 @@ export async function POST(request: Request) {
       await writer.collection('bank_accounts').update(destinationBank.id, {
         balance: Number(destinationBank.balance ?? 0) + amount,
         updatedBy: context.user.id,
+      }).catch(() => null);
+    }
+
+    if (kind === 'cash-to-bank' && cashFund) {
+      await writer.collection('cash_funds').update(cashFund.id, {
+        balance: Number(cashFund.balance ?? 0) - amount,
+      }).catch(() => null);
+    }
+
+    if (kind === 'bank-to-cash' && cashFund) {
+      await writer.collection('cash_funds').update(cashFund.id, {
+        balance: Number(cashFund.balance ?? 0) + amount,
       }).catch(() => null);
     }
 

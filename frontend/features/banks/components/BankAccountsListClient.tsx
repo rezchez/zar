@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  ArrowRightLeft,
   Calendar,
   ChevronRight,
   Edit3,
@@ -19,13 +20,19 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import BankLogo from '@/src/components/documents/BankLogo';
 import InitialBankInventoryModal, { type BankAccountEditItem } from './InitialBankInventoryModal';
+import BankOperationModal from './BankOperationModal';
 import PaginationControls from '@/components/shared/PaginationControls';
+import { useAppSettings } from '@/src/components/SettingsProvider';
+import { useToastManager } from '@/components/ui/toast';
+import { getAccountTypeLabel, getConvertedBankAmount } from '../services/bank';
+import type { Currency } from '@/lib/currencies';
 
 export type BankAccountItem = {
   id: string;
   bankName: string;
   branchName: string;
   accountNumber: string;
+  accountType?: string;
   currencyId: string;
   currencyName: string;
   currencyCode: string;
@@ -35,6 +42,9 @@ export type BankAccountItem = {
   openingBalanceDate: string;
   description?: string;
   isBlocked?: boolean;
+  shebaNumber?: string;
+  hasCheckbook?: boolean;
+  hasVirtualCheck?: boolean;
 };
 
 // ─── Confirmation Dialog ───────────────────────────────────────────────────────
@@ -103,7 +113,7 @@ function ConfirmDialog({
 }
 
 // ─── Action Dropdown ───────────────────────────────────────────────────────────
-type AccountAction = 'edit' | 'block' | 'unblock' | 'delete';
+type AccountAction = 'edit' | 'operation' | 'block' | 'unblock' | 'delete';
 
 type ActionMenuProps = {
   account: BankAccountItem;
@@ -144,6 +154,16 @@ function BankActionMenu({ account, onAction }: ActionMenuProps) {
 
       {open && (
         <div className="absolute left-0 top-9 z-30 min-w-[168px] rounded-xl border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-900">
+          {/* عملیات بانکی */}
+          <button
+            type="button"
+            onClick={() => handleAction('operation')}
+            className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            <ArrowRightLeft size={14} className="text-amber-500" />
+            عملیات بانکی
+          </button>
+
           {/* ویرایش */}
           <button
             type="button"
@@ -151,7 +171,7 @@ function BankActionMenu({ account, onAction }: ActionMenuProps) {
             className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
           >
             <Edit3 size={14} className="text-slate-400" />
-            ویرایش موجودی اولیه
+            ویرایش حساب بانکی و موجودی
           </button>
 
           {/* مسدودی / رفع مسدودی */}
@@ -223,9 +243,15 @@ export default function BankAccountsListClient({
 }: {
   initialAccounts?: BankAccountItem[];
 }) {
+  const { settings } = useAppSettings();
+  const toast = useToastManager();
+  const baseCurrency = (settings.baseCurrency || 'IRR') as 'IRR' | 'IRT';
+  const [currencies, setCurrencies] = useState<Currency[]>([]);
   const [accounts, setAccounts] = useState<BankAccountItem[]>(initialAccounts);
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
+  const [operationModalOpen, setOperationModalOpen] = useState(false);
+  const [preselectedBankId, setPreselectedBankId] = useState<string | undefined>(undefined);
   const [editingItem, setEditingItem] = useState<BankAccountEditItem | null>(null);
   const [dialog, setDialog] = useState<DialogState>({ type: 'none' });
   const [actionLoading, setActionLoading] = useState(false);
@@ -234,6 +260,17 @@ export default function BankAccountsListClient({
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPerPage] = useState(24);
+
+  useEffect(() => {
+    fetch('/api/currencies', { cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.currencies && Array.isArray(data.currencies)) {
+          setCurrencies(data.currencies);
+        }
+      })
+      .catch(() => undefined);
+  }, []);
 
   const activeCount = accounts.filter((a) => !a.isBlocked).length;
   const blockedCount = accounts.filter((a) => a.isBlocked).length;
@@ -289,7 +326,10 @@ export default function BankAccountsListClient({
 
   const handleAction = (action: AccountAction, account: BankAccountItem) => {
     setErrorMsg('');
-    if (action === 'edit') {
+    if (action === 'operation') {
+      setPreselectedBankId(account.id);
+      setOperationModalOpen(true);
+    } else if (action === 'edit') {
       setEditingItem(account);
       setModalOpen(true);
     } else {
@@ -316,22 +356,29 @@ export default function BankAccountsListClient({
       const data = await res.json().catch(() => ({})) as Record<string, unknown>;
 
       if (!res.ok) {
-        setErrorMsg(String(data.message || 'عملیات انجام نشد.'));
+        const msg = String(data.message || 'عملیات انجام نشد.');
+        setErrorMsg(msg);
+        toast.error(msg);
         return;
       }
 
       // Update local state
       if (type === 'delete') {
         setAccounts((prev) => prev.filter((a) => a.id !== account.id));
+        toast.success(`حساب بانکی «${account.bankName}» با موفقیت حذف شد.`);
       } else if (type === 'block') {
         setAccounts((prev) => prev.map((a) => a.id === account.id ? { ...a, isBlocked: true } : a));
+        toast.info(`حساب بانکی «${account.bankName}» مسدود شد.`);
       } else {
         setAccounts((prev) => prev.map((a) => a.id === account.id ? { ...a, isBlocked: false } : a));
+        toast.success(`مسدودی حساب بانکی «${account.bankName}» برداشته شد.`);
       }
 
       setDialog({ type: 'none' });
     } catch {
-      setErrorMsg('خطا در ارتباط با سرور. لطفاً دوباره تلاش کنید.');
+      const msg = 'خطا در ارتباط با سرور. لطفاً دوباره تلاش کنید.';
+      setErrorMsg(msg);
+      toast.error(msg);
     } finally {
       setActionLoading(false);
     }
@@ -413,6 +460,19 @@ export default function BankAccountsListClient({
           >
             <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
             <span className="hidden sm:inline">به‌روزرسانی</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setPreselectedBankId(undefined);
+              setOperationModalOpen(true);
+            }}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-amber-300/80 bg-amber-50 px-3.5 text-xs font-bold text-amber-900 shadow-sm transition hover:bg-amber-100 hover:border-amber-400 dark:border-amber-700/60 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-900/60 cursor-pointer"
+            title="انتقال حساب به حساب، واریز وجه نقد از صندوق به حساب بانکی و برداشت وجه از حساب بانکی به صندوق"
+          >
+            <ArrowRightLeft size={16} className="text-amber-600 dark:text-amber-400" />
+            <span>عملیات بانکی</span>
           </button>
 
           <button
@@ -534,7 +594,12 @@ export default function BankAccountsListClient({
         <div className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {paginatedAccounts.map((acc) => {
-              const currencyLabel = [acc.currencySymbol, acc.currencyCode].filter(Boolean).join(' · ');
+              const convertedOpening = getConvertedBankAmount(acc.openingBalance, acc.currencyCode, baseCurrency, currencies);
+              const convertedCurrent = getConvertedBankAmount(acc.balance, acc.currencyCode, baseCurrency, currencies);
+              const activeCurrencySymbol = convertedOpening.currencySymbol;
+              const activeCurrencyCode = convertedOpening.currencyCode;
+              const currencyLabel = [activeCurrencySymbol, activeCurrencyCode].filter(Boolean).join(' · ');
+
               return (
                 <article
                   key={acc.id}
@@ -559,11 +624,24 @@ export default function BankAccountsListClient({
                             <p className="font-mono text-[11px] font-semibold text-slate-500 dark:text-slate-400" dir="ltr">
                               {acc.accountNumber}
                             </p>
+                            <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-300">
+                              حساب {getAccountTypeLabel(acc.accountType)}
+                            </span>
                             <StatusBadge isBlocked={acc.isBlocked} />
                             <span className="rounded bg-sky-500/10 px-1.5 py-0.2 text-[9px] font-bold text-sky-600 dark:text-sky-400">
                               تفضیل ۱ (۱۱۱۰)
                             </span>
                           </div>
+                          {acc.shebaNumber ? (
+                            <div className="mt-1 flex items-center gap-1 font-mono text-[10px]" dir="ltr">
+                              <span className="rounded bg-slate-100 px-1 py-0.2 font-black text-slate-700 dark:bg-slate-800 dark:text-slate-300 select-none">
+                                IR
+                              </span>
+                              <span className="font-semibold text-slate-500 dark:text-slate-400 tracking-wider">
+                                {acc.shebaNumber.replace(/^IR/i, '').replace(/(\d{4})/g, '$1 ').trim()}
+                              </span>
+                            </div>
+                          ) : null}
                         </div>
                       </div>
 
@@ -577,7 +655,17 @@ export default function BankAccountsListClient({
                         <span>تاریخ موجودی:</span>
                         <span className="font-mono dir-ltr">{acc.openingBalanceDate || 'ثبت نشده'}</span>
                       </div>
-                      <span className="text-[10px] text-slate-400">{currencyLabel}</span>
+                      <div className="flex items-center gap-1.5">
+                        {convertedOpening.isConverted && (
+                          <span
+                            className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-black text-amber-700 dark:text-amber-300"
+                            title={`تبدیل خودکار از ${acc.currencySymbol || acc.currencyCode} به ${activeCurrencySymbol} طبق تنظیمات برنامه`}
+                          >
+                            تبدیل به {convertedOpening.currencyName}
+                          </span>
+                        )}
+                        <span className="text-[10px] text-slate-400">{currencyLabel}</span>
+                      </div>
                     </div>
 
                     {/* Balances Grid */}
@@ -586,7 +674,7 @@ export default function BankAccountsListClient({
                       <div className="rounded-xl bg-slate-50/80 p-2.5 dark:bg-slate-800/40">
                         <span className="block text-[10px] font-bold text-slate-400">موجودی اولیه</span>
                         <span className="mt-0.5 block font-mono text-xs font-bold text-slate-800 dark:text-slate-200">
-                          {Number(acc.openingBalance || 0).toLocaleString('fa-IR')} {acc.currencySymbol || acc.currencyCode}
+                          {Number(convertedOpening.amount || 0).toLocaleString('fa-IR')} {activeCurrencySymbol}
                         </span>
                       </div>
 
@@ -594,7 +682,7 @@ export default function BankAccountsListClient({
                       <div className={`rounded-xl p-2.5 ${acc.isBlocked ? 'bg-red-50 dark:bg-red-500/10' : 'bg-amber-500/10 dark:bg-amber-500/15'}`}>
                         <span className={`block text-[10px] font-bold ${acc.isBlocked ? 'text-red-700 dark:text-red-300' : 'text-amber-700 dark:text-amber-300'}`}>موجودی فعلی</span>
                         <span className={`mt-0.5 block font-mono text-sm font-black ${acc.isBlocked ? 'text-red-900 dark:text-red-200' : 'text-amber-900 dark:text-amber-200'}`}>
-                          {Number(acc.balance || 0).toLocaleString('fa-IR')} {acc.currencySymbol || acc.currencyCode}
+                          {Number(convertedCurrent.amount || 0).toLocaleString('fa-IR')} {activeCurrencySymbol}
                         </span>
                       </div>
                     </div>
@@ -652,6 +740,20 @@ export default function BankAccountsListClient({
         onSuccess={() => {
           void fetchAccounts();
         }}
+      />
+
+      {/* Bank Operation Modal */}
+      <BankOperationModal
+        isOpen={operationModalOpen}
+        onClose={() => {
+          setOperationModalOpen(false);
+          setPreselectedBankId(undefined);
+        }}
+        onSuccess={() => {
+          void fetchAccounts();
+        }}
+        bankAccounts={accounts}
+        preselectedBankId={preselectedBankId}
       />
     </div>
   );

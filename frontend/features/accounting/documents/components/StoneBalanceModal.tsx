@@ -251,7 +251,6 @@ export default function StoneBalanceModal({
 
         const shape = String(details.stoneShape || '');
         const shapeName = String(details.stoneShapeName || (shape ? getShapeNameFa(shape) : ''));
-        const mode = details.stoneMode === 'parcel' ? ('parcel' as const) : ('single_stone' as const);
 
         let color = '';
         if (details.stoneColorMode === 'fancy') {
@@ -284,7 +283,21 @@ export default function StoneBalanceModal({
             : '';
         const description = t.description || String(details.claimPurpose || '');
 
-        const detailKey = `${speciesId}__${shape}__${color}__${clarity}__${rawCut}__${certLab}_${certNumber}__${mode}__${lotNumber}`;
+        const isParcel = details.stoneMode === 'parcel' || (!details.stoneMode && rawPieces > 1);
+        const mode = isParcel ? ('parcel' as const) : ('single_stone' as const);
+        const isReferenceSettlement = Boolean(details.unsettledReferenceId && itemsMap[String(details.unsettledReferenceId)]);
+        const detailKey = isParcel
+          ? `parcel__${speciesId}__${shape}__${color}__${clarity}__${rawCut}__${certLab}_${certNumber}__${mode}__${lotNumber}`
+          : (details.unsettledReferenceId
+              ? String(details.unsettledReferenceId)
+              : `single__${t.id || (t as any).key || details.inventorySourceId || details.stoneInternalCode || `${speciesId}_${t.documentNumber || 'doc'}_${carats}_${shape}`}`);
+
+        const effectiveDirection = isReferenceSettlement
+          ? (itemsMap[String(details.unsettledReferenceId)].carats > 0 ? -1 : 1)
+          : direction;
+        const effectivePieceDir = isReferenceSettlement
+          ? (itemsMap[String(details.unsettledReferenceId)].pieces > 0 ? -1 : 1)
+          : direction;
 
         if (!itemsMap[detailKey]) {
           itemsMap[detailKey] = {
@@ -316,9 +329,9 @@ export default function StoneBalanceModal({
             draftPieces: 0,
           };
         }
-        itemsMap[detailKey].carats = Math.round((itemsMap[detailKey].carats + carats * direction) * 1000) / 1000;
-        itemsMap[detailKey].grams = Math.round((itemsMap[detailKey].grams + grams * direction) * 10000) / 10000;
-        itemsMap[detailKey].pieces += pieces * direction;
+        itemsMap[detailKey].carats = Math.round((itemsMap[detailKey].carats + carats * effectiveDirection) * 1000) / 1000;
+        itemsMap[detailKey].grams = Math.round((itemsMap[detailKey].grams + grams * effectiveDirection) * 10000) / 10000;
+        itemsMap[detailKey].pieces += isReferenceSettlement ? Math.abs(pieces) * effectivePieceDir : (isParcel ? pieces * direction : (isPurchase ? -1 : 1));
         itemsMap[detailKey].transactionsCount = (itemsMap[detailKey].transactionsCount || 0) + 1;
         if (t.documentDateJalali) itemsMap[detailKey].lastDate = t.documentDateJalali;
         if (t.documentNumber) itemsMap[detailKey].lastDocumentNumber = t.documentNumber;
@@ -367,7 +380,7 @@ export default function StoneBalanceModal({
     // 5. Merge live draft lines from committedLines
     for (const line of committedLines) {
       if (line.documentTab !== 'stone' && line.sourceTab !== 'stone') continue;
-      const details = line.details || {};
+      const details = (line.details || {}) as any;
       const opKind = String(details.stoneOperationKind || '');
       const subType = String(line.documentSubType || '');
       const isTradeSettled = (opKind === 'purchase' || opKind === 'sale') && line.settlementMethod === 'cash';
@@ -417,7 +430,6 @@ export default function StoneBalanceModal({
 
       const shape = String(details.stoneShape || '');
       const shapeName = String(details.stoneShapeName || (shape ? getShapeNameFa(shape) : ''));
-      const mode = details.stoneMode === 'parcel' ? ('parcel' as const) : ('single_stone' as const);
 
       let color = '';
       if (details.stoneColorMode === 'fancy') {
@@ -450,7 +462,21 @@ export default function StoneBalanceModal({
           ? `${details.stoneMeasurementsLength || '—'} × ${details.stoneMeasurementsWidth || '—'}${details.stoneMeasurementsDepth ? ` × ${details.stoneMeasurementsDepth}` : ''} mm`
           : '';
 
-      const detailKey = `${speciesId}__${shape}__${color}__${clarity}__${rawCut}__${certLab}_${certNumber}__${mode}__${lotNumber}`;
+      const isParcel = details.stoneMode === 'parcel' || (!details.stoneMode && rawPieces > 1);
+      const mode = isParcel ? ('parcel' as const) : ('single_stone' as const);
+      const isReferenceSettlement = Boolean(details.unsettledReferenceId && itemsMap[String(details.unsettledReferenceId)]);
+      const detailKey = isParcel
+        ? `parcel__${speciesId}__${shape}__${color}__${clarity}__${rawCut}__${certLab}_${certNumber}__${mode}__${lotNumber}`
+        : (isReferenceSettlement
+            ? String(details.unsettledReferenceId)
+            : `single__draft_${line.id || (line as any).key || Math.random().toString(36).slice(2)}`);
+
+      const effectiveDirection = isReferenceSettlement
+        ? (itemsMap[String(details.unsettledReferenceId)].carats > 0 ? -1 : 1)
+        : direction;
+      const effectivePieceDir = isReferenceSettlement
+        ? (itemsMap[String(details.unsettledReferenceId)].pieces > 0 ? -1 : 1)
+        : direction;
 
       if (!itemsMap[detailKey]) {
         itemsMap[detailKey] = {
@@ -478,9 +504,9 @@ export default function StoneBalanceModal({
           draftPieces: 0,
         };
       }
-      itemsMap[detailKey].draftCarats = Math.round(((itemsMap[detailKey].draftCarats || 0) + carats * direction) * 1000) / 1000;
-      itemsMap[detailKey].draftGrams = Math.round(((itemsMap[detailKey].draftGrams || 0) + grams * direction) * 10000) / 10000;
-      itemsMap[detailKey].draftPieces = (itemsMap[detailKey].draftPieces || 0) + pieces * direction;
+      itemsMap[detailKey].draftCarats = Math.round(((itemsMap[detailKey].draftCarats || 0) + carats * effectiveDirection) * 1000) / 1000;
+      itemsMap[detailKey].draftGrams = Math.round(((itemsMap[detailKey].draftGrams || 0) + grams * effectiveDirection) * 10000) / 10000;
+      itemsMap[detailKey].draftPieces = (itemsMap[detailKey].draftPieces || 0) + (isReferenceSettlement ? Math.abs(pieces) * effectivePieceDir : (isParcel ? pieces * direction : (isPurchase ? -1 : 1)));
       itemsMap[detailKey].hasDraftEffect = true;
     }
 
@@ -900,7 +926,7 @@ export default function StoneBalanceModal({
                     قاعده ماهیت معامله سنگ و عدم تهاتر:
                   </p>
                   <p className="text-[11px] sm:text-xs leading-relaxed text-amber-900 dark:text-amber-200 font-medium">
-                    خرید سنگ از مشتری یعنی مشتری سنگ را به ما بدهکار می‌شود · فروش سنگ به مشتری یعنی مشتری سنگ را از ما طلبکار می‌شود. همچنین سنگ‌ها غیرهمگن هستند و ارزش هر سنگ مستقیماً به گونه، رنگ، پاکی، تراش و شناسنامه آن وابسته است و اقلام طلب و بدهی هرگز با یکدیگر جمع یا تهاتر کور نمی‌شوند.
+                    خرید سنگ از مشتری یعنی مشتری سنگ را به ما بدهکار می‌شود · فروش سنگ به مشتری یعنی مشتری سنگ را از ما طلبکار می‌شود. سنگ‌های تکی کاملاً یونیک و یکتا هستند و حتی در صورت خرید و فروش با مشخصات یکسان هرگز با یکدیگر تهاتر یا کسر نمی‌شوند و هر کدام قلمی خاص و مجزا هستند؛ فقط در سنگ‌های بارخانه‌ای (بسته‌ای) امکان کسر و ادغام موجودی وجود دارد.
                   </p>
                 </div>
               </div>

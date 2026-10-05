@@ -1748,6 +1748,19 @@ export async function ensureBankAccountDetailInChart(
     try {
       const existing = await pb.collection('chart_of_accounts').getOne(params.existingAccountId).catch(() => null);
       if (existing) {
+        const coll = pb.collection('chart_of_accounts');
+        if (typeof coll?.update === 'function') {
+          const effectiveBankName = params.bankName.startsWith('بانک ') ? params.bankName.slice(5) : params.bankName;
+          const targetName = `بانک ${effectiveBankName}${params.branchName ? ' - ' + params.branchName : ''} (${params.accountNumber})`;
+          const targetDesc = `حساب بانکی تفصیلی مربوط به ${effectiveBankName} شماره حساب ${params.accountNumber}`;
+          if (existing.name !== targetName || existing.description !== targetDesc) {
+            await coll.update(existing.id, {
+              name: targetName,
+              description: targetDesc,
+              ...(params.userId ? { updatedBy: params.userId } : {}),
+            }).catch(() => null);
+          }
+        }
         return {
           id: existing.id,
           code: existing.code,
@@ -1777,8 +1790,9 @@ export async function ensureBankAccountDetailInChart(
   }
 
   const newCode = getNextDetailAccountCode('1110', existingCodes, { min: 1, max: 49 });
-  const accountName = `بانک ${params.bankName}${params.branchName ? ' - ' + params.branchName : ''} (${params.accountNumber})`;
-  const description = `حساب بانکی تفصیلی مربوط به ${params.bankName} شماره حساب ${params.accountNumber}`;
+  const effectiveBankName = params.bankName.startsWith('بانک ') ? params.bankName.slice(5) : params.bankName;
+  const accountName = `بانک ${effectiveBankName}${params.branchName ? ' - ' + params.branchName : ''} (${params.accountNumber})`;
+  const description = `حساب بانکی تفصیلی مربوط به ${effectiveBankName} شماره حساب ${params.accountNumber}`;
 
   try {
     const created = await pb.collection('chart_of_accounts').create({

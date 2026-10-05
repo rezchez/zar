@@ -49,6 +49,13 @@ export type DetailState = {
   sayadId?: string;
   dueDateJalali?: string;
   bankOperationKind?: string;
+  bankAccountBalance?: number;
+  rawBankAccountBalance?: number;
+  baseCurrency?: string;
+  amountInIrr?: number;
+  rialAmountInIrr?: boolean;
+  transferFee?: string;
+  trackingNumber?: string;
   cashFundId?: string;
   cashFundName?: string;
   cashFundCurrency?: string;
@@ -136,6 +143,7 @@ export type DetailState = {
   stoneStorageLocation?: string;
   stoneInternalCode?: string;
   stoneVerificationStatus?: string;
+  unsettledReferenceId?: string;
 };
 
 export type DocumentLine = {

@@ -5,3 +5,5 @@ export { default as InitialBankInventoryModal } from './components/InitialBankIn
 export { default as InitialBankInventoryCard } from './components/InitialBankInventoryCard';
 export { default as BankBalancesWidget } from './components/BankBalancesWidget';
 export { default as BankLogo } from './components/BankLogo';
+export { default as BankAccountSelect } from './components/BankAccountSelect';
+export { default as BankOperationModal } from './components/BankOperationModal';

@@ -8,12 +8,14 @@ import { motion } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { FilePlus2, HandCoins, Landmark, ReceiptText } from 'lucide-react';
 
-const ACTIONS = [
-  { id: 'invoice', title: 'فاکتور خرید / فروش طلا', icon: ReceiptText, href: '/dashboard/documents/new', accent: true },
-  { id: 'conditional', title: 'ثبت طلای شرطی', icon: HandCoins, href: '/dashboard/documents/new' },
-  { id: 'cash', title: 'دریافت / پرداخت نقد', icon: Landmark, href: '/dashboard/documents/new' },
-  { id: 'cheque', title: 'ثبت چک', icon: FilePlus2, href: '/dashboard/documents/new' },
+export const QUICK_GOLD_ACTIONS = [
+  { id: 'invoice', title: 'فاکتور خرید / فروش طلا', icon: ReceiptText, href: '/dashboard/documents/new#gold-sale', accent: true },
+  { id: 'conditional', title: 'ثبت طلای شرطی', icon: HandCoins, href: '/dashboard/documents/new?kind=conditional#metals' },
+  { id: 'cash', title: 'دریافت / پرداخت نقد', icon: Landmark, href: '/dashboard/documents/new#cash' },
+  { id: 'cheque', title: 'ثبت چک', icon: FilePlus2, href: '/dashboard/documents/new?kind=check-payment#bank' },
 ];
+
+const ACTIONS = QUICK_GOLD_ACTIONS;
 
 export default function QuickGoldActions() {
   const router = useRouter();

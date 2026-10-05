@@ -18,7 +18,12 @@ export default async function InitialBankAccountsListPage() {
   let initialAccounts: any[] = [];
   try {
     const currenciesList = await context.pb.collection('currencies').getFullList().catch(() => []);
-    const currencyMap = new Map<string, any>(currenciesList.map((c: any) => [c.id, c]));
+    const currencyMap = new Map<string, any>();
+    for (const c of currenciesList) {
+      if (c.id) currencyMap.set(String(c.id).toLowerCase(), c);
+      if (c.code) currencyMap.set(String(c.code).toUpperCase(), c);
+      if (c.name) currencyMap.set(String(c.name).trim(), c);
+    }
 
     const accounts = await context.pb.collection('bank_accounts').getFullList().catch(() => []);
 
@@ -34,13 +39,27 @@ export default async function InitialBankAccountsListPage() {
     const todayJalali = dateToJalaliString(new Date());
 
     initialAccounts = accounts.map((acc: any) => {
-      const currency = acc.expand?.currency || (acc.currency ? currencyMap.get(acc.currency) : null);
-      const currencyId = String(acc.currency || currency?.id || '');
-      const currencyName = String(currency?.name || acc.currency || 'ریال');
-      const currencyCode = String(currency?.code || acc.currency || 'IRR');
-      const currencySymbol = String(currency?.symbol || currencyCode);
-
       const tx = txMap.get(acc.id);
+      const rawCurr = String(acc.currency || '').trim();
+      let currency = acc.expand?.currency
+        || (rawCurr ? currencyMap.get(rawCurr.toLowerCase()) || currencyMap.get(rawCurr.toUpperCase()) || currencyMap.get(rawCurr) : null);
+
+      if (!currency && tx) {
+        const txRef = String(tx.currency_ref || '').trim();
+        const txCode = String(tx.currency || '').trim();
+        currency = (txRef ? currencyMap.get(txRef.toLowerCase()) : null)
+          || (txCode ? currencyMap.get(txCode.toUpperCase()) || currencyMap.get(txCode) : null);
+      }
+
+      if (!currency) {
+        currency = currencyMap.get('IRR') || currencyMap.get('IRT') || null;
+      }
+
+      const currencyId = String(currency?.id || acc.currency || '');
+      const currencyCode = String(currency?.code || acc.currency || 'IRR').toUpperCase();
+      const currencyName = String(currency?.name || (currencyCode === 'IRT' ? 'تومان' : 'ریال ایران'));
+      const currencySymbol = String(currency?.symbol || (currencyCode === 'IRT' ? 'تومان' : 'ریال'));
+
       const openingDate = String(tx?.date || (acc.created ? dateToJalaliString(new Date(acc.created)) : todayJalali));
 
       return {
@@ -48,6 +67,10 @@ export default async function InitialBankAccountsListPage() {
         bankName: String(acc.bankName || ''),
         branchName: String(acc.branchName || ''),
         accountNumber: String(acc.accountNumber || ''),
+        accountType: String(acc.accountType || 'current'),
+        shebaNumber: String(acc.shebaNumber || ''),
+        hasCheckbook: Boolean(acc.hasCheckbook),
+        hasVirtualCheck: Boolean(acc.hasVirtualCheck),
         currencyId,
         currencyName,
         currencyCode,
@@ -55,6 +78,8 @@ export default async function InitialBankAccountsListPage() {
         openingBalance: Math.abs(Number(tx?.amount ?? acc.opening_balance ?? 0)),
         balance: Number(acc.currentBalance ?? acc.balance ?? 0),
         openingBalanceDate: openingDate,
+        description: String(tx?.description || ''),
+        isBlocked: acc.isBlocked === true,
       };
     });
   } catch {

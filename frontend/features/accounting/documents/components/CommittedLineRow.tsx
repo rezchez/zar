@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { ArrowLeftRight, Flame, PencilLine, Trash2 } from 'lucide-react';
 import { TableRow, TableCell } from '@/components/ui/data-table';
 import type { DocumentLine } from '@/src/components/documents/RawGoldTab';
@@ -24,6 +24,7 @@ interface CommittedLineRowProps {
   hasValidCustomer?: boolean;
   hasMetalLines?: boolean;
   hasCurrencyLines?: boolean;
+  hasCheckLines?: boolean;
 }
 
 export default function CommittedLineRow({
@@ -38,6 +39,7 @@ export default function CommittedLineRow({
   hasValidCustomer = false,
   hasMetalLines = true,
   hasCurrencyLines = false,
+  hasCheckLines = false,
 }: CommittedLineRowProps) {
   const isPaid = line.documentNature === 'paid';
   const isReceived = line.documentNature === 'received';
@@ -64,8 +66,14 @@ export default function CommittedLineRow({
       line.details.refiningOpKind,
     );
 
+  const isMetalLine =
+    !isCurrency &&
+    !isStone &&
+    line.documentTab !== 'cash' &&
+    line.documentTab !== 'bank';
+
   const metalLabel =
-    isCurrency || isStone
+    !isMetalLine
       ? '-'
       : line.details.metalType === 'silver'
       ? 'نقره'
@@ -149,6 +157,48 @@ export default function CommittedLineRow({
 
   const bedehkarMali = isPaid && financialAmount > 0 ? faNumber(financialAmount, 0) : null;
   const bostankarMali = isReceived && financialAmount > 0 ? faNumber(financialAmount, 0) : null;
+
+  // Check and bank details
+  const isCheck =
+    line.details?.bankOperationKind === 'check-payment' ||
+    Boolean(line.details?.checkNumber?.trim()) ||
+    Boolean(line.details?.sayadId?.trim()) ||
+    (line.documentTab as string) === 'check' ||
+    (line.sourceTab as string) === 'check';
+
+  const bankName = line.details?.bankName?.trim() || '';
+  const bankBranch = line.details?.bankBranch?.trim() || '';
+  const accountNumber = line.details?.accountNumber?.trim() || '';
+
+  const bankDisplayFull = useMemo(() => {
+    if (!bankName && !accountNumber) return '';
+    const parts: string[] = [];
+    if (bankName) parts.push(bankName);
+    if (bankBranch) parts.push(`(${bankBranch})`);
+    if (accountNumber) parts.push(`ش.ح ${toPersianDigits(accountNumber)}`);
+    return parts.join(' ');
+  }, [bankName, bankBranch, accountNumber]);
+
+  const bankDisplayShort = useMemo(() => {
+    if (!bankName && !accountNumber) return '';
+    if (bankName && bankBranch) return `${bankName} ${bankBranch}`;
+    if (bankName) return bankName;
+    if (accountNumber) return `ش.ح ${toPersianDigits(accountNumber)}`;
+    return '';
+  }, [bankName, bankBranch, accountNumber]);
+
+  const checkNumberDisplay = isCheck ? line.details?.checkNumber?.trim() || '' : '';
+
+  const sayadRaw = isCheck ? (line.details?.sayadId?.trim() || '').replace(/\D/g, '') : '';
+  const sayadFormatted = useMemo(() => {
+    if (!sayadRaw) return '';
+    if (sayadRaw.length === 16) {
+      return toPersianDigits(sayadRaw.replace(/(\d{4})(?=\d)/g, '$1-'));
+    }
+    return toPersianDigits(sayadRaw);
+  }, [sayadRaw]);
+
+  const dueDateDisplay = isCheck ? line.details?.dueDateJalali?.trim() || '' : '';
 
   return (
     <TableRow className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors group border-b border-slate-100 dark:border-slate-800">
@@ -238,8 +288,53 @@ export default function CommittedLineRow({
         </>
       ) : null}
 
+      {/* Check Cells (Only rendered if hasCheckLines) */}
+      {hasCheckLines ? (
+        <>
+          {/* Bank / Account */}
+          <TableCell className="px-1.5 py-1.5 text-center text-slate-700 dark:text-slate-300 text-xs border-s border-slate-200/60 dark:border-slate-800/60">
+            <span
+              className="block truncate w-full mx-auto text-xs"
+              title={bankDisplayFull || undefined}
+            >
+              {bankDisplayShort || '-'}
+            </span>
+          </TableCell>
+
+          {/* Check Number */}
+          <TableCell className="px-1.5 py-1.5 text-center font-bold tabular-nums text-slate-800 dark:text-slate-100 text-xs border-s border-slate-200/60 dark:border-slate-800/60">
+            <span
+              className="block truncate w-full mx-auto text-xs"
+              title={checkNumberDisplay ? toPersianDigits(checkNumberDisplay) : undefined}
+            >
+              {checkNumberDisplay ? toPersianDigits(checkNumberDisplay) : '-'}
+            </span>
+          </TableCell>
+
+          {/* Sayad ID */}
+          <TableCell className="px-1.5 py-1.5 text-center font-mono tabular-nums text-slate-700 dark:text-slate-200 text-xs border-s border-slate-200/60 dark:border-slate-800/60">
+            <span
+              className="block truncate w-full mx-auto text-xs font-medium"
+              title={sayadRaw ? toPersianDigits(sayadRaw) : undefined}
+            >
+              {sayadFormatted || '-'}
+            </span>
+          </TableCell>
+
+          {/* Due Date */}
+          <TableCell className="px-1.5 py-1.5 text-center tabular-nums text-slate-700 dark:text-slate-300 text-xs border-s border-slate-200/60 dark:border-slate-800/60">
+            <span
+              className="block truncate w-full mx-auto text-xs font-semibold"
+              title={dueDateDisplay ? toPersianDigits(dueDateDisplay) : undefined}
+            >
+              {dueDateDisplay ? toPersianDigits(dueDateDisplay) : '-'}
+            </span>
+          </TableCell>
+        </>
+      ) : null}
+
       {/* 8. Financial Debit (بدهکار مالی) */}
-      {hasFinancialAmounts ? (
+      {hasFinancialAmounts || hasCheckLines ? (
         <TableCell className="px-1.5 py-1.5 text-center tabular-nums text-xs border-s border-slate-200/60 dark:border-slate-800/60">
           {bedehkarMali ? (
             <span className="text-rose-600 dark:text-rose-400 font-bold truncate block w-full" title={bedehkarMali}>
@@ -252,7 +347,7 @@ export default function CommittedLineRow({
       ) : null}
 
       {/* 9. Financial Credit (بستانکار مالی) */}
-      {hasFinancialAmounts ? (
+      {hasFinancialAmounts || hasCheckLines ? (
         <TableCell className="px-1.5 py-1.5 text-center tabular-nums text-xs border-s border-slate-200/60 dark:border-slate-800/60">
           {bostankarMali ? (
             <span className="text-emerald-600 dark:text-emerald-400 font-bold truncate block w-full" title={bostankarMali}>

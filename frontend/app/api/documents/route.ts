@@ -19,7 +19,18 @@ import { isRefinerGroup } from '@/lib/customer-groups';
 import { jalaliDateToIso, normalizeDigits } from '@/lib/jalali';
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
 import { createRefiningCase, syncCaseTotals } from '@/features/refining/services/refining-service';
-import { postMetalSale, postMetalPurchase, postCurrencyTrade, postStoneSale, postStonePurchase } from '@/features/accounting/posting/posting-engine';
+import {
+  postMetalSale,
+  postMetalPurchase,
+  postCurrencyTrade,
+  postStoneSale,
+  postStonePurchase,
+  postPayableChequeIssue,
+  postBankPaymentToCustomer,
+  postBankReceiptFromCustomer,
+} from '@/features/accounting/posting/posting-engine';
+import { ensureChecksCollection } from '@/lib/check-collection';
+import { mapBankAccount } from '@/lib/bank';
 import { getCustomerWithBalances } from '@/lib/customer-service';
 import { getCurrencyMeta, normalizeCurrencyCode } from '@/lib/customer';
 import { convertTomanToRial } from '@/lib/money';
@@ -486,6 +497,25 @@ export async function POST(request: Request) {
         details.rialAmountInIrr = true;
       }
 
+      const isBankLine = line.documentTab === 'bank' || line.sourceTab === 'bank';
+      if (isBankLine) {
+        const bankCurrency = normalizeCurrencyCode(String(details.currencyUnit || details.baseCurrency || ''));
+        const isToman = bankCurrency === 'IRT' || details.baseCurrency === 'IRT';
+        const rawLineRial = Math.abs(readAmount(line.rialAmount) || 0);
+        const detailTotal = Math.abs(readAmount(details.totalAmount) || readAmount(details.amount) || 0);
+        const alreadyInIrr = details.rialAmountInIrr === true;
+
+        const effectiveAbsRial = isToman
+          ? (alreadyInIrr && rawLineRial > 0 && rawLineRial !== detailTotal
+              ? rawLineRial
+              : convertTomanToRial(detailTotal || rawLineRial))
+          : (rawLineRial || detailTotal);
+
+        const bankDirection = lineNature === 'received' ? 1 : -1;
+        lineAmounts.rialAmount = Math.round(effectiveAbsRial) * bankDirection;
+        details.rialAmountInIrr = true;
+      }
+
       const hasStoneQuantity =
         isStoneLine &&
         (Number(details.stoneCarats || 0) > 0 ||
@@ -591,6 +621,7 @@ export async function POST(request: Request) {
 
     // Validate that referenced cash funds and bank accounts are not blocked, and have sufficient balance
     const simulatedVaultBalances = new Map<string, number>();
+    const simulatedBankBalances = new Map<string, number>();
     const currenciesList = await writer.collection('currencies').getFullList().catch(() => []);
 
     for (const prepared of preparedLines) {
@@ -696,6 +727,40 @@ export async function POST(request: Request) {
             },
             { status: 409 },
           );
+        }
+
+        const opKind = String(prepared.documentDetails.bankOperationKind || prepared.line.documentSubType || '');
+        const isCheckPayment = opKind === 'check-payment' || Boolean(prepared.documentDetails.checkNumber?.trim()) || Boolean(prepared.documentDetails.sayadId?.trim());
+        const isBankTab = prepared.line.documentTab === 'bank' || prepared.line.sourceTab === 'bank';
+        const isBankOutflow = isBankTab && (opKind === 'pay-to-customer' || (prepared.lineNature === 'paid' && !isCheckPayment));
+        const isBankInflow = isBankTab && (opKind === 'receive-from-customer' || (prepared.lineNature === 'received' && !isCheckPayment));
+
+        if (bankAcc && (isBankOutflow || isBankInflow)) {
+          if (!simulatedBankBalances.has(bankAcc.id)) {
+            simulatedBankBalances.set(bankAcc.id, Number(bankAcc.currentBalance ?? bankAcc.balance ?? 0));
+          }
+          const amount = Math.abs(prepared.lineAmounts.rialAmount ?? 0) || Math.abs(Number(prepared.documentDetails.totalAmount) || 0);
+          const currentBal = simulatedBankBalances.get(bankAcc.id)!;
+
+          if (isBankOutflow) {
+            const rawFee = Math.abs(Number(prepared.documentDetails.transferFee) || 0);
+            const isFeeToman = prepared.documentDetails.currencyUnit === 'IRT' || prepared.documentDetails.baseCurrency === 'IRT';
+            const transferFee = isFeeToman ? convertTomanToRial(rawFee) : rawFee;
+            const totalDeduction = amount + transferFee;
+            if (currentBal < totalDeduction) {
+              return NextResponse.json(
+                {
+                  success: false,
+                  code: 'INSUFFICIENT_BANK_BALANCE',
+                  message: `موجودی حساب بانکی «${bankAcc.bankName || 'بانک'}» کافی نیست. (موجودی: ${currentBal.toLocaleString('fa-IR')} ریال، درخواستی با احتساب کارمزد: ${totalDeduction.toLocaleString('fa-IR')} ریال)`,
+                },
+                { status: 400 },
+              );
+            }
+            simulatedBankBalances.set(bankAcc.id, currentBal - totalDeduction);
+          } else if (isBankInflow) {
+            simulatedBankBalances.set(bankAcc.id, currentBal + amount);
+          }
         }
       }
     }
@@ -1194,6 +1259,167 @@ export async function POST(request: Request) {
               source_key: cashSourceKey,
               created_by: context.user.id,
             });
+          }
+        }
+
+        // Process Bank / Cheque Operations in Document Lines
+        for (let index = 0; index < preparedLines.length; index++) {
+          const prepared = preparedLines[index];
+          const isBankTab = prepared.line.documentTab === 'bank' || prepared.line.sourceTab === 'bank';
+          if (!isBankTab) continue;
+
+          const opKind = String(prepared.documentDetails.bankOperationKind || prepared.line.documentSubType || '');
+          const isCheckPayment = opKind === 'check-payment' || Boolean(prepared.documentDetails.checkNumber?.trim()) || Boolean(prepared.documentDetails.sayadId?.trim());
+          const rawBankId = String(prepared.documentDetails.bankAccountId || '');
+          const amount = Math.abs(prepared.lineAmounts.rialAmount ?? 0) || Math.abs(Number(prepared.documentDetails.totalAmount) || 0);
+          if (amount <= 0) continue;
+
+          const bankAccountRecord = rawBankId ? await writer.collection('bank_accounts').getOne(rawBankId).catch(() => null) : null;
+          const mappedBank = bankAccountRecord ? mapBankAccount(bankAccountRecord) : null;
+
+          if (isCheckPayment && mappedBank) {
+            const rawCheckNumber = normalizeDigits(String(prepared.documentDetails.checkNumber || '')).trim();
+            const rawSayad = normalizeDigits(String(prepared.documentDetails.sayadId || '')).replace(/\D/g, '');
+            const checkDueDateJalali = String(prepared.documentDetails.dueDateJalali || documentDateJalali);
+            const checkDueDateIso = jalaliDateToIso(checkDueDateJalali) || new Date().toISOString();
+
+            try {
+              await ensureChecksCollection(writer);
+
+              let existingCheck = null;
+              if (rawSayad) {
+                existingCheck = await writer.collection('checks').getFirstListItem(
+                  writer.filter('sayadId = {:sayadId}', { sayadId: rawSayad }),
+                ).catch(() => null);
+              }
+              if (!existingCheck && rawBankId && rawCheckNumber) {
+                existingCheck = await writer.collection('checks').getFirstListItem(
+                  writer.filter('bankAccount = {:bankId} && (checkNumber = {:cNum} || check_number = {:cNum})', { bankId: rawBankId, cNum: rawCheckNumber }),
+                ).catch(() => null);
+              }
+
+              let checkRecord = existingCheck;
+              if (!checkRecord) {
+                checkRecord = await writer.collection('checks').create({
+                  bankAccount: mappedBank.id,
+                  customer: customer.id,
+                  sayadId: rawSayad,
+                  checkNumber: rawCheckNumber,
+                  check_number: rawCheckNumber,
+                  amount,
+                  currency: mappedBank.currency || 'IRR',
+                  chequeType: 'payable',
+                  issueDate: new Date().toISOString(),
+                  issueDateJalali: documentDateJalali,
+                  dueDate: checkDueDateIso,
+                  dueDateJalali: checkDueDateJalali,
+                  status: 'issued',
+                  document: documentId,
+                  bankName: mappedBank.bankName || '',
+                  branchName: mappedBank.branchName || '',
+                  created_by: context.user.id,
+                  createdBy: context.user.id,
+                  updated_by: context.user.id,
+                  updatedBy: context.user.id,
+                });
+              }
+
+              if (checkRecord) {
+                const journalResult = await postPayableChequeIssue(
+                  {
+                    id: checkRecord.id,
+                    amount,
+                    sayadId: rawSayad,
+                    checkNumber: rawCheckNumber,
+                    description: readString(prepared.line.description ?? body.description, 500) || `صدور چک شماره ${rawCheckNumber || rawSayad}`,
+                    dueDateJalali: checkDueDateJalali,
+                    issueDateJalali: documentDateJalali,
+                    bankAccount: mappedBank.id,
+                    customer: customer.id,
+                  },
+                  {
+                    id: customer.id,
+                    name: customer.name,
+                    customerCode: Number(customer.customerCode ?? 0),
+                    accountId: (customer as any).accountId || null,
+                  },
+                  mappedBank,
+                  context.user.id,
+                  writer,
+                );
+
+                if (journalResult?.id) {
+                  await writer.collection('checks').update(checkRecord.id, {
+                    journalEntryId: journalResult.id,
+                  }).catch(() => undefined);
+                }
+              }
+            } catch (checkErr) {
+              console.error('Failed to post payable cheque in document:', checkErr);
+            }
+          } else if (mappedBank) {
+            // Direct bank-customer transfers (pay-to-customer / receive-from-customer)
+            const currentBal = Number(mappedBank.currentBalance ?? mappedBank.balance ?? 0);
+            const isOutflow = opKind === 'pay-to-customer' || (prepared.lineNature === 'paid' && !isCheckPayment);
+            const transferFee = Math.abs(Number(prepared.documentDetails.transferFee) || 0);
+            const totalDeduction = isOutflow ? amount + transferFee : amount;
+            const nextBal = isOutflow ? currentBal - totalDeduction : currentBal + amount;
+            await writer.collection('bank_accounts').update(mappedBank.id, {
+              balance: nextBal,
+              currentBalance: nextBal,
+              updatedBy: context.user.id,
+            }).catch(() => undefined);
+
+            if (opKind === 'pay-to-customer' || (prepared.lineNature === 'paid' && !isCheckPayment)) {
+              try {
+                await postBankPaymentToCustomer(
+                  {
+                    documentId: `${documentId}:${prepared.lineNumber}`,
+                    documentNumber: lineDocumentNumbers[index] || finalDocumentNumber,
+                    entryDateJalali: documentDateJalali,
+                    amount,
+                    transferFee,
+                    customer: {
+                      id: customer.id,
+                      name: customer.name,
+                      customerCode: Number(customer.customerCode ?? 0),
+                      accountId: (customer as any).accountId || null,
+                    },
+                    bankAccount: mappedBank,
+                    userId: context.user.id,
+                    description: readString(prepared.line.description ?? body.description, 500) || undefined,
+                    trackingNumber: readString(prepared.documentDetails.trackingNumber, 100) || undefined,
+                  },
+                  writer,
+                );
+              } catch (bankJournalErr) {
+                console.error('Failed to post bank payment journal entry:', bankJournalErr);
+              }
+            } else if (opKind === 'receive-from-customer' || (prepared.lineNature === 'received' && !isCheckPayment)) {
+              try {
+                await postBankReceiptFromCustomer(
+                  {
+                    documentId: `${documentId}:${prepared.lineNumber}`,
+                    documentNumber: lineDocumentNumbers[index] || finalDocumentNumber,
+                    entryDateJalali: documentDateJalali,
+                    amount,
+                    customer: {
+                      id: customer.id,
+                      name: customer.name,
+                      customerCode: Number(customer.customerCode ?? 0),
+                      accountId: (customer as any).accountId || null,
+                    },
+                    bankAccount: mappedBank,
+                    userId: context.user.id,
+                    description: readString(prepared.line.description ?? body.description, 500) || undefined,
+                    trackingNumber: readString(prepared.documentDetails.trackingNumber, 100) || undefined,
+                  },
+                  writer,
+                );
+              } catch (bankJournalErr) {
+                console.error('Failed to post bank receipt journal entry:', bankJournalErr);
+              }
+            }
           }
         }
 

@@ -478,12 +478,16 @@ export type BankAccount = {
   bankName: string;
   branchName: string;
   accountNumber: string;
+  accountType?: string;
   balance: number;
   currentBalance: number;
   accountCodeZero: string;
   currency: string;
   isActive: boolean;
   isBlocked?: boolean;
+  shebaNumber?: string;
+  hasCheckbook?: boolean;
+  hasVirtualCheck?: boolean;
   accountId?: string | null;
   accountCode?: string | null;
   accountName?: string | null;
@@ -495,6 +499,44 @@ export type BankAccount = {
     accountId?: Record<string, unknown>;
   };
 };
+
+export const BANK_ACCOUNT_TYPES = [
+  { value: 'current', label: 'جاری' },
+  { value: 'short_term', label: 'کوتاه‌مدت' },
+  { value: 'long_term', label: 'بلندمدت' },
+  { value: 'saving', label: 'قرض‌الحسنه پس‌انداز' },
+  { value: 'gharzalhasane_current', label: 'قرض‌الحسنه جاری' },
+] as const;
+
+export function getAccountTypeLabel(type?: string | null): string {
+  switch (type) {
+    case 'current':
+      return 'جاری';
+    case 'short_term':
+      return 'کوتاه‌مدت';
+    case 'long_term':
+      return 'بلندمدت';
+    case 'saving':
+      return 'قرض‌الحسنه پس‌انداز';
+    case 'gharzalhasane_current':
+      return 'قرض‌الحسنه جاری';
+    default:
+      return type ? type : 'جاری';
+  }
+}
+
+export function formatBankSelectOptionLabel(
+  bank: BankAccount,
+  formattedBalance: string,
+): string {
+  const blocked = bank.isBlocked ? '⛔ [مسدود] ' : '';
+  const cleanBankName = (bank.bankName || '').replace(/^بانک\s+/, '').trim();
+  const cleanBranch = bank.branchName ? bank.branchName.replace(/^شعبه\s+/, '').trim() : '';
+  const branchPart = cleanBranch ? ` ${cleanBranch}` : '';
+  const typePart = bank.accountType && bank.accountType !== 'current' ? ` (${getAccountTypeLabel(bank.accountType)})` : '';
+  const accNum = bank.accountNumber ? ` ش.ح ${bank.accountNumber}` : '';
+  return `${blocked}${cleanBankName}${branchPart}${typePart}${accNum} موجودی: ${formattedBalance}`;
+}
 
 export type BankTransferKind = 'bank-to-bank' | 'cash-to-bank' | 'bank-to-cash' | 'check-payment';
 
@@ -523,12 +565,16 @@ export function mapBankAccount(record: Record<string, unknown>): BankAccount {
     bankName: typeof record.bankName === 'string' ? record.bankName : '',
     branchName: typeof record.branchName === 'string' ? record.branchName : '',
     accountNumber: typeof record.accountNumber === 'string' ? record.accountNumber : '',
+    accountType: typeof record.accountType === 'string' && record.accountType ? record.accountType : 'current',
     balance: rawBalance,
     currentBalance: rawBalance,
     accountCodeZero: typeof record.accountCodeZero === 'string' ? record.accountCodeZero : '',
     currency: typeof record.currency === 'string' && record.currency ? record.currency : 'IRR',
     isActive: typeof record.isActive === 'boolean' ? record.isActive : true,
     isBlocked: typeof record.isBlocked === 'boolean' ? record.isBlocked : false,
+    shebaNumber: typeof record.shebaNumber === 'string' ? record.shebaNumber : undefined,
+    hasCheckbook: Boolean(record.hasCheckbook),
+    hasVirtualCheck: Boolean(record.hasVirtualCheck),
     accountId,
     accountCode: expandedAccount && typeof expandedAccount.code === 'string' ? expandedAccount.code : null,
     accountName: expandedAccount && typeof expandedAccount.name === 'string' ? expandedAccount.name : null,
@@ -543,4 +589,107 @@ export function mapBankAccount(record: Record<string, unknown>): BankAccount {
 
 export function formatRials(value: number) {
   return new Intl.NumberFormat('fa-IR').format(value);
+}
+
+export type BankAccountDisplayCurrency = {
+  amount: number;
+  currencyCode: string;
+  currencyName: string;
+  currencySymbol: string;
+  isConverted: boolean;
+  conversionDirection?: 'irr-to-irt' | 'irt-to-irr';
+};
+
+/**
+ * Checks whether a given currency code or name represents Iranian domestic currency (Rial or Toman).
+ */
+export function isDomesticBankCurrency(codeOrName?: string | null): boolean {
+  if (!codeOrName) return true;
+  const clean = codeOrName.trim().toUpperCase();
+  return (
+    clean === 'IRR' ||
+    clean === 'IRT' ||
+    clean === 'RIAL' ||
+    clean === 'TOMAN' ||
+    clean.includes('ریال') ||
+    clean.includes('تومان')
+  );
+}
+
+/**
+ * Determines whether the stored currency code represents Toman.
+ */
+export function isTomanCurrency(codeOrName?: string | null): boolean {
+  if (!codeOrName) return false;
+  const clean = codeOrName.trim().toUpperCase();
+  return clean === 'IRT' || clean === 'TOMAN' || clean.includes('تومان');
+}
+
+/**
+ * Converts bank account amount based on the active application baseCurrency setting ('IRR' or 'IRT').
+ * 
+ * Rules:
+ * - Foreign currencies (USD, EUR, etc.) remain intact without modification.
+ * - If account was saved in Rial (IRR) and baseCurrency is Toman (IRT): amount / 10
+ * - If account was saved in Toman (IRT) and baseCurrency is Rial (IRR): amount * 10
+ * - If currency matches baseCurrency: amount is returned as-is.
+ */
+export function getConvertedBankAmount(
+  amount: number,
+  accountCurrencyCode: string | undefined,
+  baseCurrency: 'IRR' | 'IRT',
+  currencies?: Array<{ id: string; code: string; name: string; symbol: string }>,
+): BankAccountDisplayCurrency {
+  const code = (accountCurrencyCode || 'IRR').trim().toUpperCase();
+  const isDomestic = isDomesticBankCurrency(code);
+
+  if (!isDomestic) {
+    const matched = currencies?.find((c) => c.code.toUpperCase() === code);
+    return {
+      amount,
+      currencyCode: code,
+      currencyName: matched?.name || code,
+      currencySymbol: matched?.symbol || code,
+      isConverted: false,
+    };
+  }
+
+  const accountIsToman = isTomanCurrency(code);
+  const targetIsToman = baseCurrency === 'IRT';
+
+  if (!accountIsToman && targetIsToman) {
+    // Registered in Rial, target is Toman => Rial to Toman (/ 10)
+    const matchedToman = currencies?.find((c) => isTomanCurrency(c.code));
+    return {
+      amount: Math.floor(amount / 10),
+      currencyCode: 'IRT',
+      currencyName: matchedToman?.name || 'تومان',
+      currencySymbol: matchedToman?.symbol || 'تومان',
+      isConverted: true,
+      conversionDirection: 'irr-to-irt',
+    };
+  }
+
+  if (accountIsToman && !targetIsToman) {
+    // Registered in Toman, target is Rial => Toman to Rial (* 10)
+    const matchedRial = currencies?.find((c) => !isTomanCurrency(c.code) && isDomesticBankCurrency(c.code));
+    return {
+      amount: Math.round(amount * 10),
+      currencyCode: 'IRR',
+      currencyName: matchedRial?.name || 'ریال ایران',
+      currencySymbol: matchedRial?.symbol || 'ریال',
+      isConverted: true,
+      conversionDirection: 'irt-to-irr',
+    };
+  }
+
+  // Same domestic unit
+  const matched = currencies?.find((c) => c.code.toUpperCase() === code);
+  return {
+    amount,
+    currencyCode: code === 'IRT' ? 'IRT' : 'IRR',
+    currencyName: matched?.name || (code === 'IRT' ? 'تومان' : 'ریال ایران'),
+    currencySymbol: matched?.symbol || (code === 'IRT' ? 'تومان' : 'ریال'),
+    isConverted: false,
+  };
 }

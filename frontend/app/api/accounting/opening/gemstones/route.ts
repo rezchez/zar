@@ -612,6 +612,12 @@ export async function POST(request: Request) {
         return NextResponse.json({ message: 'بارخانه مبنا برای ادغام یافت نشد یا حذف شده است.' }, { status: 404 });
       }
 
+      if (existingParcel.inventory_mode !== 'parcel' || inventoryMode !== 'parcel') {
+        return NextResponse.json({
+          message: 'تنها سنگ‌های بارخانه‌ای امکان ادغام و افزایش موجودی را دارند. سنگ‌های تکی یکتا هستند و قابلیت ادغام ندارند.',
+        }, { status: 400 });
+      }
+
       const currentCt = Number(existingParcel.weight_ct || 0);
       const currentPieces = Number(existingParcel.pieces || existingParcel.quantity || 0);
       const currentCost = Math.round(Number(existingParcel.total_amount || existingParcel.total_cost || 0));

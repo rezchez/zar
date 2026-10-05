@@ -14,6 +14,8 @@ export interface DocumentBalancePreviewData {
     silver: number;
     platinum: number;
     stone?: number;
+    stoneCredit?: number;
+    stoneDebit?: number;
     foreign: number;
     tertiary: number;
     secondaryCurrency?: string;
@@ -27,6 +29,8 @@ export interface DocumentBalancePreviewData {
     silver: number;
     platinum: number;
     stone?: number;
+    stoneCredit?: number;
+    stoneDebit?: number;
     foreign: number;
     tertiary: number;
   };
@@ -36,6 +40,8 @@ export interface DocumentBalancePreviewData {
     silver: number;
     platinum: number;
     stone?: number;
+    stoneCredit?: number;
+    stoneDebit?: number;
     foreign: number;
     tertiary: number;
   };
@@ -122,7 +128,22 @@ export default function DocumentBalancePreview({
               پلاتین: {faNumber(Math.abs(previewData.previousBalance.platinum), weightPrecision)} گرم
             </div>
           ) : null}
-          {previewData.previousBalance.stone !== undefined &&
+          {previewData.previousBalance.stoneCredit !== undefined || previewData.previousBalance.stoneDebit !== undefined ? (
+            ((previewData.previousBalance.stoneCredit ?? 0) !== 0 || (previewData.previousBalance.stoneDebit ?? 0) !== 0 ||
+             (previewData.transactionEffect.stoneCredit ?? 0) !== 0 || (previewData.transactionEffect.stoneDebit ?? 0) !== 0) ? (
+              <div className="text-amber-800 dark:text-amber-300 whitespace-nowrap inline-flex items-center gap-1">
+                <span>سنگ:</span>
+                <span className="text-emerald-700 dark:text-emerald-300">
+                  طلب {faNumber(previewData.previousBalance.stoneCredit || 0, 2)}
+                </span>
+                <span className="text-slate-300 dark:text-slate-600 font-light">|</span>
+                <span className="text-rose-700 dark:text-rose-300">
+                  بدهی {faNumber(previewData.previousBalance.stoneDebit || 0, 2)}
+                </span>
+                <span className="text-slate-500 font-bold">قیراط</span>
+              </div>
+            ) : null
+          ) : previewData.previousBalance.stone !== undefined &&
           (previewData.previousBalance.stone !== 0 || (previewData.transactionEffect.stone && previewData.transactionEffect.stone !== 0)) ? (
             <div className="text-amber-600 dark:text-amber-400 whitespace-nowrap">
               سنگ: {faNumber(Math.abs(previewData.previousBalance.stone), 2)} قیراط
@@ -202,7 +223,27 @@ export default function DocumentBalancePreview({
                   {faNumber(previewData.transactionEffect.platinum, weightPrecision)} گرم
                 </div>
               ) : null}
-              {previewData.transactionEffect.stone !== undefined && previewData.transactionEffect.stone !== 0 ? (
+              {previewData.transactionEffect.stoneCredit !== undefined || previewData.transactionEffect.stoneDebit !== undefined ? (
+                ((previewData.transactionEffect.stoneCredit ?? 0) !== 0 || (previewData.transactionEffect.stoneDebit ?? 0) !== 0) ? (
+                  <div className="whitespace-nowrap inline-flex items-center gap-1">
+                    <span className="text-amber-800 dark:text-amber-300 font-bold">سنگ:</span>
+                    {(previewData.transactionEffect.stoneCredit ?? 0) !== 0 ? (
+                      <span className="text-emerald-600 dark:text-emerald-400 font-black">
+                        طلب +{faNumber(previewData.transactionEffect.stoneCredit || 0, 2)}
+                      </span>
+                    ) : null}
+                    {(previewData.transactionEffect.stoneCredit ?? 0) !== 0 && (previewData.transactionEffect.stoneDebit ?? 0) !== 0 ? (
+                      <span className="text-slate-300 dark:text-slate-600 font-light">|</span>
+                    ) : null}
+                    {(previewData.transactionEffect.stoneDebit ?? 0) !== 0 ? (
+                      <span className="text-rose-600 dark:text-rose-400 font-black">
+                        بدهی +{faNumber(previewData.transactionEffect.stoneDebit || 0, 2)}
+                      </span>
+                    ) : null}
+                    <span className="text-slate-500 font-bold">قیراط</span>
+                  </div>
+                ) : null
+              ) : previewData.transactionEffect.stone !== undefined && previewData.transactionEffect.stone !== 0 ? (
                 <div
                   className={`whitespace-nowrap ${
                     previewData.transactionEffect.stone >= 0
@@ -262,7 +303,22 @@ export default function DocumentBalancePreview({
               پلاتین: {faNumber(Math.abs(previewData.projectedBalance.platinum), weightPrecision)} گرم
             </div>
           ) : null}
-          {previewData.projectedBalance.stone !== undefined &&
+          {previewData.projectedBalance.stoneCredit !== undefined || previewData.projectedBalance.stoneDebit !== undefined ? (
+            ((previewData.projectedBalance.stoneCredit ?? 0) !== 0 || (previewData.projectedBalance.stoneDebit ?? 0) !== 0 ||
+             (previewData.previousBalance.stoneCredit ?? 0) !== 0 || (previewData.previousBalance.stoneDebit ?? 0) !== 0) ? (
+              <div className="text-amber-800 dark:text-amber-300 whitespace-nowrap inline-flex items-center gap-1">
+                <span>سنگ:</span>
+                <span className="text-emerald-700 dark:text-emerald-300">
+                  طلب {faNumber(previewData.projectedBalance.stoneCredit || 0, 2)}
+                </span>
+                <span className="text-slate-300 dark:text-slate-600 font-light">|</span>
+                <span className="text-rose-700 dark:text-rose-300">
+                  بدهی {faNumber(previewData.projectedBalance.stoneDebit || 0, 2)}
+                </span>
+                <span className="text-slate-500 font-bold">قیراط</span>
+              </div>
+            ) : null
+          ) : previewData.projectedBalance.stone !== undefined &&
           (previewData.projectedBalance.stone !== 0 || (previewData.previousBalance.stone && previewData.previousBalance.stone !== 0)) ? (
             <div className="text-amber-600 dark:text-amber-400 whitespace-nowrap">
               سنگ: {faNumber(Math.abs(previewData.projectedBalance.stone), 2)} قیراط

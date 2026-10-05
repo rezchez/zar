@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Calendar as CalendarIcon, CalendarDays, Sparkles, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -25,8 +25,16 @@ export default function DashboardCalendarWidget({
   events = [],
   onDateSelect,
 }: DashboardCalendarWidgetProps) {
+  const [mounted, setMounted] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(() => new Date());
   const [currentMonth, setCurrentMonth] = useState<Date>(() => new Date());
+
+  useEffect(() => {
+    setMounted(true);
+    const today = new Date();
+    setSelectedDate(today);
+    setCurrentMonth(today);
+  }, []);
 
   const selectedDateShamsiString = useMemo(() => {
     if (!selectedDate) return '';
@@ -78,10 +86,74 @@ export default function DashboardCalendarWidget({
     onDateSelect?.(today, shamsiStr, isoStr);
   }
 
+  if (!mounted) {
+    return (
+      <div
+        className={`dashboard-panel w-full self-start rounded-2xl p-3 sm:p-4 text-slate-900 dark:text-slate-100 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-slate-200/80 dark:border-slate-800/80 shadow-xl transition-all ${className}`}
+        dir="rtl"
+        suppressHydrationWarning
+      >
+        {/* Top Header */}
+        <div className="mb-1.5 flex items-center justify-between border-b border-slate-200/80 pb-2.5 dark:border-slate-800/80">
+          <div className="flex items-center gap-2.5">
+            <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-1.5 text-amber-600 shadow-2xs dark:text-amber-400">
+              <CalendarIcon size={16} />
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5">
+                <h2 className="text-sm font-black tracking-tight text-slate-900 dark:text-slate-100">
+                  تقویم خورشیدی
+                </h2>
+                <Sparkles size={13} className="text-amber-500 opacity-90 animate-pulse" />
+              </div>
+              <p className="text-[11px] font-bold text-slate-600 dark:text-slate-400">
+                تعطیلات و مناسبت‌های رسمی ایران
+              </p>
+            </div>
+          </div>
+
+          <div className="px-3 py-1.5 text-xs font-black rounded-xl bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30 opacity-60">
+            امروز
+          </div>
+        </div>
+
+        {/* PersianLabs Calendar Component Skeleton */}
+        <div className="flex w-full justify-center">
+          <div className="w-full max-w-[22rem] p-0 space-y-2 py-2">
+            <div className="h-9 w-full rounded-xl bg-slate-200/60 dark:bg-slate-800/60 animate-pulse" />
+            <div className="grid grid-cols-7 gap-1">
+              {Array.from({ length: 7 }).map((_, i) => (
+                <div key={i} className="h-8 rounded-lg bg-slate-200/40 dark:bg-slate-800/40 animate-pulse" />
+              ))}
+            </div>
+            <div className="grid grid-cols-7 gap-1">
+              {Array.from({ length: 35 }).map((_, i) => (
+                <div key={i} className="h-8 sm:h-9 rounded-xl bg-slate-200/30 dark:bg-slate-800/30 animate-pulse" />
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Selected Day Details Section Skeleton */}
+        <div className="mt-2 border-t border-slate-200/80 pt-2 dark:border-slate-800/80">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-1.5">
+              <CalendarDays size={14} className="text-amber-600 dark:text-amber-400" />
+              <div className="h-4 w-28 rounded-md bg-slate-200/50 dark:bg-slate-800/50 animate-pulse" />
+            </div>
+            <div className="h-4 w-16 rounded-md bg-slate-200/50 dark:bg-slate-800/50 animate-pulse" />
+          </div>
+          <div className="h-7 w-full rounded-xl bg-slate-200/40 dark:bg-slate-800/40 animate-pulse" />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className={`dashboard-panel w-full self-start rounded-2xl p-3 sm:p-4 text-slate-900 dark:text-slate-100 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-slate-200/80 dark:border-slate-800/80 shadow-xl transition-all ${className}`}
       dir="rtl"
+      suppressHydrationWarning
     >
       {/* Top Header */}
       <div className="mb-1.5 flex items-center justify-between border-b border-slate-200/80 pb-2.5 dark:border-slate-800/80">
@@ -140,9 +212,9 @@ export default function DashboardCalendarWidget({
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-1.5 text-xs font-black text-slate-900 dark:text-slate-100">
                 <CalendarDays size={14} className="text-amber-600 dark:text-amber-400" />
-                <span>{formattedSelectedFullDate}</span>
+                <span suppressHydrationWarning>{formattedSelectedFullDate}</span>
               </div>
-              <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400">
+              <span suppressHydrationWarning className="text-[11px] font-bold text-slate-600 dark:text-slate-400">
                 {toPersianDigits(selectedDateShamsiString)}
               </span>
             </div>

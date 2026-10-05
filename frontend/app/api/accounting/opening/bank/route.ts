@@ -5,7 +5,7 @@ import { hasPermission } from '@/lib/authorization';
 import { postBankOpeningBalance } from '@/lib/accounting-posting-engine';
 import { ensureBankAccountDetailInChart } from '@/lib/chart-of-accounts';
 import { dateToJalaliString } from '@/lib/jalali';
-import { parseLocalizedAmount } from '@/lib/money';
+import { convertTomanToRial, parseLocalizedAmount } from '@/lib/money';
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
 import { validateIranianSheba } from '@/lib/sheba';
 
@@ -59,7 +59,12 @@ export async function GET() {
 
   try {
     const currenciesList = await context.pb.collection('currencies').getFullList().catch(() => []);
-    const currencyMap = new Map<string, any>(currenciesList.map((c: any) => [c.id, c]));
+    const currencyMap = new Map<string, any>();
+    for (const c of currenciesList) {
+      if (c.id) currencyMap.set(String(c.id).toLowerCase(), c);
+      if (c.code) currencyMap.set(String(c.code).toUpperCase(), c);
+      if (c.name) currencyMap.set(String(c.name).trim(), c);
+    }
 
     const accounts = await context.pb.collection('bank_accounts').getFullList().catch(() => []);
 
@@ -77,13 +82,27 @@ export async function GET() {
     const todayJalali = dateToJalaliString(new Date());
 
     const result = accounts.map((acc: any) => {
-      const currency = acc.expand?.currency || (acc.currency ? currencyMap.get(acc.currency) : null);
-      const currencyId = String(acc.currency || currency?.id || '');
-      const currencyName = String(currency?.name || acc.currency || 'ریال');
-      const currencyCode = String(currency?.code || acc.currency || 'IRR');
-      const currencySymbol = String(currency?.symbol || currencyCode);
-
       const tx = txMap.get(acc.id);
+      const rawCurr = String(acc.currency || '').trim();
+      let currency = acc.expand?.currency
+        || (rawCurr ? currencyMap.get(rawCurr.toLowerCase()) || currencyMap.get(rawCurr.toUpperCase()) || currencyMap.get(rawCurr) : null);
+
+      if (!currency && tx) {
+        const txRef = String(tx.currency_ref || '').trim();
+        const txCode = String(tx.currency || '').trim();
+        currency = (txRef ? currencyMap.get(txRef.toLowerCase()) : null)
+          || (txCode ? currencyMap.get(txCode.toUpperCase()) || currencyMap.get(txCode) : null);
+      }
+
+      if (!currency) {
+        currency = currencyMap.get('IRR') || currencyMap.get('IRT') || null;
+      }
+
+      const currencyId = String(currency?.id || acc.currency || '');
+      const currencyCode = String(currency?.code || acc.currency || 'IRR').toUpperCase();
+      const currencyName = String(currency?.name || (currencyCode === 'IRT' ? 'تومان' : 'ریال ایران'));
+      const currencySymbol = String(currency?.symbol || (currencyCode === 'IRT' ? 'تومان' : 'ریال'));
+
       const openingDate = String(tx?.date || (acc.created ? dateToJalaliString(new Date(acc.created)) : todayJalali));
       const description = String(tx?.description || '');
 
@@ -106,6 +125,7 @@ export async function GET() {
         balance,
         openingBalanceDate: openingDate,
         description,
+        accountType: String(acc.accountType || 'current'),
         isActive: acc.isActive ?? true,
         isBlocked: acc.isBlocked === true,
         created: acc.created,
@@ -140,6 +160,7 @@ export async function POST(request: Request) {
     const bankName = text(body?.bankName);
     const branchName = text(body?.branchName);
     const accountNumber = text(body?.accountNumber, 80);
+    const accountType = text(body?.accountType, 50) || 'current';
     const rawSheba = text(body?.shebaNumber || body?.iban, 34);
     const hasCheckbook = typeof body?.hasCheckbook === 'boolean' ? body.hasCheckbook : false;
     const hasVirtualCheck = typeof body?.hasVirtualCheck === 'boolean' ? body.hasVirtualCheck : false;
@@ -162,6 +183,25 @@ export async function POST(request: Request) {
     }
     const normSheba = rawSheba ? (rawSheba.toUpperCase().startsWith('IR') ? rawSheba.toUpperCase() : `IR${rawSheba.toUpperCase()}`) : '';
 
+    // Resolve currency from collection
+    let currencyRecord: any = null;
+    if (requestedCurrencyId) {
+      currencyRecord = await writer.collection('currencies').getOne(requestedCurrencyId).catch(() => null);
+    }
+    if (!currencyRecord && currencyCodeInput) {
+      currencyRecord = await writer.collection('currencies').getFirstListItem(
+        writer.filter('code = {:code} || name = {:name}', { code: currencyCodeInput, name: currencyCodeInput }),
+      ).catch(() => null);
+    }
+
+    const currencyCode = currencyRecord ? String(currencyRecord.code).toUpperCase() : (currencyCodeInput || 'IRR');
+    const currencyRefId = currencyRecord ? currencyRecord.id : (requestedCurrencyId || null);
+    const currencyName = currencyRecord ? String(currencyRecord.name) : (currencyCode === 'IRT' ? 'تومان' : 'ریال ایران');
+    const currencySymbol = currencyRecord ? String(currencyRecord.symbol) : (currencyCode === 'IRT' ? 'تومان' : 'ریال');
+
+    const isToman = currencyCode === 'IRT' || currencyName.includes('تومان');
+    const accountingAmount = isToman ? convertTomanToRial(amount) : amount;
+
     // MODE 1: EDIT EXISTING BANK ACCOUNT OPENING BALANCE & METADATA
     if (bankAccountId) {
       let existingAccount: any = null;
@@ -179,7 +219,23 @@ export async function POST(request: Request) {
 
       const previousOpening = Number(existingTx?.amount ?? existingAccount.opening_balance ?? 0);
       const previousBalance = Number(existingAccount.balance ?? existingAccount.currentBalance ?? 0);
-      const nextBalance = previousBalance - previousOpening + amount;
+
+      // Handle currency unit change between IRR and IRT if needed
+      const prevIsToman = existingAccount.currency === 'IRT';
+      let prevOpeningAdjusted = previousOpening;
+      let prevBalanceAdjusted = previousBalance;
+
+      if (prevIsToman && !isToman) {
+        // Was Toman, now Rial (* 10)
+        prevOpeningAdjusted = Math.round(previousOpening * 10);
+        prevBalanceAdjusted = Math.round(previousBalance * 10);
+      } else if (!prevIsToman && isToman) {
+        // Was Rial, now Toman (/ 10)
+        prevOpeningAdjusted = Math.floor(previousOpening / 10);
+        prevBalanceAdjusted = Math.floor(previousBalance / 10);
+      }
+
+      const nextBalance = prevBalanceAdjusted - prevOpeningAdjusted + amount;
 
       if (nextBalance < 0) {
         return NextResponse.json({ message: 'موجودی حساب بانکی نمی‌تواند منفی شود.' }, { status: 400 });
@@ -187,13 +243,14 @@ export async function POST(request: Request) {
 
       const updatePayload: Record<string, any> = {
         balance: nextBalance,
-        currentBalance: nextBalance,
+        currency: currencyCode,
         updatedBy: context.user.id,
       };
 
       if (bankName) updatePayload.bankName = bankName;
       if (branchName !== undefined) updatePayload.branchName = branchName;
       if (accountNumber) updatePayload.accountNumber = accountNumber;
+      if (body?.accountType !== undefined) updatePayload.accountType = text(body.accountType, 50);
       updatePayload.shebaNumber = normSheba;
       updatePayload.hasCheckbook = hasCheckbook;
       updatePayload.hasVirtualCheck = hasVirtualCheck;
@@ -205,7 +262,7 @@ export async function POST(request: Request) {
           bankName: bankName || existingAccount.bankName,
           branchName: branchName ?? existingAccount.branchName,
           accountNumber: accountNumber || existingAccount.accountNumber,
-          currency: currencyCodeInput || existingAccount.currency,
+          currency: currencyCode,
           existingAccountId: existingAccount.accountId || null,
           userId: context.user.id,
         });
@@ -227,43 +284,49 @@ export async function POST(request: Request) {
       const dateValue = dateInput || (existingTx?.date ? String(existingTx.date) : dateToJalaliString(new Date()));
 
       try {
-        if (existingTx) {
-          await writer.collection('bank_transactions').update(existingTx.id, {
-            amount,
-            direction: 'in',
-            date: dateValue,
-            description: description || `موجودی اول دوره حساب بانکی - ${updatedAccount.bankName}`,
-          });
-        } else {
-          await writer.collection('bank_transactions').create({
-            bank_account: existingAccount.id,
-            currency_ref: requestedCurrencyId || null,
-            currency: currencyCodeInput || existingAccount.currency || 'IRT',
-            amount,
-            direction: 'in',
-            source_key: `opening:bank:${existingAccount.id}`,
-            transaction_type: 'opening_balance',
-            is_opening_balance: true,
-            date: dateValue,
-            description: description || `موجودی اول دوره حساب بانکی - ${updatedAccount.bankName}`,
-            created_by: context.user.id,
-          });
-        }
+        if (amount > 0) {
+          if (existingTx) {
+            await writer.collection('bank_transactions').update(existingTx.id, {
+              amount,
+              currency: currencyCode,
+              currency_ref: currencyRefId || null,
+              direction: 'in',
+              date: dateValue,
+              description: description || `موجودی اول دوره حساب بانکی - ${updatedAccount.bankName}`,
+            });
+          } else {
+            await writer.collection('bank_transactions').create({
+              bank_account: existingAccount.id,
+              currency_ref: currencyRefId || null,
+              currency: currencyCode,
+              amount,
+              direction: 'in',
+              source_key: `opening:bank:${existingAccount.id}`,
+              transaction_type: 'opening_balance',
+              is_opening_balance: true,
+              date: dateValue,
+              description: description || `موجودی اول دوره حساب بانکی - ${updatedAccount.bankName}`,
+              created_by: context.user.id,
+            });
+          }
 
-        // Generate or update double-entry journal entry
-        await postBankOpeningBalance(
-          {
-            id: updatedAccount.id,
-            bankName: updatedAccount.bankName,
-            accountNumber: updatedAccount.accountNumber,
-            accountId: linkedAccountId || updatedAccount.accountId,
-          },
-          amount,
-          dateValue,
-          context.user.id,
-          writer,
-          description || `موجودی اول دوره حساب بانکی - ${updatedAccount.bankName}`,
-        );
+          // Generate or update double-entry journal entry (always in IRR for general ledger)
+          await postBankOpeningBalance(
+            {
+              id: updatedAccount.id,
+              bankName: updatedAccount.bankName,
+              accountNumber: updatedAccount.accountNumber,
+              accountId: linkedAccountId || updatedAccount.accountId,
+            },
+            accountingAmount,
+            dateValue,
+            context.user.id,
+            writer,
+            description || `موجودی اول دوره حساب بانکی - ${updatedAccount.bankName}`,
+          );
+        } else if (existingTx) {
+          await writer.collection('bank_transactions').delete(existingTx.id).catch(() => null);
+        }
       } catch (err) {
         return NextResponse.json({ message: extractPbErrorMessage(err, 'ثبت تراکنش و سند موجودی اولیه با خطا مواجه شد.') }, { status: 400 });
       }
@@ -278,7 +341,11 @@ export async function POST(request: Request) {
           shebaNumber: updatedAccount.shebaNumber,
           hasCheckbook: Boolean(updatedAccount.hasCheckbook),
           hasVirtualCheck: Boolean(updatedAccount.hasVirtualCheck),
-          currency: updatedAccount.currency,
+          currencyId: currencyRefId || '',
+          currencyCode,
+          currency: currencyCode,
+          currencyName,
+          currencySymbol,
           openingBalance: amount,
           balance: nextBalance,
           openingBalanceDate: dateValue,
@@ -298,19 +365,6 @@ export async function POST(request: Request) {
 
     if (duplicate) {
       return NextResponse.json({ message: 'این شماره حساب قبلاً ثبت شده است.' }, { status: 409 });
-    }
-
-    let currencyCode = currencyCodeInput || 'IRT';
-    let currencyRefId = requestedCurrencyId || null;
-
-    if (requestedCurrencyId) {
-      try {
-        const currencyRecord = await writer.collection('currencies').getOne(requestedCurrencyId);
-        currencyCode = String(currencyRecord.code || currencyCode).toUpperCase();
-        currencyRefId = currencyRecord.id;
-      } catch {
-        // Fallback to currencyCode
-      }
     }
 
     let linkedAccountId: string | null = null;
@@ -333,23 +387,28 @@ export async function POST(request: Request) {
 
     let bankAccountRecord: any;
     try {
-      bankAccountRecord = await writer.collection('bank_accounts').create({
+      const createPayload: Record<string, unknown> = {
         bankName,
-        branchName,
+        branchName: branchName || '',
         accountNumber,
-        shebaNumber: normSheba,
+        accountType,
+        shebaNumber: normSheba || '',
         hasCheckbook,
         hasVirtualCheck,
         balance: amount,
-        currentBalance: amount,
         currency: currencyCode,
         accountCodeZero: '0',
-        accountId: linkedAccountId || null,
-        isActive: true,
-        owner: context.user.id,
-        createdBy: context.user.id,
-        updatedBy: context.user.id,
-      });
+        isBlocked: false,
+      };
+      if (linkedAccountId) {
+        createPayload.accountId = linkedAccountId;
+      }
+      if (context.user?.id) {
+        createPayload.createdBy = context.user.id;
+        createPayload.updatedBy = context.user.id;
+      }
+
+      bankAccountRecord = await writer.collection('bank_accounts').create(createPayload);
     } catch (err) {
       return NextResponse.json({
         message: extractPbErrorMessage(err, 'ایجاد حساب بانکی با خطا مواجه شد.'),
@@ -357,34 +416,36 @@ export async function POST(request: Request) {
     }
 
     try {
-      await writer.collection('bank_transactions').create({
-        bank_account: bankAccountRecord.id,
-        currency_ref: currencyRefId,
-        currency: currencyCode,
-        amount,
-        direction: 'in',
-        source_key: `opening:bank:${bankAccountRecord.id}`,
-        transaction_type: 'opening_balance',
-        is_opening_balance: true,
-        date: dateValue,
-        description: description || `موجودی اول دوره حساب بانکی - ${bankName}`,
-        created_by: context.user.id,
-      });
+      if (amount > 0) {
+        await writer.collection('bank_transactions').create({
+          bank_account: bankAccountRecord.id,
+          currency_ref: currencyRefId,
+          currency: currencyCode,
+          amount,
+          direction: 'in',
+          source_key: `opening:bank:${bankAccountRecord.id}`,
+          transaction_type: 'opening_balance',
+          is_opening_balance: true,
+          date: dateValue,
+          description: description || `موجودی اول دوره حساب بانکی - ${bankName}`,
+          created_by: context.user.id,
+        });
 
-      // Generate double-entry journal entry
-      await postBankOpeningBalance(
-        {
-          id: bankAccountRecord.id,
-          bankName,
-          accountNumber,
-          accountId: linkedAccountId || bankAccountRecord.accountId,
-        },
-        amount,
-        dateValue,
-        context.user.id,
-        writer,
-        description || `موجودی اول دوره حساب بانکی - ${bankName}`,
-      );
+        // Generate double-entry journal entry (always in IRR for general ledger)
+        await postBankOpeningBalance(
+          {
+            id: bankAccountRecord.id,
+            bankName,
+            accountNumber,
+            accountId: linkedAccountId || bankAccountRecord.accountId,
+          },
+          accountingAmount,
+          dateValue,
+          context.user.id,
+          writer,
+          description || `موجودی اول دوره حساب بانکی - ${bankName}`,
+        );
+      }
     } catch (transactionError) {
       await writer.collection('bank_accounts').delete(bankAccountRecord.id).catch(() => undefined);
       return NextResponse.json({
@@ -402,7 +463,11 @@ export async function POST(request: Request) {
         shebaNumber: normSheba,
         hasCheckbook,
         hasVirtualCheck,
+        currencyId: currencyRefId || '',
+        currencyCode,
         currency: currencyCode,
+        currencyName,
+        currencySymbol,
         openingBalance: amount,
         balance: amount,
         openingBalanceDate: dateValue,

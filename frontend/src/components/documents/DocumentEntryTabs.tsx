@@ -84,19 +84,6 @@ export default function DocumentEntryTabs({
   const tabs: TabDefinition[] = [
     { id: 'metals', label: metalsTabLabel, icon: Gem, content: firstTabContent },
     { id: 'gold-sale', label: goldSaleTabLabel ?? (nature === 'received' ? 'خرید طلا' : 'فروش طلا'), icon: Gem, content: goldSaleTabContent ?? <PlaceholderTab label="خرید و فروش فلزات" /> },
-    { id: 'goods', label: 'کالا و جواهر', icon: Package, content: <PlaceholderTab label="کالا و جواهر" /> },
-    {
-      id: 'currency',
-      label: 'ارز',
-      icon: CircleDollarSign,
-      content: currencyTabContent ?? <PlaceholderTab label="عملیات ارزی" />,
-    },
-    {
-      id: 'stone',
-      label: 'سنگ',
-      icon: Sparkles,
-      content: stoneTabContent ?? <PlaceholderTab label="عملیات سنگ" />,
-    },
     {
       id: 'coin',
       label: 'سکه',
@@ -104,10 +91,10 @@ export default function DocumentEntryTabs({
       content: coinTabContent ?? <CoinEntryComponent nature={nature} />,
     },
     {
-      id: 'cash',
-      label: dynamicCashLabel,
-      icon: Wallet,
-      content: cashTabContent ?? <PlaceholderTab label={dynamicCashLabel} />,
+      id: 'currency',
+      label: 'ارز',
+      icon: CircleDollarSign,
+      content: currencyTabContent ?? <PlaceholderTab label="عملیات ارزی" />,
     },
     {
       id: 'bank',
@@ -122,16 +109,29 @@ export default function DocumentEntryTabs({
       ),
     },
     {
-      id: 'income-expense',
-      label: nature === 'received' ? 'درآمد' : 'هزینه',
-      icon: Banknote,
-      content: <PlaceholderTab label={nature === 'received' ? 'ثبت درآمد' : 'ثبت هزینه'} />,
+      id: 'cash',
+      label: dynamicCashLabel,
+      icon: Wallet,
+      content: cashTabContent ?? <PlaceholderTab label={dynamicCashLabel} />,
     },
     {
       id: 'claim',
       label: nature === 'received' ? 'بدهی ما' : 'طلب ما',
       icon: HandCoins,
       content: claimTabContent ?? <PlaceholderTab label={nature === 'received' ? 'بدهی ما' : 'طلب ما'} />,
+    },
+    {
+      id: 'stone',
+      label: 'سنگ',
+      icon: Sparkles,
+      content: stoneTabContent ?? <PlaceholderTab label="عملیات سنگ" />,
+    },
+    { id: 'goods', label: 'کالا', icon: Package, content: <PlaceholderTab label="کالا" /> },
+    {
+      id: 'income-expense',
+      label: nature === 'received' ? 'درآمد' : 'هزینه',
+      icon: Banknote,
+      content: <PlaceholderTab label={nature === 'received' ? 'ثبت درآمد' : 'ثبت هزینه'} />,
     },
     {
       id: 'workmanship',

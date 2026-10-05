@@ -131,6 +131,8 @@ export async function POST(request: Request) {
       silver: totals.silverAmount,
       platinum: totals.platinumAmount,
       stone: stoneBalances.carats || 0,
+      stoneCredit: stoneBalances.creditCarats || 0,
+      stoneDebit: stoneBalances.debitCarats || 0,
       foreign: currencyBalances[activeCurrency] ?? (activeCurrency === normalizeCurrencyCode(customer.secondaryCurrency) ? totals.foreignAmount : 0),
       tertiary: totals.tertiaryAmount,
       secondaryCurrency: resolvedSecondary,
@@ -146,6 +148,8 @@ export async function POST(request: Request) {
       silver: 0,
       platinum: 0,
       stone: 0,
+      stoneCredit: 0,
+      stoneDebit: 0,
       foreign: 0,
       tertiary: 0,
     };
@@ -205,7 +209,12 @@ export async function POST(request: Request) {
       } else if (docTab === 'refining' && details.refiningOpKind === 'fee') {
         rialAmount = numberValue(details.totalAmount);
       } else if (docTab === 'bank') {
-        rialAmount = numberValue(details.totalAmount || details.amount);
+        const rawBankAmt = numberValue(details.totalAmount || details.amount);
+        const isToman =
+          details.currencyUnit === 'IRT' ||
+          details.baseCurrency === 'IRT' ||
+          body?.baseCurrency === 'IRT';
+        rialAmount = isToman && !details.rialAmountInIrr ? convertTomanToRial(rawBankAmt) : rawBankAmt;
       } else if (docTab === 'coin') {
         rialAmount = numberValue(details.totalAmount);
       } else if (docTab === 'workmanship') {
@@ -267,6 +276,20 @@ export async function POST(request: Request) {
           const rawGrams = numberValue(details.stoneGrams);
           const weightCt = rawCarats || (rawGrams > 0 ? gramsToCarats(rawGrams) : 0);
           transactionEffect.stone += direction * weightCt;
+
+          const isPurchase =
+            lineNature === 'received' ||
+            opKind === 'purchase' ||
+            opKind === 'unsettled_purchase' ||
+            opKind === 'entry' ||
+            subType === 'stone-purchase' ||
+            subType === 'stone-unsettled-purchase' ||
+            subType === 'stone-entry';
+          if (isPurchase) {
+            transactionEffect.stoneDebit += weightCt;
+          } else {
+            transactionEffect.stoneCredit += weightCt;
+          }
         }
 
         const isUnsettledStone =
@@ -299,6 +322,8 @@ export async function POST(request: Request) {
       silver: previousBalance.silver + transactionEffect.silver,
       platinum: previousBalance.platinum + transactionEffect.platinum,
       stone: previousBalance.stone + transactionEffect.stone,
+      stoneCredit: previousBalance.stoneCredit + transactionEffect.stoneCredit,
+      stoneDebit: previousBalance.stoneDebit + transactionEffect.stoneDebit,
       foreign: previousBalance.foreign + transactionEffect.foreign,
       tertiary: previousBalance.tertiary + transactionEffect.tertiary,
     };

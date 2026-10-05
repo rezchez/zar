@@ -6,33 +6,34 @@ import {
   ArrowRightLeft,
   ArrowUpRight,
   Building2,
-  Check,
-  ChevronDown,
   CreditCard,
+  Edit3,
   FileText,
+  Landmark,
   ListPlus,
-  LoaderCircle,
   Plus,
   Wallet,
-  X,
 } from 'lucide-react';
+import Link from 'next/link';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
-import { formatRials, searchBanks, type BankAccount } from '@/lib/bank';
+import { formatBankSelectOptionLabel, formatRials, getConvertedBankAmount, type BankAccount } from '@/lib/bank';
 import type { Customer } from '@/lib/customer';
-import { formatJalaliDate, normalizeDigits } from '@/lib/jalali';
+import { formatJalaliDate, isTodayOrPastJalaliDate, normalizeDigits } from '@/lib/jalali';
 import {
   formatCurrencyAmount,
-  getReadableCurrencyAmount,
   parseLocalizedAmount,
-  SUPPORTED_CURRENCIES,
 } from '@/lib/money';
-import BankLogo from '@/src/components/documents/BankLogo';
+
+const getBankOptionLabel = formatBankSelectOptionLabel;
 import Field from '@/src/components/documents/Field';
-import AccountTreeSelector from '@/src/components/accounting/AccountTreeSelector';
+import { useAppSettings } from '@/src/components/SettingsProvider';
 import DatePicker from '@/components/ui/date-picker';
 import { PriceInput } from '@/components/ui/price-input';
 import SayadInput from '@/components/ui/sayad-input';
+import { useToastManager } from '@/components/ui/toast';
+import AddBankAccountModal from '@/features/banks/components/AddBankAccountModal';
+import BankAccountSelect from '@/features/banks/components/BankAccountSelect';
 import type { DetailState, DocumentLine } from '@/src/components/documents/RawGoldTab';
 
 type BankOperationKind =
@@ -54,11 +55,7 @@ type BankTabProps = {
   updateDraftDetail?: <K extends keyof DetailState>(field: K, value: DetailState[K]) => void;
   handleKeyDownEnter?: (event: React.KeyboardEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => void;
   draftReady?: boolean;
-};
-
-type Notice = {
-  tone: 'success' | 'error' | 'warning';
-  text: string;
+  baseCurrency?: 'IRR' | 'IRT';
 };
 
 // Module-level in-memory cache for bank accounts across tab switches
@@ -100,7 +97,13 @@ export default function BankTab({
   updateDraftDetail,
   handleKeyDownEnter,
   draftReady = false,
+  baseCurrency,
 }: BankTabProps) {
+  const { settings, formatMoney } = useAppSettings();
+  const toast = useToastManager();
+  const effectiveBaseCurrency = (baseCurrency || settings?.baseCurrency || 'IRR') as 'IRR' | 'IRT';
+  const currencySuffix = effectiveBaseCurrency === 'IRT' ? 'تومان' : 'ریال';
+
   const [banks, setBanks] = useState<BankAccount[]>(() => cachedBanks || []);
   const [search, setSearch] = useState('');
   const [selectedSource, setSelectedSource] = useState(() => (cachedBanks && cachedBanks.length > 0 ? cachedBanks[0].id : ''));
@@ -109,25 +112,18 @@ export default function BankTab({
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
   const [loading, setLoading] = useState(false);
-  const [notice, setNotice] = useState<Notice | null>(null);
 
   // Bank Creation Modal States
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [newBankName, setNewBankName] = useState('');
-  const [bankSearchQuery, setBankSearchQuery] = useState('');
-  const [bankDropdownOpen, setBankDropdownOpen] = useState(false);
-  const [newBranchName, setNewBranchName] = useState('');
-  const [newAccountNumber, setNewAccountNumber] = useState('');
-  const [newBalance, setNewBalance] = useState('0');
-  const [newCurrency, setNewCurrency] = useState('IRR');
-  const [newAccountId, setNewAccountId] = useState<string | null>(null);
 
   // Check Issuance States
   const [checkNumber, setCheckNumber] = useState('');
   const [sayadId, setSayadId] = useState('');
   const [dueDateJalali, setDueDateJalali] = useState(() => formatJalaliDate());
 
-  const bankDropdownRef = useRef<HTMLDivElement>(null);
+  // Transfer Fee & Tracking States
+  const [transferFee, setTransferFee] = useState('');
+  const [trackingNumber, setTrackingNumber] = useState('');
 
   const customerName = selectedCustomer ? selectedCustomer.name : 'طرف‌حساب';
 
@@ -139,15 +135,25 @@ export default function BankTab({
     { value: 'check-payment', label: 'پرداخت چک از حساب بانکی', icon: CreditCard },
     { value: 'pay-to-customer', label: `پرداخت وجه به ${customerName} از حساب بانکی`, icon: ArrowUpRight },
     { value: 'receive-from-customer', label: `دریافت وجه از ${customerName} به حساب بانکی`, icon: ArrowDownLeft },
-    { value: 'cash-to-bank', label: 'واریز وجه نقد از صندوق به حساب بانکی', icon: Wallet },
-    { value: 'bank-to-cash', label: 'برداشت وجه از حساب بانکی به صندوق', icon: Wallet },
-    { value: 'bank-to-bank', label: 'انتقال حساب به حساب', icon: ArrowRightLeft },
   ];
 
   async function loadBanks() {
-    const loaded = await fetchBankAccounts(true);
-    setBanks(loaded);
+    try {
+      const loaded = await fetchBankAccounts(true);
+      setBanks(loaded);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'دریافت حساب‌های بانکی انجام نشد.');
+    }
   }
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const searchParams = new URLSearchParams(window.location.search);
+    const paramKind = searchParams.get('kind') || searchParams.get('operation');
+    if (paramKind && ['check-payment', 'pay-to-customer', 'receive-from-customer', 'cash-to-bank', 'bank-to-cash', 'bank-to-bank'].includes(paramKind)) {
+      setKind(paramKind as BankOperationKind);
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -162,10 +168,7 @@ export default function BankTab({
       })
       .catch((error: unknown) => {
         if (!cancelled && (!cachedBanks || cachedBanks.length === 0)) {
-          setNotice({
-            tone: 'error',
-            text: error instanceof Error ? error.message : 'دریافت حساب‌ها انجام نشد.',
-          });
+          toast.error(error instanceof Error ? error.message : 'دریافت حساب‌های بانکی انجام نشد.');
         }
       });
     return () => {
@@ -173,88 +176,48 @@ export default function BankTab({
     };
   }, []);
 
+  const checkPaymentBanks = useMemo(() => {
+    return banks.filter((b) => Boolean(b.hasCheckbook || b.hasVirtualCheck));
+  }, [banks]);
+
   useEffect(() => {
-    function closeOnOutsideClick(event: MouseEvent) {
-      if (bankDropdownRef.current && !bankDropdownRef.current.contains(event.target as Node)) {
-        setBankDropdownOpen(false);
+    if (kind === 'check-payment') {
+      const isValid = checkPaymentBanks.some((b) => b.id === selectedSource);
+      if (!isValid) {
+        setSelectedSource(checkPaymentBanks[0]?.id || '');
+      }
+    } else {
+      const isValid = banks.some((b) => b.id === selectedSource);
+      if (!isValid && banks.length > 0) {
+        setSelectedSource(banks[0].id);
       }
     }
-    document.addEventListener('mousedown', closeOnOutsideClick);
-    return () => document.removeEventListener('mousedown', closeOnOutsideClick);
-  }, []);
-
-  const filteredIranianBanks = useMemo(() => {
-    return searchBanks(bankSearchQuery);
-  }, [bankSearchQuery]);
+  }, [kind, checkPaymentBanks, banks, selectedSource]);
 
   const numericAmount = parseLocalizedAmount(amount);
+  const numericTransferFee = parseLocalizedAmount(transferFee);
+  const totalBankDeduction = numericAmount + numericTransferFee;
   const selectedSourceAccount = banks.find((b) => b.id === selectedSource);
   const rawSourceBalance = selectedSourceAccount
     ? (selectedSourceAccount.currentBalance ?? selectedSourceAccount.balance ?? 0)
     : 0;
 
+  const convertedSourceBalance = selectedSourceAccount
+    ? getConvertedBankAmount(rawSourceBalance, selectedSourceAccount.currency, effectiveBaseCurrency).amount
+    : 0;
+
   const normalizedSayad = normalizeDigits(sayadId).replace(/\D/g, '');
   const isSayadValid = normalizedSayad.length === 16;
-  const isBalanceSufficient = numericAmount <= rawSourceBalance;
-
-  async function createBank(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true);
-    setNotice(null);
-    try {
-      if (!newBankName) throw new Error('انتخاب نام بانک الزامی است.');
-      if (!newAccountNumber) throw new Error('شماره حساب الزامی است.');
-
-      // Check duplicate
-      const isDuplicate = banks.some(
-        (b) => b.bankName === newBankName && b.accountNumber === newAccountNumber,
-      );
-      if (isDuplicate) throw new Error('حساب بانکی با این شماره حساب قبلاً ثبت شده است.');
-
-      const response = await fetch('/api/banks', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          bankName: newBankName,
-          branchName: newBranchName,
-          accountNumber: newAccountNumber,
-          currentBalance: parseLocalizedAmount(newBalance),
-          currency: newCurrency,
-          accountId: newAccountId || null,
-          accountCodeZero: '0',
-          isActive: true,
-        }),
-      });
-      const data = (await response.json()) as { bank?: BankAccount; message?: string };
-      if (!response.ok || !data.bank) throw new Error(data.message ?? 'ثبت حساب بانکی انجام نشد.');
-
-      const newBank = data.bank as BankAccount;
-      setBanks((current) => [...current, newBank]);
-      cachedBanks = [...(cachedBanks || []), newBank];
-      setSelectedSource(newBank.id);
-
-      // Reset Modal form
-      setNewBankName('');
-      setNewBranchName('');
-      setNewAccountNumber('');
-      setNewBalance('0');
-      setNewCurrency('IRR');
-      setNewAccountId(null);
-      setShowCreateModal(false);
-      setNotice({ tone: 'success', text: 'حساب بانکی جدید با موفقیت ایجاد شد.' });
-    } catch (error) {
-      setNotice({ tone: 'error', text: error instanceof Error ? error.message : 'ثبت حساب انجام نشد.' });
-    } finally {
-      setLoading(false);
-    }
-  }
+  const isBalanceSufficient = numericAmount <= convertedSourceBalance;
+  const isPayToCustomerBalanceSufficient = totalBankDeduction <= convertedSourceBalance;
+  const isTodayCheck = isTodayOrPastJalaliDate(dueDateJalali);
 
   // Keep draftLine details synchronized so external commit (e.g. from pinned lines panel) works seamlessly
   useEffect(() => {
     const opLabel = operationOptions.find((o) => o.value === kind)?.label || 'عملیات بانکی';
     setDraftLine((current) => ({
       ...current,
-      documentTab: 'cash',
+      documentTab: 'bank',
       sourceTab: 'bank',
       documentNature: nature,
       documentTypeLabel: opLabel,
@@ -262,15 +225,21 @@ export default function BankTab({
       details: {
         ...current.details,
         totalAmount: String(numericAmount),
+        transferFee: numericTransferFee > 0 ? String(numericTransferFee) : '',
+        trackingNumber: trackingNumber.trim(),
         bankAccountId: selectedSource,
         destinationBankId: selectedDestination,
         bankName: selectedSourceAccount?.bankName || '',
         bankBranch: selectedSourceAccount?.branchName || '',
         accountNumber: selectedSourceAccount?.accountNumber || '',
+        bankAccountBalance: convertedSourceBalance,
+        rawBankAccountBalance: rawSourceBalance,
         checkNumber: checkNumber.trim(),
         sayadId: normalizedSayad,
         dueDateJalali,
         bankOperationKind: kind,
+        currencyUnit: effectiveBaseCurrency,
+        baseCurrency: effectiveBaseCurrency,
       },
     }));
   }, [
@@ -278,60 +247,125 @@ export default function BankTab({
     nature,
     description,
     numericAmount,
+    numericTransferFee,
+    trackingNumber,
+    convertedSourceBalance,
+    rawSourceBalance,
     selectedSource,
     selectedDestination,
     selectedSourceAccount,
     checkNumber,
     normalizedSayad,
     dueDateJalali,
+    effectiveBaseCurrency,
     setDraftLine,
   ]);
+
+  // Synchronize state when editing an existing line or when draftLine is reset after commit
+  const lastDraftIdRef = useRef(draftLine.id);
+  useEffect(() => {
+    if (editingLineId && draftLine.id === editingLineId) {
+      setAmount(draftLine.details?.totalAmount || '');
+      setTransferFee(draftLine.details?.transferFee || '');
+      setTrackingNumber(draftLine.details?.trackingNumber || '');
+      setCheckNumber(draftLine.details?.checkNumber || '');
+      setSayadId(draftLine.details?.sayadId || '');
+      setDueDateJalali(draftLine.details?.dueDateJalali || formatJalaliDate());
+      setDescription(draftLine.description || '');
+      if (draftLine.details?.bankAccountId) {
+        setSelectedSource(draftLine.details.bankAccountId);
+      }
+      if (draftLine.details?.destinationBankId) {
+        setSelectedDestination(draftLine.details.destinationBankId);
+      }
+      if (draftLine.details?.bankOperationKind) {
+        setKind(draftLine.details.bankOperationKind as BankOperationKind);
+      }
+      lastDraftIdRef.current = draftLine.id;
+    } else if (lastDraftIdRef.current !== draftLine.id && !editingLineId) {
+      lastDraftIdRef.current = draftLine.id;
+      setAmount('');
+      setTransferFee('');
+      setTrackingNumber('');
+      setCheckNumber('');
+      setSayadId('');
+      setDueDateJalali(formatJalaliDate());
+      setDescription('');
+      setSelectedDestination('');
+    }
+  }, [draftLine.id, editingLineId, draftLine.details, draftLine.description]);
 
   // Sync state into draft line when committing
   function handleCommitLine() {
     if (!commitDraftLine) return;
 
-    if (selectedSourceAccount?.isBlocked) {
-      setNotice({
-        tone: 'error',
-        text: 'این حساب بانکی مسدود است و امکان ثبت تراکنش جدید برای آن وجود ندارد.',
-      });
+    if (!selectedSourceAccount) {
+      toast.error('حساب بانکی پرداخت‌کننده را انتخاب کنید.');
+      return;
+    }
+
+    if (selectedSourceAccount.isBlocked) {
+      toast.error('این حساب بانکی مسدود است و امکان ثبت تراکنش جدید برای آن وجود ندارد.');
       return;
     }
 
     if (kind === 'bank-to-bank') {
+      if (!selectedDestination) {
+        toast.error('حساب بانکی مقصد را انتخاب کنید.');
+        return;
+      }
+      if (selectedSource === selectedDestination) {
+        toast.error('حساب مبدأ و مقصد نمی‌توانند یکسان باشند.');
+        return;
+      }
       const destAccount = banks.find((b) => b.id === selectedDestination);
       if (destAccount?.isBlocked) {
-        setNotice({
-          tone: 'error',
-          text: 'حساب بانکی مقصد مسدود است و امکان ثبت تراکنش جدید برای آن وجود ندارد.',
-        });
+        toast.error('حساب بانکی مقصد مسدود است و امکان ثبت تراکنش جدید برای آن وجود ندارد.');
         return;
       }
     }
 
     if (kind === 'check-payment') {
+      if (!selectedSourceAccount.hasCheckbook && !selectedSourceAccount.hasVirtualCheck) {
+        toast.error('حساب بانکی انتخاب شده دارای دسته چک فیزیکی یا مجازی فعال نیست.');
+        return;
+      }
       if (!checkNumber.trim()) {
-        setNotice({
-          tone: 'error',
-          text: 'شماره چک الزامی است.',
-        });
+        toast.error('شماره چک الزامی است.');
         return;
       }
       if (!isSayadValid) {
-        setNotice({
-          tone: 'error',
-          text: 'شناسه صیاد باید ۱۶ رقم باشد.',
-        });
+        toast.error('شناسه صیاد باید ۱۶ رقم باشد.');
         return;
       }
+    }
+
+    if (kind === 'pay-to-customer') {
+      if (numericAmount <= 0) {
+        toast.error('مبلغ پرداختی به طرف‌حساب باید بیشتر از صفر باشد.');
+        return;
+      }
+      if (!isPayToCustomerBalanceSufficient) {
+        toast.error(`مجموع مبلغ پرداختی و کارمزد (${Number(totalBankDeduction).toLocaleString('fa-IR')} ${currencySuffix}) از موجودی حساب بانکی (${Number(convertedSourceBalance).toLocaleString('fa-IR')} ${currencySuffix}) بیشتر است. امکان برداشت بیش از موجودی وجود ندارد.`);
+        return;
+      }
+    }
+
+    if (numericAmount <= 0) {
+      toast.error('مبلغ تراکنش بانکی باید بیشتر از صفر باشد.');
+      return;
+    }
+
+    // Check day warning
+    if (kind === 'check-payment' && isTodayCheck && !isBalanceSufficient) {
+      toast.warning('با توجه به اینکه چک در حال صدور به تاریخ امروز می‌باشد، لذا نسبت به افزایش موجودی حساب بانکی اقدام نمایید و سپس چک را صادر کنید.');
     }
 
     const opLabel = operationOptions.find((o) => o.value === kind)?.label || 'عملیات بانکی';
 
     setDraftLine((current) => ({
       ...current,
-      documentTab: 'cash',
+      documentTab: 'bank',
       sourceTab: 'bank',
       documentNature: nature,
       documentTypeLabel: opLabel,
@@ -339,41 +373,39 @@ export default function BankTab({
       details: {
         ...current.details,
         totalAmount: String(numericAmount),
+        transferFee: numericTransferFee > 0 ? String(numericTransferFee) : '',
+        trackingNumber: trackingNumber.trim(),
         bankAccountId: selectedSource,
         destinationBankId: selectedDestination,
         bankName: selectedSourceAccount?.bankName || '',
         bankBranch: selectedSourceAccount?.branchName || '',
         accountNumber: selectedSourceAccount?.accountNumber || '',
+        bankAccountBalance: convertedSourceBalance,
+        rawBankAccountBalance: rawSourceBalance,
         checkNumber: checkNumber.trim(),
         sayadId: normalizedSayad,
         dueDateJalali,
         bankOperationKind: kind,
+        currencyUnit: effectiveBaseCurrency,
+        baseCurrency: effectiveBaseCurrency,
       },
     }));
 
     commitDraftLine();
+
+    // After temporary registration of check / bank row, clear all fields
+    setAmount('');
+    setTransferFee('');
+    setTrackingNumber('');
+    setCheckNumber('');
+    setSayadId('');
+    setDueDateJalali(formatJalaliDate());
+    setDescription('');
+    setSelectedDestination('');
   }
 
   return (
     <div className="space-y-4" dir="rtl">
-      {/* Notice Banner */}
-      {notice ? (
-        <div
-          className={`flex items-center justify-between p-3 rounded-xl text-xs font-bold ${
-            notice.tone === 'success'
-              ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
-              : notice.tone === 'warning'
-                ? 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
-                : 'bg-rose-50 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
-          }`}
-        >
-          <span>{notice.text}</span>
-          <button type="button" onClick={() => setNotice(null)} className="p-1">
-            <X size={14} />
-          </button>
-        </div>
-      ) : null}
-
       {/* Top Controls: Operation Kind Selector & Add Bank Button */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-800 pb-3">
         <div className="flex flex-wrap gap-1.5">
@@ -386,7 +418,6 @@ export default function BankTab({
                 key={opt.value}
                 onClick={() => {
                   setKind(opt.value);
-                  setNotice(null);
                 }}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
                   isSelected
@@ -401,14 +432,23 @@ export default function BankTab({
           })}
         </div>
 
-        <button
-          type="button"
-          onClick={() => setShowCreateModal(true)}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 text-amber-800 dark:text-amber-300 hover:bg-amber-500/20 rounded-xl text-xs font-extrabold transition-colors border border-amber-500/30 cursor-pointer"
-        >
-          <Plus size={14} />
-          حساب جدید
-        </button>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/dashboard/documents/initial-inventory/bank"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-colors border border-slate-300/80 dark:border-slate-700 cursor-pointer shadow-sm"
+          >
+            <Edit3 size={14} />
+            ویرایش حساب‌های بانکی
+          </Link>
+          <button
+            type="button"
+            onClick={() => setShowCreateModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 text-amber-800 dark:text-amber-300 hover:bg-amber-500/20 rounded-xl text-xs font-extrabold transition-colors border border-amber-500/30 cursor-pointer"
+          >
+            <Plus size={14} />
+            حساب جدید
+          </button>
+        </div>
       </div>
 
       {/* Dynamic Operation Form */}
@@ -417,49 +457,56 @@ export default function BankTab({
           <Building2 className="mx-auto text-amber-500 mb-2" size={32} />
           <p className="text-xs font-bold text-slate-700 dark:text-slate-300">هنوز هیچ حساب بانکی ثبت نشده است.</p>
           <p className="text-[11px] text-slate-500 mt-1">برای ثبت عملیات چک یا واریز/برداشت، ابتدا یک حساب بانکی تعریف کنید.</p>
-          <button
-            type="button"
-            onClick={() => setShowCreateModal(true)}
-            className="mt-3 px-4 py-2 bg-amber-500 text-slate-950 font-extrabold rounded-xl text-xs inline-flex items-center gap-1.5 shadow cursor-pointer"
-          >
-            <Plus size={14} />
-            افزودن حساب بانکی
-          </button>
+          <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+            <Link
+              href="/dashboard/documents/initial-inventory/bank"
+              className="px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-extrabold rounded-xl text-xs inline-flex items-center gap-1.5 shadow-sm cursor-pointer border border-slate-300 dark:border-slate-700 transition-colors"
+            >
+              <Edit3 size={14} />
+              تعریف موجودی اولیه حساب بانکی
+            </Link>
+            <button
+              type="button"
+              onClick={() => setShowCreateModal(true)}
+              className="px-4 py-2 bg-amber-500 text-slate-950 font-extrabold rounded-xl text-xs inline-flex items-center gap-1.5 shadow cursor-pointer"
+            >
+              <Plus size={14} />
+              افزودن حساب بانکی
+            </button>
+          </div>
         </div>
       ) : kind === 'check-payment' ? (
         /* Check Payment Form */
         <div className="grid gap-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-900/60">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <Field label="حساب بانکی پرداخت‌کننده">
-              <select
-                value={selectedSource}
-                onChange={(e) => setSelectedSource(e.target.value)}
-                className="h-10 text-xs"
-              >
-                {banks.map((bank) => (
-                  <option key={bank.id} value={bank.id}>
-                    {bank.isBlocked ? '⛔ [مسدود] ' : ''}{bank.bankName} {bank.branchName ? `(${bank.branchName})` : ''} · {formatCurrencyAmount(bank.currentBalance ?? bank.balance, bank.currency)}
-                    {bank.accountCode ? ` [کدینگ: ${bank.accountCode}]` : ''}
-                  </option>
-                ))}
-              </select>
+          <div className="grid gap-3 grid-cols-1 sm:grid-cols-12 items-start">
+            <Field
+              label="حساب بانکی پرداخت‌کننده"
+              className="sm:col-span-5"
+              action={
+                <Link
+                  href="/dashboard/documents/initial-inventory/bank"
+                  className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 dark:text-amber-400 hover:underline"
+                >
+                  <Edit3 size={12} />
+                  ویرایش حساب‌ها
+                </Link>
+              }
+            >
+              {checkPaymentBanks.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50 p-2 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                  <span>هیچ حساب بانکی دارای دسته چک فیزیکی یا مجازی فعال یافت نشد.</span>
+                </div>
+              ) : (
+                <BankAccountSelect
+                  value={selectedSource}
+                  onChange={(bankId) => setSelectedSource(bankId)}
+                  banks={checkPaymentBanks}
+                  placeholder="انتخاب حساب بانکی..."
+                />
+              )}
             </Field>
 
-            <Field label="مبلغ چک">
-              <PriceInput
-                value={amount}
-                onValueChange={(parsed, rawVal) => {
-                  setAmount(rawVal);
-                  updateDraftDetail?.('totalAmount', String(parsed || 0));
-                }}
-                baseCurrency="IRR"
-                currencySuffix="ریال"
-                placeholder="۰"
-                showWords
-              />
-            </Field>
-
-            <Field label="شماره چک">
+            <Field label="شماره چک" className="sm:col-span-3">
               <input
                 value={checkNumber}
                 onChange={(e) => {
@@ -471,7 +518,38 @@ export default function BankTab({
               />
             </Field>
 
-            <Field label="شناسه ۱۶ رقمی صیاد">
+            {/* PersianLabs Jalali Due Date */}
+            <Field label="تاریخ سررسید چک" className="sm:col-span-4">
+              <DatePicker
+                value={dueDateJalali}
+                onValueChange={(_iso, jalali) => {
+                  if (jalali) {
+                    setDueDateJalali(jalali);
+                    updateDraftDetail?.('dueDateJalali', jalali);
+                  }
+                }}
+                calendarType="shamsi"
+                showSecondary={false}
+                format="yyyy/MM/dd"
+                placeholder="انتخاب تاریخ سررسید"
+              />
+            </Field>
+
+            <Field label={`مبلغ چک (${currencySuffix})`} className="sm:col-span-6">
+              <PriceInput
+                value={amount}
+                onValueChange={(parsed, rawVal) => {
+                  setAmount(rawVal);
+                  updateDraftDetail?.('totalAmount', String(parsed || 0));
+                }}
+                baseCurrency={effectiveBaseCurrency}
+                currencySuffix={currencySuffix}
+                placeholder="۰"
+                showWords
+              />
+            </Field>
+
+            <Field label="شناسه ۱۶ رقمی صیاد" className="sm:col-span-6">
               <SayadInput
                 value={sayadId}
                 onChange={(e) => {
@@ -483,23 +561,7 @@ export default function BankTab({
               />
             </Field>
 
-            {/* PersianLabs Jalali Due Date */}
-            <Field label="تاریخ سررسید چک">
-              <DatePicker
-                value={dueDateJalali}
-                onValueChange={(_iso, jalali) => {
-                  if (jalali) {
-                    setDueDateJalali(jalali);
-                    updateDraftDetail?.('dueDateJalali', jalali);
-                  }
-                }}
-                calendarType="shamsi"
-                format="yyyy/MM/dd"
-                placeholder="انتخاب تاریخ سررسید"
-              />
-            </Field>
-
-            <Field label="بابت / شرح چک" wide>
+            <Field label="بابت / شرح چک" className="sm:col-span-12" wide>
               <textarea
                 value={description}
                 onChange={(e) => {
@@ -513,117 +575,222 @@ export default function BankTab({
 
           {/* Insufficient Balance Alert */}
           {numericAmount > 0 && !isBalanceSufficient ? (
-            <div className="flex items-center gap-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-800 dark:text-amber-300 text-xs font-bold">
-              <FileText size={15} />
-              <span>مبلغ چک از موجودی فعلی حساب بیشتر است.</span>
+            isTodayCheck ? (
+              <div className="flex items-start gap-2.5 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-200 text-xs font-semibold leading-relaxed">
+                <AlertCircle size={16} className="shrink-0 text-amber-600 mt-0.5" />
+                <span>
+                  <strong>هشدار چک روز:</strong> با توجه به اینکه چک در حال صدور به تاریخ امروز می‌باشد، لذا نسبت به افزایش موجودی حساب بانکی اقدام نمایید و سپس چک را صادر کنید.
+                </span>
+              </div>
+            ) : (
+              <div className="flex items-start gap-2.5 p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-900 dark:text-blue-200 text-xs leading-relaxed">
+                <FileText size={16} className="shrink-0 text-blue-600 mt-0.5" />
+                <span>
+                  <strong>یادآوری:</strong> مبلغ چک از موجودی فعلی حساب بیشتر است. این چک به عنوان اسناد پرداختنی ثبت شده و در سررسید ({dueDateJalali}) پاس خواهد شد.
+                </span>
+              </div>
+            )
+          ) : null}
+        </div>
+      ) : kind === 'pay-to-customer' ? (
+        /* Direct Payment to Customer Form */
+        <div className="grid gap-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-900/60">
+          <div className="grid gap-3 grid-cols-1 sm:grid-cols-12 items-start">
+            <Field
+              label="حساب بانکی پرداخت‌کننده"
+              className="sm:col-span-6"
+              action={
+                <Link
+                  href="/dashboard/documents/initial-inventory/bank"
+                  className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 dark:text-amber-400 hover:underline"
+                >
+                  <Edit3 size={12} />
+                  ویرایش حساب‌ها
+                </Link>
+              }
+            >
+              <BankAccountSelect
+                value={selectedSource}
+                onChange={(bankId) => setSelectedSource(bankId)}
+                banks={banks}
+                placeholder="انتخاب حساب بانکی..."
+              />
+            </Field>
+
+            <Field label={`مبلغ پرداختی (${currencySuffix})`} className="sm:col-span-6">
+              <PriceInput
+                value={amount}
+                onValueChange={(parsed, rawVal) => {
+                  setAmount(rawVal);
+                  updateDraftDetail?.('totalAmount', String(parsed || 0));
+                }}
+                baseCurrency={effectiveBaseCurrency}
+                currencySuffix={currencySuffix}
+                placeholder="۰"
+                showWords
+              />
+            </Field>
+
+            <Field
+              label={`کارمزد انتقال وجه (${currencySuffix})`}
+              className="sm:col-span-6"
+              action={<span className="text-[10px] text-slate-500 font-normal">اختیاری</span>}
+            >
+              <PriceInput
+                value={transferFee}
+                onValueChange={(parsed, rawVal) => {
+                  setTransferFee(rawVal);
+                  updateDraftDetail?.('transferFee', String(parsed || 0));
+                }}
+                baseCurrency={effectiveBaseCurrency}
+                currencySuffix={currencySuffix}
+                placeholder="۰ (اختیاری)"
+                showWords
+              />
+            </Field>
+
+            <Field
+              label="شماره پیگیری / ارجاع حواله"
+              className="sm:col-span-6"
+              action={<span className="text-[10px] text-slate-500 font-normal">اختیاری</span>}
+            >
+              <input
+                value={trackingNumber}
+                onChange={(e) => {
+                  setTrackingNumber(e.target.value);
+                  updateDraftDetail?.('trackingNumber', e.target.value);
+                }}
+                placeholder="کد پیگیری، ارجاع، شماره فیش..."
+                className="h-10 text-xs font-mono"
+              />
+            </Field>
+
+            <Field label="شرح پرداخت / بابت" className="sm:col-span-12" wide>
+              <textarea
+                value={description}
+                onChange={(e) => {
+                  setDescription(e.target.value);
+                  setDraftLine((curr) => ({ ...curr, description: e.target.value }));
+                }}
+                placeholder={`شرح انتقال وجه به ${customerName}...`}
+              />
+            </Field>
+          </div>
+
+          {/* Balance breakdown and overdraft alert */}
+          {numericAmount > 0 ? (
+            <div className="space-y-2">
+              {!isPayToCustomerBalanceSufficient ? (
+                <div className="flex items-start gap-2.5 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-900 dark:text-rose-200 text-xs font-semibold leading-relaxed">
+                  <AlertCircle size={16} className="shrink-0 text-rose-600 mt-0.5" />
+                  <div>
+                    <p className="font-bold">موجودی حساب بانکی کافی نیست:</p>
+                    <p className="mt-0.5">
+                      مجموع مبلغ پرداختی و کارمزد ({formatMoney(totalBankDeduction)} {currencySuffix}) از موجودی فعلی حساب بانکی ({formatMoney(rawSourceBalance)} {currencySuffix}) بیشتر است.
+                      امکان برداشت وجه بیش از موجودی از حساب بانکی وجود ندارد.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-xl bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs">
+                  <div className="flex flex-wrap items-center gap-4 text-slate-700 dark:text-slate-300">
+                    <span>موجودی فعلی حساب: <strong>{formatMoney(rawSourceBalance)}</strong> {currencySuffix}</span>
+                    {numericTransferFee > 0 ? (
+                      <span>کارمزد انتقال: <strong>{formatMoney(numericTransferFee)}</strong> {currencySuffix}</span>
+                    ) : null}
+                    <span>مجموع کسر از حساب: <strong className="text-amber-600 dark:text-amber-400">{formatMoney(totalBankDeduction)}</strong> {currencySuffix}</span>
+                  </div>
+                  <div className="text-emerald-700 dark:text-emerald-400 font-bold">
+                    مانده پس از تراکنش: {formatMoney(rawSourceBalance - totalBankDeduction)} {currencySuffix}
+                  </div>
+                </div>
+              )}
             </div>
           ) : null}
         </div>
-      ) : kind === 'bank-to-bank' ? (
-        /* Bank to Bank Transfer Form */
-        <div className="grid gap-3 sm:grid-cols-2 p-4 rounded-2xl border border-slate-200 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-900/60">
-          <Field label="حساب مبدأ">
-            <select
-              value={selectedSource}
-              onChange={(e) => setSelectedSource(e.target.value)}
-              className="h-10 text-xs"
+      ) : kind === 'receive-from-customer' ? (
+        /* Receive from Customer Form */
+        <div className="grid gap-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-900/60">
+          <div className="grid gap-3 grid-cols-1 sm:grid-cols-12 items-start">
+            <Field
+              label="حساب بانکی واریز شونده"
+              className="sm:col-span-6"
+              action={
+                <Link
+                  href="/dashboard/documents/initial-inventory/bank"
+                  className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 dark:text-amber-400 hover:underline"
+                >
+                  <Edit3 size={12} />
+                  ویرایش حساب‌ها
+                </Link>
+              }
             >
-              <option value="">انتخاب حساب مبدأ...</option>
-              {banks.map((bank) => (
-                <option key={bank.id} value={bank.id}>
-                  {bank.isBlocked ? '⛔ [مسدود] ' : ''}{bank.bankName} {bank.branchName ? `(${bank.branchName})` : ''} · {formatRials(bank.currentBalance ?? bank.balance)}
-                  {bank.accountCode ? ` [کد: ${bank.accountCode}]` : ''}
-                </option>
-              ))}
-            </select>
-          </Field>
+              <BankAccountSelect
+                value={selectedSource}
+                onChange={(bankId) => setSelectedSource(bankId)}
+                banks={banks}
+                placeholder="انتخاب حساب بانکی..."
+              />
+            </Field>
 
-          <Field label="حساب مقصد">
-            <select
-              value={selectedDestination}
-              onChange={(e) => setSelectedDestination(e.target.value)}
-              className="h-10 text-xs"
+            <Field label={`مبلغ دریافتی (${currencySuffix})`} className="sm:col-span-6">
+              <PriceInput
+                value={amount}
+                onValueChange={(parsed, rawVal) => {
+                  setAmount(rawVal);
+                  updateDraftDetail?.('totalAmount', String(parsed || 0));
+                }}
+                baseCurrency={effectiveBaseCurrency}
+                currencySuffix={currencySuffix}
+                placeholder="۰"
+                showWords
+              />
+            </Field>
+
+            <Field
+              label="شماره پیگیری / ارجاع واریز"
+              className="sm:col-span-12"
+              action={<span className="text-[10px] text-slate-500 font-normal">اختیاری</span>}
             >
-              <option value="">انتخاب حساب مقصد...</option>
-              {banks.map((bank) => (
-                <option key={bank.id} value={bank.id}>
-                  {bank.isBlocked ? '⛔ [مسدود] ' : ''}{bank.bankName} {bank.branchName ? `(${bank.branchName})` : ''} · {formatRials(bank.currentBalance ?? bank.balance)}
-                  {bank.accountCode ? ` [کد: ${bank.accountCode}]` : ''}
-                </option>
-              ))}
-            </select>
-          </Field>
+              <input
+                value={trackingNumber}
+                onChange={(e) => {
+                  setTrackingNumber(e.target.value);
+                  updateDraftDetail?.('trackingNumber', e.target.value);
+                }}
+                placeholder="کد پیگیری، ارجاع، شماره فیش..."
+                className="h-10 text-xs font-mono"
+              />
+            </Field>
 
-          <Field label="مبلغ انتقال (ریال)" wide>
-            <PriceInput
-              value={amount}
-              onValueChange={(parsed, rawVal) => {
-                setAmount(rawVal);
-                updateDraftDetail?.('totalAmount', String(parsed || 0));
-              }}
-              baseCurrency="IRR"
-              currencySuffix="ریال"
-              placeholder="۰"
-              showWords
-            />
-          </Field>
-
-          <Field label="شرح انتقال" wide>
-            <textarea
-              value={description}
-              onChange={(e) => {
-                setDescription(e.target.value);
-                setDraftLine((curr) => ({ ...curr, description: e.target.value }));
-              }}
-              placeholder="شرح انتقال حساب به حساب..."
-            />
-          </Field>
+            <Field label="شرح دریافت / بابت" className="sm:col-span-12" wide>
+              <textarea
+                value={description}
+                onChange={(e) => {
+                  setDescription(e.target.value);
+                  setDraftLine((curr) => ({ ...curr, description: e.target.value }));
+                }}
+                placeholder={`شرح دریافت وجه از ${customerName}...`}
+              />
+            </Field>
+          </div>
         </div>
-      ) : (
-        /* Other Operations (Pay/Receive Customer, Cash to Bank, Bank to Cash) */
-        <div className="grid gap-3 sm:grid-cols-2 p-4 rounded-2xl border border-slate-200 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-900/60">
-          <Field label="حساب بانکی">
-            <select
-              value={selectedSource}
-              onChange={(e) => setSelectedSource(e.target.value)}
-              className="h-10 text-xs"
-            >
-              <option value="">انتخاب حساب بانکی...</option>
-              {banks.map((bank) => (
-                <option key={bank.id} value={bank.id}>
-                  {bank.isBlocked ? '⛔ [مسدود] ' : ''}{bank.bankName} {bank.branchName ? `(${bank.branchName})` : ''} · {formatRials(bank.currentBalance ?? bank.balance)}
-                  {bank.accountCode ? ` [کد: ${bank.accountCode}]` : ''}
-                </option>
-              ))}
-            </select>
-          </Field>
+      ) : null}
 
-          <Field label="مبلغ (ریال)">
-            <PriceInput
-              value={amount}
-              onValueChange={(parsed, rawVal) => {
-                setAmount(rawVal);
-                updateDraftDetail?.('totalAmount', String(parsed || 0));
-              }}
-              baseCurrency="IRR"
-              currencySuffix="ریال"
-              placeholder="۰"
-              showWords
-            />
-          </Field>
-
-          <Field label="شرح عملیات" wide>
-            <textarea
-              value={description}
-              onChange={(e) => {
-                setDescription(e.target.value);
-                setDraftLine((curr) => ({ ...curr, description: e.target.value }));
-              }}
-              placeholder="توضیحات تکمیلی..."
-            />
-          </Field>
-        </div>
-      )}
+      {/* Info Banner: Internal Bank & Cash Operations Moved to Bank Section */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 text-xs text-slate-600 dark:bg-slate-900/40 dark:border-slate-800 dark:text-slate-400">
+        <span className="flex items-center gap-2">
+          <Landmark size={15} className="text-amber-500 shrink-0" />
+          <span>جهت انتقال حساب به حساب یا واریز و برداشت وجه با صندوق‌ها، به بخش «بانک» مراجعه نمایید.</span>
+        </span>
+        <Link
+          href="/dashboard/documents/initial-inventory/bank"
+          className="inline-flex items-center gap-1 font-bold text-amber-700 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-300 transition shrink-0"
+        >
+          <span>رفتن به عملیات بانکی</span>
+          <ArrowRightLeft size={13} />
+        </Link>
+      </div>
 
       {/* Blocked Bank Account Warning */}
       {selectedSourceAccount?.isBlocked ? (
@@ -639,9 +806,11 @@ export default function BankTab({
           <button
             type="button"
             className={`document-commit-line-button shadow-lg max-w-sm ${
-              selectedSourceAccount?.isBlocked ? 'opacity-50 cursor-not-allowed bg-slate-400 dark:bg-slate-700' : 'cursor-pointer'
+              selectedSourceAccount?.isBlocked || (kind === 'pay-to-customer' && numericAmount > 0 && !isPayToCustomerBalanceSufficient)
+                ? 'opacity-50 cursor-not-allowed bg-slate-400 dark:bg-slate-700'
+                : 'cursor-pointer'
             }`}
-            disabled={Boolean(selectedSourceAccount?.isBlocked)}
+            disabled={Boolean(selectedSourceAccount?.isBlocked) || (kind === 'pay-to-customer' && numericAmount > 0 && !isPayToCustomerBalanceSufficient)}
             onClick={handleCommitLine}
           >
             <ListPlus size={16} /> {editingLineId ? 'ثبت اصلاح ردیف' : 'ثبت ردیف'}
@@ -650,153 +819,15 @@ export default function BankTab({
       ) : null}
 
       {/* MODAL: ADD NEW BANK ACCOUNT */}
-      {showCreateModal ? (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 dir-rtl">
-          <form
-            onSubmit={createBank}
-            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 max-w-lg w-full space-y-4 shadow-2xl text-right"
-          >
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-              <h3 className="font-extrabold text-sm text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                <Building2 size={18} className="text-amber-600" />
-                افزودن حساب بانکی جدید و اتصال به کدینگ
-              </h3>
-              <button type="button" onClick={() => setShowCreateModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              {/* Searchable Bank Select */}
-              <div className="space-y-1 relative" ref={bankDropdownRef}>
-                <label className="text-xs font-bold text-slate-600 dark:text-slate-300">نام بانک *</label>
-                <button
-                  type="button"
-                  onClick={() => setBankDropdownOpen((v) => !v)}
-                  className="flex h-10 w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-3 text-xs dark:border-slate-700 dark:bg-slate-800 cursor-pointer"
-                >
-                  <span className="flex items-center gap-2 min-w-0">
-                    {newBankName ? <BankLogo bankName={newBankName} size={22} /> : null}
-                    <span className={`truncate ${newBankName ? 'font-bold' : 'text-slate-400'}`}>
-                      {newBankName || 'انتخاب نام بانک...'}
-                    </span>
-                  </span>
-                  <ChevronDown size={15} className="shrink-0" />
-                </button>
-
-                {bankDropdownOpen ? (
-                  <div className="absolute top-full z-30 mt-1 max-h-56 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-700 dark:bg-slate-800">
-                    <input
-                      value={bankSearchQuery}
-                      onChange={(e) => setBankSearchQuery(e.target.value)}
-                      placeholder="جست‌وجوی بانک یا کد..."
-                      className="mb-2 w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-900"
-                      autoFocus
-                    />
-                    {filteredIranianBanks.length === 0 ? (
-                      <p className="p-2 text-center text-xs text-slate-400">بانکی با این نام یافت نشد.</p>
-                    ) : (
-                      filteredIranianBanks.map((bank) => (
-                        <button
-                          type="button"
-                          key={bank.id}
-                          onClick={() => {
-                            setNewBankName(bank.name);
-                            setBankDropdownOpen(false);
-                          }}
-                          className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-right text-xs transition ${
-                            newBankName === bank.name
-                              ? 'bg-amber-50 font-bold text-amber-900 dark:bg-amber-950/40 dark:text-amber-200'
-                              : 'hover:bg-slate-100 dark:hover:bg-slate-700/60'
-                          }`}
-                        >
-                          <BankLogo bankId={bank.id} bankName={bank.name} size={24} />
-                          <span className="truncate">{bank.name}</span>
-                        </button>
-                      ))
-                    )}
-                  </div>
-                ) : null}
-              </div>
-
-              <Field label="نام شعبه">
-                <input
-                  value={newBranchName}
-                  onChange={(e) => setNewBranchName(e.target.value)}
-                  placeholder="مثلاً: مرکزی"
-                  className="h-10 text-xs"
-                />
-              </Field>
-
-              <Field label="شماره حساب *">
-                <input
-                  value={newAccountNumber}
-                  onChange={(e) => setNewAccountNumber(e.target.value)}
-                  placeholder="شماره حساب یا شبا"
-                  className="h-10 text-xs"
-                  required
-                />
-              </Field>
-
-              <Field label="واحد پولی حساب *">
-                <select
-                  value={newCurrency}
-                  onChange={(e) => setNewCurrency(e.target.value)}
-                  className="h-10 text-xs"
-                >
-                  {Object.values(SUPPORTED_CURRENCIES).map((curr) => (
-                    <option key={curr.code} value={curr.code}>
-                      {curr.faName} ({curr.code})
-                    </option>
-                  ))}
-                </select>
-              </Field>
-
-              <Field label="موجودی اولیه / فعلی *" wide>
-                <PriceInput
-                  value={newBalance}
-                  onValueChange={(_parsed, rawVal) => {
-                    setNewBalance(rawVal);
-                  }}
-                  baseCurrency="IRR"
-                  currencySuffix="ریال"
-                  placeholder="۰"
-                  showWords
-                />
-              </Field>
-
-              {/* Tree Selector for Chart of Accounts Linkage */}
-              <div className="sm:col-span-2">
-                <AccountTreeSelector
-                  value={newAccountId}
-                  onChange={(id) => setNewAccountId(id)}
-                  filterType="asset"
-                  label="اتصال به سرفصل کدینگ حسابداری"
-                  placeholder="انتخاب سرفصل از درختواره حساب‌ها..."
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-              <button
-                type="button"
-                onClick={() => setShowCreateModal(false)}
-                className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold rounded-xl text-xs cursor-pointer"
-              >
-                انصراف
-              </button>
-              <button
-                type="submit"
-                disabled={loading}
-                className="px-4 py-2 bg-amber-500 text-slate-950 font-extrabold rounded-xl hover:bg-amber-400 text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
-              >
-                {loading ? <LoaderCircle size={15} className="animate-spin" /> : <Check size={15} />}
-                ایجاد حساب بانکی
-              </button>
-            </div>
-          </form>
-        </div>
-      ) : null}
+      <AddBankAccountModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onSuccess={async (newBank) => {
+          await loadBanks();
+          setSelectedSource(newBank.id);
+          toast.success(`حساب بانکی «${newBank.bankName}» با موفقیت ایجاد شد.`);
+        }}
+      />
     </div>
   );
 }

@@ -144,3 +144,18 @@ export function isoToJalaliString(isoString: string): string {
   const jalali = gregorianToJalali(parts[0], parts[1], parts[2]);
   return `${jalali.year}/${String(jalali.month).padStart(2, '0')}/${String(jalali.day).padStart(2, '0')}`;
 }
+
+export function isTodayOrPastJalaliDate(value: string | undefined | null): boolean {
+  if (!value) return false;
+  const target = parseJalaliDate(value);
+  if (!target) return false;
+  const today = parseJalaliDate(formatJalaliDate());
+  if (!today) return false;
+
+  if (target.year < today.year) return true;
+  if (target.year > today.year) return false;
+  if (target.month < today.month) return true;
+  if (target.month > today.month) return false;
+  return target.day <= today.day;
+}
+

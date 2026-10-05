@@ -16,7 +16,7 @@ import {
   getCurrenciesForBaseCurrency,
   type Currency,
 } from '@/lib/currencies';
-import type { DetailState, DocumentLine, MeltedInventoryItem } from '@/src/components/documents/RawGoldTab';
+import type { DetailState, DocumentLine, MeltedInventoryItem, RawOperationKind } from '@/src/components/documents/RawGoldTab';
 
 // Document entry tabs
 import DocumentEntryTabs from '@/src/components/documents/DocumentEntryTabs';
@@ -72,14 +72,14 @@ import {
 export const VALID_ENTRY_TABS = [
   'metals',
   'gold-sale',
-  'goods',
-  'currency',
-  'stone',
   'coin',
-  'cash',
+  'currency',
   'bank',
-  'income-expense',
+  'cash',
   'claim',
+  'stone',
+  'goods',
+  'income-expense',
   'workmanship',
 ] as const;
 
@@ -323,12 +323,35 @@ export default function DocumentForm({
     selectedCurrency,
   });
 
-  // URL hash sync
+  // URL hash & search params sync
   useEffect(() => {
-    const handleHashChange = () => {
+    const handleLocationSync = () => {
+      if (typeof window === 'undefined') return;
       const hash = window.location.hash.replace('#', '');
-      if (hash && (VALID_ENTRY_TABS as readonly string[]).includes(hash)) {
-        const validTab = hash as ValidEntryTab;
+      const searchParams = new URLSearchParams(window.location.search);
+      const paramTab = searchParams.get('tab') || '';
+      const paramKind = searchParams.get('kind') || searchParams.get('rawKind') || '';
+
+      let targetTab: ValidEntryTab | null = null;
+      let targetKind: RawOperationKind | null = null;
+
+      if (hash === 'conditional' || paramKind === 'conditional') {
+        targetTab = 'metals';
+        targetKind = 'conditional';
+      } else if (hash === 'gold-sale' || hash === 'invoice' || paramTab === 'gold-sale') {
+        targetTab = 'gold-sale';
+      } else if (hash === 'cash' || paramTab === 'cash') {
+        targetTab = 'cash';
+      } else if (hash === 'bank' || hash === 'cheque' || hash === 'check' || paramTab === 'bank') {
+        targetTab = 'bank';
+      } else if (hash && (VALID_ENTRY_TABS as readonly string[]).includes(hash)) {
+        targetTab = hash as ValidEntryTab;
+      } else if (paramTab && (VALID_ENTRY_TABS as readonly string[]).includes(paramTab)) {
+        targetTab = paramTab as ValidEntryTab;
+      }
+
+      if (targetTab) {
+        const validTab = targetTab;
         setActiveEntryTab(validTab);
         setDraftLine((current) => {
           const normDoc = (selectedCurrency || '').trim().toUpperCase();
@@ -340,6 +363,9 @@ export default function DocumentForm({
           const isValidForeignUnit = validForeignCurrencies.includes(currentUnit);
           const curUnit = isValidForeignUnit ? current.details.currencyUnit : fallbackAlt;
           const isFromCurrencyTab = current.sourceTab === 'currency' || current.documentTab === 'currency';
+
+          const effectiveRawKind = targetKind || (validTab === 'metals' && current.details?.rawKind ? current.details.rawKind : 'molten');
+
           return {
             ...current,
             documentTab:
@@ -353,6 +379,7 @@ export default function DocumentForm({
                       ? 'stone'
                       : 'raw-gold',
             sourceTab: validTab,
+            settlementMethod: effectiveRawKind === 'unsettled' ? 'unsettled' : current.settlementMethod,
             documentSubType:
               validTab === 'gold-sale'
                 ? `${documentNature === 'received' ? 'gold-purchase' : 'gold-sale'}-${current.details?.rawKind || 'molten'}`
@@ -363,10 +390,11 @@ export default function DocumentForm({
                     : validTab === 'stone'
                       ? (documentNature === 'received' ? 'stone-purchase' : 'stone-sale')
                       : validTab === 'metals'
-                        ? documentSubType(documentNature, current.details?.rawKind || 'molten')
+                        ? documentSubType(documentNature, effectiveRawKind)
                         : current.documentSubType,
             details: {
               ...current.details,
+              rawKind: effectiveRawKind,
               currencyUnit: validTab === 'currency' ? curUnit : current.details?.currencyUnit,
               settlementCurrencyUnit: validTab === 'currency' ? (selectedCurrency || 'IRR') : current.details?.settlementCurrencyUnit,
               currencyQuantity: validTab === 'currency' && !isFromCurrencyTab && !editingLineId ? '' : current.details?.currencyQuantity,
@@ -377,9 +405,13 @@ export default function DocumentForm({
         });
       }
     };
-    handleHashChange();
-    window.addEventListener('hashchange', handleHashChange);
-    return () => window.removeEventListener('hashchange', handleHashChange);
+    handleLocationSync();
+    window.addEventListener('hashchange', handleLocationSync);
+    window.addEventListener('popstate', handleLocationSync);
+    return () => {
+      window.removeEventListener('hashchange', handleLocationSync);
+      window.removeEventListener('popstate', handleLocationSync);
+    };
   }, [documentNature]);
 
   // Restore locked customer from localStorage
@@ -575,12 +607,17 @@ export default function DocumentForm({
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           customerId: selectedCustomerId,
+          baseCurrency,
           lines: committedLines.map((line) => ({
             documentNature: line.documentNature,
             documentTab: line.documentTab,
             sourceTab: line.sourceTab,
             converted750: line.converted750,
-            details: line.details,
+            details: {
+              ...line.details,
+              currencyUnit: line.details?.currencyUnit || (line.documentTab === 'bank' || line.sourceTab === 'bank' ? baseCurrency : undefined),
+              baseCurrency: line.details?.baseCurrency || (line.documentTab === 'bank' || line.sourceTab === 'bank' ? baseCurrency : undefined),
+            },
           })),
         }),
         signal: controller.signal,
@@ -649,7 +686,15 @@ export default function DocumentForm({
                   ? 'coin'
                   : validTab === 'stone'
                     ? 'stone'
-                    : 'raw-gold',
+                    : validTab === 'bank'
+                      ? 'bank'
+                      : validTab === 'cash'
+                        ? 'cash'
+                        : validTab === 'claim'
+                          ? 'claim'
+                          : validTab === 'workmanship'
+                            ? 'workmanship'
+                            : 'raw-gold',
           sourceTab: validTab,
           documentSubType:
             validTab === 'gold-sale'
@@ -1082,6 +1127,19 @@ export default function DocumentForm({
                 : 0;
             const stoneForeignAmount = isUnsettledStone && isForeignStone ? rawStoneAmount : 0;
 
+            const isBankRow = line.documentTab === 'bank' || line.sourceTab === 'bank';
+            const isBankToman =
+              isBankRow &&
+              (line.details.currencyUnit === 'IRT' ||
+                line.details.baseCurrency === 'IRT' ||
+                baseCurrency === 'IRT');
+            const rawBankAmount = isBankRow
+              ? numberValue(line.details.totalAmount || '')
+              : 0;
+            const bankRialAmount = isBankToman
+              ? convertTomanToRial(rawBankAmount)
+              : Math.round(rawBankAmount);
+
             return {
               documentNature: line.documentNature,
               documentTab: line.documentTab,
@@ -1096,24 +1154,34 @@ export default function DocumentForm({
                     settlementCurrencyUnit: stoneCurrency || line.details.settlementCurrencyUnit || baseCurrency,
                     rialAmountInIrr: true,
                   }
-                : line.details,
+                : isBankRow
+                  ? {
+                      ...line.details,
+                      currencyUnit: isBankToman ? 'IRT' : 'IRR',
+                      baseCurrency,
+                      amountInIrr: bankRialAmount,
+                      rialAmountInIrr: true,
+                    }
+                  : line.details,
               goldAmount: isMetalRow && metalType === 'gold' ? weightValue : 0,
               silverAmount: isMetalRow && metalType === 'silver' ? weightValue : 0,
               platinumAmount: isMetalRow && metalType === 'platinum' ? weightValue : 0,
               rialAmount:
                 isStoneRow
                   ? stoneRialAmount
-                  : line.documentTab === 'currency'
-                    ? (line.documentSubType === 'currency-claim' || line.documentSubType === 'currency-debt'
-                        ? 0
-                        : numberValue(line.details.currencyTotalAmount))
-                    : line.documentTab === 'cash' && !line.details.isForeignCash
-                      ? numberValue(line.details.totalAmount)
-                      : line.documentTab === 'gold-sale'
+                  : isBankRow
+                    ? bankRialAmount
+                    : line.documentTab === 'currency'
+                      ? (line.documentSubType === 'currency-claim' || line.documentSubType === 'currency-debt'
+                          ? 0
+                          : numberValue(line.details.currencyTotalAmount))
+                      : line.documentTab === 'cash' && !line.details.isForeignCash
                         ? numberValue(line.details.totalAmount)
-                        : line.documentTab === 'refining' && line.details.refiningOpKind === 'fee'
+                        : line.documentTab === 'gold-sale'
                           ? numberValue(line.details.totalAmount)
-                          : numberValue(line.details.totalAmount || ''),
+                          : line.documentTab === 'refining' && line.details.refiningOpKind === 'fee'
+                            ? numberValue(line.details.totalAmount)
+                            : numberValue(line.details.totalAmount || ''),
               foreignAmount:
                 isStoneRow
                   ? stoneForeignAmount
@@ -1569,6 +1637,7 @@ export default function DocumentForm({
               updateDraftDetail={updateDraftDetail}
               handleKeyDownEnter={handleKeyDownEnter}
               draftReady={draftReady}
+              baseCurrency={baseCurrency}
             />
           )}
           cashTabContent={(

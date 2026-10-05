@@ -6,7 +6,7 @@ import { getServerAuthContext } from '@/lib/auth';
 import { ensureChecksCollection } from '@/lib/check-collection';
 import { mapCheckRecord, type CheckStatus, type ChequeType } from '@/lib/check';
 import { formatJalaliDate, jalaliDateToIso, normalizeDigits } from '@/lib/jalali';
-import { parseLocalizedAmount } from '@/lib/money';
+import { convertTomanToRial, parseLocalizedAmount } from '@/lib/money';
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
 import { generateUniqueZfDocumentNumber } from '@/lib/document-number';
 import { postPayableChequeIssue, postReceivableChequeReceipt } from '@/lib/accounting-posting-engine';
@@ -153,9 +153,21 @@ export async function POST(request: Request) {
       );
     }
     const bankAccount = mapBankAccount(rawBankAccount);
+    if (chequeType === 'payable' && !bankAccount.hasCheckbook && !bankAccount.hasVirtualCheck) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: 'BANK_ACCOUNT_NO_CHECKBOOK',
+          message: 'حساب بانکی انتخاب شده دارای دسته چک فیزیکی یا مجازی فعال نیست.',
+        },
+        { status: 400 },
+      );
+    }
     const customer = await writer.collection('customers').getOne(customerId);
 
     const documentId = text(body?.documentId, 80) || randomUUID();
+    const isToman = currency === 'IRT' || text(body?.baseCurrency, 16) === 'IRT';
+    const accountingAmount = isToman ? convertTomanToRial(amount) : amount;
 
     // 1. Create Check record
     const checkRecord = await writer.collection('checks').create({
@@ -164,8 +176,8 @@ export async function POST(request: Request) {
       sayadId: normalizedSayadId,
       check_number: normalizedCheckNumber || normalizedSayadId,
       checkNumber: normalizedCheckNumber || normalizedSayadId,
-      amount,
-      currency,
+      amount: accountingAmount,
+      currency: bankAccount.currency || 'IRR',
       description,
       chequeType,
       issueDate: issueDateIso,
@@ -188,10 +200,12 @@ export async function POST(request: Request) {
       journalResult = await postPayableChequeIssue(
         {
           id: checkRecord.id,
-          amount,
+          amount: accountingAmount,
           sayadId: normalizedSayadId,
+          checkNumber: normalizedCheckNumber,
           description,
           dueDateJalali,
+          issueDateJalali,
           bankAccount: bankAccount.id,
           customer: customer.id,
         },
@@ -199,6 +213,7 @@ export async function POST(request: Request) {
           id: customer.id,
           name: customer.name,
           customerCode: Number(customer.customerCode ?? 0),
+          accountId: (customer as any).accountId || null,
         },
         bankAccount,
         context.user.id,

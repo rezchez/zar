@@ -67,7 +67,7 @@ export function getLineDocumentTypeLabel(
   }
 
   if (tab === 'goods') {
-    return nature === 'received' ? 'ورود کالا و جواهر' : 'خروج کالا و جواهر';
+    return nature === 'received' ? 'ورود کالا' : 'خروج کالا';
   }
 
   if (tab === 'stone') {

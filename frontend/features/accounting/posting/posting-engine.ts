@@ -82,6 +82,7 @@ export const SYSTEM_ACCOUNT_CODES = {
   REFINING_EXPENSE: '5500',
   ROUNDING_EXPENSE: '6500',
   ROUNDING_INCOME: '4300',
+  BANK_EXPENSE: '6300',
 } as const;
 
 /**
@@ -504,25 +505,31 @@ export async function postPayableChequeIssue(
     id: string;
     amount: number;
     sayadId: string;
+    checkNumber?: string;
     description: string;
     dueDateJalali: string;
+    issueDateJalali?: string;
     bankAccount: string;
     customer: string;
     payableAccountId?: string | null;
   },
-  customer: { id: string; name: string; customerCode?: number },
+  customer: { id: string; name: string; customerCode?: number; accountId?: string | null },
   bankAccount: BankAccount,
   userId: string,
   pb: PocketBase,
 ): Promise<JournalEntryResult> {
   const amount = Math.round(cheque.amount);
   const payableAccount = cheque.payableAccountId || SYSTEM_ACCOUNT_CODES.NOTES_PAYABLE;
-  const liabilityAccount = SYSTEM_ACCOUNT_CODES.COUNTERPARTY_LIABILITY;
+  const liabilityAccount = customer.accountId || SYSTEM_ACCOUNT_CODES.COUNTERPARTY_LIABILITY;
 
-  const desc = `صدور چک صیادی ${cheque.sayadId} به سررسید ${cheque.dueDateJalali} به نام ${customer.name} — ${cheque.description}`;
+  const chequeLabel = cheque.checkNumber
+    ? (cheque.sayadId ? `شماره ${cheque.checkNumber} (صیاد ${cheque.sayadId})` : `شماره ${cheque.checkNumber}`)
+    : (cheque.sayadId ? `صیاد ${cheque.sayadId}` : cheque.id);
+  const desc = `صدور چک ${chequeLabel} به سررسید ${cheque.dueDateJalali} به نام ${customer.name} — ${cheque.description}`;
 
   return postJournalEntry(
     {
+      entryDateJalali: cheque.issueDateJalali,
       description: desc,
       sourceType: 'cheque_issue',
       sourceId: cheque.id,
@@ -533,15 +540,16 @@ export async function postPayableChequeIssue(
           accountId: liabilityAccount,
           debit: amount,
           credit: 0,
-          description: `بدهکار طرف‌حساب: ${customer.name}`,
+          description: `بدهکار طرف‌حساب: ${customer.name} (بابت صدور چک ${chequeLabel})`,
           partyId: customer.id,
+          bankAccountId: bankAccount.id,
           chequeId: cheque.id,
         },
         {
           accountId: payableAccount,
           debit: 0,
           credit: amount,
-          description: `بستانکار اسناد پرداختنی (چک ${cheque.sayadId})`,
+          description: `بستانکار اسناد پرداختنی (چک ${chequeLabel} - ${bankAccount.bankName})`,
           partyId: customer.id,
           bankAccountId: bankAccount.id,
           chequeId: cheque.id,
@@ -694,7 +702,8 @@ export async function postPayableChequeClear(
   cheque: {
     id: string;
     amount: number;
-    sayadId: string;
+    sayadId?: string;
+    checkNumber?: string;
     description: string;
     bankAccount: string;
     customer: string;
@@ -710,7 +719,10 @@ export async function postPayableChequeClear(
   const payableAccount = cheque.payableAccountId || SYSTEM_ACCOUNT_CODES.NOTES_PAYABLE;
   const bankCodingAccount = bankAccount.accountId || SYSTEM_ACCOUNT_CODES.CASH_AND_BANK;
 
-  const desc = `وصول چک پرداختنی صیادی ${cheque.sayadId} از حساب ${bankAccount.bankName} به نام ${customerName}`;
+  const chequeLabel = cheque.checkNumber
+    ? (cheque.sayadId ? `شماره ${cheque.checkNumber} (صیاد ${cheque.sayadId})` : `شماره ${cheque.checkNumber}`)
+    : (cheque.sayadId ? `صیادی ${cheque.sayadId}` : cheque.id);
+  const desc = `وصول چک پرداختنی ${chequeLabel} از حساب ${bankAccount.bankName} به نام ${customerName}`;
 
   const journal = await postJournalEntry(
     {
@@ -725,7 +737,8 @@ export async function postPayableChequeClear(
           accountId: payableAccount,
           debit: amount,
           credit: 0,
-          description: `تسویه اسناد پرداختنی (چک ${cheque.sayadId})`,
+          description: `تسویه اسناد پرداختنی (چک ${chequeLabel})`,
+          partyId: cheque.customer || undefined,
           bankAccountId: bankAccount.id,
           chequeId: cheque.id,
         },
@@ -733,7 +746,8 @@ export async function postPayableChequeClear(
           accountId: bankCodingAccount,
           debit: 0,
           credit: amount,
-          description: `برداشت از حساب بانکی ${bankAccount.bankName} (${bankAccount.accountNumber})`,
+          description: `برداشت از حساب بانکی ${bankAccount.bankName} (${bankAccount.accountNumber}) بابت وصول چک ${chequeLabel}`,
+          partyId: cheque.customer || undefined,
           bankAccountId: bankAccount.id,
           chequeId: cheque.id,
         },
@@ -1329,6 +1343,8 @@ export async function postPayableChequeReturn(
           debit: amount,
           credit: 0,
           description: `ابطال اسناد پرداختنی بابت برگشت چک ${cheque.sayadId}`,
+          partyId: customer.id,
+          bankAccountId: bankAccount.id,
           chequeId: cheque.id,
         },
         {
@@ -1337,6 +1353,7 @@ export async function postPayableChequeReturn(
           credit: amount,
           description: `احیای بدهی به طرف‌حساب ${customer.name}`,
           partyId: customer.id,
+          bankAccountId: bankAccount.id,
           chequeId: cheque.id,
         },
       ],
@@ -1955,4 +1972,174 @@ export async function postStonePurchase(
     writer,
   );
 }
+
+/**
+ * Bank Payment to Customer Accounting Integration (Direct Outflow / Transfer):
+ * - Debit: Counterparty Liability (2120 - بستانکاران تجاری / طرف‌حساب‌ها) for principal amount
+ * - Debit (if transferFee > 0): Bank / Financial Expenses (6300 - هزینه‌های مالی و بانکی / کارمزد بانکی) for transfer fee
+ * - Credit: Cash & Bank (1110 or bankAccount.accountId) for (amount + transferFee)
+ */
+export async function postBankPaymentToCustomer(
+  params: {
+    documentId: string;
+    documentNumber?: string;
+    entryDateJalali?: string;
+    amount: number; // IRR (paid to customer)
+    transferFee?: number; // IRR (bank transfer fee)
+    customer: { id: string; name: string; customerCode?: number; accountId?: string | null };
+    bankAccount: BankAccount;
+    userId: string;
+    description?: string;
+    trackingNumber?: string;
+  },
+  pb: PocketBase,
+): Promise<JournalEntryResult> {
+  const amount = Math.round(params.amount);
+  const transferFee = Math.round(params.transferFee || 0);
+  const totalDeduction = amount + transferFee;
+
+  if (amount <= 0) {
+    throw new Error('مبلغ پرداختی به طرف‌حساب باید بیشتر از صفر باشد.');
+  }
+
+  let writer = pb;
+  if (!(pb as any)._store) {
+    try {
+      const { getPocketBaseServiceClient } = await import('@/lib/pocketbase-service');
+      writer = await getPocketBaseServiceClient();
+    } catch {
+      writer = pb;
+    }
+  }
+
+  const liabilityAccount = params.customer.accountId || SYSTEM_ACCOUNT_CODES.COUNTERPARTY_LIABILITY;
+  const bankAccountAcc = params.bankAccount.accountId || SYSTEM_ACCOUNT_CODES.CASH_AND_BANK;
+  const bankExpenseAccount = SYSTEM_ACCOUNT_CODES.BANK_EXPENSE;
+
+  const trackingNote = params.trackingNumber ? ` (شماره پیگیری: ${params.trackingNumber})` : '';
+  const feeNote = transferFee > 0 ? ` [کارمزد: ${transferFee.toLocaleString('fa-IR')} ریال]` : '';
+  const desc =
+    params.description ||
+    `پرداخت وجه به طرف‌حساب ${params.customer.name} از حساب بانکی ${params.bankAccount.bankName}${feeNote}${trackingNote}`;
+
+  const lines: JournalLineInput[] = [
+    {
+      accountId: liabilityAccount,
+      debit: amount,
+      credit: 0,
+      description: `بدهکار طرف‌حساب: ${params.customer.name} بابت پرداخت از حساب ${params.bankAccount.bankName}`,
+      partyId: params.customer.id,
+      bankAccountId: params.bankAccount.id,
+    },
+  ];
+
+  if (transferFee > 0) {
+    lines.push({
+      accountId: bankExpenseAccount,
+      debit: transferFee,
+      credit: 0,
+      description: `هزینه‌های مالی و بانکی: کارمزد انتقال وجه حساب ${params.bankAccount.bankName}`,
+      partyId: params.customer.id,
+      bankAccountId: params.bankAccount.id,
+    });
+  }
+
+  lines.push({
+    accountId: bankAccountAcc,
+    debit: 0,
+    credit: totalDeduction,
+    description: `بستانکار بانک: ${params.bankAccount.bankName} ${params.bankAccount.branchName ? `(${params.bankAccount.branchName})` : ''} - حساب ${params.bankAccount.accountNumber || ''}`,
+    partyId: params.customer.id,
+    bankAccountId: params.bankAccount.id,
+  });
+
+  return postJournalEntry(
+    {
+      entryDateJalali: params.entryDateJalali,
+      description: desc,
+      sourceType: 'bank_transfer',
+      sourceId: params.documentId,
+      sourceKey: `bank:payment:${params.documentId}`,
+      userId: params.userId,
+      lines,
+    },
+    writer,
+  );
+}
+
+/**
+ * Bank Receipt from Customer Accounting Integration (Direct Inflow):
+ * - Debit: Cash & Bank (1110 or bankAccount.accountId) for amount
+ * - Credit: Counterparty Liability (2120 - بستانکاران تجاری / طرف‌حساب‌ها) for amount
+ */
+export async function postBankReceiptFromCustomer(
+  params: {
+    documentId: string;
+    documentNumber?: string;
+    entryDateJalali?: string;
+    amount: number; // IRR (received from customer)
+    customer: { id: string; name: string; customerCode?: number; accountId?: string | null };
+    bankAccount: BankAccount;
+    userId: string;
+    description?: string;
+    trackingNumber?: string;
+  },
+  pb: PocketBase,
+): Promise<JournalEntryResult> {
+  const amount = Math.round(params.amount);
+  if (amount <= 0) {
+    throw new Error('مبلغ دریافتی از طرف‌حساب باید بیشتر از صفر باشد.');
+  }
+
+  let writer = pb;
+  if (!(pb as any)._store) {
+    try {
+      const { getPocketBaseServiceClient } = await import('@/lib/pocketbase-service');
+      writer = await getPocketBaseServiceClient();
+    } catch {
+      writer = pb;
+    }
+  }
+
+  const liabilityAccount = params.customer.accountId || SYSTEM_ACCOUNT_CODES.COUNTERPARTY_LIABILITY;
+  const bankAccountAcc = params.bankAccount.accountId || SYSTEM_ACCOUNT_CODES.CASH_AND_BANK;
+
+  const trackingNote = params.trackingNumber ? ` (شماره پیگیری: ${params.trackingNumber})` : '';
+  const desc =
+    params.description ||
+    `دریافت وجه از طرف‌حساب ${params.customer.name} به حساب بانکی ${params.bankAccount.bankName}${trackingNote}`;
+
+  const lines: JournalLineInput[] = [
+    {
+      accountId: bankAccountAcc,
+      debit: amount,
+      credit: 0,
+      description: `بدهکار بانک: ${params.bankAccount.bankName} ${params.bankAccount.branchName ? `(${params.bankAccount.branchName})` : ''} - حساب ${params.bankAccount.accountNumber || ''}`,
+      partyId: params.customer.id,
+      bankAccountId: params.bankAccount.id,
+    },
+    {
+      accountId: liabilityAccount,
+      debit: 0,
+      credit: amount,
+      description: `بستانکار طرف‌حساب: ${params.customer.name} بابت واریز به حساب ${params.bankAccount.bankName}`,
+      partyId: params.customer.id,
+      bankAccountId: params.bankAccount.id,
+    },
+  ];
+
+  return postJournalEntry(
+    {
+      entryDateJalali: params.entryDateJalali,
+      description: desc,
+      sourceType: 'bank_transfer',
+      sourceId: params.documentId,
+      sourceKey: `bank:receipt:${params.documentId}`,
+      userId: params.userId,
+      lines,
+    },
+    writer,
+  );
+}
+
 

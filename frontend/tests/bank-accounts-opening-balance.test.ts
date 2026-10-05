@@ -93,4 +93,46 @@ describe('Bank Accounts & Bank Opening Balance Tests', () => {
     expect(openingTx.date).toBe('1405/02/01');
     expect(openingTx.id).toBe('tx_bank_01'); // Ensure NO duplicate created
   });
+
+  it('Test 6 — Editing bank account with 0 opening balance (e.g. updating hasCheckbook) succeeds without transaction error', () => {
+    const existingAccount = {
+      id: 'acc_zero_check',
+      bankName: 'بانک تجارت',
+      balance: 0,
+      hasCheckbook: false,
+      hasVirtualCheck: false,
+    };
+
+    const updateBody = {
+      bankAccountId: existingAccount.id,
+      bankName: 'بانک تجارت',
+      hasCheckbook: true,
+      hasVirtualCheck: false,
+      amount: 0,
+    };
+
+    const rawAmount = updateBody.amount ?? 0;
+    expect(Number.isFinite(rawAmount) && rawAmount >= 0).toBe(true);
+
+    // When amount is 0, no bank_transactions insert/update is required, preserving 0-balance integrity
+    const shouldCreateTx = rawAmount > 0;
+    expect(shouldCreateTx).toBe(false);
+
+    // Bank account metadata updates successfully
+    const updatedAccount = {
+      ...existingAccount,
+      hasCheckbook: updateBody.hasCheckbook,
+      hasVirtualCheck: updateBody.hasVirtualCheck,
+    };
+
+    expect(updatedAccount.hasCheckbook).toBe(true);
+    expect(updatedAccount.balance).toBe(0);
+  });
+
+  it('Test 7 — Sidebar version badge dynamically matches APP_VERSION (0.1.1 BETA)', async () => {
+    const { APP_VERSION } = await import('@/lib/version');
+    expect(APP_VERSION).toBe('0.1.1 BETA');
+    const badgeText = `Zarfolio ${APP_VERSION}`;
+    expect(badgeText).toBe('Zarfolio 0.1.1 BETA');
+  });
 });

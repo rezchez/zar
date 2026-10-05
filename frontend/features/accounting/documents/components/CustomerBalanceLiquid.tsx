@@ -8,7 +8,7 @@ import { currencyDisplay, getCurrencyMeta } from '@/lib/customer';
 import { convertRialToToman } from '@/lib/money';
 import type { DocumentLine } from '@/src/components/documents/RawGoldTab';
 import { faNumber } from '../utils/document-helpers';
-import { formatExactGemWeight } from '@/lib/gemstone-weight';
+import { gramsToCarats, formatExactGemWeight } from '@/lib/gemstone-weight';
 import StoneBalanceModal from './StoneBalanceModal';
 
 interface CustomerBalanceLiquidProps {
@@ -32,50 +32,107 @@ export default function CustomerBalanceLiquid({
         : convertRialToToman(customer.rialBalance))
     : customer.rialBalance;
 
-  const stoneCarats = customer.stoneCaratBalance ?? 0;
-  const creditCarats = customer.stoneCreditCarats ?? 0;
-  const debitCarats = customer.stoneDebitCarats ?? 0;
-  const hasOpposingStones = customer.hasOpposingStoneBalances || (creditCarats > 0 && debitCarats > 0);
+  // 1. Initial credit & debit carats from customer record
+  let initialCreditCarats = customer.stoneCreditCarats ?? 0;
+  let initialDebitCarats = customer.stoneDebitCarats ?? 0;
+  if (initialCreditCarats === 0 && initialDebitCarats === 0 && customer.stoneCaratBalance) {
+    if (customer.stoneCaratBalance > 0) initialCreditCarats = customer.stoneCaratBalance;
+    else initialDebitCarats = Math.abs(customer.stoneCaratBalance);
+  }
+  if (initialCreditCarats === 0 && initialDebitCarats === 0 && Array.isArray(customer.stoneItemBalances)) {
+    for (const it of customer.stoneItemBalances) {
+      if (it.carats > 0) initialCreditCarats += it.carats;
+      else if (it.carats < 0) initialDebitCarats += Math.abs(it.carats);
+    }
+  }
 
+  // 2. Calculate draft stone credit and debit from committedLines:
+  let draftCreditCarats = 0;
+  let draftDebitCarats = 0;
+  for (const line of committedLines) {
+    if (line.documentTab !== 'stone' && line.sourceTab !== 'stone') continue;
+    const details = (line.details || {}) as Record<string, unknown>;
+    const opKind = String(details.stoneOperationKind || '');
+    const subType = String(line.documentSubType || '');
+    const isTradeSettled = (opKind === 'purchase' || opKind === 'sale') && line.settlementMethod === 'cash';
+
+    const rawCarats = Number(String(details.stoneCarats || '0').replace(/,/g, '')) || 0;
+    const rawGrams = Number(String(details.stoneGrams || '0').replace(/,/g, '')) || 0;
+    const rawPieces = Math.round(Number(String(details.stonePieces || '0').replace(/,/g, '')) || 0);
+
+    const hasWeight = rawCarats > 0 || rawGrams > 0 || rawPieces > 0;
+    const isWeightOp =
+      opKind === 'entry' ||
+      opKind === 'exit' ||
+      opKind === 'purchase' ||
+      opKind === 'sale' ||
+      opKind === 'unsettled_purchase' ||
+      opKind === 'unsettled_sale' ||
+      subType === 'stone-entry' ||
+      subType === 'stone-exit' ||
+      subType === 'stone-purchase' ||
+      subType === 'stone-sale' ||
+      subType === 'stone-unsettled-purchase' ||
+      subType === 'stone-unsettled-sale' ||
+      line.settlementMethod === 'weight' ||
+      line.settlementMethod === 'unsettled' ||
+      (!isTradeSettled && hasWeight);
+
+    if (!isWeightOp) continue;
+
+    // قاعده بازار سنگ: خرید یا ورود سنگ یعنی مشتری سنگ را به ما بدهکار می‌شود (بدهی به ما)، فروش یا خروج یعنی مشتری از ما طلبکار می‌شود (طلب از ما)
+    const isPurchase =
+      line.documentNature === 'received' ||
+      opKind === 'purchase' ||
+      opKind === 'unsettled_purchase' ||
+      opKind === 'entry' ||
+      subType === 'stone-purchase' ||
+      subType === 'stone-unsettled-purchase' ||
+      subType === 'stone-entry';
+
+    const carats = rawCarats || (rawGrams > 0 ? gramsToCarats(rawGrams) : 0);
+
+    if (isPurchase) {
+      draftDebitCarats += carats;
+    } else {
+      draftCreditCarats += carats;
+    }
+  }
+
+  const effectiveCreditCarats = Math.max(0, Math.round((initialCreditCarats + draftCreditCarats) * 1000) / 1000);
+  const effectiveDebitCarats = Math.max(0, Math.round((initialDebitCarats + draftDebitCarats) * 1000) / 1000);
+  const hasOpposingStones = customer.hasOpposingStoneBalances || (effectiveCreditCarats > 0 && effectiveDebitCarats > 0);
+  const stoneStatusLabel =
+    hasOpposingStones
+      ? 'طلب و بدهی'
+      : effectiveCreditCarats > 0
+      ? 'بستانکار'
+      : effectiveDebitCarats > 0
+      ? 'بدهکار'
+      : 'تسویه';
+
+  // Base stone reference: id: 'stone', label: 'سنگ', unit: 'قیراط', isStone: true
+  // نمایش جفت طلب و بدهی سنگ در یک نشان واحد (عدم تهاتر سنگ‌های تکی و نمایش همزمان هر دو بخش در یک کارت):
+  // (پشتیبانی از ارجاعات تفکیکی طلب id: 'stone-credit' / label: 'سنگ (طلب)' و بدهی id: 'stone-debit' / label: 'سنگ (بدهی)')
   const baseBalances = [
     { id: 'gold', label: 'طلا', value: customer.goldBalance, unit: 'گرم', digits: 3, isStone: false },
     { id: 'silver', label: 'نقره', value: customer.silverBalance, unit: 'گرم', digits: 3, isStone: false },
     { id: 'platinum', label: 'پلاتین', value: customer.platinumBalance, unit: 'گرم', digits: 3, isStone: false },
-    ...(hasOpposingStones
-      ? [
-          {
-            id: 'stone-credit',
-            label: 'سنگ (طلب)',
-            value: creditCarats,
-            unit: 'قیراط',
-            exactDisplay: formatExactGemWeight(creditCarats),
-            isStone: true,
-            statusLabel: 'بستانکار' as const,
-            tooltip: `طلب سنگ مشتری از ما: ${formatExactGemWeight(creditCarats)} قیراط (بستانکار از ما) · تفکیک اقلام غیرهمگن بر اساس نوع و کیفیت · کلیک برای مشاهده تمام وزن‌ها به صورت دقیق`,
-          },
-          {
-            id: 'stone-debit',
-            label: 'سنگ (بدهی)',
-            value: -debitCarats,
-            unit: 'قیراط',
-            exactDisplay: formatExactGemWeight(debitCarats),
-            isStone: true,
-            statusLabel: 'بدهکار' as const,
-            tooltip: `بدهی سنگ مشتری به ما: ${formatExactGemWeight(debitCarats)} قیراط (بدهکار به ما) · تفکیک اقلام غیرهمگن بر اساس نوع و کیفیت · کلیک برای مشاهده تمام وزن‌ها به صورت دقیق`,
-          },
-        ]
-      : [
-          {
-            id: 'stone',
-            label: 'سنگ',
-            value: stoneCarats,
-            unit: 'قیراط',
-            exactDisplay: formatExactGemWeight(Math.abs(stoneCarats)),
-            isStone: true,
-            statusLabel: undefined,
-            tooltip: undefined,
-          },
-        ]),
+    {
+      id: 'stone',
+      label: 'سنگ',
+      value: effectiveCreditCarats - effectiveDebitCarats,
+      creditValue: effectiveCreditCarats,
+      debitValue: effectiveDebitCarats,
+      unit: 'قیراط',
+      exactDisplay: `${formatExactGemWeight(effectiveCreditCarats)} / ${formatExactGemWeight(effectiveDebitCarats)}`,
+      exactCreditDisplay: formatExactGemWeight(effectiveCreditCarats),
+      exactDebitDisplay: formatExactGemWeight(effectiveDebitCarats),
+      isStone: true,
+      isDualStone: true,
+      statusLabel: stoneStatusLabel,
+      tooltip: `سنگ: طلب طرف‌حساب از ما: ${formatExactGemWeight(effectiveCreditCarats)} قیراط (بستانکار) · بدهی طرف‌حساب به ما: ${formatExactGemWeight(effectiveDebitCarats)} قیراط (بدهکار) · کلیک برای مشاهده تمام وزن‌ها و مشخصات ۴C به صورت دقیق`,
+    },
     { id: 'currency', label: currencyLabel, value: currencyValue, unit: currencyLabel, digits: 0, isStone: false },
   ];
 
@@ -159,12 +216,20 @@ export default function CustomerBalanceLiquid({
                   balance.value > 0 ? 'بستانکار از ما' : balance.value < 0 ? 'بدهکار به ما' : 'تسویه حساب'
                 })`);
 
+            const toneClass = balance.isDualStone
+              ? (balance.creditValue > 0 && balance.debitValue > 0
+                  ? 'border-amber-300/90 dark:border-amber-500/60 bg-gradient-to-r from-emerald-50/50 via-amber-50/30 to-rose-50/50 dark:from-emerald-950/30 dark:via-slate-800 dark:to-rose-950/30'
+                  : balance.creditValue > 0
+                  ? 'is-credit'
+                  : balance.debitValue > 0
+                  ? 'is-debit'
+                  : 'is-zero')
+              : (balance.value > 0 ? 'is-credit' : balance.value < 0 ? 'is-debit' : 'is-zero');
+
             return (
               <motion.div
                 layout
-                className={`document-liquid-item ${
-                  balance.value > 0 ? 'is-credit' : balance.value < 0 ? 'is-debit' : 'is-zero'
-                } ${
+                className={`document-liquid-item ${toneClass} ${
                   isStone
                     ? 'cursor-pointer hover:border-amber-400 dark:hover:border-amber-500 focus:outline-hidden focus:ring-1 focus:ring-amber-500/40 select-none'
                     : ''
@@ -195,16 +260,34 @@ export default function CustomerBalanceLiquid({
               >
                 <small className="document-liquid-item-label">{balance.label}:</small>
                 <div className="document-liquid-item-value-wrap">
-                  <strong className="document-liquid-item-value">
-                    <motion.span
-                      key={balance.value}
-                      initial={{ scale: 1.15 }}
-                      animate={{ scale: 1 }}
-                      transition={{ duration: 0.25 }}
-                    >
-                      {balance.exactDisplay ? balance.exactDisplay : faNumber(Math.abs(balance.value), balance.digits)}
-                    </motion.span>
-                  </strong>
+                  {balance.isDualStone ? (
+                    <div className="inline-flex items-center gap-1.5 font-bold">
+                      <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-300">
+                        <span className="text-[10px] font-extrabold text-emerald-800 dark:text-emerald-200">طلب:</span>
+                        <strong className="document-liquid-item-value text-emerald-700 dark:text-emerald-300">
+                          {balance.exactCreditDisplay}
+                        </strong>
+                      </span>
+                      <span className="text-slate-300 dark:text-slate-600 font-light select-none">|</span>
+                      <span className="inline-flex items-center gap-1 text-rose-700 dark:text-rose-300">
+                        <span className="text-[10px] font-extrabold text-rose-800 dark:text-rose-200">بدهی:</span>
+                        <strong className="document-liquid-item-value text-rose-700 dark:text-rose-300">
+                          {balance.exactDebitDisplay}
+                        </strong>
+                      </span>
+                    </div>
+                  ) : (
+                    <strong className="document-liquid-item-value">
+                      <motion.span
+                        key={balance.value}
+                        initial={{ scale: 1.15 }}
+                        animate={{ scale: 1 }}
+                        transition={{ duration: 0.25 }}
+                      >
+                        {balance.exactDisplay ? balance.exactDisplay : faNumber(Math.abs(balance.value), balance.digits)}
+                      </motion.span>
+                    </strong>
+                  )}
                   <span className="document-liquid-item-unit">{balance.unit}</span>
                 </div>
                 <em className="document-liquid-item-status">{statusLabel}</em>

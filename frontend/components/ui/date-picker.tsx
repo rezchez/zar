@@ -37,6 +37,12 @@ export interface DatePickerProps {
   showDistance?: boolean;
   /** Custom class name for trigger / container */
   className?: string;
+  /** Custom class name directly on the trigger button */
+  triggerClassName?: string;
+  /** Show secondary calendar in parentheses. Default: true */
+  showSecondaryCalendar?: boolean;
+  /** Alias for showSecondaryCalendar */
+  showSecondary?: boolean;
   /** Error message */
   error?: string;
   /** Required field */
@@ -139,6 +145,9 @@ export function DatePicker({
   clearable = true,
   showDistance = true,
   className = '',
+  triggerClassName = '',
+  showSecondaryCalendar = true,
+  showSecondary,
   error,
   required = false,
   format = 'yyyy/MM/dd',
@@ -209,6 +218,10 @@ export function DatePicker({
         calendarType: 'miladi',
         digits: 'en',
       });
+      const hasSecondary = showSecondary !== undefined ? showSecondary : showSecondaryCalendar;
+      if (!hasSecondary) {
+        return activeCalendarType === 'miladi' ? miladiFormatted : shamsiFormatted;
+      }
       if (activeCalendarType === 'miladi') {
         return `${miladiFormatted} (${shamsiFormatted})`;
       }
@@ -216,7 +229,7 @@ export function DatePicker({
     } catch {
       return jalaliStr ? toPersianDigits(jalaliStr) : '';
     }
-  }, [selectedDate, jalaliStr, activeCalendarType, format]);
+  }, [selectedDate, jalaliStr, activeCalendarType, format, showSecondary, showSecondaryCalendar]);
 
   const distanceLabel = useMemo(() => {
     if (!showDistance || !selectedDate) return '';
@@ -262,6 +275,7 @@ export function DatePicker({
           }}
           className={cn(
             'flex h-10 w-full items-center justify-between rounded-xl border border-slate-200/80 dark:border-slate-800/80 bg-white/90 dark:bg-slate-900/90 px-3 py-2 text-xs font-bold text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/40 focus:border-amber-500 transition-all shadow-2xs text-right cursor-pointer select-none',
+            triggerClassName,
             isOpen && 'ring-2 ring-amber-500/40 border-amber-500 shadow-md',
             disabled && 'opacity-50 cursor-not-allowed bg-slate-100 dark:bg-slate-800',
             error && 'border-rose-500 focus:ring-rose-500/40',

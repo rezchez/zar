@@ -2193,6 +2193,11 @@ export default function StoneTab({
                 <span>بسته‌ای / بار سنگ (Parcel)</span>
               </button>
             </div>
+            <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400 font-medium">
+              {stoneMode === 'single_stone'
+                ? 'سنگ تکی یونیک است و با مشخصات مشابه تهاتر یا کسر نمی‌شود.'
+                : 'بارخانه قابلیت ادغام، کسر وزنی و گردش دسته‌ای دارد.'}
+            </p>
           </div>
 
           {/* Dynamic Cascading Species Selector */}

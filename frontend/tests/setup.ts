@@ -81,15 +81,19 @@ class MockPocketBase {
     save: () => {},
     clear: () => {},
   };
-  collection(_name?: string) {
+  collections = {
+    getFirstListItem: async () => null,
+    create: async (data: Record<string, unknown>) => ({ id: 'coll_mock', ...data }),
+  };
+  collection(_name?: string): any {
     return {
       authWithPassword: async () => ({ token: 'mock_token', record: {} }),
       getList: async () => ({ items: [], totalItems: 0, page: 1, perPage: 30, totalPages: 0 }),
       getFullList: async () => [],
-      getFirstListItem: async () => null,
-      getOne: async () => ({}),
-      create: async (data: Record<string, unknown>) => ({ id: 'mock_id', ...data }),
-      update: async (id: string, data: Record<string, unknown>) => ({ id, ...data }),
+      getFirstListItem: async (_query?: any) => null,
+      getOne: async (_id?: any, _opt?: any) => ({}),
+      create: async (data: Record<string, unknown> = {}) => ({ id: 'mock_id', ...data }),
+      update: async (id: string, data: Record<string, unknown> = {}) => ({ id, ...data }),
       delete: async () => true,
     };
   }
@@ -140,3 +144,9 @@ mock.module('@/lib/auth', () => ({
     };
   },
 }));
+
+mock.module('@/lib/pocketbase-service', () => ({
+  getPocketBaseServiceClient: async () => sharedMockPb,
+  PocketBaseServiceConfigurationError: class extends Error {},
+}));
+

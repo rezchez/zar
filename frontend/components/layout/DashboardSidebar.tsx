@@ -12,6 +12,7 @@ import NotificationCenter from '@/src/components/dashboard/NotificationCenter';
 import CacheRebuildButton from '@/src/components/dashboard/CacheRebuildButton';
 import LogoutButton from '@/src/components/LogoutButton';
 import ChangelogModal from '@/features/changelog/components/ChangelogModal';
+import { APP_VERSION } from '@/lib/version';
 
 // Icon SVG path nodes for Morphicons
 const CHEVRON_DOWN_NODE = [['path', { d: 'm6 9 6 6 6-6' }]] as const;
@@ -120,6 +121,13 @@ function NavMenuItem({
 
   function handleClick() {
     if (hasChildren) {
+      if (isCollapsed) {
+        const firstChildWithHref = item.children?.find((child) => child.href);
+        if (firstChildWithHref) {
+          onSelect(firstChildWithHref);
+          return;
+        }
+      }
       setIsOpen((prev) => !prev);
       return;
     }
@@ -305,7 +313,7 @@ export default function DashboardSidebar({
                     className="shrink-0 inline-flex items-center rounded bg-amber-100 dark:bg-amber-950/70 px-1.5 py-0.5 text-[9px] font-bold text-amber-800 dark:text-amber-300 border border-amber-300/40 dark:border-amber-700/40 hover:bg-amber-200/80 dark:hover:bg-amber-900/60 transition-colors cursor-pointer select-none origin-right scale-[0.8]"
                     title="مشاهده یادداشت‌های انتشار (Changelog)"
                   >
-                    Zarfolio Beta 0.1.0
+                    Zarfolio {APP_VERSION}
                   </button>
                 </div>
                 <div className="mt-0.5">

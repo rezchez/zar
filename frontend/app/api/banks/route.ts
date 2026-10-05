@@ -6,12 +6,50 @@ import { hasPermission } from '@/lib/authorization';
 import { mapBankAccount } from '@/lib/bank';
 import { ensureBankAccountsCollection } from '@/lib/bank-collection';
 import { ensureBankAccountDetailInChart } from '@/lib/chart-of-accounts';
+import { normalizeDigits } from '@/lib/jalali';
 import { parseLocalizedAmount } from '@/lib/money';
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
 import { validateIranianSheba } from '@/lib/sheba';
 
 function text(value: unknown, max = 120) {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
+}
+
+function extractPbErrorMessage(error: unknown, fallback: string): string {
+  if (!error) return fallback;
+  if (typeof error === 'object') {
+    const errObj = error as any;
+    const responseData = errObj?.response?.data || errObj?.data;
+    if (responseData && typeof responseData === 'object') {
+      const FIELD_NAMES_FA: Record<string, string> = {
+        bankName: 'نام بانک',
+        accountNumber: 'شماره حساب',
+        branchName: 'نام شعبه',
+        shebaNumber: 'شماره شبا',
+        balance: 'موجودی',
+        currency: 'ارز',
+        accountId: 'سرفصل حسابداری',
+        accountCodeZero: 'کد حساب',
+      };
+      const fieldErrors: string[] = [];
+      for (const [key, val] of Object.entries(responseData)) {
+        const fieldLabel = FIELD_NAMES_FA[key] || key;
+        if (val && typeof val === 'object' && 'message' in val) {
+          fieldErrors.push(`${fieldLabel}: ${(val as any).message}`);
+        } else if (typeof val === 'string') {
+          fieldErrors.push(`${fieldLabel}: ${val}`);
+        }
+      }
+      if (fieldErrors.length > 0) {
+        return `خطا در ثبت اطلاعات (${fieldErrors.join(' - ')})`;
+      }
+    }
+    if (errObj?.message && typeof errObj.message === 'string' && errObj.message !== 'Failed to create record.') {
+      return errObj.message;
+    }
+  }
+  if (error instanceof Error && error.message !== 'Failed to create record.') return error.message;
+  return fallback;
 }
 
 async function writerFor(context: Awaited<ReturnType<typeof getServerAuthContext>>) {
@@ -40,7 +78,7 @@ export async function GET(request: Request) {
     const service = await getPocketBaseServiceClient().catch(() => null);
     if (service) await ensureBankAccountsCollection(service);
 
-    const filter = activeOnly ? context.pb.filter('isActive = true') : '';
+    const filter = activeOnly ? context.pb.filter('isBlocked != true') : '';
     const records = await context.pb.collection('bank_accounts').getFullList({
       filter,
       sort: 'bankName,accountNumber',
@@ -70,14 +108,14 @@ export async function POST(request: Request) {
   const bankName = text(body?.bankName);
   const branchName = text(body?.branchName, 120);
   const accountNumber = text(body?.accountNumber, 80);
-  const rawSheba = text(body?.shebaNumber || body?.iban, 34);
+  const accountType = text(body?.accountType, 50) || 'current';
+  const rawSheba = normalizeDigits(text(body?.shebaNumber || body?.iban, 34)).toUpperCase().replace(/[\s-]/g, '');
   const hasCheckbook = Boolean(body?.hasCheckbook);
   const hasVirtualCheck = Boolean(body?.hasVirtualCheck);
   const accountCodeZero = text(body?.accountCodeZero, 80) || '0';
   const currency = text(body?.currency, 16).toUpperCase() || 'IRR';
   const rawBalance = body?.currentBalance ?? body?.balance ?? 0;
   const initialBalance = parseLocalizedAmount(String(rawBalance));
-  const isActive = typeof body?.isActive === 'boolean' ? body.isActive : true;
   const explicitAccountId = body?.accountId ? text(body.accountId, 40) : null;
 
   if (!bankName || !accountNumber || initialBalance < 0) {
@@ -94,7 +132,7 @@ export async function POST(request: Request) {
     }
   }
 
-  const normSheba = rawSheba ? (rawSheba.toUpperCase().startsWith('IR') ? rawSheba.toUpperCase() : `IR${rawSheba.toUpperCase()}`) : '';
+  const normSheba = rawSheba ? (rawSheba.startsWith('IR') ? rawSheba : `IR${rawSheba}`) : '';
 
   const writer = await writerFor(context);
   if (!writer) {
@@ -128,23 +166,45 @@ export async function POST(request: Request) {
       console.warn('ensureBankAccountDetailInChart failed, proceeding without linked account:', err);
     }
 
-    const record = await writer.collection('bank_accounts').create({
+    let bankRefId: string | null = null;
+    try {
+      const cleanName = bankName.startsWith('بانک ') ? bankName.slice(5).trim() : bankName.trim();
+      const matchedBank = await writer.collection('banks').getFirstListItem(
+        writer.filter('name ~ {:cleanName}', { cleanName }),
+      ).catch(() => null);
+      if (matchedBank?.id) {
+        bankRefId = matchedBank.id;
+      }
+    } catch {
+      // non-critical
+    }
+
+    const createPayload: Record<string, unknown> = {
       bankName,
-      branchName,
+      branchName: branchName || '',
       accountNumber,
-      shebaNumber: normSheba,
+      accountType,
+      shebaNumber: normSheba || '',
       hasCheckbook,
       hasVirtualCheck,
       balance: initialBalance,
-      currentBalance: initialBalance,
       currency,
-      isActive,
-      accountId: linkedAccountId || null,
       accountCodeZero,
-      owner: context.user.id,
-      createdBy: context.user.id,
-      updatedBy: context.user.id,
-    });
+      isBlocked: false,
+    };
+
+    if (linkedAccountId) {
+      createPayload.accountId = linkedAccountId;
+    }
+    if (bankRefId) {
+      createPayload.bank_ref = bankRefId;
+    }
+    if (context.user?.id) {
+      createPayload.createdBy = context.user.id;
+      createPayload.updatedBy = context.user.id;
+    }
+
+    const record = await writer.collection('bank_accounts').create(createPayload);
 
     const fullRecord = await writer.collection('bank_accounts').getOne(record.id, {
       expand: 'accountId',
@@ -158,7 +218,7 @@ export async function POST(request: Request) {
       entityType: 'bank_account',
       entityId: record.id,
       entityLabel: `${bankName} - ${accountNumber}`,
-      changes: { bankName, branchName, accountNumber, shebaNumber: normSheba, hasCheckbook, hasVirtualCheck, balance: initialBalance, currency, accountId: linkedAccountId },
+      changes: { bankName, branchName, accountNumber, accountType, shebaNumber: normSheba, hasCheckbook, hasVirtualCheck, balance: initialBalance, currency, accountId: linkedAccountId },
       authenticatedClient: context.pb,
     });
 
@@ -166,7 +226,7 @@ export async function POST(request: Request) {
   } catch (error: any) {
     console.error('bank_account_create_failed', error);
     return NextResponse.json(
-      { message: error?.message || 'ثبت حساب بانکی انجام نشد.' },
+      { message: extractPbErrorMessage(error, 'ثبت حساب بانکی انجام نشد.') },
       { status: 400 },
     );
   }

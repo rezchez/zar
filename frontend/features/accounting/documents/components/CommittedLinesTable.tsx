@@ -45,6 +45,10 @@ export type ColumnKey =
   | 'currency'
   | 'bedehkarArzi'
   | 'bostankarArzi'
+  | 'bankAccount'
+  | 'checkNumber'
+  | 'sayadId'
+  | 'dueDate'
   | 'bedehkarMali'
   | 'bostankarMali'
   | 'labName'
@@ -63,6 +67,10 @@ export const DEFAULT_COLUMN_WIDTHS: Record<ColumnKey, number> = {
   currency: 60,
   bedehkarArzi: 95,
   bostankarArzi: 95,
+  bankAccount: 120,
+  checkNumber: 90,
+  sayadId: 130,
+  dueDate: 95,
   bedehkarMali: 125,
   bostankarMali: 125,
   labName: 105,
@@ -82,6 +90,10 @@ export const MIN_COLUMN_WIDTHS: Record<ColumnKey, number> = {
   currency: 45,
   bedehkarArzi: 65,
   bostankarArzi: 65,
+  bankAccount: 80,
+  checkNumber: 60,
+  sayadId: 90,
+  dueDate: 70,
   bedehkarMali: 80,
   bostankarMali: 80,
   labName: 65,
@@ -103,6 +115,10 @@ type SortColumn =
   | 'currency'
   | 'bedehkarArzi'
   | 'bostankarArzi'
+  | 'bankAccount'
+  | 'checkNumber'
+  | 'sayadId'
+  | 'dueDate'
   | 'bedehkarMali'
   | 'bostankarMali'
   | 'labName'
@@ -253,6 +269,18 @@ function getLineSortValue(
         ? numberValue(line.details.currencyTotalAmount)
         : numberValue(line.details.totalAmount);
     }
+    case 'bankAccount': {
+      const bName = line.details?.bankName?.trim() || '';
+      const bBranch = line.details?.bankBranch?.trim() || '';
+      const acc = line.details?.accountNumber?.trim() || '';
+      return `${bName} ${bBranch} ${acc}`.trim();
+    }
+    case 'checkNumber':
+      return line.details?.checkNumber?.trim() || '';
+    case 'sayadId':
+      return (line.details?.sayadId?.trim() || '').replace(/\D/g, '');
+    case 'dueDate':
+      return line.details?.dueDateJalali?.trim() || '';
     case 'labName':
       return line.details.labName?.trim() || '';
     case 'stampNumber':
@@ -354,6 +382,7 @@ interface CommittedLinesTableProps {
   documentDateJalali: string;
   hasAssayOrStamp: boolean;
   hasFinancialAmounts: boolean;
+  hasCheckLines?: boolean;
   baseCurrency?: 'IRR' | 'IRT';
   weightPrecision?: number;
   activeTab?: string;
@@ -374,6 +403,7 @@ export default function CommittedLinesTable({
   documentDateJalali,
   hasAssayOrStamp,
   hasFinancialAmounts,
+  hasCheckLines: hasCheckLinesProp,
   baseCurrency = 'IRR',
   weightPrecision = 3,
   activeTab,
@@ -534,6 +564,18 @@ export default function CommittedLinesTable({
     );
   }, [committedLines, activeTab]);
 
+  const hasCheckLines = useMemo(() => {
+    if (typeof hasCheckLinesProp === 'boolean') return hasCheckLinesProp;
+    return committedLines.some(
+      (line) =>
+        line.details?.bankOperationKind === 'check-payment' ||
+        Boolean(line.details?.checkNumber?.trim()) ||
+        Boolean(line.details?.sayadId?.trim()) ||
+        (line.documentTab as string) === 'check' ||
+        (line.sourceTab as string) === 'check',
+    );
+  }, [committedLines, hasCheckLinesProp]);
+
   const activeColumns = useMemo(() => {
     const cols: ColumnKey[] = ['index', 'docType'];
     if (hasMetalLines) {
@@ -542,8 +584,12 @@ export default function CommittedLinesTable({
     if (hasCurrencyLines) {
       cols.push('currency', 'bedehkarArzi', 'bostankarArzi');
     }
+    if (hasCheckLines) {
+      cols.push('bankAccount', 'checkNumber', 'sayadId', 'dueDate');
+    }
     if (
       hasFinancialAmounts ||
+      hasCheckLines ||
       activeTab === 'cash' ||
       activeTab === 'bank' ||
       activeTab === 'currency' ||
@@ -557,7 +603,7 @@ export default function CommittedLinesTable({
     }
     cols.push('description', 'actions');
     return cols;
-  }, [hasMetalLines, hasCurrencyLines, hasFinancialAmounts, hasAssayOrStamp, activeTab]);
+  }, [hasMetalLines, hasCurrencyLines, hasCheckLines, hasFinancialAmounts, hasAssayOrStamp, activeTab]);
 
   const totalTableWidth = useMemo(() => {
     return activeColumns.reduce(
@@ -1013,8 +1059,73 @@ export default function CommittedLinesTable({
                 </>
               ) : null}
 
+              {/* Check Headers (Only if hasCheckLines) */}
+              {hasCheckLines ? (
+                <>
+                  <TableHead
+                    style={{ width: `${columnWidths.bankAccount}px` }}
+                    className="relative px-1.5 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
+                  >
+                    <SortableHeader column="bankAccount" currentSort={sortState} onSort={handleSort}>
+                      بانک / حساب
+                    </SortableHeader>
+                    <ColumnResizer
+                      colKey="bankAccount"
+                      onResizeStart={handleResizeStart}
+                      onReset={handleResetColumnWidth}
+                      isResizing={resizingCol === 'bankAccount'}
+                    />
+                  </TableHead>
+
+                  <TableHead
+                    style={{ width: `${columnWidths.checkNumber}px` }}
+                    className="relative px-1.5 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
+                  >
+                    <SortableHeader column="checkNumber" currentSort={sortState} onSort={handleSort}>
+                      شماره چک
+                    </SortableHeader>
+                    <ColumnResizer
+                      colKey="checkNumber"
+                      onResizeStart={handleResizeStart}
+                      onReset={handleResetColumnWidth}
+                      isResizing={resizingCol === 'checkNumber'}
+                    />
+                  </TableHead>
+
+                  <TableHead
+                    style={{ width: `${columnWidths.sayadId}px` }}
+                    className="relative px-1.5 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
+                  >
+                    <SortableHeader column="sayadId" currentSort={sortState} onSort={handleSort}>
+                      شناسه صیاد
+                    </SortableHeader>
+                    <ColumnResizer
+                      colKey="sayadId"
+                      onResizeStart={handleResizeStart}
+                      onReset={handleResetColumnWidth}
+                      isResizing={resizingCol === 'sayadId'}
+                    />
+                  </TableHead>
+
+                  <TableHead
+                    style={{ width: `${columnWidths.dueDate}px` }}
+                    className="relative px-1.5 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
+                  >
+                    <SortableHeader column="dueDate" currentSort={sortState} onSort={handleSort}>
+                      سررسید
+                    </SortableHeader>
+                    <ColumnResizer
+                      colKey="dueDate"
+                      onResizeStart={handleResizeStart}
+                      onReset={handleResetColumnWidth}
+                      isResizing={resizingCol === 'dueDate'}
+                    />
+                  </TableHead>
+                </>
+              ) : null}
+
               {/* 8. Financial Debit */}
-              {hasFinancialAmounts ? (
+              {hasFinancialAmounts || hasCheckLines ? (
                 <TableHead
                   style={{ width: `${columnWidths.bedehkarMali}px` }}
                   className="relative px-1.5 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
@@ -1037,7 +1148,7 @@ export default function CommittedLinesTable({
               ) : null}
 
               {/* 9. Financial Credit */}
-              {hasFinancialAmounts ? (
+              {hasFinancialAmounts || hasCheckLines ? (
                 <TableHead
                   style={{ width: `${columnWidths.bostankarMali}px` }}
                   className="relative px-1.5 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
@@ -1132,10 +1243,11 @@ export default function CommittedLinesTable({
                 onHawala={() => onHawalaLine(line)}
                 weightPrecision={weightPrecision}
                 hasAssayOrStamp={hasAssayOrStamp}
-                hasFinancialAmounts={hasFinancialAmounts}
+                hasFinancialAmounts={hasFinancialAmounts || hasCheckLines}
                 hasValidCustomer={Boolean(selectedCustomer)}
                 hasMetalLines={hasMetalLines}
                 hasCurrencyLines={hasCurrencyLines}
+                hasCheckLines={hasCheckLines}
               />
             ))}
           </TableBody>
@@ -1172,12 +1284,20 @@ export default function CommittedLinesTable({
                     </TableCell>
                   </>
                 ) : null}
-                {hasFinancialAmounts ? (
+                {hasCheckLines ? (
+                  <>
+                    <TableCell className="px-1.5 py-1.5 border-s border-slate-200/60 dark:border-slate-700/60" />
+                    <TableCell className="px-1.5 py-1.5 border-s border-slate-200/60 dark:border-slate-700/60" />
+                    <TableCell className="px-1.5 py-1.5 border-s border-slate-200/60 dark:border-slate-700/60" />
+                    <TableCell className="px-1.5 py-1.5 border-s border-slate-200/60 dark:border-slate-700/60" />
+                  </>
+                ) : null}
+                {hasFinancialAmounts || hasCheckLines ? (
                   <TableCell className="px-1.5 py-1.5 text-center tabular-nums text-rose-600 dark:text-rose-400 font-extrabold text-xs border-s border-slate-200/60 dark:border-slate-700/60">
                     {totalBedehkarMali > 0 ? faNumber(totalBedehkarMali, 0) : '-'}
                   </TableCell>
                 ) : null}
-                {hasFinancialAmounts ? (
+                {hasFinancialAmounts || hasCheckLines ? (
                   <TableCell className="px-1.5 py-1.5 text-center tabular-nums text-emerald-600 dark:text-emerald-400 font-extrabold text-xs border-s border-slate-200/60 dark:border-slate-700/60">
                     {totalBostankarMali > 0 ? faNumber(totalBostankarMali, 0) : '-'}
                   </TableCell>

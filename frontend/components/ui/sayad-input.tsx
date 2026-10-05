@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { Check, X } from 'lucide-react';
 import { normalizeDigits } from '@/lib/jalali';
+import { cn } from '@/lib/utils';
 
 export interface SayadInputProps
   extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'value' | 'defaultValue' | 'onChange'> {
@@ -153,31 +154,38 @@ export const SayadInput = React.forwardRef<HTMLInputElement, SayadInputProps>(
       props.onKeyDown?.(e);
     };
 
-    const hasHeight = className.includes('h-');
-    const heightClass = hasHeight ? '' : 'h-10';
+    const heightMatch = className.match(/\bh-\S+/)?.[0] || 'h-10';
+    const cleanClassName = className.replace(/\bh-\S+/g, '').trim();
     const isRounded2xl = className.includes('rounded-2xl');
     const fullRadius = isRounded2xl ? 'rounded-2xl' : 'rounded-xl';
-    const addonRadius = isRounded2xl ? 'rounded-r-2xl' : 'rounded-r-xl';
-    const inputRadius = showIcon
-      ? (isRounded2xl ? 'rounded-l-2xl rounded-r-none' : 'rounded-l-xl rounded-r-none')
-      : fullRadius;
 
     return (
       <div className="relative w-full">
         {name ? <input type="hidden" name={name} value={activeRaw} disabled={disabled} /> : null}
 
-        <div className={`flex w-full items-stretch ${heightClass}`} dir="rtl">
-          {/* Right Attached Addon (Outside input, shown after user click/interaction) */}
+        <div
+          className={cn(
+            'relative flex w-full items-center overflow-hidden border bg-white transition-all',
+            'focus-within:ring-2 focus-within:ring-amber-500/20 focus-within:border-amber-500',
+            'dark:bg-slate-900',
+            heightMatch,
+            fullRadius,
+            isComplete
+              ? 'border-emerald-500/80 dark:border-emerald-600 focus-within:border-emerald-500 focus-within:ring-emerald-500/20'
+              : hasValue
+                ? 'border-rose-400 dark:border-rose-700 focus-within:border-rose-400 focus-within:ring-rose-400/20'
+                : 'border-slate-300 dark:border-slate-700',
+            readOnly && 'bg-slate-100 dark:bg-slate-800/90 cursor-not-allowed',
+            disabled && 'opacity-50 cursor-not-allowed',
+          )}
+          dir="rtl"
+        >
+          {/* Status Icon Indicator merged directly inside the field */}
           {showIcon ? (
-            <button
-              type="button"
+            <div
               tabIndex={-1}
               onClick={() => inputRef.current?.focus()}
-              className={`flex shrink-0 items-center justify-center px-3 border border-l-0 transition-all select-none cursor-pointer ${addonRadius} ${
-                isComplete
-                  ? 'border-emerald-400 bg-emerald-50 text-emerald-600 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400'
-                  : 'border-rose-300 bg-rose-50 text-rose-500 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-400'
-              } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+              className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center justify-center cursor-pointer select-none z-10"
               title={
                 isComplete
                   ? 'شناسه صیاد ۱۶ رقمی تکمیل است'
@@ -187,58 +195,51 @@ export const SayadInput = React.forwardRef<HTMLInputElement, SayadInputProps>(
               {isComplete ? (
                 <span
                   data-testid="sayad-status-complete"
-                  className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-200/70 text-emerald-700 dark:bg-emerald-900/80 dark:text-emerald-300"
+                  className="flex size-5 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 dark:bg-emerald-950/80 dark:text-emerald-400"
                 >
-                  <Check size={13} strokeWidth={3} />
+                  <Check size={12} strokeWidth={3} />
                 </span>
               ) : (
                 <span
                   data-testid="sayad-status-incomplete"
-                  className="flex h-5 w-5 items-center justify-center rounded-full bg-rose-200/70 text-rose-600 dark:bg-rose-900/80 dark:text-rose-300"
+                  className="flex size-5 items-center justify-center rounded-full bg-rose-100 text-rose-600 dark:bg-rose-950/80 dark:text-rose-400"
                 >
-                  <X size={13} strokeWidth={3} />
+                  <X size={12} strokeWidth={3} />
                 </span>
               )}
-            </button>
+            </div>
           ) : null}
 
-          {/* Left Attached Input (The input field itself) */}
-          <div className="relative min-w-0 flex-1">
-            <input
-              {...props}
-              ref={inputRef}
-              id={id}
-              type="text"
-              inputMode="numeric"
-              dir="ltr"
-              disabled={disabled}
-              readOnly={readOnly}
-              value={displayFormatted}
-              onClick={(e) => {
-                setIsInteracted(true);
-                props.onClick?.(e);
-              }}
-              onFocus={(e) => {
-                setIsInteracted(true);
-                props.onFocus?.(e);
-              }}
-              onChange={handleInputChange}
-              onKeyDown={handleKeyDown}
-              placeholder={placeholder}
-              maxLength={19} // 16 digits + 3 spaces
-              aria-invalid={!isComplete}
-              aria-label="شناسه ۱۶ رقمی صیاد"
-              className={`h-full w-full ${inputRadius} border border-slate-300 bg-white px-3 text-center font-mono tabular-nums text-xs sm:text-sm font-bold tracking-widest text-slate-900 placeholder:text-slate-400 placeholder:tracking-normal transition-all focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:z-10 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 ${
-                isComplete
-                  ? 'border-emerald-400 dark:border-emerald-700'
-                  : hasValue
-                    ? 'border-rose-300 dark:border-rose-800'
-                    : ''
-              } ${readOnly ? 'bg-slate-100 dark:bg-slate-800/90 cursor-not-allowed' : ''} ${
-                disabled ? 'opacity-50 cursor-not-allowed' : ''
-              } ${className}`}
-            />
-          </div>
+          {/* Unified Input */}
+          <input
+            {...props}
+            ref={inputRef}
+            id={id}
+            type="text"
+            inputMode="numeric"
+            dir="ltr"
+            disabled={disabled}
+            readOnly={readOnly}
+            value={displayFormatted}
+            onClick={(e) => {
+              setIsInteracted(true);
+              props.onClick?.(e);
+            }}
+            onFocus={(e) => {
+              setIsInteracted(true);
+              props.onFocus?.(e);
+            }}
+            onChange={handleInputChange}
+            onKeyDown={handleKeyDown}
+            placeholder={placeholder}
+            maxLength={19} // 16 digits + 3 spaces
+            aria-invalid={!isComplete}
+            aria-label="شناسه ۱۶ رقمی صیاد"
+            className={cn(
+              'h-full w-full bg-transparent px-8 text-center font-mono tabular-nums text-xs sm:text-sm font-bold tracking-widest text-slate-900 border-0 outline-none focus:outline-none placeholder:text-slate-400 placeholder:tracking-normal dark:text-slate-100 dark:placeholder:text-slate-500',
+              cleanClassName,
+            )}
+          />
         </div>
       </div>
     );

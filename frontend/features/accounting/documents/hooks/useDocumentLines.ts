@@ -10,7 +10,7 @@ import type {
 } from '@/src/components/documents/RawGoldTab';
 import type { AppSettings } from '@/lib/settings';
 import { useToastManager } from '@/components/ui/toast';
-import { normalizeDigits } from '@/lib/jalali';
+import { formatJalaliDate, normalizeDigits } from '@/lib/jalali';
 import {
   actualWeightFromMoney,
   convertedTo750,
@@ -213,6 +213,33 @@ export function isLineReady(line: DocumentLine) {
     const rawWeight = numberValue(line.details.rawWeight);
     return rawWeight > 0;
   }
+  const isBankOrCheckLine =
+    line.documentTab === 'bank' ||
+    line.sourceTab === 'bank' ||
+    Boolean(line.details?.bankAccountId) ||
+    Boolean(line.details?.checkNumber) ||
+    Boolean(line.details?.bankOperationKind);
+  if (isBankOrCheckLine) {
+    if (line.details?.bankOperationKind === 'check-payment') {
+      return (
+        numberValue(line.details?.totalAmount) > 0 &&
+        Boolean(line.details?.bankAccountId) &&
+        Boolean(line.details?.checkNumber?.trim())
+      );
+    }
+    const amt = numberValue(line.details?.totalAmount);
+    if (amt <= 0) return false;
+    if (line.details?.bankOperationKind === 'pay-to-customer') {
+      if (!line.details?.bankAccountId) return false;
+      if (line.details?.bankAccountBalance !== undefined && line.details?.bankAccountBalance !== null) {
+        const fee = numberValue(line.details?.transferFee);
+        const totalDeduction = amt + fee;
+        const bankBal = numberValue(line.details.bankAccountBalance);
+        if (totalDeduction > bankBal) return false;
+      }
+    }
+    return true;
+  }
   if (line.documentTab === 'cash' || line.sourceTab === 'cash') {
     const amount = numberValue(line.details.totalAmount);
     const hasFund = Boolean(line.details.cashFundId?.trim());
@@ -226,9 +253,6 @@ export function isLineReady(line: DocumentLine) {
       if (amount > fundBalance) return false;
     }
     return true;
-  }
-  if (line.documentTab === 'bank' || line.sourceTab === 'bank') {
-    return numberValue(line.details.totalAmount) > 0;
   }
   if (line.documentTab === 'coin' || line.sourceTab === 'coin') {
     return numberValue(line.details.currencyQuantity || line.details.quantity) > 0 || numberValue(line.details.rawWeight) > 0;
@@ -325,6 +349,68 @@ export function validateLine(
     }
     return '';
   }
+  const isBankOrCheckLine =
+    line.documentTab === 'bank' ||
+    line.sourceTab === 'bank' ||
+    Boolean(line.details?.bankAccountId) ||
+    Boolean(line.details?.checkNumber) ||
+    Boolean(line.details?.bankOperationKind);
+  if (isBankOrCheckLine) {
+    const opKind = line.details?.bankOperationKind || '';
+    const isCheck = opKind === 'check-payment' || Boolean(line.details?.checkNumber);
+
+    const amount = numberValue(line.details?.totalAmount);
+    if (amount <= 0) {
+      return 'مبلغ تراکنش بانکی باید بیشتر از صفر باشد.';
+    }
+
+    if (isCheck) {
+      if (!line.details?.bankAccountId) {
+        return 'حساب بانکی پرداخت‌کننده را انتخاب کنید.';
+      }
+      if (!line.details?.checkNumber?.trim()) {
+        return 'شماره چک الزامی است.';
+      }
+      const sayad = (line.details?.sayadId || '').replace(/\D/g, '');
+      if (sayad.length !== 16) {
+        return 'شناسه صیاد باید ۱۶ رقم باشد.';
+      }
+    } else if (opKind === 'pay-to-customer') {
+      if (!line.details?.bankAccountId) {
+        return 'حساب بانکی پرداخت‌کننده را انتخاب کنید.';
+      }
+    }
+
+    const isDirectBankOutflow = opKind === 'pay-to-customer';
+    if (isDirectBankOutflow && line.details?.bankAccountBalance !== undefined && line.details?.bankAccountBalance !== null) {
+      const bankBalance = numberValue(line.details.bankAccountBalance);
+      const fee = numberValue(line.details?.transferFee);
+      const committedBankOutflowDelta = committedLines.reduce((acc, cl) => {
+        if (editingLineId && cl.id === editingLineId) return acc;
+        if (cl.documentTab !== 'bank' && cl.sourceTab !== 'bank') return acc;
+        if (cl.details?.bankAccountId !== line.details?.bankAccountId) return acc;
+        const clOpKind = cl.details?.bankOperationKind || '';
+        const clIsCheck = clOpKind === 'check-payment' || Boolean(cl.details?.checkNumber);
+        if (clIsCheck) return acc;
+        const clAmt = numberValue(cl.details?.totalAmount);
+        const clFee = numberValue(cl.details?.transferFee);
+        const clIsOutflow = clOpKind === 'pay-to-customer' || cl.documentNature === 'paid';
+        if (clIsOutflow) return acc + clAmt + clFee;
+        if (clOpKind === 'receive-from-customer' || cl.documentNature === 'received') return acc - clAmt;
+        return acc;
+      }, 0);
+
+      const availableBalance = bankBalance - committedBankOutflowDelta;
+      const totalDeduction = amount + fee;
+      const isToman = line.details?.currencyUnit === 'IRT' || line.details?.baseCurrency === 'IRT';
+      const currencySuffix = isToman ? 'تومان' : 'ریال';
+      if (totalDeduction > availableBalance) {
+        return `مجموع مبلغ پرداختی و کارمزد (${totalDeduction.toLocaleString('fa-IR')} ${currencySuffix}) از موجودی حساب بانکی (${Math.max(0, availableBalance).toLocaleString('fa-IR')} ${currencySuffix}) بیشتر است. امکان برداشت بیش از موجودی وجود ندارد.`;
+      }
+    }
+
+    return '';
+  }
   if (line.documentTab === 'cash' || line.sourceTab === 'cash') {
     if (!line.details.cashFundId?.trim()) {
       return 'انتخاب صندوق وجه نقد الزامی است.';
@@ -354,12 +440,6 @@ export function validateLine(
         const unit = line.details.currencyUnit || 'ریال';
         return `مبلغ خروج وجه نقد (${amount.toLocaleString('fa-IR')} ${unit}) از موجودی صندوق (${Math.max(0, availableBalance).toLocaleString('fa-IR')} ${unit}) بیشتر است. امکان خروج وجه نقد بیش از موجودی وجود ندارد.`;
       }
-    }
-    return '';
-  }
-  if (line.documentTab === 'bank' || line.sourceTab === 'bank') {
-    if (numberValue(line.details.totalAmount) <= 0) {
-      return 'مبلغ تراکنش بانکی باید بیشتر از صفر باشد.';
     }
     return '';
   }
@@ -1137,6 +1217,22 @@ export function useDocumentLines({
         nextLine.details.currencyUnit = lineToCommit.details.currencyUnit;
         nextLine.details.isForeignCash = lineToCommit.details.isForeignCash;
       }
+    } else if (lineSourceTab === 'bank' || lineToCommit.documentTab === 'bank') {
+      if (lineToCommit.details?.bankAccountId) {
+        nextLine.details.bankAccountId = lineToCommit.details.bankAccountId;
+        nextLine.details.bankName = lineToCommit.details.bankName;
+        nextLine.details.bankBranch = lineToCommit.details.bankBranch;
+        nextLine.details.accountNumber = lineToCommit.details.accountNumber;
+        nextLine.details.bankOperationKind = lineToCommit.details.bankOperationKind;
+        nextLine.details.bankAccountBalance = lineToCommit.details.bankAccountBalance;
+      }
+      nextLine.details.totalAmount = '';
+      nextLine.details.checkNumber = '';
+      nextLine.details.sayadId = '';
+      nextLine.details.dueDateJalali = formatJalaliDate();
+      nextLine.details.transferFee = '';
+      nextLine.details.trackingNumber = '';
+      nextLine.description = '';
     }
     setDraftLine(nextLine);
     return true;

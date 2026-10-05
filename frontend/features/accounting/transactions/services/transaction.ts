@@ -330,7 +330,8 @@ export function calculateCustomerStoneBalances(
 
     const shape = String(details.stoneShape || '');
     const shapeName = String(details.stoneShapeName || (shape ? getShapeNameFa(shape) : ''));
-    const mode = details.stoneMode === 'parcel' ? ('parcel' as const) : ('single_stone' as const);
+    const isParcel = details.stoneMode === 'parcel' || (!details.stoneMode && rawPieces > 1);
+    const mode = isParcel ? ('parcel' as const) : ('single_stone' as const);
 
     let color = '';
     if (details.stoneColorMode === 'fancy') {
@@ -386,8 +387,23 @@ export function calculateCustomerStoneBalances(
     bySpecies[speciesId].grams = Math.round((bySpecies[speciesId].grams + grams * direction) * 1e8) / 1e8;
     bySpecies[speciesId].pieces += pieces * direction;
 
-    // 2. Group by exact stone specification (ریز طلب و بدهی سنگ با مشخصات، کیفیت، رنگ و سایز)
-    const detailKey = `${speciesId}__${shape}__${color}__${clarity}__${rawCut}__${certLab}_${certNumber}__${mode}__${lotNumber}__${sieveSize}`;
+    // قاعده سنگ‌های تکی در برابر بارخانه:
+    // سنگ‌های تکی یونیک و یکتا هستند و حتی با مشخصات یکسان هرگز با یکدیگر ادغام یا کسر نمی‌شوند.
+    // تنها در سنگ‌های بارخانه‌ای امکان ادغام و کسر موجودی وجود دارد.
+    const isReferenceSettlement = Boolean(details.unsettledReferenceId && byDetail[String(details.unsettledReferenceId)]);
+    const detailKey = isParcel
+      ? `parcel__${speciesId}__${shape}__${color}__${clarity}__${rawCut}__${lotNumber}__${sieveSize}`
+      : (details.unsettledReferenceId
+          ? String(details.unsettledReferenceId)
+          : `single__${t.id || (t as any).key || details.inventorySourceId || details.stoneInternalCode || `${speciesId}_${t.documentNumber || 'doc'}_${carats}_${shape}`}`);
+
+    const effectiveDirection = isReferenceSettlement
+      ? (byDetail[String(details.unsettledReferenceId)].carats > 0 ? -1 : 1)
+      : direction;
+    const effectivePieceDir = isReferenceSettlement
+      ? (byDetail[String(details.unsettledReferenceId)].pieces > 0 ? -1 : 1)
+      : direction;
+
     if (!byDetail[detailKey]) {
       byDetail[detailKey] = {
         key: detailKey,
@@ -415,9 +431,9 @@ export function calculateCustomerStoneBalances(
         lastDocumentNumber: t.documentNumber,
       };
     }
-    byDetail[detailKey].carats = Math.round((byDetail[detailKey].carats + carats * direction) * 1e8) / 1e8;
-    byDetail[detailKey].grams = Math.round((byDetail[detailKey].grams + grams * direction) * 1e8) / 1e8;
-    byDetail[detailKey].pieces += pieces * direction;
+    byDetail[detailKey].carats = Math.round((byDetail[detailKey].carats + carats * effectiveDirection) * 1e8) / 1e8;
+    byDetail[detailKey].grams = Math.round((byDetail[detailKey].grams + grams * effectiveDirection) * 1e8) / 1e8;
+    byDetail[detailKey].pieces += isReferenceSettlement ? Math.abs(pieces) * effectivePieceDir : pieces * direction;
     byDetail[detailKey].transactionsCount = (byDetail[detailKey].transactionsCount || 0) + 1;
     if (t.documentDateJalali) byDetail[detailKey].lastDate = t.documentDateJalali;
     if (t.documentNumber) byDetail[detailKey].lastDocumentNumber = t.documentNumber;
@@ -607,7 +623,8 @@ export function calculateCustomerDetailedStonePositions(
 
       const shape = String(details.stoneShape || '');
       const shapeName = String(details.stoneShapeName || (shape ? getShapeNameFa(shape) : ''));
-      const mode = details.stoneMode === 'parcel' ? ('parcel' as const) : ('single_stone' as const);
+      const isParcel = details.stoneMode === 'parcel' || (!details.stoneMode && rawPieces > 1);
+      const mode = isParcel ? ('parcel' as const) : ('single_stone' as const);
 
       let color = '';
       if (details.stoneColorMode === 'fancy') {
@@ -640,7 +657,19 @@ export function calculateCustomerDetailedStonePositions(
           ? `${details.stoneMeasurementsLength || '—'} × ${details.stoneMeasurementsWidth || '—'}${details.stoneMeasurementsDepth ? ` × ${details.stoneMeasurementsDepth}` : ''} mm`
           : '';
 
-      const detailKey = `${speciesId}__${shape}__${color}__${clarity}__${rawCut}__${certLab}_${certNumber}__${mode}__${lotNumber}__${sieveSize}`;
+      const isReferenceSettlement = Boolean(details.unsettledReferenceId && itemsMap[String(details.unsettledReferenceId)]);
+      const detailKey = isParcel
+        ? `parcel__${speciesId}__${shape}__${color}__${clarity}__${rawCut}__${lotNumber}__${sieveSize}`
+        : (isReferenceSettlement
+            ? String(details.unsettledReferenceId)
+            : `single__draft_${line.id || (line as any).key || Math.random().toString(36).slice(2)}`);
+
+      const effectiveDirection = isReferenceSettlement
+        ? (itemsMap[String(details.unsettledReferenceId)].carats > 0 ? -1 : 1)
+        : direction;
+      const effectivePieceDir = isReferenceSettlement
+        ? (itemsMap[String(details.unsettledReferenceId)].pieces > 0 ? -1 : 1)
+        : direction;
 
       if (!itemsMap[detailKey]) {
         itemsMap[detailKey] = {
@@ -665,9 +694,9 @@ export function calculateCustomerDetailedStonePositions(
           pieces: 0,
         };
       }
-      itemsMap[detailKey].carats = Math.round(((itemsMap[detailKey].carats || 0) + carats * direction) * 1e8) / 1e8;
-      itemsMap[detailKey].grams = Math.round(((itemsMap[detailKey].grams || 0) + grams * direction) * 1e8) / 1e8;
-      itemsMap[detailKey].pieces = (itemsMap[detailKey].pieces || 0) + pieces * direction;
+      itemsMap[detailKey].carats = Math.round(((itemsMap[detailKey].carats || 0) + carats * effectiveDirection) * 1e8) / 1e8;
+      itemsMap[detailKey].grams = Math.round(((itemsMap[detailKey].grams || 0) + grams * effectiveDirection) * 1e8) / 1e8;
+      itemsMap[detailKey].pieces = (itemsMap[detailKey].pieces || 0) + (isReferenceSettlement ? Math.abs(pieces) * effectivePieceDir : pieces * direction);
     }
   }
 

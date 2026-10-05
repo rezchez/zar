@@ -7,9 +7,47 @@ import { mapBankAccount } from '@/lib/bank';
 import { ensureBankAccountsCollection } from '@/lib/bank-collection';
 import { parseLocalizedAmount } from '@/lib/money';
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
+import { validateIranianSheba } from '@/lib/sheba';
 
 function text(value: unknown, max = 120) {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
+}
+
+function extractPbErrorMessage(error: unknown, fallback: string): string {
+  if (!error) return fallback;
+  if (typeof error === 'object') {
+    const errObj = error as any;
+    const responseData = errObj?.response?.data || errObj?.data;
+    if (responseData && typeof responseData === 'object') {
+      const FIELD_NAMES_FA: Record<string, string> = {
+        bankName: 'نام بانک',
+        accountNumber: 'شماره حساب',
+        branchName: 'نام شعبه',
+        shebaNumber: 'شماره شبا',
+        balance: 'موجودی',
+        currency: 'ارز',
+        accountId: 'سرفصل حسابداری',
+        accountCodeZero: 'کد حساب',
+      };
+      const fieldErrors: string[] = [];
+      for (const [key, val] of Object.entries(responseData)) {
+        const fieldLabel = FIELD_NAMES_FA[key] || key;
+        if (val && typeof val === 'object' && 'message' in val) {
+          fieldErrors.push(`${fieldLabel}: ${(val as any).message}`);
+        } else if (typeof val === 'string') {
+          fieldErrors.push(`${fieldLabel}: ${val}`);
+        }
+      }
+      if (fieldErrors.length > 0) {
+        return `خطا در ثبت اطلاعات (${fieldErrors.join(' - ')})`;
+      }
+    }
+    if (errObj?.message && typeof errObj.message === 'string' && errObj.message !== 'Failed to update record.') {
+      return errObj.message;
+    }
+  }
+  if (error instanceof Error && error.message !== 'Failed to update record.') return error.message;
+  return fallback;
 }
 
 async function writerFor(context: Awaited<ReturnType<typeof getServerAuthContext>>) {
@@ -76,8 +114,31 @@ export async function PATCH(
     if (body?.bankName !== undefined) updateData.bankName = text(body.bankName);
     if (body?.branchName !== undefined) updateData.branchName = text(body.branchName);
     if (body?.accountNumber !== undefined) updateData.accountNumber = text(body.accountNumber);
+    if (body?.accountType !== undefined) updateData.accountType = text(body.accountType, 50);
     if (body?.currency !== undefined) updateData.currency = text(body.currency).toUpperCase();
-    if (body?.isActive !== undefined) updateData.isActive = Boolean(body.isActive);
+    if (body?.isActive !== undefined) {
+      updateData.isBlocked = !Boolean(body.isActive);
+    }
+    if (body?.isBlocked !== undefined) {
+      updateData.isBlocked = Boolean(body.isBlocked);
+    }
+
+    if (body?.shebaNumber !== undefined || body?.iban !== undefined) {
+      const rawSheba = text(body?.shebaNumber || body?.iban, 34);
+      if (rawSheba) {
+        const shebaValidation = validateIranianSheba(rawSheba);
+        if (!shebaValidation.valid) {
+          return NextResponse.json({ message: shebaValidation.error }, { status: 400 });
+        }
+        let norm = rawSheba.trim().toUpperCase().replace(/[\s-]/g, '');
+        if (norm && !norm.startsWith('IR')) norm = `IR${norm}`;
+        updateData.shebaNumber = norm;
+      } else {
+        updateData.shebaNumber = '';
+      }
+    }
+    if (body?.hasCheckbook !== undefined) updateData.hasCheckbook = Boolean(body.hasCheckbook);
+    if (body?.hasVirtualCheck !== undefined) updateData.hasVirtualCheck = Boolean(body.hasVirtualCheck);
 
     if (body?.accountId !== undefined) {
       const accountId = body.accountId ? text(body.accountId, 40) : null;
@@ -100,7 +161,6 @@ export async function PATCH(
         return NextResponse.json({ message: 'موجودی نمی‌تواند منفی باشد.' }, { status: 400 });
       }
       updateData.balance = balanceVal;
-      updateData.currentBalance = balanceVal;
     }
 
     await writer.collection('bank_accounts').update(id, updateData);
@@ -147,7 +207,7 @@ export async function PATCH(
     return NextResponse.json({ bank: mapBankAccount(fullRecord) });
   } catch (error) {
     console.error('bank_account_update_failed', error);
-    return NextResponse.json({ message: 'ویرایش حساب بانکی انجام نشد.' }, { status: 400 });
+    return NextResponse.json({ message: extractPbErrorMessage(error, 'ویرایش حساب بانکی انجام نشد.') }, { status: 400 });
   }
 }
 

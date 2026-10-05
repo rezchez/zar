@@ -20,7 +20,10 @@ export const EXACT_PATH_LABELS: Record<string, string> = {
   '/dashboard/documents/opening-balance': 'تراز افتتاحیه',
   '/dashboard/documents/initial-inventory': 'تعریف موجودی اول دوره',
   '/dashboard/documents/initial-inventory/checks': 'موجودی اولیه چک‌های صادرشده',
+  '/dashboard/documents/initial-inventory/checks-received': 'موجودی اولیه چک‌های دریافتی',
   '/dashboard/documents/initial-inventory/bank': 'موجودی اول دوره بانک',
+  '/dashboard/banks': 'بانک',
+  '/dashboard/bank': 'بانک',
   '/dashboard/documents/initial-inventory/cash': 'موجودی اول دوره صندوق',
   '/dashboard/documents/initial-inventory/coin': 'موجودی اول دوره مسکوکات',
   '/dashboard/documents/initial-inventory/workmanship': 'موجودی اول دوره کار ساخته',
@@ -33,6 +36,8 @@ export const EXACT_PATH_LABELS: Record<string, string> = {
   '/dashboard/audit-logs': 'لاگ حسابرسی',
   '/dashboard/settings': 'تنظیمات کلی سامانه',
   '/dashboard/account': 'حساب کاربری',
+  '/dashboard/refining': 'مدیریت ری‌گیری',
+  '/dashboard/refining/packets': 'پاکت‌های نزد ریگیری',
 };
 
 /**
@@ -46,6 +51,8 @@ export const SEGMENT_FALLBACK_LABELS: Record<string, string> = {
   'initial-inventory': 'موجودی اول دوره',
   'opening-balance': 'تراز افتتاحیه',
   checks: 'چک‌های صادرشده',
+  'checks-received': 'چک‌های دریافتی',
+  banks: 'بانک',
   bank: 'موجودی بانک',
   cash: 'موجودی صندوق',
   coin: 'موجودی مسکوکات',
@@ -58,6 +65,8 @@ export const SEGMENT_FALLBACK_LABELS: Record<string, string> = {
   account: 'حساب کاربری',
   'activity-log': 'لاگ و رویدادها',
   'audit-logs': 'لاگ حسابرسی',
+  refining: 'ری‌گیری طلا',
+  packets: 'پاکت‌های نزد ریگیری',
 };
 
 /**
