@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Script from 'next/script';
 import './globals.css';
 import './document-form.css';
 import ThemeProvider from '@/src/components/ThemeProvider';
@@ -39,12 +40,16 @@ export default async function RootLayout({
   return (
     <html lang="fa" dir="rtl" suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
         <meta name="color-scheme" content="dark light" />
         <meta name="theme-color" content={settings.pwaThemeColor || '#1e293b'} />
         {isPwaEnabled && <link rel="apple-touch-icon" href="/favicon.ico" />}
       </head>
       <body suppressHydrationWarning>
+        <Script
+          id="zarfolio-theme-init"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{ __html: themeInitScript }}
+        />
         <ThemeProvider>
           <SettingsProvider>
             <ToastProvider>

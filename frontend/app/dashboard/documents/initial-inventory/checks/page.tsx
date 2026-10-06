@@ -5,23 +5,31 @@ import { hasPermission } from '@/lib/authorization';
 import { mapCheckRecord, type CheckRecord } from '@/lib/check';
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
 import DashboardShell from '@/src/components/dashboard/DashboardShell';
-import InitialIssuedChecksClient from '@/features/checks/components/InitialIssuedChecksClient';
+import UnifiedChecksClient from '@/features/checks/components/UnifiedChecksClient';
 
 export const dynamic = 'force-dynamic';
 
-export default async function InitialIssuedChecksPage() {
+type PageProps = {
+  searchParams?: Promise<{ tab?: string }>;
+};
+
+export default async function InitialChecksPage({ searchParams }: PageProps) {
   const context = await getServerAuthContext();
   if (!context) redirect('/');
   if (!hasPermission(context.user, 'bank.view') && !hasPermission(context.user, 'bank.manage')) {
     redirect('/dashboard');
   }
 
-  let initialChecks: CheckRecord[] = [];
+  const resolvedParams = searchParams ? await searchParams : {};
+  const defaultTab = resolvedParams?.tab === 'received' ? 'received' : 'issued';
+
+  let initialIssuedChecks: CheckRecord[] = [];
+  let initialReceivedChecks: CheckRecord[] = [];
   try {
     const service = await getPocketBaseServiceClient().catch(() => null);
     const client = service || context.pb;
     const records = await client.collection('checks').getFullList({
-      filter: 'is_opening_balance = true && chequeType != "receivable"',
+      filter: 'is_opening_balance = true',
       sort: '-dueDate',
       expand: 'bankAccount,customer,created_by',
     }).catch(async () => {
@@ -31,17 +39,25 @@ export default async function InitialIssuedChecksPage() {
       }).catch(() => []);
     });
 
-    initialChecks = records
-      .filter((r: Record<string, unknown>) => (r.is_opening_balance === true || r.isOpeningBalance === true) && r.chequeType !== 'receivable')
+    const allOpeningChecks = records
+      .filter((r: Record<string, unknown>) => r.is_opening_balance === true || r.isOpeningBalance === true)
       .map(mapCheckRecord);
+
+    initialIssuedChecks = allOpeningChecks.filter((c) => c.chequeType !== 'receivable');
+    initialReceivedChecks = allOpeningChecks.filter((c) => c.chequeType === 'receivable');
   } catch {
-    initialChecks = [];
+    initialIssuedChecks = [];
+    initialReceivedChecks = [];
   }
 
   return (
     <DashboardShell user={context.user}>
       <main dir="rtl" className="min-h-full px-4 py-8 text-slate-900 dark:text-slate-100 sm:px-6 lg:px-10">
-        <InitialIssuedChecksClient initialChecks={initialChecks} />
+        <UnifiedChecksClient
+          initialIssuedChecks={initialIssuedChecks}
+          initialReceivedChecks={initialReceivedChecks}
+          defaultTab={defaultTab}
+        />
       </main>
     </DashboardShell>
   );

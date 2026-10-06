@@ -224,10 +224,10 @@ export default function InitialIssuedCheckModal({
             </div>
             <div>
               <h2 className="text-sm font-black text-slate-900 dark:text-white">
-                {editItem ? 'ویرایش چک صادرشده اول دوره' : 'ثبت چک صادرشده اول دوره'}
+                {editItem ? 'ویرایش چک صادرشده' : 'ثبت چک صادرشده'}
               </h2>
               <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                چک‌های صادرشده پیش از دوره که هنوز در بانک وصول نشده‌اند
+                مشخصات و وضعیت چک بانکی صادرشده
               </p>
             </div>
           </div>

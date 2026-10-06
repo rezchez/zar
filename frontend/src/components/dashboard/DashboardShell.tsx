@@ -1,7 +1,7 @@
 'use client';
 
 import {
-  ArrowDownLeft,
+  Banknote,
   BarChart3,
   Boxes,
   CreditCard,
@@ -91,7 +91,7 @@ export const navGroupsBase: NavGroupData[] = [
       },
       {
         id: 'bank',
-        title: 'بانک',
+        title: 'بانکداری',
         icon: Landmark,
         children: [
           {
@@ -101,24 +101,18 @@ export const navGroupsBase: NavGroupData[] = [
             href: '/dashboard/documents/initial-inventory/bank',
           },
           {
-            id: 'bank-checks-issued',
-            title: 'چک‌های پرداختی',
+            id: 'bank-cash',
+            title: 'وجوه نقد',
+            icon: Banknote,
+            href: '/dashboard/documents/initial-inventory/cash',
+          },
+          {
+            id: 'bank-checks',
+            title: 'چک',
             icon: CreditCard,
             href: '/dashboard/documents/initial-inventory/checks',
           },
-          {
-            id: 'bank-checks-received',
-            title: 'چک‌های دریافتی',
-            icon: ArrowDownLeft,
-            href: '/dashboard/documents/initial-inventory/checks-received',
-          },
         ],
-      },
-      {
-        id: 'reports',
-        title: 'گزارش‌ها و ترازها',
-        icon: BarChart3,
-        href: '/dashboard/reports',
       },
       {
         id: 'refining',
@@ -144,6 +138,12 @@ export const navGroupsBase: NavGroupData[] = [
             href: '/dashboard/documents/new',
           },
         ],
+      },
+      {
+        id: 'reports',
+        title: 'گزارش‌ها و ترازها',
+        icon: BarChart3,
+        href: '/dashboard/reports',
       },
     ],
   },
@@ -312,10 +312,10 @@ export default function DashboardShell({
             ? 'document-new'
             : pathname === '/dashboard/documents/initial-inventory/bank' || pathname === '/dashboard/banks' || pathname === '/dashboard/bank'
               ? 'bank-accounts'
-            : pathname === '/dashboard/documents/initial-inventory/checks'
-              ? 'bank-checks-issued'
-            : pathname === '/dashboard/documents/initial-inventory/checks-received'
-              ? 'bank-checks-received'
+            : pathname === '/dashboard/documents/initial-inventory/cash' || pathname === '/dashboard/cash'
+              ? 'bank-cash'
+            : pathname === '/dashboard/documents/initial-inventory/checks' || pathname === '/dashboard/documents/initial-inventory/checks-received'
+              ? 'bank-checks'
             : pathname === '/dashboard/documents/initial-inventory' || pathname === '/dashboard/documents/opening-balance'
               ? 'document-initial-inventory'
               : pathname === '/dashboard/customers'

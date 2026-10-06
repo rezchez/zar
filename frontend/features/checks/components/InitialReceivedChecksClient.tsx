@@ -2,6 +2,7 @@
 
 import {
   AlertCircle,
+  ArrowDownLeft,
   Calendar,
   CheckCircle2,
   ChevronRight,
@@ -33,13 +34,21 @@ type ChecksSummary = {
   byBank: Record<string, { count: number; amount: number; outstandingCount: number; outstandingAmount: number; name?: string }>;
 };
 
+export type InitialReceivedChecksClientProps = {
+  initialChecks?: CheckRecord[];
+  initialSummary?: ChecksSummary;
+  pageTitle?: string;
+  activeTab?: 'issued' | 'received';
+  onTabChange?: (tab: 'issued' | 'received') => void;
+};
+
 export default function InitialReceivedChecksClient({
   initialChecks = [],
   initialSummary,
-}: {
-  initialChecks?: CheckRecord[];
-  initialSummary?: ChecksSummary;
-}) {
+  pageTitle,
+  activeTab = 'received',
+  onTabChange,
+}: InitialReceivedChecksClientProps) {
   const { formatMoney, settings } = useAppSettings();
   const effectiveCurrency = (settings.baseCurrency as 'IRR' | 'IRT') || 'IRR';
   const currencySuffix = effectiveCurrency === 'IRT' ? 'تومان' : 'ریال';
@@ -212,7 +221,7 @@ export default function InitialReceivedChecksClient({
               </span>
             </div>
             <h1 className="text-xl font-black text-slate-900 dark:text-white sm:text-2xl">
-              موجودی اولیه چک‌های دریافتی
+              {pageTitle || 'چک'}
             </h1>
           </div>
         </div>
@@ -248,19 +257,34 @@ export default function InitialReceivedChecksClient({
         </div>
       </div>
 
-      {/* Top Tab Switcher: Receivable (1120) vs Issued (2110) */}
+      {/* Top Tab Switcher: Issued (2110) vs Receivable (1120) */}
       <div className="flex items-center gap-2 border-b border-slate-200/80 pb-3 dark:border-slate-800">
-        <span className="inline-flex items-center gap-2 rounded-xl bg-emerald-500/15 px-4 py-2 text-xs font-black text-emerald-800 transition dark:bg-emerald-500/25 dark:text-emerald-300">
-          <CreditCard size={15} />
-          <span>چک‌های دریافتی (۱۱۲۰)</span>
-        </span>
-        <Link
-          href="/dashboard/documents/initial-inventory/checks"
-          className="inline-flex items-center gap-2 rounded-xl bg-slate-100 px-4 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-200/70 hover:text-slate-900 dark:bg-slate-800/80 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
+        {onTabChange ? (
+          <button
+            type="button"
+            onClick={() => onTabChange('issued')}
+            className="inline-flex items-center gap-2 rounded-xl bg-slate-100 px-4 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-200/70 hover:text-slate-900 dark:bg-slate-800/80 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white cursor-pointer"
+          >
+            <CreditCard size={15} />
+            <span>چک‌های پرداختی (صادره) - ۲۱۱۰</span>
+          </button>
+        ) : (
+          <Link
+            href="/dashboard/documents/initial-inventory/checks"
+            className="inline-flex items-center gap-2 rounded-xl bg-slate-100 px-4 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-200/70 hover:text-slate-900 dark:bg-slate-800/80 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
+          >
+            <CreditCard size={15} />
+            <span>چک‌های پرداختی (صادره) - ۲۱۱۰</span>
+          </Link>
+        )}
+        <button
+          type="button"
+          onClick={() => onTabChange?.('received')}
+          className="inline-flex items-center gap-2 rounded-xl bg-amber-500/15 px-4 py-2 text-xs font-black text-amber-800 transition dark:bg-amber-500/25 dark:text-amber-300 cursor-pointer"
         >
-          <CreditCard size={15} />
-          <span>چک‌های صادرشده (۲۱۱۰)</span>
-        </Link>
+          <ArrowDownLeft size={15} />
+          <span>چک‌های دریافتی - ۱۱۲۰</span>
+        </button>
       </div>
 
       {/* Error Banner */}

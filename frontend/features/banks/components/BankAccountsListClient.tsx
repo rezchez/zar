@@ -435,9 +435,6 @@ export default function BankAccountsListClient({
           </Link>
           <div>
             <h1 className="text-2xl font-black text-slate-900 dark:text-white">فهرست حساب‌های بانکی</h1>
-            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-              حساب‌های بانکی معرفی‌شده و موجودی اولیه
-            </p>
           </div>
         </div>
 

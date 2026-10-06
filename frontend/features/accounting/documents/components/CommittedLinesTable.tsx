@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowDown,
   ArrowUp,
@@ -414,22 +414,23 @@ export default function CommittedLinesTable({
   const [sortState, setSortState] = useState<SortState | null>(null);
 
   // Column width resizing state with localStorage persistence
-  const [columnWidths, setColumnWidths] = useState<Record<ColumnKey, number>>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const stored = localStorage.getItem(STORAGE_KEY);
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (parsed && typeof parsed === 'object') {
-            return { ...DEFAULT_COLUMN_WIDTHS, ...parsed };
-          }
+  const [columnWidths, setColumnWidths] = useState<Record<ColumnKey, number>>(DEFAULT_COLUMN_WIDTHS);
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed && typeof parsed === 'object') {
+          setColumnWidths({ ...DEFAULT_COLUMN_WIDTHS, ...parsed });
         }
-      } catch {
-        // Fallback to defaults
       }
+    } catch {
+      // Fallback to defaults
     }
-    return DEFAULT_COLUMN_WIDTHS;
-  });
+  }, []);
 
   const latestWidthsRef = useRef(columnWidths);
   latestWidthsRef.current = columnWidths;
@@ -437,10 +438,11 @@ export default function CommittedLinesTable({
   const [resizingCol, setResizingCol] = useState<ColumnKey | null>(null);
 
   const hasCustomWidths = useMemo(() => {
+    if (!isMounted) return false;
     return (Object.keys(DEFAULT_COLUMN_WIDTHS) as ColumnKey[]).some(
       (k) => columnWidths[k] !== DEFAULT_COLUMN_WIDTHS[k],
     );
-  }, [columnWidths]);
+  }, [isMounted, columnWidths]);
 
   const handleResizeStart = (
     colKey: ColumnKey,

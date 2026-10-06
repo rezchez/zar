@@ -2,6 +2,7 @@
 
 import {
   AlertCircle,
+  ArrowDownLeft,
   Calendar,
   CheckCircle2,
   ChevronRight,
@@ -11,7 +12,6 @@ import {
   Filter,
   FolderTree,
   Landmark,
-  Plus,
   RefreshCw,
   Search,
   Trash2,
@@ -33,13 +33,21 @@ type ChecksSummary = {
   byBank: Record<string, { count: number; amount: number; outstandingCount: number; outstandingAmount: number }>;
 };
 
+export type InitialIssuedChecksClientProps = {
+  initialChecks?: CheckRecord[];
+  initialSummary?: ChecksSummary;
+  pageTitle?: string;
+  activeTab?: 'issued' | 'received';
+  onTabChange?: (tab: 'issued' | 'received') => void;
+};
+
 export default function InitialIssuedChecksClient({
   initialChecks = [],
   initialSummary,
-}: {
-  initialChecks?: CheckRecord[];
-  initialSummary?: ChecksSummary;
-}) {
+  pageTitle,
+  activeTab = 'issued',
+  onTabChange,
+}: InitialIssuedChecksClientProps) {
   const { formatMoney, settings } = useAppSettings();
   const effectiveCurrency = (settings.baseCurrency as 'IRR' | 'IRT') || 'IRR';
   const currencySuffix = effectiveCurrency === 'IRT' ? 'تومان' : 'ریال';
@@ -147,11 +155,6 @@ export default function InitialIssuedChecksClient({
     return filteredChecks.slice(start, start + pageSize);
   }, [filteredChecks, page, pageSize, totalPages]);
 
-  const handleOpenCreate = () => {
-    setEditingItem(null);
-    setModalOpen(true);
-  };
-
   const handleOpenEdit = (check: CheckRecord) => {
     setEditingItem(check);
     setModalOpen(true);
@@ -197,7 +200,7 @@ export default function InitialIssuedChecksClient({
               </span>
             </div>
             <h1 className="text-xl font-black text-slate-900 dark:text-white sm:text-2xl">
-              موجودی اولیه چک‌های صادرشده
+              {pageTitle || 'چک'}
             </h1>
           </div>
         </div>
@@ -221,31 +224,37 @@ export default function InitialIssuedChecksClient({
           >
             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
           </button>
-
-          <button
-            type="button"
-            onClick={handleOpenCreate}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-2xl bg-amber-500 px-4 text-xs font-black text-slate-950 shadow-xs transition hover:bg-amber-400 dark:bg-amber-400 dark:hover:bg-amber-300 cursor-pointer"
-          >
-            <Plus size={16} strokeWidth={2.5} />
-            <span>ثبت چک صادرشده اول دوره</span>
-          </button>
         </div>
       </div>
 
       {/* Top Tab Switcher: Issued (2110) vs Receivable (1120) */}
       <div className="flex items-center gap-2 border-b border-slate-200/80 pb-3 dark:border-slate-800">
-        <span className="inline-flex items-center gap-2 rounded-xl bg-amber-500/15 px-4 py-2 text-xs font-black text-amber-800 transition dark:bg-amber-500/25 dark:text-amber-300">
-          <CreditCard size={15} />
-          <span>چک‌های صادرشده (۲۱۱۰)</span>
-        </span>
-        <Link
-          href="/dashboard/documents/initial-inventory/checks-received"
-          className="inline-flex items-center gap-2 rounded-xl bg-slate-100 px-4 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-200/70 hover:text-slate-900 dark:bg-slate-800/80 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
+        <button
+          type="button"
+          onClick={() => onTabChange?.('issued')}
+          className="inline-flex items-center gap-2 rounded-xl bg-amber-500/15 px-4 py-2 text-xs font-black text-amber-800 transition dark:bg-amber-500/25 dark:text-amber-300 cursor-pointer"
         >
           <CreditCard size={15} />
-          <span>چک‌های دریافتی (۱۱۲۰)</span>
-        </Link>
+          <span>چک‌های پرداختی (صادره) - ۲۱۱۰</span>
+        </button>
+        {onTabChange ? (
+          <button
+            type="button"
+            onClick={() => onTabChange('received')}
+            className="inline-flex items-center gap-2 rounded-xl bg-slate-100 px-4 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-200/70 hover:text-slate-900 dark:bg-slate-800/80 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white cursor-pointer"
+          >
+            <ArrowDownLeft size={15} />
+            <span>چک‌های دریافتی - ۱۱۲۰</span>
+          </button>
+        ) : (
+          <Link
+            href="/dashboard/documents/initial-inventory/checks-received"
+            className="inline-flex items-center gap-2 rounded-xl bg-slate-100 px-4 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-200/70 hover:text-slate-900 dark:bg-slate-800/80 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
+          >
+            <ArrowDownLeft size={15} />
+            <span>چک‌های دریافتی - ۱۱۲۰</span>
+          </Link>
+        )}
       </div>
 
       {/* Error Banner */}
@@ -369,16 +378,8 @@ export default function InitialIssuedChecksClient({
             هنوز چکی ثبت نشده است.
           </h3>
           <p className="mt-1 max-w-md text-xs text-slate-500 dark:text-slate-400">
-            در صورتی که قبل از شروع کار با سامانه، چک‌هایی صادر کرده‌اید که هنوز در بانک وصول نشده‌اند، می‌توانید آن‌ها را اینجا ثبت کنید.
+            چک‌های پرداختی و صادرشده، هنگام ثبت سند (پرداخت چک از حساب بانکی) صادر شده و در این جدول نمایش داده می‌شوند.
           </p>
-          <button
-            type="button"
-            onClick={handleOpenCreate}
-            className="mt-5 inline-flex h-10 items-center justify-center gap-2 rounded-2xl bg-amber-500 px-5 text-xs font-black text-slate-950 shadow-xs transition hover:bg-amber-400 dark:bg-amber-400 dark:hover:bg-amber-300 cursor-pointer"
-          >
-            <Plus size={16} strokeWidth={2.5} />
-            <span>ثبت اولین چک صادرشده</span>
-          </button>
         </div>
       ) : (
         <div className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900">
