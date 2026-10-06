@@ -51,7 +51,7 @@ export default async function RootLayout({
           dangerouslySetInnerHTML={{ __html: themeInitScript }}
         />
         <ThemeProvider>
-          <SettingsProvider>
+          <SettingsProvider initialSettings={settings}>
             <ToastProvider>
               <Toaster position="bottom-right" progress />
               {children}

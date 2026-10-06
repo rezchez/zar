@@ -6,9 +6,11 @@ import { useCallback, useEffect, useState } from 'react';
 import type { BankAccount } from '@/lib/bank';
 import BankLogo from '@/src/components/documents/BankLogo';
 import { useAppSettings } from '@/src/components/SettingsProvider';
+import { getConvertedBankAmount } from '../services/bank';
 
 export default function BankBalancesWidget() {
-  const { formatMoney } = useAppSettings();
+  const { settings } = useAppSettings();
+  const baseCurrency = (settings?.baseCurrency || 'IRT') as 'IRR' | 'IRT';
   const [banks, setBanks] = useState<BankAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -49,18 +51,33 @@ export default function BankBalancesWidget() {
       {!loading && !banks.length && !error ? <p className="dashboard-empty-search">هنوز حساب بانکی ثبت نشده است.</p> : null}
 
       <div className="mt-4 space-y-2">
-        {banks.map((bank) => (
-          <div key={bank.id} className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/70 p-3 dark:border-slate-700 dark:bg-slate-900/60">
-            <BankLogo bankName={bank.bankName} size={38} />
-            <div className="min-w-0 flex-1">
-              <strong className="block truncate text-sm">{bank.bankName}</strong>
-              <small className="text-xs text-slate-500 dark:text-slate-400">{bank.accountNumber}</small>
+        {banks.map((bank) => {
+          const converted = getConvertedBankAmount(bank.balance, bank.currency, baseCurrency);
+          const isToman =
+            converted.currencyCode === 'IRT' ||
+            converted.currencySymbol === 'IRT' ||
+            converted.currencySymbol === 'تومان' ||
+            converted.currencyName?.includes('تومان');
+          const isRial =
+            converted.currencyCode === 'IRR' ||
+            converted.currencySymbol === 'IRR' ||
+            converted.currencySymbol === 'ریال' ||
+            converted.currencyName?.includes('ریال');
+          const displayUnit = isToman ? 'تومان' : isRial ? 'ریال' : (converted.currencyName || converted.currencySymbol || converted.currencyCode);
+
+          return (
+            <div key={bank.id} className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/70 p-3 dark:border-slate-700 dark:bg-slate-900/60">
+              <BankLogo bankName={bank.bankName} size={38} />
+              <div className="min-w-0 flex-1">
+                <strong className="block truncate text-sm">{bank.bankName}</strong>
+                <small className="text-xs text-slate-500 dark:text-slate-400">{bank.accountNumber}</small>
+              </div>
+              <strong className="text-sm text-emerald-700 dark:text-emerald-300">
+                {Number(converted.amount || 0).toLocaleString('fa-IR')} {displayUnit}
+              </strong>
             </div>
-            <strong className="text-sm text-emerald-700 dark:text-emerald-300">
-              {formatMoney(bank.balance)}
-            </strong>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </section>
   );

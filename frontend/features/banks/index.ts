@@ -7,3 +7,6 @@ export { default as BankBalancesWidget } from './components/BankBalancesWidget';
 export { default as BankLogo } from './components/BankLogo';
 export { default as BankAccountSelect } from './components/BankAccountSelect';
 export { default as BankOperationModal } from './components/BankOperationModal';
+export { default as BankOpeningBalanceModal } from './components/BankOpeningBalanceModal';
+export { default as BankAccountModal } from './components/BankAccountModal';
+export { default as BankingAccountsClient } from './components/BankingAccountsClient';

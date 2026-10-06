@@ -26,6 +26,7 @@ export const EXACT_PATH_LABELS: Record<string, string> = {
   '/dashboard/bank': 'بانک',
   '/dashboard/documents/initial-inventory/cash': 'موجودی اول دوره صندوق',
   '/dashboard/cash': 'وجوه نقد',
+  '/dashboard/checks': 'چک',
   '/dashboard/documents/initial-inventory/coin': 'موجودی اول دوره مسکوکات',
   '/dashboard/documents/initial-inventory/workmanship': 'موجودی اول دوره کار ساخته',
   '/dashboard/accounting': 'عملیات مالی و حسابداری',

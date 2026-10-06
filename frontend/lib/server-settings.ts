@@ -25,7 +25,30 @@ export const getServerAppSettings = cache(async function getServerAppSettings():
   }
 
   try {
-    const pb = createPocketBaseClient();
+    let pb: any = null;
+    try {
+      const { getServerAuthContext } = await import('@/lib/auth');
+      const auth = await getServerAuthContext();
+      if (auth?.pb) {
+        pb = auth.pb;
+      }
+    } catch {
+      // Cookies not accessible or unauthenticated
+    }
+
+    if (!pb) {
+      try {
+        const { getPocketBaseServiceClient } = await import('@/lib/pocketbase-service');
+        pb = await getPocketBaseServiceClient();
+      } catch {
+        // Superuser credentials not configured
+      }
+    }
+
+    if (!pb) {
+      pb = createPocketBaseClient();
+    }
+
     const record = await pb.collection('app_settings').getFirstListItem('id != ""', {
       signal: AbortSignal.timeout(2000),
     }).catch(() => null);

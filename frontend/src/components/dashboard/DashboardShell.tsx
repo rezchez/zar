@@ -98,19 +98,19 @@ export const navGroupsBase: NavGroupData[] = [
             id: 'bank-accounts',
             title: 'حساب‌های بانکی',
             icon: Landmark,
-            href: '/dashboard/documents/initial-inventory/bank',
+            href: '/dashboard/banks',
           },
           {
             id: 'bank-cash',
             title: 'وجوه نقد',
             icon: Banknote,
-            href: '/dashboard/documents/initial-inventory/cash',
+            href: '/dashboard/cash',
           },
           {
             id: 'bank-checks',
             title: 'چک',
             icon: CreditCard,
-            href: '/dashboard/documents/initial-inventory/checks',
+            href: '/dashboard/checks',
           },
         ],
       },
@@ -310,13 +310,13 @@ export default function DashboardShell({
             ? 'refining-management'
           : pathname === '/dashboard/documents/new'
             ? 'document-new'
-            : pathname === '/dashboard/documents/initial-inventory/bank' || pathname === '/dashboard/banks' || pathname === '/dashboard/bank'
+            : pathname === '/dashboard/banks' || pathname === '/dashboard/bank'
               ? 'bank-accounts'
-            : pathname === '/dashboard/documents/initial-inventory/cash' || pathname === '/dashboard/cash'
+            : pathname === '/dashboard/cash'
               ? 'bank-cash'
-            : pathname === '/dashboard/documents/initial-inventory/checks' || pathname === '/dashboard/documents/initial-inventory/checks-received'
+            : pathname === '/dashboard/checks'
               ? 'bank-checks'
-            : pathname === '/dashboard/documents/initial-inventory' || pathname === '/dashboard/documents/opening-balance'
+            : pathname.startsWith('/dashboard/documents/initial-inventory') || pathname === '/dashboard/documents/opening-balance'
               ? 'document-initial-inventory'
               : pathname === '/dashboard/customers'
                 ? 'customer-list'

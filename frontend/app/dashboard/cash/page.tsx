@@ -1,5 +1,98 @@
 import { redirect } from 'next/navigation';
 
-export default function DashboardCashPage() {
-  redirect('/dashboard/documents/initial-inventory/cash');
+import { getServerAuthContext } from '@/lib/auth';
+import { hasPermission } from '@/lib/authorization';
+import { dateToJalaliString } from '@/lib/jalali';
+import DashboardShell from '@/src/components/dashboard/DashboardShell';
+import BankingCashClient, { type CashFundItem } from '@/features/cash/components/BankingCashClient';
+
+export const dynamic = 'force-dynamic';
+
+type PbRecord = Record<string, unknown>;
+
+export default async function DashboardCashPage() {
+  const context = await getServerAuthContext();
+  if (!context) redirect('/');
+  if (!hasPermission(context.user, 'cash.view') && !hasPermission(context.user, 'cash.manage')) {
+    redirect('/dashboard');
+  }
+
+  let initialFunds: CashFundItem[] = [];
+  try {
+    const currenciesList = await context.pb.collection('currencies').getFullList().catch(() => []);
+    const currencyMap = new Map<string, PbRecord>();
+    for (const c of currenciesList) {
+      if (c.id) currencyMap.set(String(c.id), c);
+      if (c.code) currencyMap.set(String(c.code).toUpperCase(), c);
+      if (c.name) currencyMap.set(String(c.name), c);
+    }
+
+    const funds = await context.pb.collection('cash_funds').getFullList().catch(() => []);
+
+    const txs = await context.pb.collection('cash_transactions').getFullList({
+      filter: 'is_opening_balance = true || transaction_type = "opening_balance" || source_key ~ "opening:cash:"',
+    }).catch(async () => {
+      return context.pb.collection('cash_transactions').getFullList({
+        filter: 'is_opening_balance = true || transaction_type = "opening_balance"',
+      }).catch(() => []);
+    });
+
+    const todayJalali = dateToJalaliString(new Date());
+
+    initialFunds = funds.map((f: PbRecord) => {
+      const expand = f.expand as Record<string, PbRecord> | undefined;
+      const currency =
+        expand?.currency ||
+        (f.currency ? currencyMap.get(String(f.currency)) : null) ||
+        (f.currency_name ? currencyMap.get(String(f.currency_name)) : null);
+      const currencyId = String(currency?.id || f.currency || '');
+      const currencyName = String(currency?.name || f.currency_name || 'ارز نامشخص');
+      const fundName = String(f.name || `صندوق ${currencyName}`).trim();
+
+      const fundTxs = txs.filter((tx: PbRecord) => {
+        const v = tx.vault ? String(tx.vault) : '';
+        const sk = tx.source_key ? String(tx.source_key) : '';
+        const cr = tx.currency_ref ? String(tx.currency_ref) : '';
+        return (
+          v === String(f.id) ||
+          sk === `opening:cash:${String(f.id)}` ||
+          (currencyId && (v === currencyId || sk === `opening:cash:${currencyId}` || cr === currencyId)) ||
+          (f.currency && cr === String(f.currency))
+        );
+      });
+
+      const canonicalTx =
+        fundTxs.find((t: PbRecord) => t.source_key === `opening:cash:${String(f.id)}`) ||
+        fundTxs.find((t: PbRecord) => t.vault === String(f.id)) ||
+        fundTxs[0] ||
+        null;
+
+      const currencyCode = String(currency?.code || canonicalTx?.currency || f.code || '').trim().toUpperCase();
+      const currencySymbol = String(currency?.symbol || canonicalTx?.currency_symbol || currencyCode).trim();
+      const openingDate = String(canonicalTx?.date || todayJalali);
+
+      return {
+        id: String(f.id),
+        name: fundName,
+        currencyId,
+        currencyName,
+        currencyCode,
+        currencySymbol,
+        openingBalance: Math.abs(Number(f.opening_balance ?? canonicalTx?.amount ?? 0)),
+        balance: Number(f.balance ?? 0),
+        openingBalanceDate: openingDate,
+        isBlocked: f.isBlocked === true,
+      };
+    });
+  } catch {
+    initialFunds = [];
+  }
+
+  return (
+    <DashboardShell user={context.user}>
+      <main dir="rtl" className="min-h-full px-4 py-8 text-slate-900 dark:text-slate-100 sm:px-6 lg:px-10">
+        <BankingCashClient initialFunds={initialFunds} />
+      </main>
+    </DashboardShell>
+  );
 }

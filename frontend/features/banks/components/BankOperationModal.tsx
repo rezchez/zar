@@ -34,6 +34,127 @@ export type CashVaultItem = {
   isBlocked?: boolean;
 };
 
+export type CurrencyHolder = {
+  currencyId?: string | null;
+  currencyCode?: string | null;
+  currencyName?: string | null;
+  currencySymbol?: string | null;
+};
+
+export function normalizeCurrencyCode(entity?: CurrencyHolder | null): string {
+  if (!entity) return '';
+  const code = (entity.currencyCode || '').trim().toUpperCase();
+  if (code === 'IRR' || code === 'RIAL' || entity.currencyName?.includes('ریال') || entity.currencySymbol === 'ریال') {
+    return 'IRR';
+  }
+  if (code === 'IRT' || code === 'TOMAN' || entity.currencyName?.includes('تومان') || entity.currencySymbol === 'تومان') {
+    return 'IRT';
+  }
+  if (code) {
+    return code;
+  }
+  const name = (entity.currencyName || '').trim();
+  if (name.includes('ریال')) return 'IRR';
+  if (name.includes('تومان')) return 'IRT';
+  if (entity.currencySymbol === 'ریال') return 'IRR';
+  if (entity.currencySymbol === 'تومان') return 'IRT';
+  if (entity.currencyId) {
+    return entity.currencyId.trim();
+  }
+  return '';
+}
+
+export function isSameCurrency(
+  a?: CurrencyHolder | null,
+  b?: CurrencyHolder | null,
+): boolean {
+  if (!a || !b) return false;
+  if (a.currencyId && b.currencyId && a.currencyId === b.currencyId) {
+    return true;
+  }
+  const codeA = normalizeCurrencyCode(a);
+  const codeB = normalizeCurrencyCode(b);
+  if (codeA && codeB && codeA === codeB) {
+    return true;
+  }
+  return false;
+}
+
+export function getEntityCurrencyLabel(
+  entity?: CurrencyHolder | null,
+  baseCurrency: 'IRR' | 'IRT' = 'IRT',
+): string {
+  if (!entity) {
+    return baseCurrency === 'IRT' ? 'تومان' : 'ریال';
+  }
+  const code = (entity.currencyCode || '').trim().toUpperCase();
+  const name = (entity.currencyName || '').trim();
+  const symbol = (entity.currencySymbol || '').trim();
+
+  const isDomestic =
+    code === 'IRR' ||
+    code === 'IRT' ||
+    code === 'RIAL' ||
+    code === 'TOMAN' ||
+    name.includes('ریال') ||
+    name.includes('تومان') ||
+    symbol === 'ریال' ||
+    symbol === 'تومان';
+
+  if (!isDomestic) {
+    return name || symbol || code || (baseCurrency === 'IRT' ? 'تومان' : 'ریال');
+  }
+
+  const targetIsToman = baseCurrency === 'IRT';
+  return targetIsToman ? 'تومان' : 'ریال';
+}
+
+export function formatEntityAmount(
+  balance: number,
+  entity?: CurrencyHolder | null,
+  baseCurrency: 'IRR' | 'IRT' = 'IRT',
+): string {
+  const num = balance || 0;
+  if (!entity) {
+    const isToman = baseCurrency === 'IRT';
+    const converted = isToman ? Math.floor(num / 10) : num;
+    return `${Number(converted).toLocaleString('fa-IR')} ${isToman ? 'تومان' : 'ریال'}`;
+  }
+
+  const code = (entity.currencyCode || '').trim().toUpperCase();
+  const name = (entity.currencyName || '').trim();
+  const symbol = (entity.currencySymbol || '').trim();
+
+  const isDomestic =
+    code === 'IRR' ||
+    code === 'IRT' ||
+    code === 'RIAL' ||
+    code === 'TOMAN' ||
+    name.includes('ریال') ||
+    name.includes('تومان') ||
+    symbol === 'ریال' ||
+    symbol === 'تومان';
+
+  if (!isDomestic) {
+    const currLabel = name || symbol || code || '';
+    return `${Number(num).toLocaleString('fa-IR')} ${currLabel}`.trim();
+  }
+
+  const isTomanEntity = code === 'IRT' || code === 'TOMAN' || name.includes('تومان') || symbol === 'تومان';
+  const targetIsToman = baseCurrency === 'IRT';
+
+  let displayNum = num;
+  let unitLabel = targetIsToman ? 'تومان' : 'ریال';
+
+  if (!isTomanEntity && targetIsToman) {
+    displayNum = Math.floor(displayNum / 10);
+  } else if (isTomanEntity && !targetIsToman) {
+    displayNum = Math.round(displayNum * 10);
+  }
+
+  return `${Number(displayNum).toLocaleString('fa-IR')} ${unitLabel}`;
+}
+
 type BankOperationModalProps = {
   isOpen: boolean;
   onClose: () => void;
@@ -51,13 +172,13 @@ export default function BankOperationModal({
   preselectedBankId,
   initialOperation = 'bank-to-bank',
 }: BankOperationModalProps) {
-  const { settings, formatMoney } = useAppSettings();
+  const { settings } = useAppSettings();
   const toast = useToastManager();
   const baseCurrency = (settings.baseCurrency || 'IRR') as 'IRR' | 'IRT';
   const currencySuffix = baseCurrency === 'IRT' ? 'تومان' : 'ریال';
 
   const [operation, setOperation] = useState<BankOperationKind>(initialOperation);
-  const [sourceBankId, setSourceBankId] = useState<string>('');
+  const [sourceBankId, setSourceBankId] = useState<string>(() => preselectedBankId || (bankAccounts.length > 0 ? bankAccounts[0].id : ''));
   const [destinationBankId, setDestinationBankId] = useState<string>('');
   const [cashFundId, setCashFundId] = useState<string>('');
   const [amount, setAmount] = useState<string>('');
@@ -91,7 +212,10 @@ export default function BankOperationModal({
         const vaults: CashVaultItem[] = data.vaults || [];
         setCashVaults(vaults);
         if (vaults.length > 0 && !cashFundId) {
-          setCashFundId(vaults[0].id);
+          const matchingVault = sourceBank
+            ? vaults.find((v) => !v.isBlocked && isSameCurrency(v, sourceBank))
+            : null;
+          setCashFundId(matchingVault ? matchingVault.id : vaults[0].id);
         }
       })
       .catch(() => {
@@ -126,10 +250,38 @@ export default function BankOperationModal({
   const numericAmount = parseLocalizedAmount(amount);
   const numericFee = parseLocalizedAmount(transferFee);
 
-  // Available destination banks (excluding source)
+  // Active operation currency label
+  const activeOperationCurrencyLabel = useMemo(() => {
+    if (operation === 'cash-to-bank' && selectedCashVault) {
+      return getEntityCurrencyLabel(selectedCashVault, baseCurrency);
+    }
+    if (sourceBank) {
+      return getEntityCurrencyLabel(sourceBank, baseCurrency);
+    }
+    return baseCurrency === 'IRT' ? 'تومان' : 'ریال';
+  }, [operation, selectedCashVault, sourceBank, baseCurrency]);
+
+  // Available destination banks for bank-to-bank (only same currency as source bank)
   const availableDestinationBanks = useMemo(() => {
-    return activeBankAccounts.filter((b) => b.id !== sourceBankId);
-  }, [activeBankAccounts, sourceBankId]);
+    if (!sourceBank) {
+      return activeBankAccounts.filter((b) => b.id !== sourceBankId);
+    }
+    return activeBankAccounts.filter(
+      (b) => b.id !== sourceBankId && isSameCurrency(b, sourceBank),
+    );
+  }, [activeBankAccounts, sourceBankId, sourceBank]);
+
+  // Available destination banks for cash-to-bank (only same currency as selected cash vault)
+  const availableDestinationBanksForCash = useMemo(() => {
+    if (!selectedCashVault) return activeBankAccounts;
+    return activeBankAccounts.filter((b) => isSameCurrency(b, selectedCashVault));
+  }, [activeBankAccounts, selectedCashVault]);
+
+  // Available destination cash vaults for bank-to-cash (only same currency as source bank)
+  const availableCashVaultsForBank = useMemo(() => {
+    if (!sourceBank) return activeCashVaults;
+    return activeCashVaults.filter((v) => isSameCurrency(v, sourceBank));
+  }, [activeCashVaults, sourceBank]);
 
   // Balance validations
   const isSourceBankBalanceSufficient = useMemo(() => {
@@ -149,6 +301,23 @@ export default function BankOperationModal({
     setTrackingNumber('');
     setDescription('');
     setDateJalali(formatJalaliDate());
+  }
+
+  function handleSwitchOperation(op: BankOperationKind) {
+    setOperation(op);
+    if (op === 'bank-to-bank') {
+      if (destinationBank && !isSameCurrency(sourceBank, destinationBank)) {
+        setDestinationBankId('');
+      }
+    } else if (op === 'cash-to-bank') {
+      if (destinationBank && !isSameCurrency(selectedCashVault, destinationBank)) {
+        setDestinationBankId('');
+      }
+    } else if (op === 'bank-to-cash') {
+      if (selectedCashVault && !isSameCurrency(sourceBank, selectedCashVault)) {
+        setCashFundId('');
+      }
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -172,6 +341,10 @@ export default function BankOperationModal({
         toast.error('حساب مبدأ و مقصد نمی‌توانند یکسان باشند.');
         return;
       }
+      if (!isSameCurrency(sourceBank, destinationBank)) {
+        toast.error('انتقال حساب به حساب فقط بین حساب‌هایی با واحد پولی یکسان امکان‌پذیر است.');
+        return;
+      }
       if (!isSourceBankBalanceSufficient) {
         toast.error('موجودی حساب بانکی مبدأ با احتساب کارمزد کافی نیست.');
         return;
@@ -185,6 +358,10 @@ export default function BankOperationModal({
         toast.error('لطفاً حساب بانکی مقصد را انتخاب کنید.');
         return;
       }
+      if (!isSameCurrency(selectedCashVault, destinationBank)) {
+        toast.error('واریز از صندوق به حساب بانکی فقط به حساب‌های با واحد پولی یکسان امکان‌پذیر است.');
+        return;
+      }
       if (!isCashFundBalanceSufficient) {
         toast.error('موجودی صندوق وجه نقد مبدأ کافی نیست.');
         return;
@@ -196,6 +373,10 @@ export default function BankOperationModal({
       }
       if (!cashFundId) {
         toast.error('لطفاً صندوق وجه نقد مقصد را انتخاب کنید.');
+        return;
+      }
+      if (!isSameCurrency(sourceBank, selectedCashVault)) {
+        toast.error('برداشت از حساب بانکی به صندوق فقط به صندوق‌های با واحد پولی یکسان امکان‌پذیر است.');
         return;
       }
       if (!isSourceBankBalanceSufficient) {
@@ -287,7 +468,7 @@ export default function BankOperationModal({
         <div className="mt-4 grid grid-cols-3 gap-2 rounded-2xl bg-slate-100/80 p-1.5 dark:bg-slate-800/80">
           <button
             type="button"
-            onClick={() => setOperation('bank-to-bank')}
+            onClick={() => handleSwitchOperation('bank-to-bank')}
             className={`flex items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-black transition ${
               operation === 'bank-to-bank'
                 ? 'bg-white text-amber-700 shadow-sm dark:bg-slate-900 dark:text-amber-300'
@@ -300,7 +481,7 @@ export default function BankOperationModal({
 
           <button
             type="button"
-            onClick={() => setOperation('cash-to-bank')}
+            onClick={() => handleSwitchOperation('cash-to-bank')}
             className={`flex items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-black transition ${
               operation === 'cash-to-bank'
                 ? 'bg-white text-emerald-700 shadow-sm dark:bg-slate-900 dark:text-emerald-300'
@@ -313,7 +494,7 @@ export default function BankOperationModal({
 
           <button
             type="button"
-            onClick={() => setOperation('bank-to-cash')}
+            onClick={() => handleSwitchOperation('bank-to-cash')}
             className={`flex items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-black transition ${
               operation === 'bank-to-cash'
                 ? 'bg-white text-blue-700 shadow-sm dark:bg-slate-900 dark:text-blue-300'
@@ -339,8 +520,10 @@ export default function BankOperationModal({
                   <select
                     value={sourceBankId}
                     onChange={(e) => {
-                      setSourceBankId(e.target.value);
-                      if (e.target.value === destinationBankId) {
+                      const newId = e.target.value;
+                      setSourceBankId(newId);
+                      const newSource = bankAccounts.find((b) => b.id === newId);
+                      if (newId === destinationBankId || (destinationBank && !isSameCurrency(newSource, destinationBank))) {
                         setDestinationBankId('');
                       }
                     }}
@@ -349,7 +532,7 @@ export default function BankOperationModal({
                     <option value="">انتخاب حساب مبدأ...</option>
                     {activeBankAccounts.map((b) => (
                       <option key={b.id} value={b.id}>
-                        {b.bankName} - {b.accountNumber} ({formatMoney(b.balance)} {currencySuffix})
+                        {b.bankName} - {b.accountNumber} ({formatEntityAmount(b.balance, b, baseCurrency)})
                       </option>
                     ))}
                   </select>
@@ -361,7 +544,7 @@ export default function BankOperationModal({
                       <span>{sourceBank.branchName || sourceBank.bankName}</span>
                     </span>
                     <span className="font-mono">
-                      موجودی: <strong>{formatMoney(sourceBank.balance)}</strong> {currencySuffix}
+                      موجودی: <strong>{formatEntityAmount(sourceBank.balance, sourceBank, baseCurrency)}</strong>
                     </span>
                   </div>
                 )}
@@ -380,10 +563,16 @@ export default function BankOperationModal({
                   <option value="">انتخاب حساب مقصد...</option>
                   {availableDestinationBanks.map((b) => (
                     <option key={b.id} value={b.id}>
-                      {b.bankName} - {b.accountNumber} ({formatMoney(b.balance)} {currencySuffix})
+                      {b.bankName} - {b.accountNumber} ({formatEntityAmount(b.balance, b, baseCurrency)})
                     </option>
                   ))}
                 </select>
+                {sourceBank && availableDestinationBanks.length === 0 && (
+                  <div className="flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300">
+                    <AlertCircle size={15} className="shrink-0" />
+                    <span>حساب بانکی مقصد با واحد پولی یکسان ({getEntityCurrencyLabel(sourceBank, baseCurrency)}) یافت نشد.</span>
+                  </div>
+                )}
                 {destinationBank && (
                   <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 px-1">
                     <span className="flex items-center gap-1">
@@ -391,7 +580,7 @@ export default function BankOperationModal({
                       <span>{destinationBank.branchName || destinationBank.bankName}</span>
                     </span>
                     <span className="font-mono">
-                      موجودی فعلی: <strong>{formatMoney(destinationBank.balance)}</strong> {currencySuffix}
+                      موجودی فعلی: <strong>{formatEntityAmount(destinationBank.balance, destinationBank, baseCurrency)}</strong>
                     </span>
                   </div>
                 )}
@@ -409,14 +598,21 @@ export default function BankOperationModal({
                 </label>
                 <select
                   value={cashFundId}
-                  onChange={(e) => setCashFundId(e.target.value)}
+                  onChange={(e) => {
+                    const newFundId = e.target.value;
+                    setCashFundId(newFundId);
+                    const newVault = cashVaults.find((v) => v.id === newFundId);
+                    if (destinationBank && !isSameCurrency(newVault, destinationBank)) {
+                      setDestinationBankId('');
+                    }
+                  }}
                   disabled={loadingVaults}
                   className="w-full h-11 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-800 transition focus:border-amber-500 focus:outline-hidden dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                 >
                   <option value="">انتخاب صندوق مبدأ...</option>
                   {activeCashVaults.map((v) => (
                     <option key={v.id} value={v.id}>
-                      {v.name} ({formatMoney(v.balance)} {v.currencyName || currencySuffix})
+                      {v.name} ({formatEntityAmount(v.balance, v, baseCurrency)})
                     </option>
                   ))}
                 </select>
@@ -427,7 +623,7 @@ export default function BankOperationModal({
                       <span>{selectedCashVault.name}</span>
                     </span>
                     <span className="font-mono">
-                      موجودی: <strong>{formatMoney(selectedCashVault.balance)}</strong> {selectedCashVault.currencyName || currencySuffix}
+                      موجودی: <strong>{formatEntityAmount(selectedCashVault.balance, selectedCashVault, baseCurrency)}</strong>
                     </span>
                   </div>
                 )}
@@ -444,12 +640,18 @@ export default function BankOperationModal({
                   className="w-full h-11 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-800 transition focus:border-amber-500 focus:outline-hidden dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                 >
                   <option value="">انتخاب حساب مقصد...</option>
-                  {activeBankAccounts.map((b) => (
+                  {availableDestinationBanksForCash.map((b) => (
                     <option key={b.id} value={b.id}>
-                      {b.bankName} - {b.accountNumber} ({formatMoney(b.balance)} {currencySuffix})
+                      {b.bankName} - {b.accountNumber} ({formatEntityAmount(b.balance, b, baseCurrency)})
                     </option>
                   ))}
                 </select>
+                {selectedCashVault && availableDestinationBanksForCash.length === 0 && (
+                  <div className="flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300">
+                    <AlertCircle size={15} className="shrink-0" />
+                    <span>حساب بانکی با واحد پولی یکسان با این صندوق ({getEntityCurrencyLabel(selectedCashVault, baseCurrency)}) یافت نشد.</span>
+                  </div>
+                )}
                 {destinationBank && (
                   <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 px-1">
                     <span className="flex items-center gap-1">
@@ -457,7 +659,7 @@ export default function BankOperationModal({
                       <span>{destinationBank.branchName || destinationBank.bankName}</span>
                     </span>
                     <span className="font-mono">
-                      موجودی: <strong>{formatMoney(destinationBank.balance)}</strong> {currencySuffix}
+                      موجودی: <strong>{formatEntityAmount(destinationBank.balance, destinationBank, baseCurrency)}</strong>
                     </span>
                   </div>
                 )}
@@ -475,13 +677,20 @@ export default function BankOperationModal({
                 </label>
                 <select
                   value={sourceBankId}
-                  onChange={(e) => setSourceBankId(e.target.value)}
+                  onChange={(e) => {
+                    const newSourceId = e.target.value;
+                    setSourceBankId(newSourceId);
+                    const newSource = bankAccounts.find((b) => b.id === newSourceId);
+                    if (selectedCashVault && !isSameCurrency(newSource, selectedCashVault)) {
+                      setCashFundId('');
+                    }
+                  }}
                   className="w-full h-11 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-800 transition focus:border-amber-500 focus:outline-hidden dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                 >
                   <option value="">انتخاب حساب مبدأ...</option>
                   {activeBankAccounts.map((b) => (
                     <option key={b.id} value={b.id}>
-                      {b.bankName} - {b.accountNumber} ({formatMoney(b.balance)} {currencySuffix})
+                      {b.bankName} - {b.accountNumber} ({formatEntityAmount(b.balance, b, baseCurrency)})
                     </option>
                   ))}
                 </select>
@@ -492,7 +701,7 @@ export default function BankOperationModal({
                       <span>{sourceBank.branchName || sourceBank.bankName}</span>
                     </span>
                     <span className="font-mono">
-                      موجودی: <strong>{formatMoney(sourceBank.balance)}</strong> {currencySuffix}
+                      موجودی: <strong>{formatEntityAmount(sourceBank.balance, sourceBank, baseCurrency)}</strong>
                     </span>
                   </div>
                 )}
@@ -510,12 +719,18 @@ export default function BankOperationModal({
                   className="w-full h-11 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-800 transition focus:border-amber-500 focus:outline-hidden dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                 >
                   <option value="">انتخاب صندوق مقصد...</option>
-                  {activeCashVaults.map((v) => (
+                  {availableCashVaultsForBank.map((v) => (
                     <option key={v.id} value={v.id}>
-                      {v.name} ({formatMoney(v.balance)} {v.currencyName || currencySuffix})
+                      {v.name} ({formatEntityAmount(v.balance, v, baseCurrency)})
                     </option>
                   ))}
                 </select>
+                {sourceBank && availableCashVaultsForBank.length === 0 && (
+                  <div className="flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300">
+                    <AlertCircle size={15} className="shrink-0" />
+                    <span>صندوق وجه نقد با واحد پولی یکسان با این حساب ({getEntityCurrencyLabel(sourceBank, baseCurrency)}) یافت نشد.</span>
+                  </div>
+                )}
                 {selectedCashVault && (
                   <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 px-1">
                     <span className="flex items-center gap-1">
@@ -523,7 +738,7 @@ export default function BankOperationModal({
                       <span>{selectedCashVault.name}</span>
                     </span>
                     <span className="font-mono">
-                      موجودی فعلی: <strong>{formatMoney(selectedCashVault.balance)}</strong> {selectedCashVault.currencyName || currencySuffix}
+                      موجودی فعلی: <strong>{formatEntityAmount(selectedCashVault.balance, selectedCashVault, baseCurrency)}</strong>
                     </span>
                   </div>
                 )}
@@ -535,13 +750,13 @@ export default function BankOperationModal({
           <div className="grid gap-4 sm:grid-cols-2 pt-2">
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                مبلغ انتقال ({currencySuffix}) <span className="text-red-500">*</span>
+                مبلغ انتقال ({activeOperationCurrencyLabel}) <span className="text-red-500">*</span>
               </label>
               <PriceInput
                 value={amount}
                 onValueChange={(_parsed, rawVal) => setAmount(rawVal)}
                 baseCurrency={baseCurrency}
-                currencySuffix={currencySuffix}
+                currencySuffix={activeOperationCurrencyLabel}
                 placeholder="۰"
                 showWords
               />
@@ -552,7 +767,7 @@ export default function BankOperationModal({
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                    کارمزد انتقال ({currencySuffix})
+                    کارمزد انتقال ({activeOperationCurrencyLabel})
                   </label>
                   <span className="text-[10px] text-slate-400 font-normal">اختیاری (کسر از مبدأ)</span>
                 </div>
@@ -560,7 +775,7 @@ export default function BankOperationModal({
                   value={transferFee}
                   onValueChange={(_parsed, rawVal) => setTransferFee(rawVal)}
                   baseCurrency={baseCurrency}
-                  currencySuffix={currencySuffix}
+                  currencySuffix={activeOperationCurrencyLabel}
                   placeholder="۰"
                   showWords
                 />
@@ -638,7 +853,7 @@ export default function BankOperationModal({
             <div className="flex items-center gap-2 rounded-xl bg-red-500/10 p-3 text-xs font-bold text-red-700 border border-red-500/20 dark:text-red-400">
               <AlertCircle size={16} className="shrink-0" />
               <span>
-                موجودی حساب بانکی مبدأ ({formatMoney(sourceBank?.balance ?? 0)} {currencySuffix}) برای انتقال مبلغ و کارمزد کافی نیست.
+                موجودی حساب بانکی مبدأ ({formatEntityAmount(sourceBank?.balance ?? 0, sourceBank, baseCurrency)}) برای انتقال مبلغ و کارمزد کافی نیست.
               </span>
             </div>
           )}
@@ -647,7 +862,7 @@ export default function BankOperationModal({
             <div className="flex items-center gap-2 rounded-xl bg-red-500/10 p-3 text-xs font-bold text-red-700 border border-red-500/20 dark:text-red-400">
               <AlertCircle size={16} className="shrink-0" />
               <span>
-                موجودی صندوق مبدأ ({formatMoney(selectedCashVault?.balance ?? 0)} {currencySuffix}) برای واریز این مبلغ کافی نیست.
+                موجودی صندوق مبدأ ({formatEntityAmount(selectedCashVault?.balance ?? 0, selectedCashVault, baseCurrency)}) برای واریز این مبلغ کافی نیست.
               </span>
             </div>
           )}
@@ -656,7 +871,7 @@ export default function BankOperationModal({
             <div className="flex items-center gap-2 rounded-xl bg-red-500/10 p-3 text-xs font-bold text-red-700 border border-red-500/20 dark:text-red-400">
               <AlertCircle size={16} className="shrink-0" />
               <span>
-                موجودی حساب بانکی مبدأ ({formatMoney(sourceBank?.balance ?? 0)} {currencySuffix}) برای برداشت این مبلغ کافی نیست.
+                موجودی حساب بانکی مبدأ ({formatEntityAmount(sourceBank?.balance ?? 0, sourceBank, baseCurrency)}) برای برداشت این مبلغ کافی نیست.
               </span>
             </div>
           )}
@@ -677,9 +892,21 @@ export default function BankOperationModal({
               disabled={
                 loading ||
                 numericAmount <= 0 ||
-                (operation === 'bank-to-bank' && (!isSourceBankBalanceSufficient || !destinationBankId || !sourceBankId)) ||
-                (operation === 'cash-to-bank' && (!isCashFundBalanceSufficient || !destinationBankId || !cashFundId)) ||
-                (operation === 'bank-to-cash' && (!isSourceBankBalanceSufficient || !sourceBankId || !cashFundId))
+                (operation === 'bank-to-bank' &&
+                  (!isSourceBankBalanceSufficient ||
+                    !destinationBankId ||
+                    !sourceBankId ||
+                    !isSameCurrency(sourceBank, destinationBank))) ||
+                (operation === 'cash-to-bank' &&
+                  (!isCashFundBalanceSufficient ||
+                    !destinationBankId ||
+                    !cashFundId ||
+                    !isSameCurrency(selectedCashVault, destinationBank))) ||
+                (operation === 'bank-to-cash' &&
+                  (!isSourceBankBalanceSufficient ||
+                    !sourceBankId ||
+                    !cashFundId ||
+                    !isSameCurrency(sourceBank, selectedCashVault)))
               }
               className="inline-flex items-center justify-center gap-2 rounded-xl bg-amber-500 px-5 py-2.5 text-xs font-black text-slate-950 shadow-md shadow-amber-500/20 transition hover:bg-amber-400 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-amber-400 dark:hover:bg-amber-300"
             >

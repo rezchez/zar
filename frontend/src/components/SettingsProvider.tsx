@@ -115,10 +115,33 @@ const SettingsContext = createContext<SettingsContextValue>({
   formatWeight: (val) => formatWeightUtil(val, 3),
 });
 
-export function SettingsProvider({ children }: { children: React.ReactNode }) {
-  const [settings, setSettings] = useState<AppSettings>(defaultSettings);
+const SETTINGS_STORAGE_KEY = 'zarfolio_app_settings';
+
+export function SettingsProvider({
+  children,
+  initialSettings,
+}: {
+  children: React.ReactNode;
+  initialSettings?: AppSettings;
+}) {
+  const [settings, setSettings] = useState<AppSettings>(() => {
+    if (initialSettings) {
+      return normalizeSettings(initialSettings);
+    }
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem(SETTINGS_STORAGE_KEY);
+        if (cached) {
+          return normalizeSettings(JSON.parse(cached));
+        }
+      } catch {
+        // Ignore JSON or storage errors
+      }
+    }
+    return defaultSettings;
+  });
   const [customFonts, setCustomFonts] = useState<CustomFontRecord[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(!initialSettings);
   const [error, setError] = useState<string | null>(null);
 
   const fetchSettings = useCallback(async () => {
@@ -130,10 +153,19 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
           const norm = normalizeSettings(data.settings);
           setSettings(norm);
           applyTypographyCssVariables(norm);
+          if (typeof window !== 'undefined') {
+            try {
+              localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(norm));
+            } catch {
+              // Ignore storage errors
+            }
+          }
         }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'خطا در بارگذاری تنظیمات');
+    } finally {
+      setIsLoading(false);
     }
   }, []);
 
@@ -189,6 +221,13 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         const norm = normalizeSettings(data.settings);
         setSettings(norm);
         applyTypographyCssVariables(norm);
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(norm));
+          } catch {
+            // Ignore storage errors
+          }
+        }
       }
 
       return { success: true };

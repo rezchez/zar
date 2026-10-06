@@ -25,19 +25,19 @@ describe('Sidebar Bank Navigation & Route Configuration', () => {
       expect(accountsChild).toBeDefined();
       expect(accountsChild?.title).toBe('حساب‌های بانکی');
       expect(accountsChild?.icon).toBe(Landmark);
-      expect(accountsChild?.href).toBe('/dashboard/documents/initial-inventory/bank');
+      expect(accountsChild?.href).toBe('/dashboard/banks');
 
       const cashChild = bankItem?.children?.find((c) => c.id === 'bank-cash');
       expect(cashChild).toBeDefined();
       expect(cashChild?.title).toBe('وجوه نقد');
       expect(cashChild?.icon).toBe(Banknote);
-      expect(cashChild?.href).toBe('/dashboard/documents/initial-inventory/cash');
+      expect(cashChild?.href).toBe('/dashboard/cash');
 
       const checksChild = bankItem?.children?.find((c) => c.id === 'bank-checks');
       expect(checksChild).toBeDefined();
       expect(checksChild?.title).toBe('چک');
       expect(checksChild?.icon).toBe(CreditCard);
-      expect(checksChild?.href).toBe('/dashboard/documents/initial-inventory/checks');
+      expect(checksChild?.href).toBe('/dashboard/checks');
 
       // Refining item sits above reports
       const refiningIndex = opsGroup?.items.findIndex((item) => item.id === 'refining') ?? -1;
@@ -84,6 +84,7 @@ describe('Sidebar Bank Navigation & Route Configuration', () => {
     expect(EXACT_PATH_LABELS['/dashboard/banks']).toBe('بانک');
     expect(EXACT_PATH_LABELS['/dashboard/bank']).toBe('بانک');
     expect(EXACT_PATH_LABELS['/dashboard/cash']).toBe('وجوه نقد');
+    expect(EXACT_PATH_LABELS['/dashboard/checks']).toBe('چک');
     expect(EXACT_PATH_LABELS['/dashboard/documents/initial-inventory/bank']).toBe('موجودی اول دوره بانک');
     expect(SEGMENT_FALLBACK_LABELS['banks']).toBe('بانک');
   });

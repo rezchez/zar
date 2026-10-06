@@ -17,6 +17,49 @@ function positiveAmount(value: unknown) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+export function normalizeServerCurrency(raw: any, currencyMap?: Map<string, any>): string {
+  if (!raw) return 'IRR';
+
+  const rawCode = String(raw.currency_code || raw.currencyCode || '').trim().toUpperCase();
+  if (rawCode === 'IRR' || rawCode === 'RIAL' || rawCode.includes('ریال')) return 'IRR';
+  if (rawCode === 'IRT' || rawCode === 'TOMAN' || rawCode.includes('تومان')) return 'IRT';
+  if (rawCode) return rawCode;
+
+  const rawField = String(raw.currency || '').trim();
+  const rawName = String(raw.currency_name || raw.currencyName || '').trim();
+  const rawSymbol = String(raw.currency_symbol || raw.currencySymbol || '').trim();
+
+  if (currencyMap && (rawField || rawName)) {
+    const fromMap =
+      (rawField && (currencyMap.get(rawField.toLowerCase()) || currencyMap.get(rawField.toUpperCase()) || currencyMap.get(rawField))) ||
+      (rawName && (currencyMap.get(rawName.toLowerCase()) || currencyMap.get(rawName.toUpperCase()) || currencyMap.get(rawName)));
+
+    if (fromMap?.code) {
+      const code = String(fromMap.code).trim().toUpperCase();
+      if (code === 'IRR' || code === 'RIAL') return 'IRR';
+      if (code === 'IRT' || code === 'TOMAN') return 'IRT';
+      return code;
+    }
+  }
+
+  if (rawField) {
+    const upper = rawField.toUpperCase();
+    if (upper === 'IRR' || upper === 'RIAL' || rawField.includes('ریال')) return 'IRR';
+    if (upper === 'IRT' || upper === 'TOMAN' || rawField.includes('تومان')) return 'IRT';
+    if (/^[A-Z]{3}$/.test(upper)) return upper;
+  }
+
+  if (rawName) {
+    if (rawName.includes('ریال')) return 'IRR';
+    if (rawName.includes('تومان')) return 'IRT';
+  }
+
+  if (rawSymbol === 'ریال') return 'IRR';
+  if (rawSymbol === 'تومان') return 'IRT';
+
+  return rawField ? rawField.toUpperCase() : 'IRR';
+}
+
 export async function POST(request: Request) {
   const context = await getServerAuthContext();
   if (!context) {
@@ -42,12 +85,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: 'حساب مبدأ و مقصد باید متفاوت باشند.' }, { status: 400 });
   }
 
-  if (kind === 'cash-to-bank' && !destinationBankId) {
-    return NextResponse.json({ message: 'حساب مقصد بانکی را انتخاب کنید.' }, { status: 400 });
+  if (kind === 'cash-to-bank') {
+    if (!destinationBankId) {
+      return NextResponse.json({ message: 'حساب مقصد بانکی را انتخاب کنید.' }, { status: 400 });
+    }
+    if (!cashFundId) {
+      return NextResponse.json({ message: 'صندوق وجه نقد مبدأ را انتخاب کنید.' }, { status: 400 });
+    }
   }
 
-  if (kind === 'bank-to-cash' && !sourceBankId) {
-    return NextResponse.json({ message: 'حساب مبدأ بانکی را انتخاب کنید.' }, { status: 400 });
+  if (kind === 'bank-to-cash') {
+    if (!sourceBankId) {
+      return NextResponse.json({ message: 'حساب مبدأ بانکی را انتخاب کنید.' }, { status: 400 });
+    }
+    if (!cashFundId) {
+      return NextResponse.json({ message: 'صندوق وجه نقد مقصد را انتخاب کنید.' }, { status: 400 });
+    }
   }
 
   let writer = context.pb;
@@ -63,10 +116,10 @@ export async function POST(request: Request) {
   try {
     await ensureBankAccountsCollection(writer);
     const sourceBank = sourceBankId
-      ? await writer.collection('bank_accounts').getOne(sourceBankId)
+      ? await writer.collection('bank_accounts').getOne(sourceBankId).catch(() => null)
       : null;
     const destinationBank = destinationBankId
-      ? await writer.collection('bank_accounts').getOne(destinationBankId)
+      ? await writer.collection('bank_accounts').getOne(destinationBankId).catch(() => null)
       : null;
     const ledgerAccount = await writer.collection('customers').getFirstListItem(
       writer.filter('customerCode = {:customerCode}', { customerCode: 0 }),
@@ -79,13 +132,31 @@ export async function POST(request: Request) {
       );
     }
 
+    const currenciesList = await writer.collection('currencies').getFullList().catch(() => []);
+    const currencyMap = new Map<string, any>();
+    for (const c of (currenciesList as any[])) {
+      if (c.id) currencyMap.set(String(c.id).toLowerCase(), c);
+      if (c.code) currencyMap.set(String(c.code).toUpperCase(), c);
+      if (c.name) currencyMap.set(String(c.name).trim(), c);
+    }
+
     const totalRequiredSource = amount + transferFee;
     if (sourceBank && Number(sourceBank.balance ?? 0) < totalRequiredSource) {
       return NextResponse.json({ message: 'موجودی حساب مبدأ با احتساب کارمزد کافی نیست.' }, { status: 400 });
     }
 
-    if (kind === 'bank-to-bank' && (!sourceBank || !destinationBank)) {
-      return NextResponse.json({ message: 'حساب‌های بانکی انتخاب‌شده معتبر نیستند.' }, { status: 400 });
+    if (kind === 'bank-to-bank') {
+      if (!sourceBank || !destinationBank) {
+        return NextResponse.json({ message: 'حساب‌های بانکی انتخاب‌شده معتبر نیستند.' }, { status: 400 });
+      }
+      const sourceCurr = normalizeServerCurrency(sourceBank, currencyMap);
+      const destCurr = normalizeServerCurrency(destinationBank, currencyMap);
+      if (sourceCurr !== destCurr) {
+        return NextResponse.json(
+          { message: 'انتقال حساب به حساب فقط بین حساب‌های بانکی با واحد پولی یکسان امکان‌پذیر است.' },
+          { status: 400 },
+        );
+      }
     }
 
     // Cash Fund resolution & validation for cash-to-bank or bank-to-cash
@@ -94,16 +165,44 @@ export async function POST(request: Request) {
       cashFund = await writer.collection('cash_funds').getOne(cashFundId).catch(() => null);
     }
     if (kind === 'cash-to-bank') {
+      if (!destinationBank) {
+        return NextResponse.json({ message: 'حساب مقصد بانکی معتبر نیست.' }, { status: 400 });
+      }
+      if (!cashFund) {
+        return NextResponse.json({ message: 'صندوق وجه نقد مبدأ پیدا نشد.' }, { status: 400 });
+      }
       if (cashFund && cashFund.isBlocked) {
         return NextResponse.json({ message: 'صندوق وجه نقد مبدأ مسدود است.' }, { status: 409 });
       }
       if (cashFund && Number(cashFund.balance ?? 0) < amount) {
         return NextResponse.json({ message: 'موجودی صندوق وجه نقد مبدأ کافی نیست.' }, { status: 400 });
       }
+      const vaultCurr = normalizeServerCurrency(cashFund, currencyMap);
+      const destCurr = normalizeServerCurrency(destinationBank, currencyMap);
+      if (vaultCurr !== destCurr) {
+        return NextResponse.json(
+          { message: 'واریز از صندوق به حساب بانکی فقط به حساب‌های با واحد پولی یکسان امکان‌پذیر است.' },
+          { status: 400 },
+        );
+      }
     }
     if (kind === 'bank-to-cash') {
+      if (!sourceBank) {
+        return NextResponse.json({ message: 'حساب مبدأ بانکی معتبر نیست.' }, { status: 400 });
+      }
+      if (!cashFund) {
+        return NextResponse.json({ message: 'صندوق وجه نقد مقصد پیدا نشد.' }, { status: 400 });
+      }
       if (cashFund && cashFund.isBlocked) {
         return NextResponse.json({ message: 'صندوق وجه نقد مقصد مسدود است.' }, { status: 409 });
+      }
+      const sourceCurr = normalizeServerCurrency(sourceBank, currencyMap);
+      const vaultCurr = normalizeServerCurrency(cashFund, currencyMap);
+      if (sourceCurr !== vaultCurr) {
+        return NextResponse.json(
+          { message: 'برداشت از حساب بانکی به صندوق فقط به صندوق‌های با واحد پولی یکسان امکان‌پذیر است.' },
+          { status: 400 },
+        );
       }
     }
 
