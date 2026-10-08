@@ -37,6 +37,7 @@ import {
 export type ColumnKey =
   | 'index'
   | 'docType'
+  | 'workmanshipName'
   | 'metal'
   | 'weight'
   | 'purity'
@@ -59,6 +60,7 @@ export type ColumnKey =
 export const DEFAULT_COLUMN_WIDTHS: Record<ColumnKey, number> = {
   index: 38,
   docType: 120,
+  workmanshipName: 110,
   metal: 55,
   weight: 95,
   purity: 60,
@@ -82,6 +84,7 @@ export const DEFAULT_COLUMN_WIDTHS: Record<ColumnKey, number> = {
 export const MIN_COLUMN_WIDTHS: Record<ColumnKey, number> = {
   index: 30,
   docType: 80,
+  workmanshipName: 75,
   metal: 45,
   weight: 65,
   purity: 45,
@@ -107,6 +110,7 @@ const STORAGE_KEY = 'zarfolio_committed_lines_column_widths';
 type SortColumn =
   | 'index'
   | 'docType'
+  | 'workmanshipName'
   | 'metal'
   | 'weight'
   | 'purity'
@@ -147,8 +151,13 @@ function getLineSortValue(
           line.details.rawKind,
           line.details.unsettledTrade,
           line.details.refiningOpKind,
+          line.details.workmanshipOptionId,
+          line.documentSubType,
         );
       return docType || '';
+    }
+    case 'workmanshipName': {
+      return line.details?.workmanshipName?.trim() || '';
     }
     case 'metal': {
       return line.documentTab === 'currency' || line.documentTab === 'stone'
@@ -578,8 +587,23 @@ export default function CommittedLinesTable({
     );
   }, [committedLines, hasCheckLinesProp]);
 
+  const hasWorkmanshipLines = useMemo(() => {
+    return (
+      activeTab === 'workmanship' ||
+      committedLines.some(
+        (l) =>
+          l.documentTab === 'workmanship' ||
+          l.sourceTab === 'workmanship' ||
+          Boolean(l.details?.workmanshipName?.trim()),
+      )
+    );
+  }, [committedLines, activeTab]);
+
   const activeColumns = useMemo(() => {
     const cols: ColumnKey[] = ['index', 'docType'];
+    if (hasWorkmanshipLines) {
+      cols.push('workmanshipName');
+    }
     if (hasMetalLines) {
       cols.push('metal', 'weight', 'purity', 'bedehkarVazni', 'bostankarVazni');
     }
@@ -605,7 +629,7 @@ export default function CommittedLinesTable({
     }
     cols.push('description', 'actions');
     return cols;
-  }, [hasMetalLines, hasCurrencyLines, hasCheckLines, hasFinancialAmounts, hasAssayOrStamp, activeTab]);
+  }, [hasWorkmanshipLines, hasMetalLines, hasCurrencyLines, hasCheckLines, hasFinancialAmounts, hasAssayOrStamp, activeTab]);
 
   const totalTableWidth = useMemo(() => {
     return activeColumns.reduce(
@@ -910,6 +934,24 @@ export default function CommittedLinesTable({
                   isResizing={resizingCol === 'docType'}
                 />
               </TableHead>
+
+              {/* Workmanship Name Header (Only if hasWorkmanshipLines) */}
+              {hasWorkmanshipLines ? (
+                <TableHead
+                  style={{ width: `${columnWidths.workmanshipName}px` }}
+                  className="relative px-1.5 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
+                >
+                  <SortableHeader column="workmanshipName" currentSort={sortState} onSort={handleSort}>
+                    نام کار ساخته
+                  </SortableHeader>
+                  <ColumnResizer
+                    colKey="workmanshipName"
+                    onResizeStart={handleResizeStart}
+                    onReset={handleResetColumnWidth}
+                    isResizing={resizingCol === 'workmanshipName'}
+                  />
+                </TableHead>
+              ) : null}
 
               {/* 3..7 Metal Headers (Only if hasMetalLines) */}
               {hasMetalLines ? (
@@ -1250,6 +1292,7 @@ export default function CommittedLinesTable({
                 hasMetalLines={hasMetalLines}
                 hasCurrencyLines={hasCurrencyLines}
                 hasCheckLines={hasCheckLines}
+                hasWorkmanshipLines={hasWorkmanshipLines}
               />
             ))}
           </TableBody>
@@ -1258,7 +1301,7 @@ export default function CommittedLinesTable({
             <TableFooter className="bg-slate-100/80 dark:bg-slate-800/80 font-bold border-t-2 border-slate-200 dark:border-slate-700">
               <TableRow>
                 <TableCell
-                  colSpan={hasMetalLines ? 5 : 2}
+                  colSpan={(hasMetalLines ? 5 : 2) + (hasWorkmanshipLines ? 1 : 0)}
                   className="px-2 py-1.5 text-right font-black text-xs text-slate-700 dark:text-slate-200"
                 >
                   جمع کل ردیف‌ها ({toPersianDigits(String(committedLines.length))})

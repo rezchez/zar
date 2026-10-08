@@ -112,9 +112,11 @@ export function createLine(nature: DocumentNature = 'received', sourceTab = 'met
             : 'incoming-refining'
           : sourceTab === 'currency'
             ? currencyDocumentSubType(nature)
-            : sourceTab === 'coin'
-              ? (nature === 'received' ? 'incoming-coin' : 'outgoing-coin')
-              : documentSubType(nature, 'molten');
+            : sourceTab === 'workmanship'
+              ? (nature === 'received' ? 'entry_manufactured' : 'exit_manufactured')
+              : sourceTab === 'coin'
+                ? (nature === 'received' ? 'incoming-coin' : 'outgoing-coin')
+                : documentSubType(nature, 'molten');
 
   return {
     id: crypto.randomUUID(),
@@ -731,9 +733,11 @@ export function useDocumentLines({
       (lineSourceTab === 'cash' ||
         lineSourceTab === 'bank' ||
         lineSourceTab === 'stone' ||
+        lineSourceTab === 'workmanship' ||
         draftLine.documentTab === 'cash' ||
         draftLine.documentTab === 'bank' ||
-        draftLine.documentTab === 'stone') &&
+        draftLine.documentTab === 'stone' ||
+        draftLine.documentTab === 'workmanship') &&
       draftLine.documentTypeLabel
         ? draftLine.documentTypeLabel
         : getLineDocumentTypeLabel(
@@ -742,6 +746,8 @@ export function useDocumentLines({
             draftLine.details.rawKind,
             draftLine.details.unsettledTrade,
             draftLine.details.refiningOpKind,
+            draftLine.details.workmanshipOptionId,
+            draftLine.documentSubType,
           );
 
     const rawWeight =

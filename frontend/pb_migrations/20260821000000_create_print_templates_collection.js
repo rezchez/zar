@@ -24,6 +24,8 @@ migrate((app) => {
           new JsonField({ name: "page" }),
           new JsonField({ name: "design" }),
           new JsonField({ name: "elements" }),
+          new JsonField({ name: "table" }),
+          new JsonField({ name: "footer" }),
         ],
       });
       app.save(col);

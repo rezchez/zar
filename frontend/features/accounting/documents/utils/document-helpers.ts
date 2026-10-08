@@ -35,6 +35,8 @@ export function getLineDocumentTypeLabel(
   rawKind?: RawOperationKind,
   unsettledTrade?: boolean,
   refiningOpKind?: string,
+  workmanshipOptionId?: number | string,
+  workmanshipSubType?: string,
 ): string {
   if (tab === 'refining') {
     if (nature === 'paid') {
@@ -86,7 +88,18 @@ export function getLineDocumentTypeLabel(
   }
 
   if (tab === 'workmanship') {
-    return nature === 'received' ? 'ورود کار ساخته' : 'خروج کار ساخته';
+    const optId = Number(workmanshipOptionId);
+    if (nature === 'paid') {
+      if (optId === 2 || workmanshipSubType === 'sale_manufactured') return 'فروش کارساخته';
+      if (optId === 3 || workmanshipSubType === 'return_exit') return 'خروج مرجوعی';
+      if (optId === 4 || workmanshipSubType === 'return_sale') return 'فروش مرجوعی';
+      return 'خروج کار ساخته';
+    } else {
+      if (optId === 2 || workmanshipSubType === 'buy_manufactured') return 'خرید کارساخته';
+      if (optId === 3 || workmanshipSubType === 'return_entry') return 'ورود مرجوعی';
+      if (optId === 4 || workmanshipSubType === 'return_buy') return 'خرید مرجوعی';
+      return 'ورود کار ساخته';
+    }
   }
 
   if (tab === 'gold-sale') {

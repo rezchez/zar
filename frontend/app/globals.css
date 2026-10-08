@@ -4,7 +4,7 @@
   font-family: "Vazirmatn";
   src: url("/fonts/vazirmatn/Vazirmatn-Regular.ttf") format("truetype");
   font-style: normal;
-  font-weight: 400;
+  font-weight: 100 500;
   font-display: swap;
 }
 
@@ -12,7 +12,7 @@
   font-family: "Vazirmatn";
   src: url("/fonts/vazirmatn/Vazirmatn-Bold.ttf") format("truetype");
   font-style: normal;
-  font-weight: 700 900;
+  font-weight: 600 900;
   font-display: swap;
 }
 

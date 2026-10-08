@@ -1,6 +1,12 @@
 import { NextResponse } from 'next/server';
 import { getServerAuthContext } from '@/lib/auth';
-import { DEFAULT_SYSTEM_TEMPLATES, type InvoicePrintTemplate } from '@/lib/print-templates';
+import {
+  DEFAULT_SYSTEM_TEMPLATES,
+  CUSTOMER_DEFAULT_TABLE_COLUMNS,
+  DEFAULT_TABLE_COLUMNS,
+  type InvoicePrintTemplate,
+  type InvoiceTableConfiguration,
+} from '@/lib/print-templates';
 import { recordAuditEvent } from '@/lib/audit';
 
 function isAllowed(context: Awaited<ReturnType<typeof getServerAuthContext>>) {
@@ -22,20 +28,31 @@ export async function GET() {
       return NextResponse.json({ templates: DEFAULT_SYSTEM_TEMPLATES });
     }
 
-    const templates: InvoicePrintTemplate[] = records.map((rec) => ({
-      id: rec.id,
-      name: rec.name,
-      templateType: rec.templateType === 'customer' ? 'customer' : 'invoice',
-      isActive: Boolean(rec.isActive),
-      isSystemDefault: Boolean(rec.isSystemDefault),
-      page: rec.page,
-      design: rec.design || { zoom: 1, gridEnabled: true, gridSizeMm: 5 },
-      elements: rec.elements || [],
-      table: rec.table,
-      footer: rec.footer,
-      created: rec.created,
-      updated: rec.updated,
-    }));
+    const templates: InvoicePrintTemplate[] = records.map((rec) => {
+      const rawTable = rec.table || (rec.design as any)?.table;
+      const defaultCols = rec.templateType === 'customer' ? CUSTOMER_DEFAULT_TABLE_COLUMNS : DEFAULT_TABLE_COLUMNS;
+      const resolvedTable: InvoiceTableConfiguration | undefined = rawTable
+        ? {
+            ...rawTable,
+            columns: rawTable.columns && rawTable.columns.length > 0 ? rawTable.columns : defaultCols,
+          }
+        : undefined;
+
+      return {
+        id: rec.id,
+        name: rec.name,
+        templateType: rec.templateType === 'customer' ? 'customer' : 'invoice',
+        isActive: Boolean(rec.isActive),
+        isSystemDefault: Boolean(rec.isSystemDefault),
+        page: rec.page,
+        design: rec.design || { zoom: 1, gridEnabled: true, gridSizeMm: 5 },
+        elements: rec.elements || [],
+        table: resolvedTable,
+        footer: rec.footer || (rec.design as any)?.footer || undefined,
+        created: rec.created,
+        updated: rec.updated,
+      };
+    });
 
     return NextResponse.json({ templates });
   } catch {
@@ -88,19 +105,44 @@ export async function POST(request: Request) {
       }
     }
 
-    const payload = {
-      name,
-      templateType,
-      isActive: Boolean(body.isActive),
-      isSystemDefault: false,
-      page: body.page || DEFAULT_SYSTEM_TEMPLATES[0].page,
-      design: body.design || DEFAULT_SYSTEM_TEMPLATES[0].design,
-      elements: body.elements || DEFAULT_SYSTEM_TEMPLATES[0].elements,
-      table: body.table,
+    const defaultCols = templateType === 'customer' ? CUSTOMER_DEFAULT_TABLE_COLUMNS : DEFAULT_TABLE_COLUMNS;
+    const finalTable = body.table
+      ? {
+          ...body.table,
+          columns: body.table.columns && body.table.columns.length > 0 ? body.table.columns : defaultCols,
+        }
+      : undefined;
+
+    const designPayload = {
+      ...(body.design || DEFAULT_SYSTEM_TEMPLATES[0].design),
+      table: finalTable,
       footer: body.footer,
     };
 
-    const record = await collection.create(payload);
+    let record;
+    try {
+      record = await collection.create({
+        name,
+        templateType,
+        isActive: Boolean(body.isActive),
+        isSystemDefault: false,
+        page: body.page || DEFAULT_SYSTEM_TEMPLATES[0].page,
+        design: designPayload,
+        elements: body.elements || DEFAULT_SYSTEM_TEMPLATES[0].elements,
+        table: finalTable,
+        footer: body.footer,
+      });
+    } catch {
+      record = await collection.create({
+        name,
+        templateType,
+        isActive: Boolean(body.isActive),
+        isSystemDefault: false,
+        page: body.page || DEFAULT_SYSTEM_TEMPLATES[0].page,
+        design: designPayload,
+        elements: body.elements || DEFAULT_SYSTEM_TEMPLATES[0].elements,
+      });
+    }
 
     const createdTemplate: InvoicePrintTemplate = {
       id: record.id,
@@ -111,8 +153,8 @@ export async function POST(request: Request) {
       page: record.page,
       design: record.design,
       elements: record.elements,
-      table: record.table,
-      footer: record.footer,
+      table: record.table || (record.design as any)?.table || body.table,
+      footer: record.footer || (record.design as any)?.footer || body.footer,
       created: record.created,
       updated: record.updated,
     };

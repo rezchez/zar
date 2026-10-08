@@ -50,6 +50,8 @@ const printTemplatesFields = [
   { id: 'json_page', name: 'page', type: 'json', required: true },
   { id: 'json_design', name: 'design', type: 'json', required: true },
   { id: 'json_elements', name: 'elements', type: 'json', required: false },
+  { id: 'json_table', name: 'table', type: 'json', required: false },
+  { id: 'json_footer', name: 'footer', type: 'json', required: false },
   { id: 'autodate_created', name: 'created', type: 'autodate', onCreate: true, onUpdate: false },
   { id: 'autodate_updated', name: 'updated', type: 'autodate', onCreate: true, onUpdate: true },
 ];

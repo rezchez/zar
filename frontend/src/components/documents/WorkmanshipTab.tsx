@@ -119,7 +119,7 @@ export default function WorkmanshipTab({
         {
           id: 2,
           key: 'sale_manufactured' as WorkmanshipOperationType,
-          label: 'فروش کار ساخته',
+          label: 'فروش کارساخته',
           description: 'فروش قطعی مصنوعات با محاسبه قیمت فلز، اجرت و سود',
           icon: ShoppingBag,
           hasFullPricing: true,
@@ -154,7 +154,7 @@ export default function WorkmanshipTab({
         {
           id: 2,
           key: 'buy_manufactured' as WorkmanshipOperationType,
-          label: 'خرید کار ساخته',
+          label: 'خرید کارساخته',
           description: 'خرید قطعی مصنوعات ساخته با محاسبه قیمت فلز و اجرت',
           icon: ShoppingBag,
           hasFullPricing: true,

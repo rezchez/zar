@@ -33,6 +33,17 @@ import {
   AlignRight,
   AlignCenter,
   AlignLeft,
+  Square,
+  Circle,
+  Minus,
+  Tag,
+  AlignJustify,
+  FileText,
+  Sliders,
+  Table,
+  Columns,
+  BringToFront,
+  SendToBack,
 } from 'lucide-react';
 import {
   type InvoicePrintTemplate,
@@ -47,8 +58,13 @@ import {
   convertToMm,
   convertFromMm,
   createStandardElements,
+  createCustomTextElement,
+  createShapeElement,
   DEFAULT_TABLE_COLUMNS,
+  CUSTOMER_DEFAULT_TABLE_COLUMNS,
   type InvoiceTableColumnConfig,
+  type InvoiceTableConfiguration,
+  getFontWeightCss,
 } from '@/lib/print-templates';
 import { useAppSettings } from '@/src/components/SettingsProvider';
 import { useToastManager } from '@/components/ui/toast';
@@ -127,7 +143,34 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
   // Unit display state for property panel (mm, cm, px, pt)
   const [displayUnit, setDisplayUnit] = useState<UnitType>('mm');
 
+  // Menu and Table Subtab state
+  const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
+  const [tableSubTab, setTableSubTab] = useState<'columns' | 'borders' | 'colors'>('columns');
+
   const canvasContainerRef = useRef<HTMLDivElement>(null);
+
+  // Keyboard shortcuts for delete and duplicate
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.target as HTMLElement)?.tagName === 'INPUT' || (e.target as HTMLElement)?.tagName === 'TEXTAREA') {
+        return;
+      }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedElementId) {
+        const target = activeTemplate?.elements.find((el) => el.id === selectedElementId);
+        if (target && (target.type.startsWith('shape_') || target.type === 'custom_text')) {
+          e.preventDefault();
+          updateActiveTemplate((prev) => ({
+            ...prev,
+            elements: prev.elements.filter((el) => el.id !== selectedElementId),
+          }));
+          setSelectedElementId(null);
+          toast.success('حذف المان', 'المان مورد نظر حذف گردید.');
+        }
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedElementId, activeTemplate]);
 
   // Sync isDirty with parent
   useEffect(() => {
@@ -232,10 +275,23 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
       const method = isNewLocal ? 'POST' : 'PUT';
       const url = isNewLocal ? '/api/settings/print-templates' : `/api/settings/print-templates/${activeTemplate.id}`;
 
+      const currentTable = activeTemplate.table || (activeTemplate.design as any)?.table;
+      const currentFooter = activeTemplate.footer || (activeTemplate.design as any)?.footer;
+      const templateToSave: InvoicePrintTemplate = {
+        ...activeTemplate,
+        table: currentTable,
+        footer: currentFooter,
+        design: {
+          ...activeTemplate.design,
+          table: currentTable,
+          footer: currentFooter,
+        },
+      };
+
       const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(activeTemplate),
+        body: JSON.stringify(templateToSave),
       });
 
       const data = await res.json();
@@ -272,20 +328,80 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
     }, 100);
   };
 
+  // Centralized Table Configuration Updater (keeps table, design.table, and elements in sync)
+  const updateTableConfig = useCallback(
+    (updater: (currentTable: InvoiceTableConfiguration) => InvoiceTableConfiguration) => {
+      updateActiveTemplate((prev) => {
+        const fallbackCols = prev.templateType === 'customer' ? CUSTOMER_DEFAULT_TABLE_COLUMNS : DEFAULT_TABLE_COLUMNS;
+        const rawT = prev.table || (prev.design as any)?.table || {};
+        const rawCols = rawT.columns && rawT.columns.length > 0 ? rawT.columns : fallbackCols;
+        const rawColIds = new Set(rawCols.map((c: any) => c.id));
+        const missingCols = fallbackCols.filter((c) => !rawColIds.has(c.id));
+        const mergedCols = missingCols.length > 0 ? [...rawCols, ...missingCols] : rawCols;
+
+        const currentTable: InvoiceTableConfiguration = {
+          ...rawT,
+          columns: mergedCols,
+        };
+        const updatedTable = updater(currentTable);
+        if (!updatedTable.columns || updatedTable.columns.length === 0) {
+          updatedTable.columns = JSON.parse(JSON.stringify(fallbackCols));
+        }
+        const updatedElements = prev.elements.map((el) => {
+          if (el.type === 'items_table' || el.id === 'items_table') {
+            return {
+              ...el,
+              style: {
+                ...el.style,
+                borderColor: updatedTable.borderColor ?? el.style.borderColor,
+                borderWidthMm: updatedTable.borderWidthMm ?? el.style.borderWidthMm,
+                borderStyle: updatedTable.borderStyle ?? el.style.borderStyle,
+                borderRadiusMm: updatedTable.borderRadiusMm ?? el.style.borderRadiusMm,
+                color: updatedTable.bodyTextColor ?? el.style.color,
+              },
+              content: {
+                ...el.content,
+                tableColumns: updatedTable.columns.filter((c) => c.visible).map((c) => c.id),
+              },
+            };
+          }
+          return el;
+        });
+
+        return {
+          ...prev,
+          table: updatedTable,
+          design: {
+            ...prev.design,
+            table: updatedTable,
+          },
+          elements: updatedElements,
+        };
+      });
+    },
+    [updateActiveTemplate],
+  );
+
   // Duplicate Current Template
   const handleDuplicate = async () => {
     if (!activeTemplate) return;
     const dupName = `${activeTemplate.name} (کپی)`;
+
+    const tableToDup = activeTemplate.table || (activeTemplate.design as any)?.table;
+    const footerToDup = activeTemplate.footer || (activeTemplate.design as any)?.footer;
+    const duplicatedDesign = JSON.parse(JSON.stringify(activeTemplate.design || {}));
+    if (tableToDup) duplicatedDesign.table = JSON.parse(JSON.stringify(tableToDup));
+    if (footerToDup) duplicatedDesign.footer = JSON.parse(JSON.stringify(footerToDup));
 
     const duplicated: Partial<InvoicePrintTemplate> = {
       name: dupName,
       isActive: false,
       isSystemDefault: false,
       page: JSON.parse(JSON.stringify(activeTemplate.page)),
-      design: JSON.parse(JSON.stringify(activeTemplate.design)),
+      design: duplicatedDesign,
       elements: JSON.parse(JSON.stringify(activeTemplate.elements)),
-      table: activeTemplate.table ? JSON.parse(JSON.stringify(activeTemplate.table)) : undefined,
-      footer: activeTemplate.footer ? JSON.parse(JSON.stringify(activeTemplate.footer)) : undefined,
+      table: tableToDup ? JSON.parse(JSON.stringify(tableToDup)) : undefined,
+      footer: footerToDup ? JSON.parse(JSON.stringify(footerToDup)) : undefined,
     };
 
     setIsLoading(true);
@@ -629,65 +745,330 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
     });
   };
 
-  // Alignment Tools (Right, Center, Left) for selected elements
-  const handleAlignElements = (alignment: 'right' | 'center' | 'left') => {
+  // Alignment Tools (Horizontal & Vertical, Center on Page)
+  const handleAlignElements = (alignment: 'right' | 'center' | 'left' | 'top' | 'middle' | 'bottom' | 'centerPage') => {
     if (!activeTemplate || selectedElementIds.length === 0) return;
 
     updateActiveTemplate((prev) => {
       const selectedEls = prev.elements.filter((el) => selectedElementIds.includes(el.id));
       if (selectedEls.length === 0) return prev;
 
+      if (alignment === 'centerPage') {
+        return {
+          ...prev,
+          elements: prev.elements.map((el) => {
+            if (!selectedElementIds.includes(el.id)) return el;
+            return {
+              ...el,
+              position: {
+                xMm: Number(((pageDimensions.widthMm - el.size.widthMm) / 2).toFixed(1)),
+                yMm: Number(((pageDimensions.heightMm - el.size.heightMm) / 2).toFixed(1)),
+              },
+            };
+          }),
+        };
+      }
+
       if (selectedEls.length === 1) {
         const target = selectedEls[0];
         let newXMm = target.position.xMm;
+        let newYMm = target.position.yMm;
+
         if (alignment === 'right') {
           newXMm = 0; // In RTL, xMm is distance from right edge
         } else if (alignment === 'center') {
           newXMm = (pageDimensions.widthMm - target.size.widthMm) / 2;
         } else if (alignment === 'left') {
           newXMm = pageDimensions.widthMm - target.size.widthMm;
+        } else if (alignment === 'top') {
+          newYMm = 0;
+        } else if (alignment === 'middle') {
+          newYMm = (pageDimensions.heightMm - target.size.heightMm) / 2;
+        } else if (alignment === 'bottom') {
+          newYMm = pageDimensions.heightMm - target.size.heightMm;
         }
 
         return {
           ...prev,
           elements: prev.elements.map((el) =>
-            el.id === target.id ? { ...el, position: { ...el.position, xMm: Number(newXMm.toFixed(1)) } } : el,
+            el.id === target.id
+              ? {
+                  ...el,
+                  position: {
+                    xMm: Number(newXMm.toFixed(1)),
+                    yMm: Number(newYMm.toFixed(1)),
+                  },
+                }
+              : el,
           ),
         };
       }
 
-      // Group Alignment relative to page container
+      // Group Alignment relative to selected bounding box
       const minXMm = Math.min(...selectedEls.map((el) => el.position.xMm));
       const maxXMm = Math.max(...selectedEls.map((el) => el.position.xMm + el.size.widthMm));
       const groupWidthMm = maxXMm - minXMm;
 
-      let targetGroupMinX = minXMm;
+      const minYMm = Math.min(...selectedEls.map((el) => el.position.yMm));
+      const maxYMm = Math.max(...selectedEls.map((el) => el.position.yMm + el.size.heightMm));
+      const groupHeightMm = maxYMm - minYMm;
+
       if (alignment === 'right') {
-        targetGroupMinX = 0;
-      } else if (alignment === 'center') {
-        targetGroupMinX = (pageDimensions.widthMm - groupWidthMm) / 2;
-      } else if (alignment === 'left') {
-        targetGroupMinX = pageDimensions.widthMm - groupWidthMm;
+        return {
+          ...prev,
+          elements: prev.elements.map((el) =>
+            selectedElementIds.includes(el.id)
+              ? { ...el, position: { ...el.position, xMm: minXMm } }
+              : el,
+          ),
+        };
+      }
+      if (alignment === 'left') {
+        return {
+          ...prev,
+          elements: prev.elements.map((el) =>
+            selectedElementIds.includes(el.id)
+              ? { ...el, position: { ...el.position, xMm: Number((maxXMm - el.size.widthMm).toFixed(1)) } }
+              : el,
+          ),
+        };
+      }
+      if (alignment === 'center') {
+        const centerX = minXMm + groupWidthMm / 2;
+        return {
+          ...prev,
+          elements: prev.elements.map((el) =>
+            selectedElementIds.includes(el.id)
+              ? { ...el, position: { ...el.position, xMm: Number((centerX - el.size.widthMm / 2).toFixed(1)) } }
+              : el,
+          ),
+        };
+      }
+      if (alignment === 'top') {
+        return {
+          ...prev,
+          elements: prev.elements.map((el) =>
+            selectedElementIds.includes(el.id)
+              ? { ...el, position: { ...el.position, yMm: minYMm } }
+              : el,
+          ),
+        };
+      }
+      if (alignment === 'bottom') {
+        return {
+          ...prev,
+          elements: prev.elements.map((el) =>
+            selectedElementIds.includes(el.id)
+              ? { ...el, position: { ...el.position, yMm: Number((maxYMm - el.size.heightMm).toFixed(1)) } }
+              : el,
+          ),
+        };
+      }
+      if (alignment === 'middle') {
+        const centerY = minYMm + groupHeightMm / 2;
+        return {
+          ...prev,
+          elements: prev.elements.map((el) =>
+            selectedElementIds.includes(el.id)
+              ? { ...el, position: { ...el.position, yMm: Number((centerY - el.size.heightMm / 2).toFixed(1)) } }
+              : el,
+          ),
+        };
       }
 
-      const deltaX = targetGroupMinX - minXMm;
+      return prev;
+    });
+  };
+
+  // Distribute spacing between 3 or more elements
+  const handleDistributeElements = (axis: 'horizontal' | 'vertical') => {
+    if (!activeTemplate || selectedElementIds.length < 3) return;
+
+    updateActiveTemplate((prev) => {
+      const selectedEls = prev.elements.filter((el) => selectedElementIds.includes(el.id));
+      if (selectedEls.length < 3) return prev;
+
+      if (axis === 'horizontal') {
+        const sorted = [...selectedEls].sort((a, b) => a.position.xMm - b.position.xMm);
+        const minX = sorted[0].position.xMm;
+        const lastEl = sorted[sorted.length - 1];
+        const maxX = lastEl.position.xMm + lastEl.size.widthMm;
+        const totalElementsWidth = sorted.reduce((sum, el) => sum + el.size.widthMm, 0);
+        const totalSpace = maxX - minX - totalElementsWidth;
+        const gap = totalSpace / (sorted.length - 1);
+
+        let currentX = minX;
+        const newPosMap: Record<string, number> = {};
+        sorted.forEach((el, index) => {
+          if (index === 0) {
+            newPosMap[el.id] = el.position.xMm;
+            currentX += el.size.widthMm;
+          } else {
+            currentX += gap;
+            newPosMap[el.id] = Number(currentX.toFixed(1));
+            currentX += el.size.widthMm;
+          }
+        });
+
+        return {
+          ...prev,
+          elements: prev.elements.map((el) =>
+            newPosMap[el.id] !== undefined
+              ? { ...el, position: { ...el.position, xMm: newPosMap[el.id] } }
+              : el,
+          ),
+        };
+      } else {
+        const sorted = [...selectedEls].sort((a, b) => a.position.yMm - b.position.yMm);
+        const minY = sorted[0].position.yMm;
+        const lastEl = sorted[sorted.length - 1];
+        const maxY = lastEl.position.yMm + lastEl.size.heightMm;
+        const totalElementsHeight = sorted.reduce((sum, el) => sum + el.size.heightMm, 0);
+        const totalSpace = maxY - minY - totalElementsHeight;
+        const gap = totalSpace / (sorted.length - 1);
+
+        let currentY = minY;
+        const newPosMap: Record<string, number> = {};
+        sorted.forEach((el, index) => {
+          if (index === 0) {
+            newPosMap[el.id] = el.position.yMm;
+            currentY += el.size.heightMm;
+          } else {
+            currentY += gap;
+            newPosMap[el.id] = Number(currentY.toFixed(1));
+            currentY += el.size.heightMm;
+          }
+        });
+
+        return {
+          ...prev,
+          elements: prev.elements.map((el) =>
+            newPosMap[el.id] !== undefined
+              ? { ...el, position: { ...el.position, yMm: newPosMap[el.id] } }
+              : el,
+          ),
+        };
+      }
+    });
+  };
+
+  // Adjust Layer / Z-Index ordering
+  const handleLayerReorder = (direction: 'front' | 'back' | 'forward' | 'backward') => {
+    if (!activeTemplate || !selectedElementId) return;
+
+    updateActiveTemplate((prev) => {
+      const target = prev.elements.find((el) => el.id === selectedElementId);
+      if (!target) return prev;
+
+      const currentZ = target.zIndex || 10;
+      let newZ = currentZ;
+
+      if (direction === 'front') {
+        const maxZ = Math.max(...prev.elements.map((el) => el.zIndex || 10));
+        newZ = maxZ + 1;
+      } else if (direction === 'back') {
+        const minZ = Math.min(...prev.elements.map((el) => el.zIndex || 10));
+        newZ = Math.max(1, minZ - 1);
+      } else if (direction === 'forward') {
+        newZ = currentZ + 1;
+      } else if (direction === 'backward') {
+        newZ = Math.max(1, currentZ - 1);
+      }
 
       return {
         ...prev,
-        elements: prev.elements.map((el) => {
-          if (selectedElementIds.includes(el.id)) {
-            return {
-              ...el,
-              position: {
-                ...el.position,
-                xMm: Number((el.position.xMm + deltaX).toFixed(1)),
-              },
-            };
-          }
-          return el;
-        }),
+        elements: prev.elements.map((el) =>
+          el.id === selectedElementId ? { ...el, zIndex: newZ } : el,
+        ),
       };
     });
+  };
+
+  // Add Custom Free Text Element
+  const handleAddCustomText = () => {
+    if (!activeTemplate) return;
+    const newEl = createCustomTextElement(15, 60, 'متن دلخواه جدید');
+    updateActiveTemplate((prev) => ({
+      ...prev,
+      elements: [...prev.elements, newEl],
+    }));
+    setSelectedElementId(newEl.id);
+    setIsAddMenuOpen(false);
+    toast.success('افزودن المان', 'المان متن دلخواه به فاکتور افزوده شد.');
+  };
+
+  // Add Shape Element
+  const handleAddShape = (shapeType: 'rectangle' | 'circle' | 'line_h' | 'line_v' | 'badge') => {
+    if (!activeTemplate) return;
+    const newEl = createShapeElement(shapeType, 20, 60, pageDimensions.widthMm);
+    updateActiveTemplate((prev) => ({
+      ...prev,
+      elements: [...prev.elements, newEl],
+    }));
+    setSelectedElementId(newEl.id);
+    setIsAddMenuOpen(false);
+    const label = ELEMENT_LABELS[newEl.type] || 'شکل جدید';
+    toast.success('افزودن شکل', `شکل «${label}» با موفقیت به فاکتور افزوده شد.`);
+  };
+
+  // Duplicate Element
+  const handleDuplicateElement = (idToDuplicate?: string) => {
+    if (!activeTemplate) return;
+    const targetId = idToDuplicate || selectedElementId;
+    if (!targetId) return;
+    const target = activeTemplate.elements.find((el) => el.id === targetId);
+    if (!target) return;
+
+    const newId = `${target.type}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const cloned: InvoicePrintElement = {
+      ...JSON.parse(JSON.stringify(target)),
+      id: newId,
+      position: {
+        xMm: Math.min(pageDimensions.widthMm - target.size.widthMm, target.position.xMm + 4),
+        yMm: Math.min(pageDimensions.heightMm - target.size.heightMm, target.position.yMm + 4),
+      },
+      zIndex: (target.zIndex || 10) + 1,
+    };
+
+    updateActiveTemplate((prev) => ({
+      ...prev,
+      elements: [...prev.elements, cloned],
+    }));
+    setSelectedElementId(newId);
+    toast.success('تکثیر المان', 'المان با موفقیت کپی و تکثیر شد.');
+  };
+
+  // Delete Element
+  const handleDeleteElement = (idToDelete: string) => {
+    if (!activeTemplate) return;
+    updateActiveTemplate((prev) => ({
+      ...prev,
+      elements: prev.elements.filter((el) => el.id !== idToDelete),
+    }));
+    if (selectedElementId === idToDelete) {
+      setSelectedElementId(null);
+    }
+    toast.success('حذف المان', 'المان مورد نظر حذف گردید.');
+  };
+
+  // Auto Balance Table Column Widths
+  const handleAutoBalanceTableColumns = () => {
+    if (!activeTemplate) return;
+    const tableEl = activeTemplate.elements.find((el) => el.type === 'items_table');
+    const cols = (activeTemplate.table?.columns || DEFAULT_TABLE_COLUMNS).filter((c) => c.visible);
+    if (!cols.length) return;
+
+    const availableWidthMm = tableEl ? tableEl.size.widthMm : (pageDimensions.widthMm - 20);
+    const equalWidth = Number((availableWidthMm / cols.length).toFixed(1));
+
+    updateTableConfig((prevTable) => {
+      const currentCols = prevTable.columns || DEFAULT_TABLE_COLUMNS;
+      return {
+        ...prevTable,
+        columns: currentCols.map((c) => (c.visible ? { ...c, widthMm: equalWidth } : c)),
+      };
+    });
+    toast.success('تراز ستون‌ها', 'پهنای ستون‌های جدول به طور متناسب توزیع گردید.');
   };
 
   // Handle centering an out-of-bounds element upon confirmation
@@ -767,7 +1148,18 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
     );
   }
 
-  const activeColumns = activeTemplate.table?.columns || DEFAULT_TABLE_COLUMNS;
+  const defaultCols = activeTemplate.templateType === 'customer' ? CUSTOMER_DEFAULT_TABLE_COLUMNS : DEFAULT_TABLE_COLUMNS;
+  const rawTable = activeTemplate.table || (activeTemplate.design as any)?.table;
+  const rawCols = rawTable?.columns && rawTable.columns.length > 0 ? rawTable.columns : defaultCols;
+  const rawColIds = new Set(rawCols.map((c: any) => c.id));
+  const missingCols = defaultCols.filter((c) => !rawColIds.has(c.id));
+  const mergedColumns = missingCols.length > 0 ? [...rawCols, ...missingCols] : rawCols;
+
+  const activeTableConfig: InvoiceTableConfiguration = {
+    ...rawTable,
+    columns: mergedColumns,
+  };
+  const activeColumns = activeTableConfig.columns || defaultCols;
 
   return (
     <div
@@ -976,32 +1368,139 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
           </div>
 
           {/* Elements List / Visibility Toggle Box */}
-          <div className="dashboard-panel p-4 space-y-3">
+          <div className="dashboard-panel p-4 space-y-3 relative">
             <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
               <h3 className="font-extrabold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                 <Layers size={15} className="text-amber-600" />
                 المان‌های فاکتور
               </h3>
-              <span className="text-[10px] text-slate-400">
-                {activeTemplate.elements.filter((e) => e.visible).length} از {activeTemplate.elements.length} نمایان
-              </span>
+
+              {/* Add Element / Shape Dropdown Trigger */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setIsAddMenuOpen((prev) => !prev)}
+                  className="px-2 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg font-extrabold text-[10px] flex items-center gap-1 shadow-sm transition-colors"
+                  title="افزودن متن دلخواه یا اشکال هندسی"
+                >
+                  <Plus size={13} />
+                  <span>افزودن</span>
+                  <ChevronDown size={12} className={`transition-transform ${isAddMenuOpen ? 'rotate-180' : ''}`} />
+                </button>
+
+                {isAddMenuOpen && (
+                  <div
+                    className="absolute left-0 mt-1 w-44 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 p-1.5 space-y-1 text-right"
+                    onClick={() => setIsAddMenuOpen(false)}
+                  >
+                    <button
+                      type="button"
+                      onClick={handleAddCustomText}
+                      className="w-full flex items-center gap-2 p-1.5 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-amber-500/15 hover:text-amber-700 dark:hover:text-amber-300 font-bold transition-colors"
+                    >
+                      <FileText size={14} className="text-amber-600" />
+                      <span>متن دلخواه جدید</span>
+                    </button>
+                    <div className="h-px bg-slate-200 dark:bg-slate-800 my-1" />
+                    <button
+                      type="button"
+                      onClick={() => handleAddShape('rectangle')}
+                      className="w-full flex items-center gap-2 p-1.5 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-amber-500/15 hover:text-amber-700 dark:hover:text-amber-300 font-bold transition-colors"
+                    >
+                      <Square size={14} className="text-blue-500" />
+                      <span>کادر مستطیل</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAddShape('circle')}
+                      className="w-full flex items-center gap-2 p-1.5 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-amber-500/15 hover:text-amber-700 dark:hover:text-amber-300 font-bold transition-colors"
+                    >
+                      <Circle size={14} className="text-emerald-500" />
+                      <span>دایره / بیضی</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAddShape('line_h')}
+                      className="w-full flex items-center gap-2 p-1.5 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-amber-500/15 hover:text-amber-700 dark:hover:text-amber-300 font-bold transition-colors"
+                    >
+                      <Minus size={14} className="text-purple-500" />
+                      <span>خط جداکننده افقی</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAddShape('line_v')}
+                      className="w-full flex items-center gap-2 p-1.5 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-amber-500/15 hover:text-amber-700 dark:hover:text-amber-300 font-bold transition-colors"
+                    >
+                      <Minus size={14} className="rotate-90 text-purple-500" />
+                      <span>خط جداکننده عمودی</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAddShape('badge')}
+                      className="w-full flex items-center gap-2 p-1.5 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-amber-500/15 hover:text-amber-700 dark:hover:text-amber-300 font-bold transition-colors"
+                    >
+                      <Tag size={14} className="text-amber-500" />
+                      <span>نشان / برچسب</span>
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
 
-            <div className="space-y-1 max-h-[300px] overflow-y-auto pr-1">
+            <div className="flex items-center justify-between text-[10px] text-slate-400">
+              <span>تعداد: {activeTemplate.elements.length}</span>
+              <span>{activeTemplate.elements.filter((e) => e.visible).length} نمایان</span>
+            </div>
+
+            <div className="space-y-1 max-h-[320px] overflow-y-auto pr-1">
               {activeTemplate.elements.map((el) => {
-                const isSelected = el.id === selectedElementId;
+                const isSelected = selectedElementIds.includes(el.id);
+                const isCustomOrShape = el.type === 'custom_text' || el.type.startsWith('shape_');
                 return (
                   <div
                     key={el.id}
                     onClick={() => setSelectedElementId(el.id)}
                     className={`flex items-center justify-between p-2 rounded-xl cursor-pointer transition-all border ${
                       isSelected
-                        ? 'bg-amber-500/20 border-amber-500/50 text-slate-900 dark:text-slate-100 font-bold'
+                        ? 'bg-amber-500/20 border-amber-500/50 text-slate-900 dark:text-slate-100 font-bold shadow-xs'
                         : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:bg-slate-50 text-slate-700 dark:text-slate-300'
                     }`}
                   >
-                    <span className="truncate flex-1">{ELEMENT_LABELS[el.type] || el.id}</span>
+                    <div className="flex items-center gap-1.5 truncate flex-1">
+                      {el.type === 'custom_text' ? (
+                        <FileText size={13} className="text-amber-500 shrink-0" />
+                      ) : el.type === 'shape_rectangle' ? (
+                        <Square size={13} className="text-blue-500 shrink-0" />
+                      ) : el.type === 'shape_circle' ? (
+                        <Circle size={13} className="text-emerald-500 shrink-0" />
+                      ) : el.type === 'shape_line_h' ? (
+                        <Minus size={13} className="text-purple-500 shrink-0" />
+                      ) : el.type === 'shape_line_v' ? (
+                        <Minus size={13} className="rotate-90 text-purple-500 shrink-0" />
+                      ) : el.type === 'shape_badge' ? (
+                        <Tag size={13} className="text-amber-500 shrink-0" />
+                      ) : el.type === 'items_table' ? (
+                        <Table size={13} className="text-sky-500 shrink-0" />
+                      ) : (
+                        <Layers size={13} className="text-slate-400 shrink-0" />
+                      )}
+                      <span className="truncate">{ELEMENT_LABELS[el.type] || el.id}</span>
+                    </div>
+
                     <div className="flex items-center gap-1 shrink-0">
+                      {isCustomOrShape && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteElement(el.id);
+                          }}
+                          className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-500/10 rounded-lg transition-colors"
+                          title="حذف المان"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={(e) => {
@@ -1018,7 +1517,7 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
                         }`}
                         title={el.visible ? 'مخفی کردن المان' : 'نمایش المان'}
                       >
-                        {el.visible ? <Eye size={14} /> : <EyeOff size={14} />}
+                        {el.visible ? <Eye size={13} /> : <EyeOff size={13} />}
                       </button>
                     </div>
                   </div>
@@ -1078,41 +1577,142 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
             </div>
 
             {/* Grid, Pan & Alignment Tools */}
-            <div className="flex items-center gap-2">
-              {/* Alignment Tools */}
-              <div className="flex items-center gap-1 bg-slate-900/80 p-1 rounded-xl">
+            <div className="flex flex-wrap items-center gap-1.5">
+              {/* Comprehensive Alignment Tools */}
+              <div className="flex items-center gap-0.5 bg-slate-900/80 p-1 rounded-xl" title="ابزارهای ترازبندی المان‌ها">
+                {/* Horizontal Alignment */}
                 <button
                   type="button"
                   onClick={() => handleAlignElements('right')}
                   disabled={selectedElementIds.length === 0}
-                  className="p-1.5 hover:bg-slate-800 disabled:opacity-30 rounded-lg text-slate-300 transition-colors flex items-center gap-1"
-                  title="چسبیده به راست"
+                  className="p-1.5 hover:bg-slate-800 disabled:opacity-30 rounded-lg text-slate-300 transition-colors"
+                  title="تراز راست"
                 >
-                  <AlignRight size={15} />
-                  <span className="hidden sm:inline text-[10px]">چسبیده به راست</span>
+                  <AlignRight size={14} />
                 </button>
                 <button
                   type="button"
                   onClick={() => handleAlignElements('center')}
                   disabled={selectedElementIds.length === 0}
-                  className="p-1.5 hover:bg-slate-800 disabled:opacity-30 rounded-lg text-slate-300 transition-colors flex items-center gap-1"
-                  title="وسط"
+                  className="p-1.5 hover:bg-slate-800 disabled:opacity-30 rounded-lg text-slate-300 transition-colors"
+                  title="تراز مرکز افقی"
                 >
-                  <AlignCenter size={15} />
-                  <span className="hidden sm:inline text-[10px]">وسط</span>
+                  <AlignCenter size={14} />
                 </button>
                 <button
                   type="button"
                   onClick={() => handleAlignElements('left')}
                   disabled={selectedElementIds.length === 0}
-                  className="p-1.5 hover:bg-slate-800 disabled:opacity-30 rounded-lg text-slate-300 transition-colors flex items-center gap-1"
-                  title="چسبیده به چپ"
+                  className="p-1.5 hover:bg-slate-800 disabled:opacity-30 rounded-lg text-slate-300 transition-colors"
+                  title="تراز چپ"
                 >
-                  <AlignLeft size={15} />
-                  <span className="hidden sm:inline text-[10px]">چسبیده به چپ</span>
+                  <AlignLeft size={14} />
                 </button>
+
+                <div className="h-3.5 w-px bg-slate-700 mx-0.5" />
+
+                {/* Vertical Alignment */}
+                <button
+                  type="button"
+                  onClick={() => handleAlignElements('top')}
+                  disabled={selectedElementIds.length === 0}
+                  className="p-1.5 hover:bg-slate-800 disabled:opacity-30 rounded-lg text-slate-300 transition-colors"
+                  title="تراز بالا"
+                >
+                  <ArrowUp size={14} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleAlignElements('middle')}
+                  disabled={selectedElementIds.length === 0}
+                  className="p-1.5 hover:bg-slate-800 disabled:opacity-30 rounded-lg text-slate-300 transition-colors"
+                  title="تراز وسط عمودی"
+                >
+                  <Minus size={14} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleAlignElements('bottom')}
+                  disabled={selectedElementIds.length === 0}
+                  className="p-1.5 hover:bg-slate-800 disabled:opacity-30 rounded-lg text-slate-300 transition-colors"
+                  title="تراز پایین"
+                >
+                  <ArrowDown size={14} />
+                </button>
+
+                <div className="h-3.5 w-px bg-slate-700 mx-0.5" />
+
+                {/* Center Page */}
+                <button
+                  type="button"
+                  onClick={() => handleAlignElements('centerPage')}
+                  disabled={selectedElementIds.length === 0}
+                  className="p-1.5 hover:bg-slate-800 disabled:opacity-30 rounded-lg text-amber-400 transition-colors"
+                  title="تراز مرکز کامل صفحه"
+                >
+                  <Maximize2 size={13} />
+                </button>
+
+                {/* Distribute when 3+ elements selected */}
+                {selectedElementIds.length >= 3 && (
+                  <>
+                    <div className="h-3.5 w-px bg-slate-700 mx-0.5" />
+                    <button
+                      type="button"
+                      onClick={() => handleDistributeElements('horizontal')}
+                      className="p-1.5 hover:bg-slate-800 rounded-lg text-sky-400 transition-colors text-[10px] font-bold"
+                      title="توزیع یکنواخت افقی فاصله‌ها"
+                    >
+                      توزیع افقی
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDistributeElements('vertical')}
+                      className="p-1.5 hover:bg-slate-800 rounded-lg text-sky-400 transition-colors text-[10px] font-bold"
+                      title="توزیع یکنواخت عمودی فاصله‌ها"
+                    >
+                      توزیع عمودی
+                    </button>
+                  </>
+                )}
+
+                {/* Layer Ordering */}
+                {selectedElementId && (
+                  <>
+                    <div className="h-3.5 w-px bg-slate-700 mx-0.5" />
+                    <button
+                      type="button"
+                      onClick={() => handleLayerReorder('forward')}
+                      className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-300 transition-colors"
+                      title="یک لایه جلوتر"
+                    >
+                      <BringToFront size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleLayerReorder('backward')}
+                      className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-300 transition-colors"
+                      title="یک لایه عقب‌تر"
+                    >
+                      <SendToBack size={14} />
+                    </button>
+                  </>
+                )}
+
+                {/* Duplicate */}
+                {selectedElementId && (
+                  <button
+                    type="button"
+                    onClick={() => handleDuplicateElement()}
+                    className="p-1.5 hover:bg-slate-800 rounded-lg text-emerald-400 transition-colors"
+                    title="تکثیر المان (Ctrl+D)"
+                  >
+                    <Copy size={13} />
+                  </button>
+                )}
               </div>
 
+              {/* Grid Toggle */}
               <button
                 type="button"
                 onClick={() =>
@@ -1130,11 +1730,6 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
                 <Grid size={15} />
                 <span>Grid</span>
               </button>
-
-              <div className="text-[10px] text-slate-400 flex items-center gap-1 bg-slate-900/80 px-2.5 py-1.5 rounded-xl">
-                <Move size={13} className="text-amber-400" />
-                <span>Ctrl + کلیک برای انتخاب چندتایی · Alt + Mouse برای Pan</span>
-              </div>
             </div>
           </div>
 
@@ -1194,7 +1789,7 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
                       height: `${el.size.heightMm}mm`,
                       fontFamily: el.style.fontFamily || 'Vazirmatn',
                       fontSize: el.style.fontSizePt ? `${el.style.fontSizePt}pt` : '9pt',
-                      fontWeight: el.style.fontWeight || 'normal',
+                      fontWeight: getFontWeightCss(el.style.fontWeight),
                       color: el.style.color || '#0f172a',
                       backgroundColor: el.style.backgroundColor || 'transparent',
                       textAlign: el.style.textAlign || 'right',
@@ -1402,129 +1997,19 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
             </div>
           </div>
 
-          {/* Table Column & Layout Inspector */}
-          {selectedElement?.type === 'items_table' && (
-            <div className="dashboard-panel p-4 space-y-3">
-              <h3 className="font-extrabold text-xs text-slate-800 dark:text-slate-200 pb-2 border-b border-slate-100 dark:border-slate-800 flex items-center gap-1.5">
-                <Settings size={15} className="text-amber-600" />
-                ویرایش پیشرفته ستون‌های جدول
-              </h3>
-
-              <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
-                {activeColumns.map((col, idx) => (
-                  <div key={col.id} className="p-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <label className="flex items-center gap-1.5 font-bold text-[10px]">
-                        <input
-                          type="checkbox"
-                          checked={col.visible}
-                          onChange={(e) => {
-                            const checked = e.target.checked;
-                            const nextCols = activeColumns.map((c) => (c.id === col.id ? { ...c, visible: checked } : c));
-                            updateActiveTemplate((prev) => ({
-                              ...prev,
-                              table: { ...prev.table, columns: nextCols },
-                            }));
-                          }}
-                          className="accent-amber-500"
-                        />
-                        <span>{col.label}</span>
-                      </label>
-
-                      {/* Move Column Up / Down */}
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          disabled={idx === 0}
-                          onClick={() => {
-                            if (idx === 0) return;
-                            const next = [...activeColumns];
-                            const temp = next[idx - 1];
-                            next[idx - 1] = next[idx];
-                            next[idx] = temp;
-                            updateActiveTemplate((prev) => ({
-                              ...prev,
-                              table: { ...prev.table, columns: next },
-                            }));
-                          }}
-                          className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded disabled:opacity-30"
-                          title="انتقال به بالا"
-                        >
-                          <ArrowUp size={12} />
-                        </button>
-                        <button
-                          type="button"
-                          disabled={idx === activeColumns.length - 1}
-                          onClick={() => {
-                            if (idx === activeColumns.length - 1) return;
-                            const next = [...activeColumns];
-                            const temp = next[idx + 1];
-                            next[idx + 1] = next[idx];
-                            next[idx] = temp;
-                            updateActiveTemplate((prev) => ({
-                              ...prev,
-                              table: { ...prev.table, columns: next },
-                            }));
-                          }}
-                          className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded disabled:opacity-30"
-                          title="انتقال به پایین"
-                        >
-                          <ArrowDown size={12} />
-                        </button>
-                      </div>
-                    </div>
-
-                    {col.visible && (
-                      <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-slate-200 dark:border-slate-800">
-                        <input
-                          type="text"
-                          value={col.label}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            const nextCols = activeColumns.map((c) => (c.id === col.id ? { ...c, label: val } : c));
-                            updateActiveTemplate((prev) => ({
-                              ...prev,
-                              table: { ...prev.table, columns: nextCols },
-                            }));
-                          }}
-                          placeholder="عنوان ستون"
-                          className="px-1.5 py-1 text-[10px] rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800"
-                        />
-                        <input
-                          type="number"
-                          value={col.widthMm || 20}
-                          onChange={(e) => {
-                            const val = Number(e.target.value);
-                            const nextCols = activeColumns.map((c) => (c.id === col.id ? { ...c, widthMm: val } : c));
-                            updateActiveTemplate((prev) => ({
-                              ...prev,
-                              table: { ...prev.table, columns: nextCols },
-                            }));
-                          }}
-                          placeholder="عرض mm"
-                          className="px-1.5 py-1 text-[10px] rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800"
-                        />
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Selected Element Property Inspector */}
-          <div className="dashboard-panel p-4 space-y-3">
+          {/* Selected Element & Table Comprehensive Inspector */}
+          <div className="dashboard-panel p-4 space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
               <h3 className="font-extrabold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                 <Palette size={15} className="text-amber-600" />
                 تنظیمات المان انتخابی
               </h3>
               {selectedElement && (
-                <div className="flex gap-1">
+                <div className="flex items-center gap-1">
                   <select
                     value={displayUnit}
                     onChange={(e) => setDisplayUnit(e.target.value as UnitType)}
-                    className="text-[10px] bg-transparent border border-slate-300 dark:border-slate-700 rounded px-1"
+                    className="text-[10px] bg-transparent border border-slate-300 dark:border-slate-700 rounded px-1 text-slate-700 dark:text-slate-300"
                   >
                     <option value="mm">mm</option>
                     <option value="cm">cm</option>
@@ -1536,165 +2021,73 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
             </div>
 
             {!selectedElement ? (
-              <p className="text-[11px] text-slate-500 py-6 text-center">
-                برای تنظیم موقعیت، فونت و ابعاد، یک المان را روی پیش‌نمایش یا از لیست انتخاب کنید.
+              <p className="text-[11px] text-slate-500 py-8 text-center leading-relaxed">
+                برای تنظیم موقعیت، ابعاد، فونت، لبه‌ها، و رنگ‌ها، یک المان را از فهرست سمت راست یا روی پیش‌نمایش صفحه انتخاب کنید.
               </p>
             ) : (
-              <div className="space-y-3">
-                <div className="p-2 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-800 dark:text-amber-300 font-extrabold text-xs">
-                  {ELEMENT_LABELS[selectedElement.type] || selectedElement.type}
+              <div className="space-y-4">
+                {/* Header Badge & Action Controls */}
+                <div className="flex items-center justify-between gap-2 p-2 bg-amber-500/10 border border-amber-500/30 rounded-xl">
+                  <span className="text-amber-900 dark:text-amber-300 font-extrabold text-xs truncate">
+                    {ELEMENT_LABELS[selectedElement.type] || selectedElement.type}
+                  </span>
+
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleDuplicateElement(selectedElement.id)}
+                      className="p-1 text-emerald-600 hover:bg-emerald-500/15 rounded-lg transition-colors"
+                      title="تکثیر المان"
+                    >
+                      <Copy size={13} />
+                    </button>
+                    {(selectedElement.type === 'custom_text' || selectedElement.type.startsWith('shape_')) && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteElement(selectedElement.id)}
+                        className="p-1 text-rose-600 hover:bg-rose-500/15 rounded-lg transition-colors"
+                        title="حذف المان"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )}
+                  </div>
                 </div>
 
-                {/* Visibility */}
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-[11px]">نمایش در چاپ</span>
-                  <input
-                    type="checkbox"
-                    checked={selectedElement.visible}
-                    onChange={(e) => {
-                      const checked = e.target.checked;
-                      updateActiveTemplate((prev) => ({
-                        ...prev,
-                        elements: prev.elements.map((el) =>
-                          el.id === selectedElement.id ? { ...el, visible: checked } : el,
-                        ),
-                      }));
-                    }}
-                    className="accent-amber-500"
-                  />
-                </div>
-
-                {/* Position X and Y */}
-                <div className="grid grid-cols-2 gap-2">
-                  <label className="account-field">
-                    <span className="text-[10px]">موقعیت X ({displayUnit})</span>
+                {/* Common Visibility & Placement */}
+                <div className="space-y-3 pt-1 border-t border-slate-100 dark:border-slate-800">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-[11px] text-slate-700 dark:text-slate-300">نمایش المان در چاپ</span>
                     <input
-                      type="number"
-                      step="0.5"
-                      value={Number(convertFromMm(selectedElement.position.xMm, displayUnit).toFixed(1))}
+                      type="checkbox"
+                      checked={selectedElement.visible}
                       onChange={(e) => {
-                        const valMm = convertToMm(Number(e.target.value), displayUnit);
+                        const checked = e.target.checked;
                         updateActiveTemplate((prev) => ({
                           ...prev,
                           elements: prev.elements.map((el) =>
-                            el.id === selectedElement.id
-                              ? { ...el, position: { ...el.position, xMm: valMm } }
-                              : el,
+                            el.id === selectedElement.id ? { ...el, visible: checked } : el,
                           ),
                         }));
                       }}
+                      className="accent-amber-500"
                     />
-                  </label>
-
-                  <label className="account-field">
-                    <span className="text-[10px]">موقعیت Y ({displayUnit})</span>
-                    <input
-                      type="number"
-                      step="0.5"
-                      value={Number(convertFromMm(selectedElement.position.yMm, displayUnit).toFixed(1))}
-                      onChange={(e) => {
-                        const valMm = convertToMm(Number(e.target.value), displayUnit);
-                        updateActiveTemplate((prev) => ({
-                          ...prev,
-                          elements: prev.elements.map((el) =>
-                            el.id === selectedElement.id
-                              ? { ...el, position: { ...el.position, yMm: valMm } }
-                              : el,
-                          ),
-                        }));
-                      }}
-                    />
-                  </label>
-                </div>
-
-                {/* Dimensions Width & Height */}
-                <div className="grid grid-cols-2 gap-2">
-                  <label className="account-field">
-                    <span className="text-[10px]">عرض ({displayUnit})</span>
-                    <input
-                      type="number"
-                      step="0.5"
-                      value={Number(convertFromMm(selectedElement.size.widthMm, displayUnit).toFixed(1))}
-                      onChange={(e) => {
-                        const valMm = convertToMm(Number(e.target.value), displayUnit);
-                        updateActiveTemplate((prev) => ({
-                          ...prev,
-                          elements: prev.elements.map((el) =>
-                            el.id === selectedElement.id
-                              ? { ...el, size: { ...el.size, widthMm: valMm } }
-                              : el,
-                          ),
-                        }));
-                      }}
-                    />
-                  </label>
-
-                  <label className="account-field">
-                    <span className="text-[10px]">ارتفاع ({displayUnit})</span>
-                    <input
-                      type="number"
-                      step="0.5"
-                      value={Number(convertFromMm(selectedElement.size.heightMm, displayUnit).toFixed(1))}
-                      onChange={(e) => {
-                        const valMm = convertToMm(Number(e.target.value), displayUnit);
-                        updateActiveTemplate((prev) => ({
-                          ...prev,
-                          elements: prev.elements.map((el) =>
-                            el.id === selectedElement.id
-                              ? { ...el, size: { ...el.size, heightMm: valMm } }
-                              : el,
-                          ),
-                        }));
-                      }}
-                    />
-                  </label>
-                </div>
-
-                {/* Font Controls */}
-                <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-                  <div className="flex items-center gap-1 font-bold text-[11px] text-slate-700 dark:text-slate-300">
-                    <Type size={14} />
-                    <span>تنظیمات فونت و متن</span>
                   </div>
 
-                  <label className="account-field">
-                    <span className="text-[10px]">خانواده فونت</span>
-                    <select
-                      value={selectedElement.style.fontFamily || 'Vazirmatn'}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        updateActiveTemplate((prev) => ({
-                          ...prev,
-                          elements: prev.elements.map((el) =>
-                            el.id === selectedElement.id
-                              ? { ...el, style: { ...el.style, fontFamily: val } }
-                              : el,
-                          ),
-                        }));
-                      }}
-                    >
-                      <option value="Vazirmatn">وزیرمتن (Vazirmatn)</option>
-                      <option value="DoranNoEn">دوران (Doran)</option>
-                    </select>
-                  </label>
-
+                  {/* Position X and Y */}
                   <div className="grid grid-cols-2 gap-2">
                     <label className="account-field">
-                      <span className="text-[10px]">اندازه فونت (pt)</span>
+                      <span className="text-[10px]">موقعیت X ({displayUnit})</span>
                       <input
                         type="number"
-                        min="6"
-                        max="48"
                         step="0.5"
-                        value={selectedElement.style.fontSizePt || 9}
+                        value={Number(convertFromMm(selectedElement.position.xMm, displayUnit).toFixed(1))}
                         onChange={(e) => {
-                          const val = Number(e.target.value);
+                          const valMm = convertToMm(Number(e.target.value), displayUnit);
                           updateActiveTemplate((prev) => ({
                             ...prev,
                             elements: prev.elements.map((el) =>
-                              el.id === selectedElement.id
-                                ? { ...el, style: { ...el.style, fontSizePt: val } }
-                                : el,
+                              el.id === selectedElement.id ? { ...el, position: { ...el.position, xMm: valMm } } : el,
                             ),
                           }));
                         }}
@@ -1702,94 +2095,989 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
                     </label>
 
                     <label className="account-field">
-                      <span className="text-[10px]">وزن فونت</span>
+                      <span className="text-[10px]">موقعیت Y ({displayUnit})</span>
+                      <input
+                        type="number"
+                        step="0.5"
+                        value={Number(convertFromMm(selectedElement.position.yMm, displayUnit).toFixed(1))}
+                        onChange={(e) => {
+                          const valMm = convertToMm(Number(e.target.value), displayUnit);
+                          updateActiveTemplate((prev) => ({
+                            ...prev,
+                            elements: prev.elements.map((el) =>
+                              el.id === selectedElement.id ? { ...el, position: { ...el.position, yMm: valMm } } : el,
+                            ),
+                          }));
+                        }}
+                      />
+                    </label>
+                  </div>
+
+                  {/* Dimensions Width & Height */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="account-field">
+                      <span className="text-[10px]">عرض ({displayUnit})</span>
+                      <input
+                        type="number"
+                        step="0.5"
+                        value={Number(convertFromMm(selectedElement.size.widthMm, displayUnit).toFixed(1))}
+                        onChange={(e) => {
+                          const valMm = convertToMm(Number(e.target.value), displayUnit);
+                          updateActiveTemplate((prev) => ({
+                            ...prev,
+                            elements: prev.elements.map((el) =>
+                              el.id === selectedElement.id ? { ...el, size: { ...el.size, widthMm: valMm } } : el,
+                            ),
+                          }));
+                        }}
+                      />
+                    </label>
+
+                    <label className="account-field">
+                      <span className="text-[10px]">ارتفاع ({displayUnit})</span>
+                      <input
+                        type="number"
+                        step="0.5"
+                        value={Number(convertFromMm(selectedElement.size.heightMm, displayUnit).toFixed(1))}
+                        onChange={(e) => {
+                          const valMm = convertToMm(Number(e.target.value), displayUnit);
+                          updateActiveTemplate((prev) => ({
+                            ...prev,
+                            elements: prev.elements.map((el) =>
+                              el.id === selectedElement.id ? { ...el, size: { ...el.size, heightMm: valMm } } : el,
+                            ),
+                          }));
+                        }}
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                {/* SPECIALIZED: SHOP SLOGAN EDITING */}
+                {selectedElement.type === 'shop_slogan' && (
+                  <div className="space-y-2 p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl">
+                    <label className="account-field">
+                      <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400">متن شعار فروشگاه</span>
+                      <input
+                        type="text"
+                        value={selectedElement.content?.text || ''}
+                        placeholder={settings.printStoreSlogan || 'کیفیت و اصالت در ساخت طلا و جواهرات'}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          updateActiveTemplate((prev) => ({
+                            ...prev,
+                            elements: prev.elements.map((el) =>
+                              el.id === selectedElement.id ? { ...el, content: { ...el.content, text: val } } : el,
+                            ),
+                          }));
+                        }}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        updateActiveTemplate((prev) => ({
+                          ...prev,
+                          elements: prev.elements.map((el) =>
+                            el.id === selectedElement.id ? { ...el, content: { ...el.content, text: settings.printStoreSlogan || 'کیفیت و اصالت در ساخت طلا و جواهرات' } } : el,
+                          ),
+                        }));
+                      }}
+                      className="text-[10px] text-amber-600 hover:underline font-bold"
+                    >
+                      استفاده از شعار پیش‌فرض تنظیمات سامانه
+                    </button>
+                  </div>
+                )}
+
+                {/* SPECIALIZED: CUSTOM TEXT EDITING */}
+                {selectedElement.type === 'custom_text' && (
+                  <div className="space-y-2 p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl">
+                    <label className="account-field">
+                      <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400">متن دلخواه (چندخطی)</span>
+                      <textarea
+                        rows={3}
+                        value={selectedElement.content?.text || ''}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          updateActiveTemplate((prev) => ({
+                            ...prev,
+                            elements: prev.elements.map((el) =>
+                              el.id === selectedElement.id ? { ...el, content: { ...el.content, text: val } } : el,
+                            ),
+                          }));
+                        }}
+                        placeholder="متن دلخواه فاکتور خود را بنویسید..."
+                        className="w-full text-xs p-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800"
+                      />
+                    </label>
+
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <label className="account-field">
+                        <span className="text-[9px]">فاصله خطوط</span>
+                        <input
+                          type="number"
+                          step="0.1"
+                          min="1"
+                          max="3"
+                          value={selectedElement.style.lineHeight || 1.4}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            updateActiveTemplate((prev) => ({
+                              ...prev,
+                              elements: prev.elements.map((el) =>
+                                el.id === selectedElement.id ? { ...el, style: { ...el.style, lineHeight: val } } : el,
+                              ),
+                            }));
+                          }}
+                        />
+                      </label>
+                      <label className="account-field">
+                        <span className="text-[9px]">فاصله داخلی (mm)</span>
+                        <input
+                          type="number"
+                          step="0.5"
+                          min="0"
+                          max="20"
+                          value={selectedElement.style.paddingMm || 0}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            updateActiveTemplate((prev) => ({
+                              ...prev,
+                              elements: prev.elements.map((el) =>
+                                el.id === selectedElement.id ? { ...el, style: { ...el.style, paddingMm: val } } : el,
+                              ),
+                            }));
+                          }}
+                        />
+                      </label>
+                    </div>
+                  </div>
+                )}
+
+                {/* SPECIALIZED: FOOTER TEXT EDITING */}
+                {selectedElement.type === 'footer_text' && (
+                  <div className="space-y-2 p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl">
+                    <label className="account-field">
+                      <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400">متن پانویس فاکتور (توضیحات و شرایط فروش)</span>
+                      <textarea
+                        rows={3}
+                        value={selectedElement.content?.text ?? (activeTemplate.footer?.footerText || '')}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          updateActiveTemplate((prev) => {
+                            const updatedFooter = { ...prev.footer, ...(prev.design as any)?.footer, footerText: val };
+                            return {
+                              ...prev,
+                              footer: updatedFooter,
+                              design: { ...prev.design, footer: updatedFooter },
+                              elements: prev.elements.map((el) =>
+                                el.id === selectedElement.id ? { ...el, content: { ...el.content, text: val } } : el,
+                              ),
+                            };
+                          });
+                        }}
+                        placeholder={settings.printFooterText || 'متن پانویس فاکتور...'}
+                        className="w-full text-xs p-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800"
+                      />
+                    </label>
+
+                    {/* Footer Presets */}
+                    <div className="space-y-1">
+                      <span className="text-[9px] text-slate-500 font-bold">الگوهای آماده پانویس:</span>
+                      <div className="flex flex-wrap gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const text = 'فاکتور بدون خط‌خوردگی دارای اعتبار است. تعویض یا مرجوعی کالا حداکثر تا ۲۴ ساعت پس از صدور با ارائه اصل فاکتور پذیرفته می‌شود.';
+                            updateActiveTemplate((prev) => {
+                              const updatedFooter = { ...prev.footer, ...(prev.design as any)?.footer, footerText: text };
+                              return {
+                                ...prev,
+                                footer: updatedFooter,
+                                design: { ...prev.design, footer: updatedFooter },
+                                elements: prev.elements.map((el) =>
+                                  el.id === selectedElement.id ? { ...el, content: { ...el.content, text } } : el,
+                                ),
+                              };
+                            });
+                          }}
+                          className="text-[9px] px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-800 hover:bg-amber-500/20 text-slate-700 dark:text-slate-300 font-bold"
+                        >
+                          شرایط استاندارد فاکتور
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const text = 'اصالت عیار ۷۵۰ کلیه اقلام طلای مندرج در این سند توسط گالری طلا تضمین می‌گردد.';
+                            updateActiveTemplate((prev) => {
+                              const updatedFooter = { ...prev.footer, ...(prev.design as any)?.footer, footerText: text };
+                              return {
+                                ...prev,
+                                footer: updatedFooter,
+                                design: { ...prev.design, footer: updatedFooter },
+                                elements: prev.elements.map((el) =>
+                                  el.id === selectedElement.id ? { ...el, content: { ...el.content, text } } : el,
+                                ),
+                              };
+                            });
+                          }}
+                          className="text-[9px] px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-800 hover:bg-amber-500/20 text-slate-700 dark:text-slate-300 font-bold"
+                        >
+                          تضمین عیار ۷۵۰
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* SPECIALIZED: SHAPE PROPERTIES (Rectangle, Circle, Lines, Badge) */}
+                {selectedElement.type.startsWith('shape_') && (
+                  <div className="space-y-3 p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl">
+                    <span className="font-extrabold text-[10px] text-amber-700 dark:text-amber-400">شخصی‌سازی شکل هندسی</span>
+
+                    {/* Badge text if badge */}
+                    {selectedElement.type === 'shape_badge' && (
+                      <label className="account-field">
+                        <span className="text-[9px]">متن برچسب / نشان</span>
+                        <input
+                          type="text"
+                          value={selectedElement.content?.text || ''}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            updateActiveTemplate((prev) => ({
+                              ...prev,
+                              elements: prev.elements.map((el) =>
+                                el.id === selectedElement.id ? { ...el, content: { ...el.content, text: val } } : el,
+                              ),
+                            }));
+                          }}
+                        />
+                      </label>
+                    )}
+
+                    {/* Border & Outline Controls */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <label className="account-field">
+                        <span className="text-[9px]">ضخامت خط (mm)</span>
+                        <input
+                          type="number"
+                          step="0.1"
+                          min="0"
+                          max="10"
+                          value={selectedElement.style.borderWidthMm ?? 0.5}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            updateActiveTemplate((prev) => ({
+                              ...prev,
+                              elements: prev.elements.map((el) =>
+                                el.id === selectedElement.id ? { ...el, style: { ...el.style, borderWidthMm: val } } : el,
+                              ),
+                            }));
+                          }}
+                        />
+                      </label>
+
+                      <label className="account-field">
+                        <span className="text-[9px]">استایل خط</span>
+                        <select
+                          value={selectedElement.style.borderStyle || 'solid'}
+                          onChange={(e) => {
+                            const val = e.target.value as any;
+                            updateActiveTemplate((prev) => ({
+                              ...prev,
+                              elements: prev.elements.map((el) =>
+                                el.id === selectedElement.id ? { ...el, style: { ...el.style, borderStyle: val } } : el,
+                              ),
+                            }));
+                          }}
+                        >
+                          <option value="solid">پیوسته (Solid)</option>
+                          <option value="dashed">خط‌چین (Dashed)</option>
+                          <option value="dotted">نقطه‌چین (Dotted)</option>
+                        </select>
+                      </label>
+                    </div>
+
+                    {/* Corner Radius (for rectangle & badge) */}
+                    {(selectedElement.type === 'shape_rectangle' || selectedElement.type === 'shape_badge') && (
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-[9px] font-bold">
+                          <span>گردی گوشه‌ها (mm)</span>
+                          <span>{selectedElement.style.borderRadiusMm || 0} mm</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="25"
+                          step="0.5"
+                          value={selectedElement.style.borderRadiusMm || 0}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            updateActiveTemplate((prev) => ({
+                              ...prev,
+                              elements: prev.elements.map((el) =>
+                                el.id === selectedElement.id ? { ...el, style: { ...el.style, borderRadiusMm: val } } : el,
+                              ),
+                            }));
+                          }}
+                          className="w-full accent-amber-500"
+                        />
+                      </div>
+                    )}
+
+                    {/* Colors & Opacity */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <label className="account-field">
+                        <span className="text-[9px]">رنگ خط / کادر</span>
+                        <input
+                          type="color"
+                          value={selectedElement.style.borderColor || '#cbd5e1'}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            updateActiveTemplate((prev) => ({
+                              ...prev,
+                              elements: prev.elements.map((el) =>
+                                el.id === selectedElement.id ? { ...el, style: { ...el.style, borderColor: val } } : el,
+                              ),
+                            }));
+                          }}
+                          className="h-8 p-1 cursor-pointer"
+                        />
+                      </label>
+
+                      {selectedElement.type !== 'shape_line_h' && selectedElement.type !== 'shape_line_v' && (
+                        <label className="account-field">
+                          <span className="text-[9px]">رنگ پس‌زمینه</span>
+                          <input
+                            type="color"
+                            value={selectedElement.style.backgroundColor || '#f8fafc'}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              updateActiveTemplate((prev) => ({
+                                ...prev,
+                                elements: prev.elements.map((el) =>
+                                  el.id === selectedElement.id ? { ...el, style: { ...el.style, backgroundColor: val } } : el,
+                                ),
+                              }));
+                            }}
+                            className="h-8 p-1 cursor-pointer"
+                          />
+                        </label>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* SPECIALIZED: ADVANCED ITEMS TABLE INSPECTOR */}
+                {selectedElement.type === 'items_table' && (
+                  <div className="space-y-3 p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl">
+                    <div className="flex items-center justify-between pb-1 border-b border-slate-200 dark:border-slate-800">
+                      <span className="font-extrabold text-[11px] text-amber-700 dark:text-amber-400 flex items-center gap-1">
+                        <Table size={14} />
+                        تنظیمات پیشرفته جدول
+                      </span>
+                    </div>
+
+                    {/* Subtabs: Columns & Dividers | Borders & Rounding | Colors & Theme */}
+                    <div className="grid grid-cols-3 gap-1 bg-slate-200 dark:bg-slate-800 p-1 rounded-xl text-center font-bold text-[10px]">
+                      <button
+                        type="button"
+                        onClick={() => setTableSubTab('columns')}
+                        className={`py-1.5 rounded-lg transition-colors ${
+                          tableSubTab === 'columns' ? 'bg-amber-500 text-slate-950 shadow-xs' : 'text-slate-600 dark:text-slate-300'
+                        }`}
+                      >
+                        ستون‌ها و فواصل
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTableSubTab('borders')}
+                        className={`py-1.5 rounded-lg transition-colors ${
+                          tableSubTab === 'borders' ? 'bg-amber-500 text-slate-950 shadow-xs' : 'text-slate-600 dark:text-slate-300'
+                        }`}
+                      >
+                        لبه‌ها و کادر
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTableSubTab('colors')}
+                        className={`py-1.5 rounded-lg transition-colors ${
+                          tableSubTab === 'colors' ? 'bg-amber-500 text-slate-950 shadow-xs' : 'text-slate-600 dark:text-slate-300'
+                        }`}
+                      >
+                        رنگ‌ها و تم
+                      </button>
+                    </div>
+
+                    {/* TAB 1: Columns & Dividers */}
+                    {tableSubTab === 'columns' && (
+                      <div className="space-y-2">
+                        {/* Workmanship Title Display Mode */}
+                        <div className="p-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-black text-slate-800 dark:text-slate-200">
+                              نحوه نمایش شرح کارساخته:
+                            </span>
+                            <span className="text-[9px] text-amber-600 dark:text-amber-400 font-bold">
+                              {activeTableConfig.workmanshipDisplayMode === 'both'
+                                ? 'عنوان + عملیات'
+                                : activeTableConfig.workmanshipDisplayMode === 'operation_only'
+                                  ? 'فقط عملیات'
+                                  : 'فقط نام کار ساخته'}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-1 gap-1 text-[10px] text-slate-700 dark:text-slate-300">
+                            <label className="flex items-center gap-1.5 cursor-pointer hover:text-amber-600">
+                              <input
+                                type="radio"
+                                name="workmanshipDisplayMode"
+                                value="name_only"
+                                checked={(activeTableConfig.workmanshipDisplayMode || 'name_only') === 'name_only'}
+                                onChange={() =>
+                                  updateTableConfig((tbl) => ({
+                                    ...tbl,
+                                    workmanshipDisplayMode: 'name_only',
+                                  }))
+                                }
+                                className="accent-amber-500"
+                              />
+                              <span>فقط نام کار ساخته (مثال: مدال پناه)</span>
+                            </label>
+                            <label className="flex items-center gap-1.5 cursor-pointer hover:text-amber-600">
+                              <input
+                                type="radio"
+                                name="workmanshipDisplayMode"
+                                value="both"
+                                checked={activeTableConfig.workmanshipDisplayMode === 'both'}
+                                onChange={() =>
+                                  updateTableConfig((tbl) => ({
+                                    ...tbl,
+                                    workmanshipDisplayMode: 'both',
+                                  }))
+                                }
+                                className="accent-amber-500"
+                              />
+                              <span>عملیات + نام کار ساخته (مثال: فروش کار ساخته (مدال پناه))</span>
+                            </label>
+                            <label className="flex items-center gap-1.5 cursor-pointer hover:text-amber-600">
+                              <input
+                                type="radio"
+                                name="workmanshipDisplayMode"
+                                value="operation_only"
+                                checked={activeTableConfig.workmanshipDisplayMode === 'operation_only'}
+                                onChange={() =>
+                                  updateTableConfig((tbl) => ({
+                                    ...tbl,
+                                    workmanshipDisplayMode: 'operation_only',
+                                  }))
+                                }
+                                className="accent-amber-500"
+                              />
+                              <span>فقط نوع عملیات (مثال: فروش کار ساخته)</span>
+                            </label>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-1 flex-wrap">
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={handleAutoBalanceTableColumns}
+                              className="px-2 py-1 bg-sky-500/15 hover:bg-sky-500/25 text-sky-700 dark:text-sky-300 text-[10px] font-bold rounded-lg transition-colors"
+                              title="توزیع خودکار پهنای ستون‌ها برای پر کردن عرض جدول"
+                            >
+                              توزیع متناسب پهنا
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const fallbackCols = activeTemplate.templateType === 'customer' ? CUSTOMER_DEFAULT_TABLE_COLUMNS : DEFAULT_TABLE_COLUMNS;
+                                updateTableConfig((tbl) => ({
+                                  ...tbl,
+                                  columns: JSON.parse(JSON.stringify(fallbackCols)),
+                                }));
+                              }}
+                              className="px-2 py-1 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-[10px] font-bold rounded-lg transition-colors"
+                              title="بازنشانی ستون‌ها و عرض آن‌ها به حالت پیش‌فرض"
+                            >
+                              بازنشانی ستون‌ها
+                            </button>
+                          </div>
+
+                          <label className="flex items-center gap-1 text-[10px] font-bold text-slate-700 dark:text-slate-300">
+                            <input
+                              type="checkbox"
+                              checked={activeTableConfig.showIndexColumn !== false}
+                              onChange={(e) => {
+                                const checked = e.target.checked;
+                                updateTableConfig((tbl) => ({
+                                  ...tbl,
+                                  showIndexColumn: checked,
+                                }));
+                              }}
+                              className="accent-amber-500"
+                            />
+                            <span>ستون ردیف</span>
+                          </label>
+                        </div>
+
+                        {/* Column Reordering, Width & Divider Position */}
+                        <div className="space-y-1.5 max-h-[220px] overflow-y-auto pr-1">
+                          {activeColumns.map((col, idx) => (
+                            <div
+                              key={col.id}
+                              className="p-2 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl space-y-1"
+                            >
+                              <div className="flex items-center justify-between">
+                                <label className="flex items-center gap-1.5 font-bold text-[10px]">
+                                  <input
+                                    type="checkbox"
+                                    checked={col.visible}
+                                    onChange={(e) => {
+                                      const checked = e.target.checked;
+                                      const nextCols = activeColumns.map((c) => (c.id === col.id ? { ...c, visible: checked } : c));
+                                      updateTableConfig((tbl) => ({
+                                        ...tbl,
+                                        columns: nextCols,
+                                      }));
+                                    }}
+                                    className="accent-amber-500"
+                                  />
+                                  <span>{col.label}</span>
+                                </label>
+
+                                {/* Move Column (Changes column order & divider position) */}
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    disabled={idx === 0}
+                                    onClick={() => {
+                                      if (idx === 0) return;
+                                      const next = [...activeColumns];
+                                      const temp = next[idx - 1];
+                                      next[idx - 1] = next[idx];
+                                      next[idx] = temp;
+                                      updateTableConfig((tbl) => ({
+                                        ...tbl,
+                                        columns: next,
+                                      }));
+                                    }}
+                                    className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded disabled:opacity-30"
+                                    title="انتقال به راست (ستون قبلی)"
+                                  >
+                                    <ArrowUp size={12} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={idx === activeColumns.length - 1}
+                                    onClick={() => {
+                                      if (idx === activeColumns.length - 1) return;
+                                      const next = [...activeColumns];
+                                      const temp = next[idx + 1];
+                                      next[idx + 1] = next[idx];
+                                      next[idx] = temp;
+                                      updateTableConfig((tbl) => ({
+                                        ...tbl,
+                                        columns: next,
+                                      }));
+                                    }}
+                                    className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded disabled:opacity-30"
+                                    title="انتقال به چپ (ستون بعدی)"
+                                  >
+                                    <ArrowDown size={12} />
+                                  </button>
+                                </div>
+                              </div>
+
+                              {col.visible && (
+                                <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-slate-100 dark:border-slate-800">
+                                  <input
+                                    type="text"
+                                    value={col.label}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      const nextCols = activeColumns.map((c) => (c.id === col.id ? { ...c, label: val } : c));
+                                      updateTableConfig((tbl) => ({
+                                        ...tbl,
+                                        columns: nextCols,
+                                      }));
+                                    }}
+                                    placeholder="عنوان ستون"
+                                    className="px-1.5 py-1 text-[10px] rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800"
+                                  />
+                                  <div className="flex items-center gap-1">
+                                    <input
+                                      type="number"
+                                      value={col.widthMm || 20}
+                                      onChange={(e) => {
+                                        const val = Number(e.target.value);
+                                        const nextCols = activeColumns.map((c) => (c.id === col.id ? { ...c, widthMm: val } : c));
+                                        updateTableConfig((tbl) => ({
+                                          ...tbl,
+                                          columns: nextCols,
+                                        }));
+                                      }}
+                                      placeholder="عرض mm"
+                                      className="w-full px-1.5 py-1 text-[10px] rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800"
+                                    />
+                                    <span className="text-[9px] text-slate-400">mm</span>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* TAB 2: Borders & Corner Rounding */}
+                    {tableSubTab === 'borders' && (
+                      <div className="space-y-3">
+                        {/* Table Border Color & Width */}
+                        <div className="grid grid-cols-2 gap-2">
+                          <label className="account-field">
+                            <span className="text-[9px]">رنگ کادر جدول</span>
+                            <input
+                              type="color"
+                              value={activeTableConfig.borderColor || '#cbd5e1'}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                updateTableConfig((tbl) => ({
+                                  ...tbl,
+                                  borderColor: val,
+                                }));
+                              }}
+                              className="h-8 p-1 cursor-pointer"
+                            />
+                          </label>
+
+                          <label className="account-field">
+                            <span className="text-[9px]">ضخامت کادر (mm)</span>
+                            <input
+                              type="number"
+                              step="0.1"
+                              min="0.1"
+                              max="3"
+                              value={activeTableConfig.borderWidthMm || 0.4}
+                              onChange={(e) => {
+                                const val = Number(e.target.value);
+                                updateTableConfig((tbl) => ({
+                                  ...tbl,
+                                  borderWidthMm: val,
+                                }));
+                              }}
+                            />
+                          </label>
+                        </div>
+
+                        {/* Border Style */}
+                        <label className="account-field">
+                          <span className="text-[9px]">نوع خط کادر جدول</span>
+                          <select
+                            value={activeTableConfig.borderStyle || 'solid'}
+                            onChange={(e) => {
+                              const val = e.target.value as any;
+                              updateTableConfig((tbl) => ({
+                                ...tbl,
+                                borderStyle: val,
+                              }));
+                            }}
+                          >
+                            <option value="solid">پیوسته (Solid)</option>
+                            <option value="dashed">خط‌چین (Dashed)</option>
+                            <option value="dotted">نقطه‌چین (Dotted)</option>
+                            <option value="double">دولبه (Double)</option>
+                          </select>
+                        </label>
+
+                        {/* Corner Radius (Rounded Table) */}
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-[9px] font-bold">
+                            <span>گردی لبه‌های جدول (Border Radius)</span>
+                            <span>{activeTableConfig.borderRadiusMm || 0} mm</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="15"
+                            step="0.5"
+                            value={activeTableConfig.borderRadiusMm || 0}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              updateTableConfig((tbl) => ({
+                                ...tbl,
+                                borderRadiusMm: val,
+                              }));
+                            }}
+                            className="w-full accent-amber-500"
+                          />
+                        </div>
+
+                        {/* Inner Divider Lines Toggles */}
+                        <div className="space-y-2 pt-1 border-t border-slate-200 dark:border-slate-800">
+                          <label className="flex items-center justify-between text-[10px] font-bold cursor-pointer">
+                            <span>خطوط عمودی جداکننده ستون‌ها</span>
+                            <input
+                              type="checkbox"
+                              checked={activeTableConfig.showVerticalBorders !== false}
+                              onChange={(e) => {
+                                const checked = e.target.checked;
+                                updateTableConfig((tbl) => ({
+                                  ...tbl,
+                                  showVerticalBorders: checked,
+                                }));
+                              }}
+                              className="accent-amber-500"
+                            />
+                          </label>
+
+                          <label className="flex items-center justify-between text-[10px] font-bold cursor-pointer">
+                            <span>خطوط افقی جداکننده ردیف‌ها</span>
+                            <input
+                              type="checkbox"
+                              checked={activeTableConfig.showHorizontalBorders !== false}
+                              onChange={(e) => {
+                                const checked = e.target.checked;
+                                updateTableConfig((tbl) => ({
+                                  ...tbl,
+                                  showHorizontalBorders: checked,
+                                }));
+                              }}
+                              className="accent-amber-500"
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* TAB 3: Colors & Themes */}
+                    {tableSubTab === 'colors' && (
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-2 gap-2">
+                          <label className="account-field">
+                            <span className="text-[9px]">پس‌زمینه سربرگ</span>
+                            <input
+                              type="color"
+                              value={activeTableConfig.headerBackgroundColor || '#f1f5f9'}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                updateTableConfig((tbl) => ({
+                                  ...tbl,
+                                  headerBackgroundColor: val,
+                                }));
+                              }}
+                              className="h-8 p-1 cursor-pointer"
+                            />
+                          </label>
+
+                          <label className="account-field">
+                            <span className="text-[9px]">رنگ متن سربرگ</span>
+                            <input
+                              type="color"
+                              value={activeTableConfig.headerTextColor || '#0f172a'}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                updateTableConfig((tbl) => ({
+                                  ...tbl,
+                                  headerTextColor: val,
+                                }));
+                              }}
+                              className="h-8 p-1 cursor-pointer"
+                            />
+                          </label>
+                        </div>
+
+                        <label className="account-field">
+                          <span className="text-[9px]">رنگ متن ردیف‌های جدول</span>
+                          <input
+                            type="color"
+                            value={activeTableConfig.bodyTextColor || '#1e293b'}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              updateTableConfig((tbl) => ({
+                                ...tbl,
+                                bodyTextColor: val,
+                              }));
+                            }}
+                            className="h-8 p-1 cursor-pointer"
+                          />
+                        </label>
+
+                        {/* Striped / Alternating Rows */}
+                        <div className="space-y-2 pt-1 border-t border-slate-200 dark:border-slate-800">
+                          <label className="flex items-center justify-between text-[10px] font-bold cursor-pointer">
+                            <span>ردیف‌های راه‌راه (یکی‌درمیان)</span>
+                            <input
+                              type="checkbox"
+                              checked={Boolean(activeTableConfig.stripedRows)}
+                              onChange={(e) => {
+                                const checked = e.target.checked;
+                                updateTableConfig((tbl) => ({
+                                  ...tbl,
+                                  stripedRows: checked,
+                                }));
+                              }}
+                              className="accent-amber-500"
+                            />
+                          </label>
+
+                          {activeTableConfig.stripedRows && (
+                            <label className="account-field">
+                              <span className="text-[9px]">رنگ ردیف دوم</span>
+                              <input
+                                type="color"
+                                value={activeTableConfig.alternateRowColor || '#f8fafc'}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  updateTableConfig((tbl) => ({
+                                    ...tbl,
+                                    alternateRowColor: val,
+                                  }));
+                                }}
+                                className="h-8 p-1 cursor-pointer"
+                              />
+                            </label>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Typography Controls for text-enabled elements */}
+                {selectedElement.type !== 'items_table' && !selectedElement.type.startsWith('shape_line_') && (
+                  <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                    <div className="flex items-center gap-1 font-bold text-[11px] text-slate-700 dark:text-slate-300">
+                      <Type size={14} />
+                      <span>تنظیمات فونت و متن</span>
+                    </div>
+
+                    <label className="account-field">
+                      <span className="text-[10px]">خانواده فونت</span>
                       <select
-                        value={selectedElement.style.fontWeight || 'normal'}
+                        value={selectedElement.style.fontFamily || 'Vazirmatn'}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          updateActiveTemplate((prev) => ({
+                            ...prev,
+                            elements: prev.elements.map((el) =>
+                              el.id === selectedElement.id ? { ...el, style: { ...el.style, fontFamily: val } } : el,
+                            ),
+                          }));
+                        }}
+                      >
+                        <option value="Vazirmatn">وزیرمتن (Vazirmatn)</option>
+                        <option value="DoranNoEn">دوران (Doran)</option>
+                      </select>
+                    </label>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <label className="account-field">
+                        <span className="text-[10px]">اندازه فونت (pt)</span>
+                        <input
+                          type="number"
+                          min="6"
+                          max="48"
+                          step="0.5"
+                          value={selectedElement.style.fontSizePt || 9}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            updateActiveTemplate((prev) => ({
+                              ...prev,
+                              elements: prev.elements.map((el) =>
+                                el.id === selectedElement.id ? { ...el, style: { ...el.style, fontSizePt: val } } : el,
+                              ),
+                            }));
+                          }}
+                        />
+                      </label>
+
+                      <label className="account-field">
+                        <span className="text-[10px]">وزن فونت</span>
+                        <select
+                          value={selectedElement.style.fontWeight || 'normal'}
+                          onChange={(e) => {
+                            const val = e.target.value as any;
+                            updateActiveTemplate((prev) => ({
+                              ...prev,
+                              elements: prev.elements.map((el) =>
+                                el.id === selectedElement.id ? { ...el, style: { ...el.style, fontWeight: val } } : el,
+                              ),
+                            }));
+                          }}
+                        >
+                          <option value="normal">معمولی (400)</option>
+                          <option value="medium">متوسط (500)</option>
+                          <option value="semibold">نیمه‌ضخیم (600)</option>
+                          <option value="bold">ضخیم (700)</option>
+                          <option value="extrabold">خیلی ضخیم (800)</option>
+                        </select>
+                      </label>
+                    </div>
+
+                    <label className="account-field">
+                      <span className="text-[10px]">تراز متن</span>
+                      <select
+                        value={selectedElement.style.textAlign || 'right'}
                         onChange={(e) => {
                           const val = e.target.value as any;
                           updateActiveTemplate((prev) => ({
                             ...prev,
                             elements: prev.elements.map((el) =>
-                              el.id === selectedElement.id
-                                ? { ...el, style: { ...el.style, fontWeight: val } }
-                                : el,
+                              el.id === selectedElement.id ? { ...el, style: { ...el.style, textAlign: val } } : el,
                             ),
                           }));
                         }}
                       >
-                        <option value="normal">معمولی (400)</option>
-                        <option value="medium">متوسط (500)</option>
-                        <option value="semibold">نیمه‌ضخیم (600)</option>
-                        <option value="bold">ضخیم (700)</option>
+                        <option value="right">راست‌چین</option>
+                        <option value="center">وسط‌چین</option>
+                        <option value="left">چپ‌چین</option>
                       </select>
                     </label>
+
+                    {/* Text Color & Background Color */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <label className="account-field">
+                        <span className="text-[10px]">رنگ متن</span>
+                        <input
+                          type="color"
+                          value={selectedElement.style.color || '#0f172a'}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            updateActiveTemplate((prev) => ({
+                              ...prev,
+                              elements: prev.elements.map((el) =>
+                                el.id === selectedElement.id ? { ...el, style: { ...el.style, color: val } } : el,
+                              ),
+                            }));
+                          }}
+                          className="h-8 p-1 cursor-pointer"
+                        />
+                      </label>
+
+                      {!selectedElement.type.startsWith('shape_') && (
+                        <label className="account-field">
+                          <span className="text-[10px]">رنگ پس‌زمینه</span>
+                          <input
+                            type="color"
+                            value={selectedElement.style.backgroundColor || '#ffffff'}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              updateActiveTemplate((prev) => ({
+                                ...prev,
+                                elements: prev.elements.map((el) =>
+                                  el.id === selectedElement.id ? { ...el, style: { ...el.style, backgroundColor: val } } : el,
+                                ),
+                              }));
+                            }}
+                            className="h-8 p-1 cursor-pointer"
+                          />
+                        </label>
+                      )}
+                    </div>
                   </div>
-
-                  <label className="account-field">
-                    <span className="text-[10px]">تراز متن</span>
-                    <select
-                      value={selectedElement.style.textAlign || 'right'}
-                      onChange={(e) => {
-                        const val = e.target.value as any;
-                        updateActiveTemplate((prev) => ({
-                          ...prev,
-                          elements: prev.elements.map((el) =>
-                            el.id === selectedElement.id
-                              ? { ...el, style: { ...el.style, textAlign: val } }
-                              : el,
-                          ),
-                        }));
-                      }}
-                    >
-                      <option value="right">راست‌چین</option>
-                      <option value="center">وسط‌چین</option>
-                      <option value="left">چپ‌چین</option>
-                    </select>
-                  </label>
-
-                  {/* Text Color */}
-                  <div className="grid grid-cols-2 gap-2">
-                    <label className="account-field">
-                      <span className="text-[10px]">رنگ متن</span>
-                      <input
-                        type="color"
-                        value={selectedElement.style.color || '#0f172a'}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          updateActiveTemplate((prev) => ({
-                            ...prev,
-                            elements: prev.elements.map((el) =>
-                              el.id === selectedElement.id
-                                ? { ...el, style: { ...el.style, color: val } }
-                                : el,
-                            ),
-                          }));
-                        }}
-                        className="h-8 p-1 cursor-pointer"
-                      />
-                    </label>
-
-                    <label className="account-field">
-                      <span className="text-[10px]">رنگ پس‌زمینه</span>
-                      <input
-                        type="color"
-                        value={selectedElement.style.backgroundColor || '#ffffff'}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          updateActiveTemplate((prev) => ({
-                            ...prev,
-                            elements: prev.elements.map((el) =>
-                              el.id === selectedElement.id
-                                ? { ...el, style: { ...el.style, backgroundColor: val } }
-                                : el,
-                            ),
-                          }));
-                        }}
-                        className="h-8 p-1 cursor-pointer"
-                      />
-                    </label>
-                  </div>
-                </div>
+                )}
               </div>
             )}
           </div>
@@ -1994,79 +3282,362 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
 function renderElementPreviewContent(el: InvoicePrintElement, settings: any, template: InvoicePrintTemplate) {
   switch (el.type) {
     case 'shop_name':
-      return <div className="font-bold truncate">{settings.printStoreName || settings.organizationName}</div>;
-    case 'shop_slogan':
-      return <div className="font-medium text-amber-700 truncate">{el.content?.text || 'کیفیت و اصالت در ساخت طلا و جواهرات'}</div>;
-    case 'invoice_title':
-      return <div className="font-bold truncate">{el.content?.text || 'فاکتور فروش طلا'}</div>;
-    case 'temporary_invoice_badge':
-      return <div className="font-extrabold flex items-center justify-center h-full text-red-600 bg-red-50 border border-red-200 rounded">فاکتور موقت</div>;
-    case 'shop_address':
-      return <div className="truncate text-[80%]">{settings.printAddress}</div>;
-    case 'shop_phone':
-      return <div className="truncate text-[80%]">تلفن: {settings.printPhone}</div>;
-    case 'invoice_number':
-      return <div className="truncate font-bold">شماره فاکتور: {settings.documentNumberPrefix || 'سند-'}۱۲۳۴</div>;
-    case 'invoice_date':
-      return <div className="truncate">تاریخ: ۱۴۰۳/۱۲/۰۵</div>;
-    case 'customer_name':
-      return <div className="truncate px-1 font-bold">طرف‌حساب: آقای علی محمدی (کد: C-102)</div>;
-    case 'items_table': {
-      const cols = template.table?.columns.filter((c) => c.visible) || DEFAULT_TABLE_COLUMNS;
       return (
-        <div className="w-full h-full border border-slate-400 text-[80%] overflow-hidden">
-          <table className="w-full text-center border-collapse">
+        <div
+          className="truncate"
+          style={{ fontWeight: getFontWeightCss(el.style?.fontWeight || 'bold') }}
+        >
+          {settings.printStoreName || settings.organizationName}
+        </div>
+      );
+
+    case 'shop_slogan':
+      return (
+        <div
+          className="text-amber-700 truncate"
+          style={{ fontWeight: getFontWeightCss(el.style?.fontWeight || 'medium') }}
+        >
+          {el.content?.text || settings.printStoreSlogan || 'کیفیت و اصالت در ساخت طلا و جواهرات'}
+        </div>
+      );
+
+    case 'invoice_title':
+      return (
+        <div
+          className="truncate"
+          style={{ fontWeight: getFontWeightCss(el.style?.fontWeight || 'bold') }}
+        >
+          {el.content?.text || 'فاکتور فروش طلا'}
+        </div>
+      );
+
+    case 'temporary_invoice_badge':
+      return (
+        <div
+          className="flex items-center justify-center h-full text-red-600 bg-red-50 border border-red-200 rounded"
+          style={{ fontWeight: getFontWeightCss(el.style?.fontWeight || 'extrabold') }}
+        >
+          فاکتور موقت
+        </div>
+      );
+
+    case 'custom_text':
+      return (
+        <div
+          className="w-full h-full whitespace-pre-line leading-relaxed"
+          style={{
+            fontWeight: getFontWeightCss(el.style?.fontWeight),
+            lineHeight: el.style.lineHeight || 1.4,
+            padding: el.style.paddingMm ? `${el.style.paddingMm}mm` : undefined,
+          }}
+        >
+          {el.content?.text || 'متن دلخواه جدید'}
+        </div>
+      );
+
+    case 'shape_rectangle':
+      return <div className="w-full h-full" />;
+
+    case 'shape_circle':
+      return <div className="w-full h-full rounded-full" />;
+
+    case 'shape_line_h':
+      return (
+        <div
+          className="w-full"
+          style={{
+            borderTopWidth: `${el.style.borderWidthMm || 0.5}mm`,
+            borderTopColor: el.style.borderColor || '#cbd5e1',
+            borderTopStyle: el.style.borderStyle || 'solid',
+            height: 0,
+          }}
+        />
+      );
+
+    case 'shape_line_v':
+      return (
+        <div
+          className="h-full"
+          style={{
+            borderRightWidth: `${el.style.borderWidthMm || 0.5}mm`,
+            borderRightColor: el.style.borderColor || '#cbd5e1',
+            borderRightStyle: el.style.borderStyle || 'solid',
+            width: 0,
+          }}
+        />
+      );
+
+    case 'shape_badge':
+      return (
+        <div
+          className="w-full h-full flex items-center justify-center text-center px-1"
+          style={{ fontWeight: getFontWeightCss(el.style?.fontWeight || 'bold') }}
+        >
+          {el.content?.text || 'نشان'}
+        </div>
+      );
+
+    case 'shop_address':
+      return (
+        <div
+          className="truncate text-[80%]"
+          style={{ fontWeight: getFontWeightCss(el.style?.fontWeight) }}
+        >
+          {settings.printAddress}
+        </div>
+      );
+
+    case 'shop_phone':
+      return (
+        <div
+          className="truncate text-[80%]"
+          style={{ fontWeight: getFontWeightCss(el.style?.fontWeight) }}
+        >
+          تلفن: {settings.printPhone}
+        </div>
+      );
+
+    case 'invoice_number':
+      return (
+        <div
+          className="truncate"
+          style={{ fontWeight: getFontWeightCss(el.style?.fontWeight || 'bold') }}
+        >
+          شماره فاکتور: {settings.documentNumberPrefix || 'سند-'}۱۲۳۴
+        </div>
+      );
+
+    case 'invoice_date':
+      return (
+        <div
+          className="truncate"
+          style={{ fontWeight: getFontWeightCss(el.style?.fontWeight) }}
+        >
+          تاریخ: ۱۴۰۳/۱۲/۰۵
+        </div>
+      );
+
+    case 'customer_name':
+      return (
+        <div
+          className="truncate px-1"
+          style={{ fontWeight: getFontWeightCss(el.style?.fontWeight || 'bold') }}
+        >
+          طرف‌حساب: آقای علی محمدی (کد: C-102)
+        </div>
+      );
+
+    case 'items_table': {
+      const tableConfig: InvoiceTableConfiguration =
+        template.table || (template.design as any)?.table || { columns: DEFAULT_TABLE_COLUMNS };
+      const allColumns = tableConfig.columns?.length ? tableConfig.columns : DEFAULT_TABLE_COLUMNS;
+      const cols = allColumns
+        .filter((column) => column.visible)
+        .filter((column) => column.id !== 'index' || tableConfig.showIndexColumn !== false);
+
+      const tableBorderColor = tableConfig.borderColor || el.style.borderColor || '#94a3b8';
+      const tableBorderWidth = tableConfig.borderWidthMm ? `${tableConfig.borderWidthMm}mm` : (el.style.borderWidthMm ? `${el.style.borderWidthMm}mm` : '0.4mm');
+      const tableBorderStyle = tableConfig.borderStyle || el.style.borderStyle || 'solid';
+      const tableRadius = tableConfig.borderRadiusMm ? `${tableConfig.borderRadiusMm}mm` : (el.style.borderRadiusMm ? `${el.style.borderRadiusMm}mm` : '0');
+      const showVertical = tableConfig.showVerticalBorders !== false;
+      const showHorizontal = tableConfig.showHorizontalBorders !== false;
+      const striped = Boolean(tableConfig.stripedRows);
+      const altBg = tableConfig.alternateRowColor || '#f8fafc';
+
+      return (
+        <div
+          className="w-full h-full text-[80%] overflow-hidden"
+          style={{
+            borderRadius: tableRadius,
+            border: `${tableBorderWidth} ${tableBorderStyle} ${tableBorderColor}`,
+          }}
+        >
+          <table
+            className="w-full h-full text-center border-collapse table-fixed"
+            style={{
+              color: tableConfig.bodyTextColor || el.style.color || '#0f172a',
+              fontSize: tableConfig.fontSizePt ? `${tableConfig.fontSizePt}pt` : '80%',
+              fontWeight: getFontWeightCss(el.style?.fontWeight),
+            }}
+          >
             <thead>
-              <tr className="bg-slate-100 border-b border-slate-400 font-bold">
-                {cols.map((col) => (
-                  <th key={col.id} className="p-1 border-x border-slate-300">
+              <tr
+                style={{
+                  fontWeight: getFontWeightCss(el.style?.fontWeight || 'bold'),
+                  backgroundColor: tableConfig.headerBackgroundColor || '#f1f5f9',
+                  color: tableConfig.headerTextColor || '#0f172a',
+                  borderBottom: `${tableBorderWidth} ${tableBorderStyle} ${tableBorderColor}`,
+                }}
+              >
+                {cols.map((col, cIdx) => (
+                  <th
+                    key={col.id}
+                    className="p-1"
+                    style={{
+                      width: col.widthMm ? `${col.widthMm}mm` : 'auto',
+                      borderLeft: showVertical && cIdx < cols.length - 1 ? `${tableBorderWidth} ${tableBorderStyle} ${tableBorderColor}` : undefined,
+                    }}
+                  >
                     {col.label}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              <tr className="border-b border-slate-200">
-                {cols.map((col) => (
-                  <td key={col.id} className="p-1 border-x border-slate-200">
-                    {col.id === 'index'
-                      ? '۱'
-                      : col.id === 'operation_type'
-                      ? 'فروش'
-                      : col.id === 'metal_type'
-                      ? 'طلا'
-                      : col.id === 'weight'
-                      ? '۱۲٫۴۵۰'
-                      : col.id === 'purity'
-                      ? '۷۵۰'
-                      : col.id === 'converted_weight'
-                      ? '۱۲٫۴۵۰'
-                      : '-'}
-                  </td>
-                ))}
-              </tr>
+              {[
+                {
+                  type: 'فروش کار ساخته',
+                  wName: 'مدال پناه',
+                  metal: 'طلا',
+                  w: '۱۲٫۴۵۰',
+                  k: '۷۵۰',
+                  c: '۱۲٫۴۵۰',
+                  pricePerGram: '۴٬۸۵۰٬۰۰۰',
+                  subtotal: '۶۰٬۳۸۲٬۵۰۰',
+                  discount: '۳۸۲٬۵۰۰',
+                  total: '۶۰٬۰۰۰٬۰۰۰',
+                },
+                {
+                  type: 'خرید متفرقه',
+                  wName: '',
+                  metal: 'طلا',
+                  w: '۸٫۱۲۰',
+                  k: '۷۴۰',
+                  c: '۸٫۰۱۲',
+                  pricePerGram: '۴٬۸۰۰٬۰۰۰',
+                  subtotal: '۳۸٬۴۵۷٬۶۰۰',
+                  discount: '۰',
+                  total: '۳۸٬۴۵۷٬۶۰۰',
+                },
+              ].map((row, idx) => {
+                const mode = tableConfig?.workmanshipDisplayMode || 'name_only';
+                let opLabel = row.type;
+                if (row.wName) {
+                  if (mode === 'name_only') opLabel = row.wName;
+                  else if (mode === 'both') opLabel = `${row.type} (${row.wName})`;
+                  else opLabel = row.type;
+                }
+
+                return (
+                  <tr
+                    key={idx}
+                    style={{
+                      backgroundColor: striped && idx % 2 === 1 ? altBg : undefined,
+                      borderBottom: showHorizontal && idx === 0 ? `${tableBorderWidth} ${tableBorderStyle} ${tableBorderColor}` : undefined,
+                    }}
+                  >
+                    {cols.map((col, cIdx) => (
+                      <td
+                        key={col.id}
+                        className="p-1"
+                        style={{
+                          borderLeft: showVertical && cIdx < cols.length - 1 ? `${tableBorderWidth} ${tableBorderStyle} ${tableBorderColor}` : undefined,
+                          textAlign: col.textAlign || 'center',
+                        }}
+                      >
+                        {col.id === 'index'
+                          ? idx + 1
+                          : col.id === 'operation_type'
+                          ? opLabel
+                          : col.id === 'metal_type'
+                          ? row.metal
+                          : col.id === 'weight'
+                          ? row.w
+                          : col.id === 'purity'
+                          ? row.k
+                          : col.id === 'converted_weight'
+                          ? row.c
+                          : col.id === 'price_per_gram'
+                          ? row.pricePerGram
+                          : col.id === 'subtotal_price'
+                          ? row.subtotal
+                          : col.id === 'discount_amount'
+                          ? row.discount
+                          : col.id === 'total_price'
+                          ? row.total
+                          : '-'}
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       );
     }
+
     case 'totals_summary':
       return (
-        <div className="w-full h-full flex flex-wrap items-center justify-around font-bold text-[85%] px-2 bg-slate-100 border border-slate-300 rounded">
-          <span>طلا: ۱۲٫۴۵۰ گرم (۷۵۰)</span>
-          <span>نقره: ۵۰٫۰۰۰ گرم</span>
-          <span>مانده: بستانکار</span>
+        <div
+          className="w-full h-full flex flex-wrap items-center justify-around text-[85%] px-2 bg-slate-100 border border-slate-300 rounded gap-1"
+          style={{ fontWeight: getFontWeightCss(el.style?.fontWeight || 'bold') }}
+        >
+          <span>جمع طلا (۷۵۰): ۱۲٫۴۵۰ گرم</span>
+          <span>قیمت کل قبل از تخفیف: ۹۸٬۸۴۰٬۱۰۰ تومان</span>
+          <span>تخفیف: ۳۸۲٬۵۰۰ تومان</span>
+          <span>مبلغ قابل پرداخت: ۹۸٬۴۵۷٬۶۰۰ تومان</span>
         </div>
       );
+
     case 'footer_text':
-      return <div className="truncate text-[80%] leading-snug">{settings.printFooterText}</div>;
+      return (
+        <div
+          className="truncate text-[80%] leading-snug whitespace-pre-line text-center"
+          style={{ fontWeight: getFontWeightCss(el.style?.fontWeight) }}
+        >
+          {el.content?.text || template.footer?.footerText || (template.design as any)?.footer?.footerText || settings.printFooterText || 'متن پانویس فاکتور'}
+        </div>
+      );
+
     case 'seller_signature':
-      return <div className="border-t border-dashed border-slate-400 pt-1 text-center font-bold text-[85%]">{el.content?.text || 'امضای فروشنده'}</div>;
+      return (
+        <div
+          className="border-t border-dashed border-slate-400 pt-1 text-center text-[85%]"
+          style={{ fontWeight: getFontWeightCss(el.style?.fontWeight || 'bold') }}
+        >
+          {template.footer?.sellerSignatureTitle || (template.design as any)?.footer?.sellerSignatureTitle || el.content?.text || 'امضای فروشنده'}
+        </div>
+      );
+
+    case 'customer_signature':
+      return (
+        <div
+          className="border-t border-dashed border-slate-400 pt-1 text-center text-[85%]"
+          style={{ fontWeight: getFontWeightCss(el.style?.fontWeight || 'bold') }}
+        >
+          {template.footer?.customerSignatureTitle || (template.design as any)?.footer?.customerSignatureTitle || el.content?.text || 'امضای خریدار'}
+        </div>
+      );
+
     case 'stamp':
-      return <div className="border-t border-dashed border-slate-400 pt-1 text-center font-bold text-[85%]">{el.content?.text || 'مهر و امضای فروشگاه'}</div>;
+      return (
+        <div
+          className="border-t border-dashed border-slate-400 pt-1 text-center text-[85%]"
+          style={{ fontWeight: getFontWeightCss(el.style?.fontWeight || 'bold') }}
+        >
+          {template.footer?.customerSignatureTitle || (template.design as any)?.footer?.customerSignatureTitle || el.content?.text || 'مهر و امضای فروشگاه'}
+        </div>
+      );
+
     case 'print_datetime':
-      return <div className="text-[75%] text-slate-500">تاریخ و زمان چاپ: ۱۴۰۳/۱۲/۰۵ - ۱۴:۳۰</div>;
+      return (
+        <div
+          className="text-[75%] text-slate-500"
+          style={{ fontWeight: getFontWeightCss(el.style?.fontWeight) }}
+        >
+          تاریخ و زمان چاپ: ۱۴۰۳/۱۲/۰۵ - ۱۴:۳۰
+        </div>
+      );
+
     default:
-      return <div className="truncate">{ELEMENT_LABELS[el.type] || el.type}</div>;
+      return (
+        <div
+          className="truncate"
+          style={{ fontWeight: getFontWeightCss(el.style?.fontWeight) }}
+        >
+          {ELEMENT_LABELS[el.type] || el.type}
+        </div>
+      );
   }
 }

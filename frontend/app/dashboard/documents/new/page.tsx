@@ -9,9 +9,16 @@ import DocumentForm from '@/src/components/DocumentForm';
 
 export const dynamic = 'force-dynamic';
 
-export default async function NewDocumentPage() {
+export default async function NewDocumentPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ editDocumentId?: string; editId?: string }>;
+}) {
   const context = await getServerAuthContext();
   if (!context) redirect('/');
+
+  const resolvedParams = searchParams ? await searchParams : {};
+  const editDocumentId = resolvedParams.editDocumentId || resolvedParams.editId || '';
 
   const [customers, currencies, quotes] = await Promise.all([
     getCustomersWithBalances(context.pb),
@@ -26,6 +33,7 @@ export default async function NewDocumentPage() {
         initialCurrencies={currencies}
         initialQuotes={quotes}
         nextDocumentNumber={1}
+        initialEditDocumentId={editDocumentId}
       />
     </DashboardShell>
   );

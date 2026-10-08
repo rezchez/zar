@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 import { getServerAuthContext } from '@/lib/auth';
-import type { InvoicePrintTemplate } from '@/lib/print-templates';
+import {
+  type InvoicePrintTemplate,
+  type InvoiceTableConfiguration,
+  CUSTOMER_DEFAULT_TABLE_COLUMNS,
+  DEFAULT_TABLE_COLUMNS,
+} from '@/lib/print-templates';
 import { recordAuditEvent } from '@/lib/audit';
 
 function isAllowed(context: Awaited<ReturnType<typeof getServerAuthContext>>) {
@@ -20,6 +25,15 @@ export async function GET(
 
   try {
     const record = await context.pb.collection('print_templates').getOne(id);
+    const rawTable = record.table || (record.design as any)?.table;
+    const defaultCols = record.templateType === 'customer' ? CUSTOMER_DEFAULT_TABLE_COLUMNS : DEFAULT_TABLE_COLUMNS;
+    const resolvedTable: InvoiceTableConfiguration | undefined = rawTable
+      ? {
+          ...rawTable,
+          columns: rawTable.columns && rawTable.columns.length > 0 ? rawTable.columns : defaultCols,
+        }
+      : undefined;
+
     const template: InvoicePrintTemplate = {
       id: record.id,
       name: record.name,
@@ -29,8 +43,8 @@ export async function GET(
       page: record.page,
       design: record.design,
       elements: record.elements,
-      table: record.table,
-      footer: record.footer,
+      table: resolvedTable,
+      footer: record.footer || (record.design as any)?.footer || undefined,
       created: record.created,
       updated: record.updated,
     };
@@ -100,18 +114,43 @@ export async function PUT(
       }
     }
 
-    const payload = {
-      ...(body.name !== undefined ? { name: body.name.trim() } : {}),
-      templateType,
-      ...(body.isActive !== undefined ? { isActive: body.isActive } : {}),
-      ...(body.page !== undefined ? { page: body.page } : {}),
-      ...(body.design !== undefined ? { design: body.design } : {}),
-      ...(body.elements !== undefined ? { elements: body.elements } : {}),
-      ...(body.table !== undefined ? { table: body.table } : {}),
+    const defaultCols = templateType === 'customer' ? CUSTOMER_DEFAULT_TABLE_COLUMNS : DEFAULT_TABLE_COLUMNS;
+    let finalTable = body.table;
+    if (finalTable !== undefined) {
+      finalTable = {
+        ...finalTable,
+        columns: finalTable.columns && finalTable.columns.length > 0 ? finalTable.columns : defaultCols,
+      };
+    }
+
+    const designPayload = {
+      ...(body.design !== undefined ? body.design : (existing.design || {})),
+      ...(finalTable !== undefined ? { table: finalTable } : {}),
       ...(body.footer !== undefined ? { footer: body.footer } : {}),
     };
 
-    const updatedRecord = await collection.update(id, payload);
+    let updatedRecord;
+    try {
+      updatedRecord = await collection.update(id, {
+        ...(body.name !== undefined ? { name: body.name.trim() } : {}),
+        templateType,
+        ...(body.isActive !== undefined ? { isActive: body.isActive } : {}),
+        ...(body.page !== undefined ? { page: body.page } : {}),
+        design: designPayload,
+        ...(body.elements !== undefined ? { elements: body.elements } : {}),
+        ...(finalTable !== undefined ? { table: finalTable } : {}),
+        ...(body.footer !== undefined ? { footer: body.footer } : {}),
+      });
+    } catch {
+      updatedRecord = await collection.update(id, {
+        ...(body.name !== undefined ? { name: body.name.trim() } : {}),
+        templateType,
+        ...(body.isActive !== undefined ? { isActive: body.isActive } : {}),
+        ...(body.page !== undefined ? { page: body.page } : {}),
+        design: designPayload,
+        ...(body.elements !== undefined ? { elements: body.elements } : {}),
+      });
+    }
 
     const updatedTemplate: InvoicePrintTemplate = {
       id: updatedRecord.id,
@@ -122,8 +161,8 @@ export async function PUT(
       page: updatedRecord.page,
       design: updatedRecord.design,
       elements: updatedRecord.elements,
-      table: updatedRecord.table,
-      footer: updatedRecord.footer,
+      table: updatedRecord.table || (updatedRecord.design as any)?.table || finalTable,
+      footer: updatedRecord.footer || (updatedRecord.design as any)?.footer || body.footer,
       created: updatedRecord.created,
       updated: updatedRecord.updated,
     };

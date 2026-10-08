@@ -26,6 +26,7 @@ export type AppSettings = {
 
   // Print customization settings
   printStoreName: string;
+  printStoreSlogan?: string;
   printLogoUrl: string;
   printAddress: string;
   printPhone: string;
@@ -112,6 +113,7 @@ export const defaultSettings: AppSettings = {
   headingFontWeight: 700,
 
   printStoreName: 'گالری پرضا گلد',
+  printStoreSlogan: 'فروش و ساخت مدرن‌ترین طلا و جواهرات با عیار استاندارد ۷۵۰',
   printLogoUrl: '',
   printAddress: 'تهران، بازار بزرگ، تکیه دولت، پاساژ تکیه دولت واحد ۴۳۲',
   printPhone: '02122981574',
@@ -253,6 +255,7 @@ export function normalizeSettings(input: Record<string, unknown>): AppSettings {
     headingFontWeight: Number(input.headingFontWeight ?? input.heading_font_weight) || defaultSettings.headingFontWeight,
 
     printStoreName: String(input.printStoreName ?? defaultSettings.printStoreName).trim(),
+    printStoreSlogan: String(input.printStoreSlogan ?? defaultSettings.printStoreSlogan ?? '').trim(),
     printLogoUrl: String(input.printLogoUrl ?? defaultSettings.printLogoUrl).trim(),
     printAddress: String(input.printAddress ?? defaultSettings.printAddress).trim(),
     printPhone: String(input.printPhone ?? defaultSettings.printPhone).trim(),

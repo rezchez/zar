@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import { ArrowLeftRight, Flame, PencilLine, Trash2 } from 'lucide-react';
+import { ArrowLeftRight, Flame, PencilLine, Sparkles, Trash2 } from 'lucide-react';
 import { TableRow, TableCell } from '@/components/ui/data-table';
 import type { DocumentLine } from '@/src/components/documents/RawGoldTab';
 import {
@@ -25,6 +25,7 @@ interface CommittedLineRowProps {
   hasMetalLines?: boolean;
   hasCurrencyLines?: boolean;
   hasCheckLines?: boolean;
+  hasWorkmanshipLines?: boolean;
 }
 
 export default function CommittedLineRow({
@@ -40,6 +41,7 @@ export default function CommittedLineRow({
   hasMetalLines = true,
   hasCurrencyLines = false,
   hasCheckLines = false,
+  hasWorkmanshipLines = false,
 }: CommittedLineRowProps) {
   const isPaid = line.documentNature === 'paid';
   const isReceived = line.documentNature === 'received';
@@ -64,6 +66,8 @@ export default function CommittedLineRow({
       line.details.rawKind,
       line.details.unsettledTrade,
       line.details.refiningOpKind,
+      line.details.workmanshipOptionId,
+      line.documentSubType,
     );
 
   const isMetalLine =
@@ -216,11 +220,33 @@ export default function CommittedLineRow({
               ری‌گیری
             </span>
           ) : null}
-          <span className="font-semibold text-xs text-slate-800 dark:text-slate-200 truncate block w-full" title={docType}>
-            {docType}
-          </span>
+          {(line.documentTab === 'workmanship' || line.sourceTab === 'workmanship') ? (
+            <span className="inline-flex items-center gap-0.5 rounded bg-amber-100 px-1 py-0.5 text-[9px] font-extrabold text-amber-900 border border-amber-300/80 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800 shrink-0">
+              <Sparkles size={10} className="text-amber-600 dark:text-amber-400 shrink-0" />
+              کار ساخته
+            </span>
+          ) : null}
+          <div className="min-w-0 flex-1">
+            <span className="font-semibold text-xs text-slate-800 dark:text-slate-200 truncate block w-full" title={docType}>
+              {docType}
+            </span>
+            {line.details?.workmanshipName && !hasWorkmanshipLines ? (
+              <span className="text-[10px] text-amber-600 dark:text-amber-400 font-bold truncate block" title={line.details.workmanshipName}>
+                {line.details.workmanshipName}
+              </span>
+            ) : null}
+          </div>
         </div>
       </TableCell>
+
+      {/* Workmanship Name Cell (Only rendered if hasWorkmanshipLines) */}
+      {hasWorkmanshipLines ? (
+        <TableCell className="px-1.5 py-1.5 text-center font-bold text-slate-800 dark:text-slate-100 text-xs border-s border-slate-200/60 dark:border-slate-800/60">
+          <span className="truncate block w-full" title={line.details?.workmanshipName || ''}>
+            {line.details?.workmanshipName?.trim() || '-'}
+          </span>
+        </TableCell>
+      ) : null}
 
       {/* 3..7 Metal Cells (Only rendered if hasMetalLines) */}
       {hasMetalLines ? (

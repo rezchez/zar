@@ -92,12 +92,14 @@ interface DocumentFormProps {
   nextDocumentNumber?: number;
   initialCurrencies?: Currency[];
   initialQuotes?: MarketQuote[];
+  initialEditDocumentId?: string;
 }
 
 export default function DocumentForm({
   customers: initialCustomers,
   initialCurrencies = [],
   initialQuotes = [],
+  initialEditDocumentId = '',
 }: DocumentFormProps) {
   const router = useRouter();
   const toast = useToastManager();
@@ -106,6 +108,18 @@ export default function DocumentForm({
   const baseCurrency = settings.baseCurrency || 'IRR';
   const weightPrecision = Number(settings.weightDecimalPlaces) || 3;
   const { goldBaseKarat } = settings;
+
+  // Edit existing document state
+  const [editingExistingDocId, setEditingExistingDocId] = useState<string>(() => {
+    if (initialEditDocumentId) return initialEditDocumentId;
+    if (typeof window !== 'undefined') {
+      const sp = new URLSearchParams(window.location.search);
+      return sp.get('editDocumentId') || sp.get('editId') || '';
+    }
+    return '';
+  });
+  const [isEditingExistingDoc, setIsEditingExistingDoc] = useState(false);
+  const [loadingExistingDoc, setLoadingExistingDoc] = useState(false);
 
   // Customers state
   const [customers, setCustomers] = useState<Customer[]>(initialCustomers);
@@ -528,10 +542,68 @@ export default function DocumentForm({
     };
   }, [isLinesPinned, editingLineId, committedLines.length]);
 
+  // Load existing document data when editingExistingDocId is present
+  useEffect(() => {
+    const docIdToLoad = editingExistingDocId;
+    if (!docIdToLoad) return;
+    let cancelled = false;
+    setLoadingExistingDoc(true);
+
+    fetch(`/api/documents?documentId=${encodeURIComponent(docIdToLoad)}`, {
+      cache: 'no-store',
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error('سند مورد نظر یافت نشد.');
+        return res.json();
+      })
+      .then((data) => {
+        if (cancelled || !data) return;
+        setIsEditingExistingDoc(true);
+        if (data.customerId) {
+          setSelectedCustomerId(data.customerId);
+        }
+        if (data.customer) {
+          setActiveCustomerOverride(data.customer);
+          setCustomers((prev) => {
+            const exists = prev.some((c) => c.id === data.customer.id);
+            return exists ? prev : [data.customer, ...prev];
+          });
+        }
+        if (data.documentId) {
+          setDocumentId(data.documentId);
+        }
+        if (data.documentNumber) {
+          setDocumentNumberDisplay(data.documentNumber);
+        }
+        if (data.documentDateJalali) {
+          setDocumentDateJalali(data.documentDateJalali);
+        }
+        if (data.documentNature) {
+          setDocumentNature(data.documentNature);
+        }
+        if (Array.isArray(data.lines) && data.lines.length > 0) {
+          setCommittedLines(data.lines);
+        }
+        toast.info(`سند شماره ${data.documentNumber || data.documentId} برای ویرایش بارگذاری شد.`);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          toast.error(err instanceof Error ? err.message : 'خطا در بارگذاری اطلاعات سند جهت ویرایش.');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingExistingDoc(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [editingExistingDocId]);
+
   // Fetch document number when customer changes
   useEffect(() => {
-    if (!selectedCustomerId) {
-      setDocumentNumberDisplay('');
+    if (!selectedCustomerId || isEditingExistingDoc) {
+      if (!isEditingExistingDoc) setDocumentNumberDisplay('');
       return;
     }
     let cancelled = false;
@@ -552,7 +624,7 @@ export default function DocumentForm({
     return () => {
       cancelled = true;
     };
-  }, [selectedCustomerId]);
+  }, [selectedCustomerId, isEditingExistingDoc]);
 
   // Fetch melted inventory
   useEffect(() => {
@@ -705,9 +777,17 @@ export default function DocumentForm({
                   ? (documentNature === 'received' ? 'incoming-coin' : 'outgoing-coin')
                   : validTab === 'stone'
                     ? (documentNature === 'received' ? 'stone-purchase' : 'stone-sale')
-                    : validTab === 'metals'
-                      ? documentSubType(documentNature, current.details?.rawKind || 'molten')
-                      : current.documentSubType,
+                    : validTab === 'workmanship'
+                      ? (current.details?.workmanshipOptionId === 2
+                          ? (documentNature === 'received' ? 'buy_manufactured' : 'sale_manufactured')
+                          : current.details?.workmanshipOptionId === 3
+                            ? (documentNature === 'received' ? 'return_entry' : 'return_exit')
+                            : current.details?.workmanshipOptionId === 4
+                              ? (documentNature === 'received' ? 'return_buy' : 'return_sale')
+                              : (documentNature === 'received' ? 'entry_manufactured' : 'exit_manufactured'))
+                      : validTab === 'metals'
+                        ? documentSubType(documentNature, current.details?.rawKind || 'molten')
+                        : current.documentSubType,
           details: nextDetails,
         };
       });
@@ -726,9 +806,17 @@ export default function DocumentForm({
             ? (nextNature === 'received' ? 'currency-purchase' : 'currency-sale')
             : current.sourceTab === 'gold-sale' || activeEntryTab === 'gold-sale'
               ? `${nextNature === 'received' ? 'gold-purchase' : 'gold-sale'}-${current.details?.rawKind || 'molten'}`
-              : current.sourceTab === 'metals' || activeEntryTab === 'metals'
-                ? documentSubType(nextNature, current.details?.rawKind || 'molten')
-                : current.documentSubType,
+              : current.sourceTab === 'workmanship' || activeEntryTab === 'workmanship'
+                ? (current.details?.workmanshipOptionId === 2
+                    ? (nextNature === 'received' ? 'buy_manufactured' : 'sale_manufactured')
+                    : current.details?.workmanshipOptionId === 3
+                      ? (nextNature === 'received' ? 'return_entry' : 'return_exit')
+                      : current.details?.workmanshipOptionId === 4
+                        ? (nextNature === 'received' ? 'return_buy' : 'return_sale')
+                        : (nextNature === 'received' ? 'entry_manufactured' : 'exit_manufactured'))
+                : current.sourceTab === 'metals' || activeEntryTab === 'metals'
+                  ? documentSubType(nextNature, current.details?.rawKind || 'molten')
+                  : current.documentSubType,
       }));
     },
     [activeEntryTab, setDraftLine],
@@ -1079,6 +1167,7 @@ export default function DocumentForm({
           documentId,
           documentDateJalali,
           status,
+          isEdit: isEditingExistingDoc,
           lines: committedLines.map((line) => {
             const metalType = line.details.metalType || 'gold';
             const baseKarat = purityForMetal(metalType);
@@ -1205,7 +1294,11 @@ export default function DocumentForm({
         throw new Error(data?.message ?? 'ثبت سند انجام نشد.');
       }
 
-      if (status === 'temporary') {
+      if (isEditingExistingDoc) {
+        toast.success(`سند شماره ${data?.documentNumber || documentNumberDisplay} با موفقیت ویرایش و ذخیره شد.`);
+        setIsEditingExistingDoc(false);
+        setEditingExistingDocId('');
+      } else if (status === 'temporary') {
         toast.success('پیش‌نویس سند با موفقیت ذخیره شد.');
       } else {
         toast.success('سند با موفقیت به صورت قطعی ثبت گردید.');
@@ -1357,7 +1450,7 @@ export default function DocumentForm({
   const currentRefiningOpKind = currentLine?.details?.refiningOpKind;
 
   const currentOpLabel =
-    (currentTab === 'bank' || currentTab === 'stone') &&
+    (currentTab === 'bank' || currentTab === 'stone' || currentTab === 'workmanship') &&
     currentLine?.documentTypeLabel &&
     currentLine.documentTypeLabel !== 'عملیات بانکی' &&
     currentLine.documentTypeLabel !== 'عملیات سنگ'
@@ -1368,6 +1461,8 @@ export default function DocumentForm({
           currentRawKind,
           currentUnsettled,
           currentRefiningOpKind,
+          currentLine?.details?.workmanshipOptionId,
+          currentLine?.documentSubType,
         );
 
   const commitRowLabel = editingLineId
@@ -1384,6 +1479,41 @@ export default function DocumentForm({
       }
     >
       {errorMessage ? <p className="form-error">{errorMessage}</p> : null}
+
+      {/* EDIT EXISTING DOCUMENT BANNER */}
+      {isEditingExistingDoc && (
+        <div className="mb-3.5 p-3 sm:p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-200 flex flex-wrap items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+              <PencilLine className="w-4 h-4" />
+            </div>
+            <div>
+              <p className="text-sm font-bold flex items-center gap-2">
+                <span>در حال ویرایش سند</span>
+                <span className="font-mono text-amber-700 dark:text-amber-300">
+                  {documentNumberDisplay || documentId.slice(0, 8)}
+                </span>
+              </p>
+              <p className="text-xs text-amber-700/80 dark:text-amber-300/80">
+                ردیف‌های مورد نظر را اصلاح، حذف یا اضافه کرده و برای ذخیره «ثبت سند» را بزنید.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setIsEditingExistingDoc(false);
+              setEditingExistingDocId('');
+              setCommittedLines([]);
+              setDocumentId(crypto.randomUUID());
+              router.push('/dashboard/documents/new');
+            }}
+            className="text-xs px-3 py-1.5 rounded-lg font-semibold bg-amber-500/20 hover:bg-amber-500/30 text-amber-900 dark:text-amber-200 transition-colors shrink-0"
+          >
+            انصراف از ویرایش
+          </button>
+        </div>
+      )}
 
       {/* CUSTOMER & DOCUMENT METADATA PANEL */}
       <div ref={customerSectionRef}>

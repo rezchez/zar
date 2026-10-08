@@ -14,7 +14,10 @@ import {
   getNextDocumentNumber,
   getNextDocumentSequenceForCustomer,
   generateUniqueZfDocumentNumber,
+  getRecentDocuments,
+  transactionRecordToDocumentLine,
 } from '@/lib/document-service';
+import { mapCustomer } from '@/lib/customer';
 import { isRefinerGroup } from '@/lib/customer-groups';
 import { jalaliDateToIso, normalizeDigits } from '@/lib/jalali';
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
@@ -322,6 +325,55 @@ export async function GET(request: Request) {
 
   try {
     const url = new URL(request.url);
+
+    const recentParam = url.searchParams.get('recent');
+    if (recentParam) {
+      const limit = Math.min(Math.max(Number(recentParam) || 10, 1), 50);
+      const documents = await getRecentDocuments(context.pb, limit);
+      return NextResponse.json({ documents });
+    }
+
+    const documentIdParam = url.searchParams.get('documentId');
+    if (documentIdParam) {
+      const records = await context.pb.collection('transactions').getFullList({
+        filter: context.pb.filter(
+          'documentId = {:documentId} && is_deleted = false',
+          { documentId: documentIdParam },
+        ),
+        sort: 'documentLineNumber, created',
+        expand: 'customer',
+      });
+      if (records.length === 0) {
+        return NextResponse.json({ message: 'سند مورد نظر یافت نشد.' }, { status: 404 });
+      }
+      const primary = records[0];
+      const customerRecord = primary.expand?.customer as any;
+      let customer: any = null;
+      if (customerRecord) {
+        try {
+          customer = mapCustomer(context.pb, customerRecord);
+        } catch {
+          customer = {
+            id: customerRecord.id || '',
+            name: (customerRecord as any).name || '',
+            customerCode: (customerRecord as any).customerCode || '',
+          } as any;
+        }
+      }
+      const lines = records.map(transactionRecordToDocumentLine);
+      return NextResponse.json({
+        documentId: primary.documentId || documentIdParam,
+        documentNumber: String(primary.documentNumber ?? ''),
+        documentSequence: primary.documentSequence,
+        documentDateJalali: String(primary.documentDateJalali ?? ''),
+        documentNature: primary.documentNature || 'received',
+        status: primary.status,
+        customerId: primary.customer,
+        customer,
+        lines,
+      });
+    }
+
     const inventoryParam = url.searchParams.get('inventory');
     if (inventoryParam === 'melted' || inventoryParam === 'raw-gold') {
       const kindParam = url.searchParams.get('kind') as 'molten' | 'conditional' | 'misc' | 'question' | null;
@@ -392,6 +444,10 @@ export async function POST(request: Request) {
     }
 
     const documentId = readString(body.documentId, 80) || randomUUID();
+    const isEditMode = body.isEdit === true;
+    let preservedSequence: number | undefined;
+    let preservedNumber: string | undefined;
+
     // The document ID is the user-facing idempotency token; sourceKey is the
     // storage-level guard used for each row. Check both before creating a
     // financial document so a retry can never create another first line.
@@ -410,16 +466,43 @@ export async function POST(request: Request) {
     }).catch(() => []);
 
     if (existingDocument.length > 0 || existingFirstLine) {
-      const records = existingDocument.length > 0 ? existingDocument : (existingFirstLine ? [existingFirstLine] : []);
-      const primaryRecord = records[0];
-      return NextResponse.json({
-        transactions: records.map(mapDocument),
-        transaction: primaryRecord ? mapDocument(primaryRecord) : null,
-        documentId,
-        documentNumber: String(primaryRecord?.documentNumber ?? ''),
-        documentSequence: Number(primaryRecord?.documentSequence ?? 1),
-        alreadyExists: true,
-      }, { status: 200 });
+      if (!isEditMode) {
+        const records = existingDocument.length > 0 ? existingDocument : (existingFirstLine ? [existingFirstLine] : []);
+        const primaryRecord = records[0];
+        return NextResponse.json({
+          transactions: records.map(mapDocument),
+          transaction: primaryRecord ? mapDocument(primaryRecord) : null,
+          documentId,
+          documentNumber: String(primaryRecord?.documentNumber ?? ''),
+          documentSequence: Number(primaryRecord?.documentSequence ?? 1),
+          alreadyExists: true,
+        }, { status: 200 });
+      } else {
+        const recordsToDelete = existingDocument.length > 0 ? existingDocument : (existingFirstLine ? [existingFirstLine] : []);
+        if (recordsToDelete.length > 0) {
+          preservedSequence = typeof recordsToDelete[0].documentSequence === 'number' ? recordsToDelete[0].documentSequence : undefined;
+          preservedNumber = String(recordsToDelete[0].documentNumber ?? '');
+          const deletedAt = new Date().toISOString();
+          for (const sibling of recordsToDelete) {
+            await context.pb.collection('transactions').update(sibling.id, {
+              is_deleted: true,
+              deleted_at: deletedAt,
+              deleted_by: context.user.id,
+              sourceKey: `${sibling.sourceKey}:edited:${Date.now()}`,
+            });
+          }
+        }
+        const oldMetalInv = await context.pb.collection('metal_inventory').getFullList({
+          filter: context.pb.filter('document_id = {:docId} && is_deleted = false', { docId: documentId }),
+        }).catch(() => []);
+        for (const inv of oldMetalInv) {
+          await context.pb.collection('metal_inventory').update(inv.id, {
+            is_deleted: true,
+            updated_by: context.user.id,
+            source_key: `${inv.source_key}:edited:${Date.now()}`,
+          }).catch(() => null);
+        }
+      }
     }
 
     const requestedLines = Array.isArray(body.lines) ? body.lines : [body];
@@ -775,14 +858,22 @@ export async function POST(request: Request) {
 
     while (attempts < 5) {
       attempts++;
-      finalSequence = await getNextDocumentSequenceForCustomer(writer, customer.id);
+      finalSequence = (isEditMode && preservedSequence !== undefined)
+        ? preservedSequence
+        : await getNextDocumentSequenceForCustomer(writer, customer.id);
       const usedNumbers = new Set<string>();
       const lineDocumentNumbers: string[] = [];
       for (let i = 0; i < preparedLines.length; i++) {
-        const num = await generateUniqueZfDocumentNumber(writer, 10, usedNumbers);
-        lineDocumentNumbers.push(num);
+        if (i === 0 && isEditMode && preservedNumber) {
+          lineDocumentNumbers.push(preservedNumber);
+          usedNumbers.add(preservedNumber);
+        } else {
+          const num = await generateUniqueZfDocumentNumber(writer, 10, usedNumbers);
+          lineDocumentNumbers.push(num);
+          usedNumbers.add(num);
+        }
       }
-      finalDocumentNumber = lineDocumentNumbers[0] || '';
+      finalDocumentNumber = lineDocumentNumbers[0] || (preservedNumber || '');
 
       const documentPayloads = preparedLines.map((prepared, idx) => {
         const isStone = prepared.line.documentTab === 'stone' || prepared.line.sourceTab === 'stone';
@@ -1448,13 +1539,16 @@ export async function POST(request: Request) {
 
     await recordAuditEvent({
       userId: context.user.id,
-      event: 'transaction_created',
+      event: isEditMode ? 'transaction_updated' : 'transaction_created',
       request,
-      details: `سند چندردیفی شماره ${finalDocumentNumber} برای طرف‌حساب ${customer.customerCode} ثبت شد.`,
+      details: isEditMode
+        ? `سند شماره ${finalDocumentNumber} برای طرف‌حساب ${customer.customerCode} ویرایش و به‌روزرسانی شد.`
+        : `سند چندردیفی شماره ${finalDocumentNumber} برای طرف‌حساب ${customer.customerCode} ثبت شد.`,
       entityType: 'transaction',
       entityId: documentId,
       entityLabel: `${customer.customerCode} - سند ${finalDocumentNumber}`,
       changes: {
+        isEdit: isEditMode,
         lineCount: finalRecords.length,
         documentDateJalali,
         documentSequence: finalSequence,
@@ -1515,7 +1609,7 @@ export async function POST(request: Request) {
       nextDocumentSequence: finalSequence + 1,
       registeredAt: finalRecords[0].created,
       customer: updatedCustomer,
-    }, { status: 201 });
+    }, { status: isEditMode ? 200 : 201 });
   } catch (error) {
     console.error('Error submitting document:', error);
     let message = error instanceof Error ? error.message : 'ثبت سند انجام نشد. اطلاعات سند را بررسی و دوباره تلاش کنید.';

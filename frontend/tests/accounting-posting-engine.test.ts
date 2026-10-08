@@ -9,6 +9,8 @@ import {
   postReceivableChequeCollection,
   postReceivableChequeUncollect,
   postReceivableChequeReturnToDrawer,
+  postOpeningChequeIssue,
+  postOpeningChequeReceipt,
   SYSTEM_ACCOUNT_CODES,
 } from '@/lib/accounting-posting-engine';
 import type { BankAccount } from '@/lib/bank';
@@ -434,5 +436,105 @@ describe('Accounting Posting Engine', () => {
     expect(debitLine?.accountId).toBe('pbc_2120');
     expect(debitLine?.partyId).toBe('cust_10');
     expect(creditLine?.accountId).toBe('pbc_1110');
+  });
+
+  it('handles operational receivable cheque receipt (debits 1120 Notes Receivable, credits 2120 Counterparty, does NOT touch 3100)', async () => {
+    const pb = createMockPocketBase();
+    const cheque = {
+      id: 'chk_rec_op_1',
+      amount: 40000000,
+      sayadId: '1234567890123456',
+      description: 'بابت تسویه فاکتور فروش طلا',
+      dueDateJalali: '1405/07/20',
+      customer: 'cust_op_1',
+    };
+    const customer = { id: 'cust_op_1', name: 'جناب حسینی' };
+
+    const journal = await postReceivableChequeReceipt(cheque, customer, 'usr_1', pb);
+
+    expect(journal.totalDebit).toBe(40000000);
+    expect(journal.totalCredit).toBe(40000000);
+    expect(journal.sourceType).toBe('cheque_receive');
+    expect(journal.description).not.toContain('موجودی اولیه');
+
+    // Debits 1120 and Credits 2120
+    const debitLine = journal.lines.find((l) => l.debit > 0);
+    const creditLine = journal.lines.find((l) => l.credit > 0);
+    expect(debitLine?.accountCode).toBe(SYSTEM_ACCOUNT_CODES.NOTES_RECEIVABLE);
+    expect(creditLine?.accountCode).toBe(SYSTEM_ACCOUNT_CODES.COUNTERPARTY_LIABILITY);
+
+    // Verify 3100 Opening Equity is NEVER touched
+    const equityLine = journal.lines.find(
+      (l) => l.accountCode === SYSTEM_ACCOUNT_CODES.OPENING_EQUITY || l.accountId === SYSTEM_ACCOUNT_CODES.OPENING_EQUITY,
+    );
+    expect(equityLine).toBeUndefined();
+  });
+
+  it('handles opening issued cheque (debits 3100 Opening Equity, credits 2110 Notes Payable, does NOT deduct bank balance)', async () => {
+    const pb = createMockPocketBase();
+    const bankAccount: BankAccount = {
+      id: 'bank_1',
+      bankName: 'بانک صادرات',
+      branchName: 'مرکزی',
+      accountNumber: '44556677',
+      balance: 500000000,
+      currentBalance: 500000000,
+      accountCodeZero: '0',
+      currency: 'IRR',
+      isActive: true,
+      created: '',
+      updated: '',
+    };
+
+    const cheque = {
+      id: 'chk_opening_pay_1',
+      amount: 15000000,
+      checkNumber: '887766',
+      description: 'چک اول دوره صادره',
+      dueDateJalali: '1405/08/10',
+      openingDateJalali: '1405/01/01',
+      bankAccount: 'bank_1',
+      customer: 'cust_1',
+    };
+
+    const journal = await postOpeningChequeIssue(cheque, 'آقای شریفی', bankAccount, 'usr_1', pb);
+
+    expect(journal.totalDebit).toBe(15000000);
+    expect(journal.totalCredit).toBe(15000000);
+    expect(journal.sourceType).toBe('opening_check');
+    expect(journal.description).toContain('موجودی اولیه');
+
+    // Debits 3100 (Opening Equity) and Credits 2110 (Notes Payable)
+    const debitLine = journal.lines.find((l) => l.debit > 0);
+    const creditLine = journal.lines.find((l) => l.credit > 0);
+    expect(debitLine?.accountCode).toBe(SYSTEM_ACCOUNT_CODES.OPENING_EQUITY);
+    expect(creditLine?.accountCode).toBe(SYSTEM_ACCOUNT_CODES.NOTES_PAYABLE);
+  });
+
+  it('handles opening receivable cheque (debits 1120 Notes Receivable, credits 3100 Opening Equity)', async () => {
+    const pb = createMockPocketBase();
+    const cheque = {
+      id: 'chk_opening_rec_1',
+      amount: 22000000,
+      checkNumber: '112233',
+      description: 'چک اول دوره وارده',
+      dueDateJalali: '1405/09/15',
+      openingDateJalali: '1405/01/01',
+      bankName: 'بانک پاسارگاد',
+      customer: 'cust_2',
+    };
+
+    const journal = await postOpeningChequeReceipt(cheque, 'خانم حسابی', 'usr_1', pb);
+
+    expect(journal.totalDebit).toBe(22000000);
+    expect(journal.totalCredit).toBe(22000000);
+    expect(journal.sourceType).toBe('opening_check');
+    expect(journal.description).toContain('موجودی اولیه');
+
+    // Debits 1120 (Notes Receivable) and Credits 3100 (Opening Equity)
+    const debitLine = journal.lines.find((l) => l.debit > 0);
+    const creditLine = journal.lines.find((l) => l.credit > 0);
+    expect(debitLine?.accountCode).toBe(SYSTEM_ACCOUNT_CODES.NOTES_RECEIVABLE);
+    expect(creditLine?.accountCode).toBe(SYSTEM_ACCOUNT_CODES.OPENING_EQUITY);
   });
 });

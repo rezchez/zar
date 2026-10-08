@@ -21,20 +21,28 @@ export type ElementType =
   | 'seller_signature'
   | 'customer_signature'
   | 'stamp'
-  | 'print_datetime';
+  | 'print_datetime'
+  | 'custom_text'
+  | 'shape_rectangle'
+  | 'shape_circle'
+  | 'shape_line_h'
+  | 'shape_line_v'
+  | 'shape_badge';
 
 export interface InvoicePrintElementStyle {
   fontFamily?: string;
   fontSizePt?: number;
-  fontWeight?: 'normal' | 'medium' | 'semibold' | 'bold';
+  fontWeight?: 'normal' | 'medium' | 'semibold' | 'bold' | 'extrabold' | number;
   color?: string;
   backgroundColor?: string;
-  textAlign?: 'right' | 'center' | 'left';
+  textAlign?: 'right' | 'center' | 'left' | 'justify';
   borderColor?: string;
   borderWidthMm?: number;
+  borderStyle?: 'solid' | 'dashed' | 'dotted' | 'double' | 'none';
   borderRadiusMm?: number;
   paddingMm?: number;
   lineHeight?: number;
+  opacity?: number;
 }
 
 export interface InvoiceTableColumnConfig {
@@ -45,16 +53,25 @@ export interface InvoiceTableColumnConfig {
   textAlign?: 'right' | 'center' | 'left';
 }
 
+export type InvoiceTableColumn = InvoiceTableColumnConfig;
+
 export interface InvoiceTableConfiguration {
   columns: InvoiceTableColumnConfig[];
+  workmanshipDisplayMode?: 'name_only' | 'both' | 'operation_only';
   headerBackgroundColor?: string;
   headerTextColor?: string;
   bodyTextColor?: string;
   borderColor?: string;
   borderWidthMm?: number;
+  borderStyle?: 'solid' | 'dashed' | 'dotted' | 'double';
+  borderRadiusMm?: number;
   showIndexColumn?: boolean;
   fontSizePt?: number;
   rowHeightMm?: number;
+  alternateRowColor?: string;
+  stripedRows?: boolean;
+  showVerticalBorders?: boolean;
+  showHorizontalBorders?: boolean;
 }
 
 export interface InvoiceFooterConfiguration {
@@ -69,6 +86,8 @@ export interface InvoiceFooterConfiguration {
 export interface InvoicePrintElementContent {
   text?: string;
   tableColumns?: string[];
+  shapeType?: 'rectangle' | 'circle' | 'line_h' | 'line_v' | 'badge';
+  badgeIcon?: string;
 }
 
 export interface InvoicePrintElement {
@@ -108,6 +127,8 @@ export interface InvoicePrintTemplateDesign {
   zoom?: number;
   gridEnabled: boolean;
   gridSizeMm: number;
+  table?: InvoiceTableConfiguration;
+  footer?: InvoiceFooterConfiguration;
 }
 
 export interface InvoicePrintTemplate {
@@ -145,18 +166,28 @@ export const ELEMENT_LABELS: Record<ElementType, string> = {
   customer_signature: 'امضای خریدار / مشتری',
   stamp: 'مهر فروشگاه',
   print_datetime: 'تاریخ و زمان چاپ',
+  custom_text: 'متن دلخواه',
+  shape_rectangle: 'کادر مستطیل',
+  shape_circle: 'دایره / بیضی',
+  shape_line_h: 'خط جداکننده افقی',
+  shape_line_v: 'خط جداکننده عمودی',
+  shape_badge: 'نشان / برچسب',
 };
 
 export const DEFAULT_TABLE_COLUMNS: InvoiceTableColumnConfig[] = [
-  { id: 'index', label: 'ردیف', visible: true, widthMm: 12, textAlign: 'center' },
-  { id: 'operation_type', label: 'نوع عملیات', visible: true, widthMm: 22, textAlign: 'center' },
-  { id: 'metal_type', label: 'جنس فلز', visible: true, widthMm: 18, textAlign: 'center' },
-  { id: 'weight', label: 'وزن (گرم)', visible: true, widthMm: 22, textAlign: 'center' },
-  { id: 'purity', label: 'عیار', visible: true, widthMm: 16, textAlign: 'center' },
-  { id: 'converted_weight', label: 'وزن معادل ۷۵۰', visible: true, widthMm: 25, textAlign: 'center' },
-  { id: 'lab_name', label: 'نام آزمایشگاه / ری‌گیری', visible: true, widthMm: 25, textAlign: 'center' },
-  { id: 'stamp_number', label: 'شماره پاکت / انگ', visible: true, widthMm: 22, textAlign: 'center' },
-  { id: 'description', label: 'توضیحات', visible: true, widthMm: 28, textAlign: 'right' },
+  { id: 'index', label: 'ردیف', visible: true, widthMm: 10, textAlign: 'center' },
+  { id: 'operation_type', label: 'نوع عملیات / شرح کالا', visible: true, widthMm: 24, textAlign: 'center' },
+  { id: 'metal_type', label: 'جنس فلز', visible: true, widthMm: 16, textAlign: 'center' },
+  { id: 'weight', label: 'وزن (گرم)', visible: true, widthMm: 18, textAlign: 'center' },
+  { id: 'purity', label: 'عیار', visible: true, widthMm: 14, textAlign: 'center' },
+  { id: 'converted_weight', label: 'وزن معادل ۷۵۰', visible: true, widthMm: 22, textAlign: 'center' },
+  { id: 'price_per_gram', label: 'قیمت هر گرم طلا', visible: true, widthMm: 24, textAlign: 'center' },
+  { id: 'subtotal_price', label: 'قیمت کل قبل از تخفیف', visible: true, widthMm: 26, textAlign: 'center' },
+  { id: 'discount_amount', label: 'تخفیف', visible: true, widthMm: 18, textAlign: 'center' },
+  { id: 'total_price', label: 'مبلغ کل', visible: true, widthMm: 26, textAlign: 'center' },
+  { id: 'lab_name', label: 'نام آزمایشگاه / ری‌گیری', visible: false, widthMm: 24, textAlign: 'center' },
+  { id: 'stamp_number', label: 'شماره پاکت / انگ', visible: false, widthMm: 20, textAlign: 'center' },
+  { id: 'description', label: 'توضیحات', visible: false, widthMm: 26, textAlign: 'right' },
 ];
 
 export const AVAILABLE_TABLE_COLUMNS: { id: string; label: string }[] = DEFAULT_TABLE_COLUMNS.map((c) => ({
@@ -230,6 +261,184 @@ export function convertFromMm(valueMm: number, unit: UnitType): number {
     case 'mm':
     default:
       return valueMm;
+  }
+}
+
+export function getFontWeightCss(weight?: string | number): number {
+  if (!weight) return 400;
+  if (typeof weight === 'number') return weight;
+  const lower = String(weight).toLowerCase().trim();
+  switch (lower) {
+    case 'thin':
+    case '100':
+      return 100;
+    case 'light':
+    case '300':
+      return 300;
+    case 'normal':
+    case 'regular':
+    case '400':
+      return 400;
+    case 'medium':
+    case '500':
+      return 500;
+    case 'semibold':
+    case 'semi-bold':
+    case '600':
+      return 600;
+    case 'bold':
+    case '700':
+      return 700;
+    case 'extrabold':
+    case 'extra-bold':
+    case '800':
+      return 800;
+    case 'black':
+    case '900':
+      return 900;
+    default: {
+      const n = parseInt(lower, 10);
+      return !isNaN(n) ? n : 400;
+    }
+  }
+}
+
+export function createCustomTextElement(
+  xMm = 20,
+  yMm = 50,
+  text = 'متن دلخواه جدید',
+): InvoicePrintElement {
+  return {
+    id: `custom_text_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    type: 'custom_text',
+    label: 'متن دلخواه',
+    visible: true,
+    position: { xMm, yMm },
+    size: { widthMm: 80, heightMm: 12 },
+    style: {
+      fontFamily: 'Vazirmatn',
+      fontSizePt: 9.5,
+      fontWeight: 'normal',
+      color: '#0f172a',
+      backgroundColor: 'transparent',
+      textAlign: 'right',
+      borderColor: '#cbd5e1',
+      borderWidthMm: 0,
+      borderStyle: 'solid',
+      borderRadiusMm: 0,
+      paddingMm: 1,
+      lineHeight: 1.4,
+      opacity: 1,
+    },
+    content: { text },
+    zIndex: 15,
+  };
+}
+
+export function createShapeElement(
+  shapeType: 'rectangle' | 'circle' | 'line_h' | 'line_v' | 'badge',
+  xMm = 20,
+  yMm = 50,
+  pageWidthMm = 210,
+): InvoicePrintElement {
+  const rand = Math.random().toString(36).slice(2, 6);
+  switch (shapeType) {
+    case 'rectangle':
+      return {
+        id: `shape_rect_${Date.now()}_${rand}`,
+        type: 'shape_rectangle',
+        label: 'کادر مستطیل',
+        visible: true,
+        position: { xMm, yMm },
+        size: { widthMm: 60, heightMm: 30 },
+        style: {
+          backgroundColor: '#f8fafc',
+          borderColor: '#cbd5e1',
+          borderWidthMm: 0.5,
+          borderStyle: 'solid',
+          borderRadiusMm: 2,
+          opacity: 1,
+        },
+        zIndex: 5,
+      };
+    case 'circle':
+      return {
+        id: `shape_circle_${Date.now()}_${rand}`,
+        type: 'shape_circle',
+        label: 'دایره / بیضی',
+        visible: true,
+        position: { xMm, yMm },
+        size: { widthMm: 25, heightMm: 25 },
+        style: {
+          backgroundColor: '#f1f5f9',
+          borderColor: '#94a3b8',
+          borderWidthMm: 0.5,
+          borderStyle: 'solid',
+          borderRadiusMm: 50,
+          opacity: 1,
+        },
+        zIndex: 5,
+      };
+    case 'line_h':
+      return {
+        id: `shape_line_h_${Date.now()}_${rand}`,
+        type: 'shape_line_h',
+        label: 'خط جداکننده افقی',
+        visible: true,
+        position: { xMm: 10, yMm },
+        size: { widthMm: pageWidthMm - 20, heightMm: 2 },
+        style: {
+          borderColor: '#cbd5e1',
+          borderWidthMm: 0.5,
+          borderStyle: 'solid',
+          backgroundColor: 'transparent',
+          color: '#cbd5e1',
+          opacity: 1,
+        },
+        zIndex: 5,
+      };
+    case 'line_v':
+      return {
+        id: `shape_line_v_${Date.now()}_${rand}`,
+        type: 'shape_line_v',
+        label: 'خط جداکننده عمودی',
+        visible: true,
+        position: { xMm, yMm },
+        size: { widthMm: 2, heightMm: 40 },
+        style: {
+          borderColor: '#cbd5e1',
+          borderWidthMm: 0.5,
+          borderStyle: 'solid',
+          backgroundColor: 'transparent',
+          color: '#cbd5e1',
+          opacity: 1,
+        },
+        zIndex: 5,
+      };
+    case 'badge':
+      return {
+        id: `shape_badge_${Date.now()}_${rand}`,
+        type: 'shape_badge',
+        label: 'نشان / برچسب',
+        visible: true,
+        position: { xMm, yMm },
+        size: { widthMm: 35, heightMm: 8 },
+        style: {
+          fontFamily: 'Vazirmatn',
+          fontSizePt: 8.5,
+          fontWeight: 'bold',
+          color: '#b45309',
+          backgroundColor: '#fef3c7',
+          borderColor: '#fde68a',
+          borderWidthMm: 0.4,
+          borderStyle: 'solid',
+          borderRadiusMm: 4,
+          textAlign: 'center',
+          opacity: 1,
+        },
+        content: { text: 'ضمانت اصالت عیار' },
+        zIndex: 12,
+      };
   }
 }
 

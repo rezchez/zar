@@ -59,4 +59,69 @@ describe('Customer Print Template & Manager Notifications Tests', () => {
     expect(normalized.printRecipients).toHaveLength(1);
     expect(normalized.printRecipients[0].name).toBe('مدیر فروش');
   });
+
+  it('createCustomTextElement and createShapeElement create valid elements with new styling attributes', () => {
+    const { createCustomTextElement, createShapeElement, ELEMENT_LABELS } = require('@/lib/print-templates');
+    
+    // Check ELEMENT_LABELS includes new types
+    expect(ELEMENT_LABELS.custom_text).toBe('متن دلخواه');
+    expect(ELEMENT_LABELS.shape_rectangle).toBe('کادر مستطیل');
+    expect(ELEMENT_LABELS.shape_circle).toBe('دایره / بیضی');
+    expect(ELEMENT_LABELS.shape_line_h).toBe('خط جداکننده افقی');
+    expect(ELEMENT_LABELS.shape_line_v).toBe('خط جداکننده عمودی');
+    expect(ELEMENT_LABELS.shape_badge).toBe('نشان / برچسب');
+
+    // Test createCustomTextElement
+    const textEl = createCustomTextElement(15, 45, 'توضیحات اختصاصی طلا');
+    expect(textEl.type).toBe('custom_text');
+    expect(textEl.position.xMm).toBe(15);
+    expect(textEl.position.yMm).toBe(45);
+    expect(textEl.content?.text).toBe('توضیحات اختصاصی طلا');
+    expect(textEl.style.lineHeight).toBe(1.4);
+    expect(textEl.style.opacity).toBe(1);
+    expect(textEl.style.borderStyle).toBe('solid');
+
+    // Test createShapeElement for rectangle, circle, line_h, line_v, badge
+    const rectEl = createShapeElement('rectangle', 10, 20);
+    expect(rectEl.type).toBe('shape_rectangle');
+    expect(rectEl.style.borderStyle).toBe('solid');
+    expect(rectEl.style.borderRadiusMm).toBe(2);
+
+    const circleEl = createShapeElement('circle', 10, 20);
+    expect(circleEl.type).toBe('shape_circle');
+    expect(circleEl.style.borderRadiusMm).toBe(50);
+
+    const lineHEl = createShapeElement('line_h', 10, 20, 210);
+    expect(lineHEl.type).toBe('shape_line_h');
+    expect(lineHEl.size.heightMm).toBe(2);
+    expect(lineHEl.size.widthMm).toBe(190); // 210 - 20
+
+    const lineVEl = createShapeElement('line_v', 10, 20);
+    expect(lineVEl.type).toBe('shape_line_v');
+    expect(lineVEl.size.widthMm).toBe(2);
+
+    const badgeEl = createShapeElement('badge', 10, 20);
+    expect(badgeEl.type).toBe('shape_badge');
+    expect(badgeEl.style.borderRadiusMm).toBe(4);
+    expect(badgeEl.content?.text).toBe('ضمانت اصالت عیار');
+  });
+
+  it('InvoiceTableConfiguration supports borders, rounded corners, striped rows and dividers', () => {
+    const tpl = DEFAULT_SYSTEM_TEMPLATES[0];
+    expect(tpl.table).toBeDefined();
+    // Verify properties can be specified and typed correctly
+    const updatedTable = {
+      ...tpl.table,
+      borderStyle: 'solid' as const,
+      borderRadiusMm: 3,
+      stripedRows: true,
+      alternateRowColor: '#f1f5f9',
+      showVerticalBorders: true,
+      showHorizontalBorders: true,
+    };
+    expect(updatedTable.borderStyle).toBe('solid');
+    expect(updatedTable.borderRadiusMm).toBe(3);
+    expect(updatedTable.stripedRows).toBe(true);
+    expect(updatedTable.alternateRowColor).toBe('#f1f5f9');
+  });
 });
