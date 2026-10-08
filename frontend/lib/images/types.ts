@@ -11,7 +11,8 @@ export type ImagePurpose =
   | 'diamond'
   | 'document'
   | 'invoice'
-  | 'gallery';
+  | 'gallery'
+  | 'check';
 
 export type SupportedImageFormat = 'webp' | 'jpeg' | 'png';
 

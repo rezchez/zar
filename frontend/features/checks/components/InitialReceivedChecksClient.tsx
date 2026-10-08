@@ -4,6 +4,7 @@ import {
   AlertCircle,
   ArrowDownLeft,
   Calendar,
+  Camera,
   CheckCircle2,
   ChevronRight,
   Clock,
@@ -11,18 +12,23 @@ import {
   Edit3,
   Filter,
   FolderTree,
+  Image as ImageIcon,
   Landmark,
   Plus,
   RefreshCw,
   Search,
   Trash2,
+  X,
+  ZoomIn,
 } from 'lucide-react';
 import Link from 'next/link';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { useAppSettings } from '@/components/shared/SettingsProvider';
+import { useToastManager } from '@/components/ui/toast';
 import BankLogo from '@/features/banks/components/BankLogo';
 import { CHEQUE_STATUS_COLORS, CHEQUE_STATUS_LABELS, type CheckRecord } from '@/lib/check';
+import { convertImageToWebP } from '@/features/checks/services/check-image';
 import InitialReceivedCheckModal from './InitialReceivedCheckModal';
 import PaginationControls from '@/components/shared/PaginationControls';
 
@@ -71,9 +77,14 @@ export default function InitialReceivedChecksClient({
   const [editingItem, setEditingItem] = useState<CheckRecord | null>(null);
   const [selectedBankFilter, setSelectedBankFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const toast = useToastManager();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
+
+  // Check image state
+  const [activeImagePreview, setActiveImagePreview] = useState<{ url: string; title: string } | null>(null);
+  const [uploadingImageCheckId, setUploadingImageCheckId] = useState<string | null>(null);
 
   const displayTotalAmount =
     effectiveCurrency === 'IRT'
@@ -93,6 +104,45 @@ export default function InitialReceivedChecksClient({
   // Delete state
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+
+  const handleImageUpload = async (checkId: string, file: File) => {
+    setUploadingImageCheckId(checkId);
+    try {
+      toast.info('در حال تبدیل تصویر به WebP و بهینه‌سازی...');
+      const converted = await convertImageToWebP(file);
+      const formData = new FormData();
+      formData.append('image', converted.file, converted.file.name);
+
+      const res = await fetch(`/api/checks/${checkId}/image`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || 'خطا در بارگذاری تصویر چک');
+      }
+
+      const resData = await res.json();
+      toast.success('تصویر چک با موفقیت به فرمت WebP تبدیل و ذخیره شد.');
+
+      setChecks((prev) =>
+        prev.map((c) =>
+          c.id === checkId
+            ? {
+                ...c,
+                image: resData.check?.image || converted.file.name,
+                imageUrl: resData.check?.imageUrl || converted.previewUrl,
+              }
+            : c,
+        ),
+      );
+    } catch (err: any) {
+      toast.error(err.message || 'خطا در بارگذاری تصویر چک');
+    } finally {
+      setUploadingImageCheckId(null);
+    }
+  };
 
   const fetchChecks = useCallback(async () => {
     setLoading(true);
@@ -226,14 +276,28 @@ export default function InitialReceivedChecksClient({
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* بخش جستجوی چک در راستای رفرش و دکمه درختواره */}
+          <div className="relative min-w-[200px] sm:w-64">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setPage(1);
+              }}
+              placeholder="جستجو در سریال، صیاد، طرف‌حساب..."
+              className="h-10 w-full rounded-2xl border border-slate-200 bg-white pr-9 pl-3 text-xs font-bold text-slate-900 shadow-2xs placeholder:text-slate-400 transition-all focus:border-emerald-500 focus:bg-white focus:text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-emerald-400 dark:focus:bg-slate-800 dark:focus:text-white dark:focus:ring-emerald-400/20"
+            />
+            <Search size={14} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-400" />
+          </div>
+
           <Link
             href="/dashboard/accounting/chart-of-accounts?focus=1120"
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-slate-700 shadow-xs transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 cursor-pointer"
+            className="inline-flex size-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-xs transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 cursor-pointer"
             title="مشاهده ساختار اسناد دریافتنی در درختواره کدینگ حساب‌ها (۱۱۲۰)"
           >
             <FolderTree size={16} className="text-emerald-600 dark:text-emerald-400" />
-            <span className="hidden sm:inline">مشاهده در درختواره (۱۱۲۰)</span>
           </Link>
 
           <button
@@ -263,7 +327,7 @@ export default function InitialReceivedChecksClient({
           <button
             type="button"
             onClick={() => onTabChange('issued')}
-            className="inline-flex items-center gap-2 rounded-xl bg-slate-100 px-4 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-200/70 hover:text-slate-900 dark:bg-slate-800/80 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white cursor-pointer"
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 shadow-2xs transition hover:bg-slate-50 hover:text-slate-950 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:text-white cursor-pointer"
           >
             <CreditCard size={15} />
             <span>چک‌های پرداختی (صادره) - ۲۱۱۰</span>
@@ -271,7 +335,7 @@ export default function InitialReceivedChecksClient({
         ) : (
           <Link
             href="/dashboard/documents/initial-inventory/checks"
-            className="inline-flex items-center gap-2 rounded-xl bg-slate-100 px-4 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-200/70 hover:text-slate-900 dark:bg-slate-800/80 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 shadow-2xs transition hover:bg-slate-50 hover:text-slate-950 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:text-white"
           >
             <CreditCard size={15} />
             <span>چک‌های پرداختی (صادره) - ۲۱۱۰</span>
@@ -280,7 +344,7 @@ export default function InitialReceivedChecksClient({
         <button
           type="button"
           onClick={() => onTabChange?.('received')}
-          className="inline-flex items-center gap-2 rounded-xl bg-amber-500/15 px-4 py-2 text-xs font-black text-amber-800 transition dark:bg-amber-500/25 dark:text-amber-300 cursor-pointer"
+          className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-black text-white shadow-xs transition hover:bg-emerald-500 dark:bg-emerald-500 dark:hover:bg-emerald-400 cursor-pointer"
         >
           <ArrowDownLeft size={15} />
           <span>چک‌های دریافتی - ۱۱۲۰</span>
@@ -349,11 +413,11 @@ export default function InitialReceivedChecksClient({
         </div>
       </div>
 
-      {/* Filter and Search Bar */}
+      {/* Filter Bar */}
       <div className="flex flex-col gap-3 rounded-3xl border border-slate-200/80 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap items-center gap-3">
           {/* Bank Filter */}
-          <div className="relative min-w-[180px]">
+          <div className="relative min-w-[200px]">
             <select
               value={selectedBankFilter}
               onChange={(e) => {
@@ -371,23 +435,6 @@ export default function InitialReceivedChecksClient({
             </select>
             <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-400">
               <Filter size={14} />
-            </div>
-          </div>
-
-          {/* Search Input */}
-          <div className="relative min-w-[240px]">
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setPage(1);
-              }}
-              placeholder="جستجو در سریال، صیاد، طرف‌حساب، بانک..."
-              className="h-10 w-full rounded-2xl border border-slate-200 bg-white pr-9 pl-3 text-xs font-bold text-slate-900 shadow-2xs placeholder:text-slate-400 transition-all focus:border-emerald-500 focus:bg-white focus:text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-emerald-400 dark:focus:bg-slate-800 dark:focus:text-white dark:focus:ring-emerald-400/20"
-            />
-            <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-400">
-              <Search size={14} />
             </div>
           </div>
         </div>
@@ -431,6 +478,7 @@ export default function InitialReceivedChecksClient({
                   <th className="px-3 py-3.5">تاریخ سررسید</th>
                   <th className="px-3 py-3.5">مبلغ ({currencySuffix})</th>
                   <th className="px-3 py-3.5">وضعیت</th>
+                  <th className="px-3 py-3.5 text-center w-16">تصویر</th>
                   <th className="py-3.5 pr-2 pl-4 text-left w-24">عملیات</th>
                 </tr>
               </thead>
@@ -519,6 +567,56 @@ export default function InitialReceivedChecksClient({
                           <span className="size-1 rounded-full bg-current" />
                           {CHEQUE_STATUS_LABELS[check.status] || check.status}
                         </span>
+                      </td>
+
+                      {/* Check Image */}
+                      <td className="px-3 py-3.5 text-center">
+                        {check.imageUrl || check.image ? (
+                          <div className="relative inline-block group">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setActiveImagePreview({
+                                  url: check.imageUrl || `/api/checks/${check.id}/image`,
+                                  title: `تصویر چک شماره ${check.checkNumber || check.sayadId || check.id}`,
+                                })
+                              }
+                              className="relative block h-9 w-12 overflow-hidden rounded-lg border border-slate-200 bg-slate-100 shadow-2xs transition group-hover:border-emerald-500 group-hover:shadow-xs dark:border-slate-700 dark:bg-slate-800 cursor-pointer"
+                              title="مشاهده تصویر چک"
+                            >
+                              <img
+                                src={check.imageUrl || `/api/checks/${check.id}/image`}
+                                alt="چک"
+                                className="h-full w-full object-cover"
+                              />
+                              <span className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition group-hover:opacity-100 text-white">
+                                <ZoomIn size={14} />
+                              </span>
+                            </button>
+                          </div>
+                        ) : (
+                          <label
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-dashed border-slate-300 text-slate-400 hover:border-emerald-500 hover:bg-emerald-50/50 hover:text-emerald-600 dark:border-slate-700 dark:text-slate-500 dark:hover:border-emerald-500 dark:hover:bg-emerald-950/20 dark:hover:text-emerald-400 cursor-pointer transition-colors"
+                            title="افزودن تصویر چک (تبدیل خودکار به WebP)"
+                          >
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              disabled={uploadingImageCheckId === check.id}
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) void handleImageUpload(check.id, file);
+                                e.target.value = '';
+                              }}
+                            />
+                            {uploadingImageCheckId === check.id ? (
+                              <RefreshCw size={13} className="animate-spin text-emerald-600" />
+                            ) : (
+                              <Camera size={14} />
+                            )}
+                          </label>
+                        )}
                       </td>
 
                       {/* Actions */}
@@ -612,6 +710,37 @@ export default function InitialReceivedChecksClient({
               >
                 {deleteLoading ? 'در حال حذف...' : 'تایید و حذف'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Lightbox Image Preview Modal */}
+      {activeImagePreview && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-xs"
+          onClick={() => setActiveImagePreview(null)}
+        >
+          <div
+            className="relative max-h-[90vh] max-w-3xl overflow-hidden rounded-3xl border border-slate-800 bg-slate-900 p-2 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3 text-white">
+              <span className="text-xs font-black">{activeImagePreview.title}</span>
+              <button
+                type="button"
+                onClick={() => setActiveImagePreview(null)}
+                className="rounded-xl p-1 text-slate-400 transition hover:bg-slate-800 hover:text-white cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="flex items-center justify-center p-3">
+              <img
+                src={activeImagePreview.url}
+                alt={activeImagePreview.title}
+                className="max-h-[75vh] w-auto max-w-full rounded-2xl object-contain shadow-lg"
+              />
             </div>
           </div>
         </div>

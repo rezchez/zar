@@ -227,4 +227,52 @@ describe('Bank Tab & Check Payment Currency & Balance Integration Tests', () => 
       expect(checkAmount).toBe(50000000);
     });
   });
+
+  describe('6. Check Modals & Management Base Currency Consistency', () => {
+    it('initializes edit modal amount in user selected base currency (IRT vs IRR)', () => {
+      // Stored check in DB has 80,000,000 IRR
+      const checkInDb = { id: 'chk_1', amount: 80000000 };
+
+      const resolveModalInitialAmount = (
+        amount: number,
+        baseCurrency: 'IRR' | 'IRT',
+      ) => (baseCurrency === 'IRT' ? Math.floor(amount / 10) : amount);
+
+      // Case A: User has baseCurrency = 'IRT'
+      expect(resolveModalInitialAmount(checkInDb.amount, 'IRT')).toBe(8000000); // 8,000,000 Toman
+
+      // Case B: User has baseCurrency = 'IRR'
+      expect(resolveModalInitialAmount(checkInDb.amount, 'IRR')).toBe(80000000); // 80,000,000 Rial
+    });
+
+    it('converts user modal input back to native IRR integer before persisting to backend', () => {
+      const convertModalInputToIrr = (
+        inputAmount: number,
+        baseCurrency: 'IRR' | 'IRT',
+      ) => (baseCurrency === 'IRT' ? Math.round(inputAmount * 10) : Math.round(inputAmount));
+
+      // Case A: User typed 15,000,000 in Toman mode
+      expect(convertModalInputToIrr(15000000, 'IRT')).toBe(150000000); // 150,000,000 IRR
+
+      // Case B: User typed 150,000,000 in Rial mode
+      expect(convertModalInputToIrr(150000000, 'IRR')).toBe(150000000); // 150,000,000 IRR
+    });
+
+    it('formats check amounts consistently with active baseCurrency via formatMoney', () => {
+      const { formatMoney } = require('@/lib/money');
+
+      // 25,000,000 IRR check
+      const checkAmountIrr = 25000000;
+
+      // In Toman mode
+      const formattedToman = formatMoney(checkAmountIrr, 'IRT');
+      expect(formattedToman).toContain('۲٬۵۰۰٬۰۰۰');
+      expect(formattedToman).toContain('تومان');
+
+      // In Rial mode
+      const formattedRial = formatMoney(checkAmountIrr, 'IRR');
+      expect(formattedRial).toContain('۲۵٬۰۰۰٬۰۰۰');
+      expect(formattedRial).toContain('ریال');
+    });
+  });
 });

@@ -34,11 +34,13 @@ export default function InitialIssuedCheckModal({
   onClose,
   onSuccess,
   editItem,
+  isOpening = true,
 }: {
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: () => void;
   editItem?: CheckRecord | null;
+  isOpening?: boolean;
 }) {
   const { settings, formatMoney } = useAppSettings();
   const effectiveCurrency = (settings.baseCurrency as 'IRR' | 'IRT') || 'IRR';
@@ -104,7 +106,11 @@ export default function InitialIssuedCheckModal({
       setSelectedCustomerId(editItem.customer || '');
       setCheckNumber(editItem.checkNumber || '');
       setSayadId(editItem.sayadId || '');
-      setAmount(editItem.amount ? String(editItem.amount) : '');
+      const initialAmountVal =
+        effectiveCurrency === 'IRT'
+          ? Math.floor((editItem.amount || 0) / 10)
+          : (editItem.amount || 0);
+      setAmount(initialAmountVal > 0 ? String(initialAmountVal) : '');
       setIssueDate(editItem.issueDateJalali || editItem.openingBalanceDateJalali || dateToJalaliString(new Date()));
       setDueDate(editItem.dueDateJalali || '');
       setDescription(editItem.description || '');
@@ -120,7 +126,7 @@ export default function InitialIssuedCheckModal({
       setDescription('');
       setErrorMsg(null);
     }
-  }, [isOpen, editItem, fetchOptions]);
+  }, [isOpen, editItem, effectiveCurrency, fetchOptions]);
 
   if (!isOpen) return null;
 
@@ -158,8 +164,17 @@ export default function InitialIssuedCheckModal({
       return;
     }
 
+    // Persist native IRR integer
+    const finalAmountIRR =
+      effectiveCurrency === 'IRT' ? Math.round(parsedAmount * 10) : Math.round(parsedAmount);
+
     if (!dueDate) {
       setErrorMsg('تاریخ سررسید چک معتبر نیست.');
+      return;
+    }
+
+    if (!isOpening && !selectedCustomerId) {
+      setErrorMsg('انتخاب طرف‌حساب الزامی است.');
       return;
     }
 
@@ -167,25 +182,59 @@ export default function InitialIssuedCheckModal({
     setErrorMsg(null);
 
     try {
-      const res = await fetch('/api/accounting/opening/checks', {
-        method: 'POST',
+      const isEditing = Boolean(editItem?.id);
+      const url = isEditing
+        ? `/api/checks/${editItem!.id}`
+        : isOpening
+        ? '/api/accounting/opening/checks'
+        : '/api/checks';
+      const method = isEditing ? 'PATCH' : 'POST';
+
+      const payload = isEditing
+        ? {
+            bankAccount: selectedBankId,
+            customer: selectedCustomerId || null,
+            checkNumber: normalizedNo,
+            sayadId: normalizedSayad,
+            amount: finalAmountIRR,
+            dueDateJalali: dueDate,
+            issueDateJalali: issueDate,
+            description: description.trim(),
+          }
+        : isOpening
+        ? {
+            bankAccount: selectedBankId,
+            customer: selectedCustomerId || null,
+            checkNumber: normalizedNo,
+            sayadId: normalizedSayad,
+            amount: finalAmountIRR,
+            dueDateJalali: dueDate,
+            openingBalanceDateJalali: issueDate,
+            issueDateJalali: issueDate,
+            description: description.trim(),
+          }
+        : {
+            chequeType: 'payable',
+            bankAccount: selectedBankId,
+            customer: selectedCustomerId || null,
+            checkNumber: normalizedNo,
+            sayadId: normalizedSayad,
+            amount: finalAmountIRR,
+            dueDateJalali: dueDate,
+            issueDateJalali: issueDate,
+            description: description.trim(),
+            currency: 'IRR',
+          };
+
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: editItem?.id,
-          bankAccount: selectedBankId,
-          customer: selectedCustomerId || null,
-          checkNumber: normalizedNo,
-          sayadId: normalizedSayad,
-          amount: parsedAmount,
-          dueDateJalali: dueDate,
-          openingBalanceDateJalali: issueDate,
-          description: description.trim(),
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json();
       if (!res.ok) {
-        setErrorMsg(data.message || 'ثبت چک افتتاحیه با خطا مواجه شد.');
+        setErrorMsg(data.message || (isEditing ? 'ویرایش چک با خطا مواجه شد.' : 'ثبت چک با خطا مواجه شد.'));
         return;
       }
 
@@ -224,10 +273,16 @@ export default function InitialIssuedCheckModal({
             </div>
             <div>
               <h2 className="text-sm font-black text-slate-900 dark:text-white">
-                {editItem ? 'ویرایش چک صادرشده' : 'ثبت چک صادرشده'}
+                {editItem
+                  ? 'ویرایش چک صادرشده'
+                  : isOpening
+                  ? 'ثبت موجودی اولیه چک پرداختی (صادرشده)'
+                  : 'ثبت چک پرداختی جدید'}
               </h2>
               <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                مشخصات و وضعیت چک بانکی صادرشده
+                {isOpening
+                  ? 'مشخصات و تعهدات چک‌های صادره اول دوره و ثبت در اسناد پرداختنی (سرمایه اول دوره ۳۱۰۰)'
+                  : 'صدور چک پرداختی عهده حساب بانکی و کاهش بدهی طرف‌حساب (اسناد پرداختنی ۲۱۱۰)'}
               </p>
             </div>
           </div>
@@ -413,7 +468,7 @@ export default function InitialIssuedCheckModal({
               type="button"
               onClick={onClose}
               disabled={submitting}
-              className="h-10 rounded-2xl border border-slate-200 px-4 text-xs font-bold text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 cursor-pointer"
+              className="h-10 rounded-2xl border border-slate-200 bg-white px-4 text-xs font-bold text-slate-700 transition hover:bg-slate-50 hover:text-slate-950 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 cursor-pointer"
             >
               انصراف
             </button>

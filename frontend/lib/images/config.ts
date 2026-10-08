@@ -106,6 +106,17 @@ export const IMAGE_PURPOSE_CONFIGS: Record<ImagePurpose, ImagePurposeConfig> = {
     stripMetadata: true,
     allowedMimeTypes: DEFAULT_ALLOWED_MIME_TYPES,
   },
+  check: {
+    maxSizeBytes: 15 * 1024 * 1024,
+    targetWidth: 1600,
+    targetHeight: 1200,
+    format: 'webp',
+    quality: 85,
+    fit: 'inside',
+    position: 'center',
+    stripMetadata: true,
+    allowedMimeTypes: DEFAULT_ALLOWED_MIME_TYPES,
+  },
 };
 
 export function getImageConfig(

@@ -1,7 +1,19 @@
 'use client';
 
 import { AnimatePresence, motion } from 'framer-motion';
-import { AlertCircle, Check, ChevronDown, CreditCard, Landmark, X } from 'lucide-react';
+import {
+  AlertCircle,
+  Camera,
+  Check,
+  ChevronDown,
+  CreditCard,
+  Image as ImageIcon,
+  ImagePlus,
+  Landmark,
+  RefreshCw,
+  Trash2,
+  X,
+} from 'lucide-react';
 import React, { useCallback, useEffect, useState } from 'react';
 
 import DatePicker from '@/components/ui/date-picker';
@@ -11,6 +23,7 @@ import { useAppSettings } from '@/components/shared/SettingsProvider';
 import BankLogo from '@/features/banks/components/BankLogo';
 import { BANKS_REGISTRY } from '@/features/banks/services/bank';
 import { type CheckRecord } from '@/lib/check';
+import { convertImageToWebP } from '@/features/checks/services/check-image';
 import { dateToJalaliString, normalizeDigits } from '@/lib/jalali';
 import { parseLocalizedAmount } from '@/lib/money';
 
@@ -34,11 +47,13 @@ export default function InitialReceivedCheckModal({
   onClose,
   onSuccess,
   editItem,
+  isOpening = true,
 }: {
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: () => void;
   editItem?: CheckRecord | null;
+  isOpening?: boolean;
 }) {
   const { settings } = useAppSettings();
   const effectiveCurrency = (settings.baseCurrency as 'IRR' | 'IRT') || 'IRR';
@@ -61,6 +76,28 @@ export default function InitialReceivedCheckModal({
   const [loadingBanks, setLoadingBanks] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Check image state with WebP conversion
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [isConvertingImage, setIsConvertingImage] = useState<boolean>(false);
+  const [imageSizeStats, setImageSizeStats] = useState<{ orig: number; webp: number } | null>(null);
+
+  const handleSelectImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsConvertingImage(true);
+    try {
+      const res = await convertImageToWebP(file);
+      setImageFile(res.file);
+      setImagePreview(res.previewUrl);
+      setImageSizeStats({ orig: res.originalSize, webp: res.webpSize });
+    } catch {
+      setErrorMsg('خطا در پردازش و تبدیل تصویر به WebP.');
+    } finally {
+      setIsConvertingImage(false);
+    }
+  };
 
   const fetchCustomers = useCallback(async () => {
     setLoading(true);
@@ -141,6 +178,9 @@ export default function InitialReceivedCheckModal({
       setIssueDate(editItem.issueDateJalali || editItem.openingBalanceDateJalali || dateToJalaliString(new Date()));
       setDueDate(editItem.dueDateJalali || '');
       setDescription(editItem.description || '');
+      setImageFile(null);
+      setImagePreview(editItem.imageUrl || (editItem.image ? `/api/checks/${editItem.id}/image` : null));
+      setImageSizeStats(null);
     } else {
       setSelectedCustomerId('');
       setBankName((curr) => curr || banks[0]?.name || BANKS_REGISTRY[0]?.name || 'بانک ملی ایران');
@@ -152,6 +192,9 @@ export default function InitialReceivedCheckModal({
       setIssueDate(dateToJalaliString(new Date()));
       setDueDate('');
       setDescription('');
+      setImageFile(null);
+      setImagePreview(null);
+      setImageSizeStats(null);
     }
     setErrorMsg(null);
   }, [isOpen, editItem, effectiveCurrency, fetchCustomers, fetchBanks]);
@@ -195,32 +238,78 @@ export default function InitialReceivedCheckModal({
 
     setSubmitting(true);
     try {
-      const payload = {
-        id: editItem?.id,
-        chequeType: 'receivable',
-        customer: selectedCustomerId,
-        bankName: bankName.trim(),
-        branchName: branchName.trim(),
-        checkNumber: normCheckNumber || normSayadId,
-        sayadId: normSayadId,
-        amount: finalAmountIRR,
-        currency: 'IRR',
-        issueDateJalali: issueDate,
-        openingBalanceDateJalali: issueDate,
-        dueDateJalali: dueDate,
-        description: description.trim(),
-        status: 'pending',
-      };
+      const isEditing = Boolean(editItem?.id);
+      const url = isEditing
+        ? `/api/checks/${editItem!.id}`
+        : isOpening
+        ? '/api/accounting/opening/checks'
+        : '/api/checks';
+      const method = isEditing ? 'PATCH' : 'POST';
 
-      const res = await fetch('/api/accounting/opening/checks', {
-        method: 'POST',
+      const payload = isEditing
+        ? {
+            customer: selectedCustomerId,
+            bankName: bankName.trim(),
+            branchName: branchName.trim(),
+            checkNumber: normCheckNumber || normSayadId,
+            sayadId: normSayadId,
+            amount: finalAmountIRR,
+            currency: 'IRR',
+            issueDateJalali: issueDate,
+            dueDateJalali: dueDate,
+            description: description.trim(),
+          }
+        : isOpening
+        ? {
+            chequeType: 'receivable',
+            customer: selectedCustomerId,
+            bankName: bankName.trim(),
+            branchName: branchName.trim(),
+            checkNumber: normCheckNumber || normSayadId,
+            sayadId: normSayadId,
+            amount: finalAmountIRR,
+            currency: 'IRR',
+            issueDateJalali: issueDate,
+            openingBalanceDateJalali: issueDate,
+            dueDateJalali: dueDate,
+            description: description.trim(),
+            status: 'pending',
+          }
+        : {
+            chequeType: 'receivable',
+            customer: selectedCustomerId,
+            bankName: bankName.trim(),
+            branchName: branchName.trim(),
+            checkNumber: normCheckNumber || normSayadId,
+            sayadId: normSayadId,
+            amount: finalAmountIRR,
+            currency: 'IRR',
+            issueDateJalali: issueDate,
+            dueDateJalali: dueDate,
+            description: description.trim(),
+            status: 'pending',
+          };
+
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
       const resData = await res.json();
       if (!res.ok) {
-        throw new Error(resData?.message || 'ثبت چک دریافتی با خطا مواجه شد.');
+        throw new Error(resData?.message || (isEditing ? 'ویرایش چک دریافتی با خطا مواجه شد.' : 'ثبت چک دریافتی با خطا مواجه شد.'));
+      }
+
+      // If an image was selected, upload it to the check
+      const savedCheckId = resData?.check?.id || editItem?.id;
+      if (savedCheckId && imageFile) {
+        const imgFormData = new FormData();
+        imgFormData.append('image', imageFile, imageFile.name);
+        await fetch(`/api/checks/${savedCheckId}/image`, {
+          method: 'POST',
+          body: imgFormData,
+        }).catch(() => null);
       }
 
       onSuccess?.();
@@ -271,10 +360,16 @@ export default function InitialReceivedCheckModal({
                 </div>
                 <div>
                   <h3 className="text-base font-black text-slate-900 dark:text-white">
-                    {editItem ? 'ویرایش چک دریافتی اول دوره' : 'ثبت چک دریافتی اول دوره'}
+                    {editItem
+                      ? 'ویرایش چک دریافتی'
+                      : isOpening
+                      ? 'ثبت موجودی اولیه چک دریافتی'
+                      : 'ثبت چک دریافتی جدید'}
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    موجودی اولیه اسناد دریافتنی (کدینگ حسابداری ۱۱۲۰ بدهکار / ۳۱۰۰ بستانکار)
+                    {isOpening
+                      ? 'موجودی اولیه اسناد دریافتنی (کدینگ حسابداری ۱۱۲۰ بدهکار / ۳۱۰۰ بستانکار)'
+                      : 'دریافت چک از طرف‌حساب و ثبت در اسناد دریافتنی (کدینگ ۱۱۲۰ بدهکار / ۲۱۲۰ بستانکار)'}
                   </p>
                 </div>
               </div>
@@ -295,10 +390,14 @@ export default function InitialReceivedCheckModal({
                 <div className="rounded-2xl border border-emerald-500/20 bg-emerald-50/70 p-3.5 text-xs font-semibold text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-950/20 dark:text-emerald-300">
                   <p className="flex items-center gap-1.5 font-bold text-xs sm:text-sm">
                     <Check size={16} className="text-emerald-600 dark:text-emerald-400" />
-                    سند افتتاحیه دوبل: بدهکار اسناد دریافتنی (۱۱۲۰) / بستانکار سرمایه اول دوره (۳۱۰۰)
+                    {isOpening
+                      ? 'سند افتتاحیه دوبل: بدهکار اسناد دریافتنی (۱۱۲۰) / بستانکار سرمایه اول دوره (۳۱۰۰)'
+                      : 'سند دوبل دریافت چک: بدهکار اسناد دریافتنی (۱۱۲۰) / بستانکار طرف‌حساب (۲۱۲۰)'}
                   </p>
                   <p className="mt-1 text-[11px] leading-5 opacity-90">
-                    این چک در صندوق اسناد نگهداری می‌شود و تا زمان وصول در سررسید، هیچ‌گونه تاثیری بر موجودی نقدی بانک‌ها نخواهد داشت.
+                    {isOpening
+                      ? 'این چک در صندوق اسناد نگهداری می‌شود و تا زمان وصول در سررسید، هیچ‌گونه تاثیری بر موجودی نقدی بانک‌ها نخواهد داشت.'
+                      : 'این چک به عنوان سند دریافتنی از طرف‌حساب نزد صندوق ثبت می‌شود و تا زمان واگذاری به کلر و وصول نهایی در بانک، موجودی نقدی بانک‌ها را تغییر نمی‌دهد.'}
                   </p>
                 </div>
 
@@ -464,6 +563,7 @@ export default function InitialReceivedCheckModal({
                     value={amount}
                     onValueChange={(_parsed, raw) => setAmount(raw)}
                     placeholder={`مبلغ به ${currencySuffix}`}
+                    baseCurrency={effectiveCurrency}
                     currencySuffix={currencySuffix}
                     showWords={true}
                     className="h-11 rounded-2xl border-slate-200 dark:border-slate-700 dark:bg-slate-800"
@@ -507,6 +607,87 @@ export default function InitialReceivedCheckModal({
                     placeholder="مثال: بابت مانده طلب فاکتور سال قبل"
                     className={inputClasses}
                   />
+                </div>
+
+                {/* Row 7: Check Photo Upload with WebP Conversion */}
+                <div>
+                  <label className="mb-1.5 flex items-center justify-between text-xs font-extrabold text-slate-700 dark:text-slate-300">
+                    <span className="flex items-center gap-1.5">
+                      <ImageIcon size={14} className="text-emerald-600 dark:text-emerald-400" />
+                      تصویر چک (تبدیل خودکار به WebP)
+                    </span>
+                    {imageSizeStats && (
+                      <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400">
+                        حجم: {(imageSizeStats.orig / 1024).toFixed(0)}KB ➔ {(imageSizeStats.webp / 1024).toFixed(0)}KB WebP
+                      </span>
+                    )}
+                  </label>
+
+                  {imagePreview ? (
+                    <div className="relative group overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 p-2 dark:border-slate-700 dark:bg-slate-800/60">
+                      <div className="relative aspect-[3/1] w-full overflow-hidden rounded-xl bg-white dark:bg-slate-900">
+                        <img
+                          src={imagePreview}
+                          alt="پیش‌نمایش چک"
+                          className="size-full object-contain"
+                        />
+                      </div>
+                      <div className="mt-2 flex items-center justify-between">
+                        <label className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-2xs hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 cursor-pointer">
+                          <Camera size={13} />
+                          <span>تغییر تصویر</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={handleSelectImage}
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setImageFile(null);
+                            setImagePreview(null);
+                            setImageSizeStats(null);
+                          }}
+                          className="inline-flex items-center gap-1.5 rounded-xl border border-rose-300 bg-rose-50 px-3 py-1.5 text-xs font-black text-rose-800 shadow-2xs hover:bg-rose-100 dark:border-rose-700 dark:bg-rose-950/60 dark:text-rose-200 cursor-pointer"
+                        >
+                          <Trash2 size={13} />
+                          <span>حذف تصویر</span>
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <label className="flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/50 p-4 text-center transition hover:border-emerald-500 hover:bg-emerald-50/20 cursor-pointer dark:border-slate-700 dark:bg-slate-800/40 dark:hover:border-emerald-400">
+                      {isConvertingImage ? (
+                        <div className="flex items-center gap-2 text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                          <RefreshCw size={16} className="animate-spin" />
+                          <span>در حال تبدیل تصویر به فرمت WebP...</span>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex size-10 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400">
+                            <ImagePlus size={20} />
+                          </div>
+                          <div>
+                            <span className="block text-xs font-extrabold text-slate-800 dark:text-slate-200">
+                              انتخاب تصویر چک
+                            </span>
+                            <span className="block text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
+                              پشتیبانی از انواع فرمت‌های تصویر (JPEG, PNG, HEIC) با فشرده‌سازی خودکار به WebP
+                            </span>
+                          </div>
+                        </>
+                      )}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        disabled={isConvertingImage}
+                        onChange={handleSelectImage}
+                      />
+                    </label>
+                  )}
                 </div>
               </div>
 

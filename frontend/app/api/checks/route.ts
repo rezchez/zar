@@ -90,12 +90,20 @@ export async function POST(request: Request) {
   const amount = parseLocalizedAmount(String(body?.amount ?? 0));
   const rawStatus = text(body?.status, 20) || 'issued';
   const validStatus: CheckStatus = (
-    rawStatus === 'draft' || rawStatus === 'delivered' || rawStatus === 'pending'
+    rawStatus === 'draft' ||
+    rawStatus === 'delivered' ||
+    rawStatus === 'pending' ||
+    rawStatus === 'clearing' ||
+    rawStatus === 'returned_to_drawer'
   ) ? (rawStatus as CheckStatus) : 'issued';
   const chequeType: ChequeType = body?.chequeType === 'receivable' ? 'receivable' : 'payable';
 
-  if (!bankAccountId) {
-    return NextResponse.json({ message: 'حساب بانکی صادرکننده/مرتبط را انتخاب کنید.' }, { status: 400 });
+  const bankName = text(body?.bankName, 120);
+  const branchName = text(body?.branchName, 120);
+  const effectiveCheckNumber = normalizedCheckNumber || normalizedSayadId;
+
+  if (chequeType === 'payable' && !bankAccountId) {
+    return NextResponse.json({ message: 'حساب بانکی صادرکننده چک را انتخاب کنید.' }, { status: 400 });
   }
 
   if (!customerId) {
@@ -106,12 +114,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: 'مبلغ چک باید بزرگ‌تر از صفر باشد.' }, { status: 400 });
   }
 
-  if (!normalizedSayadId || normalizedSayadId.length !== 16) {
-    return NextResponse.json({ message: 'شناسه صیاد باید دقیقاً ۱۶ رقم باشد.' }, { status: 400 });
+  if (!effectiveCheckNumber) {
+    return NextResponse.json({ message: 'شماره چک یا شناسه صیاد الزامی است.' }, { status: 400 });
   }
 
-  if (!description) {
-    return NextResponse.json({ message: 'توضیحات بابت چک الزامی است.' }, { status: 400 });
+  if (normalizedSayadId && normalizedSayadId.length !== 16) {
+    return NextResponse.json({ message: 'شناسه صیاد در صورت ثبت باید دقیقاً ۱۶ رقم باشد.' }, { status: 400 });
   }
 
   const dueDateIso = jalaliDateToIso(dueDateJalali);
@@ -129,62 +137,84 @@ export async function POST(request: Request) {
   try {
     await ensureChecksCollection(writer);
 
-    // Duplicate Sayad ID check
-    const duplicate = await writer.collection('checks').getFirstListItem(
-      writer.filter('sayadId = {:sayadId}', { sayadId: normalizedSayadId }),
-    ).catch(() => null);
+    // Duplicate Sayad ID check (if 16 digits provided)
+    if (normalizedSayadId && normalizedSayadId.length === 16) {
+      const duplicate = await writer.collection('checks').getFirstListItem(
+        writer.filter('sayadId = {:sayadId}', { sayadId: normalizedSayadId }),
+      ).catch(() => null);
 
-    if (duplicate) {
-      return NextResponse.json({ message: 'چک دیگری با این شناسه صیاد قبلاً ثبت شده است.' }, { status: 409 });
+      if (duplicate) {
+        return NextResponse.json({ message: 'چک دیگری با این شناسه صیاد قبلاً ثبت شده است.' }, { status: 409 });
+      }
     }
 
     // Verify bank account & customer
-    const rawBankAccount = await writer.collection('bank_accounts').getOne(bankAccountId, {
-      expand: 'accountId',
-    });
-    if (rawBankAccount.isBlocked === true) {
-      return NextResponse.json(
-        {
-          success: false,
-          code: 'BANK_ACCOUNT_BLOCKED',
-          message: 'این حساب بانکی مسدود است و امکان ثبت تراکنش جدید برای آن وجود ندارد.',
-        },
-        { status: 409 },
-      );
+    let bankAccount: any = null;
+    if (bankAccountId) {
+      const rawBankAccount = await writer.collection('bank_accounts').getOne(bankAccountId, {
+        expand: 'accountId',
+      }).catch(() => null);
+
+      if (!rawBankAccount) {
+        return NextResponse.json({ message: 'حساب بانکی انتخاب‌شده معتبر نیست.' }, { status: 404 });
+      }
+
+      if (rawBankAccount.isBlocked === true) {
+        return NextResponse.json(
+          {
+            success: false,
+            code: 'BANK_ACCOUNT_BLOCKED',
+            message: 'این حساب بانکی مسدود است و امکان ثبت تراکنش جدید برای آن وجود ندارد.',
+          },
+          { status: 409 },
+        );
+      }
+      bankAccount = mapBankAccount(rawBankAccount);
+      if (chequeType === 'payable' && !bankAccount.hasCheckbook && !bankAccount.hasVirtualCheck) {
+        return NextResponse.json(
+          {
+            success: false,
+            code: 'BANK_ACCOUNT_NO_CHECKBOOK',
+            message: 'حساب بانکی انتخاب شده دارای دسته چک فیزیکی یا مجازی فعال نیست.',
+          },
+          { status: 400 },
+        );
+      }
     }
-    const bankAccount = mapBankAccount(rawBankAccount);
-    if (chequeType === 'payable' && !bankAccount.hasCheckbook && !bankAccount.hasVirtualCheck) {
-      return NextResponse.json(
-        {
-          success: false,
-          code: 'BANK_ACCOUNT_NO_CHECKBOOK',
-          message: 'حساب بانکی انتخاب شده دارای دسته چک فیزیکی یا مجازی فعال نیست.',
-        },
-        { status: 400 },
-      );
+
+    const customer = await writer.collection('customers').getOne(customerId).catch(() => null);
+    if (!customer) {
+      return NextResponse.json({ message: 'طرف‌حساب انتخاب‌شده معتبر نیست.' }, { status: 404 });
     }
-    const customer = await writer.collection('customers').getOne(customerId);
 
     const documentId = text(body?.documentId, 80) || randomUUID();
     const isToman = currency === 'IRT' || text(body?.baseCurrency, 16) === 'IRT';
     const accountingAmount = isToman ? convertTomanToRial(amount) : amount;
 
+    const effectiveDescription = description || (chequeType === 'payable'
+      ? `صدور چک شماره ${effectiveCheckNumber} به نام ${customer.name}`
+      : `دریافت چک شماره ${effectiveCheckNumber} از ${customer.name}${bankName ? ` (${bankName})` : ''}`);
+
     // 1. Create Check record
     const checkRecord = await writer.collection('checks').create({
-      bankAccount: bankAccount.id,
+      bankAccount: bankAccount?.id || null,
       customer: customer.id,
       sayadId: normalizedSayadId,
-      check_number: normalizedCheckNumber || normalizedSayadId,
-      checkNumber: normalizedCheckNumber || normalizedSayadId,
+      check_number: effectiveCheckNumber,
+      checkNumber: effectiveCheckNumber,
+      bankName: bankName || bankAccount?.bankName || '',
+      branchName: branchName || bankAccount?.branchName || '',
       amount: accountingAmount,
-      currency: bankAccount.currency || 'IRR',
-      description,
+      currency: bankAccount?.currency || currency || 'IRR',
+      description: effectiveDescription,
       chequeType,
       issueDate: issueDateIso,
       issueDateJalali,
       dueDate: dueDateIso,
       dueDateJalali,
       status: validStatus,
+      is_opening_balance: false,
+      isOpeningBalance: false,
       document: documentId,
       created_by: context.user.id,
       createdBy: context.user.id,
@@ -202,8 +232,8 @@ export async function POST(request: Request) {
           id: checkRecord.id,
           amount: accountingAmount,
           sayadId: normalizedSayadId,
-          checkNumber: normalizedCheckNumber,
-          description,
+          checkNumber: effectiveCheckNumber,
+          description: effectiveDescription,
           dueDateJalali,
           issueDateJalali,
           bankAccount: bankAccount.id,
@@ -223,9 +253,9 @@ export async function POST(request: Request) {
       journalResult = await postReceivableChequeReceipt(
         {
           id: checkRecord.id,
-          amount,
-          sayadId: normalizedSayadId,
-          description,
+          amount: accountingAmount,
+          sayadId: normalizedSayadId || effectiveCheckNumber,
+          description: effectiveDescription,
           dueDateJalali,
           customer: customer.id,
         },
@@ -256,24 +286,26 @@ export async function POST(request: Request) {
       transactionType: 'document',
       status: 'posted',
       isOpeningBalance: false,
-      sourceKey: `check-issued:${checkRecord.id}`,
+      sourceKey: `check-${chequeType}:${checkRecord.id}`,
       transactionDate: new Date().toISOString(),
       documentId,
       documentNumber: checkDocNumber,
-      description: `صدور چک صیادی ${normalizedSayadId} — ${description}`,
+      description: effectiveDescription,
       documentNature: chequeType === 'payable' ? 'paid' : 'received',
-      documentTab: 'bank',
-      documentSubType: 'check-payment',
+      documentTab: chequeType === 'payable' ? 'bank' : 'check',
+      documentSubType: chequeType === 'payable' ? 'check-payment' : 'check-receipt',
       settlementMethod: 'check',
       balanceSource: 'current',
-      rialAmount: currency === 'IRR' ? (chequeType === 'payable' ? -amount : amount) : 0,
-      foreignAmount: currency !== 'IRR' ? (chequeType === 'payable' ? -amount : amount) : 0,
+      rialAmount: currency === 'IRR' ? (chequeType === 'payable' ? -accountingAmount : accountingAmount) : 0,
+      foreignAmount: currency !== 'IRR' ? (chequeType === 'payable' ? -accountingAmount : accountingAmount) : 0,
       foreignCurrency: currency !== 'IRR' ? currency : '',
       documentDetails: JSON.stringify({
         checkId: checkRecord.id,
         sayadId: normalizedSayadId,
-        bankAccountId: bankAccount.id,
-        bankName: bankAccount.bankName,
+        checkNumber: effectiveCheckNumber,
+        bankAccountId: bankAccount?.id || null,
+        bankName: bankAccount?.bankName || bankName || '',
+        branchName: branchName || '',
         dueDateJalali,
         dueDate: dueDateIso,
         journalEntryId: journalResult?.id || null,
@@ -281,21 +313,25 @@ export async function POST(request: Request) {
     }).catch(() => undefined);
 
     // 4. Audit Log (mask Sayad ID for security)
-    const maskedSayadId = `${normalizedSayadId.slice(0, 4)}****${normalizedSayadId.slice(12)}`;
+    const maskedSayadId = normalizedSayadId && normalizedSayadId.length >= 12
+      ? `${normalizedSayadId.slice(0, 4)}****${normalizedSayadId.slice(12)}`
+      : (normalizedSayadId || effectiveCheckNumber);
     await recordAuditEvent({
       userId: context.user.id,
       event: 'transaction_created',
       request,
-      details: `صدور چک صیادی ${maskedSayadId} به مبلغ ${amount} ${currency} از ${bankAccount.bankName} به نام ${customer.name}`,
+      details: chequeType === 'payable'
+        ? `صدور چک صیادی ${maskedSayadId} به مبلغ ${accountingAmount} ${currency} از ${bankAccount?.bankName || 'بانک'} به نام ${customer.name}`
+        : `دریافت چک ${maskedSayadId} به مبلغ ${accountingAmount} ${currency} از ${customer.name}${bankName ? ` (${bankName})` : ''}`,
       entityType: 'check',
       entityId: checkRecord.id,
-      entityLabel: `چک صیاد ${maskedSayadId}`,
+      entityLabel: `چک ${maskedSayadId}`,
       changes: {
-        bankAccountId: bankAccount.id,
-        bankName: bankAccount.bankName,
+        bankAccountId: bankAccount?.id || null,
+        bankName: bankAccount?.bankName || bankName || '',
         customerId: customer.id,
         customerName: customer.name,
-        amount,
+        amount: accountingAmount,
         currency,
         dueDateJalali,
         dueDate: dueDateIso,

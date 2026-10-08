@@ -32,13 +32,22 @@ const checkCollectionPayload = {
       type: 'select',
       required: true,
       maxSelect: 1,
-      values: ['draft', 'issued', 'delivered', 'pending', 'due', 'cleared', 'returned', 'cancelled', 'paid'],
+      values: ['draft', 'issued', 'delivered', 'pending', 'due', 'cleared', 'returned', 'cancelled', 'paid', 'clearing', 'returned_to_drawer'],
     },
     { id: 'payable_account_rel', name: 'payableAccountId', type: 'relation', collectionId: 'chart_of_accounts', maxSelect: 1, required: false },
     { id: 'receivable_account_rel', name: 'receivableAccountId', type: 'relation', collectionId: 'chart_of_accounts', maxSelect: 1, required: false },
     { id: 'journal_entry_id', name: 'journalEntryId', type: 'text', required: false, max: 80 },
     { id: 'bank_name_field', name: 'bankName', type: 'text', required: false, max: 120 },
     { id: 'branch_name_field', name: 'branchName', type: 'text', required: false, max: 120 },
+    {
+      id: 'image_field',
+      name: 'image',
+      type: 'file',
+      required: false,
+      maxSelect: 1,
+      maxSize: 15728640,
+      mimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
+    },
     { id: 'document_id', name: 'document', type: 'text', required: false, max: 80 },
     { id: 'created_by_rel', name: 'createdBy', type: 'text', max: 80 },
     { id: 'updated_by_rel', name: 'updatedBy', type: 'text', max: 80 },
@@ -104,6 +113,30 @@ export async function ensureChecksCollection(pb: PocketBase) {
           });
           needsUpdate = true;
         }
+        if (!existingFieldNames.has('image')) {
+          (existing.fields as any[]).push({
+            id: 'image_field',
+            name: 'image',
+            type: 'file',
+            required: false,
+            maxSelect: 1,
+            maxSize: 15728640,
+            mimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
+            system: false,
+            hidden: false,
+            presentable: false,
+          });
+          needsUpdate = true;
+        }
+
+        const statusField = (existing.fields || []).find((f: any) => f.name === 'status');
+        if (statusField && statusField.type === 'select') {
+          const currentVals = new Set(statusField.values || []);
+          if (!currentVals.has('clearing') || !currentVals.has('returned_to_drawer')) {
+            statusField.values = Array.from(new Set([...(statusField.values || []), 'clearing', 'returned_to_drawer']));
+            needsUpdate = true;
+          }
+        }
 
         if (needsUpdate) {
           await pb.collections.update(existing.id, existing).catch(() => null);
@@ -141,7 +174,16 @@ export async function ensureChecksCollection(pb: PocketBase) {
             type: 'select',
             required: false,
             maxSelect: 1,
-            values: ['draft', 'issued', 'delivered', 'pending', 'due', 'cleared', 'returned', 'cancelled', 'paid'],
+            values: ['draft', 'issued', 'delivered', 'pending', 'due', 'cleared', 'returned', 'cancelled', 'paid', 'clearing', 'returned_to_drawer'],
+          },
+          {
+            id: 'image_field',
+            name: 'image',
+            type: 'file',
+            required: false,
+            maxSelect: 1,
+            maxSize: 15728640,
+            mimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
           },
           { id: 'journal_entry_id', name: 'journalEntryId', type: 'text', required: false, max: 80 },
           { id: 'document_id', name: 'document', type: 'text', required: false, max: 80 },

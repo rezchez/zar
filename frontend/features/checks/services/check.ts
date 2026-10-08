@@ -7,7 +7,9 @@ export type CheckStatus =
   | 'cleared'
   | 'returned'
   | 'cancelled'
-  | 'paid'; // alias for cleared in legacy records
+  | 'paid' // alias for cleared in legacy records
+  | 'clearing'
+  | 'returned_to_drawer';
 
 export type ChequeType = 'payable' | 'receivable';
 
@@ -15,24 +17,28 @@ export const CHEQUE_STATUS_LABELS: Record<CheckStatus, string> = {
   draft: 'پیش‌نویس',
   issued: 'صادرشده',
   delivered: 'تحویل داده‌شده',
-  pending: 'در انتظار سررسید',
+  pending: 'در انتظار وصول',
   due: 'رسیده به سررسید',
-  cleared: 'وصول‌شده',
-  returned: 'برگشت‌خورده',
+  cleared: 'پاس‌شده (وصول)',
+  returned: 'برگشت‌خورده (کسر موجودی)',
   cancelled: 'باطل‌شده',
   paid: 'تسویه‌شده',
+  clearing: 'کلر چک (در جریان وصول بانک)',
+  returned_to_drawer: 'عودت به صادرکننده',
 };
 
 export const CHEQUE_STATUS_COLORS: Record<CheckStatus, { bg: string; text: string; border: string }> = {
-  draft: { bg: 'bg-slate-500/10', text: 'text-slate-700 dark:text-slate-300', border: 'border-slate-500/20' },
-  issued: { bg: 'bg-blue-500/10', text: 'text-blue-700 dark:text-blue-300', border: 'border-blue-500/20' },
-  delivered: { bg: 'bg-indigo-500/10', text: 'text-indigo-700 dark:text-indigo-300', border: 'border-indigo-500/20' },
-  pending: { bg: 'bg-amber-500/10', text: 'text-amber-800 dark:text-amber-300', border: 'border-amber-500/20' },
-  due: { bg: 'bg-orange-500/10', text: 'text-orange-800 dark:text-orange-300', border: 'border-orange-500/20' },
-  cleared: { bg: 'bg-emerald-500/10', text: 'text-emerald-800 dark:text-emerald-300', border: 'border-emerald-500/20' },
-  returned: { bg: 'bg-rose-500/10', text: 'text-rose-800 dark:text-rose-300', border: 'border-rose-500/20' },
-  cancelled: { bg: 'bg-slate-500/10', text: 'text-slate-600 dark:text-slate-400', border: 'border-slate-500/20' },
-  paid: { bg: 'bg-emerald-500/10', text: 'text-emerald-800 dark:text-emerald-300', border: 'border-emerald-500/20' },
+  draft: { bg: 'bg-slate-100 dark:bg-slate-800', text: 'text-slate-900 dark:text-slate-100 font-extrabold', border: 'border-slate-300 dark:border-slate-700' },
+  issued: { bg: 'bg-blue-100 dark:bg-blue-950/70', text: 'text-blue-950 dark:text-blue-200 font-extrabold', border: 'border-blue-300 dark:border-blue-700' },
+  delivered: { bg: 'bg-indigo-100 dark:bg-indigo-950/70', text: 'text-indigo-950 dark:text-indigo-200 font-extrabold', border: 'border-indigo-300 dark:border-indigo-700' },
+  pending: { bg: 'bg-amber-100 dark:bg-amber-950/70', text: 'text-amber-950 dark:text-amber-200 font-extrabold', border: 'border-amber-300 dark:border-amber-700' },
+  due: { bg: 'bg-orange-100 dark:bg-orange-950/70', text: 'text-orange-950 dark:text-orange-200 font-extrabold', border: 'border-orange-300 dark:border-orange-700' },
+  clearing: { bg: 'bg-sky-100 dark:bg-sky-950/70', text: 'text-sky-950 dark:text-sky-200 font-extrabold', border: 'border-sky-300 dark:border-sky-700' },
+  cleared: { bg: 'bg-emerald-100 dark:bg-emerald-950/70', text: 'text-emerald-950 dark:text-emerald-200 font-extrabold', border: 'border-emerald-300 dark:border-emerald-700' },
+  returned: { bg: 'bg-rose-100 dark:bg-rose-950/70', text: 'text-rose-950 dark:text-rose-200 font-extrabold', border: 'border-rose-300 dark:border-rose-700' },
+  returned_to_drawer: { bg: 'bg-purple-100 dark:bg-purple-950/70', text: 'text-purple-950 dark:text-purple-200 font-extrabold', border: 'border-purple-300 dark:border-purple-700' },
+  cancelled: { bg: 'bg-slate-100 dark:bg-slate-800', text: 'text-slate-900 dark:text-slate-200 font-extrabold', border: 'border-slate-300 dark:border-slate-700' },
+  paid: { bg: 'bg-emerald-100 dark:bg-emerald-950/70', text: 'text-emerald-950 dark:text-emerald-200 font-extrabold', border: 'border-emerald-300 dark:border-emerald-700' },
 };
 
 /**
@@ -41,6 +47,8 @@ export const CHEQUE_STATUS_COLORS: Record<CheckStatus, { bg: string; text: strin
 export function canTransitionChequeStatus(
   current: CheckStatus,
   target: CheckStatus,
+  chequeType?: ChequeType,
+  options?: { allowReversal?: boolean },
 ): { allowed: boolean; reason?: string } {
   if (current === target) return { allowed: true };
 
@@ -49,31 +57,65 @@ export function canTransitionChequeStatus(
     return { allowed: false, reason: 'چک باطل‌شده قابلیت تغییر وضعیت ندارد.' };
   }
 
-  // Already cleared checks cannot be re-cleared or changed to draft/issued directly
+  // Already cleared checks:
+  // For receivable checks: can only be returned in reversal workflows.
+  // For payable checks: can also revert to pending or cancelled if mistakenly cleared.
   if (current === 'cleared' || current === 'paid') {
     if (target === 'returned') {
       return { allowed: true };
     }
-    return { allowed: false, reason: 'چک وصول‌شده فقط در صورت نیاز می‌تواند به وضعیت برگشتی تغییر یابد.' };
+    if (chequeType === 'payable' && (target === 'pending' || target === 'cancelled')) {
+      return { allowed: true };
+    }
+    if (options?.allowReversal) {
+      if (
+        target === 'pending' ||
+        target === 'clearing' ||
+        target === 'returned_to_drawer' ||
+        target === 'cancelled'
+      ) {
+        return { allowed: true };
+      }
+    }
+    return {
+      allowed: false,
+      reason: 'چک وصول‌شده فقط در صورت نیاز می‌تواند به وضعیت برگشتی، در انتظار وصول یا عودت تغییر یابد.',
+    };
   }
 
-  // Returned checks cannot be directly cleared without proper workflow
+  // Returned checks can move to pending, clearing, cleared, returned_to_drawer, or cancelled
   if (current === 'returned') {
-    if (target === 'cancelled' || target === 'pending' || target === 'cleared') {
+    if (
+      target === 'cancelled' ||
+      target === 'pending' ||
+      target === 'clearing' ||
+      target === 'cleared' ||
+      target === 'returned_to_drawer'
+    ) {
       return { allowed: true };
     }
     return { allowed: false, reason: 'گذار نامعتبر از وضعیت برگشت‌خورده.' };
   }
 
+  // Returned to drawer can move to pending, clearing, or cancelled
+  if (current === 'returned_to_drawer') {
+    if (target === 'pending' || target === 'clearing' || target === 'cancelled') {
+      return { allowed: true };
+    }
+    return { allowed: false, reason: 'چک عودت‌داده‌شده فقط می‌تواند به وضعیت در انتظار وصول، کلر یا باطل‌شده تغییر یابد.' };
+  }
+
   // Standard progressive transitions
   const allowedTransitions: Record<CheckStatus, CheckStatus[]> = {
     draft: ['issued', 'cancelled'],
-    issued: ['delivered', 'pending', 'due', 'cleared', 'returned', 'cancelled', 'paid'],
-    delivered: ['pending', 'due', 'cleared', 'returned', 'cancelled'],
-    pending: ['due', 'cleared', 'returned', 'cancelled'],
-    due: ['cleared', 'returned', 'cancelled', 'pending'],
+    issued: ['delivered', 'pending', 'clearing', 'due', 'cleared', 'returned', 'returned_to_drawer', 'cancelled', 'paid'],
+    delivered: ['pending', 'clearing', 'due', 'cleared', 'returned', 'returned_to_drawer', 'cancelled'],
+    pending: ['clearing', 'due', 'cleared', 'returned', 'returned_to_drawer', 'cancelled'],
+    clearing: ['cleared', 'returned', 'pending', 'returned_to_drawer', 'cancelled'],
+    due: ['clearing', 'cleared', 'returned', 'returned_to_drawer', 'cancelled', 'pending'],
     cleared: ['returned'],
-    returned: ['pending', 'cleared', 'cancelled'],
+    returned: ['pending', 'clearing', 'cleared', 'returned_to_drawer', 'cancelled'],
+    returned_to_drawer: ['pending', 'clearing', 'cancelled'],
     cancelled: [],
     paid: ['returned'],
   };
@@ -112,6 +154,12 @@ export type CheckRecord = {
   clearedDateJalali?: string;
   returnedDate?: string;
   returnedDateJalali?: string;
+  clearingDate?: string;
+  clearingDateJalali?: string;
+  returnedToDrawerDate?: string;
+  returnedToDrawerDateJalali?: string;
+  image?: string;
+  imageUrl?: string;
   status: CheckStatus;
   payableAccountId?: string | null;
   receivableAccountId?: string | null;
@@ -143,6 +191,8 @@ export function mapCheckRecord(record: Record<string, unknown>): CheckRecord {
     'returned',
     'cancelled',
     'paid',
+    'clearing',
+    'returned_to_drawer',
   ];
   const status: CheckStatus = validStatuses.includes(rawStatus as CheckStatus)
     ? (rawStatus as CheckStatus)
@@ -150,8 +200,16 @@ export function mapCheckRecord(record: Record<string, unknown>): CheckRecord {
 
   const chequeType: ChequeType = record.chequeType === 'receivable' ? 'receivable' : 'payable';
 
+  const recId = typeof record.id === 'string' ? record.id : '';
+  const rawImage = typeof record.image === 'string' && record.image ? record.image : undefined;
+  const rawImageUrl = typeof record.imageUrl === 'string' && record.imageUrl
+    ? record.imageUrl
+    : rawImage && recId
+      ? `/api/checks/${recId}/image`
+      : undefined;
+
   return {
-    id: typeof record.id === 'string' ? record.id : '',
+    id: recId,
     bankAccount: typeof record.bankAccount === 'string'
       ? record.bankAccount
       : typeof record.bank_account === 'string'
@@ -214,6 +272,12 @@ export function mapCheckRecord(record: Record<string, unknown>): CheckRecord {
     clearedDateJalali: typeof record.clearedDateJalali === 'string' ? record.clearedDateJalali : undefined,
     returnedDate: typeof record.returnedDate === 'string' ? record.returnedDate : undefined,
     returnedDateJalali: typeof record.returnedDateJalali === 'string' ? record.returnedDateJalali : undefined,
+    clearingDate: typeof record.clearingDate === 'string' ? record.clearingDate : undefined,
+    clearingDateJalali: typeof record.clearingDateJalali === 'string' ? record.clearingDateJalali : undefined,
+    returnedToDrawerDate: typeof record.returnedToDrawerDate === 'string' ? record.returnedToDrawerDate : undefined,
+    returnedToDrawerDateJalali: typeof record.returnedToDrawerDateJalali === 'string' ? record.returnedToDrawerDateJalali : undefined,
+    image: rawImage,
+    imageUrl: rawImageUrl,
     status,
     payableAccountId: typeof record.payableAccountId === 'string' ? record.payableAccountId : null,
     receivableAccountId: typeof record.receivableAccountId === 'string' ? record.receivableAccountId : null,

@@ -933,7 +933,7 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
                     className={`w-full flex items-center justify-between p-2.5 rounded-xl text-right transition-all border ${
                       isSelected
                         ? 'bg-amber-500/15 border-amber-500/40 text-amber-900 dark:text-amber-300 font-extrabold shadow-sm'
-                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-850'
+                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
                     }`}
                   >
                     <span className="truncate flex-1">{tpl.name}</span>

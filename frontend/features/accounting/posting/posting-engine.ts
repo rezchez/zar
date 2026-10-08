@@ -32,6 +32,9 @@ export interface CreateJournalEntryParams {
     | 'cheque_return'
     | 'cheque_receive'
     | 'cheque_collect'
+    | 'cheque_uncollect'
+    | 'cheque_unclear'
+    | 'cheque_return_to_drawer'
     | 'document'
     | 'bank_transfer'
     | 'settlement'
@@ -1483,6 +1486,250 @@ export async function postReceivableChequeCollection(
   }).catch(() => undefined);
 
   return { journal, nextBankBalance };
+}
+
+/**
+ * Reverses Collection of a Receivable Cheque (ابطال وصول چک دریافتی):
+ * When a previously collected receivable cheque is reverted from cleared/paid back to pending/clearing/returned.
+ * - Credit: Bank Account (Bank Account coding ID / 1110) -> DECREASES BANK BALANCE!
+ * - Debit: Notes Receivable (1120 اسناد دریافتنی)
+ */
+export async function postReceivableChequeUncollect(
+  cheque: {
+    id: string;
+    amount: number;
+    sayadId: string;
+    receivableAccountId?: string | null;
+  },
+  bankAccount: BankAccount,
+  customerName: string,
+  userId: string,
+  pb: PocketBase,
+  uncollectDateJalali?: string,
+): Promise<{ journal: JournalEntryResult; nextBankBalance: number }> {
+  const amount = Math.round(cheque.amount);
+  const receivableAccount = cheque.receivableAccountId || SYSTEM_ACCOUNT_CODES.NOTES_RECEIVABLE;
+  const bankCodingAccount = bankAccount.accountId || SYSTEM_ACCOUNT_CODES.CASH_AND_BANK;
+
+  const desc = `ابطال وصول چک دریافتی ${cheque.sayadId} از حساب ${bankAccount.bankName} (${customerName})`;
+
+  const journal = await postJournalEntry(
+    {
+      entryDateJalali: uncollectDateJalali,
+      description: desc,
+      sourceType: 'cheque_uncollect',
+      sourceId: cheque.id,
+      sourceKey: `cheque:uncollect:${cheque.id}:${Date.now()}`,
+      userId,
+      lines: [
+        {
+          accountId: receivableAccount,
+          debit: amount,
+          credit: 0,
+          description: `احیای اسناد دریافتنی (ابطال وصول چک ${cheque.sayadId})`,
+          bankAccountId: bankAccount.id,
+          chequeId: cheque.id,
+        },
+        {
+          accountId: bankCodingAccount,
+          debit: 0,
+          credit: amount,
+          description: `برگشت و کسر از حساب بانکی ${bankAccount.bankName} بابت ابطال وصول چک ${cheque.sayadId}`,
+          bankAccountId: bankAccount.id,
+          chequeId: cheque.id,
+        },
+      ],
+    },
+    pb,
+  );
+
+  // Decrease bank balance
+  const currentBankBalance = Number(bankAccount.currentBalance ?? bankAccount.balance ?? 0);
+  const nextBankBalance = currentBankBalance - amount;
+
+  await pb.collection('bank_accounts').update(bankAccount.id, {
+    balance: nextBankBalance,
+    currentBalance: nextBankBalance,
+    updatedBy: userId,
+  }).catch(() => undefined);
+
+  return { journal, nextBankBalance };
+}
+
+/**
+ * Reverses Clearing of a Payable Cheque (ابطال پاس شدن چک پرداختنی):
+ * When a previously cleared payable cheque is reverted from cleared back to pending.
+ * - Debit: Bank Account (Bank Account coding ID / 1110) -> INCREASES BANK BALANCE!
+ * - Credit: Notes Payable (2110 اسناد پرداختنی)
+ */
+export async function postPayableChequeUnclear(
+  cheque: {
+    id: string;
+    amount: number;
+    sayadId: string;
+    payableAccountId?: string | null;
+  },
+  bankAccount: BankAccount,
+  customerName: string,
+  userId: string,
+  pb: PocketBase,
+  unclearDateJalali?: string,
+): Promise<{ journal: JournalEntryResult; nextBankBalance: number }> {
+  const amount = Math.round(cheque.amount);
+  const payableAccount = cheque.payableAccountId || SYSTEM_ACCOUNT_CODES.NOTES_PAYABLE;
+  const bankCodingAccount = bankAccount.accountId || SYSTEM_ACCOUNT_CODES.CASH_AND_BANK;
+
+  const desc = `ابطال پاس شدن چک پرداختنی ${cheque.sayadId} عهده ${bankAccount.bankName} (${customerName})`;
+
+  const journal = await postJournalEntry(
+    {
+      entryDateJalali: unclearDateJalali,
+      description: desc,
+      sourceType: 'cheque_unclear',
+      sourceId: cheque.id,
+      sourceKey: `cheque:unclear:${cheque.id}:${Date.now()}`,
+      userId,
+      lines: [
+        {
+          accountId: bankCodingAccount,
+          debit: amount,
+          credit: 0,
+          description: `بازگشت وجه به حساب بانکی ${bankAccount.bankName} بابت ابطال پاس شدن چک ${cheque.sayadId}`,
+          bankAccountId: bankAccount.id,
+          chequeId: cheque.id,
+        },
+        {
+          accountId: payableAccount,
+          debit: 0,
+          credit: amount,
+          description: `احیای اسناد پرداختنی (ابطال پاس شدن چک ${cheque.sayadId})`,
+          bankAccountId: bankAccount.id,
+          chequeId: cheque.id,
+        },
+      ],
+    },
+    pb,
+  );
+
+  // Increase bank balance
+  const currentBankBalance = Number(bankAccount.currentBalance ?? bankAccount.balance ?? 0);
+  const nextBankBalance = currentBankBalance + amount;
+
+  await pb.collection('bank_accounts').update(bankAccount.id, {
+    balance: nextBankBalance,
+    currentBalance: nextBankBalance,
+    updatedBy: userId,
+  }).catch(() => undefined);
+
+  return { journal, nextBankBalance };
+}
+
+/**
+ * Step 4 (Receivable Cheque Return to Drawer / عودت چک دریافتی به صادرکننده):
+ * "عودت چک یعنی برگشت دادن چک بدون وصول اون به طرف حساب و باقی ماندن طلب ما از مشتری چرا که اسناد دریافتنی تبدیل به حساب دریافتنی شده"
+ * - If wasCleared is true:
+ *   Reverses the bank collection (Credit Bank 1110, Debit Customer Account / Accounts Receivable 2120),
+ *   and DECREASES the bank balance!
+ * - If wasCleared is false:
+ *   Credit: Notes Receivable (1120 اسناد دریافتنی)
+ *   Debit: Customer Account / Accounts Receivable (2120 / طلب از مشتری)
+ *   -> This converts the notes receivable into accounts receivable and keeps our claim against the customer active!
+ */
+export async function postReceivableChequeReturnToDrawer(
+  cheque: {
+    id: string;
+    amount: number;
+    sayadId: string;
+    description?: string;
+    receivableAccountId?: string | null;
+  },
+  customer: { id: string; name: string; accountId?: string | null },
+  bankAccount: BankAccount | null,
+  wasCleared: boolean,
+  userId: string,
+  pb: PocketBase,
+  returnedDateJalali?: string,
+): Promise<{ journal: JournalEntryResult; nextBankBalance?: number }> {
+  const amount = Math.round(cheque.amount);
+  const receivableAccount = cheque.receivableAccountId || SYSTEM_ACCOUNT_CODES.NOTES_RECEIVABLE;
+  const customerAccount = customer.accountId || SYSTEM_ACCOUNT_CODES.COUNTERPARTY_LIABILITY;
+
+  const desc = `عودت لاشه چک دریافتی ${cheque.sayadId} به ${customer.name} و تبدیل اسناد دریافتنی به حساب دریافتنی (باقی ماندن طلب از مشتری)`;
+
+  if (wasCleared && bankAccount) {
+    const bankCodingAccount = bankAccount.accountId || SYSTEM_ACCOUNT_CODES.CASH_AND_BANK;
+    const journal = await postJournalEntry(
+      {
+        entryDateJalali: returnedDateJalali,
+        description: desc,
+        sourceType: 'cheque_return_to_drawer',
+        sourceId: cheque.id,
+        sourceKey: `cheque:return_to_drawer:${cheque.id}:${Date.now()}`,
+        userId,
+        lines: [
+          {
+            accountId: customerAccount,
+            debit: amount,
+            credit: 0,
+            description: `احیای طلب از طرف‌حساب ${customer.name} بابت عودت چک صیادی ${cheque.sayadId} (حساب دریافتنی)`,
+            partyId: customer.id,
+            chequeId: cheque.id,
+          },
+          {
+            accountId: bankCodingAccount,
+            debit: 0,
+            credit: amount,
+            description: `برگشت وجه از حساب بانکی ${bankAccount.bankName} بابت عودت چک وصول‌شده`,
+            bankAccountId: bankAccount.id,
+            chequeId: cheque.id,
+          },
+        ],
+      },
+      pb,
+    );
+
+    const currentBankBalance = Number(bankAccount.currentBalance ?? bankAccount.balance ?? 0);
+    const nextBankBalance = currentBankBalance - amount;
+    await pb.collection('bank_accounts').update(bankAccount.id, {
+      balance: nextBankBalance,
+      currentBalance: nextBankBalance,
+      updatedBy: userId,
+    }).catch(() => undefined);
+
+    return { journal, nextBankBalance };
+  }
+
+  // Not cleared: Debit Customer (Accounts Receivable), Credit Notes Receivable (1120)
+  const journal = await postJournalEntry(
+    {
+      entryDateJalali: returnedDateJalali,
+      description: desc,
+      sourceType: 'cheque_return_to_drawer',
+      sourceId: cheque.id,
+      sourceKey: `cheque:return_to_drawer:${cheque.id}:${Date.now()}`,
+      userId,
+      lines: [
+        {
+          accountId: customerAccount,
+          debit: amount,
+          credit: 0,
+          description: `احیای طلب از طرف‌حساب ${customer.name} بابت عودت لاشه چک دریافتی (تبدیل به حساب دریافتنی)`,
+          partyId: customer.id,
+          chequeId: cheque.id,
+        },
+        {
+          accountId: receivableAccount,
+          debit: 0,
+          credit: amount,
+          description: `تسویه اسناد دریافتنی بابت عودت چک صیادی ${cheque.sayadId} به صادرکننده`,
+          chequeId: cheque.id,
+        },
+      ],
+    },
+    pb,
+  );
+
+  return { journal };
 }
 
 /**
