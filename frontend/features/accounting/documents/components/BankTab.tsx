@@ -18,7 +18,13 @@ import {
 import Link from 'next/link';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
-import { formatBankSelectOptionLabel, formatRials, getConvertedBankAmount, type BankAccount } from '@/lib/bank';
+import {
+  formatBankSelectOptionLabel,
+  formatRials,
+  getConvertedBankAmount,
+  isDomesticBankCurrency,
+  type BankAccount,
+} from '@/lib/bank';
 import type { Customer } from '@/lib/customer';
 import { formatJalaliDate, isTodayOrPastJalaliDate, normalizeDigits } from '@/lib/jalali';
 import {
@@ -89,12 +95,33 @@ export function getInitialCachedBanks(): BankAccount[] | null {
 export async function fetchBankAccounts(forceRefresh = false): Promise<BankAccount[]> {
   const existing = getInitialCachedBanks();
   if (!forceRefresh && existing) {
+    // Return cached immediately for speed, but revalidate in background if not already in flight
+    if (!banksFetchPromise) {
+      banksFetchPromise = fetch('/api/banks', { cache: 'no-store' })
+        .then(async (response) => {
+          const data = (await response.json()) as { banks?: BankAccount[]; message?: string };
+          if (response.ok && data.banks) {
+            cachedBanks = data.banks;
+            if (typeof window !== 'undefined') {
+              try {
+                localStorage.setItem(BANKS_CACHE_STORAGE_KEY, JSON.stringify(data.banks));
+                window.dispatchEvent(new CustomEvent('zarfolio:banks_cache_invalidated'));
+              } catch {}
+            }
+          }
+          return data.banks ?? [];
+        })
+        .catch(() => existing)
+        .finally(() => {
+          banksFetchPromise = null;
+        });
+    }
     return existing;
   }
   if (!forceRefresh && banksFetchPromise) {
     return banksFetchPromise;
   }
-  banksFetchPromise = fetch('/api/banks', { cache: forceRefresh ? 'no-cache' : 'default' })
+  banksFetchPromise = fetch('/api/banks', { cache: 'no-store' })
     .then(async (response) => {
       const data = (await response.json()) as { banks?: BankAccount[]; message?: string };
       if (!response.ok) throw new Error(data.message ?? 'دریافت حساب‌های بانکی انجام نشد.');
@@ -293,16 +320,22 @@ export default function BankTab({
   // Bank accounts with realtime effective balance taking committed lines into account
   const effectiveBanks = useMemo(() => {
     return banks.map((bank) => {
-      const delta = committedBankDeltas.get(bank.id) || 0;
+      const deltaInBase = committedBankDeltas.get(bank.id) || 0;
       const baseBal = bank.currentBalance ?? bank.balance ?? 0;
-      const adjusted = baseBal + delta;
+      // If bank is domestic (persisted in IRR) and input is in IRT (Toman), delta is in IRT.
+      // Convert delta to IRR before adjusting bank balance so units match!
+      const isDomestic = !bank.currency || isDomesticBankCurrency(bank.currency);
+      const deltaInBankCurrency = (isDomestic && effectiveBaseCurrency === 'IRT')
+        ? deltaInBase * 10
+        : deltaInBase;
+      const adjusted = baseBal + deltaInBankCurrency;
       return {
         ...bank,
         balance: adjusted,
         currentBalance: adjusted,
       };
     });
-  }, [banks, committedBankDeltas]);
+  }, [banks, committedBankDeltas, effectiveBaseCurrency]);
 
   const checkPaymentBanks = useMemo(() => {
     return effectiveBanks.filter((b) => Boolean(b.hasCheckbook || b.hasVirtualCheck));
@@ -709,6 +742,7 @@ export default function BankTab({
                   onChange={(bankId) => setSelectedSource(bankId)}
                   banks={checkPaymentBanks}
                   placeholder="انتخاب حساب بانکی..."
+                  baseCurrency={effectiveBaseCurrency}
                 />
               )}
             </Field>
@@ -825,6 +859,7 @@ export default function BankTab({
                 onChange={(bankId) => setSelectedSource(bankId)}
                 banks={effectiveBanks}
                 placeholder="انتخاب حساب بانکی..."
+                baseCurrency={effectiveBaseCurrency}
               />
             </Field>
 
@@ -948,6 +983,7 @@ export default function BankTab({
                 onChange={(bankId) => setSelectedSource(bankId)}
                 banks={effectiveBanks}
                 placeholder="انتخاب حساب بانکی..."
+                baseCurrency={effectiveBaseCurrency}
               />
             </Field>
 

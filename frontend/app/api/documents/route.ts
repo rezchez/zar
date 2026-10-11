@@ -594,6 +594,17 @@ export async function POST(request: Request) {
               : convertTomanToRial(detailTotal || rawLineRial))
           : (rawLineRial || detailTotal);
 
+        if (details.transferFee) {
+          const rawFee = Math.abs(readAmount(details.transferFee) || 0);
+          if (rawFee > 0) {
+            const effectiveFeeIrr = isToman && !details.transferFeeInIrr
+              ? convertTomanToRial(rawFee)
+              : rawFee;
+            details.transferFee = String(Math.round(effectiveFeeIrr));
+            details.transferFeeInIrr = true;
+          }
+        }
+
         const bankDirection = lineNature === 'received' ? 1 : -1;
         lineAmounts.rialAmount = Math.round(effectiveAbsRial) * bankDirection;
         details.rialAmountInIrr = true;

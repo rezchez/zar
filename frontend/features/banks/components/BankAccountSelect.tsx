@@ -6,6 +6,7 @@ import BankLogo from '@/src/components/documents/BankLogo';
 import {
   type BankAccount,
   getAccountTypeLabel,
+  getConvertedBankAmount,
 } from '@/lib/bank';
 import { formatCurrencyAmount } from '@/lib/money';
 
@@ -19,6 +20,8 @@ export interface BankAccountSelectProps {
   triggerClassName?: string;
   id?: string;
   error?: boolean;
+  baseCurrency?: 'IRR' | 'IRT';
+  currencies?: Array<{ id: string; code: string; name: string; symbol: string }>;
 }
 
 export default function BankAccountSelect({
@@ -31,6 +34,8 @@ export default function BankAccountSelect({
   triggerClassName = '',
   id,
   error = false,
+  baseCurrency,
+  currencies,
 }: BankAccountSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -69,7 +74,14 @@ export default function BankAccountSelect({
     const branchPart = cleanBranch ? ` ${cleanBranch}` : '';
     const typePart = bank.accountType && bank.accountType !== 'current' ? ` (${getAccountTypeLabel(bank.accountType)})` : '';
     const accNum = bank.accountNumber ? ` ش.ح ${bank.accountNumber}` : '';
-    const formattedBalance = formatCurrencyAmount(bank.currentBalance ?? bank.balance, bank.currency);
+    const rawBal = bank.currentBalance ?? bank.balance ?? 0;
+    let formattedBalance: string;
+    if (baseCurrency) {
+      const converted = getConvertedBankAmount(rawBal, bank.currency, baseCurrency, currencies);
+      formattedBalance = formatCurrencyAmount(converted.amount, converted.currencyCode as 'IRR' | 'IRT');
+    } else {
+      formattedBalance = formatCurrencyAmount(rawBal, bank.currency);
+    }
     return {
       title: `${cleanBankName}${branchPart}${typePart}`,
       accountNumber: accNum,

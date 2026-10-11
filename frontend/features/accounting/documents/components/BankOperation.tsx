@@ -379,6 +379,7 @@ export default function BankOperation({
                   banks={checkPaymentBanks}
                   placeholder="انتخاب حساب بانکی..."
                   triggerClassName="h-12 text-sm"
+                  baseCurrency={effectiveBaseCurrency}
                 />
               )}
             </div>
