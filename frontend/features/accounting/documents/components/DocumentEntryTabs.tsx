@@ -13,11 +13,13 @@ import {
   Wrench,
   type LucideIcon,
 } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { motion } from 'framer-motion';
 
 import type { Customer } from '@/lib/customer';
 import BankOperation from '@/src/components/documents/BankOperation';
+import { fetchBankAccounts } from '@/src/components/documents/BankTab';
+import { fetchCashFunds } from '@/src/components/documents/CashTab';
 import CoinEntryComponent from '@/src/components/documents/CoinEntryComponent';
 import PlaceholderTab from '@/src/components/documents/PlaceholderTab';
 
@@ -78,6 +80,11 @@ export default function DocumentEntryTabs({
     if (isEditingMode) return;
     onActiveTabChange?.(tab);
   }
+
+  useEffect(() => {
+    void fetchBankAccounts(false);
+    void fetchCashFunds(false);
+  }, []);
 
   const dynamicCashLabel = cashTabLabel ?? (nature === 'received' ? 'ورود وجه نقد' : 'خروج وجه نقد');
 
@@ -172,6 +179,13 @@ export default function DocumentEntryTabs({
               onClick={(e) => {
                 e.preventDefault();
                 selectTab(tab.id);
+              }}
+              onMouseEnter={() => {
+                if (tab.id === 'bank') {
+                  void fetchBankAccounts(false);
+                } else if (tab.id === 'cash') {
+                  void fetchCashFunds(false);
+                }
               }}
               aria-selected={isActive}
               tabIndex={isActive ? 0 : -1}

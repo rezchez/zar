@@ -187,10 +187,10 @@ export function actualWeightFromMoney(
 }
 
 export function actualWeightForLine(line: DocumentLine, baseKarat = 750): number {
-  if (line.details.calculationMethod === 'money') {
+  if (line.details?.calculationMethod === 'money') {
     return actualWeightFromMoney(line.details, baseKarat);
   }
-  return numberValue(line.details.rawWeight);
+  return numberValue(line.details?.rawWeight);
 }
 
 export interface DateDiffInfo {

@@ -44,7 +44,15 @@ import {
   Columns,
   BringToFront,
   SendToBack,
+  Database,
+  Search,
+  GripVertical,
+  QrCode,
+  Link as LinkIcon,
+  Hash,
+  Globe,
 } from 'lucide-react';
+import { QrCodeSvg } from '@/lib/qr-code';
 import {
   type InvoicePrintTemplate,
   type InvoicePrintElement,
@@ -60,10 +68,19 @@ import {
   createStandardElements,
   createCustomTextElement,
   createShapeElement,
+  createCustomTableElement,
+  createDbFieldElement,
   DEFAULT_TABLE_COLUMNS,
   CUSTOMER_DEFAULT_TABLE_COLUMNS,
+  AVAILABLE_DATABASE_FIELDS,
+  type AvailableDataField,
+  type CustomTableRowField,
+  type CustomTableConfiguration,
+  type InvoiceCustomTableField,
   type InvoiceTableColumnConfig,
   type InvoiceTableConfiguration,
+  type QrContentType,
+  resolveQrCodeValue,
   getFontWeightCss,
 } from '@/lib/print-templates';
 import { useAppSettings } from '@/src/components/SettingsProvider';
@@ -146,6 +163,11 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
   // Menu and Table Subtab state
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const [tableSubTab, setTableSubTab] = useState<'columns' | 'borders' | 'colors'>('columns');
+  const [customTableSubTab, setCustomTableSubTab] = useState<'fields' | 'layout' | 'appearance'>('fields');
+  const [isFieldPickerOpen, setIsFieldPickerOpen] = useState(false);
+  const [fieldPickerMode, setFieldPickerMode] = useState<'custom_table' | 'standalone'>('custom_table');
+  const [fieldSearchQuery, setFieldSearchQuery] = useState('');
+  const [fieldFilterCategory, setFieldFilterCategory] = useState<string>('all');
 
   const canvasContainerRef = useRef<HTMLDivElement>(null);
 
@@ -157,7 +179,7 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
       }
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedElementId) {
         const target = activeTemplate?.elements.find((el) => el.id === selectedElementId);
-        if (target && (target.type.startsWith('shape_') || target.type === 'custom_text')) {
+        if (target && (target.type.startsWith('shape_') || target.type === 'custom_text' || target.type === 'custom_table')) {
           e.preventDefault();
           updateActiveTemplate((prev) => ({
             ...prev,
@@ -1011,6 +1033,110 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
     toast.success('افزودن شکل', `شکل «${label}» با موفقیت به فاکتور افزوده شد.`);
   };
 
+  // Add Custom Table Element (Completely Blank per user requirement)
+  const handleAddCustomTable = () => {
+    if (!activeTemplate) return;
+    const newEl = createCustomTableElement(10, 160, pageDimensions.widthMm - 20, 32);
+    updateActiveTemplate((prev) => ({
+      ...prev,
+      elements: [...prev.elements, newEl],
+    }));
+    setSelectedElementId(newEl.id);
+    setIsAddMenuOpen(false);
+    toast.success('افزودن جدول', 'جدول خام محاسبات و مانده‌ها افزوده شد. از پنل تنظیمات فیلدهای مورد نظر خود را اضافه کنید.');
+  };
+
+  // Add Standalone Database Field Element (Freestanding anywhere on canvas per user requirement)
+  const handleAddStandaloneDbField = (fieldKey: string) => {
+    if (!activeTemplate) return;
+    const newEl = createDbFieldElement(fieldKey, 20, 60);
+    updateActiveTemplate((prev) => ({
+      ...prev,
+      elements: [...prev.elements, newEl],
+    }));
+    setSelectedElementId(newEl.id);
+    setIsFieldPickerOpen(false);
+    setIsAddMenuOpen(false);
+    const def = AVAILABLE_DATABASE_FIELDS.find((f) => f.key === fieldKey);
+    toast.success('افزودن فیلد داده', `فیلد «${def?.label || fieldKey}» به فاکتور افزوده شد. می‌توانید آن را به هر نقطه دلخواه جابجا کنید.`);
+  };
+
+  // Helper to update custom table content
+  const updateCustomTable = (updater: (prevTable: CustomTableConfiguration) => CustomTableConfiguration) => {
+    if (!selectedElement || selectedElement.type !== 'custom_table') return;
+    updateActiveTemplate((prev) => ({
+      ...prev,
+      elements: prev.elements.map((el) => {
+        if (el.id !== selectedElement.id) return el;
+        const currentConfig: CustomTableConfiguration = el.content?.customTable || {
+          fields: [],
+          layout: 'rows',
+          showHeader: true,
+          headerLabelText: 'شرح شاخص',
+          headerValueText: 'مقدار / مانده',
+          borderColor: '#cbd5e1',
+          borderWidthMm: 0.3,
+          borderStyle: 'solid',
+          borderRadiusMm: 1.5,
+          headerBackgroundColor: '#f1f5f9',
+          headerTextColor: '#0f172a',
+          bodyTextColor: '#1e293b',
+          stripedRows: true,
+          alternateRowColor: '#f8fafc',
+        };
+        const updatedConfig = updater(currentConfig);
+        return {
+          ...el,
+          content: {
+            ...el.content,
+            customTable: updatedConfig,
+          },
+        };
+      }),
+    }));
+  };
+
+  const handleAddDatabaseFieldToCustomTable = (fieldKey: string) => {
+    if (!selectedElement || selectedElement.type !== 'custom_table') return;
+    const rand = Math.random().toString(36).slice(2, 6);
+    const meta = AVAILABLE_DATABASE_FIELDS.find((f) => f.key === fieldKey);
+
+    const newField: CustomTableRowField = {
+      id: `f_${Date.now()}_${rand}`,
+      key: fieldKey,
+      label: meta?.label || 'شاخص جدید',
+      unit: meta?.defaultUnit || '',
+      visible: true,
+    };
+
+    updateCustomTable((tbl) => ({
+      ...tbl,
+      fields: [...tbl.fields, newField],
+    }));
+    setIsFieldPickerOpen(false);
+    toast.success('افزودن فیلد', `فیلد «${newField.label}» به جدول افزوده شد.`);
+  };
+
+  const handleAddCustomRowToCustomTable = () => {
+    if (!selectedElement || selectedElement.type !== 'custom_table') return;
+    const rand = Math.random().toString(36).slice(2, 6);
+    const newField: CustomTableRowField = {
+      id: `f_${Date.now()}_${rand}`,
+      key: 'custom',
+      label: 'سطر دلخواه',
+      customValue: 'متن یا مقدار دستی',
+      unit: '',
+      visible: true,
+    };
+
+    updateCustomTable((tbl) => ({
+      ...tbl,
+      fields: [...tbl.fields, newField],
+    }));
+    setIsFieldPickerOpen(false);
+    toast.success('افزودن سطر دلخواه', 'سطر سفارشی به جدول افزوده شد.');
+  };
+
   // Duplicate Element
   const handleDuplicateElement = (idToDuplicate?: string) => {
     if (!activeTemplate) return;
@@ -1401,6 +1527,26 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
                       <FileText size={14} className="text-amber-600" />
                       <span>متن دلخواه جدید</span>
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFieldPickerMode('standalone');
+                        setIsFieldPickerOpen(true);
+                        setIsAddMenuOpen(false);
+                      }}
+                      className="w-full flex items-center gap-2 p-1.5 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-emerald-500/15 hover:text-emerald-700 dark:hover:text-emerald-300 font-bold transition-colors"
+                    >
+                      <Database size={14} className="text-emerald-600" />
+                      <span>فیلد داده از دیتابیس (آزاد)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleAddCustomTable}
+                      className="w-full flex items-center gap-2 p-1.5 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-teal-500/15 hover:text-teal-700 dark:hover:text-teal-300 font-bold transition-colors"
+                    >
+                      <Table size={14} className="text-teal-600" />
+                      <span>جدول محاسبات و مانده‌ها (خام)</span>
+                    </button>
                     <div className="h-px bg-slate-200 dark:bg-slate-800 my-1" />
                     <button
                       type="button"
@@ -1455,7 +1601,7 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
             <div className="space-y-1 max-h-[320px] overflow-y-auto pr-1">
               {activeTemplate.elements.map((el) => {
                 const isSelected = selectedElementIds.includes(el.id);
-                const isCustomOrShape = el.type === 'custom_text' || el.type.startsWith('shape_');
+                const isCustomOrShape = el.type === 'custom_text' || el.type === 'custom_table' || el.type === 'db_field' || el.type.startsWith('shape_');
                 return (
                   <div
                     key={el.id}
@@ -1469,6 +1615,10 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
                     <div className="flex items-center gap-1.5 truncate flex-1">
                       {el.type === 'custom_text' ? (
                         <FileText size={13} className="text-amber-500 shrink-0" />
+                      ) : el.type === 'custom_table' ? (
+                        <Table size={13} className="text-emerald-500 shrink-0" />
+                      ) : el.type === 'db_field' ? (
+                        <Database size={13} className="text-emerald-500 shrink-0" />
                       ) : el.type === 'shape_rectangle' ? (
                         <Square size={13} className="text-blue-500 shrink-0" />
                       ) : el.type === 'shape_circle' ? (
@@ -1484,7 +1634,7 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
                       ) : (
                         <Layers size={13} className="text-slate-400 shrink-0" />
                       )}
-                      <span className="truncate">{ELEMENT_LABELS[el.type] || el.id}</span>
+                      <span className="truncate">{el.type === 'db_field' && el.content?.fieldLabel ? `داده: ${el.content.fieldLabel}` : (ELEMENT_LABELS[el.type] || el.id)}</span>
                     </div>
 
                     <div className="flex items-center gap-1 shrink-0">
@@ -2041,7 +2191,7 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
                     >
                       <Copy size={13} />
                     </button>
-                    {(selectedElement.type === 'custom_text' || selectedElement.type.startsWith('shape_')) && (
+                    {(selectedElement.type === 'custom_text' || selectedElement.type === 'custom_table' || selectedElement.type === 'db_field' || selectedElement.type.startsWith('shape_')) && (
                       <button
                         type="button"
                         onClick={() => handleDeleteElement(selectedElement.id)}
@@ -2327,6 +2477,518 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
                           تضمین عیار ۷۵۰
                         </button>
                       </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* SPECIALIZED: STANDALONE DATABASE FIELD INSPECTOR */}
+                {selectedElement.type === 'db_field' && (
+                  <div className="space-y-3 p-3 bg-slate-50 dark:bg-slate-900 border border-emerald-500/40 rounded-xl">
+                    <div className="flex items-center justify-between pb-1 border-b border-slate-200 dark:border-slate-800">
+                      <span className="font-extrabold text-[11px] text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5">
+                        <Database size={14} />
+                        تنظیمات فیلد داده داینامیک
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFieldPickerMode('standalone');
+                          setIsFieldPickerOpen(true);
+                        }}
+                        className="text-[9px] font-bold px-2 py-0.5 rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-700 dark:text-emerald-300 transition-colors"
+                      >
+                        کاتالوگ فیلدها
+                      </button>
+                    </div>
+
+                    {/* Current Field Selector */}
+                    <label className="account-field">
+                      <span className="text-[10px]">شاخص متصل به دیتابیس</span>
+                      <select
+                        value={selectedElement.content?.fieldKey || ''}
+                        onChange={(e) => {
+                          const key = e.target.value;
+                          const def = AVAILABLE_DATABASE_FIELDS.find((f) => f.key === key);
+                          updateActiveTemplate((prev) => ({
+                            ...prev,
+                            elements: prev.elements.map((el) =>
+                              el.id === selectedElement.id
+                                ? {
+                                    ...el,
+                                    label: `داده: ${def?.label || key}`,
+                                    content: {
+                                      ...el.content,
+                                      fieldKey: key,
+                                      fieldLabel: def?.label || el.content?.fieldLabel || '',
+                                      fieldUnit: def?.defaultUnit ?? el.content?.fieldUnit,
+                                    },
+                                  }
+                                : el,
+                            ),
+                          }));
+                        }}
+                        className="text-xs"
+                      >
+                        {AVAILABLE_DATABASE_FIELDS.map((f) => (
+                          <option key={f.key} value={f.key}>
+                            {f.categoryLabel} : {f.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    {/* SPECIALIZED QR CODE SETTINGS */}
+                    {selectedElement.content?.fieldKey === 'custom_qrcode' && (() => {
+                      const currentQrType: QrContentType = (selectedElement.content?.qrContentType as QrContentType) || 'invoice_number';
+                      const rawText = selectedElement.content?.text || '';
+                      const resolvedSample = resolveQrCodeValue(currentQrType, rawText, {
+                        documentNumber: '1403-1002',
+                        customerName: 'آقای محمدی',
+                        date: '1403/07/19',
+                      });
+
+                      return (
+                        <div className="space-y-2.5 p-2.5 bg-amber-50/70 dark:bg-amber-950/20 border border-amber-300 dark:border-amber-800/60 rounded-xl">
+                          <div className="flex items-center gap-1.5 text-[11px] font-extrabold text-amber-800 dark:text-amber-300">
+                            <QrCode size={14} />
+                            <span>تنظیمات محتوای بارکد QR</span>
+                          </div>
+
+                          {/* 3-way Mode Selector */}
+                          <div className="grid grid-cols-3 gap-1 p-0.5 bg-slate-200/70 dark:bg-slate-800 rounded-lg text-[9.5px] font-bold text-center">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                updateActiveTemplate((prev) => ({
+                                  ...prev,
+                                  elements: prev.elements.map((el) =>
+                                    el.id === selectedElement.id
+                                      ? {
+                                          ...el,
+                                          content: { ...el.content, qrContentType: 'invoice_number' },
+                                        }
+                                      : el,
+                                  ),
+                                }));
+                              }}
+                              className={`py-1.5 px-1 rounded-md transition-all flex flex-col items-center gap-0.5 ${
+                                currentQrType === 'invoice_number'
+                                  ? 'bg-white dark:bg-slate-900 text-amber-700 dark:text-amber-300 shadow-sm'
+                                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                              }`}
+                            >
+                              <Hash size={13} />
+                              <span>شماره فاکتور</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                updateActiveTemplate((prev) => ({
+                                  ...prev,
+                                  elements: prev.elements.map((el) =>
+                                    el.id === selectedElement.id
+                                      ? {
+                                          ...el,
+                                          content: {
+                                            ...el.content,
+                                            qrContentType: 'url',
+                                            text: el.content?.text || 'https://zarfolio.ir/invoice/{invoice_number}',
+                                          },
+                                        }
+                                      : el,
+                                  ),
+                                }));
+                              }}
+                              className={`py-1.5 px-1 rounded-md transition-all flex flex-col items-center gap-0.5 ${
+                                currentQrType === 'url'
+                                  ? 'bg-white dark:bg-slate-900 text-amber-700 dark:text-amber-300 shadow-sm'
+                                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                              }`}
+                            >
+                              <Globe size={13} />
+                              <span>لینک اینترنتی</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                updateActiveTemplate((prev) => ({
+                                  ...prev,
+                                  elements: prev.elements.map((el) =>
+                                    el.id === selectedElement.id
+                                      ? {
+                                          ...el,
+                                          content: {
+                                            ...el.content,
+                                            qrContentType: 'custom_text',
+                                            text: el.content?.text || 'فاکتور فروش طلا | سند {invoice_number}',
+                                          },
+                                        }
+                                      : el,
+                                  ),
+                                }));
+                              }}
+                              className={`py-1.5 px-1 rounded-md transition-all flex flex-col items-center gap-0.5 ${
+                                currentQrType === 'custom_text'
+                                  ? 'bg-white dark:bg-slate-900 text-amber-700 dark:text-amber-300 shadow-sm'
+                                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                              }`}
+                            >
+                              <Type size={13} />
+                              <span>متن دلخواه</span>
+                            </button>
+                          </div>
+
+                          {/* Detail Input for URL or Custom Text */}
+                          {currentQrType === 'invoice_number' && (
+                            <div className="p-2 bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-900/50 rounded-lg text-[9.5px] text-slate-600 dark:text-slate-300 leading-relaxed">
+                              ⚡ <strong>شماره سند به صورت خودکار:</strong> در چاپ هر فاکتور، بارکد QR دقیقا برابر با شماره همان سند تولید می‌شود و نیازی به ورود دستی نیست.
+                            </div>
+                          )}
+
+                          {currentQrType === 'url' && (
+                            <div className="space-y-1.5">
+                              <label className="account-field">
+                                <span className="text-[9px]">آدرس اینترنتی یا لینک استعلام (URL)</span>
+                                <input
+                                  type="text"
+                                  dir="ltr"
+                                  value={rawText}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    updateActiveTemplate((prev) => ({
+                                      ...prev,
+                                      elements: prev.elements.map((el) =>
+                                        el.id === selectedElement.id
+                                          ? {
+                                              ...el,
+                                              content: { ...el.content, text: val },
+                                            }
+                                          : el,
+                                      ),
+                                    }));
+                                  }}
+                                  placeholder="https://your-site.ir/invoices/{invoice_number}"
+                                  className="text-xs font-mono"
+                                />
+                              </label>
+                              <div className="flex flex-wrap items-center gap-1 text-[8.5px]">
+                                <span className="text-slate-500">الگوهای آماده:</span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    updateActiveTemplate((prev) => ({
+                                      ...prev,
+                                      elements: prev.elements.map((el) =>
+                                        el.id === selectedElement.id
+                                          ? { ...el, content: { ...el.content, text: 'https://zarfolio.ir/invoice/{invoice_number}' } }
+                                          : el,
+                                      ),
+                                    }));
+                                  }}
+                                  className="px-1.5 py-0.5 bg-slate-200 dark:bg-slate-800 rounded hover:bg-amber-200 text-slate-700 dark:text-slate-300 font-bold"
+                                >
+                                  استعلام زرفولیو
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    updateActiveTemplate((prev) => ({
+                                      ...prev,
+                                      elements: prev.elements.map((el) =>
+                                        el.id === selectedElement.id
+                                          ? { ...el, content: { ...el.content, text: 'https://instagram.com/' } }
+                                          : el,
+                                      ),
+                                    }));
+                                  }}
+                                  className="px-1.5 py-0.5 bg-slate-200 dark:bg-slate-800 rounded hover:bg-amber-200 text-slate-700 dark:text-slate-300 font-bold"
+                                >
+                                  پیج اینستاگرام
+                                </button>
+                              </div>
+                              <p className="text-[8.5px] text-slate-500 dark:text-slate-400">
+                                💡 می‌توانید در آدرس از کلمه <code>{'{invoice_number}'}</code> استفاده کنید تا خودکار شماره فاکتور جایگزین شود.
+                              </p>
+                            </div>
+                          )}
+
+                          {currentQrType === 'custom_text' && (
+                            <div className="space-y-1.5">
+                              <label className="account-field">
+                                <span className="text-[9px]">متن دلخواه بارکد دو بعدی</span>
+                                <textarea
+                                  rows={2}
+                                  value={rawText}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    updateActiveTemplate((prev) => ({
+                                      ...prev,
+                                      elements: prev.elements.map((el) =>
+                                        el.id === selectedElement.id
+                                          ? {
+                                              ...el,
+                                              content: { ...el.content, text: val },
+                                            }
+                                          : el,
+                                      ),
+                                    }));
+                                  }}
+                                  placeholder="مثال: فاکتور طلا و جواهر | سند: {invoice_number}"
+                                  className="text-xs"
+                                />
+                              </label>
+                              <div className="flex flex-wrap items-center gap-1 text-[8.5px]">
+                                <span className="text-slate-500">درج متغیر:</span>
+                                {[
+                                  { tag: '{invoice_number}', label: 'شماره فاکتور' },
+                                  { tag: '{date}', label: 'تاریخ' },
+                                  { tag: '{customer_name}', label: 'نام خریدار' },
+                                ].map((v) => (
+                                  <button
+                                    key={v.tag}
+                                    type="button"
+                                    onClick={() => {
+                                      const newT = rawText ? `${rawText} ${v.tag}` : v.tag;
+                                      updateActiveTemplate((prev) => ({
+                                        ...prev,
+                                        elements: prev.elements.map((el) =>
+                                          el.id === selectedElement.id
+                                            ? { ...el, content: { ...el.content, text: newT } }
+                                            : el,
+                                        ),
+                                      }));
+                                    }}
+                                    className="px-1.5 py-0.5 bg-slate-200 dark:bg-slate-800 rounded hover:bg-amber-200 text-slate-700 dark:text-slate-300 font-bold"
+                                  >
+                                    + {v.label}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Real-time QR Preview & Scanned Value Inspector */}
+                          <div className="flex items-center gap-2.5 p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg">
+                            <div className="shrink-0 w-16 h-16 flex items-center justify-center bg-white p-1 border-2 border-slate-200 rounded-lg shadow-xs">
+                              <QrCodeSvg value={resolvedSample} size={56} backgroundColor="#ffffff" color="#000000" />
+                            </div>
+                            <div className="overflow-hidden min-w-0 flex-1 text-[9px]">
+                              <span className="text-slate-500 font-bold block">محتوای اسکن (پیش‌نمایش زنده):</span>
+                              <span className="font-mono font-bold text-slate-800 dark:text-slate-200 truncate block mt-1 bg-slate-50 dark:bg-slate-800 p-1.5 rounded border border-slate-200 dark:border-slate-700 select-all" dir="ltr" title={resolvedSample}>
+                                {resolvedSample}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Label display & custom text */}
+                    <div className="space-y-1.5 pt-1 border-t border-slate-200/60 dark:border-slate-800/60">
+                      <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300">
+                        <input
+                          type="checkbox"
+                          checked={selectedElement.content?.showFieldLabel !== false}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            updateActiveTemplate((prev) => ({
+                              ...prev,
+                              elements: prev.elements.map((el) =>
+                                el.id === selectedElement.id
+                                  ? {
+                                      ...el,
+                                      content: { ...el.content, showFieldLabel: checked },
+                                    }
+                                  : el,
+                              ),
+                            }));
+                          }}
+                          className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                        />
+                        <span className="text-[10px] font-bold">نمایش عنوان / برچسب شاخص</span>
+                      </label>
+
+                      {selectedElement.content?.showFieldLabel !== false && (
+                        <label className="account-field">
+                          <span className="text-[9px]">متن عنوان شاخص</span>
+                          <input
+                            type="text"
+                            value={selectedElement.content?.fieldLabel || ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              updateActiveTemplate((prev) => ({
+                                ...prev,
+                                elements: prev.elements.map((el) =>
+                                  el.id === selectedElement.id
+                                    ? {
+                                        ...el,
+                                        content: { ...el.content, fieldLabel: val },
+                                      }
+                                    : el,
+                                ),
+                              }));
+                            }}
+                            placeholder="مثال: مانده نهایی طلا"
+                          />
+                        </label>
+                      )}
+                    </div>
+
+                    {/* Unit display & custom unit */}
+                    <div className="space-y-1.5 pt-1 border-t border-slate-200/60 dark:border-slate-800/60">
+                      <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300">
+                        <input
+                          type="checkbox"
+                          checked={selectedElement.content?.showFieldUnit !== false}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            updateActiveTemplate((prev) => ({
+                              ...prev,
+                              elements: prev.elements.map((el) =>
+                                el.id === selectedElement.id
+                                  ? {
+                                      ...el,
+                                      content: { ...el.content, showFieldUnit: checked },
+                                    }
+                                  : el,
+                              ),
+                            }));
+                          }}
+                          className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                        />
+                        <span className="text-[10px] font-bold">نمایش پسوند واحد سنجش</span>
+                      </label>
+
+                      {selectedElement.content?.showFieldUnit !== false && (
+                        <label className="account-field">
+                          <span className="text-[9px]">واحد سنجش</span>
+                          <input
+                            type="text"
+                            value={selectedElement.content?.fieldUnit || ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              updateActiveTemplate((prev) => ({
+                                ...prev,
+                                elements: prev.elements.map((el) =>
+                                  el.id === selectedElement.id
+                                    ? {
+                                        ...el,
+                                        content: { ...el.content, fieldUnit: val },
+                                      }
+                                    : el,
+                                ),
+                              }));
+                            }}
+                            placeholder="مثال: گرم، تومان"
+                          />
+                        </label>
+                      )}
+                    </div>
+
+                    {/* Border & Corner Rounding */}
+                    <div className="space-y-2 pt-1 border-t border-slate-200/60 dark:border-slate-800/60">
+                      <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400">کادر و گوشه‌ها:</span>
+                      <div className="grid grid-cols-2 gap-2">
+                        <label className="account-field">
+                          <span className="text-[9px]">ضخامت کادر (mm)</span>
+                          <input
+                            type="number"
+                            step="0.1"
+                            min="0"
+                            max="5"
+                            value={selectedElement.style.borderWidthMm ?? 0.3}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              updateActiveTemplate((prev) => ({
+                                ...prev,
+                                elements: prev.elements.map((el) =>
+                                  el.id === selectedElement.id
+                                    ? { ...el, style: { ...el.style, borderWidthMm: val } }
+                                    : el,
+                                ),
+                              }));
+                            }}
+                          />
+                        </label>
+
+                        <label className="account-field">
+                          <span className="text-[9px]">گردی گوشه‌ها (mm)</span>
+                          <input
+                            type="number"
+                            step="0.5"
+                            min="0"
+                            max="15"
+                            value={selectedElement.style.borderRadiusMm ?? 2}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              updateActiveTemplate((prev) => ({
+                                ...prev,
+                                elements: prev.elements.map((el) =>
+                                  el.id === selectedElement.id
+                                    ? { ...el, style: { ...el.style, borderRadiusMm: val } }
+                                    : el,
+                                ),
+                              }));
+                            }}
+                          />
+                        </label>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <label className="account-field">
+                          <span className="text-[9px]">رنگ کادر دور</span>
+                          <input
+                            type="color"
+                            value={selectedElement.style.borderColor || '#cbd5e1'}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              updateActiveTemplate((prev) => ({
+                                ...prev,
+                                elements: prev.elements.map((el) =>
+                                  el.id === selectedElement.id
+                                    ? { ...el, style: { ...el.style, borderColor: val } }
+                                    : el,
+                                ),
+                              }));
+                            }}
+                            className="h-8 p-1 cursor-pointer"
+                          />
+                        </label>
+
+                        <label className="account-field">
+                          <span className="text-[9px]">فاصله داخلی (padding mm)</span>
+                          <input
+                            type="number"
+                            step="0.5"
+                            min="0"
+                            max="10"
+                            value={selectedElement.style.paddingMm ?? 1.5}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              updateActiveTemplate((prev) => ({
+                                ...prev,
+                                elements: prev.elements.map((el) =>
+                                  el.id === selectedElement.id
+                                    ? { ...el, style: { ...el.style, paddingMm: val } }
+                                    : el,
+                                ),
+                              }));
+                            }}
+                          />
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Sample Value Preview */}
+                    <div className="p-2 bg-white dark:bg-slate-950 rounded-lg border border-slate-200 dark:border-slate-800 text-[10px] flex items-center justify-between">
+                      <span className="text-slate-400">پیش‌نمایش:</span>
+                      <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                        {selectedElement.content?.showFieldLabel !== false ? `${selectedElement.content?.fieldLabel || 'عنوان'}: ` : ''}
+                        {AVAILABLE_DATABASE_FIELDS.find((f) => f.key === selectedElement.content?.fieldKey)?.sampleValue || '۱۲٫۴۵۰'}
+                        {selectedElement.content?.showFieldUnit !== false && selectedElement.content?.fieldUnit ? ` ${selectedElement.content.fieldUnit}` : ''}
+                      </span>
                     </div>
                   </div>
                 )}
@@ -2945,8 +3607,586 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
                   </div>
                 )}
 
+                {/* SPECIALIZED: ADVANCED CUSTOM TABLE INSPECTOR */}
+                {selectedElement.type === 'custom_table' && (() => {
+                  const customTable: CustomTableConfiguration = selectedElement.content?.customTable || {
+                    fields: [],
+                    layout: 'rows',
+                    showHeader: true,
+                    headerLabelText: 'شرح شاخص',
+                    headerValueText: 'مقدار / مانده',
+                    borderColor: '#cbd5e1',
+                    borderWidthMm: 0.3,
+                    borderStyle: 'solid',
+                    borderRadiusMm: 1.5,
+                    headerBackgroundColor: '#f1f5f9',
+                    headerTextColor: '#0f172a',
+                    bodyTextColor: '#1e293b',
+                    stripedRows: true,
+                    alternateRowColor: '#f8fafc',
+                  };
+                  const fields = customTable.fields || [];
+
+                  return (
+                    <div className="space-y-3 p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl">
+                      <div className="flex items-center justify-between pb-1 border-b border-slate-200 dark:border-slate-800">
+                        <span className="font-extrabold text-[11px] text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
+                          <Table size={14} />
+                          تنظیمات جدول محاسبات و مانده‌ها
+                        </span>
+                        <span className="text-[10px] text-slate-500 font-bold">
+                          {fields.filter((f) => f.visible).length} از {fields.length} فیلد
+                        </span>
+                      </div>
+
+                      {/* 3 Sub-tabs: Fields | Layout | Appearance */}
+                      <div className="grid grid-cols-3 gap-1 p-1 bg-slate-200/60 dark:bg-slate-800/60 rounded-xl text-[10px] font-bold">
+                        <button
+                          type="button"
+                          onClick={() => setCustomTableSubTab('fields')}
+                          className={`py-1.5 rounded-lg transition-colors ${
+                            customTableSubTab === 'fields'
+                              ? 'bg-emerald-600 text-white shadow-xs'
+                              : 'text-slate-600 dark:text-slate-300'
+                          }`}
+                        >
+                          فیلدها و داده‌ها
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCustomTableSubTab('layout')}
+                          className={`py-1.5 rounded-lg transition-colors ${
+                            customTableSubTab === 'layout'
+                              ? 'bg-emerald-600 text-white shadow-xs'
+                              : 'text-slate-600 dark:text-slate-300'
+                          }`}
+                        >
+                          ساختار و سربرگ
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCustomTableSubTab('appearance')}
+                          className={`py-1.5 rounded-lg transition-colors ${
+                            customTableSubTab === 'appearance'
+                              ? 'bg-emerald-600 text-white shadow-xs'
+                              : 'text-slate-600 dark:text-slate-300'
+                          }`}
+                        >
+                          کادر و رنگ‌ها
+                        </button>
+                      </div>
+
+                      {/* SUBTAB 1: Fields & Data */}
+                      {customTableSubTab === 'fields' && (
+                        <div className="space-y-2">
+                          {/* Add Field Buttons */}
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setFieldSearchQuery('');
+                                setFieldFilterCategory('all');
+                                setIsFieldPickerOpen(true);
+                              }}
+                              className="flex-1 py-1.5 px-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] rounded-lg flex items-center justify-center gap-1 shadow-xs transition-colors"
+                            >
+                              <Database size={13} />
+                              <span>افزودن فیلد داده از دیتابیس</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleAddCustomRowToCustomTable}
+                              className="py-1.5 px-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-[10px] rounded-lg flex items-center gap-1 transition-colors"
+                              title="افزودن یک سطر با عنوان و مقدار دلخواه دستی"
+                            >
+                              <Plus size={13} />
+                              <span>سطر دستی</span>
+                            </button>
+                          </div>
+
+                          {/* Fields List */}
+                          {fields.length === 0 ? (
+                            <div className="p-3 bg-white dark:bg-slate-950 border border-dashed border-amber-300 dark:border-amber-700 rounded-xl text-center space-y-1">
+                              <p className="text-[10px] font-bold text-amber-800 dark:text-amber-400">
+                                جدول کاملاً خام است!
+                              </p>
+                              <p className="text-[9px] text-slate-500">
+                                از دکمه «افزودن فیلد داده از دیتابیس» برای انتخاب مانده‌ها، قیمت‌ها و شاخص‌های فاکتور استفاده کنید.
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="space-y-1.5 max-h-[260px] overflow-y-auto pr-1">
+                              {fields.map((f, idx) => (
+                                <div
+                                  key={f.id}
+                                  className="p-2 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl space-y-1.5"
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-1.5">
+                                      <input
+                                        type="checkbox"
+                                        checked={f.visible}
+                                        onChange={(e) => {
+                                          const checked = e.target.checked;
+                                          updateCustomTable((tbl) => ({
+                                            ...tbl,
+                                            fields: tbl.fields.map((item) =>
+                                              item.id === f.id ? { ...item, visible: checked } : item,
+                                            ),
+                                          }));
+                                        }}
+                                        className="accent-emerald-600"
+                                      />
+                                      <span className="text-[9px] px-1 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold">
+                                        {f.key === 'custom' ? 'دستی' : (AVAILABLE_DATABASE_FIELDS.find((m) => m.key === f.key)?.categoryLabel || f.key)}
+                                      </span>
+                                    </div>
+
+                                    {/* Action buttons: Move Up, Move Down, Delete */}
+                                    <div className="flex items-center gap-0.5">
+                                      <button
+                                        type="button"
+                                        disabled={idx === 0}
+                                        onClick={() => {
+                                          if (idx === 0) return;
+                                          const next = [...fields];
+                                          const temp = next[idx - 1];
+                                          next[idx - 1] = next[idx];
+                                          next[idx] = temp;
+                                          updateCustomTable((tbl) => ({ ...tbl, fields: next }));
+                                        }}
+                                        className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded disabled:opacity-30"
+                                        title="انتقال به بالا"
+                                      >
+                                        <ArrowUp size={11} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={idx === fields.length - 1}
+                                        onClick={() => {
+                                          if (idx === fields.length - 1) return;
+                                          const next = [...fields];
+                                          const temp = next[idx + 1];
+                                          next[idx + 1] = next[idx];
+                                          next[idx] = temp;
+                                          updateCustomTable((tbl) => ({ ...tbl, fields: next }));
+                                        }}
+                                        className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded disabled:opacity-30"
+                                        title="انتقال به پایین"
+                                      >
+                                        <ArrowDown size={11} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          updateCustomTable((tbl) => ({
+                                            ...tbl,
+                                            fields: tbl.fields.filter((item) => item.id !== f.id),
+                                          }));
+                                          toast.success('حذف فیلد', 'فیلد از جدول حذف شد.');
+                                        }}
+                                        className="p-1 text-slate-400 hover:text-rose-600 rounded transition-colors"
+                                        title="حذف این فیلد"
+                                      >
+                                        <Trash2 size={11} />
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  {/* Inputs: Label & Unit */}
+                                  <div className="grid grid-cols-3 gap-1.5 pt-1 border-t border-slate-100 dark:border-slate-800">
+                                    <input
+                                      type="text"
+                                      value={f.label}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        updateCustomTable((tbl) => ({
+                                          ...tbl,
+                                          fields: tbl.fields.map((item) =>
+                                            item.id === f.id ? { ...item, label: val } : item,
+                                          ),
+                                        }));
+                                      }}
+                                      placeholder="عنوان فیلد"
+                                      className="col-span-2 px-1.5 py-1 text-[10px] rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800"
+                                    />
+                                    <input
+                                      type="text"
+                                      value={f.unit || ''}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        updateCustomTable((tbl) => ({
+                                          ...tbl,
+                                          fields: tbl.fields.map((item) =>
+                                            item.id === f.id ? { ...item, unit: val } : item,
+                                          ),
+                                        }));
+                                      }}
+                                      placeholder="واحد (گرم/تومان)"
+                                      className="px-1.5 py-1 text-[10px] rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800"
+                                    />
+                                  </div>
+
+                                  {f.key === 'custom' && (
+                                    <input
+                                      type="text"
+                                      value={f.customValue || ''}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        updateCustomTable((tbl) => ({
+                                          ...tbl,
+                                          fields: tbl.fields.map((item) =>
+                                            item.id === f.id ? { ...item, customValue: val } : item,
+                                          ),
+                                        }));
+                                      }}
+                                      placeholder="مقدار دستی این سطر"
+                                      className="w-full px-1.5 py-1 text-[10px] rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800"
+                                    />
+                                  )}
+
+                                  {f.key === 'custom_qrcode' && (() => {
+                                    const fQrType: QrContentType = f.qrContentType || 'invoice_number';
+                                    return (
+                                      <div className="space-y-1.5 p-1.5 bg-amber-500/10 border border-amber-500/30 rounded-lg text-[9px]">
+                                        <div className="flex items-center justify-between">
+                                          <span className="font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1">
+                                            <QrCode size={11} /> محتوای بارکد QR:
+                                          </span>
+                                          <select
+                                            value={fQrType}
+                                            onChange={(e) => {
+                                              const val = e.target.value as QrContentType;
+                                              updateCustomTable((tbl) => ({
+                                                ...tbl,
+                                                fields: tbl.fields.map((item) =>
+                                                  item.id === f.id ? { ...item, qrContentType: val } : item,
+                                                ),
+                                              }));
+                                            }}
+                                            className="text-[9px] py-0.5 px-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800"
+                                          >
+                                            <option value="invoice_number">شماره فاکتور (خودکار)</option>
+                                            <option value="url">لینک اینترنتی (URL)</option>
+                                            <option value="custom_text">متن دلخواه</option>
+                                          </select>
+                                        </div>
+
+                                        {fQrType !== 'invoice_number' && (
+                                          <input
+                                            type="text"
+                                            dir={fQrType === 'url' ? 'ltr' : 'rtl'}
+                                            value={f.customValue || ''}
+                                            onChange={(e) => {
+                                              const val = e.target.value;
+                                              updateCustomTable((tbl) => ({
+                                                ...tbl,
+                                                fields: tbl.fields.map((item) =>
+                                                  item.id === f.id ? { ...item, customValue: val } : item,
+                                                ),
+                                              }));
+                                            }}
+                                            placeholder={fQrType === 'url' ? 'https://your-store.ir/verify' : 'متن دلخواه (مثلاً {invoice_number})'}
+                                            className="w-full px-1.5 py-1 text-[9px] rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800"
+                                          />
+                                        )}
+                                      </div>
+                                    );
+                                  })()}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* SUBTAB 2: Layout & Headers */}
+                      {customTableSubTab === 'layout' && (
+                        <div className="space-y-3">
+                          {/* Layout Style */}
+                          <label className="account-field">
+                            <span className="text-[10px]">چیدمان جدول</span>
+                            <select
+                              value={customTable.layout || 'rows'}
+                              onChange={(e) => {
+                                const val = e.target.value as any;
+                                updateCustomTable((tbl) => ({ ...tbl, layout: val }));
+                              }}
+                            >
+                              <option value="rows">جدول ۲ ستونه (عنوان | مقدار) - استاندارد</option>
+                              <option value="grid2">جدول ۴ ستونه شبکه‌ای (۲ شاخص در هر ردیف)</option>
+                              <option value="columns">ستون‌های افقی (شاخص‌ها در بالا، مقادیر در پایین)</option>
+                            </select>
+                          </label>
+
+                          {/* Show Header */}
+                          <div className="space-y-1.5 p-2 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl">
+                            <label className="flex items-center justify-between text-[10px] font-bold cursor-pointer">
+                              <span>نمایش ردیف سربرگ</span>
+                              <input
+                                type="checkbox"
+                                checked={customTable.showHeader !== false}
+                                onChange={(e) => {
+                                  const checked = e.target.checked;
+                                  updateCustomTable((tbl) => ({ ...tbl, showHeader: checked }));
+                                }}
+                                className="accent-emerald-600"
+                              />
+                            </label>
+
+                            {customTable.showHeader !== false && customTable.layout !== 'columns' && (
+                              <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-slate-100 dark:border-slate-800">
+                                <label className="account-field">
+                                  <span className="text-[9px]">عنوان ستون اول</span>
+                                  <input
+                                    type="text"
+                                    value={customTable.headerLabelText || 'شرح شاخص'}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      updateCustomTable((tbl) => ({ ...tbl, headerLabelText: val }));
+                                    }}
+                                  />
+                                </label>
+                                <label className="account-field">
+                                  <span className="text-[9px]">عنوان ستون دوم</span>
+                                  <input
+                                    type="text"
+                                    value={customTable.headerValueText || 'مقدار / مانده'}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      updateCustomTable((tbl) => ({ ...tbl, headerValueText: val }));
+                                    }}
+                                  />
+                                </label>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Table Overall Title */}
+                          <div className="space-y-1.5 p-2 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl">
+                            <label className="flex items-center justify-between text-[10px] font-bold cursor-pointer">
+                              <span>نمایش نوار عنوان جدول</span>
+                              <input
+                                type="checkbox"
+                                checked={Boolean(customTable.showTitle)}
+                                onChange={(e) => {
+                                  const checked = e.target.checked;
+                                  updateCustomTable((tbl) => ({ ...tbl, showTitle: checked }));
+                                }}
+                                className="accent-emerald-600"
+                              />
+                            </label>
+
+                            {customTable.showTitle && (
+                              <input
+                                type="text"
+                                value={customTable.title || 'خلاصه حساب و مانده‌ها'}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  updateCustomTable((tbl) => ({ ...tbl, title: val }));
+                                }}
+                                placeholder="متن عنوان جدول"
+                                className="w-full px-2 py-1 text-[10px] rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800"
+                              />
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* SUBTAB 3: Appearance, Borders & Colors */}
+                      {customTableSubTab === 'appearance' && (
+                        <div className="space-y-3">
+                          {/* Border Color & Width */}
+                          <div className="grid grid-cols-2 gap-2">
+                            <label className="account-field">
+                              <span className="text-[9px]">رنگ کادر جدول</span>
+                              <input
+                                type="color"
+                                value={customTable.borderColor || '#cbd5e1'}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  updateCustomTable((tbl) => ({ ...tbl, borderColor: val }));
+                                }}
+                                className="h-8 p-1 cursor-pointer"
+                              />
+                            </label>
+
+                            <label className="account-field">
+                              <span className="text-[9px]">ضخامت کادر (mm)</span>
+                              <input
+                                type="number"
+                                step="0.1"
+                                min="0"
+                                max="3"
+                                value={customTable.borderWidthMm ?? 0.3}
+                                onChange={(e) => {
+                                  const val = Number(e.target.value);
+                                  updateCustomTable((tbl) => ({ ...tbl, borderWidthMm: val }));
+                                }}
+                              />
+                            </label>
+                          </div>
+
+                          {/* Border Style & Radius */}
+                          <div className="grid grid-cols-2 gap-2">
+                            <label className="account-field">
+                              <span className="text-[9px]">نوع خط کادر</span>
+                              <select
+                                value={customTable.borderStyle || 'solid'}
+                                onChange={(e) => {
+                                  const val = e.target.value as any;
+                                  updateCustomTable((tbl) => ({ ...tbl, borderStyle: val }));
+                                }}
+                              >
+                                <option value="solid">یکپارچه (Solid)</option>
+                                <option value="dashed">خط‌چین (Dashed)</option>
+                                <option value="dotted">نقطه‌چین (Dotted)</option>
+                              </select>
+                            </label>
+
+                            <label className="account-field">
+                              <span className="text-[9px]">گردی لبه‌ها ({customTable.borderRadiusMm || 0} mm)</span>
+                              <input
+                                type="range"
+                                min="0"
+                                max="15"
+                                step="0.5"
+                                value={customTable.borderRadiusMm || 0}
+                                onChange={(e) => {
+                                  const val = Number(e.target.value);
+                                  updateCustomTable((tbl) => ({ ...tbl, borderRadiusMm: val }));
+                                }}
+                                className="accent-emerald-600"
+                              />
+                            </label>
+                          </div>
+
+                          {/* Dividers */}
+                          <div className="p-2 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl space-y-1.5">
+                            <label className="flex items-center justify-between text-[10px] font-bold cursor-pointer">
+                              <span>خطوط عمودی جداکننده ستون‌ها</span>
+                              <input
+                                type="checkbox"
+                                checked={customTable.showVerticalBorders !== false}
+                                onChange={(e) => {
+                                  const checked = e.target.checked;
+                                  updateCustomTable((tbl) => ({ ...tbl, showVerticalBorders: checked }));
+                                }}
+                                className="accent-emerald-600"
+                              />
+                            </label>
+                            <label className="flex items-center justify-between text-[10px] font-bold cursor-pointer">
+                              <span>خطوط افقی جداکننده ردیف‌ها</span>
+                              <input
+                                type="checkbox"
+                                checked={customTable.showHorizontalBorders !== false}
+                                onChange={(e) => {
+                                  const checked = e.target.checked;
+                                  updateCustomTable((tbl) => ({ ...tbl, showHorizontalBorders: checked }));
+                                }}
+                                className="accent-emerald-600"
+                              />
+                            </label>
+                          </div>
+
+                          {/* Header & Body Colors */}
+                          <div className="grid grid-cols-2 gap-2">
+                            <label className="account-field">
+                              <span className="text-[9px]">پس‌زمینه سربرگ</span>
+                              <input
+                                type="color"
+                                value={customTable.headerBackgroundColor || '#f1f5f9'}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  updateCustomTable((tbl) => ({ ...tbl, headerBackgroundColor: val }));
+                                }}
+                                className="h-8 p-1 cursor-pointer"
+                              />
+                            </label>
+
+                            <label className="account-field">
+                              <span className="text-[9px]">رنگ متن سربرگ</span>
+                              <input
+                                type="color"
+                                value={customTable.headerTextColor || '#0f172a'}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  updateCustomTable((tbl) => ({ ...tbl, headerTextColor: val }));
+                                }}
+                                className="h-8 p-1 cursor-pointer"
+                              />
+                            </label>
+                          </div>
+
+                          {/* Body text color & font size */}
+                          <div className="grid grid-cols-2 gap-2">
+                            <label className="account-field">
+                              <span className="text-[9px]">رنگ متن داده‌ها</span>
+                              <input
+                                type="color"
+                                value={customTable.bodyTextColor || '#1e293b'}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  updateCustomTable((tbl) => ({ ...tbl, bodyTextColor: val }));
+                                }}
+                                className="h-8 p-1 cursor-pointer"
+                              />
+                            </label>
+
+                            <label className="account-field">
+                              <span className="text-[9px]">اندازه قلم (pt)</span>
+                              <input
+                                type="number"
+                                min="6"
+                                max="16"
+                                step="0.5"
+                                value={customTable.fontSizePt || selectedElement.style.fontSizePt || 8.5}
+                                onChange={(e) => {
+                                  const val = Number(e.target.value);
+                                  updateCustomTable((tbl) => ({ ...tbl, fontSizePt: val }));
+                                }}
+                              />
+                            </label>
+                          </div>
+
+                          {/* Striped Rows */}
+                          <div className="p-2 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl space-y-1.5">
+                            <label className="flex items-center justify-between text-[10px] font-bold cursor-pointer">
+                              <span>ردیف‌های یکی‌درمیان (راه‌راه)</span>
+                              <input
+                                type="checkbox"
+                                checked={Boolean(customTable.stripedRows)}
+                                onChange={(e) => {
+                                  const checked = e.target.checked;
+                                  updateCustomTable((tbl) => ({ ...tbl, stripedRows: checked }));
+                                }}
+                                className="accent-emerald-600"
+                              />
+                            </label>
+
+                            {customTable.stripedRows && (
+                              <label className="account-field pt-1 border-t border-slate-100 dark:border-slate-800">
+                                <span className="text-[9px]">رنگ ردیف دوم</span>
+                                <input
+                                  type="color"
+                                  value={customTable.alternateRowColor || '#f8fafc'}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    updateCustomTable((tbl) => ({ ...tbl, alternateRowColor: val }));
+                                  }}
+                                  className="h-8 p-1 cursor-pointer"
+                                />
+                              </label>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 {/* Typography Controls for text-enabled elements */}
-                {selectedElement.type !== 'items_table' && !selectedElement.type.startsWith('shape_line_') && (
+                {selectedElement.type !== 'items_table' && selectedElement.type !== 'custom_table' && !selectedElement.type.startsWith('shape_line_') && (
                   <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
                     <div className="flex items-center gap-1 font-bold text-[11px] text-slate-700 dark:text-slate-300">
                       <Type size={14} />
@@ -3274,6 +4514,152 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
           </div>
         </div>
       )}
+
+      {/* MODAL: Database Field Picker for Custom Table */}
+      {isFieldPickerOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 max-w-xl w-full max-h-[85vh] flex flex-col shadow-2xl text-right">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+              <div className="flex items-center gap-2 text-emerald-600 font-black text-sm">
+                <Database size={18} />
+                <span>
+                  {fieldPickerMode === 'standalone' ? 'افزودن فیلد داده داینامیک به فاکتور (آزاد)' : 'افزودن فیلد داده از دیتابیس به جدول'}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsFieldPickerOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Search & Category Filter */}
+            <div className="py-3 space-y-2.5">
+              <div className="relative">
+                <Search size={14} className="absolute right-3 top-3 text-slate-400" />
+                <input
+                  type="text"
+                  value={fieldSearchQuery}
+                  onChange={(e) => setFieldSearchQuery(e.target.value)}
+                  placeholder="جستجو در بین فیلدها و شاخص‌ها (مثال: طلا، مانده، تخفیف)..."
+                  className="w-full pl-3 pr-9 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-emerald-500"
+                  autoFocus
+                />
+              </div>
+
+              {/* Category Pills */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-[10px] font-bold">
+                {[
+                  { id: 'all', label: 'همه شاخص‌ها' },
+                  { id: 'customer_balance', label: 'مانده حساب طرف‌حساب' },
+                  { id: 'document_summary', label: 'خلاصه و اثر این سند' },
+                  { id: 'financial', label: 'ارقام مالی فاکتور' },
+                  { id: 'weights', label: 'اوزان و فلزات' },
+                ].map((cat) => (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => setFieldFilterCategory(cat.id)}
+                    className={`px-2.5 py-1 rounded-lg shrink-0 transition-colors ${
+                      fieldFilterCategory === cat.id
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
+                    }`}
+                  >
+                    {cat.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Fields Grid / List */}
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1 min-h-[250px]">
+              {(() => {
+                const query = fieldSearchQuery.trim().toLowerCase();
+                const filtered = AVAILABLE_DATABASE_FIELDS.filter((item) => {
+                  if (fieldFilterCategory !== 'all' && item.category !== fieldFilterCategory) return false;
+                  if (!query) return true;
+                  return (
+                    item.label.toLowerCase().includes(query) ||
+                    item.description.toLowerCase().includes(query) ||
+                    item.categoryLabel.toLowerCase().includes(query)
+                  );
+                });
+
+                if (filtered.length === 0) {
+                  return (
+                    <div className="py-8 text-center text-slate-400 space-y-1">
+                      <p className="text-xs font-bold">فیلدی با این مشخصات یافت نشد.</p>
+                      <p className="text-[10px]">می‌توانید از «سطر دلخواه دستی» برای اضافه کردن اطلاعات مورد نظر استفاده کنید.</p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {filtered.map((item) => (
+                      <div
+                        key={item.key}
+                        onClick={() =>
+                          fieldPickerMode === 'standalone'
+                            ? handleAddStandaloneDbField(item.key)
+                            : handleAddDatabaseFieldToCustomTable(item.key)
+                        }
+                        className="p-2.5 bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 hover:border-emerald-500 dark:hover:border-emerald-500/80 rounded-xl cursor-pointer hover:bg-emerald-500/5 transition-all space-y-1.5 group text-right"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-extrabold text-[11px] text-slate-800 dark:text-slate-200 group-hover:text-emerald-700 dark:group-hover:text-emerald-400">
+                            {item.label}
+                          </span>
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold">
+                            {item.categoryLabel}
+                          </span>
+                        </div>
+                        <p className="text-[9px] text-slate-500 line-clamp-1">
+                          {item.description}
+                        </p>
+                        <div className="flex items-center justify-between pt-1 border-t border-slate-200/50 dark:border-slate-800/50 text-[9px]">
+                          <span className="text-slate-400">
+                            نمونه: <strong className="text-slate-600 dark:text-slate-300">{item.sampleValue} {item.defaultUnit}</strong>
+                          </span>
+                          <span className="text-emerald-600 font-bold flex items-center gap-0.5 opacity-80 group-hover:opacity-100">
+                            <Plus size={11} />
+                            {fieldPickerMode === 'standalone' ? 'افزودن به فاکتور' : 'افزودن به جدول'}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Custom Row Option Footer */}
+            <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
+              {fieldPickerMode === 'custom_table' ? (
+                <button
+                  type="button"
+                  onClick={handleAddCustomRowToCustomTable}
+                  className="py-1.5 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors"
+                >
+                  <Plus size={13} />
+                  <span>افزودن سطر دلخواه دستی</span>
+                </button>
+              ) : <div />}
+              <button
+                type="button"
+                onClick={() => setIsFieldPickerOpen(false)}
+                className="py-1.5 px-4 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-xl hover:bg-slate-300 transition-colors"
+              >
+                بستن
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -3376,6 +4762,56 @@ function renderElementPreviewContent(el: InvoicePrintElement, settings: any, tem
           {el.content?.text || 'نشان'}
         </div>
       );
+
+    case 'db_field': {
+      const fieldKey = el.content?.fieldKey || 'prev_balance_gold';
+      const def = AVAILABLE_DATABASE_FIELDS.find((f) => f.key === fieldKey);
+      const label = el.content?.fieldLabel || def?.label || 'شاخص';
+      const showLabel = el.content?.showFieldLabel !== false;
+      const unit = el.content?.fieldUnit ?? def?.defaultUnit ?? '';
+      const showUnit = el.content?.showFieldUnit !== false;
+      const sampleVal = def?.sampleValue || '۱۲٫۴۵۰';
+
+      if (fieldKey === 'custom_qrcode') {
+        const qrVal = resolveQrCodeValue(
+          el.content?.qrContentType,
+          el.content?.text,
+          {
+            documentNumber: '1403-1002',
+            customerName: 'آقای محمدی',
+            date: '1403/07/19',
+          },
+        );
+        return (
+          <div className="w-full h-full flex flex-col items-center justify-center p-1 bg-white rounded overflow-hidden shadow-2xs">
+            <QrCodeSvg value={qrVal} backgroundColor="#ffffff" color="#000000" />
+            {showLabel && (
+              <span className="text-[70%] font-bold text-center text-slate-900 truncate max-w-full mt-0.5">{label}</span>
+            )}
+          </div>
+        );
+      }
+
+      return (
+        <div
+          dir="rtl"
+          className="w-full h-full flex items-center justify-between px-2 gap-1 overflow-hidden"
+          style={{
+            fontWeight: getFontWeightCss(el.style?.fontWeight || 'bold'),
+            textAlign: el.style.textAlign || 'right',
+            padding: el.style.paddingMm ? `${el.style.paddingMm}mm` : undefined,
+          }}
+        >
+          {showLabel && (
+            <span className="shrink-0 text-[90%] opacity-85 pl-1">{label}:</span>
+          )}
+          <span className="font-mono flex items-center gap-1 overflow-hidden truncate">
+            <bdi>{sampleVal}</bdi>
+            {showUnit && unit ? <span className="text-[80%] font-normal opacity-75">{unit}</span> : null}
+          </span>
+        </div>
+      );
+    }
 
     case 'shop_address':
       return (
@@ -3579,6 +5015,269 @@ function renderElementPreviewContent(el: InvoicePrintElement, settings: any, tem
           <span>مبلغ قابل پرداخت: ۹۸٬۴۵۷٬۶۰۰ تومان</span>
         </div>
       );
+
+    case 'custom_table': {
+      const customTable = el.content?.customTable;
+      const fields = (customTable?.fields || []).filter((f) => f.visible);
+      const title = customTable?.title || 'خلاصه حساب و مانده‌ها';
+      const showTitle = Boolean(customTable?.showTitle);
+      const showHeader = customTable?.showHeader !== false;
+      const headerLabel = customTable?.headerLabelText || 'شرح شاخص';
+      const headerValue = customTable?.headerValueText || 'مقدار / مانده';
+      const layout = customTable?.layout || 'rows';
+
+      const borderColor = customTable?.borderColor || el.style.borderColor || '#cbd5e1';
+      const borderWidth = customTable?.borderWidthMm ? `${customTable.borderWidthMm}mm` : (el.style.borderWidthMm ? `${el.style.borderWidthMm}mm` : '0.4mm');
+      const borderStyle = customTable?.borderStyle || el.style.borderStyle || 'solid';
+      const borderRadius = customTable?.borderRadiusMm ? `${customTable.borderRadiusMm}mm` : (el.style.borderRadiusMm ? `${el.style.borderRadiusMm}mm` : '0');
+      const showVertical = customTable?.showVerticalBorders !== false;
+      const showHorizontal = customTable?.showHorizontalBorders !== false;
+      const headerBg = customTable?.headerBackgroundColor || '#f1f5f9';
+      const headerColor = customTable?.headerTextColor || '#0f172a';
+      const bodyColor = customTable?.bodyTextColor || el.style.color || '#1e293b';
+      const striped = Boolean(customTable?.stripedRows);
+      const altBg = customTable?.alternateRowColor || '#f8fafc';
+      const fontSize = customTable?.fontSizePt ? `${customTable.fontSizePt}pt` : (el.style.fontSizePt ? `${el.style.fontSizePt}pt` : '8.5pt');
+
+      if (fields.length === 0) {
+        return (
+          <div
+            className="w-full h-full flex flex-col items-center justify-center p-2 text-center border-2 border-dashed rounded-lg bg-emerald-500/5 border-emerald-500/40 text-emerald-800 dark:text-emerald-300"
+            style={{ borderRadius }}
+          >
+            <Table size={18} className="mb-1 opacity-70" />
+            <span className="font-extrabold text-[10px]">جدول خام محاسبات و مانده‌ها</span>
+            <span className="text-[8.5px] opacity-75">
+              برای افزودن داده‌ها، از پنل تنظیمات روی «افزودن فیلد داده از دیتابیس» کلیک کنید.
+            </span>
+          </div>
+        );
+      }
+
+      const sampleMap = new Map(AVAILABLE_DATABASE_FIELDS.map((f) => [f.key, f.sampleValue]));
+
+      const renderCellVal = (f: InvoiceCustomTableField, val: string) => {
+        if (f.key === 'custom_qrcode') {
+          const qrVal = resolveQrCodeValue(f.qrContentType, f.customValue, {
+            documentNumber: '1403-1002',
+            customerName: 'آقای محمدی',
+            date: '1403/07/19',
+          });
+          return (
+            <div className="flex items-center justify-center p-0.5">
+              <div className="p-0.5 bg-white rounded shadow-2xs inline-flex">
+                <QrCodeSvg value={qrVal} size={24} backgroundColor="#ffffff" color="#000000" />
+              </div>
+            </div>
+          );
+        }
+        return (
+          <span className="whitespace-nowrap">
+            <bdi>{val}</bdi> {f.unit ? <span className="text-[80%] font-normal text-slate-500 mr-0.5">{f.unit}</span> : null}
+          </span>
+        );
+      };
+
+      return (
+        <div
+          className="w-full h-full overflow-hidden flex flex-col select-none"
+          style={{
+            borderRadius,
+            border: `${borderWidth} ${borderStyle} ${borderColor}`,
+            fontSize,
+            color: bodyColor,
+            backgroundColor: el.style.backgroundColor || '#ffffff',
+          }}
+        >
+          {showTitle && (
+            <div
+              className="py-1 px-2 font-bold text-center border-b shrink-0"
+              style={{
+                backgroundColor: headerBg,
+                color: headerColor,
+                borderColor,
+                borderBottomWidth: borderWidth,
+                borderBottomStyle: borderStyle,
+              }}
+            >
+              {title}
+            </div>
+          )}
+
+          <div className="flex-1 w-full overflow-hidden">
+            {layout === 'grid2' ? (
+              <table className="w-full h-full border-collapse table-fixed text-center">
+                <tbody>
+                  {Array.from({ length: Math.ceil(fields.length / 2) }).map((_, rIdx) => {
+                    const f1 = fields[rIdx * 2];
+                    const f2 = fields[rIdx * 2 + 1];
+                    const v1 = f1 ? (f1.key === 'custom' ? (f1.customValue || '-') : (sampleMap.get(f1.key) || '-')) : '';
+                    const v2 = f2 ? (f2.key === 'custom' ? (f2.customValue || '-') : (sampleMap.get(f2.key) || '-')) : '';
+                    const isEven = rIdx % 2 === 1;
+
+                    return (
+                      <tr
+                        key={rIdx}
+                        style={{
+                          backgroundColor: striped && isEven ? altBg : undefined,
+                          borderBottom: showHorizontal && rIdx < Math.ceil(fields.length / 2) - 1 ? `${borderWidth} ${borderStyle} ${borderColor}` : undefined,
+                        }}
+                      >
+                        {f1 && (
+                          <>
+                            <td
+                              className="p-1 font-bold text-right pr-2 text-[90%]"
+                              style={{
+                                width: '25%',
+                                backgroundColor: headerBg,
+                                color: headerColor,
+                                borderLeft: `${borderWidth} ${borderStyle} ${borderColor}`,
+                              }}
+                            >
+                              {f1.label}
+                            </td>
+                            <td
+                              className="p-1 font-extrabold text-center text-[95%]"
+                              style={{
+                                width: '25%',
+                                borderLeft: showVertical && f2 ? `${borderWidth} ${borderStyle} ${borderColor}` : undefined,
+                              }}
+                            >
+                              {renderCellVal(f1, v1)}
+                            </td>
+                          </>
+                        )}
+                        {f2 ? (
+                          <>
+                            <td
+                              className="p-1 font-bold text-right pr-2 text-[90%]"
+                              style={{
+                                width: '25%',
+                                backgroundColor: headerBg,
+                                color: headerColor,
+                                borderLeft: `${borderWidth} ${borderStyle} ${borderColor}`,
+                              }}
+                            >
+                              {f2.label}
+                            </td>
+                            <td className="p-1 font-extrabold text-center text-[95%]" style={{ width: '25%' }}>
+                              {renderCellVal(f2, v2)}
+                            </td>
+                          </>
+                        ) : (
+                          <>
+                            <td style={{ width: '25%' }} />
+                            <td style={{ width: '25%' }} />
+                          </>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            ) : layout === 'columns' ? (
+              <table className="w-full h-full border-collapse table-fixed text-center">
+                {showHeader && (
+                  <thead>
+                    <tr
+                      style={{
+                        backgroundColor: headerBg,
+                        color: headerColor,
+                        borderBottom: `${borderWidth} ${borderStyle} ${borderColor}`,
+                      }}
+                    >
+                      {fields.map((f, idx) => (
+                        <th
+                          key={f.id}
+                          className="p-1 font-bold text-[90%]"
+                          style={{
+                            borderLeft: showVertical && idx < fields.length - 1 ? `${borderWidth} ${borderStyle} ${borderColor}` : undefined,
+                          }}
+                        >
+                          {f.label}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                )}
+                <tbody>
+                  <tr>
+                    {fields.map((f, idx) => {
+                      const val = f.key === 'custom' ? (f.customValue || '-') : (sampleMap.get(f.key) || '-');
+                      return (
+                        <td
+                          key={f.id}
+                          className="p-1 font-extrabold text-[95%]"
+                          style={{
+                            borderLeft: showVertical && idx < fields.length - 1 ? `${borderWidth} ${borderStyle} ${borderColor}` : undefined,
+                          }}
+                        >
+                          {renderCellVal(f, val)}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                </tbody>
+              </table>
+            ) : (
+              <table className="w-full h-full border-collapse table-fixed text-center">
+                {showHeader && (
+                  <thead>
+                    <tr
+                      style={{
+                        backgroundColor: headerBg,
+                        color: headerColor,
+                        borderBottom: `${borderWidth} ${borderStyle} ${borderColor}`,
+                      }}
+                    >
+                      <th
+                        className="p-1 font-bold text-right pr-2 text-[90%]"
+                        style={{
+                          width: '50%',
+                          borderLeft: showVertical ? `${borderWidth} ${borderStyle} ${borderColor}` : undefined,
+                        }}
+                      >
+                        {headerLabel}
+                      </th>
+                      <th className="p-1 font-bold text-center text-[90%]" style={{ width: '50%' }}>
+                        {headerValue}
+                      </th>
+                    </tr>
+                  </thead>
+                )}
+                <tbody>
+                  {fields.map((f, idx) => {
+                    const val = f.key === 'custom' ? (f.customValue || '-') : (sampleMap.get(f.key) || '-');
+                    const isEven = idx % 2 === 1;
+                    return (
+                      <tr
+                        key={f.id}
+                        style={{
+                          backgroundColor: striped && isEven ? altBg : undefined,
+                          borderBottom: showHorizontal && idx < fields.length - 1 ? `${borderWidth} ${borderStyle} ${borderColor}` : undefined,
+                        }}
+                      >
+                        <td
+                          className="p-1 font-bold text-right pr-2 text-[90%]"
+                          style={{
+                            borderLeft: showVertical ? `${borderWidth} ${borderStyle} ${borderColor}` : undefined,
+                          }}
+                        >
+                          {f.label}
+                        </td>
+                        <td className="p-1 font-extrabold text-center text-[95%]">
+                          {renderCellVal(f, val)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      );
+    }
 
     case 'footer_text':
       return (

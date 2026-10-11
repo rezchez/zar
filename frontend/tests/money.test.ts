@@ -32,6 +32,8 @@ describe('Financial Math Precision & Currency tests', () => {
     expect(normalizePriceString('١٢٥٠٠٠٠')).toBe('1250000');
     expect(normalizePriceString(' -۵,۰۰۰.۵۰ ')).toBe('-5000.50');
     expect(normalizePriceString('-۵,۰۰۰', false)).toBe('5000');
+    expect(normalizePriceString('۷۸,۰۰۰,۰۰۰.۵۰', false, false)).toBe('7800000050');
+    expect(normalizePriceString('۱۲۳.۴۵', true, false)).toBe('12345');
   });
 
   test('formatPriceWithCommas separates groups with commas correctly', () => {

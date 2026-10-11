@@ -11,12 +11,15 @@ import {
   type InvoicePrintElement,
   type InvoiceTableConfiguration,
   type InvoiceTableColumn,
+  type InvoiceCustomTableField,
   DEFAULT_SYSTEM_TEMPLATES,
   getPageDimensions,
   DEFAULT_TABLE_COLUMNS,
   getFontWeightCss,
+  resolveQrCodeValue,
 } from '@/lib/print-templates';
 import { toPersianDigits } from '@/lib/jalali';
+import { QrCodeSvg } from '@/lib/qr-code';
 
 const DEFAULT_INVOICE_TEMPLATE = DEFAULT_SYSTEM_TEMPLATES.find(
   (template) => template.templateType !== 'customer',
@@ -298,6 +301,57 @@ function renderRealPrintElementContent(
         </div>
       );
 
+    case 'db_field': {
+      const fieldKey = el.content?.fieldKey || '';
+      const label = el.content?.fieldLabel || '';
+      const showLabel = el.content?.showFieldLabel !== false;
+      const unit = el.content?.fieldUnit || '';
+      const showUnit = el.content?.showFieldUnit !== false;
+
+      if (fieldKey === 'custom_qrcode') {
+        const qrValue = resolveQrCodeValue(
+          el.content?.qrContentType,
+          el.content?.text,
+          {
+            documentNumber,
+            customerName: customer?.name,
+            date: documentDateJalali,
+          },
+        );
+        return (
+          <div className="w-full h-full flex flex-col items-center justify-center p-0.5 bg-white rounded overflow-hidden">
+            <QrCodeSvg value={qrValue} backgroundColor="#ffffff" color="#000000" />
+            {showLabel && label && (
+              <span className="text-[70%] font-bold text-center text-slate-900 truncate max-w-full mt-0.5">{label}</span>
+            )}
+          </div>
+        );
+      }
+
+      const resolvedMap = computeDocumentCustomTableValues(customer, lines, settings);
+      const val = resolvedMap[fieldKey] || '-';
+
+      return (
+        <div
+          dir="rtl"
+          className="w-full h-full flex items-center justify-between px-2 gap-1 overflow-hidden"
+          style={{
+            fontWeight: getFontWeightCss(el.style?.fontWeight || 'bold'),
+            textAlign: el.style.textAlign || 'right',
+            padding: el.style.paddingMm ? `${el.style.paddingMm}mm` : undefined,
+          }}
+        >
+          {showLabel && label && (
+            <span className="shrink-0 text-[90%] opacity-85 pl-1">{label}:</span>
+          )}
+          <span className="font-mono flex items-center gap-1 overflow-hidden truncate">
+            <bdi>{val}</bdi>
+            {showUnit && unit ? <span className="text-[80%] font-normal opacity-75">{unit}</span> : null}
+          </span>
+        </div>
+      );
+    }
+
     case 'invoice_title':
       return <div className="truncate" style={{ fontWeight: getFontWeightCss(el.style?.fontWeight || 'bold') }}>{el.content?.text || 'فاکتور فروش طلا و جواهر'}</div>;
 
@@ -476,19 +530,19 @@ function renderRealPrintElementContent(
 
     case 'totals_summary': {
       // Distinct Multi-metal accumulation logic: Gold, Silver, Platinum strictly kept separate
-      const goldLines = lines.filter((l) => (l.details.metalType || 'gold') === 'gold');
-      const silverLines = lines.filter((l) => l.details.metalType === 'silver');
-      const platinumLines = lines.filter((l) => l.details.metalType === 'platinum');
+      const goldLines = lines.filter((l) => (l.details?.metalType || 'gold') === 'gold');
+      const silverLines = lines.filter((l) => l.details?.metalType === 'silver');
+      const platinumLines = lines.filter((l) => l.details?.metalType === 'platinum');
 
-      const totalGoldWeight = goldLines.reduce((acc, l) => acc + (Number(l.details.rawWeight) || 0), 0);
+      const totalGoldWeight = goldLines.reduce((acc, l) => acc + (Number(l.details?.rawWeight) || 0), 0);
       const totalGold750 = goldLines.reduce((acc, l) => {
-        const raw = Number(l.details.rawWeight) || 0;
-        const purity = Number(l.details.purity) || 0;
-        return acc + (l.converted750 || (raw * purity) / 750);
+        const raw = Number(l.details?.rawWeight) || 0;
+        const purity = Number(l.details?.purity) || 0;
+        return acc + (typeof l.converted750 === 'number' && Number.isFinite(l.converted750) ? l.converted750 : (purity > 0 ? (raw * purity) / 750 : raw));
       }, 0);
 
-      const totalSilverWeight = silverLines.reduce((acc, l) => acc + (Number(l.details.rawWeight) || 0), 0);
-      const totalPlatinumWeight = platinumLines.reduce((acc, l) => acc + (Number(l.details.rawWeight) || 0), 0);
+      const totalSilverWeight = silverLines.reduce((acc, l) => acc + (Number(l.details?.rawWeight) || 0), 0);
+      const totalPlatinumWeight = platinumLines.reduce((acc, l) => acc + (Number(l.details?.rawWeight) || 0), 0);
 
       let totalSubtotal = 0;
       let totalDiscount = 0;
@@ -506,20 +560,312 @@ function renderRealPrintElementContent(
       const currencySuffix = settings.baseCurrency === 'IRT' ? 'تومان' : 'ریال';
 
       return (
-        <div className="flex flex-wrap items-center justify-around h-full font-bold text-[85%] px-3 bg-slate-100 border border-slate-300 rounded gap-2">
-          {totalGoldWeight > 0 && <span>جمع طلا (۷۵۰): {toPersianDigits(totalGold750.toFixed(3))} گرم</span>}
-          {totalSilverWeight > 0 && <span>جمع نقره: {toPersianDigits(totalSilverWeight.toFixed(3))} گرم</span>}
-          {totalPlatinumWeight > 0 && <span>جمع پلاتین: {toPersianDigits(totalPlatinumWeight.toFixed(3))} گرم</span>}
+        <div
+          dir="rtl"
+          className="flex flex-wrap items-center justify-around h-full font-bold text-[85%] px-3 bg-slate-100 border border-slate-300 rounded gap-2"
+          style={{ fontWeight: getFontWeightCss(el.style?.fontWeight || 'bold') }}
+        >
+          {totalGoldWeight > 0 && (
+            <span className="whitespace-nowrap">
+              <span>جمع طلا (۷۵۰): </span>
+              <bdi className="font-mono">{toPersianDigits(totalGold750.toFixed(3))}</bdi>
+              <span> گرم</span>
+            </span>
+          )}
+          {totalSilverWeight > 0 && (
+            <span className="whitespace-nowrap">
+              <span>جمع نقره: </span>
+              <bdi className="font-mono">{toPersianDigits(totalSilverWeight.toFixed(3))}</bdi>
+              <span> گرم</span>
+            </span>
+          )}
+          {totalPlatinumWeight > 0 && (
+            <span className="whitespace-nowrap">
+              <span>جمع پلاتین: </span>
+              <bdi className="font-mono">{toPersianDigits(totalPlatinumWeight.toFixed(3))}</bdi>
+              <span> گرم</span>
+            </span>
+          )}
           {totalSubtotal > 0 && (
-            <span>قیمت کل قبل از تخفیف: {toPersianDigits(totalSubtotal.toLocaleString('en-US'))} {currencySuffix}</span>
+            <span className="whitespace-nowrap">
+              <span>قیمت کل قبل از تخفیف: </span>
+              <bdi className="font-mono">{toPersianDigits(totalSubtotal.toLocaleString('en-US'))}</bdi>
+              <span> {currencySuffix}</span>
+            </span>
           )}
           {totalDiscount > 0 && (
-            <span>مجموع تخفیف: {toPersianDigits(totalDiscount.toLocaleString('en-US'))} {currencySuffix}</span>
+            <span className="whitespace-nowrap">
+              <span>مجموع تخفیف: </span>
+              <bdi className="font-mono">{toPersianDigits(totalDiscount.toLocaleString('en-US'))}</bdi>
+              <span> {currencySuffix}</span>
+            </span>
           )}
           {totalAmount > 0 && (
-            <span>مبلغ قابل پرداخت: {toPersianDigits(totalAmount.toLocaleString('en-US'))} {currencySuffix}</span>
+            <span className="whitespace-nowrap">
+              <span>مبلغ قابل پرداخت: </span>
+              <bdi className="font-mono">{toPersianDigits(totalAmount.toLocaleString('en-US'))}</bdi>
+              <span> {currencySuffix}</span>
+            </span>
           )}
-          <span>تعداد ردیف: {toPersianDigits(lines.length)}</span>
+          <span className="whitespace-nowrap">
+            <span>تعداد ردیف: </span>
+            <bdi className="font-mono">{toPersianDigits(lines.length)}</bdi>
+          </span>
+        </div>
+      );
+    }
+
+    case 'custom_table': {
+      const customTable = el.content?.customTable;
+      const fields = (customTable?.fields || []).filter((f) => f.visible);
+      if (fields.length === 0) return null;
+
+      const title = customTable?.title || 'خلاصه حساب و مانده‌ها';
+      const showTitle = Boolean(customTable?.showTitle);
+      const showHeader = customTable?.showHeader !== false;
+      const headerLabel = customTable?.headerLabelText || 'شرح شاخص';
+      const headerValue = customTable?.headerValueText || 'مقدار / مانده';
+      const layout = customTable?.layout || 'rows';
+
+      const borderColor = customTable?.borderColor || el.style.borderColor || '#cbd5e1';
+      const borderWidth = customTable?.borderWidthMm ? `${customTable.borderWidthMm}mm` : (el.style.borderWidthMm ? `${el.style.borderWidthMm}mm` : '0.4mm');
+      const borderStyle = customTable?.borderStyle || el.style.borderStyle || 'solid';
+      const borderRadius = customTable?.borderRadiusMm ? `${customTable.borderRadiusMm}mm` : (el.style.borderRadiusMm ? `${el.style.borderRadiusMm}mm` : '0');
+      const showVertical = customTable?.showVerticalBorders !== false;
+      const showHorizontal = customTable?.showHorizontalBorders !== false;
+      const headerBg = customTable?.headerBackgroundColor || '#f1f5f9';
+      const headerColor = customTable?.headerTextColor || '#0f172a';
+      const bodyColor = customTable?.bodyTextColor || el.style.color || '#1e293b';
+      const striped = Boolean(customTable?.stripedRows);
+      const altBg = customTable?.alternateRowColor || '#f8fafc';
+      const fontSize = customTable?.fontSizePt ? `${customTable.fontSizePt}pt` : (el.style.fontSizePt ? `${el.style.fontSizePt}pt` : '8.5pt');
+
+      const resolvedValues = computeDocumentCustomTableValues(customer, lines, settings);
+
+      const renderCustomCell = (f: InvoiceCustomTableField, val: string) => {
+        if (f.key === 'custom_qrcode') {
+          const qrVal = resolveQrCodeValue(
+            f.qrContentType,
+            f.customValue,
+            {
+              documentNumber,
+              customerName: customer?.name,
+              date: documentDateJalali,
+            },
+          );
+          return (
+            <div className="flex items-center justify-center p-0.5">
+              <div className="p-0.5 bg-white rounded inline-flex">
+                <QrCodeSvg value={qrVal} size={24} backgroundColor="#ffffff" color="#000000" />
+              </div>
+            </div>
+          );
+        }
+        return (
+          <span className="whitespace-nowrap">
+            <bdi>{val}</bdi> {f.unit ? <span className="text-[80%] font-normal text-slate-500 mr-0.5">{f.unit}</span> : null}
+          </span>
+        );
+      };
+
+      return (
+        <div
+          dir="rtl"
+          className="w-full h-full overflow-hidden flex flex-col select-none"
+          style={{
+            borderRadius,
+            border: `${borderWidth} ${borderStyle} ${borderColor}`,
+            fontSize,
+            color: bodyColor,
+            backgroundColor: el.style.backgroundColor || '#ffffff',
+          }}
+        >
+          {showTitle && (
+            <div
+              className="py-1 px-2 font-bold text-center border-b shrink-0"
+              style={{
+                backgroundColor: headerBg,
+                color: headerColor,
+                borderColor,
+                borderBottomWidth: borderWidth,
+                borderBottomStyle: borderStyle,
+              }}
+            >
+              {title}
+            </div>
+          )}
+
+          <div className="flex-1 w-full overflow-hidden">
+            {layout === 'grid2' ? (
+              <table className="w-full h-full border-collapse table-fixed text-center">
+                <tbody>
+                  {Array.from({ length: Math.ceil(fields.length / 2) }).map((_, rIdx) => {
+                    const f1 = fields[rIdx * 2];
+                    const f2 = fields[rIdx * 2 + 1];
+                    const v1 = f1 ? (f1.key === 'custom' ? (f1.customValue || '-') : (resolvedValues[f1.key] || '-')) : '';
+                    const v2 = f2 ? (f2.key === 'custom' ? (f2.customValue || '-') : (resolvedValues[f2.key] || '-')) : '';
+                    const isEven = rIdx % 2 === 1;
+
+                    return (
+                      <tr
+                        key={rIdx}
+                        style={{
+                          backgroundColor: striped && isEven ? altBg : undefined,
+                          borderBottom: showHorizontal && rIdx < Math.ceil(fields.length / 2) - 1 ? `${borderWidth} ${borderStyle} ${borderColor}` : undefined,
+                        }}
+                      >
+                        {f1 && (
+                          <>
+                            <td
+                              className="p-1 font-bold text-right pr-2 text-[90%]"
+                              style={{
+                                width: '25%',
+                                backgroundColor: headerBg,
+                                color: headerColor,
+                                borderLeft: `${borderWidth} ${borderStyle} ${borderColor}`,
+                              }}
+                            >
+                              {f1.label}
+                            </td>
+                            <td
+                              className="p-1 font-extrabold text-center text-[95%]"
+                              style={{
+                                width: '25%',
+                                borderLeft: showVertical && f2 ? `${borderWidth} ${borderStyle} ${borderColor}` : undefined,
+                              }}
+                            >
+                              {renderCustomCell(f1, v1)}
+                            </td>
+                          </>
+                        )}
+                        {f2 ? (
+                          <>
+                            <td
+                              className="p-1 font-bold text-right pr-2 text-[90%]"
+                              style={{
+                                width: '25%',
+                                backgroundColor: headerBg,
+                                color: headerColor,
+                                borderLeft: `${borderWidth} ${borderStyle} ${borderColor}`,
+                              }}
+                            >
+                              {f2.label}
+                            </td>
+                            <td className="p-1 font-extrabold text-center text-[95%]" style={{ width: '25%' }}>
+                              {renderCustomCell(f2, v2)}
+                            </td>
+                          </>
+                        ) : (
+                          <>
+                            <td style={{ width: '25%' }} />
+                            <td style={{ width: '25%' }} />
+                          </>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            ) : layout === 'columns' ? (
+              <table className="w-full h-full border-collapse table-fixed text-center">
+                {showHeader && (
+                  <thead>
+                    <tr
+                      style={{
+                        backgroundColor: headerBg,
+                        color: headerColor,
+                        borderBottom: `${borderWidth} ${borderStyle} ${borderColor}`,
+                      }}
+                    >
+                      {fields.map((f, idx) => (
+                        <th
+                          key={f.id}
+                          className="p-1 font-bold text-[90%]"
+                          style={{
+                            borderLeft: showVertical && idx < fields.length - 1 ? `${borderWidth} ${borderStyle} ${borderColor}` : undefined,
+                          }}
+                        >
+                          {f.label}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                )}
+                <tbody>
+                  <tr>
+                    {fields.map((f, idx) => {
+                      const val = f.key === 'custom' ? (f.customValue || '-') : (resolvedValues[f.key] || '-');
+                      return (
+                        <td
+                          key={f.id}
+                          className="p-1 font-extrabold text-[95%]"
+                          style={{
+                            borderLeft: showVertical && idx < fields.length - 1 ? `${borderWidth} ${borderStyle} ${borderColor}` : undefined,
+                          }}
+                        >
+                          {renderCustomCell(f, val)}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                </tbody>
+              </table>
+            ) : (
+              <table className="w-full h-full border-collapse table-fixed text-center">
+                {showHeader && (
+                  <thead>
+                    <tr
+                      style={{
+                        backgroundColor: headerBg,
+                        color: headerColor,
+                        borderBottom: `${borderWidth} ${borderStyle} ${borderColor}`,
+                      }}
+                    >
+                      <th
+                        className="p-1 font-bold text-right pr-2 text-[90%]"
+                        style={{
+                          width: '50%',
+                          borderLeft: showVertical ? `${borderWidth} ${borderStyle} ${borderColor}` : undefined,
+                        }}
+                      >
+                        {headerLabel}
+                      </th>
+                      <th className="p-1 font-bold text-center text-[90%]" style={{ width: '50%' }}>
+                        {headerValue}
+                      </th>
+                    </tr>
+                  </thead>
+                )}
+                <tbody>
+                  {fields.map((f, idx) => {
+                    const val = f.key === 'custom' ? (f.customValue || '-') : (resolvedValues[f.key] || '-');
+                    const isEven = idx % 2 === 1;
+                    return (
+                      <tr
+                        key={f.id}
+                        style={{
+                          backgroundColor: striped && isEven ? altBg : undefined,
+                          borderBottom: showHorizontal && idx < fields.length - 1 ? `${borderWidth} ${borderStyle} ${borderColor}` : undefined,
+                        }}
+                      >
+                        <td
+                          className="p-1 font-bold text-right pr-2 text-[90%]"
+                          style={{
+                            borderLeft: showVertical ? `${borderWidth} ${borderStyle} ${borderColor}` : undefined,
+                          }}
+                        >
+                          {f.label}
+                        </td>
+                        <td className="p-1 font-extrabold text-center text-[95%]">
+                          {renderCustomCell(f, val)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
         </div>
       );
     }
@@ -546,4 +892,171 @@ function renderRealPrintElementContent(
     default:
       return null;
   }
+}
+
+function computeDocumentCustomTableValues(
+  customer: Customer | null,
+  lines: DocumentLine[],
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  settings: any,
+): Record<string, string> {
+  const isToman = settings?.baseCurrency === 'IRT';
+
+  // 1. Line metal aggregations
+  const goldLines = lines.filter((l) => (l.details?.metalType || 'gold') === 'gold');
+  const silverLines = lines.filter((l) => l.details?.metalType === 'silver');
+  const platinumLines = lines.filter((l) => l.details?.metalType === 'platinum');
+
+  const totalRawGold = goldLines.reduce((acc, l) => acc + (Number(l.details?.rawWeight) || 0), 0);
+  const totalGold750 = goldLines.reduce((acc, l) => {
+    const raw = Number(l.details?.rawWeight) || 0;
+    const purity = Number(l.details?.purity) || 0;
+    return acc + (typeof l.converted750 === 'number' && Number.isFinite(l.converted750) ? l.converted750 : (purity > 0 ? (raw * purity) / 750 : raw));
+  }, 0);
+
+  const totalSilverWeight = silverLines.reduce((acc, l) => acc + (Number(l.details?.rawWeight) || 0), 0);
+  const totalPlatinumWeight = platinumLines.reduce((acc, l) => acc + (Number(l.details?.rawWeight) || 0), 0);
+
+  // 2. Financial totals
+  let totalSubtotal = 0;
+  let totalDiscount = 0;
+  let totalAmount = 0;
+
+  for (const l of lines) {
+    const tot = Number(l.details?.totalAmount) || 0;
+    const disc = Number(l.details?.discountAmount) || 0;
+    const sub = tot > 0 || disc > 0 ? tot + disc : (Number(l.details?.metalTotalPrice) || 0);
+    totalAmount += tot;
+    totalDiscount += disc;
+    totalSubtotal += sub;
+  }
+
+  // 3. Document Net Effects on Customer Account
+  let effectGold = 0;
+  let effectSilver = 0;
+  let effectRial = 0;
+
+  for (const line of lines) {
+    const lineNature = line.documentNature === 'paid' ? 'paid' : 'received';
+    const direction = lineNature === 'received' ? 1 : -1;
+    const docTab = String(line.documentTab || line.sourceTab || '');
+    const det = (line.details || {}) as Record<string, unknown>;
+
+    // Metal weight effect
+    if (docTab === 'raw-gold' || docTab === 'gold-sale' || (docTab === 'refining' && det.refiningOpKind !== 'fee')) {
+      const metal = String(det.metalType || 'gold');
+      const baseKarat = Number(det.baseKarat) || 750;
+      const rawWeight = Number(det.rawWeight) || 0;
+      const purity = Number(det.purity) || baseKarat;
+      const convertedWeight = typeof line.converted750 === 'number' && Number.isFinite(line.converted750)
+        ? line.converted750
+        : (rawWeight > 0 && purity > 0 ? (rawWeight * purity) / baseKarat : 0);
+
+      const weightDirection = docTab === 'gold-sale'
+        ? (lineNature === 'received' ? -1 : 1)
+        : direction;
+
+      if (metal === 'silver') {
+        effectSilver += weightDirection * convertedWeight;
+      } else if (metal === 'gold' || !metal) {
+        effectGold += weightDirection * convertedWeight;
+      }
+    } else if (docTab === 'workmanship') {
+      const weight = typeof line.converted750 === 'number' && Number.isFinite(line.converted750)
+        ? line.converted750
+        : (Number(det.rawWeight) || 0);
+      effectGold += direction * weight;
+    }
+
+    // Financial effect
+    let lineRial = 0;
+    if (docTab === 'currency') {
+      lineRial = Number(det.currencyTotalAmount) || 0;
+    } else if (docTab === 'cash' && !det.isForeignCash) {
+      lineRial = Number(det.totalAmount) || 0;
+    } else if (docTab === 'gold-sale') {
+      lineRial = Number(det.totalAmount) || 0;
+    } else if (docTab === 'bank') {
+      const rawBankAmt = Number(det.totalAmount || det.amount) || 0;
+      lineRial = (isToman && !det.rialAmountInIrr) ? rawBankAmt * 10 : rawBankAmt;
+    } else if (docTab === 'coin' || docTab === 'workmanship' || docTab === 'claim') {
+      lineRial = Number(det.totalAmount || det.metalTotalPrice || det.claimFinancial) || 0;
+    }
+    if (lineRial > 0) {
+      effectRial += direction * lineRial;
+    }
+  }
+
+  // 4. Customer Balances
+  const prevGold = customer?.goldBalance ?? 0;
+  const prevSilver = customer?.silverBalance ?? 0;
+  const prevRial = customer?.rialBalance ?? 0;
+
+  const finalGold = prevGold + effectGold;
+  const finalSilver = prevSilver + effectSilver;
+  const finalRial = prevRial + effectRial;
+
+  // Format money helper
+  const formatMoney = (irr: number) => {
+    const val = isToman ? (irr < 0 ? -Math.floor(Math.abs(irr) / 10) : Math.floor(irr / 10)) : irr;
+    return toPersianDigits(val.toLocaleString('en-US'));
+  };
+
+  // Status helper
+  let statusText = 'بی‌حساب / تسویه';
+  if (finalGold > 0.0005 || finalRial > 50) {
+    statusText = 'بستانکار (طلب از ما)';
+  } else if (finalGold < -0.0005 || finalRial < -50) {
+    statusText = 'بدهکار (به ما)';
+  }
+
+  // Settlement methods detection
+  const hasUnsettled = lines.some((l) => l.settlementMethod === 'unsettled');
+  const hasCash = lines.some((l) => l.settlementMethod === 'cash');
+  const hasWeight = lines.some((l) => l.settlementMethod === 'weight');
+  let settlementStatus = 'تسویه شده';
+  if (hasUnsettled) settlementStatus = 'ثبت در مانده حساب (تسویه نشده)';
+  else if (hasCash && hasWeight) settlementStatus = 'تسویه نقدی و وزنی';
+  else if (hasCash) settlementStatus = 'تسویه نقدی';
+  else if (hasWeight) settlementStatus = 'تسویه وزنی';
+
+  // Karat & Converted weight calculation
+  const primaryPurity = lines.find((l) => Number(l.details?.purity) > 0)?.details?.purity || 750;
+
+  let convertedByMetalStr = '-';
+  if (totalRawGold > 0 || (totalSilverWeight === 0 && totalPlatinumWeight === 0)) {
+    convertedByMetalStr = `${toPersianDigits(totalGold750.toFixed(3))} (۷۵۰)`;
+  } else if (totalSilverWeight > 0) {
+    convertedByMetalStr = `${toPersianDigits(totalSilverWeight.toFixed(3))} (۹۹۹)`;
+  } else if (totalPlatinumWeight > 0) {
+    convertedByMetalStr = `${toPersianDigits(totalPlatinumWeight.toFixed(3))} (۹۵۰)`;
+  }
+
+  return {
+    prev_balance_gold: toPersianDigits(prevGold.toFixed(3)),
+    prev_balance_cash: formatMoney(prevRial),
+    final_balance_gold: toPersianDigits(finalGold.toFixed(3)),
+    final_balance_cash: formatMoney(finalRial),
+    customer_status: statusText,
+    prev_balance_silver: toPersianDigits(prevSilver.toFixed(3)),
+    final_balance_silver: toPersianDigits(finalSilver.toFixed(3)),
+
+    doc_net_gold: effectGold !== 0 ? (effectGold > 0 ? `+${toPersianDigits(effectGold.toFixed(3))}` : toPersianDigits(effectGold.toFixed(3))) : '۰٫۰۰۰',
+    doc_net_cash: formatMoney(effectRial),
+    doc_settlement_status: settlementStatus,
+    doc_rows_count: toPersianDigits(lines.length),
+
+    doc_subtotal_price: toPersianDigits(totalSubtotal.toLocaleString('en-US')),
+    doc_discount_amount: totalDiscount > 0 ? toPersianDigits(totalDiscount.toLocaleString('en-US')) : '۰',
+    doc_total_price: toPersianDigits(totalAmount.toLocaleString('en-US')),
+
+    doc_gold_weight_750: toPersianDigits(totalGold750.toFixed(3)),
+    doc_raw_gold_weight: toPersianDigits(totalRawGold.toFixed(3)),
+    doc_silver_weight: toPersianDigits(totalSilverWeight.toFixed(3)),
+    doc_platinum_weight: toPersianDigits(totalPlatinumWeight.toFixed(3)),
+
+    doc_karat: toPersianDigits(primaryPurity),
+    doc_converted_by_metal: convertedByMetalStr,
+    custom_qrcode: 'QR',
+  };
 }

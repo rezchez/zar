@@ -88,9 +88,9 @@ export default function CommittedLineRow({
   const rawWeight =
     isCurrency || isStone
       ? 0
-      : line.details.calculationMethod === 'money'
-      ? actualWeightFromMoney(line.details, Number(line.details.baseKarat || 750))
-      : numberValue(line.details.rawWeight);
+      : line.details?.calculationMethod === 'money'
+      ? actualWeightFromMoney(line.details, Number(line.details?.baseKarat || 750))
+      : numberValue(line.details?.rawWeight);
 
   const purityVal = isCurrency || isStone ? 0 : numberValue(line.details.purity);
 

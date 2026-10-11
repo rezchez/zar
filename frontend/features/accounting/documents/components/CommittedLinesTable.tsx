@@ -170,24 +170,24 @@ function getLineSortValue(
     }
     case 'weight': {
       if (line.documentTab === 'currency' || line.documentTab === 'stone') return 0;
-      return line.details.calculationMethod === 'money'
-        ? actualWeightFromMoney(line.details, Number(line.details.baseKarat || 750))
-        : numberValue(line.details.rawWeight);
+      return line.details?.calculationMethod === 'money'
+        ? actualWeightFromMoney(line.details, Number(line.details?.baseKarat || 750))
+        : numberValue(line.details?.rawWeight);
     }
     case 'purity': {
       if (line.documentTab === 'currency' || line.documentTab === 'stone') return 0;
-      return numberValue(line.details.purity);
+      return numberValue(line.details?.purity);
     }
     case 'bedehkarVazni': {
       if (line.documentTab === 'currency' || line.documentTab === 'stone') return 0;
       const rawW =
-        line.details.calculationMethod === 'money'
-          ? actualWeightFromMoney(line.details, Number(line.details.baseKarat || 750))
-          : numberValue(line.details.rawWeight);
-      const p = numberValue(line.details.purity) || Number(line.details.baseKarat || 750);
+        line.details?.calculationMethod === 'money'
+          ? actualWeightFromMoney(line.details, Number(line.details?.baseKarat || 750))
+          : numberValue(line.details?.rawWeight);
+      const p = numberValue(line.details?.purity) || Number(line.details?.baseKarat || 750);
       const c750 =
         line.converted750 ??
-        (rawW > 0 && p > 0 ? (rawW * p) / Number(line.details.baseKarat || 750) : 0);
+        (rawW > 0 && p > 0 ? (rawW * p) / Number(line.details?.baseKarat || 750) : 0);
 
       const isBedehkar =
         line.documentTab === 'gold-sale'
@@ -198,13 +198,13 @@ function getLineSortValue(
     case 'bostankarVazni': {
       if (line.documentTab === 'currency' || line.documentTab === 'stone') return 0;
       const rawW =
-        line.details.calculationMethod === 'money'
-          ? actualWeightFromMoney(line.details, Number(line.details.baseKarat || 750))
-          : numberValue(line.details.rawWeight);
-      const p = numberValue(line.details.purity) || Number(line.details.baseKarat || 750);
+        line.details?.calculationMethod === 'money'
+          ? actualWeightFromMoney(line.details, Number(line.details?.baseKarat || 750))
+          : numberValue(line.details?.rawWeight);
+      const p = numberValue(line.details?.purity) || Number(line.details?.baseKarat || 750);
       const c750 =
         line.converted750 ??
-        (rawW > 0 && p > 0 ? (rawW * p) / Number(line.details.baseKarat || 750) : 0);
+        (rawW > 0 && p > 0 ? (rawW * p) / Number(line.details?.baseKarat || 750) : 0);
 
       const isBostankar =
         line.documentTab === 'gold-sale'
@@ -679,13 +679,13 @@ export default function CommittedLinesTable({
       )
       .reduce((sum, l) => {
         const rawW =
-          l.details.calculationMethod === 'money'
-            ? actualWeightFromMoney(l.details, Number(l.details.baseKarat || 750))
-            : numberValue(l.details.rawWeight);
-        const p = numberValue(l.details.purity) || Number(l.details.baseKarat || 750);
+          l.details?.calculationMethod === 'money'
+            ? actualWeightFromMoney(l.details, Number(l.details?.baseKarat || 750))
+            : numberValue(l.details?.rawWeight);
+        const p = numberValue(l.details?.purity) || Number(l.details?.baseKarat || 750);
         const c750 =
           l.converted750 ??
-          (rawW > 0 && p > 0 ? (rawW * p) / Number(l.details.baseKarat || 750) : 0);
+          (rawW > 0 && p > 0 ? (rawW * p) / Number(l.details?.baseKarat || 750) : 0);
         return sum + c750;
       }, 0);
   }, [committedLines]);
@@ -701,13 +701,13 @@ export default function CommittedLinesTable({
       )
       .reduce((sum, l) => {
         const rawW =
-          l.details.calculationMethod === 'money'
-            ? actualWeightFromMoney(l.details, Number(l.details.baseKarat || 750))
-            : numberValue(l.details.rawWeight);
-        const p = numberValue(l.details.purity) || Number(l.details.baseKarat || 750);
+          l.details?.calculationMethod === 'money'
+            ? actualWeightFromMoney(l.details, Number(l.details?.baseKarat || 750))
+            : numberValue(l.details?.rawWeight);
+        const p = numberValue(l.details?.purity) || Number(l.details?.baseKarat || 750);
         const c750 =
           l.converted750 ??
-          (rawW > 0 && p > 0 ? (rawW * p) / Number(l.details.baseKarat || 750) : 0);
+          (rawW > 0 && p > 0 ? (rawW * p) / Number(l.details?.baseKarat || 750) : 0);
         return sum + c750;
       }, 0);
   }, [committedLines]);

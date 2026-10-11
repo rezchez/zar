@@ -36,6 +36,69 @@ type CashTabProps = {
   currencyLabel?: string;
 };
 
+// Persistent & Module-level in-memory cache for cash funds across tab switches
+const CASH_FUNDS_CACHE_STORAGE_KEY = 'zarfolio_cash_funds_cache';
+let cachedCashFunds: CashFundItem[] | null = null;
+let cashFundsFetchPromise: Promise<CashFundItem[]> | null = null;
+
+export function getInitialCachedCashFunds(): CashFundItem[] | null {
+  if (cachedCashFunds && cachedCashFunds.length > 0) {
+    return cachedCashFunds;
+  }
+  if (typeof window !== 'undefined') {
+    try {
+      const stored = localStorage.getItem(CASH_FUNDS_CACHE_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          cachedCashFunds = parsed;
+          return parsed;
+        }
+      }
+    } catch {
+      // Ignore localStorage parse errors
+    }
+  }
+  return null;
+}
+
+export async function fetchCashFunds(forceRefresh = false): Promise<CashFundItem[]> {
+  const existing = getInitialCachedCashFunds();
+  if (!forceRefresh && existing) {
+    return existing;
+  }
+  if (!forceRefresh && cashFundsFetchPromise) {
+    return cashFundsFetchPromise;
+  }
+  cashFundsFetchPromise = fetch('/api/accounting/opening/cash', { cache: forceRefresh ? 'no-cache' : 'default' })
+    .then(async (res) => {
+      if (!res.ok) throw new Error('دریافت صندوق‌های وجه نقد انجام نشد.');
+      const data = await res.json();
+      const loaded = (Array.isArray(data?.funds) ? data.funds : []) as CashFundItem[];
+      cachedCashFunds = loaded;
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem(CASH_FUNDS_CACHE_STORAGE_KEY, JSON.stringify(loaded));
+        } catch {}
+      }
+      return loaded;
+    })
+    .finally(() => {
+      cashFundsFetchPromise = null;
+    });
+  return cashFundsFetchPromise;
+}
+
+export function invalidateCashFundsCache() {
+  cachedCashFunds = null;
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.removeItem(CASH_FUNDS_CACHE_STORAGE_KEY);
+    } catch {}
+    window.dispatchEvent(new CustomEvent('zarfolio:cash_funds_cache_invalidated'));
+  }
+}
+
 export default function CashTab({
   nature,
   draftLine,
@@ -54,51 +117,69 @@ export default function CashTab({
   const isReceived = nature === 'received';
   const titleText = isReceived ? 'ورود وجه نقد' : 'خروج وجه نقد';
 
-  const [funds, setFunds] = useState<CashFundItem[]>([]);
+  const initialCached = getInitialCachedCashFunds();
+  const [funds, setFunds] = useState<CashFundItem[]>(() => initialCached || []);
+  const [isClient, setIsClient] = useState(false);
   const [loadingFunds, setLoadingFunds] = useState(false);
+  const [isFetchingInitial, setIsFetchingInitial] = useState(() => {
+    return typeof window !== 'undefined' && (!initialCached || initialCached.length === 0);
+  });
   const [selectedFundId, setSelectedFundId] = useState<string>(
-    draftLine.details.cashFundId || '',
+    draftLine.details.cashFundId || (initialCached && initialCached.length > 0 ? initialCached[0].id : ''),
   );
   const [showAddModal, setShowAddModal] = useState(false);
   const [notice, setNotice] = useState<{ tone: 'success' | 'error' | 'warning'; text: string } | null>(null);
 
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+
   // Fetch cash funds from API
-  const fetchFunds = useCallback(async (autoSelectNewId?: string) => {
+  const fetchFunds = useCallback(async (autoSelectNewId?: string, forceRefresh = false) => {
     setLoadingFunds(true);
     try {
-      const res = await fetch('/api/accounting/opening/cash', { cache: 'no-store' });
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data.funds)) {
-          const loadedFunds = data.funds as CashFundItem[];
-          setFunds(loadedFunds);
-          if (loadedFunds.length > 0) {
-            setSelectedFundId((current) => {
-              if (autoSelectNewId && loadedFunds.some((f) => f.id === autoSelectNewId)) {
-                return autoSelectNewId;
-              }
-              if (current && loadedFunds.some((f) => f.id === current)) {
-                return current;
-              }
-              if (draftLine.details.cashFundId && loadedFunds.some((f) => f.id === draftLine.details.cashFundId)) {
-                return draftLine.details.cashFundId;
-              }
-              return loadedFunds[0].id;
-            });
-          } else {
-            setSelectedFundId('');
+      const loadedFunds = await fetchCashFunds(forceRefresh);
+      setFunds(loadedFunds);
+      if (loadedFunds.length > 0) {
+        setSelectedFundId((current) => {
+          if (autoSelectNewId && loadedFunds.some((f) => f.id === autoSelectNewId)) {
+            return autoSelectNewId;
           }
-        }
+          if (current && loadedFunds.some((f) => f.id === current)) {
+            return current;
+          }
+          if (draftLine.details.cashFundId && loadedFunds.some((f) => f.id === draftLine.details.cashFundId)) {
+            return draftLine.details.cashFundId;
+          }
+          return loadedFunds[0].id;
+        });
+      } else {
+        setSelectedFundId('');
       }
     } catch {
       // Keep existing funds on fetch error
     } finally {
       setLoadingFunds(false);
+      setIsFetchingInitial(false);
     }
   }, [draftLine.details.cashFundId]);
 
   useEffect(() => {
     void fetchFunds();
+
+    const handleInvalidation = () => {
+      void fetchFunds(undefined, true);
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('zarfolio:cash_funds_cache_invalidated', handleInvalidation);
+    }
+
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('zarfolio:cash_funds_cache_invalidated', handleInvalidation);
+      }
+    };
   }, [fetchFunds]);
 
   // Current selected fund
@@ -230,6 +311,7 @@ export default function CashTab({
   };
 
   function handleFundCreated(entry: { currency: string; amount: number; description: string; name?: string; date?: string; fund?: CashFundItem }) {
+    invalidateCashFundsCache();
     setNotice({
       tone: 'success',
       text: `صندوق جدید «${entry.name || `صندوق ${entry.currency}`}» با موفقیت ایجاد و انتخاب شد.`,
@@ -244,7 +326,7 @@ export default function CashTab({
       });
       setSelectedFundId(entry.fund.id);
     }
-    void fetchFunds();
+    void fetchFunds(entry.fund?.id, true);
   }
 
   return (
@@ -285,7 +367,7 @@ export default function CashTab({
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => void fetchFunds()}
+            onClick={() => void fetchFunds(undefined, true)}
             disabled={loadingFunds}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer"
             title="به‌روزرسانی لیست صندوق‌ها"
@@ -306,7 +388,12 @@ export default function CashTab({
       </div>
 
       {/* Empty State when no cash fund exists */}
-      {funds.length === 0 && !loadingFunds ? (
+      {isClient && isFetchingInitial && funds.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-12 px-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30">
+          <Loader2 className="animate-spin text-amber-500 mb-3" size={28} />
+          <p className="text-xs font-bold text-slate-700 dark:text-slate-300">در حال دریافت اطلاعات صندوق‌های وجه نقد...</p>
+        </div>
+      ) : funds.length === 0 && !loadingFunds ? (
         <div className="text-center py-8 px-4 rounded-2xl border border-dashed border-amber-300 dark:border-amber-800/60 bg-amber-50/50 dark:bg-amber-950/20 space-y-3">
           <div className="flex size-14 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-600 mx-auto">
             <Wallet size={28} />

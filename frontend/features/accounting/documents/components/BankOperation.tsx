@@ -36,6 +36,7 @@ import SayadInput from '@/components/ui/sayad-input';
 import { useToastManager } from '@/components/ui/toast';
 import AddBankAccountModal from '@/features/banks/components/AddBankAccountModal';
 import BankAccountSelect from '@/features/banks/components/BankAccountSelect';
+import { fetchBankAccounts, getInitialCachedBanks } from './BankTab';
 import { useAppSettings } from '@/src/components/SettingsProvider';
 
 type BankOperationProps = {
@@ -65,9 +66,11 @@ export default function BankOperation({
   const effectiveBaseCurrency = (settings?.baseCurrency || 'IRR') as 'IRR' | 'IRT';
   const currencySuffix = effectiveBaseCurrency === 'IRT' ? 'تومان' : 'ریال';
 
-  const [banks, setBanks] = useState<BankAccount[]>([]);
+  const initialCached = getInitialCachedBanks();
+  const [banks, setBanks] = useState<BankAccount[]>(() => initialCached || []);
+  const [isFetchingBanks, setIsFetchingBanks] = useState(() => !initialCached || initialCached.length === 0);
   const [search, setSearch] = useState('');
-  const [selectedSource, setSelectedSource] = useState('');
+  const [selectedSource, setSelectedSource] = useState(() => (initialCached && initialCached.length > 0 ? initialCached[0].id : ''));
   const [selectedDestination, setSelectedDestination] = useState('');
   const [kind, setKind] = useState<BankTransferKind>('check-payment');
   const [amount, setAmount] = useState('');
@@ -83,24 +86,22 @@ export default function BankOperation({
   const [dueDateJalali, setDueDateJalali] = useState(() => formatJalaliDate());
 
   async function loadBanks() {
+    setIsFetchingBanks(true);
     try {
-      const response = await fetch('/api/banks', { cache: 'no-store' });
-      const data = (await response.json()) as { banks?: BankAccount[]; message?: string };
-      if (!response.ok) throw new Error(data.message ?? 'دریافت حساب‌های بانکی انجام نشد.');
-      setBanks(data.banks ?? []);
+      const loaded = await fetchBankAccounts(true);
+      setBanks(loaded);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'دریافت حساب‌های بانکی انجام نشد.');
+    } finally {
+      setIsFetchingBanks(false);
     }
   }
 
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/banks', { cache: 'no-store' })
-      .then(async (response) => {
-        const data = (await response.json()) as { banks?: BankAccount[]; message?: string };
-        if (!response.ok) throw new Error(data.message ?? 'دریافت حساب‌های بانکی انجام نشد.');
+    fetchBankAccounts(false)
+      .then((loadedBanks) => {
         if (!cancelled) {
-          const loadedBanks = data.banks ?? [];
           setBanks(loadedBanks);
           if (loadedBanks.length > 0) {
             setSelectedSource((prev) => prev || loadedBanks[0].id);
@@ -108,8 +109,13 @@ export default function BankOperation({
         }
       })
       .catch((error: unknown) => {
-        if (!cancelled) {
+        if (!cancelled && (!initialCached || initialCached.length === 0)) {
           toast.error(error instanceof Error ? error.message : 'دریافت حساب‌ها انجام نشد.');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsFetchingBanks(false);
         }
       });
     return () => {
@@ -311,7 +317,12 @@ export default function BankOperation({
       </div>
 
       {/* Dynamic Content Based on Operation Kind */}
-      {banks.length === 0 ? (
+      {isFetchingBanks && banks.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-12 px-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30">
+          <LoaderCircle className="animate-spin text-amber-500 mb-3" size={28} />
+          <p className="text-xs font-bold text-slate-700 dark:text-slate-300">در حال دریافت حساب‌های بانکی...</p>
+        </div>
+      ) : banks.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-amber-300 bg-amber-50/70 p-6 text-center dark:border-amber-700/60 dark:bg-amber-950/30">
           <p className="text-sm font-bold text-amber-900 dark:text-amber-200">هنوز هیچ حساب بانکی فعالی ثبت نشده است.</p>
           <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">برای ثبت و پردازش چک یا انتقال بانکی، ابتدا یک حساب بانکی ایجاد کنید.</p>

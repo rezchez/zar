@@ -166,28 +166,29 @@ export default function StoneTab({
     natureBadge: string;
     accountingImpact: string;
   }[] = useMemo(() => {
+    const customerDisplayName = selectedCustomer?.name?.trim() ? selectedCustomer.name.trim() : 'مشتری';
     if (isReceived) {
       return [
         {
           id: 'purchase',
           label: 'خرید سنگ',
-          desc: 'خرید سنگ از مشتری (مشتری سنگ را به ما بدهکار می‌شود)',
-          natureBadge: 'مشتری سنگ را به ما بدهکار می‌شود',
-          accountingImpact: 'خرید سنگ از مشتری · مشتری سنگ را به ما بدهکار می‌شود',
+          desc: `خرید سنگ از ${customerDisplayName} (${customerDisplayName} به ما سنگ را بدهکار است)`,
+          natureBadge: `${customerDisplayName} به ما سنگ را بدهکار است`,
+          accountingImpact: `خرید سنگ از ${customerDisplayName} · ${customerDisplayName} به ما سنگ را بدهکار است`,
         },
         {
           id: 'unsettled_purchase',
           label: 'خرید سنگ (بدون تسویه)',
-          desc: 'خرید اعتباری/دفتری سنگ از مشتری (مشتری سنگ را به ما بدهکار می‌شود)',
-          natureBadge: 'مشتری سنگ را به ما بدهکار می‌شود',
-          accountingImpact: 'خرید دفتری سنگ از مشتری · مشتری سنگ را به ما بدهکار می‌شود',
+          desc: `خرید اعتباری/دفتری سنگ از ${customerDisplayName} (${customerDisplayName} به ما سنگ را بدهکار است)`,
+          natureBadge: `${customerDisplayName} به ما سنگ را بدهکار است`,
+          accountingImpact: `خرید دفتری سنگ از ${customerDisplayName} · ${customerDisplayName} به ما سنگ را بدهکار است`,
         },
         {
           id: 'entry',
           label: 'ورود سنگ',
-          desc: 'ورود فیزیکی سنگ / تحویل جهت تسویه بدهی سنگ مشتری',
-          natureBadge: 'بدهی سنگ مشتری به ما (تسویه وزنی)',
-          accountingImpact: 'تراز وزنی سنگ: ثبت ردیف وزنی در جهت تسویه بدهی سنگ مشتری به ما',
+          desc: `ورود فیزیکی سنگ / تحویل جهت تسویه بدهی سنگ ${customerDisplayName}`,
+          natureBadge: `بدهی سنگ ${customerDisplayName} به ما (تسویه وزنی)`,
+          accountingImpact: `تراز وزنی سنگ: ثبت ردیف وزنی در جهت تسویه بدهی سنگ ${customerDisplayName} به ما`,
         },
       ];
     }
@@ -195,26 +196,26 @@ export default function StoneTab({
       {
         id: 'sale',
         label: 'فروش سنگ',
-        desc: 'فروش سنگ به مشتری (مشتری سنگ را از ما طلبکار می‌شود)',
-        natureBadge: 'مشتری سنگ را از ما طلبکار می‌شود',
-        accountingImpact: 'فروش سنگ به مشتری · مشتری سنگ را از ما طلبکار می‌شود',
+        desc: `فروش سنگ به ${customerDisplayName} (${customerDisplayName} سنگ را از ما طلبکار می‌شود)`,
+        natureBadge: `${customerDisplayName} سنگ را از ما طلبکار می‌شود`,
+        accountingImpact: `فروش سنگ به ${customerDisplayName} · ${customerDisplayName} سنگ را از ما طلبکار می‌شود`,
       },
       {
         id: 'unsettled_sale',
         label: 'فروش سنگ (بدون تسویه)',
-        desc: 'فروش اعتباری/دفتری سنگ به مشتری (مشتری سنگ را از ما طلبکار می‌شود)',
-        natureBadge: 'مشتری سنگ را از ما طلبکار می‌شود',
-        accountingImpact: 'فروش دفتری سنگ به مشتری · مشتری سنگ را از ما طلبکار می‌شود',
+        desc: `فروش اعتباری/دفتری سنگ به ${customerDisplayName} (${customerDisplayName} سنگ را از ما طلبکار می‌شود)`,
+        natureBadge: `${customerDisplayName} سنگ را از ما طلبکار می‌شود`,
+        accountingImpact: `فروش دفتری سنگ به ${customerDisplayName} · ${customerDisplayName} سنگ را از ما طلبکار می‌شود`,
       },
       {
         id: 'exit',
         label: 'خروج سنگ',
-        desc: 'خروج فیزیکی سنگ / تحویل سنگ در جهت تسویه طلب سنگ مشتری',
-        natureBadge: 'طلب سنگ مشتری از ما (تحویل/تسویه)',
-        accountingImpact: 'تراز وزنی سنگ: ثبت ردیف وزنی در جهت تحویل یا تسویه طلب سنگ مشتری از ما',
+        desc: `خروج فیزیکی سنگ / تحویل سنگ در جهت تسویه طلب سنگ ${customerDisplayName}`,
+        natureBadge: `طلب سنگ ${customerDisplayName} از ما (تحویل/تسویه)`,
+        accountingImpact: `تراز وزنی سنگ: ثبت ردیف وزنی در جهت تحویل یا تسویه طلب سنگ ${customerDisplayName} از ما`,
       },
     ];
-  }, [isReceived]);
+  }, [isReceived, selectedCustomer?.name]);
 
   // Current active operation
   const [currentOp, setCurrentOp] = useState<StoneOperationKind>(() => {
@@ -1524,7 +1525,7 @@ export default function StoneTab({
           </div>
           {activeOp?.natureBadge && (
             <span
-              title={`قاعده ماهیت معامله سنگ و عدم تهاتر: خرید سنگ از مشتری یعنی مشتری سنگ را به ما بدهکار می‌شود · فروش سنگ به مشتری یعنی مشتری سنگ را از ما طلبکار می‌شود · اثر: ${activeOp?.accountingImpact || ''}`}
+              title={`قاعده ماهیت معامله سنگ و عدم تهاتر: خرید سنگ از مشتری یعنی ${selectedCustomer?.name?.trim() ? `${selectedCustomer.name.trim()} به ما سنگ را بدهکار است` : 'مشتری به ما سنگ را بدهکار است'} · فروش سنگ به مشتری یعنی مشتری سنگ را از ما طلبکار می‌شود · اثر: ${activeOp?.accountingImpact || ''}`}
               className={`text-[11px] font-black px-2.5 py-0.5 rounded-lg border ${
                 currentOp === 'purchase' || currentOp === 'entry' || currentOp === 'unsettled_purchase'
                   ? 'bg-emerald-100 text-emerald-950 border-emerald-300 dark:bg-emerald-500/20 dark:text-emerald-200 dark:border-emerald-400/50'
@@ -1604,7 +1605,7 @@ export default function StoneTab({
                   ? 'bg-emerald-600 text-white shadow-xs font-black'
                   : 'text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100/70 dark:hover:bg-emerald-950/60'
               }`}
-              title="سنگ‌های خریداری‌شده بدون تسویه (مشتری سنگ را به ما بدهکار می‌شود · ثبت ورود به انبار)"
+              title={`سنگ‌های خریداری‌شده بدون تسویه (${selectedCustomer?.name?.trim() ? `${selectedCustomer.name.trim()} به ما سنگ را بدهکار است` : 'مشتری به ما سنگ را بدهکار است'} · ثبت ورود به انبار)`}
             >
               <span>خریداری‌شده (ورود)</span>
               {unsettledPurchasedStones.length > 0 && (
@@ -1665,7 +1666,7 @@ export default function StoneTab({
                 </h4>
                 <p className="text-[11px] text-amber-800/80 dark:text-amber-300/80">
                   {unsettledPickerTab === 'purchased'
-                    ? 'انتخاب قلم جهت ثبت ورود فیزیکی سنگ به انبار (مشتری سنگ را به ما بدهکار می‌شود)'
+                    ? `انتخاب قلم جهت ثبت ورود فیزیکی سنگ به انبار (${selectedCustomer?.name?.trim() ? `${selectedCustomer.name.trim()} به ما سنگ را بدهکار است` : 'مشتری به ما سنگ را بدهکار است'})`
                     : unsettledPickerTab === 'sold'
                     ? 'بررسی موجودی در انبار و انتخاب قلم جهت ثبت خروج فیزیکی سنگ (مشتری سنگ را از ما طلبکار می‌شود)'
                     : 'جستجو و انتخاب مستقیم سنگ از انبار گوهرسنگ‌ها جهت خروج یا مصرف'}
@@ -1930,7 +1931,7 @@ export default function StoneTab({
                             </span>
                           </div>
                           <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-cyan-100 text-cyan-900 border border-cyan-300 dark:bg-cyan-950/90 dark:text-cyan-300 dark:border-cyan-600">
-                            مشتری سنگ را به ما بدهکار می‌شود
+                            {selectedCustomer?.name?.trim() ? `${selectedCustomer.name.trim()} به ما سنگ را بدهکار است` : 'مشتری به ما سنگ را بدهکار است'}
                           </span>
                         </div>
 

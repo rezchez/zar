@@ -11,6 +11,7 @@ import {
   FileText,
   Landmark,
   ListPlus,
+  LoaderCircle,
   Plus,
   Wallet,
 } from 'lucide-react';
@@ -49,22 +50,46 @@ type BankTabProps = {
   selectedCustomer?: Customer | null;
   draftLine: DocumentLine;
   setDraftLine: React.Dispatch<React.SetStateAction<DocumentLine>>;
+  committedLines?: DocumentLine[];
   editingLineId?: string | null;
   isLinesPinned?: boolean;
-  commitDraftLine?: () => void;
+  commitDraftLine?: (customDraftLine?: DocumentLine) => boolean | void;
   updateDraftDetail?: <K extends keyof DetailState>(field: K, value: DetailState[K]) => void;
   handleKeyDownEnter?: (event: React.KeyboardEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => void;
   draftReady?: boolean;
   baseCurrency?: 'IRR' | 'IRT';
 };
 
-// Module-level in-memory cache for bank accounts across tab switches
+// Persistent & Module-level in-memory cache for bank accounts across tab switches
+const BANKS_CACHE_STORAGE_KEY = 'zarfolio_banks_cache';
 let cachedBanks: BankAccount[] | null = null;
 let banksFetchPromise: Promise<BankAccount[]> | null = null;
 
-export async function fetchBankAccounts(forceRefresh = false): Promise<BankAccount[]> {
-  if (!forceRefresh && cachedBanks) {
+export function getInitialCachedBanks(): BankAccount[] | null {
+  if (cachedBanks && cachedBanks.length > 0) {
     return cachedBanks;
+  }
+  if (typeof window !== 'undefined') {
+    try {
+      const stored = localStorage.getItem(BANKS_CACHE_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          cachedBanks = parsed;
+          return parsed;
+        }
+      }
+    } catch {
+      // Ignore localStorage parse errors
+    }
+  }
+  return null;
+}
+
+export async function fetchBankAccounts(forceRefresh = false): Promise<BankAccount[]> {
+  const existing = getInitialCachedBanks();
+  if (!forceRefresh && existing) {
+    return existing;
   }
   if (!forceRefresh && banksFetchPromise) {
     return banksFetchPromise;
@@ -73,8 +98,14 @@ export async function fetchBankAccounts(forceRefresh = false): Promise<BankAccou
     .then(async (response) => {
       const data = (await response.json()) as { banks?: BankAccount[]; message?: string };
       if (!response.ok) throw new Error(data.message ?? 'دریافت حساب‌های بانکی انجام نشد.');
-      cachedBanks = data.banks ?? [];
-      return cachedBanks;
+      const loaded = data.banks ?? [];
+      cachedBanks = loaded;
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem(BANKS_CACHE_STORAGE_KEY, JSON.stringify(loaded));
+        } catch {}
+      }
+      return loaded;
     })
     .finally(() => {
       banksFetchPromise = null;
@@ -84,6 +115,12 @@ export async function fetchBankAccounts(forceRefresh = false): Promise<BankAccou
 
 export function invalidateBankAccountsCache() {
   cachedBanks = null;
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.removeItem(BANKS_CACHE_STORAGE_KEY);
+    } catch {}
+    window.dispatchEvent(new CustomEvent('zarfolio:banks_cache_invalidated'));
+  }
 }
 
 export default function BankTab({
@@ -91,6 +128,7 @@ export default function BankTab({
   selectedCustomer,
   draftLine,
   setDraftLine,
+  committedLines = [],
   editingLineId,
   isLinesPinned = false,
   commitDraftLine,
@@ -104,9 +142,11 @@ export default function BankTab({
   const effectiveBaseCurrency = (baseCurrency || settings?.baseCurrency || 'IRR') as 'IRR' | 'IRT';
   const currencySuffix = effectiveBaseCurrency === 'IRT' ? 'تومان' : 'ریال';
 
-  const [banks, setBanks] = useState<BankAccount[]>(() => cachedBanks || []);
+  const initialCached = getInitialCachedBanks();
+  const [banks, setBanks] = useState<BankAccount[]>(() => initialCached || []);
+  const [isFetchingBanks, setIsFetchingBanks] = useState(() => !initialCached || initialCached.length === 0);
   const [search, setSearch] = useState('');
-  const [selectedSource, setSelectedSource] = useState(() => (cachedBanks && cachedBanks.length > 0 ? cachedBanks[0].id : ''));
+  const [selectedSource, setSelectedSource] = useState(() => (initialCached && initialCached.length > 0 ? initialCached[0].id : ''));
   const [selectedDestination, setSelectedDestination] = useState('');
   const [kind, setKind] = useState<BankOperationKind>('check-payment');
   const [amount, setAmount] = useState('');
@@ -138,11 +178,14 @@ export default function BankTab({
   ];
 
   async function loadBanks() {
+    setIsFetchingBanks(true);
     try {
       const loaded = await fetchBankAccounts(true);
       setBanks(loaded);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'دریافت حساب‌های بانکی انجام نشد.');
+    } finally {
+      setIsFetchingBanks(false);
     }
   }
 
@@ -154,6 +197,16 @@ export default function BankTab({
       setKind(paramKind as BankOperationKind);
     }
   }, []);
+
+  // Synchronize kind when document nature changes (received vs paid)
+  useEffect(() => {
+    if (editingLineId) return;
+    if (nature === 'received') {
+      setKind('receive-from-customer');
+    } else {
+      setKind((prev) => (prev === 'receive-from-customer' ? 'check-payment' : prev));
+    }
+  }, [nature, editingLineId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -170,34 +223,109 @@ export default function BankTab({
         if (!cancelled && (!cachedBanks || cachedBanks.length === 0)) {
           toast.error(error instanceof Error ? error.message : 'دریافت حساب‌های بانکی انجام نشد.');
         }
-      });
+      })
+    const handleInvalidation = () => {
+      if (!cancelled) {
+        setIsFetchingBanks(true);
+        fetchBankAccounts(true)
+          .then((fresh) => {
+            if (!cancelled) {
+              setBanks(fresh);
+            }
+          })
+          .catch(() => undefined)
+          .finally(() => {
+            if (!cancelled) setIsFetchingBanks(false);
+          });
+      }
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('zarfolio:banks_cache_invalidated', handleInvalidation);
+    }
+
     return () => {
       cancelled = true;
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('zarfolio:banks_cache_invalidated', handleInvalidation);
+      }
     };
   }, []);
 
+  // Compute committed balance deltas per bank from existing document lines
+  const committedBankDeltas = useMemo(() => {
+    const deltas = new Map<string, number>();
+    if (!committedLines || committedLines.length === 0) return deltas;
+
+    for (const line of committedLines) {
+      if (editingLineId && line.id === editingLineId) continue;
+      if (line.documentTab !== 'bank' && line.sourceTab !== 'bank') continue;
+
+      const lineAmt = parseLocalizedAmount(line.details?.totalAmount || '0');
+      const lineFee = parseLocalizedAmount(line.details?.transferFee || '0');
+      const opKind = line.details?.bankOperationKind || '';
+      const bankId = line.details?.bankAccountId;
+      const isCheck = opKind === 'check-payment' || Boolean(line.details?.checkNumber);
+
+      if (bankId) {
+        const currentDelta = deltas.get(bankId) || 0;
+        const isOutflow = line.documentNature === 'paid' || opKind === 'pay-to-customer';
+        const isInflow = line.documentNature === 'received' || opKind === 'receive-from-customer';
+
+        if (isOutflow && !isCheck) {
+          deltas.set(bankId, currentDelta - (lineAmt + lineFee));
+        } else if (isInflow) {
+          deltas.set(bankId, currentDelta + lineAmt);
+        }
+      }
+
+      // In bank-to-bank transfers, destination bank receives the transferred amount
+      if (opKind === 'bank-to-bank' && line.details?.destinationBankId) {
+        const destBankId = line.details.destinationBankId;
+        const currentDestDelta = deltas.get(destBankId) || 0;
+        deltas.set(destBankId, currentDestDelta + lineAmt);
+      }
+    }
+
+    return deltas;
+  }, [committedLines, editingLineId]);
+
+  // Bank accounts with realtime effective balance taking committed lines into account
+  const effectiveBanks = useMemo(() => {
+    return banks.map((bank) => {
+      const delta = committedBankDeltas.get(bank.id) || 0;
+      const baseBal = bank.currentBalance ?? bank.balance ?? 0;
+      const adjusted = baseBal + delta;
+      return {
+        ...bank,
+        balance: adjusted,
+        currentBalance: adjusted,
+      };
+    });
+  }, [banks, committedBankDeltas]);
+
   const checkPaymentBanks = useMemo(() => {
-    return banks.filter((b) => Boolean(b.hasCheckbook || b.hasVirtualCheck));
-  }, [banks]);
+    return effectiveBanks.filter((b) => Boolean(b.hasCheckbook || b.hasVirtualCheck));
+  }, [effectiveBanks]);
 
   useEffect(() => {
     if (kind === 'check-payment') {
       const isValid = checkPaymentBanks.some((b) => b.id === selectedSource);
-      if (!isValid) {
-        setSelectedSource(checkPaymentBanks[0]?.id || '');
+      if (!isValid && checkPaymentBanks.length > 0) {
+        setSelectedSource(checkPaymentBanks[0].id);
       }
     } else {
-      const isValid = banks.some((b) => b.id === selectedSource);
-      if (!isValid && banks.length > 0) {
-        setSelectedSource(banks[0].id);
+      const isValid = effectiveBanks.some((b) => b.id === selectedSource);
+      if (!isValid && effectiveBanks.length > 0) {
+        setSelectedSource(effectiveBanks[0].id);
       }
     }
-  }, [kind, checkPaymentBanks, banks, selectedSource]);
+  }, [kind, checkPaymentBanks, effectiveBanks, selectedSource]);
 
   const numericAmount = parseLocalizedAmount(amount);
   const numericTransferFee = parseLocalizedAmount(transferFee);
   const totalBankDeduction = numericAmount + numericTransferFee;
-  const selectedSourceAccount = banks.find((b) => b.id === selectedSource);
+  const selectedSourceAccount = effectiveBanks.find((b) => b.id === selectedSource);
   const rawSourceBalance = selectedSourceAccount
     ? (selectedSourceAccount.currentBalance ?? selectedSourceAccount.balance ?? 0)
     : 0;
@@ -212,36 +340,128 @@ export default function BankTab({
   const isPayToCustomerBalanceSufficient = totalBankDeduction <= convertedSourceBalance;
   const isTodayCheck = isTodayOrPastJalaliDate(dueDateJalali);
 
+  // Synchronize state when editing an existing line or when draftLine is reset after commit
+  const lastDraftIdRef = useRef<string | null>(null);
+  const lastEditingLineIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    // When editing line changes or draftLine ID switches to editingLineId
+    if (editingLineId && draftLine.id === editingLineId) {
+      if (lastEditingLineIdRef.current !== editingLineId || lastDraftIdRef.current !== draftLine.id) {
+        lastEditingLineIdRef.current = editingLineId;
+        lastDraftIdRef.current = draftLine.id;
+        setAmount(draftLine.details?.totalAmount || '');
+        setTransferFee(draftLine.details?.transferFee || '');
+        setTrackingNumber(draftLine.details?.trackingNumber || '');
+        setCheckNumber(draftLine.details?.checkNumber || '');
+        setSayadId(draftLine.details?.sayadId || '');
+        setDueDateJalali(draftLine.details?.dueDateJalali || formatJalaliDate());
+        setDescription(draftLine.description || '');
+        if (draftLine.details?.bankAccountId) {
+          setSelectedSource(draftLine.details.bankAccountId);
+        }
+        if (draftLine.details?.destinationBankId) {
+          setSelectedDestination(draftLine.details.destinationBankId);
+        }
+        if (draftLine.details?.bankOperationKind) {
+          setKind(draftLine.details.bankOperationKind as BankOperationKind);
+        }
+      }
+    } else if (!editingLineId && lastEditingLineIdRef.current !== null) {
+      // Exiting edit mode
+      lastEditingLineIdRef.current = null;
+      lastDraftIdRef.current = draftLine.id;
+      setAmount('');
+      setTransferFee('');
+      setTrackingNumber('');
+      setCheckNumber('');
+      setSayadId('');
+      setDueDateJalali(formatJalaliDate());
+      setDescription('');
+      setSelectedDestination('');
+    } else if (!editingLineId && lastDraftIdRef.current !== draftLine.id) {
+      // New line draft reset (e.g. after commit)
+      lastDraftIdRef.current = draftLine.id;
+      setAmount('');
+      setTransferFee('');
+      setTrackingNumber('');
+      setCheckNumber('');
+      setSayadId('');
+      setDueDateJalali(formatJalaliDate());
+      setDescription('');
+      setSelectedDestination('');
+    }
+  }, [draftLine.id, editingLineId]);
+
   // Keep draftLine details synchronized so external commit (e.g. from pinned lines panel) works seamlessly
   useEffect(() => {
     const opLabel = operationOptions.find((o) => o.value === kind)?.label || 'عملیات بانکی';
-    setDraftLine((current) => ({
-      ...current,
-      documentTab: 'bank',
-      sourceTab: 'bank',
-      documentNature: nature,
-      documentTypeLabel: opLabel,
-      description: description || current.description,
-      details: {
-        ...current.details,
-        totalAmount: String(numericAmount),
-        transferFee: numericTransferFee > 0 ? String(numericTransferFee) : '',
-        trackingNumber: trackingNumber.trim(),
-        bankAccountId: selectedSource,
-        destinationBankId: selectedDestination,
-        bankName: selectedSourceAccount?.bankName || '',
-        bankBranch: selectedSourceAccount?.branchName || '',
-        accountNumber: selectedSourceAccount?.accountNumber || '',
-        bankAccountBalance: convertedSourceBalance,
-        rawBankAccountBalance: rawSourceBalance,
-        checkNumber: checkNumber.trim(),
-        sayadId: normalizedSayad,
-        dueDateJalali,
-        bankOperationKind: kind,
-        currencyUnit: effectiveBaseCurrency,
-        baseCurrency: effectiveBaseCurrency,
-      },
-    }));
+    const trimmedDesc = description.trim();
+    const strAmount = String(numericAmount);
+    const strFee = numericTransferFee > 0 ? String(numericTransferFee) : '';
+    const trimmedTracking = trackingNumber.trim();
+    const trimmedCheckNum = checkNumber.trim();
+    const bName = selectedSourceAccount?.bankName || '';
+    const bBranch = selectedSourceAccount?.branchName || '';
+    const accNum = selectedSourceAccount?.accountNumber || '';
+
+    setDraftLine((current) => {
+      const d = current.details;
+      // Guard against infinite update loops by checking if all fields are already identical
+      if (
+        current.documentTab === 'bank' &&
+        current.sourceTab === 'bank' &&
+        current.documentNature === nature &&
+        current.documentTypeLabel === opLabel &&
+        (trimmedDesc ? current.description === trimmedDesc : true) &&
+        d?.totalAmount === strAmount &&
+        (d?.transferFee || '') === strFee &&
+        (d?.trackingNumber || '') === trimmedTracking &&
+        (d?.bankAccountId || '') === selectedSource &&
+        (d?.destinationBankId || '') === selectedDestination &&
+        (d?.bankName || '') === bName &&
+        (d?.bankBranch || '') === bBranch &&
+        (d?.accountNumber || '') === accNum &&
+        d?.bankAccountBalance === convertedSourceBalance &&
+        d?.rawBankAccountBalance === rawSourceBalance &&
+        (d?.checkNumber || '') === trimmedCheckNum &&
+        (d?.sayadId || '') === normalizedSayad &&
+        (d?.dueDateJalali || '') === dueDateJalali &&
+        d?.bankOperationKind === kind &&
+        d?.currencyUnit === effectiveBaseCurrency &&
+        d?.baseCurrency === effectiveBaseCurrency
+      ) {
+        return current;
+      }
+
+      return {
+        ...current,
+        documentTab: 'bank',
+        sourceTab: 'bank',
+        documentNature: nature,
+        documentTypeLabel: opLabel,
+        description: description || current.description,
+        details: {
+          ...current.details,
+          totalAmount: strAmount,
+          transferFee: strFee,
+          trackingNumber: trimmedTracking,
+          bankAccountId: selectedSource,
+          destinationBankId: selectedDestination,
+          bankName: bName,
+          bankBranch: bBranch,
+          accountNumber: accNum,
+          bankAccountBalance: convertedSourceBalance,
+          rawBankAccountBalance: rawSourceBalance,
+          checkNumber: trimmedCheckNum,
+          sayadId: normalizedSayad,
+          dueDateJalali,
+          bankOperationKind: kind,
+          currencyUnit: effectiveBaseCurrency,
+          baseCurrency: effectiveBaseCurrency,
+        },
+      };
+    });
   }, [
     kind,
     nature,
@@ -253,47 +473,15 @@ export default function BankTab({
     rawSourceBalance,
     selectedSource,
     selectedDestination,
-    selectedSourceAccount,
+    selectedSourceAccount?.bankName,
+    selectedSourceAccount?.branchName,
+    selectedSourceAccount?.accountNumber,
     checkNumber,
     normalizedSayad,
     dueDateJalali,
     effectiveBaseCurrency,
     setDraftLine,
   ]);
-
-  // Synchronize state when editing an existing line or when draftLine is reset after commit
-  const lastDraftIdRef = useRef(draftLine.id);
-  useEffect(() => {
-    if (editingLineId && draftLine.id === editingLineId) {
-      setAmount(draftLine.details?.totalAmount || '');
-      setTransferFee(draftLine.details?.transferFee || '');
-      setTrackingNumber(draftLine.details?.trackingNumber || '');
-      setCheckNumber(draftLine.details?.checkNumber || '');
-      setSayadId(draftLine.details?.sayadId || '');
-      setDueDateJalali(draftLine.details?.dueDateJalali || formatJalaliDate());
-      setDescription(draftLine.description || '');
-      if (draftLine.details?.bankAccountId) {
-        setSelectedSource(draftLine.details.bankAccountId);
-      }
-      if (draftLine.details?.destinationBankId) {
-        setSelectedDestination(draftLine.details.destinationBankId);
-      }
-      if (draftLine.details?.bankOperationKind) {
-        setKind(draftLine.details.bankOperationKind as BankOperationKind);
-      }
-      lastDraftIdRef.current = draftLine.id;
-    } else if (lastDraftIdRef.current !== draftLine.id && !editingLineId) {
-      lastDraftIdRef.current = draftLine.id;
-      setAmount('');
-      setTransferFee('');
-      setTrackingNumber('');
-      setCheckNumber('');
-      setSayadId('');
-      setDueDateJalali(formatJalaliDate());
-      setDescription('');
-      setSelectedDestination('');
-    }
-  }, [draftLine.id, editingLineId, draftLine.details, draftLine.description]);
 
   // Sync state into draft line when committing
   function handleCommitLine() {
@@ -346,7 +534,7 @@ export default function BankTab({
         return;
       }
       if (!isPayToCustomerBalanceSufficient) {
-        toast.error(`مجموع مبلغ پرداختی و کارمزد (${Number(totalBankDeduction).toLocaleString('fa-IR')} ${currencySuffix}) از موجودی حساب بانکی (${Number(convertedSourceBalance).toLocaleString('fa-IR')} ${currencySuffix}) بیشتر است. امکان برداشت بیش از موجودی وجود ندارد.`);
+        toast.error(`مجموع مبلغ پرداختی و کارمزد (${formatCurrencyAmount(totalBankDeduction, effectiveBaseCurrency)}) از موجودی حساب بانکی (${formatCurrencyAmount(convertedSourceBalance, effectiveBaseCurrency)}) بیشتر است. امکان برداشت بیش از موجودی وجود ندارد.`);
         return;
       }
     }
@@ -363,15 +551,15 @@ export default function BankTab({
 
     const opLabel = operationOptions.find((o) => o.value === kind)?.label || 'عملیات بانکی';
 
-    setDraftLine((current) => ({
-      ...current,
+    const completeLine: DocumentLine = {
+      ...draftLine,
       documentTab: 'bank',
       sourceTab: 'bank',
       documentNature: nature,
       documentTypeLabel: opLabel,
-      description: description || current.description,
+      description: description || draftLine.description,
       details: {
-        ...current.details,
+        ...draftLine.details,
         totalAmount: String(numericAmount),
         transferFee: numericTransferFee > 0 ? String(numericTransferFee) : '',
         trackingNumber: trackingNumber.trim(),
@@ -389,9 +577,14 @@ export default function BankTab({
         currencyUnit: effectiveBaseCurrency,
         baseCurrency: effectiveBaseCurrency,
       },
-    }));
+    };
 
-    commitDraftLine();
+    setDraftLine(completeLine);
+
+    const commitSuccess = commitDraftLine(completeLine);
+    if (commitSuccess === false) {
+      return;
+    }
 
     // After temporary registration of check / bank row, clear all fields
     setAmount('');
@@ -403,6 +596,15 @@ export default function BankTab({
     setDescription('');
     setSelectedDestination('');
   }
+
+  const handleInputKeyDown = (
+    e: React.KeyboardEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>,
+  ) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleCommitLine();
+    }
+  };
 
   return (
     <div className="space-y-4" dir="rtl">
@@ -452,7 +654,12 @@ export default function BankTab({
       </div>
 
       {/* Dynamic Operation Form */}
-      {banks.length === 0 ? (
+      {isFetchingBanks && banks.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-12 px-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30">
+          <LoaderCircle className="animate-spin text-amber-500 mb-3" size={28} />
+          <p className="text-xs font-bold text-slate-700 dark:text-slate-300">در حال دریافت حساب‌های بانکی...</p>
+        </div>
+      ) : banks.length === 0 ? (
         <div className="text-center py-8 px-4 rounded-2xl border border-dashed border-amber-300 dark:border-amber-800/60 bg-amber-50/50 dark:bg-amber-950/20">
           <Building2 className="mx-auto text-amber-500 mb-2" size={32} />
           <p className="text-xs font-bold text-slate-700 dark:text-slate-300">هنوز هیچ حساب بانکی ثبت نشده است.</p>
@@ -513,6 +720,7 @@ export default function BankTab({
                   setCheckNumber(e.target.value);
                   updateDraftDetail?.('checkNumber', e.target.value);
                 }}
+                onKeyDown={handleInputKeyDown}
                 placeholder="۱۲۳۴۵۶"
                 className="h-10 text-xs font-mono"
               />
@@ -538,10 +746,13 @@ export default function BankTab({
             <Field label={`مبلغ چک (${currencySuffix})`} className="sm:col-span-6">
               <PriceInput
                 value={amount}
+                min={0}
+                allowDecimals={false}
                 onValueChange={(parsed, rawVal) => {
                   setAmount(rawVal);
                   updateDraftDetail?.('totalAmount', String(parsed || 0));
                 }}
+                onKeyDown={handleInputKeyDown}
                 baseCurrency={effectiveBaseCurrency}
                 currencySuffix={currencySuffix}
                 placeholder="۰"
@@ -612,7 +823,7 @@ export default function BankTab({
               <BankAccountSelect
                 value={selectedSource}
                 onChange={(bankId) => setSelectedSource(bankId)}
-                banks={banks}
+                banks={effectiveBanks}
                 placeholder="انتخاب حساب بانکی..."
               />
             </Field>
@@ -620,10 +831,13 @@ export default function BankTab({
             <Field label={`مبلغ پرداختی (${currencySuffix})`} className="sm:col-span-6">
               <PriceInput
                 value={amount}
+                min={0}
+                allowDecimals={false}
                 onValueChange={(parsed, rawVal) => {
                   setAmount(rawVal);
                   updateDraftDetail?.('totalAmount', String(parsed || 0));
                 }}
+                onKeyDown={handleInputKeyDown}
                 baseCurrency={effectiveBaseCurrency}
                 currencySuffix={currencySuffix}
                 placeholder="۰"
@@ -638,10 +852,13 @@ export default function BankTab({
             >
               <PriceInput
                 value={transferFee}
+                min={0}
+                allowDecimals={false}
                 onValueChange={(parsed, rawVal) => {
                   setTransferFee(rawVal);
                   updateDraftDetail?.('transferFee', String(parsed || 0));
                 }}
+                onKeyDown={handleInputKeyDown}
                 baseCurrency={effectiveBaseCurrency}
                 currencySuffix={currencySuffix}
                 placeholder="۰ (اختیاری)"
@@ -660,6 +877,7 @@ export default function BankTab({
                   setTrackingNumber(e.target.value);
                   updateDraftDetail?.('trackingNumber', e.target.value);
                 }}
+                onKeyDown={handleInputKeyDown}
                 placeholder="کد پیگیری، ارجاع، شماره فیش..."
                 className="h-10 text-xs font-mono"
               />
@@ -686,7 +904,7 @@ export default function BankTab({
                   <div>
                     <p className="font-bold">موجودی حساب بانکی کافی نیست:</p>
                     <p className="mt-0.5">
-                      مجموع مبلغ پرداختی و کارمزد ({formatMoney(totalBankDeduction)} {currencySuffix}) از موجودی فعلی حساب بانکی ({formatMoney(rawSourceBalance)} {currencySuffix}) بیشتر است.
+                      مجموع مبلغ پرداختی و کارمزد ({formatCurrencyAmount(totalBankDeduction, effectiveBaseCurrency)}) از موجودی فعلی حساب بانکی ({formatCurrencyAmount(convertedSourceBalance, effectiveBaseCurrency)}) بیشتر است.
                       امکان برداشت وجه بیش از موجودی از حساب بانکی وجود ندارد.
                     </p>
                   </div>
@@ -694,14 +912,14 @@ export default function BankTab({
               ) : (
                 <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-xl bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs">
                   <div className="flex flex-wrap items-center gap-4 text-slate-700 dark:text-slate-300">
-                    <span>موجودی فعلی حساب: <strong>{formatMoney(rawSourceBalance)}</strong> {currencySuffix}</span>
+                    <span>موجودی فعلی حساب: <strong>{formatCurrencyAmount(convertedSourceBalance, effectiveBaseCurrency)}</strong></span>
                     {numericTransferFee > 0 ? (
-                      <span>کارمزد انتقال: <strong>{formatMoney(numericTransferFee)}</strong> {currencySuffix}</span>
+                      <span>کارمزد انتقال: <strong>{formatCurrencyAmount(numericTransferFee, effectiveBaseCurrency)}</strong></span>
                     ) : null}
-                    <span>مجموع کسر از حساب: <strong className="text-amber-600 dark:text-amber-400">{formatMoney(totalBankDeduction)}</strong> {currencySuffix}</span>
+                    <span>مجموع کسر از حساب: <strong className="text-amber-600 dark:text-amber-400">{formatCurrencyAmount(totalBankDeduction, effectiveBaseCurrency)}</strong></span>
                   </div>
                   <div className="text-emerald-700 dark:text-emerald-400 font-bold">
-                    مانده پس از تراکنش: {formatMoney(rawSourceBalance - totalBankDeduction)} {currencySuffix}
+                    مانده پس از تراکنش: {formatCurrencyAmount(convertedSourceBalance - totalBankDeduction, effectiveBaseCurrency)}
                   </div>
                 </div>
               )}
@@ -728,7 +946,7 @@ export default function BankTab({
               <BankAccountSelect
                 value={selectedSource}
                 onChange={(bankId) => setSelectedSource(bankId)}
-                banks={banks}
+                banks={effectiveBanks}
                 placeholder="انتخاب حساب بانکی..."
               />
             </Field>
@@ -736,10 +954,13 @@ export default function BankTab({
             <Field label={`مبلغ دریافتی (${currencySuffix})`} className="sm:col-span-6">
               <PriceInput
                 value={amount}
+                min={0}
+                allowDecimals={false}
                 onValueChange={(parsed, rawVal) => {
                   setAmount(rawVal);
                   updateDraftDetail?.('totalAmount', String(parsed || 0));
                 }}
+                onKeyDown={handleInputKeyDown}
                 baseCurrency={effectiveBaseCurrency}
                 currencySuffix={currencySuffix}
                 placeholder="۰"
@@ -758,6 +979,7 @@ export default function BankTab({
                   setTrackingNumber(e.target.value);
                   updateDraftDetail?.('trackingNumber', e.target.value);
                 }}
+                onKeyDown={handleInputKeyDown}
                 placeholder="کد پیگیری، ارجاع، شماره فیش..."
                 className="h-10 text-xs font-mono"
               />

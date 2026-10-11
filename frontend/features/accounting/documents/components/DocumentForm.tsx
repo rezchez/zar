@@ -25,8 +25,8 @@ import GoldSaleTab from '@/src/components/documents/GoldSaleTab';
 import CurrencyTab from './CurrencyTab';
 import StoneTab from './StoneTab';
 import CoinTab from '@/src/components/documents/CoinTab';
-import CashTab from '@/src/components/documents/CashTab';
-import BankTab from './BankTab';
+import CashTab, { fetchCashFunds, invalidateCashFundsCache } from '@/src/components/documents/CashTab';
+import BankTab, { fetchBankAccounts, invalidateBankAccountsCache } from './BankTab';
 import ClaimTab from '@/src/components/documents/ClaimTab';
 import WorkmanshipTab from '@/src/components/documents/WorkmanshipTab';
 
@@ -642,6 +642,12 @@ export default function DocumentForm({
     };
   }, []);
 
+  // Prefetch bank accounts and cash funds so tabs open instantly without delay or empty-state flash
+  useEffect(() => {
+    void fetchBankAccounts(false);
+    void fetchCashFunds(false);
+  }, []);
+
   // Fetch live currencies list
   useEffect(() => {
     const controller = new AbortController();
@@ -1169,20 +1175,20 @@ export default function DocumentForm({
           status,
           isEdit: isEditingExistingDoc,
           lines: committedLines.map((line) => {
-            const metalType = line.details.metalType || 'gold';
+            const metalType = line.details?.metalType || 'gold';
             const baseKarat = purityForMetal(metalType);
             const rawWeight =
-              line.details.calculationMethod === 'money'
+              line.details?.calculationMethod === 'money'
                 ? actualWeightForLine(line, baseKarat)
-                : numberValue(line.details.rawWeight);
-            const purity = numberValue(line.details.purity) || baseKarat;
+                : numberValue(line.details?.rawWeight);
+            const purity = numberValue(line.details?.purity) || baseKarat;
             const convertedWeight =
               typeof line.converted750 === 'number' && Number.isFinite(line.converted750)
                 ? line.converted750
                 : (rawWeight > 0 && purity > 0 ? (rawWeight * purity) / baseKarat : 0);
             const weightValue = (line.documentTab === 'gold-sale' || line.documentTab === 'raw-gold')
               ? convertedWeight
-              : (line.details.calculationMethod === 'money' ? actualWeightForLine(line, baseKarat) : numberValue(line.details.rawWeight));
+              : (line.details?.calculationMethod === 'money' ? actualWeightForLine(line, baseKarat) : numberValue(line.details?.rawWeight));
             const isMetalRow =
               (line.documentTab === 'raw-gold' ||
                 line.documentTab === 'gold-sale' ||
@@ -1310,6 +1316,10 @@ export default function DocumentForm({
         setCustomers((prev) => prev.map((c) => (c.id === updatedCust.id ? updatedCust : c)));
       }
 
+      // Invalidate banks and cash funds caches so bank & cash tabs reflect fresh balances immediately
+      invalidateBankAccountsCache();
+      invalidateCashFundsCache();
+
       router.refresh();
 
       // Reset document state
@@ -1402,16 +1412,17 @@ export default function DocumentForm({
     );
   }, [committedLines]);
 
-  const handleCommitDraft = () => {
+  const handleCommitDraft = (customDraftLine?: DocumentLine) => {
     // Check if this is the first committed row
     const isFirstRow = committedLines.length === 0 && !editingLineId;
+    const activeDraft = customDraftLine || draftLine;
 
     if (isFirstRow && !dateWarningAcknowledged) {
       const diff = checkDocumentDateDiff(documentDateJalali);
       if (diff.isDifferent) {
         // Validate draft line before showing modal so we don't prompt on invalid rows
         const validationMessage = validateLine(
-          draftLine,
+          activeDraft,
           meltedInventory,
           committedLines,
           editingLineId,
@@ -1419,16 +1430,16 @@ export default function DocumentForm({
         );
         if (validationMessage) {
           toast.error(validationMessage);
-          return;
+          return false;
         }
 
         setDateDiffInfo(diff);
         setShowDateConfirmModal(true);
-        return;
+        return false;
       }
     }
 
-    hookCommitDraftLine(meltedInventory);
+    return hookCommitDraftLine(meltedInventory, customDraftLine);
   };
 
   const handleKeyDownEnter = (
@@ -1761,6 +1772,7 @@ export default function DocumentForm({
               selectedCustomer={selectedCustomer}
               draftLine={draftLine}
               setDraftLine={setDraftLine}
+              committedLines={committedLines}
               editingLineId={editingLineId}
               isLinesPinned={isLinesPinned}
               commitDraftLine={handleCommitDraft}

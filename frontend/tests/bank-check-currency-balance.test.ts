@@ -62,9 +62,9 @@ describe('Bank Tab & Check Payment Currency & Balance Integration Tests', () => 
       expect(checkAmount2 <= convertedSourceBalance).toBe(false);
     });
 
-    it('accurately compares Rial check against a bank account whose balance is stored in Toman', () => {
-      // Bank account has 10,000,000 Toman (100,000,000 Rials)
-      const rawBankBalance = 10000000;
+    it('accurately compares Rial check against a bank account whose balance is stored in Rial (native IRR per Rule 4)', () => {
+      // Bank account balance persisted natively as 100,000,000 Rials
+      const rawBankBalance = 100000000;
       const accountCurrency = 'IRT';
       const effectiveBaseCurrency = 'IRR';
 
@@ -74,7 +74,7 @@ describe('Bank Tab & Check Payment Currency & Balance Integration Tests', () => 
         effectiveBaseCurrency,
       ).amount;
 
-      expect(convertedSourceBalance).toBe(100000000); // 10,000,000 Toman = 100,000,000 Rials
+      expect(convertedSourceBalance).toBe(100000000); // 100,000,000 Rials
 
       const checkAmount = 80000000; // 80,000,000 Rials
       expect(checkAmount <= convertedSourceBalance).toBe(true);

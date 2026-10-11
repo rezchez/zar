@@ -53,27 +53,28 @@ describe('Bank Accounts Currency Conversion & Collection Matching Tests', () => 
     expect(converted.currencySymbol).toBe('تومان');
   });
 
-  it('4. Converts Toman to Rial when settings baseCurrency is IRR (Toman * 10)', () => {
-    const tomanAmount = 5_000_000; // 5 million Tomans
-    const converted = getConvertedBankAmount(tomanAmount, 'IRT', 'IRR', mockCurrencies);
+  it('4. Formats domestic account in Rial when settings baseCurrency is IRR', () => {
+    const nativeRialAmount = 50_000_000; // 50 million Rials stored in database
+    const converted = getConvertedBankAmount(nativeRialAmount, 'IRT', 'IRR', mockCurrencies);
 
-    expect(converted.isConverted).toBe(true);
-    expect(converted.conversionDirection).toBe('irt-to-irr');
+    expect(converted.isConverted).toBe(false);
     expect(converted.amount).toBe(50_000_000); // 50 million Rials
     expect(converted.currencyCode).toBe('IRR');
     expect(converted.currencySymbol).toBe('ریال');
   });
 
-  it('5. Does NOT convert when settings baseCurrency matches account currency', () => {
+  it('5. Converts domestic account stored in IRR to Toman when baseCurrency is IRT (Rule 4)', () => {
     const rialResult = getConvertedBankAmount(75_000_000, 'IRR', 'IRR', mockCurrencies);
     expect(rialResult.isConverted).toBe(false);
     expect(rialResult.amount).toBe(75_000_000);
     expect(rialResult.currencyCode).toBe('IRR');
 
-    const tomanResult = getConvertedBankAmount(12_000_000, 'IRT', 'IRT', mockCurrencies);
-    expect(tomanResult.isConverted).toBe(false);
-    expect(tomanResult.amount).toBe(12_000_000);
+    // Blu bank account with 780M IRR stored in DB must display as 78M Toman when baseCurrency is IRT
+    const tomanResult = getConvertedBankAmount(780_000_000, 'IRT', 'IRT', mockCurrencies);
+    expect(tomanResult.isConverted).toBe(true);
+    expect(tomanResult.amount).toBe(78_000_000);
     expect(tomanResult.currencyCode).toBe('IRT');
+    expect(tomanResult.currencySymbol).toBe('تومان');
   });
 
   it('6. Does NOT convert foreign currencies regardless of baseCurrency', () => {

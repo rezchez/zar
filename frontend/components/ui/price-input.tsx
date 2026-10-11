@@ -17,16 +17,17 @@ export interface PriceInputProps
   baseCurrency?: 'IRR' | 'IRT';
   showWords?: boolean;
   locale?: string;
+  allowDecimals?: boolean;
 }
 
 /**
  * Normalizes input string by replacing Persian and Arabic-Indic numerals with ASCII digits,
  * stripping commas, spaces, and non-numeric characters (except single negative sign if min < 0 and decimal point).
  */
-export function normalizePriceString(val: string, allowNegative = true): string {
+export function normalizePriceString(val: string, allowNegative = true, allowDecimals = true): string {
   if (!val) return '';
   const digitsNormalized = normalizeDigits(val);
-  // Strip out commas and whitespace
+  // Strip out commas, spaces, and non-numeric characters (keep digits, minus, and dot)
   let clean = digitsNormalized.replace(/[,\s\u066C\u00A0]/g, '');
 
   if (!allowNegative) {
@@ -37,10 +38,14 @@ export function normalizePriceString(val: string, allowNegative = true): string 
     clean = (isNeg ? '-' : '') + clean.replace(/-/g, '');
   }
 
-  // Allow digits and at most one decimal point
-  const parts = clean.split('.');
-  if (parts.length > 2) {
-    clean = `${parts[0]}.${parts.slice(1).join('')}`;
+  if (!allowDecimals) {
+    clean = clean.replace(/\./g, '');
+  } else {
+    // Allow digits and at most one decimal point
+    const parts = clean.split('.');
+    if (parts.length > 2) {
+      clean = `${parts[0]}.${parts.slice(1).join('')}`;
+    }
   }
 
   return clean;
@@ -121,12 +126,14 @@ export const PriceInput = React.forwardRef<HTMLInputElement, PriceInputProps>(
       currencySuffix,
       baseCurrency: propBaseCurrency,
       showWords = false,
+      allowDecimals: propAllowDecimals,
       name,
       disabled,
       readOnly,
       placeholder = '۰',
       className = '',
       id,
+      onKeyDown,
       ...props
     },
     ref,
@@ -136,12 +143,16 @@ export const PriceInput = React.forwardRef<HTMLInputElement, PriceInputProps>(
       propBaseCurrency || appSettings?.settings?.baseCurrency || 'IRR';
     const isControlled = controlledValue !== undefined;
     const allowNegative = min === undefined || min < 0;
+    const allowDecimals =
+      propAllowDecimals !== undefined
+        ? propAllowDecimals
+        : !(effectiveBaseCurrency === 'IRR' || effectiveBaseCurrency === 'IRT');
 
     const initialRaw = React.useMemo(() => {
       const initial = isControlled ? controlledValue : defaultValue;
       if (initial === null || initial === undefined) return '';
-      return normalizePriceString(String(initial), allowNegative);
-    }, [controlledValue, defaultValue, isControlled, allowNegative]);
+      return normalizePriceString(String(initial), allowNegative, allowDecimals);
+    }, [controlledValue, defaultValue, isControlled, allowNegative, allowDecimals]);
 
     const [internalRaw, setInternalRaw] = React.useState<string>(initialRaw);
     const inputRef = React.useRef<HTMLInputElement | null>(null);
@@ -149,7 +160,7 @@ export const PriceInput = React.forwardRef<HTMLInputElement, PriceInputProps>(
     React.useImperativeHandle(ref, () => inputRef.current as HTMLInputElement);
 
     const activeRaw = isControlled
-      ? normalizePriceString(controlledValue !== null && controlledValue !== undefined ? String(controlledValue) : '', allowNegative)
+      ? normalizePriceString(controlledValue !== null && controlledValue !== undefined ? String(controlledValue) : '', allowNegative, allowDecimals)
       : internalRaw;
 
     const displayFormatted = React.useMemo(() => {
@@ -162,6 +173,53 @@ export const PriceInput = React.forwardRef<HTMLInputElement, PriceInputProps>(
       return Number.isFinite(num) ? num : null;
     }, [activeRaw]);
 
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+      // Allow control/navigation keys
+      const controlKeys = [
+        'Backspace',
+        'Delete',
+        'Tab',
+        'Escape',
+        'Enter',
+        'ArrowLeft',
+        'ArrowRight',
+        'ArrowUp',
+        'ArrowDown',
+        'Home',
+        'End',
+      ];
+      if (
+        controlKeys.includes(e.key) ||
+        e.ctrlKey ||
+        e.metaKey ||
+        e.altKey
+      ) {
+        onKeyDown?.(e);
+        return;
+      }
+
+      // If negative is allowed, allow '-' only once at the beginning
+      if (allowNegative && (e.key === '-' || e.key === '−')) {
+        onKeyDown?.(e);
+        return;
+      }
+
+      // If decimal is allowed, allow '.' or '/' or decimal separator once
+      if (allowDecimals && (e.key === '.' || e.key === '/' || e.key === '٫')) {
+        onKeyDown?.(e);
+        return;
+      }
+
+      // Check if it's a numeric digit (Latin, Persian, or Arabic)
+      const isDigit = /^[0-9\u0660-\u0669\u06F0-\u06F9]$/.test(e.key);
+      if (!isDigit) {
+        e.preventDefault();
+        return;
+      }
+
+      onKeyDown?.(e);
+    };
+
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       const inputEl = e.target;
       const originalValue = inputEl.value;
@@ -170,7 +228,7 @@ export const PriceInput = React.forwardRef<HTMLInputElement, PriceInputProps>(
       // Calculate how many raw non-comma characters were before the cursor
       const charsBeforeCursor = originalValue.slice(0, cursorPos).replace(/,/g, '').length;
 
-      const normalized = normalizePriceString(originalValue, allowNegative);
+      const normalized = normalizePriceString(originalValue, allowNegative, allowDecimals);
       const formatted = formatPriceWithCommas(normalized);
 
       if (!isControlled) {
@@ -263,6 +321,7 @@ export const PriceInput = React.forwardRef<HTMLInputElement, PriceInputProps>(
             disabled={disabled}
             readOnly={readOnly}
             value={displayFormatted}
+            onKeyDown={handleKeyDown}
             onChange={handleInputChange}
             onBlur={handleBlur}
             placeholder={placeholder}

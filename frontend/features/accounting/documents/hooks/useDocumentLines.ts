@@ -180,6 +180,7 @@ export function createCurrencyLine(
 }
 
 export function isLineReady(line: DocumentLine) {
+  if (!line || !line.details) return false;
   if (line.documentTab === 'stone' || line.sourceTab === 'stone') {
     const carats = numberValue(line.details.stoneCarats);
     const grams = numberValue(line.details.stoneGrams);
@@ -264,15 +265,23 @@ export function isLineReady(line: DocumentLine) {
     const wt = numberValue(line.details.claimWeight || line.details.rawWeight);
     return fin > 0 || wt > 0;
   }
+  const isRawGoldOrGoldSale =
+    line.documentTab === 'raw-gold' ||
+    line.documentTab === 'gold-sale' ||
+    line.sourceTab === 'metals' ||
+    line.sourceTab === 'gold-sale';
+  if (!isRawGoldOrGoldSale) {
+    return false;
+  }
   const rawWeight =
-    line.details.calculationMethod === 'money'
-      ? actualWeightFromMoney(line.details, Number(line.details.baseKarat || 750))
-      : numberValue(line.details.rawWeight);
-  if (line.documentTab === 'raw-gold') return rawWeight > 0;
+    line.details?.calculationMethod === 'money'
+      ? actualWeightFromMoney(line.details, Number(line.details?.baseKarat || 750))
+      : numberValue(line.details?.rawWeight);
+  if (line.documentTab === 'raw-gold' || line.sourceTab === 'metals') return rawWeight > 0;
   return (
     rawWeight > 0 &&
-    numberValue(line.details.totalAmount) > 0 &&
-    numberValue(line.details.metalPrice) > 0
+    numberValue(line.details?.totalAmount) > 0 &&
+    numberValue(line.details?.metalPrice) > 0
   );
 }
 
@@ -283,6 +292,9 @@ export function validateLine(
   editingLineId: string | null = null,
   selectedCurrency: string = '',
 ) {
+  if (!line || !line.details) {
+    return 'اطلاعات ردیف سند ناقص است.';
+  }
   if (line.documentTab === 'stone' || line.sourceTab === 'stone') {
     const carats = numberValue(line.details.stoneCarats);
     const grams = numberValue(line.details.stoneGrams);
@@ -459,21 +471,29 @@ export function validateLine(
     }
     return '';
   }
+  const isRawGoldOrGoldSale =
+    line.documentTab === 'raw-gold' ||
+    line.documentTab === 'gold-sale' ||
+    line.sourceTab === 'metals' ||
+    line.sourceTab === 'gold-sale';
+  if (!isRawGoldOrGoldSale) {
+    return '';
+  }
   const rawWeight =
-    line.details.calculationMethod === 'money'
-      ? actualWeightFromMoney(line.details, Number(line.details.baseKarat || 750))
-      : numberValue(line.details.rawWeight);
+    line.details?.calculationMethod === 'money'
+      ? actualWeightFromMoney(line.details, Number(line.details?.baseKarat || 750))
+      : numberValue(line.details?.rawWeight);
   if (rawWeight <= 0) {
     return 'وزن طلای خام باید بیشتر از صفر باشد.';
   }
   if (
     line.documentTab === 'gold-sale' &&
-    (numberValue(line.details.metalPrice) <= 0 || numberValue(line.details.totalAmount) <= 0)
+    (numberValue(line.details?.metalPrice) <= 0 || numberValue(line.details?.totalAmount) <= 0)
   ) {
     return 'نوع فی، قیمت فلز و مبلغ کل را کامل وارد کنید.';
   }
-  if (line.details.rawKind !== 'conditional') {
-    const purityStr = normalizeDigits(line.details.purity).trim();
+  if (line.details?.rawKind !== 'conditional') {
+    const purityStr = normalizeDigits(line.details?.purity || '').trim();
     const purityNum = numberValue(purityStr);
     if (!purityStr || purityNum <= 0) {
       return 'وارد کردن عیار برای این ردیف الزامی است.';
@@ -660,14 +680,14 @@ export function useDocumentLines({
       line.documentTab === 'gold-sale' ||
       line.sourceTab === 'metals' ||
       line.sourceTab === 'gold-sale';
-    if (!isMetalTab) {
+    if (!isMetalTab || !line.details) {
       return { valid: true, errors: {} };
     }
     const isGold = line.details.metalType === 'gold';
     const isMoltenOrConditional =
       line.details.rawKind === 'molten' || line.details.rawKind === 'conditional';
     const rawWeight =
-      line.details.calculationMethod === 'money'
+      line.details?.calculationMethod === 'money'
         ? actualWeightFromMoney(line.details, Number(line.details.baseKarat || 750))
         : numberValue(line.details.rawWeight);
 
@@ -689,23 +709,28 @@ export function useDocumentLines({
     return { valid: true, errors: {} };
   };
 
-  const commitDraftLine = (meltedInventory: MeltedInventoryItem[] = []) => {
+  const commitDraftLine = (
+    meltedInventory: MeltedInventoryItem[] = [],
+    customDraftLine?: DocumentLine,
+  ) => {
+    const activeDraft = customDraftLine ? { ...customDraftLine } : draftLine;
+
     if (
-      (draftLine.documentTab === 'currency' || draftLine.sourceTab === 'currency' || activeEntryTab === 'currency') &&
-      (!draftLine.details.currencyUnit || (selectedCurrency && draftLine.details.currencyUnit.trim().toUpperCase() === selectedCurrency.trim().toUpperCase()))
+      (activeDraft.documentTab === 'currency' || activeDraft.sourceTab === 'currency' || activeEntryTab === 'currency') &&
+      (!activeDraft.details.currencyUnit || (selectedCurrency && activeDraft.details.currencyUnit.trim().toUpperCase() === selectedCurrency.trim().toUpperCase()))
     ) {
       const fallbackUnit = selectedCurrency?.trim().toUpperCase() === 'USD' ? 'EUR' : 'USD';
-      draftLine.details.currencyUnit = fallbackUnit;
-      draftLine.details.settlementCurrencyUnit = selectedCurrency || 'IRR';
+      activeDraft.details.currencyUnit = fallbackUnit;
+      activeDraft.details.settlementCurrencyUnit = selectedCurrency || 'IRR';
     }
 
-    const validationMessage = validateLine(draftLine, meltedInventory, committedLines, editingLineId, selectedCurrency);
+    const validationMessage = validateLine(activeDraft, meltedInventory, committedLines, editingLineId, selectedCurrency);
     if (validationMessage) {
       toast.error(validationMessage);
       return false;
     }
 
-    const assayCheck = validateGoldAssayFields(draftLine);
+    const assayCheck = validateGoldAssayFields(activeDraft);
     if (!assayCheck.valid) {
       setLineValidationErrors(assayCheck.errors);
       if (assayCheck.errorMsg) {
@@ -722,11 +747,11 @@ export function useDocumentLines({
     setLineValidationErrors({});
 
     const lineSourceTab = editingLineId
-      ? (draftLine.sourceTab || activeEntryTab || 'metals')
-      : (activeEntryTab || draftLine.sourceTab || 'metals');
+      ? (activeDraft.sourceTab || activeEntryTab || 'metals')
+      : (activeEntryTab || activeDraft.sourceTab || 'metals');
 
     const lineNature = editingLineId
-      ? (draftLine.documentNature || documentNature)
+      ? (activeDraft.documentNature || documentNature)
       : documentNature;
 
     const docTypeLabel =
@@ -734,66 +759,66 @@ export function useDocumentLines({
         lineSourceTab === 'bank' ||
         lineSourceTab === 'stone' ||
         lineSourceTab === 'workmanship' ||
-        draftLine.documentTab === 'cash' ||
-        draftLine.documentTab === 'bank' ||
-        draftLine.documentTab === 'stone' ||
-        draftLine.documentTab === 'workmanship') &&
-      draftLine.documentTypeLabel
-        ? draftLine.documentTypeLabel
+        activeDraft.documentTab === 'cash' ||
+        activeDraft.documentTab === 'bank' ||
+        activeDraft.documentTab === 'stone' ||
+        activeDraft.documentTab === 'workmanship') &&
+      activeDraft.documentTypeLabel
+        ? activeDraft.documentTypeLabel
         : getLineDocumentTypeLabel(
             lineNature,
             lineSourceTab,
-            draftLine.details.rawKind,
-            draftLine.details.unsettledTrade,
-            draftLine.details.refiningOpKind,
-            draftLine.details.workmanshipOptionId,
-            draftLine.documentSubType,
+            activeDraft.details.rawKind,
+            activeDraft.details.unsettledTrade,
+            activeDraft.details.refiningOpKind,
+            activeDraft.details.workmanshipOptionId,
+            activeDraft.documentSubType,
           );
 
     const rawWeight =
-      draftLine.details.calculationMethod === 'money'
-        ? actualWeightFromMoney(draftLine.details, purityForMetal(draftLine.details.metalType))
-        : numberValue(draftLine.details.rawWeight);
-    const baseKarat = purityForMetal(draftLine.details.metalType);
+      activeDraft.details?.calculationMethod === 'money'
+        ? actualWeightFromMoney(activeDraft.details, purityForMetal(activeDraft.details?.metalType || 'gold'))
+        : numberValue(activeDraft.details?.rawWeight);
+    const baseKarat = purityForMetal(activeDraft.details?.metalType || 'gold');
     const c750 =
-      lineSourceTab === 'stone' || draftLine.documentTab === 'stone'
+      lineSourceTab === 'stone' || activeDraft.documentTab === 'stone'
         ? 0
-        : convertedTo750(String(rawWeight), draftLine.details.purity, baseKarat);
+        : convertedTo750(String(rawWeight), activeDraft.details?.purity, baseKarat);
 
     const effectiveCurrencyUnit =
-      draftLine.details.currencyUnit ||
+      activeDraft.details.currencyUnit ||
       (selectedCurrency?.trim().toUpperCase() === 'USD' ? 'EUR' : 'USD');
     const effectiveSettlementUnit =
-      draftLine.details.settlementCurrencyUnit ||
+      activeDraft.details.settlementCurrencyUnit ||
       selectedCurrency ||
       'IRR';
 
     const lineToCommit: DocumentLine = {
-      ...draftLine,
+      ...activeDraft,
       documentNature: lineNature,
       sourceTab: lineSourceTab,
       documentTypeLabel: docTypeLabel,
       converted750: c750,
-      description: draftLine.description ? draftLine.description.trim() : '',
+      description: activeDraft.description ? activeDraft.description.trim() : '',
       details: {
-        ...draftLine.details,
+        ...activeDraft.details,
         baseKarat,
-        currencyUnit: lineSourceTab === 'currency' ? effectiveCurrencyUnit : (lineSourceTab === 'cash' ? draftLine.details.currencyUnit : ''),
-        settlementCurrencyUnit: lineSourceTab === 'currency' ? effectiveSettlementUnit : draftLine.details.settlementCurrencyUnit,
+        currencyUnit: lineSourceTab === 'currency' ? effectiveCurrencyUnit : (lineSourceTab === 'cash' ? activeDraft.details.currencyUnit : ''),
+        settlementCurrencyUnit: lineSourceTab === 'currency' ? effectiveSettlementUnit : activeDraft.details.settlementCurrencyUnit,
       },
     };
 
     const isSettledMetalTrade =
-      (lineSourceTab === 'gold-sale' || draftLine.documentTab === 'gold-sale') &&
-      (draftLine.details.rawKind === 'molten' || draftLine.details.rawKind === 'misc') &&
-      !draftLine.details.unsettledTrade &&
-      draftLine.settlementMethod !== 'unsettled';
+      (lineSourceTab === 'gold-sale' || activeDraft.documentTab === 'gold-sale') &&
+      (activeDraft.details.rawKind === 'molten' || activeDraft.details.rawKind === 'misc') &&
+      !activeDraft.details.unsettledTrade &&
+      activeDraft.settlementMethod !== 'unsettled';
 
     const isCurrencyTrade =
-      lineSourceTab === 'currency' || draftLine.documentTab === 'currency' || activeEntryTab === 'currency';
+      lineSourceTab === 'currency' || activeDraft.documentTab === 'currency' || activeEntryTab === 'currency';
     const isUnsettledCurrency =
       isCurrencyTrade &&
-      (Boolean(draftLine.details.unsettledTrade) || draftLine.settlementMethod === 'unsettled');
+      (Boolean(activeDraft.details.unsettledTrade) || activeDraft.settlementMethod === 'unsettled');
 
     const currencyTradeDocTypeLabel =
       lineNature === 'received' ? 'خرید ارز' : 'فروش ارز';
@@ -807,20 +832,20 @@ export function useDocumentLines({
 
     const tradeDocTypeLabel =
       lineNature === 'received'
-        ? draftLine.details.rawKind === 'misc' ? 'خرید متفرقه' : 'خرید آب‌شده'
-        : draftLine.details.rawKind === 'misc' ? 'فروش متفرقه' : 'فروش آب‌شده';
+        ? activeDraft.details.rawKind === 'misc' ? 'خرید متفرقه' : 'خرید آب‌شده'
+        : activeDraft.details.rawKind === 'misc' ? 'فروش متفرقه' : 'فروش آب‌شده';
     const tradeSubType =
-      `${lineNature === 'received' ? 'gold-purchase' : 'gold-sale'}-${draftLine.details.rawKind === 'misc' ? 'misc' : 'molten'}`;
+      `${lineNature === 'received' ? 'gold-purchase' : 'gold-sale'}-${activeDraft.details.rawKind === 'misc' ? 'misc' : 'molten'}`;
 
     const physicalDocNature = lineNature;
     const physicalTypeLabel =
       physicalDocNature === 'received'
-        ? draftLine.details.rawKind === 'misc' ? 'ورود متفرقه' : 'ورود آبشده'
-        : draftLine.details.rawKind === 'misc' ? 'خروج متفرقه' : 'خروج آبشده';
+        ? activeDraft.details.rawKind === 'misc' ? 'ورود متفرقه' : 'ورود آبشده'
+        : activeDraft.details.rawKind === 'misc' ? 'خروج متفرقه' : 'خروج آبشده';
     const physicalSubType =
       physicalDocNature === 'received'
-        ? draftLine.details.rawKind === 'misc' ? 'incoming-misc' : 'incoming-molten'
-        : draftLine.details.rawKind === 'misc' ? 'outgoing-misc' : 'outgoing-molten';
+        ? activeDraft.details.rawKind === 'misc' ? 'incoming-misc' : 'incoming-molten'
+        : activeDraft.details.rawKind === 'misc' ? 'outgoing-misc' : 'outgoing-molten';
 
     if (editingLineId) {
       if (isSettledMetalTrade) {
@@ -1062,7 +1087,7 @@ export function useDocumentLines({
       }
     } else {
       if (isSettledMetalTrade) {
-        const tradeLineId = draftLine.id || crypto.randomUUID();
+        const tradeLineId = activeDraft.id || crypto.randomUUID();
         const physicalLineId = crypto.randomUUID();
 
         const tradeLineToCommit: DocumentLine = {
@@ -1091,20 +1116,20 @@ export function useDocumentLines({
           settlementMethod: 'weight',
           balanceSource: 'current',
           converted750: c750,
-          description: draftLine.description ? draftLine.description.trim() : '',
+          description: activeDraft.description ? activeDraft.description.trim() : '',
           details: {
-            ...draftLine.details,
+            ...activeDraft.details,
             calculationMethod: 'weight',
-            metalType: draftLine.details.metalType || 'gold',
-            rawKind: draftLine.details.rawKind,
+            metalType: activeDraft.details.metalType || 'gold',
+            rawKind: activeDraft.details.rawKind,
             rawWeight: String(rawWeight),
-            purity: draftLine.details.purity,
+            purity: activeDraft.details.purity,
             baseKarat,
             totalAmount: '0',
             metalPrice: '0',
-            labName: draftLine.details.labName?.trim() || '',
-            stampNumber: draftLine.details.stampNumber?.trim() || '',
-            inventorySourceId: draftLine.details.inventorySourceId || '',
+            labName: activeDraft.details.labName?.trim() || '',
+            stampNumber: activeDraft.details.stampNumber?.trim() || '',
+            inventorySourceId: activeDraft.details.inventorySourceId || '',
             linkedLineId: tradeLineId,
           },
         };
@@ -1116,7 +1141,7 @@ export function useDocumentLines({
             : 'ردیف فروش و ردیف خروج فیزیکی طلا به سند اضافه شدند.',
         );
       } else if (isCurrencyTrade) {
-        const tradeLineId = draftLine.id || crypto.randomUUID();
+        const tradeLineId = activeDraft.id || crypto.randomUUID();
 
         if (isUnsettledCurrency) {
           const claimLineId = crypto.randomUUID();
@@ -1147,15 +1172,15 @@ export function useDocumentLines({
             documentSubType: currencyClaimSubType,
             settlementMethod: 'unsettled',
             balanceSource: 'current',
-            description: draftLine.description
-              ? draftLine.description.trim()
+            description: activeDraft.description
+              ? activeDraft.description.trim()
               : lineNature === 'received'
                 ? 'بدهی ارزی بابت خرید بدون تسویه'
                 : 'طلب ارزی بابت فروش بدون تسویه',
             details: {
-              ...draftLine.details,
+              ...activeDraft.details,
               currencyUnit: effectiveCurrencyUnit,
-              currencyQuantity: draftLine.details.currencyQuantity,
+              currencyQuantity: activeDraft.details.currencyQuantity,
               currencyUnitPrice: '0',
               currencyTotalAmount: '0',
               unsettledTrade: true,

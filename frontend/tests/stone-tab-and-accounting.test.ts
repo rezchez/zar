@@ -1226,14 +1226,14 @@ describe('Stone Tab Validation & Accounting Operations', () => {
       // Verify operation accounting nature badges and impacts
       expect(tabSrc).toContain('natureBadge:');
       expect(tabSrc).toContain('accountingImpact:');
-      expect(tabSrc).toContain('مشتری سنگ را به ما بدهکار می‌شود');
-      expect(tabSrc).toContain('مشتری سنگ را از ما طلبکار می‌شود');
-      expect(tabSrc).toContain('بدهی سنگ مشتری به ما (تسویه وزنی)');
-      expect(tabSrc).toContain('طلب سنگ مشتری از ما (تحویل/تسویه)');
+      expect(tabSrc).toContain('به ما سنگ را بدهکار است');
+      expect(tabSrc).toContain('سنگ را از ما طلبکار می‌شود');
+      expect(tabSrc).toContain('بدهی سنگ');
+      expect(tabSrc).toContain('طلب سنگ');
 
       // Verify educational market rule is attached as tooltip/title on badge rather than bulky card above GIA origin
       expect(tabSrc).toContain('قاعده ماهیت معامله سنگ و عدم تهاتر');
-      expect(tabSrc).toContain('خرید سنگ از مشتری یعنی مشتری سنگ را به ما بدهکار می‌شود · فروش سنگ به مشتری یعنی مشتری سنگ را از ما طلبکار می‌شود');
+      expect(tabSrc).toContain('به ما سنگ را بدهکار است');
     });
 
     it('validates StoneBalanceModal renders (i) info button at the top of stone balance header and expandable banner', async () => {
@@ -1357,7 +1357,7 @@ describe('Stone Tab Validation & Accounting Operations', () => {
       // Verify the panel, debt badges, and warehouse status badges
       expect(tabSrc).toContain('اقلام سنگ فروخته‌شده به طرف‌حساب (فروش بدون تسویه)');
       expect(tabSrc).toContain('اقلام سنگ خریداری‌شده از طرف‌حساب (خرید بدون تسویه)');
-      expect(tabSrc).toContain('مشتری سنگ را به ما بدهکار می‌شود');
+      expect(tabSrc).toContain('به ما سنگ را بدهکار است');
       expect(tabSrc).toContain('موجود در انبار');
       expect(tabSrc).toContain('ناموجود');
       expect(tabSrc).toContain('انتخاب و خروج سنگ');

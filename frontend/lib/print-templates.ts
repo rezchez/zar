@@ -27,7 +27,9 @@ export type ElementType =
   | 'shape_circle'
   | 'shape_line_h'
   | 'shape_line_v'
-  | 'shape_badge';
+  | 'shape_badge'
+  | 'custom_table'
+  | 'db_field';
 
 export interface InvoicePrintElementStyle {
   fontFamily?: string;
@@ -83,11 +85,54 @@ export interface InvoiceFooterConfiguration {
   customerSignatureTitle?: string;
 }
 
+export type QrContentType = 'invoice_number' | 'url' | 'custom_text';
+
+export interface CustomTableRowField {
+  id: string;
+  key: string;
+  label: string;
+  customValue?: string;
+  unit?: string;
+  visible: boolean;
+  qrContentType?: QrContentType;
+}
+
+export type InvoiceCustomTableField = CustomTableRowField;
+
+export interface CustomTableConfiguration {
+  title?: string;
+  showTitle?: boolean;
+  showHeader?: boolean;
+  headerLabelText?: string;
+  headerValueText?: string;
+  layout?: 'rows' | 'grid2' | 'columns';
+  fields: CustomTableRowField[];
+  headerBackgroundColor?: string;
+  headerTextColor?: string;
+  bodyTextColor?: string;
+  borderColor?: string;
+  borderWidthMm?: number;
+  borderStyle?: 'solid' | 'dashed' | 'dotted';
+  borderRadiusMm?: number;
+  showVerticalBorders?: boolean;
+  showHorizontalBorders?: boolean;
+  stripedRows?: boolean;
+  alternateRowColor?: string;
+  fontSizePt?: number;
+}
+
 export interface InvoicePrintElementContent {
   text?: string;
   tableColumns?: string[];
   shapeType?: 'rectangle' | 'circle' | 'line_h' | 'line_v' | 'badge';
   badgeIcon?: string;
+  customTable?: CustomTableConfiguration;
+  fieldKey?: string;
+  fieldLabel?: string;
+  showFieldLabel?: boolean;
+  fieldUnit?: string;
+  showFieldUnit?: boolean;
+  qrContentType?: QrContentType;
 }
 
 export interface InvoicePrintElement {
@@ -172,6 +217,8 @@ export const ELEMENT_LABELS: Record<ElementType, string> = {
   shape_line_h: 'خط جداکننده افقی',
   shape_line_v: 'خط جداکننده عمودی',
   shape_badge: 'نشان / برچسب',
+  custom_table: 'جدول محاسبات و مانده‌ها',
+  db_field: 'فیلد داده از دیتابیس',
 };
 
 export const DEFAULT_TABLE_COLUMNS: InvoiceTableColumnConfig[] = [
@@ -440,6 +487,358 @@ export function createShapeElement(
         zIndex: 12,
       };
   }
+}
+
+export interface AvailableDataField {
+  key: string;
+  category: 'customer_balance' | 'document_summary' | 'financial' | 'weights';
+  categoryLabel: string;
+  label: string;
+  defaultUnit: string;
+  sampleValue: string;
+  description: string;
+}
+
+export const AVAILABLE_DATABASE_FIELDS: AvailableDataField[] = [
+  // مانده حساب مشتری
+  {
+    key: 'prev_balance_gold',
+    category: 'customer_balance',
+    categoryLabel: 'مانده حساب طرف‌حساب',
+    label: 'مانده قبلی طلا (گرم)',
+    defaultUnit: 'گرم',
+    sampleValue: '۱۲٫۴۵۰',
+    description: 'مانده طلای مشتری قبل از ثبت این سند',
+  },
+  {
+    key: 'prev_balance_cash',
+    category: 'customer_balance',
+    categoryLabel: 'مانده حساب طرف‌حساب',
+    label: 'مانده قبلی ریالی / نقدی',
+    defaultUnit: 'تومان',
+    sampleValue: '۴۵٬۲۰۰٬۰۰۰',
+    description: 'مانده پولی مشتری قبل از ثبت این سند',
+  },
+  {
+    key: 'final_balance_gold',
+    category: 'customer_balance',
+    categoryLabel: 'مانده حساب طرف‌حساب',
+    label: 'مانده نهایی طلا پس از این سند',
+    defaultUnit: 'گرم',
+    sampleValue: '۱۳٫۲۶۰',
+    description: 'مانده طلای نهایی مشتری پس از اعمال این سند',
+  },
+  {
+    key: 'final_balance_cash',
+    category: 'customer_balance',
+    categoryLabel: 'مانده حساب طرف‌حساب',
+    label: 'مانده نهایی ریالی پس از این سند',
+    defaultUnit: 'تومان',
+    sampleValue: '۶۸٬۵۵۰٬۰۰۰',
+    description: 'مانده پولی نهایی مشتری پس از اعمال این سند',
+  },
+  {
+    key: 'customer_status',
+    category: 'customer_balance',
+    categoryLabel: 'مانده حساب طرف‌حساب',
+    label: 'وضعیت مانده حساب مشتری',
+    defaultUnit: '',
+    sampleValue: 'بدهکار (به ما)',
+    description: 'وضعیت بدهکار / بستانکار / بی‌حساب مشتری',
+  },
+  {
+    key: 'prev_balance_silver',
+    category: 'customer_balance',
+    categoryLabel: 'مانده حساب طرف‌حساب',
+    label: 'مانده قبلی نقره (گرم)',
+    defaultUnit: 'گرم',
+    sampleValue: '۵۰٫۰۰۰',
+    description: 'مانده نقره مشتری قبل از این سند',
+  },
+  {
+    key: 'final_balance_silver',
+    category: 'customer_balance',
+    categoryLabel: 'مانده حساب طرف‌حساب',
+    label: 'مانده نهایی نقره پس از این سند',
+    defaultUnit: 'گرم',
+    sampleValue: '۵۰٫۰۰۰',
+    description: 'مانده نقره نهایی مشتری پس از اعمال سند',
+  },
+
+  // خلاصه و اثر این سند
+  {
+    key: 'doc_net_gold',
+    category: 'document_summary',
+    categoryLabel: 'خلاصه و اثر این سند',
+    label: 'مانده وزنی این سند (طلا)',
+    defaultUnit: 'گرم',
+    sampleValue: '+۰٫۸۱۰',
+    description: 'خالص اثر وزنی ردیف‌های این سند بر حساب مشتری',
+  },
+  {
+    key: 'doc_net_cash',
+    category: 'document_summary',
+    categoryLabel: 'خلاصه و اثر این سند',
+    label: 'مانده ریالی این سند',
+    defaultUnit: 'تومان',
+    sampleValue: '۲۳٬۳۵۰٬۰۰۰',
+    description: 'خالص اثر پولی این سند بر حساب مشتری',
+  },
+  {
+    key: 'doc_settlement_status',
+    category: 'document_summary',
+    categoryLabel: 'خلاصه و اثر این سند',
+    label: 'وضعیت تسویه این سند',
+    defaultUnit: '',
+    sampleValue: 'تسویه نقد و وزنی',
+    description: 'نحوه تسویه ردیف‌های فاکتور',
+  },
+  {
+    key: 'doc_rows_count',
+    category: 'document_summary',
+    categoryLabel: 'خلاصه و اثر این سند',
+    label: 'تعداد ردیف‌های فاکتور',
+    defaultUnit: 'ردیف',
+    sampleValue: '۲',
+    description: 'تعداد کل اقلام ثبت‌شده در این فاکتور',
+  },
+
+  // ارقام مالی فاکتور
+  {
+    key: 'doc_subtotal_price',
+    category: 'financial',
+    categoryLabel: 'ارقام مالی فاکتور',
+    label: 'مبلغ کل قبل از تخفیف',
+    defaultUnit: 'تومان',
+    sampleValue: '۲۳٬۳۶۸٬۲۴۱',
+    description: 'جمع مبالغ ناخالص اقلام قبل از کسر تخفیف',
+  },
+  {
+    key: 'doc_discount_amount',
+    category: 'financial',
+    categoryLabel: 'ارقام مالی فاکتور',
+    label: 'مجموع تخفیف فاکتور',
+    defaultUnit: 'تومان',
+    sampleValue: '۱۸٬۲۴۱',
+    description: 'مجموع تخفیف‌های در نظر گرفته‌شده در این فاکتور',
+  },
+  {
+    key: 'doc_total_price',
+    category: 'financial',
+    categoryLabel: 'ارقام مالی فاکتور',
+    label: 'مبلغ نهایی قابل پرداخت',
+    defaultUnit: 'تومان',
+    sampleValue: '۲۳٬۳۵۰٬۰۰۰',
+    description: 'مبلغ خالص نهایی فاکتور پس از تخفیف',
+  },
+
+  // اوزان فلزات
+  {
+    key: 'doc_gold_weight_750',
+    category: 'weights',
+    categoryLabel: 'اوزان و فلزات',
+    label: 'جمع طلا معادل ۷۵۰',
+    defaultUnit: 'گرم',
+    sampleValue: '۰٫۸۱۰',
+    description: 'مجموع وزن معادل استاندارد ۷۵۰ طلای فاکتور',
+  },
+  {
+    key: 'doc_raw_gold_weight',
+    category: 'weights',
+    categoryLabel: 'اوزان و فلزات',
+    label: 'جمع وزن ناخالص طلا',
+    defaultUnit: 'گرم',
+    sampleValue: '۰٫۸۲۰',
+    description: 'مجموع وزن ترازو / ناخالص طلای اقلام فاکتور',
+  },
+  {
+    key: 'doc_silver_weight',
+    category: 'weights',
+    categoryLabel: 'اوزان و فلزات',
+    label: 'جمع وزن نقره',
+    defaultUnit: 'گرم',
+    sampleValue: '۰٫۰۰۰',
+    description: 'مجموع وزن نقره در فاکتور',
+  },
+  {
+    key: 'doc_platinum_weight',
+    category: 'weights',
+    categoryLabel: 'اوزان و فلزات',
+    label: 'جمع وزن پلاتین',
+    defaultUnit: 'گرم',
+    sampleValue: '۰٫۰۰۰',
+    description: 'مجموع وزن پلاتین در فاکتور',
+  },
+  {
+    key: 'doc_karat',
+    category: 'weights',
+    categoryLabel: 'اوزان و فلزات',
+    label: 'عیار (عیار طلا / فلز)',
+    defaultUnit: '',
+    sampleValue: '۷۵۰',
+    description: 'عیار استاندارد یا عیار طلای اقلام فاکتور (معمولاً ۷۵۰)',
+  },
+  {
+    key: 'doc_converted_by_metal',
+    category: 'weights',
+    categoryLabel: 'اوزان و فلزات',
+    label: 'تبدیل به (با توجه به نوع فلز)',
+    defaultUnit: 'گرم',
+    sampleValue: '۰٫۸۱۰ (۷۵۰)',
+    description: 'وزن تبدیل‌شده استاندارد بر حسب نوع فلز اصلی (طلا معادل ۷۵۰، نقره معادل ۹۹۹، پلاتین معادل ۹۵۰)',
+  },
+  {
+    key: 'custom_qrcode',
+    category: 'document_summary',
+    categoryLabel: 'خلاصه و اثر این سند',
+    label: 'داده دلخواه با کیو آر کد',
+    defaultUnit: '',
+    sampleValue: 'QR Code',
+    description: 'نمایش بارکد دو بعدی (QR Code) از متن دلخواه، شماره سند یا لینک استعلام فاکتور',
+  },
+];
+
+export function createCustomTableElement(
+  xMm = 10,
+  yMm = 160,
+  widthMm = 190,
+  heightMm = 32,
+): InvoicePrintElement {
+  const rand = Math.random().toString(36).slice(2, 6);
+  return {
+    id: `custom_table_${Date.now()}_${rand}`,
+    type: 'custom_table',
+    label: 'جدول محاسبات و مانده‌ها',
+    visible: true,
+    position: { xMm, yMm },
+    size: { widthMm, heightMm },
+    style: {
+      fontFamily: 'Vazirmatn',
+      fontSizePt: 8.5,
+      fontWeight: 'normal',
+      color: '#0f172a',
+      backgroundColor: '#ffffff',
+      borderColor: '#cbd5e1',
+      borderWidthMm: 0.4,
+      borderStyle: 'solid',
+      borderRadiusMm: 2,
+      opacity: 1,
+    },
+    content: {
+      customTable: {
+        title: 'خلاصه حساب و مانده‌ها',
+        showTitle: false,
+        showHeader: true,
+        headerLabelText: 'شرح شاخص',
+        headerValueText: 'مقدار / مانده',
+        layout: 'rows',
+        headerBackgroundColor: '#f1f5f9',
+        headerTextColor: '#0f172a',
+        bodyTextColor: '#1e293b',
+        borderColor: '#cbd5e1',
+        borderWidthMm: 0.3,
+        borderStyle: 'solid',
+        borderRadiusMm: 1.5,
+        showVerticalBorders: true,
+        showHorizontalBorders: true,
+        stripedRows: true,
+        alternateRowColor: '#f8fafc',
+        fields: [], // کاملاً خام per user request!
+      },
+    },
+    zIndex: 10,
+  };
+}
+
+export function resolveQrCodeValue(
+  qrContentType?: QrContentType | string,
+  rawValue?: string,
+  context?: {
+    documentNumber?: string;
+    customerName?: string;
+    date?: string;
+  },
+): string {
+  const docNum = context?.documentNumber || 'پیش‌نمایش';
+  const custName = context?.customerName || 'مشتری عمومی';
+  const docDate = context?.date || '';
+
+  const replacePlaceholders = (val: string) => {
+    return val
+      .replace(/\{invoice_number\}|\{doc_num\}|\{documentNumber\}|\{شماره_فاکتور\}|\{شماره_سند\}/gi, docNum)
+      .replace(/\{customer_name\}|\{نام_مشتری\}/gi, custName)
+      .replace(/\{date\}|\{تاریخ\}/gi, docDate);
+  };
+
+  if (qrContentType === 'invoice_number') {
+    return docNum;
+  }
+
+  if (qrContentType === 'url') {
+    const raw = rawValue?.trim() || `https://zarfolio.ir/invoice/${docNum}`;
+    return replacePlaceholders(raw);
+  }
+
+  if (qrContentType === 'custom_text') {
+    const raw = rawValue?.trim() || docNum;
+    return replacePlaceholders(raw);
+  }
+
+  // Fallback: If no type explicitly specified
+  if (rawValue && rawValue.trim()) {
+    const trimmed = rawValue.trim();
+    if (trimmed === 'invoice_number' || trimmed === '{invoice_number}') {
+      return docNum;
+    }
+    return replacePlaceholders(trimmed);
+  }
+
+  return docNum;
+}
+
+export function createDbFieldElement(
+  fieldKey: string,
+  xMm = 20,
+  yMm = 60,
+): InvoicePrintElement {
+  const def = AVAILABLE_DATABASE_FIELDS.find((f) => f.key === fieldKey);
+  const label = def?.label || 'فیلد داده';
+  const defaultUnit = def?.defaultUnit || '';
+  const isQr = fieldKey === 'custom_qrcode';
+  const rand = Math.random().toString(36).slice(2, 6);
+
+  return {
+    id: `db_field_${Date.now()}_${rand}`,
+    type: 'db_field',
+    label: `داده: ${label}`,
+    visible: true,
+    position: { xMm, yMm },
+    size: isQr ? { widthMm: 22, heightMm: 22 } : { widthMm: 55, heightMm: 9 },
+    style: {
+      fontFamily: 'Vazirmatn',
+      fontSizePt: 9,
+      fontWeight: 'bold',
+      color: '#0f172a',
+      backgroundColor: '#ffffff',
+      textAlign: isQr ? 'center' : 'right',
+      borderColor: '#cbd5e1',
+      borderWidthMm: isQr ? 0.2 : 0.3,
+      borderStyle: 'solid',
+      borderRadiusMm: 2,
+      paddingMm: isQr ? 0.5 : 1.5,
+      opacity: 1,
+    },
+    content: {
+      fieldKey,
+      fieldLabel: label,
+      showFieldLabel: !isQr,
+      fieldUnit: defaultUnit,
+      showFieldUnit: !isQr,
+      qrContentType: isQr ? 'invoice_number' : undefined,
+      text: isQr ? '' : undefined,
+    },
+    zIndex: 15,
+  };
 }
 
 export function createStandardElements(pageWidthMm = 210): InvoicePrintElement[] {

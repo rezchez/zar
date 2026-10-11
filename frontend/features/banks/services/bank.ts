@@ -630,9 +630,11 @@ export function isTomanCurrency(codeOrName?: string | null): boolean {
  * 
  * Rules:
  * - Foreign currencies (USD, EUR, etc.) remain intact without modification.
- * - If account was saved in Rial (IRR) and baseCurrency is Toman (IRT): amount / 10
- * - If account was saved in Toman (IRT) and baseCurrency is Rial (IRR): amount * 10
- * - If currency matches baseCurrency: amount is returned as-is.
+ * - By Rule 4 (AGENTS.md): "Always persist financial sums natively as integers inside amount fields (IRR).
+ *   Converting to Toman (IRT) should only occur at the display layer using Math.floor(num / 10) or Math.round(num * 10)."
+ * - Therefore, all domestic bank account amounts in the database are stored in native IRR.
+ * - When baseCurrency is Toman (IRT): amount / 10
+ * - When baseCurrency is Rial (IRR): amount as-is
  */
 export function getConvertedBankAmount(
   amount: number,
@@ -654,11 +656,10 @@ export function getConvertedBankAmount(
     };
   }
 
-  const accountIsToman = isTomanCurrency(code);
   const targetIsToman = baseCurrency === 'IRT';
 
-  if (!accountIsToman && targetIsToman) {
-    // Registered in Rial, target is Toman => Rial to Toman (/ 10)
+  if (targetIsToman) {
+    // Domestic amounts are persisted natively in IRR (Rule 4). Display in Toman => divide by 10.
     const matchedToman = currencies?.find((c) => isTomanCurrency(c.code));
     return {
       amount: Math.floor(amount / 10),
@@ -670,26 +671,14 @@ export function getConvertedBankAmount(
     };
   }
 
-  if (accountIsToman && !targetIsToman) {
-    // Registered in Toman, target is Rial => Toman to Rial (* 10)
-    const matchedRial = currencies?.find((c) => !isTomanCurrency(c.code) && isDomesticBankCurrency(c.code));
-    return {
-      amount: Math.round(amount * 10),
-      currencyCode: 'IRR',
-      currencyName: matchedRial?.name || 'ریال ایران',
-      currencySymbol: matchedRial?.symbol || 'ریال',
-      isConverted: true,
-      conversionDirection: 'irt-to-irr',
-    };
-  }
-
-  // Same domestic unit
-  const matched = currencies?.find((c) => c.code.toUpperCase() === code);
+  // Display in Rial (IRR) => return native IRR amount
+  const matchedRial = currencies?.find((c) => !isTomanCurrency(c.code) && isDomesticBankCurrency(c.code));
   return {
     amount,
-    currencyCode: code === 'IRT' ? 'IRT' : 'IRR',
-    currencyName: matched?.name || (code === 'IRT' ? 'تومان' : 'ریال ایران'),
-    currencySymbol: matched?.symbol || (code === 'IRT' ? 'تومان' : 'ریال'),
+    currencyCode: 'IRR',
+    currencyName: matchedRial?.name || 'ریال ایران',
+    currencySymbol: matchedRial?.symbol || 'ریال',
     isConverted: false,
   };
 }
+

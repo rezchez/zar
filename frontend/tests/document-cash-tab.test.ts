@@ -283,6 +283,21 @@ describe('Document Cash Tab Validation & Readiness', () => {
       expect(validateLine(checkLine)).toBe('');
       expect(isLineReady(checkLine)).toBe(true);
     });
+
+    it('gracefully handles empty, missing details, or malformed lines without throwing TypeError', () => {
+      // Must not throw Cannot read properties of undefined (reading 'calculationMethod')
+      expect(() => validateLine(null as any)).not.toThrow();
+      expect(() => validateLine({} as any)).not.toThrow();
+      expect(validateLine({} as any)).toBe('اطلاعات ردیف سند ناقص است.');
+      expect(() => isLineReady(null as any)).not.toThrow();
+      expect(isLineReady(null as any)).toBe(false);
+      expect(() => isLineReady({} as any)).not.toThrow();
+      expect(isLineReady({} as any)).toBe(false);
+
+      const bankLineWithoutMethod = createLine('paid', 'bank');
+      delete (bankLineWithoutMethod.details as any).calculationMethod;
+      expect(() => validateLine(bankLineWithoutMethod)).not.toThrow();
+    });
   });
 });
 
