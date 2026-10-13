@@ -56,7 +56,7 @@ export default function DocumentSubmitActions({
         {showCommitRow && onCommitRow ? (
           <button
             type="button"
-            onClick={onCommitRow}
+            onClick={() => onCommitRow()}
             disabled={isLoading}
             className="inline-flex h-7.5 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-amber-500 hover:bg-amber-600 dark:bg-amber-600 dark:hover:bg-amber-500 px-2.5 text-[11px] font-black text-slate-950 dark:text-white shadow-xs transition disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
             title={commitRowLabel}

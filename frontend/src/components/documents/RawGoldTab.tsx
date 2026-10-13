@@ -67,6 +67,9 @@ export type DetailState = {
   quantity?: string;
   coinType?: string;
   coinName?: string;
+  coinYear?: string;
+  mintYear?: string;
+  unitWeight?: string;
   wage?: string;
   wageMode?: 'per_gram' | 'per_item';
   goldenPercentage?: string;

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import { ArrowLeftRight, Flame, PencilLine, Sparkles, Trash2 } from 'lucide-react';
+import { ArrowLeftRight, Coins, Flame, PencilLine, Sparkles, Trash2 } from 'lucide-react';
 import { TableRow, TableCell } from '@/components/ui/data-table';
 import type { DocumentLine } from '@/src/components/documents/RawGoldTab';
 import {
@@ -10,6 +10,7 @@ import {
   getLineDocumentTypeLabel,
   numberValue,
   toPersianDigits,
+  isMetalBearingLine,
 } from '../utils/document-helpers';
 
 interface CommittedLineRowProps {
@@ -26,6 +27,7 @@ interface CommittedLineRowProps {
   hasCurrencyLines?: boolean;
   hasCheckLines?: boolean;
   hasWorkmanshipLines?: boolean;
+  baseCurrency?: 'IRR' | 'IRT';
 }
 
 export default function CommittedLineRow({
@@ -42,11 +44,14 @@ export default function CommittedLineRow({
   hasCurrencyLines = false,
   hasCheckLines = false,
   hasWorkmanshipLines = false,
+  baseCurrency = 'IRR',
 }: CommittedLineRowProps) {
   const isPaid = line.documentNature === 'paid';
   const isReceived = line.documentNature === 'received';
   const isCurrency = line.documentTab === 'currency';
   const isStone = line.documentTab === 'stone';
+  const isClaim = line.documentTab === 'claim' || line.sourceTab === 'claim';
+  const hasClaimWeight = isClaim && numberValue(line.details.claimWeight || line.details.rawWeight) > 0;
   const isClaimLine = line.documentSubType === 'currency-claim';
   const isDebtLine = line.documentSubType === 'currency-debt';
   const isUnsettled = line.details.unsettledTrade === true || line.settlementMethod === 'unsettled';
@@ -70,44 +75,40 @@ export default function CommittedLineRow({
       line.documentSubType,
     );
 
-  const isMetalLine =
-    !isCurrency &&
-    !isStone &&
-    line.documentTab !== 'cash' &&
-    line.documentTab !== 'bank';
+  const isMetalLine = isMetalBearingLine(line);
 
   const metalLabel =
     !isMetalLine
       ? '-'
-      : line.details.metalType === 'silver'
+      : line.details?.metalType === 'silver'
       ? 'نقره'
-      : line.details.metalType === 'platinum'
+      : line.details?.metalType === 'platinum'
       ? 'پلاتین'
       : 'طلا';
 
-  const rawWeight =
-    isCurrency || isStone
-      ? 0
-      : line.details?.calculationMethod === 'money'
-      ? actualWeightFromMoney(line.details, Number(line.details?.baseKarat || 750))
-      : numberValue(line.details?.rawWeight);
+  const rawWeight = !isMetalLine
+    ? 0
+    : line.details?.calculationMethod === 'money'
+    ? actualWeightFromMoney(line.details, Number(line.details?.baseKarat || 750))
+    : numberValue(line.details?.claimWeight || line.details?.rawWeight);
 
-  const purityVal = isCurrency || isStone ? 0 : numberValue(line.details.purity);
+  const purityVal = !isMetalLine ? 0 : numberValue(line.details?.purity);
 
   // Formula: weight * purity / the base karat captured when the line was registered.
-  const c750 =
-    line.converted750 ??
-    (rawWeight > 0 && purityVal > 0
-      ? (rawWeight * purityVal) / Number(line.details.baseKarat || 750)
-      : 0);
+  const c750 = !isMetalLine
+    ? 0
+    : (line.converted750 ??
+      (rawWeight > 0 && purityVal > 0
+        ? (rawWeight * purityVal) / Number(line.details?.baseKarat || 750)
+        : 0));
 
-  const weightDisplay = rawWeight > 0 ? faNumber(rawWeight, weightPrecision) : '-';
-  const purityDisplay = purityVal > 0 ? toPersianDigits(line.details.purity) : '-';
+  const weightDisplay = isMetalLine && rawWeight > 0 ? faNumber(rawWeight, weightPrecision) : '-';
+  const purityDisplay = isMetalLine && purityVal > 0 ? toPersianDigits(line.details?.purity) : '-';
 
   let bedehkarVazni: string | null = null;
   let bostankarVazni: string | null = null;
 
-  if (!isCurrency && !isStone) {
+  if (isMetalLine) {
     if (line.documentTab === 'gold-sale') {
       if (isReceived) {
         // معامله خرید طلا: مشتری متعهد تحویل طلاست و بدهکار وزنی می‌شود
@@ -157,22 +158,29 @@ export default function CommittedLineRow({
     ? (isClaimLine || isDebtLine ? 0 : numberValue(line.details.currencyTotalAmount))
     : isStone
     ? (isForeignStone ? 0 : stoneAmount)
-    : numberValue(line.details.totalAmount);
+    : numberValue(line.details.claimFinancial || line.details.totalAmount);
 
   const bedehkarMali = isPaid && financialAmount > 0 ? faNumber(financialAmount, 0) : null;
   const bostankarMali = isReceived && financialAmount > 0 ? faNumber(financialAmount, 0) : null;
 
   // Check and bank details
-  const isCheck =
-    line.details?.bankOperationKind === 'check-payment' ||
-    Boolean(line.details?.checkNumber?.trim()) ||
-    Boolean(line.details?.sayadId?.trim()) ||
+  const isBankTabLine =
+    line.documentTab === 'bank' ||
+    line.sourceTab === 'bank' ||
     (line.documentTab as string) === 'check' ||
     (line.sourceTab as string) === 'check';
 
-  const bankName = line.details?.bankName?.trim() || '';
-  const bankBranch = line.details?.bankBranch?.trim() || '';
-  const accountNumber = line.details?.accountNumber?.trim() || '';
+  const isCheck =
+    isBankTabLine &&
+    (line.details?.bankOperationKind === 'check-payment' ||
+      Boolean(line.details?.checkNumber?.trim()) ||
+      Boolean(line.details?.sayadId?.trim()) ||
+      (line.documentTab as string) === 'check' ||
+      (line.sourceTab as string) === 'check');
+
+  const bankName = isBankTabLine ? (line.details?.bankName?.trim() || '') : '';
+  const bankBranch = isBankTabLine ? (line.details?.bankBranch?.trim() || '') : '';
+  const accountNumber = isBankTabLine ? (line.details?.accountNumber?.trim() || '') : '';
 
   const bankDisplayFull = useMemo(() => {
     if (!bankName && !accountNumber) return '';
@@ -226,13 +234,28 @@ export default function CommittedLineRow({
               کار ساخته
             </span>
           ) : null}
+          {(line.documentTab === 'coin' || line.sourceTab === 'coin') ? (
+            <span className="inline-flex items-center gap-0.5 rounded bg-amber-100 px-1 py-0.5 text-[9px] font-extrabold text-amber-900 border border-amber-300/80 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800 shrink-0">
+              <Coins size={10} className="text-amber-600 dark:text-amber-400 shrink-0" />
+              سکه و شمش
+            </span>
+          ) : null}
           <div className="min-w-0 flex-1">
             <span className="font-semibold text-xs text-slate-800 dark:text-slate-200 truncate block w-full" title={docType}>
               {docType}
             </span>
-            {line.details?.workmanshipName && !hasWorkmanshipLines ? (
+            {line.details?.workmanshipName && !hasWorkmanshipLines && (line.documentTab === 'workmanship' || line.sourceTab === 'workmanship') ? (
               <span className="text-[10px] text-amber-600 dark:text-amber-400 font-bold truncate block" title={line.details.workmanshipName}>
                 {line.details.workmanshipName}
+              </span>
+            ) : null}
+            {line.details?.coinName && (line.documentTab === 'coin' || line.sourceTab === 'coin') ? (
+              <span
+                className="text-[10px] text-amber-600 dark:text-amber-400 font-bold truncate block"
+                title={`${line.details.coinName}${line.details.quantity ? ` (تعداد: ${toPersianDigits(line.details.quantity)})` : ''}`}
+              >
+                {line.details.coinName}
+                {line.details.quantity ? ` (${toPersianDigits(line.details.quantity)} عدد)` : ''}
               </span>
             ) : null}
           </div>
@@ -243,7 +266,7 @@ export default function CommittedLineRow({
       {hasWorkmanshipLines ? (
         <TableCell className="px-1.5 py-1.5 text-center font-bold text-slate-800 dark:text-slate-100 text-xs border-s border-slate-200/60 dark:border-slate-800/60">
           <span className="truncate block w-full" title={line.details?.workmanshipName || ''}>
-            {line.details?.workmanshipName?.trim() || '-'}
+            {(line.documentTab === 'workmanship' || line.sourceTab === 'workmanship') ? (line.details?.workmanshipName?.trim() || '-') : '-'}
           </span>
         </TableCell>
       ) : null}

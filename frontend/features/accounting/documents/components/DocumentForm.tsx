@@ -49,6 +49,7 @@ import {
   convertedWeightFromTotal,
   documentSubType,
   validateLine,
+  isDocumentLineObject,
 } from '../hooks/useDocumentLines';
 import {
   validateDocumentSettlement,
@@ -67,6 +68,10 @@ import {
   type DateDiffInfo,
   getQuoteRateInRials,
   type MarketQuote,
+  isMetalBearingTab,
+  isMetalBearingLine,
+  sanitizeLineDetailsForTab,
+  sanitizeDocumentLine,
 } from '../utils/document-helpers';
 
 export const VALID_ENTRY_TABS = [
@@ -151,6 +156,7 @@ export default function DocumentForm({
 
   // Active Tab & Hash Sync
   const [activeEntryTab, setActiveEntryTab] = useState<ValidEntryTab>('metals');
+  const tabDraftsRef = useRef<Partial<Record<ValidEntryTab, DocumentLine>>>({});
 
   // Currencies state
   const [availableCurrencies, setAvailableCurrencies] = useState<Currency[]>(() => {
@@ -368,54 +374,33 @@ export default function DocumentForm({
         const validTab = targetTab;
         setActiveEntryTab(validTab);
         setDraftLine((current) => {
-          const normDoc = (selectedCurrency || '').trim().toUpperCase();
-          const validForeignCurrencies = activeCurrencies
-            .map((c) => c.code.trim().toUpperCase())
-            .filter((code) => code !== 'IRR' && code !== 'IRT' && code !== normDoc);
-          const fallbackAlt = validForeignCurrencies[0] || (normDoc === 'USD' ? 'EUR' : 'USD');
-          const currentUnit = (current.details?.currencyUnit || '').trim().toUpperCase();
-          const isValidForeignUnit = validForeignCurrencies.includes(currentUnit);
-          const curUnit = isValidForeignUnit ? current.details.currencyUnit : fallbackAlt;
-          const isFromCurrencyTab = current.sourceTab === 'currency' || current.documentTab === 'currency';
-
-          const effectiveRawKind = targetKind || (validTab === 'metals' && current.details?.rawKind ? current.details.rawKind : 'molten');
-
-          return {
-            ...current,
-            documentTab:
-              validTab === 'gold-sale'
-                ? 'gold-sale'
-                : validTab === 'currency'
-                  ? 'currency'
-                  : validTab === 'coin'
-                    ? 'coin'
-                    : validTab === 'stone'
-                      ? 'stone'
-                      : 'raw-gold',
-            sourceTab: validTab,
-            settlementMethod: effectiveRawKind === 'unsettled' ? 'unsettled' : current.settlementMethod,
-            documentSubType:
-              validTab === 'gold-sale'
-                ? `${documentNature === 'received' ? 'gold-purchase' : 'gold-sale'}-${current.details?.rawKind || 'molten'}`
-                : validTab === 'currency'
-                  ? (documentNature === 'received' ? 'currency-purchase' : 'currency-sale')
-                  : validTab === 'coin'
-                    ? (documentNature === 'received' ? 'incoming-coin' : 'outgoing-coin')
-                    : validTab === 'stone'
-                      ? (documentNature === 'received' ? 'stone-purchase' : 'stone-sale')
-                      : validTab === 'metals'
-                        ? documentSubType(documentNature, effectiveRawKind)
-                        : current.documentSubType,
-            details: {
-              ...current.details,
-              rawKind: effectiveRawKind,
-              currencyUnit: validTab === 'currency' ? curUnit : current.details?.currencyUnit,
-              settlementCurrencyUnit: validTab === 'currency' ? (selectedCurrency || 'IRR') : current.details?.settlementCurrencyUnit,
-              currencyQuantity: validTab === 'currency' && !isFromCurrencyTab && !editingLineId ? '' : current.details?.currencyQuantity,
-              currencyUnitPrice: validTab === 'currency' && !isFromCurrencyTab && !editingLineId ? '' : current.details?.currencyUnitPrice,
-              currencyTotalAmount: validTab === 'currency' && !isFromCurrencyTab && !editingLineId ? '' : current.details?.currencyTotalAmount,
-            },
-          };
+          if (current.sourceTab === validTab && current.documentTab === validTab) {
+            return current;
+          }
+          let nextDraft = tabDraftsRef.current[validTab];
+          if (nextDraft) {
+            nextDraft = sanitizeDocumentLine(nextDraft, validTab, baseCurrency, goldBaseKarat);
+            nextDraft.documentNature = documentNature;
+          } else {
+            nextDraft = createSettingsLine(documentNature, validTab);
+            const effectiveRawKind = targetKind || (validTab === 'metals' ? 'molten' : undefined);
+            if (effectiveRawKind && validTab === 'metals') {
+              nextDraft.details.rawKind = effectiveRawKind;
+              nextDraft.documentSubType = documentSubType(documentNature, effectiveRawKind);
+            }
+            nextDraft = sanitizeDocumentLine(nextDraft, validTab, baseCurrency, goldBaseKarat);
+          }
+          if (validTab === 'currency') {
+            const normDoc = (selectedCurrency || '').trim().toUpperCase();
+            const validForeignCurrencies = activeCurrencies
+              .map((c) => c.code.trim().toUpperCase())
+              .filter((code) => code !== 'IRR' && code !== 'IRT' && code !== normDoc);
+            const fallbackAlt = validForeignCurrencies[0] || (normDoc === 'USD' ? 'EUR' : 'USD');
+            const curUnit = nextDraft.details?.currencyUnit || fallbackAlt;
+            nextDraft.details.currencyUnit = curUnit;
+            nextDraft.details.settlementCurrencyUnit = selectedCurrency || baseCurrency;
+          }
+          return nextDraft;
         });
       }
     };
@@ -693,8 +678,8 @@ export default function DocumentForm({
             converted750: line.converted750,
             details: {
               ...line.details,
-              currencyUnit: line.details?.currencyUnit || (line.documentTab === 'bank' || line.sourceTab === 'bank' ? baseCurrency : undefined),
-              baseCurrency: line.details?.baseCurrency || (line.documentTab === 'bank' || line.sourceTab === 'bank' ? baseCurrency : undefined),
+              currencyUnit: line.details?.currencyUnit || (line.documentTab === 'bank' || line.sourceTab === 'bank' || line.documentTab === 'claim' || line.sourceTab === 'claim' ? baseCurrency : undefined),
+              baseCurrency: line.details?.baseCurrency || (line.documentTab === 'bank' || line.sourceTab === 'bank' || line.documentTab === 'claim' || line.sourceTab === 'claim' ? baseCurrency : undefined),
             },
           })),
         }),
@@ -722,81 +707,53 @@ export default function DocumentForm({
   const changeEntryTab = (tab: string) => {
     if ((VALID_ENTRY_TABS as readonly string[]).includes(tab)) {
       const validTab = tab as ValidEntryTab;
+      if (validTab === activeEntryTab && draftLine.sourceTab === validTab) {
+        return;
+      }
+
+      // Save current draft isolated for the active tab (if not editing an existing committed line)
+      if (!editingLineId) {
+        tabDraftsRef.current[activeEntryTab] = sanitizeDocumentLine(
+          draftLine,
+          activeEntryTab,
+          baseCurrency,
+          goldBaseKarat,
+        );
+      } else {
+        cancelEdit();
+      }
+
       setActiveEntryTab(validTab);
       window.location.hash = validTab;
-      setDraftLine((current) => {
+
+      // Restore previously saved draft for validTab or create a clean fresh line
+      let nextDraft = tabDraftsRef.current[validTab];
+      if (nextDraft) {
+        nextDraft = sanitizeDocumentLine(nextDraft, validTab, baseCurrency, goldBaseKarat);
+        nextDraft.documentNature = documentNature;
+      } else {
+        nextDraft = createSettingsLine(documentNature, validTab);
+        nextDraft = sanitizeDocumentLine(nextDraft, validTab, baseCurrency, goldBaseKarat);
+      }
+
+      // Specific tab autofills (e.g. currency rate)
+      if (validTab === 'currency') {
         const normDoc = (selectedCurrency || '').trim().toUpperCase();
         const validForeignCurrencies = activeCurrencies
           .map((c) => c.code.trim().toUpperCase())
           .filter((code) => code !== 'IRR' && code !== 'IRT' && code !== normDoc);
         const fallbackAlt = validForeignCurrencies[0] || (normDoc === 'USD' ? 'EUR' : 'USD');
-        const currentUnit = (current.details?.currencyUnit || '').trim().toUpperCase();
-        const isValidForeignUnit = validForeignCurrencies.includes(currentUnit);
-        const curUnit = isValidForeignUnit ? current.details.currencyUnit : fallbackAlt;
+        const curUnit = nextDraft.details?.currencyUnit || fallbackAlt;
+        nextDraft.details.currencyUnit = curUnit;
+        nextDraft.details.settlementCurrencyUnit = selectedCurrency || baseCurrency;
         const quoteRate = getQuoteRateInRials(quotes, curUnit);
         const finalRate = baseCurrency === 'IRT' ? Math.round(quoteRate / 10) : quoteRate;
-        const shouldFillRate =
-          validTab === 'currency' &&
-          quoteRate > 0 &&
-          (!current.details?.currencyUnitPrice || current.details.currencyUnitPrice === '0' || !isValidForeignUnit);
-        const isFromCurrencyTab = current.sourceTab === 'currency' || current.documentTab === 'currency';
-        const nextDetails = {
-          ...current.details,
-          currencyUnit: validTab === 'currency' ? curUnit : current.details?.currencyUnit,
-          settlementCurrencyUnit: validTab === 'currency' ? (selectedCurrency || baseCurrency) : current.details?.settlementCurrencyUnit,
-          currencyQuantity: validTab === 'currency' && !isFromCurrencyTab && !editingLineId ? '' : current.details?.currencyQuantity,
-          currencyUnitPrice: shouldFillRate ? String(finalRate) : (validTab === 'currency' && !isFromCurrencyTab && !editingLineId ? '' : current.details?.currencyUnitPrice || ''),
-          currencyTotalAmount: validTab === 'currency' && !isFromCurrencyTab && !editingLineId ? '' : current.details?.currencyTotalAmount,
-        };
-        const qty = numberValue(nextDetails.currencyQuantity);
-        const unitPrice = numberValue(nextDetails.currencyUnitPrice);
-        if (validTab === 'currency' && qty > 0 && unitPrice > 0) {
-          nextDetails.currencyTotalAmount = String(Math.round(qty * unitPrice));
+        if (quoteRate > 0 && (!nextDraft.details?.currencyUnitPrice || nextDraft.details.currencyUnitPrice === '0')) {
+          nextDraft.details.currencyUnitPrice = String(finalRate);
         }
-        return {
-          ...current,
-          documentTab:
-            validTab === 'gold-sale'
-              ? 'gold-sale'
-              : validTab === 'currency'
-                ? 'currency'
-                : validTab === 'coin'
-                  ? 'coin'
-                  : validTab === 'stone'
-                    ? 'stone'
-                    : validTab === 'bank'
-                      ? 'bank'
-                      : validTab === 'cash'
-                        ? 'cash'
-                        : validTab === 'claim'
-                          ? 'claim'
-                          : validTab === 'workmanship'
-                            ? 'workmanship'
-                            : 'raw-gold',
-          sourceTab: validTab,
-          documentSubType:
-            validTab === 'gold-sale'
-              ? `${documentNature === 'received' ? 'gold-purchase' : 'gold-sale'}-${current.details?.rawKind || 'molten'}`
-              : validTab === 'currency'
-                ? (documentNature === 'received' ? 'currency-purchase' : 'currency-sale')
-                : validTab === 'coin'
-                  ? (documentNature === 'received' ? 'incoming-coin' : 'outgoing-coin')
-                  : validTab === 'stone'
-                    ? (documentNature === 'received' ? 'stone-purchase' : 'stone-sale')
-                    : validTab === 'workmanship'
-                      ? (current.details?.workmanshipOptionId === 2
-                          ? (documentNature === 'received' ? 'buy_manufactured' : 'sale_manufactured')
-                          : current.details?.workmanshipOptionId === 3
-                            ? (documentNature === 'received' ? 'return_entry' : 'return_exit')
-                            : current.details?.workmanshipOptionId === 4
-                              ? (documentNature === 'received' ? 'return_buy' : 'return_sale')
-                              : (documentNature === 'received' ? 'entry_manufactured' : 'exit_manufactured'))
-                      : validTab === 'metals'
-                        ? documentSubType(documentNature, current.details?.rawKind || 'molten')
-                        : current.documentSubType,
-          details: nextDetails,
-        };
-      });
+      }
+
+      setDraftLine(nextDraft);
     }
   };
 
@@ -810,7 +767,9 @@ export default function DocumentForm({
         documentSubType:
           current.sourceTab === 'currency' || activeEntryTab === 'currency'
             ? (nextNature === 'received' ? 'currency-purchase' : 'currency-sale')
-            : current.sourceTab === 'gold-sale' || activeEntryTab === 'gold-sale'
+            : current.sourceTab === 'claim' || activeEntryTab === 'claim'
+              ? (nextNature === 'received' ? 'debt' : 'claim')
+              : current.sourceTab === 'gold-sale' || activeEntryTab === 'gold-sale'
               ? `${nextNature === 'received' ? 'gold-purchase' : 'gold-sale'}-${current.details?.rawKind || 'molten'}`
               : current.sourceTab === 'workmanship' || activeEntryTab === 'workmanship'
                 ? (current.details?.workmanshipOptionId === 2
@@ -874,10 +833,14 @@ export default function DocumentForm({
     setDateWarningAcknowledged(false);
   }, []);
 
+  const pendingCustomDraftRef = useRef<DocumentLine | undefined>(undefined);
+
   const handleConfirmDateAndCommit = useCallback(() => {
     setDateWarningAcknowledged(true);
     setShowDateConfirmModal(false);
-    hookCommitDraftLine(meltedInventory);
+    const pendingLine = pendingCustomDraftRef.current;
+    pendingCustomDraftRef.current = undefined;
+    hookCommitDraftLine(meltedInventory, pendingLine);
   }, [hookCommitDraftLine, meltedInventory]);
 
   const handleSetTodayAndCommit = useCallback(() => {
@@ -885,11 +848,14 @@ export default function DocumentForm({
     setDocumentDateJalali(today);
     setDateWarningAcknowledged(true);
     setShowDateConfirmModal(false);
-    hookCommitDraftLine(meltedInventory);
+    const pendingLine = pendingCustomDraftRef.current;
+    pendingCustomDraftRef.current = undefined;
+    hookCommitDraftLine(meltedInventory, pendingLine);
     toast.info(`تاریخ سند روی امروز (${toPersianDigits(today)}) تنظیم و ردیف ثبت شد.`);
   }, [hookCommitDraftLine, meltedInventory]);
 
   const handleCancelDateConfirm = useCallback(() => {
+    pendingCustomDraftRef.current = undefined;
     setShowDateConfirmModal(false);
   }, []);
 
@@ -1235,6 +1201,22 @@ export default function DocumentForm({
               ? convertTomanToRial(rawBankAmount)
               : Math.round(rawBankAmount);
 
+            const isClaimRow = line.documentTab === 'claim' || line.sourceTab === 'claim';
+            const isClaimToman =
+              isClaimRow &&
+              (line.details.currencyUnit === 'IRT' ||
+                line.details.baseCurrency === 'IRT' ||
+                baseCurrency === 'IRT');
+            const rawClaimFinancial = isClaimRow
+              ? numberValue(line.details.claimFinancial || line.details.totalAmount || '')
+              : 0;
+            const claimRialAmount = isClaimToman
+              ? convertTomanToRial(rawClaimFinancial)
+              : Math.round(rawClaimFinancial);
+            const rawClaimWeight = isClaimRow
+              ? numberValue(line.details.claimWeight || line.details.rawWeight || '')
+              : 0;
+
             return {
               documentNature: line.documentNature,
               documentTab: line.documentTab,
@@ -1257,26 +1239,38 @@ export default function DocumentForm({
                       amountInIrr: bankRialAmount,
                       rialAmountInIrr: true,
                     }
-                  : line.details,
-              goldAmount: isMetalRow && metalType === 'gold' ? weightValue : 0,
-              silverAmount: isMetalRow && metalType === 'silver' ? weightValue : 0,
-              platinumAmount: isMetalRow && metalType === 'platinum' ? weightValue : 0,
+                  : isClaimRow
+                    ? {
+                        ...line.details,
+                        currencyUnit: isClaimToman ? 'IRT' : 'IRR',
+                        baseCurrency,
+                        amountInIrr: claimRialAmount,
+                        rialAmountInIrr: true,
+                        claimFinancial: rawClaimFinancial > 0 ? String(rawClaimFinancial) : line.details.claimFinancial,
+                        claimWeight: rawClaimWeight > 0 ? String(rawClaimWeight) : line.details.claimWeight,
+                      }
+                    : line.details,
+              goldAmount: isMetalRow && metalType === 'gold' ? weightValue : (isClaimRow && metalType === 'gold' ? rawClaimWeight : 0),
+              silverAmount: isMetalRow && metalType === 'silver' ? weightValue : (isClaimRow && metalType === 'silver' ? rawClaimWeight : 0),
+              platinumAmount: isMetalRow && metalType === 'platinum' ? weightValue : (isClaimRow && metalType === 'platinum' ? rawClaimWeight : 0),
               rialAmount:
                 isStoneRow
                   ? stoneRialAmount
                   : isBankRow
                     ? bankRialAmount
-                    : line.documentTab === 'currency'
-                      ? (line.documentSubType === 'currency-claim' || line.documentSubType === 'currency-debt'
-                          ? 0
-                          : numberValue(line.details.currencyTotalAmount))
-                      : line.documentTab === 'cash' && !line.details.isForeignCash
-                        ? numberValue(line.details.totalAmount)
-                        : line.documentTab === 'gold-sale'
+                    : isClaimRow
+                      ? claimRialAmount
+                      : line.documentTab === 'currency'
+                        ? (line.documentSubType === 'currency-claim' || line.documentSubType === 'currency-debt'
+                            ? 0
+                            : numberValue(line.details.currencyTotalAmount))
+                        : line.documentTab === 'cash' && !line.details.isForeignCash
                           ? numberValue(line.details.totalAmount)
-                          : line.documentTab === 'refining' && line.details.refiningOpKind === 'fee'
+                          : line.documentTab === 'gold-sale'
                             ? numberValue(line.details.totalAmount)
-                            : numberValue(line.details.totalAmount || ''),
+                            : line.documentTab === 'refining' && line.details.refiningOpKind === 'fee'
+                              ? numberValue(line.details.totalAmount)
+                              : numberValue(line.details.totalAmount || ''),
               foreignAmount:
                 isStoneRow
                   ? stoneForeignAmount
@@ -1407,15 +1401,17 @@ export default function DocumentForm({
         line.documentTab === 'cash' ||
         line.documentTab === 'bank' ||
         line.documentTab === 'gold-sale' ||
+        numberValue(line.details?.claimFinancial) > 0 ||
         numberValue(line.details?.totalAmount) > 0 ||
         numberValue(line.details?.currencyTotalAmount) > 0,
     );
   }, [committedLines]);
 
   const handleCommitDraft = (customDraftLine?: DocumentLine) => {
+    const validCustomLine = isDocumentLineObject(customDraftLine) ? customDraftLine : undefined;
     // Check if this is the first committed row
     const isFirstRow = committedLines.length === 0 && !editingLineId;
-    const activeDraft = customDraftLine || draftLine;
+    const activeDraft = validCustomLine || draftLine;
 
     if (isFirstRow && !dateWarningAcknowledged) {
       const diff = checkDocumentDateDiff(documentDateJalali);
@@ -1433,13 +1429,18 @@ export default function DocumentForm({
           return false;
         }
 
+        pendingCustomDraftRef.current = validCustomLine;
         setDateDiffInfo(diff);
         setShowDateConfirmModal(true);
         return false;
       }
     }
 
-    return hookCommitDraftLine(meltedInventory, customDraftLine);
+    const commitResult = hookCommitDraftLine(meltedInventory, validCustomLine);
+    if (commitResult !== false) {
+      delete tabDraftsRef.current[activeEntryTab];
+    }
+    return commitResult;
   };
 
   const handleKeyDownEnter = (
@@ -1769,6 +1770,7 @@ export default function DocumentForm({
           bankTabContent={(
             <BankTab
               nature={documentNature}
+              onChangeNature={changeNature}
               selectedCustomer={selectedCustomer}
               draftLine={draftLine}
               setDraftLine={setDraftLine}

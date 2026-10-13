@@ -14,6 +14,8 @@ import {
   TrendingDown,
   TrendingUp,
   FileText,
+  ChevronDown,
+  Search,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 
@@ -24,6 +26,7 @@ import Field from '@/src/components/documents/Field';
 import type { DetailState, DocumentLine } from '@/src/components/documents/RawGoldTab';
 import { normalizeDigits, toPersianDigits } from '@/lib/jalali';
 import { parseLocalizedAmount } from '@/lib/money';
+import { sanitizeLineDetailsForTab } from '../utils/document-helpers';
 
 export type CoinOperationType =
   // Payment operations (سند پرداختی)
@@ -37,93 +40,133 @@ export type CoinOperationType =
   | 'receipt_unsettled_buy' // خرید بدون تسویه
   | 'receipt_debt'; // بدهی سکه و شمش
 
+export type CoinPresetCategory =
+  | 'emami_coin'
+  | 'bahar_coin'
+  | 'bank_coin'
+  | 'parsian'
+  | 'bar_zioto'
+  | 'bar_parsis'
+  | 'bar_other'
+  | 'custom';
+
 export interface CoinPreset {
   id: string;
   name: string;
-  category: 'bank_coin' | 'pahlavi_coin' | 'parsian' | 'bar_zioto' | 'bar_parsis' | 'bar_other' | 'custom';
+  category: CoinPresetCategory;
   categoryLabel: string;
   weight: number; // weight in grams
   purity: number; // in thousandths (e.g. 900, 995, 750)
   isFixedWeight: boolean;
   isFixedPurity: boolean;
+  defaultMintYear?: string;
 }
 
 export const PREDEFINED_COIN_PRESETS: CoinPreset[] = [
-  // 1. سکه‌های بانکی بهار آزادی
+  // 1. سکه‌های امامی (طرح جدید - عیار ۹۰۰ / ۲۲ عیار)
   {
     id: 'emami_full',
-    name: 'تمام سکه بانکی (بهار آزادی/امامی)',
-    category: 'bank_coin',
-    categoryLabel: 'سکه‌های بانکی (بهار آزادی)',
+    name: 'سکه تمام امامی (ضرب ۱۳۸۶)',
+    category: 'emami_coin',
+    categoryLabel: 'سکه‌های امامی (طرح جدید)',
     weight: 8.133,
     purity: 900,
     isFixedWeight: true,
     isFixedPurity: true,
+    defaultMintYear: '۱۳۸۶',
+  },
+  {
+    id: 'emami_pre86',
+    name: 'سکه تمام امامی (قبل از ۸۶)',
+    category: 'emami_coin',
+    categoryLabel: 'سکه‌های امامی (طرح جدید)',
+    weight: 8.133,
+    purity: 900,
+    isFixedWeight: true,
+    isFixedPurity: true,
+    defaultMintYear: 'قبل از ۱۳۸۶',
+  },
+
+  // 2. سکه‌های بهار آزادی (طرح قدیم، نیم، ربع و یک گرمی - عیار ۹۰۰ / ۲۲ عیار)
+  {
+    id: 'bahar_azadi_old',
+    name: 'سکه تمام بهار آزادی (طرح قدیم)',
+    category: 'bahar_coin',
+    categoryLabel: 'سکه‌های بهار آزادی',
+    weight: 8.133,
+    purity: 900,
+    isFixedWeight: true,
+    isFixedPurity: true,
+    defaultMintYear: 'طرح قدیم',
   },
   {
     id: 'half_bahar',
-    name: 'نیم سکه',
-    category: 'bank_coin',
-    categoryLabel: 'سکه‌های بانکی (بهار آزادی)',
+    name: 'نیم سکه بهار آزادی (ضرب ۱۳۸۶)',
+    category: 'bahar_coin',
+    categoryLabel: 'سکه‌های بهار آزادی',
     weight: 4.066,
     purity: 900,
     isFixedWeight: true,
     isFixedPurity: true,
+    defaultMintYear: '۱۳۸۶',
+  },
+  {
+    id: 'half_bahar_pre86',
+    name: 'نیم سکه بهار آزادی (قبل از ۸۶)',
+    category: 'bahar_coin',
+    categoryLabel: 'سکه‌های بهار آزادی',
+    weight: 4.066,
+    purity: 900,
+    isFixedWeight: true,
+    isFixedPurity: true,
+    defaultMintYear: 'قبل از ۱۳۸۶',
   },
   {
     id: 'quarter_bahar',
-    name: 'ربع سکه',
-    category: 'bank_coin',
-    categoryLabel: 'سکه‌های بانکی (بهار آزادی)',
+    name: 'ربع سکه بهار آزادی (ضرب ۱۳۸۶)',
+    category: 'bahar_coin',
+    categoryLabel: 'سکه‌های بهار آزادی',
     weight: 2.033,
     purity: 900,
     isFixedWeight: true,
     isFixedPurity: true,
+    defaultMintYear: '۱۳۸۶',
+  },
+  {
+    id: 'quarter_bahar_pre86',
+    name: 'ربع سکه بهار آزادی (قبل از ۸۶)',
+    category: 'bahar_coin',
+    categoryLabel: 'سکه‌های بهار آزادی',
+    weight: 2.033,
+    purity: 900,
+    isFixedWeight: true,
+    isFixedPurity: true,
+    defaultMintYear: 'قبل از ۱۳۸۶',
+  },
+  {
+    id: 'quarter_bahar_1403',
+    name: 'ربع سکه بهار آزادی (ضرب ۱۴۰۳)',
+    category: 'bahar_coin',
+    categoryLabel: 'سکه‌های بهار آزادی',
+    weight: 2.033,
+    purity: 900,
+    isFixedWeight: true,
+    isFixedPurity: true,
+    defaultMintYear: '۱۴۰۳',
   },
   {
     id: 'gram_coin',
-    name: 'سکه گرمی',
-    category: 'bank_coin',
-    categoryLabel: 'سکه‌های بانکی (بهار آزادی)',
-    weight: 1.010,
+    name: 'سکه یک گرمی بهار آزادی (بانک مرکزی)',
+    category: 'bahar_coin',
+    categoryLabel: 'سکه‌های بهار آزادی',
+    weight: 1.018,
     purity: 900,
     isFixedWeight: true,
     isFixedPurity: true,
+    defaultMintYear: 'بدون تاریخ',
   },
 
-  // 2. سکه‌های پهلوی
-  {
-    id: 'pahlavi_full',
-    name: 'سکه پهلوی (تمام)',
-    category: 'pahlavi_coin',
-    categoryLabel: 'سکه‌های پهلوی',
-    weight: 8.133,
-    purity: 900,
-    isFixedWeight: true,
-    isFixedPurity: true,
-  },
-  {
-    id: 'pahlavi_half',
-    name: 'سکه پهلوی (نیم)',
-    category: 'pahlavi_coin',
-    categoryLabel: 'سکه‌های پهلوی',
-    weight: 4.066,
-    purity: 900,
-    isFixedWeight: true,
-    isFixedPurity: true,
-  },
-  {
-    id: 'pahlavi_quarter',
-    name: 'سکه پهلوی (ربع)',
-    category: 'pahlavi_coin',
-    categoryLabel: 'سکه‌های پهلوی',
-    weight: 2.033,
-    purity: 900,
-    isFixedWeight: true,
-    isFixedPurity: true,
-  },
-
-  // 3. شمش زیوتو (Zioto Bars)
+  // 2. شمش زیوتو (Zioto Bars)
   {
     id: 'zioto_1g',
     name: 'شمش زیوتو (۱ گرمی)',
@@ -469,16 +512,48 @@ export default function CoinTab({
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data.coinTypes) && data.coinTypes.length > 0 && isMounted) {
-            const mapped: CoinPreset[] = data.coinTypes.map((item: { id: string; name: string; nature?: string; unitWeight?: number; purity?: number }) => ({
-              id: item.id,
-              name: item.name,
-              category: item.nature === 'bullion' ? 'bar_other' : (item.name?.includes('پهلوی') ? 'pahlavi_coin' : (item.name?.includes('پارسیان') ? 'parsian' : 'bank_coin')),
-              categoryLabel: item.nature === 'bullion' ? 'شمش‌های معتبر' : 'انواع سکه',
-              weight: Number(item.unitWeight || 1.0),
-              purity: Number(item.purity || 900),
-              isFixedWeight: true,
-              isFixedPurity: true,
-            }));
+            const mapped: CoinPreset[] = data.coinTypes
+              .filter((item: { name?: string; code?: string }) => {
+                const name = String(item.name || '');
+                const code = String(item.code || '');
+                return !name.includes('پهلوی') && !code.toUpperCase().includes('PAHLAVI');
+              })
+              .map((item: { id: string; name: string; nature?: string; unitWeight?: number; purity?: number }) => {
+                const nameStr = String(item.name || '');
+                const isEmami = nameStr.includes('امامی');
+                const isBahar =
+                  nameStr.includes('بهار آزادی') ||
+                  nameStr.includes('نیم سکه') ||
+                  nameStr.includes('ربع سکه') ||
+                  nameStr.includes('گرمی');
+
+                let category: CoinPresetCategory = 'bank_coin';
+                let categoryLabel = 'انواع سکه';
+                if (item.nature === 'bullion') {
+                  category = 'bar_other';
+                  categoryLabel = 'شمش‌های معتبر';
+                } else if (nameStr.includes('پارسیان')) {
+                  category = 'parsian';
+                  categoryLabel = 'سکه‌های پارسیان (۱۸ عیار)';
+                } else if (isEmami) {
+                  category = 'emami_coin';
+                  categoryLabel = 'سکه‌های امامی (طرح جدید)';
+                } else if (isBahar) {
+                  category = 'bahar_coin';
+                  categoryLabel = 'سکه‌های بهار آزادی';
+                }
+
+                return {
+                  id: item.id,
+                  name: item.name,
+                  category,
+                  categoryLabel,
+                  weight: Number(item.unitWeight || 1.0),
+                  purity: Number(item.purity || 900),
+                  isFixedWeight: true,
+                  isFixedPurity: true,
+                };
+              });
             setCustomCoins(mapped);
           }
         }
@@ -489,6 +564,21 @@ export default function CoinTab({
     void loadCoinTypes();
     return () => { isMounted = false; };
   }, []);
+
+  // Quick shortcuts for most commonly traded bank coins separated by Emami & Bahar Azadi
+  const quickCoinShortcuts = [
+    // سکه‌های امامی (طرح جدید)
+    { id: 'emami_full', label: 'تمام امامی (۱۳۸۶)', year: '۱۳۸۶', group: 'emami' },
+    { id: 'emami_pre86', label: 'تمام امامی (قبل ۸۶)', year: 'قبل از ۱۳۸۶', group: 'emami' },
+    // سکه‌های بهار آزادی
+    { id: 'bahar_azadi_old', label: 'تمام طرح قدیم', year: 'طرح قدیم', group: 'bahar' },
+    { id: 'half_bahar', label: 'نیم سکه (۱۳۸۶)', year: '۱۳۸۶', group: 'bahar' },
+    { id: 'half_bahar_pre86', label: 'نیم سکه (قبل ۸۶)', year: 'قبل از ۱۳۸۶', group: 'bahar' },
+    { id: 'quarter_bahar', label: 'ربع سکه (۱۳۸۶)', year: '۱۳۸۶', group: 'bahar' },
+    { id: 'quarter_bahar_pre86', label: 'ربع سکه (قبل ۸۶)', year: 'قبل از ۱۳۸۶', group: 'bahar' },
+    { id: 'quarter_bahar_1403', label: 'ربع سکه (۱۴۰۳)', year: '۱۴۰۳', group: 'bahar' },
+    { id: 'gram_coin', label: 'سکه گرمی', year: 'بدون تاریخ', group: 'bahar' },
+  ];
 
   // All combined presets
   const allPresets = useMemo(() => {
@@ -502,11 +592,50 @@ export default function CoinTab({
   // Form Fields State
   const [selectedCoinId, setSelectedCoinId] = useState<string>('emami_full');
   const [quantity, setQuantity] = useState<string>('1');
+  const [mintYear, setMintYear] = useState<string>('۱۳۸۶');
   const [unitWeight, setUnitWeight] = useState<string>('8.133');
   const [purity, setPurity] = useState<string>('900');
   const [unitPrice, setUnitPrice] = useState<string>('');
   const [totalPrice, setTotalPrice] = useState<string>('');
   const [description, setDescription] = useState<string>('');
+
+  // Dropdown & Search state
+  const [isCoinDropdownOpen, setIsCoinDropdownOpen] = useState(false);
+  const [coinSearchQuery, setCoinSearchQuery] = useState('');
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsCoinDropdownOpen(false);
+      }
+    }
+    if (isCoinDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isCoinDropdownOpen]);
+
+  // Populate state when editing an existing line
+  useEffect(() => {
+    if (editingLineId && draftLine) {
+      if (draftLine.details.coinType) setSelectedCoinId(draftLine.details.coinType);
+      if (draftLine.details.quantity) setQuantity(String(draftLine.details.quantity));
+      if (draftLine.details.unitWeight) setUnitWeight(String(draftLine.details.unitWeight));
+      if (draftLine.details.purity) setPurity(String(draftLine.details.purity));
+      if (draftLine.details.currencyUnitPrice) setUnitPrice(String(draftLine.details.currencyUnitPrice));
+      if (draftLine.details.totalAmount) setTotalPrice(String(draftLine.details.totalAmount));
+      if (draftLine.details.coinYear || draftLine.details.mintYear) {
+        setMintYear(String(draftLine.details.coinYear || draftLine.details.mintYear));
+      }
+      if (draftLine.description) setDescription(draftLine.description);
+      if (draftLine.documentSubType && (draftLine.documentSubType.startsWith('payment_') || draftLine.documentSubType.startsWith('receipt_'))) {
+        setSelectedOperation(draftLine.documentSubType as CoinOperationType);
+      }
+    }
+  }, [editingLineId]);
 
   // Selected coin preset definition
   const selectedPreset = useMemo(() => {
@@ -514,14 +643,40 @@ export default function CoinTab({
   }, [allPresets, selectedCoinId]);
 
   // Update preset defaults when changing coin
-  const handleSelectCoin = (coinId: string) => {
+  const handleSelectCoin = (coinId: string, customYear?: string) => {
     setSelectedCoinId(coinId);
     const preset = allPresets.find((p) => p.id === coinId);
     if (preset) {
       setUnitWeight(String(preset.weight));
       setPurity(String(preset.purity));
+      if (customYear) {
+        setMintYear(customYear);
+      } else if (preset.defaultMintYear) {
+        setMintYear(preset.defaultMintYear);
+      } else if (preset.name.includes('۱۳۸۶') || preset.name.includes('86')) {
+        setMintYear('۱۳۸۶');
+      } else if (preset.name.includes('قبل از ۸۶') || preset.name.includes('زیر ۸۶')) {
+        setMintYear('قبل از ۱۳۸۶');
+      } else if (preset.name.includes('طرح قدیم')) {
+        setMintYear('طرح قدیم');
+      } else if (preset.name.includes('۱۴۰۳') || preset.name.includes('1403')) {
+        setMintYear('۱۴۰۳');
+      } else if (preset.name.includes('گرمی')) {
+        setMintYear('بدون تاریخ');
+      }
     }
   };
+
+  // Derived display name combining coin name and mint year
+  const effectiveCoinDisplayName = useMemo(() => {
+    const baseName = selectedPreset.name;
+    const year = mintYear.trim();
+    const isBankType = ['emami_coin', 'bahar_coin', 'bank_coin'].includes(selectedPreset.category);
+    if (!year || baseName.includes(year) || !isBankType) {
+      return baseName;
+    }
+    return `${baseName} (ضرب ${year})`;
+  }, [selectedPreset.name, selectedPreset.category, mintYear]);
 
   // Numeric derived values
   const numericQuantity = useMemo(() => {
@@ -590,11 +745,12 @@ export default function CoinTab({
       setDraftLine((curr) => ({
         ...curr,
         documentTab: 'coin',
+        sourceTab: 'coin',
         documentSubType: selectedOperation,
         documentTypeLabel: currentOp.label,
         converted750: convertedToX,
         description: description,
-        details: {
+        details: sanitizeLineDetailsForTab('coin', {
           ...curr.details,
           metalType: 'gold',
           rawWeight: totalWeight.toFixed(weightPrecision),
@@ -602,20 +758,26 @@ export default function CoinTab({
           totalAmount: totalPrice,
           quantity: String(numericQuantity),
           currencyQuantity: String(numericQuantity),
-          currencyUnitPrice: '',
-          currencyTotalAmount: '',
-          currencyUnit: '',
+          currencyUnitPrice: unitPrice,
+          currencyTotalAmount: totalPrice,
+          currencyUnit: effectiveCurrency,
+          baseCurrency: effectiveCurrency,
           coinType: selectedPreset.id,
-          coinName: selectedPreset.name,
+          coinName: effectiveCoinDisplayName,
+          coinYear: mintYear,
+          mintYear: mintYear,
           unsettledTrade: selectedOperation.includes('unsettled'),
-        },
+        }, effectiveCurrency, 900),
       }));
     }
   }, [
     selectedOperation,
     currentOp.label,
     selectedPreset.id,
-    selectedPreset.name,
+    effectiveCoinDisplayName,
+    mintYear,
+    unitPrice,
+    effectiveCurrency,
     numericQuantity,
     totalWeight,
     numericPurity,
@@ -632,6 +794,11 @@ export default function CoinTab({
     const name = newCustomName.trim();
     if (!name) {
       setCustomFormError('عنوان سکه یا شمش الزامی است.');
+      return;
+    }
+
+    if (name.includes('پهلوی')) {
+      setCustomFormError('ثبت سکه‌های پهلوی در سیستم مجاز نمی‌باشد.');
       return;
     }
 
@@ -696,14 +863,15 @@ export default function CoinTab({
     }
   };
 
-  // Group presets for select optgroups
+  // Group presets for categories
   const groupedPresets = useMemo(() => {
     const groups: Record<string, { label: string; items: CoinPreset[] }> = {
-      bank_coin: { label: 'سکه‌های بانکی (بهار آزادی)', items: [] },
-      pahlavi_coin: { label: 'سکه‌های پهلوی', items: [] },
+      emami_coin: { label: 'سکه‌های تمام امامی (طرح جدید)', items: [] },
+      bahar_coin: { label: 'سکه‌های بهار آزادی (طرح قدیم، نیم، ربع و گرمی)', items: [] },
+      bank_coin: { label: 'سایر مسکوکات بانکی', items: [] },
+      parsian: { label: 'سکه‌های پارسیان (۱۸ عیار)', items: [] },
       bar_zioto: { label: 'شمش‌های زیوتو (Zioto)', items: [] },
       bar_parsis: { label: 'شمش‌های پارسیس (Parsis)', items: [] },
-      parsian: { label: 'سکه‌های پارسیان (۱۸ عیار)', items: [] },
       bar_other: { label: 'سایر شمش‌های معتبر', items: [] },
       custom: { label: 'سکه‌ها و شمش‌های سفارشی', items: [] },
     };
@@ -718,6 +886,28 @@ export default function CoinTab({
 
     return Object.entries(groups).filter(([, g]) => g.items.length > 0);
   }, [allPresets]);
+
+  const filteredGroupedPresets = useMemo(() => {
+    const query = normalizeDigits(coinSearchQuery).trim().toLowerCase();
+    if (!query) return groupedPresets;
+    return groupedPresets
+      .map(([key, group]) => {
+        const filteredItems = group.items.filter((item) => {
+          const itemName = normalizeDigits(item.name).toLowerCase();
+          const itemWeight = String(item.weight);
+          const itemPurity = String(item.purity);
+          const itemYear = normalizeDigits(item.defaultMintYear || '').toLowerCase();
+          return (
+            itemName.includes(query) ||
+            itemWeight.includes(query) ||
+            itemPurity.includes(query) ||
+            itemYear.includes(query)
+          );
+        });
+        return [key, { ...group, items: filteredItems }] as [string, { label: string; items: CoinPreset[] }];
+      })
+      .filter(([, group]) => group.items.length > 0);
+  }, [groupedPresets, coinSearchQuery]);
 
   return (
     <div className="space-y-4 text-right" dir="rtl">
@@ -779,27 +969,212 @@ export default function CoinTab({
           </span>
         </div>
 
+        {/* Quick Selection Chips for Emami & Bahar Azadi */}
+        <div className="space-y-2 rounded-xl border border-amber-200/70 bg-amber-50/40 p-3 dark:border-amber-900/40 dark:bg-amber-950/20">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-black text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
+              <Coins size={14} className="text-amber-600 dark:text-amber-400" />
+              دسترسی سریع مسکوکات بر اساس نوع و سال ضرب:
+            </span>
+          </div>
+
+          <div className="space-y-2">
+            {/* Emami Group */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="rounded-md bg-amber-200/70 px-2 py-0.5 text-[10px] font-black text-amber-900 dark:bg-amber-900/60 dark:text-amber-200">
+                سکه‌های امامی:
+              </span>
+              {quickCoinShortcuts
+                .filter((sc) => sc.group === 'emami')
+                .map((sc) => {
+                  const isSelected = selectedCoinId === sc.id;
+                  return (
+                    <button
+                      type="button"
+                      key={sc.id}
+                      onClick={() => handleSelectCoin(sc.id, sc.year)}
+                      className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-amber-600 text-white shadow-xs font-black ring-2 ring-amber-500/40'
+                          : 'bg-white text-slate-700 hover:bg-amber-100/80 hover:text-amber-900 border border-slate-200 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-amber-950/60 dark:hover:text-amber-200'
+                      }`}
+                    >
+                      <Coins size={12} className={isSelected ? 'text-white' : 'text-amber-500'} />
+                      <span>{sc.label}</span>
+                    </button>
+                  );
+                })}
+            </div>
+
+            {/* Bahar Azadi Group */}
+            <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+              <span className="rounded-md bg-amber-200/70 px-2 py-0.5 text-[10px] font-black text-amber-900 dark:bg-amber-900/60 dark:text-amber-200">
+                سکه‌های بهار آزادی:
+              </span>
+              {quickCoinShortcuts
+                .filter((sc) => sc.group === 'bahar')
+                .map((sc) => {
+                  const isSelected = selectedCoinId === sc.id;
+                  return (
+                    <button
+                      type="button"
+                      key={sc.id}
+                      onClick={() => handleSelectCoin(sc.id, sc.year)}
+                      className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-amber-600 text-white shadow-xs font-black ring-2 ring-amber-500/40'
+                          : 'bg-white text-slate-700 hover:bg-amber-100/80 hover:text-amber-900 border border-slate-200 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-amber-950/60 dark:hover:text-amber-200'
+                      }`}
+                    >
+                      <Coins size={12} className={isSelected ? 'text-white' : 'text-amber-500'} />
+                      <span>{sc.label}</span>
+                    </button>
+                  );
+                })}
+            </div>
+          </div>
+        </div>
+
         {/* Dynamic Fields Grid */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {/* 1. Coin / Ingot Name Field */}
+          {/* 1. Coin / Ingot Name Field with Custom Dropdown */}
           <div className="space-y-1 sm:col-span-2">
             <Field label="نام سکه / شمش *" wide>
               <div className="flex gap-2">
-                <select
-                  value={selectedCoinId}
-                  onChange={(e) => handleSelectCoin(e.target.value)}
-                  className="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-xs font-bold text-slate-900 transition-all focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                >
-                  {groupedPresets.map(([key, group]) => (
-                    <optgroup key={key} label={group.label}>
-                      {group.items.map((preset) => (
-                        <option key={preset.id} value={preset.id}>
-                          {preset.name} — {preset.weight} گرم (عیار {preset.purity})
-                        </option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </select>
+                <div ref={dropdownRef} className="relative flex-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsCoinDropdownOpen((prev) => !prev);
+                      setCoinSearchQuery('');
+                    }}
+                    className="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-xs font-bold text-slate-900 transition-all hover:border-amber-400 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 flex items-center justify-between cursor-pointer text-right"
+                    aria-haspopup="listbox"
+                    aria-expanded={isCoinDropdownOpen}
+                  >
+                    <div className="flex items-center gap-2 truncate">
+                      <span className="font-black text-slate-900 dark:text-white truncate">
+                        {selectedPreset.name}
+                      </span>
+                      <span className="shrink-0 rounded-md bg-amber-100/80 px-1.5 py-0.5 text-[10px] font-bold text-amber-900 dark:bg-amber-950/60 dark:text-amber-300">
+                        {selectedPreset.weight} گرم | عیار {selectedPreset.purity}
+                      </span>
+                    </div>
+                    <ChevronDown
+                      size={16}
+                      className={`shrink-0 text-slate-400 transition-transform duration-200 ${
+                        isCoinDropdownOpen ? 'rotate-180 text-amber-500' : ''
+                      }`}
+                    />
+                  </button>
+
+                  <AnimatePresence>
+                    {isCoinDropdownOpen && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -4 }}
+                        transition={{ duration: 0.15 }}
+                        className="absolute right-0 top-full z-50 mt-1.5 w-full rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-slate-800 dark:bg-slate-900 overflow-hidden text-right"
+                      >
+                        <div className="p-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/60">
+                          <div className="relative">
+                            <Search
+                              size={14}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+                            />
+                            <input
+                              type="text"
+                              value={coinSearchQuery}
+                              onChange={(e) => setCoinSearchQuery(e.target.value)}
+                              placeholder="جستجوی نام، وزن، عیار، سال ضرب..."
+                              className="h-8.5 w-full rounded-xl border border-slate-200 bg-white pr-8 pl-3 text-xs text-slate-900 placeholder:text-slate-400 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                              autoFocus
+                            />
+                            {coinSearchQuery && (
+                              <button
+                                type="button"
+                                onClick={() => setCoinSearchQuery('')}
+                                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                              >
+                                <X size={12} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="max-h-72 overflow-y-auto p-1.5 space-y-2">
+                          {filteredGroupedPresets.length === 0 ? (
+                            <div className="py-6 text-center text-xs text-slate-400">
+                              سکه یا شمشی با این مشخصات یافت نشد
+                            </div>
+                          ) : (
+                            filteredGroupedPresets.map(([key, group]) => (
+                              <div key={key} className="space-y-1">
+                                <div className="px-2 py-1 text-[10px] font-black text-amber-800 dark:text-amber-400 bg-amber-50/80 dark:bg-amber-950/40 rounded-lg flex items-center justify-between">
+                                  <span>{group.label}</span>
+                                  <span className="text-[9px] font-normal opacity-75">
+                                    {toPersianDigits(group.items.length)} مورد
+                                  </span>
+                                </div>
+                                <div className="space-y-0.5">
+                                  {group.items.map((preset) => {
+                                    const isSelected = preset.id === selectedCoinId;
+                                    return (
+                                      <button
+                                        type="button"
+                                        key={preset.id}
+                                        onClick={() => {
+                                          handleSelectCoin(preset.id);
+                                          setIsCoinDropdownOpen(false);
+                                          setCoinSearchQuery('');
+                                        }}
+                                        className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-xs transition-colors cursor-pointer text-right ${
+                                          isSelected
+                                            ? 'bg-amber-500 text-white font-black shadow-xs'
+                                            : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200'
+                                        }`}
+                                      >
+                                        <div className="flex items-center gap-2">
+                                          {isSelected ? (
+                                            <Check size={14} className="text-white shrink-0" />
+                                          ) : (
+                                            <div className="w-3.5" />
+                                          )}
+                                          <span className="font-bold">{preset.name}</span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5 text-[11px] font-mono">
+                                          <span
+                                            className={
+                                              isSelected
+                                                ? 'text-amber-100'
+                                                : 'text-slate-500 dark:text-slate-400'
+                                            }
+                                          >
+                                            {preset.weight} گرم
+                                          </span>
+                                          <span
+                                            className={
+                                              isSelected
+                                                ? 'text-amber-200'
+                                                : 'text-amber-600 dark:text-amber-400'
+                                            }
+                                          >
+                                            (عیار {preset.purity})
+                                          </span>
+                                        </div>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
 
                 <button
                   type="button"
@@ -833,7 +1208,24 @@ export default function CoinTab({
             </div>
           </Field>
 
-          {/* 3. Unit Weight (وزن واحد / گرم) */}
+          {/* 3. Mint Year (سال ضرب) */}
+          <Field label="سال ضرب سکه">
+            <div className="relative">
+              <input
+                type="text"
+                value={mintYear}
+                onChange={(e) => setMintYear(e.target.value)}
+                onKeyDown={handleKeyDownEnter}
+                placeholder="۱۳۸۶، قبل از ۸۶، طرح قدیم..."
+                className="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-xs font-black text-slate-950 transition-all focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+              />
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">
+                سال ضرب
+              </span>
+            </div>
+          </Field>
+
+          {/* 4. Unit Weight (وزن واحد / گرم) */}
           <Field label="وزن هر قطعه (گرم) *">
             <div className="relative">
               <input
@@ -852,7 +1244,7 @@ export default function CoinTab({
             </div>
           </Field>
 
-          {/* 4. Total Weight (وزن کل محاسبه‌شده) */}
+          {/* 5. Total Weight (وزن کل محاسبه‌شده) */}
           <Field label="وزن کل اقلام (گرم)">
             <div className="flex h-10 w-full items-center justify-between rounded-xl border border-amber-300/80 bg-amber-50/70 px-3 text-xs font-black text-amber-950 shadow-2xs dark:border-amber-700/60 dark:bg-amber-950/40 dark:text-amber-200">
               <span className="font-mono tabular-nums text-sm">
@@ -864,7 +1256,7 @@ export default function CoinTab({
             </div>
           </Field>
 
-          {/* 5. Purity (عیار) */}
+          {/* 6. Purity (عیار) */}
           <Field label="عیار *">
             <NumberField
               min={1}

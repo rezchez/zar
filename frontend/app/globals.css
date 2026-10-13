@@ -2478,6 +2478,8 @@ select:-webkit-autofill:active {
 
 .account-field {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
   gap: 7px;
   color: #0f172a;
   font-size: 12.5px;

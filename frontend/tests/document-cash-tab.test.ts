@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'bun:test';
 import {
   createLine,
+  isDocumentLineObject,
   isLineReady,
   validateLine,
 } from '@/features/accounting/documents/hooks/useDocumentLines';
+import { computeCommittedBankDeltas } from '@/features/accounting/documents/components/BankTab';
 import { formatJalaliDate, isTodayOrPastJalaliDate } from '@/lib/jalali';
 
 describe('Document Cash Tab Validation & Readiness', () => {
@@ -298,7 +300,103 @@ describe('Document Cash Tab Validation & Readiness', () => {
       delete (bankLineWithoutMethod.details as any).calculationMethod;
       expect(() => validateLine(bankLineWithoutMethod)).not.toThrow();
     });
+
+    it('correctly distinguishes valid DocumentLine objects from React click events', () => {
+      const payLine = createLine('paid', 'bank');
+      payLine.details.bankOperationKind = 'pay-to-customer';
+      payLine.details.bankAccountId = 'bank_melli_1';
+      payLine.details.totalAmount = '25000000';
+
+      const receiveLine = createLine('received', 'bank');
+      receiveLine.details.bankOperationKind = 'receive-from-customer';
+      receiveLine.details.bankAccountId = 'bank_melli_1';
+      receiveLine.details.totalAmount = '25000000';
+
+      expect(isDocumentLineObject(payLine)).toBe(true);
+      expect(isDocumentLineObject(receiveLine)).toBe(true);
+      expect(validateLine(payLine)).toBe('');
+      expect(validateLine(receiveLine)).toBe('');
+
+      // Simulated React SyntheticBaseEvent passed by onClick={commitDraftLine}
+      const mockClickEvent = {
+        type: 'click',
+        target: {},
+        currentTarget: {},
+        nativeEvent: {},
+        preventDefault: () => {},
+      };
+      expect(isDocumentLineObject(mockClickEvent)).toBe(false);
+      expect(isDocumentLineObject(null)).toBe(false);
+      expect(isDocumentLineObject(undefined)).toBe(false);
+      expect(isDocumentLineObject({})).toBe(false);
+    });
+
+    it('temporarily increases bank balance on receive-from-customer and decreases on pay-to-customer', () => {
+      const receiveLine = createLine('received', 'bank');
+      receiveLine.id = 'bank_rec_1';
+      receiveLine.details.bankOperationKind = 'receive-from-customer';
+      receiveLine.details.bankAccountId = 'bank_mellat_1';
+      receiveLine.details.totalAmount = '50000000';
+      receiveLine.details.currencyUnit = 'IRR';
+
+      // Even if documentNature was accidentally left as 'paid', bankOperationKind='receive-from-customer' must increase balance
+      receiveLine.documentNature = 'paid';
+
+      const deltasAfterReceive = computeCommittedBankDeltas([receiveLine], null, 'IRR');
+      expect(deltasAfterReceive.get('bank_mellat_1')).toBe(50000000);
+
+      const payLine = createLine('paid', 'bank');
+      payLine.id = 'bank_pay_1';
+      payLine.details.bankOperationKind = 'pay-to-customer';
+      payLine.details.bankAccountId = 'bank_mellat_1';
+      payLine.details.totalAmount = '20000000';
+      payLine.details.transferFee = '50000';
+      payLine.details.currencyUnit = 'IRR';
+
+      const deltasAfterBoth = computeCommittedBankDeltas([receiveLine, payLine], null, 'IRR');
+      // +50,000,000 - (20,000,000 + 50,000) = +29,950,000
+      expect(deltasAfterBoth.get('bank_mellat_1')).toBe(29950000);
+    });
+
+    it('allows paying from bank using temporary balance increased by a committed receive-from-customer row in the same document', () => {
+      const receiveLine = createLine('received', 'bank');
+      receiveLine.id = 'bank_rec_1';
+      receiveLine.documentNature = 'paid'; // Mismatched nature should still be treated as inflow due to bankOperationKind
+      receiveLine.details.bankOperationKind = 'receive-from-customer';
+      receiveLine.details.bankAccountId = 'bank_saman_1';
+      receiveLine.details.bankAccountBalance = 10000000; // Initial real balance: 10M
+      receiveLine.details.totalAmount = '40000000'; // +40M temporary deposit -> 50M effective balance
+      receiveLine.details.currencyUnit = 'IRR';
+
+      const payLine = createLine('paid', 'bank');
+      payLine.id = 'bank_pay_2';
+      payLine.details.bankOperationKind = 'pay-to-customer';
+      payLine.details.bankAccountId = 'bank_saman_1';
+      payLine.details.bankAccountBalance = 10000000; // Base balance stored on line
+      payLine.details.totalAmount = '45000000'; // 45M <= 50M temporary balance!
+      payLine.details.currencyUnit = 'IRR';
+
+      expect(validateLine(payLine, [], [receiveLine])).toBe('');
+      expect(isLineReady(payLine, [], [receiveLine])).toBe(true);
+    });
+
+    it('never triggers bank overdraft validation on claim tab even if bank fields leaked into details', () => {
+      const claimLine = createLine('paid', 'claim');
+      claimLine.documentTab = 'claim';
+      claimLine.sourceTab = 'claim';
+      // Simulate leaked bank fields from visiting the bank tab earlier
+      claimLine.details.bankAccountId = 'bank_saman_1';
+      claimLine.details.bankOperationKind = 'pay-to-customer';
+      claimLine.details.bankAccountBalance = 200000000;
+      // Enter 1,000,000,000 in claim tab (exceeds leaked 200,000,000 bank balance)
+      claimLine.details.claimFinancial = '1000000000';
+      claimLine.details.totalAmount = '1000000000';
+
+      expect(validateLine(claimLine)).toBe('');
+      expect(isLineReady(claimLine)).toBe(true);
+    });
   });
 });
+
 
 

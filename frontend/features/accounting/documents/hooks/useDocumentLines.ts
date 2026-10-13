@@ -16,6 +16,10 @@ import {
   convertedTo750,
   getLineDocumentTypeLabel,
   numberValue,
+  isMetalBearingTab,
+  isMetalBearingLine,
+  sanitizeLineDetailsForTab,
+  sanitizeDocumentLine,
 } from '../utils/document-helpers';
 
 type CalculationMethod = DetailState['calculationMethod'];
@@ -116,8 +120,11 @@ export function createLine(nature: DocumentNature = 'received', sourceTab = 'met
               ? (nature === 'received' ? 'entry_manufactured' : 'exit_manufactured')
               : sourceTab === 'coin'
                 ? (nature === 'received' ? 'incoming-coin' : 'outgoing-coin')
-                : documentSubType(nature, 'molten');
+                : sourceTab === 'claim'
+                  ? (nature === 'received' ? 'debt' : 'claim')
+                  : documentSubType(nature, 'molten');
 
+  const isMetal = isMetalBearingTab(sourceTab);
   return {
     id: crypto.randomUUID(),
     documentNature: nature,
@@ -127,30 +134,15 @@ export function createLine(nature: DocumentNature = 'received', sourceTab = 'met
     settlementMethod: 'weight',
     balanceSource: 'current',
     description: '',
-    details: {
+    converted750: 0,
+    details: sanitizeLineDetailsForTab(sourceTab, {
       metalType: 'gold',
       baseKarat: 750,
       rawKind: 'molten',
       rawWeight: '',
-      purity: '750',
-      calculationMethod: 'weight',
-      metalPriceType: 'gram18',
-      metalPrice: '',
-      totalAmount: '',
-      labName: '',
-      stampNumber: '',
-      currencyUnit: '',
-      currencyQuantity: '',
-      currencyUnitPrice: '',
-      currencyTotalAmount: '',
-      unsettledTrade: false,
-      currencyTradeId: '',
-      settlementCurrencyUnit: '',
-      settlementQuantity: '',
-      settlesTradeId: '',
-      inventorySourceId: '',
+      purity: isMetal ? '750' : '',
       refiningOpKind: nature === 'paid' ? 'delivery' : 'receipt',
-    },
+    }),
   };
 }
 
@@ -173,13 +165,28 @@ export function createCurrencyLine(
     details: {
       ...line.details,
       currencyTradeId: line.id,
-      currencyUnit: line.details.currencyUnit || unit,
-      settlementCurrencyUnit: line.details.settlementCurrencyUnit || settlementCurrency,
+      currencyUnit: unit,
+      settlementCurrencyUnit: settlementCurrency,
     },
   };
 }
 
-export function isLineReady(line: DocumentLine) {
+export function isDocumentLineObject(value: unknown): value is DocumentLine {
+  return (
+    Boolean(value) &&
+    typeof value === 'object' &&
+    'details' in (value as Record<string, unknown>) &&
+    Boolean((value as DocumentLine).details) &&
+    typeof (value as DocumentLine).details === 'object'
+  );
+}
+
+export function isLineReady(
+  line: DocumentLine,
+  _inventoryItems: MeltedInventoryItem[] = [],
+  committedLines: DocumentLine[] = [],
+  editingLineId: string | null = null,
+) {
   if (!line || !line.details) return false;
   if (line.documentTab === 'stone' || line.sourceTab === 'stone') {
     const carats = numberValue(line.details.stoneCarats);
@@ -218,10 +225,7 @@ export function isLineReady(line: DocumentLine) {
   }
   const isBankOrCheckLine =
     line.documentTab === 'bank' ||
-    line.sourceTab === 'bank' ||
-    Boolean(line.details?.bankAccountId) ||
-    Boolean(line.details?.checkNumber) ||
-    Boolean(line.details?.bankOperationKind);
+    line.sourceTab === 'bank';
   if (isBankOrCheckLine) {
     if (line.details?.bankOperationKind === 'check-payment') {
       return (
@@ -232,13 +236,46 @@ export function isLineReady(line: DocumentLine) {
     }
     const amt = numberValue(line.details?.totalAmount);
     if (amt <= 0) return false;
+    if (line.details?.bankOperationKind === 'receive-from-customer') {
+      if (!line.details?.bankAccountId) return false;
+    }
     if (line.details?.bankOperationKind === 'pay-to-customer') {
       if (!line.details?.bankAccountId) return false;
       if (line.details?.bankAccountBalance !== undefined && line.details?.bankAccountBalance !== null) {
         const fee = numberValue(line.details?.transferFee);
         const totalDeduction = amt + fee;
         const bankBal = numberValue(line.details.bankAccountBalance);
-        if (totalDeduction > bankBal) return false;
+        const isToman =
+          line.details.currencyUnit === 'IRT' ||
+          line.details.baseCurrency === 'IRT';
+        const committedBankOutflowDelta = committedLines.reduce((acc, cl) => {
+          if (editingLineId && cl.id === editingLineId) return acc;
+          if (cl.documentTab !== 'bank' && cl.sourceTab !== 'bank') return acc;
+          if (cl.details?.bankAccountId !== line.details.bankAccountId) return acc;
+          const clOpKind = cl.details?.bankOperationKind;
+          const clIsCheck =
+            clOpKind === 'check-payment' ||
+            Boolean(cl.details?.checkNumber?.trim()) ||
+            Boolean(cl.details?.sayadId?.trim());
+          if (clIsCheck) return acc;
+          const clIsToman =
+            cl.details?.currencyUnit === 'IRT' ||
+            cl.details?.baseCurrency === 'IRT' ||
+            (!cl.details?.currencyUnit && !cl.details?.baseCurrency && isToman);
+          const toLineCurrency = (val: number) => {
+            if (clIsToman === isToman) return val;
+            return clIsToman && !isToman ? val * 10 : Math.floor(val / 10);
+          };
+          const clAmt = toLineCurrency(numberValue(cl.details?.totalAmount));
+          const clFee = toLineCurrency(numberValue(cl.details?.transferFee));
+          const clIsOutflow = clOpKind ? clOpKind === 'pay-to-customer' : cl.documentNature === 'paid';
+          const clIsInflow = clOpKind ? clOpKind === 'receive-from-customer' : cl.documentNature === 'received';
+          if (clIsOutflow) return acc + clAmt + clFee;
+          if (clIsInflow) return acc - clAmt;
+          return acc;
+        }, 0);
+        const availableBalance = bankBal - committedBankOutflowDelta;
+        if (totalDeduction > availableBalance) return false;
       }
     }
     return true;
@@ -365,10 +402,7 @@ export function validateLine(
   }
   const isBankOrCheckLine =
     line.documentTab === 'bank' ||
-    line.sourceTab === 'bank' ||
-    Boolean(line.details?.bankAccountId) ||
-    Boolean(line.details?.checkNumber) ||
-    Boolean(line.details?.bankOperationKind);
+    line.sourceTab === 'bank';
   if (isBankOrCheckLine) {
     const opKind = line.details?.bankOperationKind || '';
     const isCheck = opKind === 'check-payment' || Boolean(line.details?.checkNumber);
@@ -393,12 +427,17 @@ export function validateLine(
       if (!line.details?.bankAccountId) {
         return 'حساب بانکی پرداخت‌کننده را انتخاب کنید.';
       }
+    } else if (opKind === 'receive-from-customer') {
+      if (!line.details?.bankAccountId) {
+        return 'حساب بانکی واریزشونده را انتخاب کنید.';
+      }
     }
 
     const isDirectBankOutflow = opKind === 'pay-to-customer';
     if (isDirectBankOutflow && line.details?.bankAccountBalance !== undefined && line.details?.bankAccountBalance !== null) {
       const bankBalance = numberValue(line.details.bankAccountBalance);
       const fee = numberValue(line.details?.transferFee);
+      const isToman = line.details?.currencyUnit === 'IRT' || line.details?.baseCurrency === 'IRT';
       const committedBankOutflowDelta = committedLines.reduce((acc, cl) => {
         if (editingLineId && cl.id === editingLineId) return acc;
         if (cl.documentTab !== 'bank' && cl.sourceTab !== 'bank') return acc;
@@ -406,17 +445,25 @@ export function validateLine(
         const clOpKind = cl.details?.bankOperationKind || '';
         const clIsCheck = clOpKind === 'check-payment' || Boolean(cl.details?.checkNumber);
         if (clIsCheck) return acc;
-        const clAmt = numberValue(cl.details?.totalAmount);
-        const clFee = numberValue(cl.details?.transferFee);
-        const clIsOutflow = clOpKind === 'pay-to-customer' || cl.documentNature === 'paid';
+        const clIsToman =
+          cl.details?.currencyUnit === 'IRT' ||
+          cl.details?.baseCurrency === 'IRT' ||
+          (!cl.details?.currencyUnit && !cl.details?.baseCurrency && isToman);
+        const toLineCurrency = (val: number) => {
+          if (clIsToman === isToman) return val;
+          return clIsToman && !isToman ? val * 10 : Math.floor(val / 10);
+        };
+        const clAmt = toLineCurrency(numberValue(cl.details?.totalAmount));
+        const clFee = toLineCurrency(numberValue(cl.details?.transferFee));
+        const clIsOutflow = clOpKind ? clOpKind === 'pay-to-customer' : cl.documentNature === 'paid';
+        const clIsInflow = clOpKind ? clOpKind === 'receive-from-customer' : cl.documentNature === 'received';
         if (clIsOutflow) return acc + clAmt + clFee;
-        if (clOpKind === 'receive-from-customer' || cl.documentNature === 'received') return acc - clAmt;
+        if (clIsInflow) return acc - clAmt;
         return acc;
       }, 0);
 
       const availableBalance = bankBalance - committedBankOutflowDelta;
       const totalDeduction = amount + fee;
-      const isToman = line.details?.currencyUnit === 'IRT' || line.details?.baseCurrency === 'IRT';
       const currencySuffix = isToman ? 'تومان' : 'ریال';
       if (totalDeduction > availableBalance) {
         return `مجموع مبلغ پرداختی و کارمزد (${totalDeduction.toLocaleString('fa-IR')} ${currencySuffix}) از موجودی حساب بانکی (${Math.max(0, availableBalance).toLocaleString('fa-IR')} ${currencySuffix}) بیشتر است. امکان برداشت بیش از موجودی وجود ندارد.`;
@@ -523,6 +570,8 @@ export function useDocumentLines({
 
   const createSettingsLine = useCallback(
     (nature: DocumentNature = 'received', sourceTab = 'metals') => {
+      const baseCurr = (settings?.baseCurrency || 'IRR') as 'IRR' | 'IRT';
+      const isMetal = isMetalBearingTab(sourceTab);
       const line =
         sourceTab === 'currency'
           ? createCurrencyLine(
@@ -531,13 +580,24 @@ export function useDocumentLines({
               selectedCurrency || 'IRR',
             )
           : createLine(nature, sourceTab);
+      if (sourceTab === 'claim') {
+        line.details.currencyUnit = baseCurr;
+        line.details.baseCurrency = baseCurr;
+      }
+      const metalPurity = purityForMetal(line.details.metalType);
       return {
         ...line,
-        details: {
-          ...line.details,
-          purity: String(purityForMetal(line.details.metalType)),
-          baseKarat: purityForMetal(line.details.metalType),
-        },
+        converted750: 0,
+        details: sanitizeLineDetailsForTab(
+          sourceTab,
+          {
+            ...line.details,
+            purity: isMetal ? String(metalPurity) : '',
+            baseKarat: metalPurity,
+          },
+          baseCurr,
+          metalPurity,
+        ),
       };
     },
     [selectedCurrency, settings],
@@ -713,7 +773,15 @@ export function useDocumentLines({
     meltedInventory: MeltedInventoryItem[] = [],
     customDraftLine?: DocumentLine,
   ) => {
-    const activeDraft = customDraftLine ? { ...customDraftLine } : draftLine;
+    const validInventory = Array.isArray(meltedInventory) ? meltedInventory : [];
+    const validCustomLine = isDocumentLineObject(customDraftLine)
+      ? customDraftLine
+      : isDocumentLineObject(meltedInventory)
+        ? meltedInventory
+        : undefined;
+    const activeDraft = validCustomLine
+      ? { ...validCustomLine, details: { ...validCustomLine.details } }
+      : { ...draftLine, details: { ...draftLine.details } };
 
     if (
       (activeDraft.documentTab === 'currency' || activeDraft.sourceTab === 'currency' || activeEntryTab === 'currency') &&
@@ -724,7 +792,7 @@ export function useDocumentLines({
       activeDraft.details.settlementCurrencyUnit = selectedCurrency || 'IRR';
     }
 
-    const validationMessage = validateLine(activeDraft, meltedInventory, committedLines, editingLineId, selectedCurrency);
+    const validationMessage = validateLine(activeDraft, validInventory, committedLines, editingLineId, selectedCurrency);
     if (validationMessage) {
       toast.error(validationMessage);
       return false;
@@ -750,40 +818,61 @@ export function useDocumentLines({
       ? (activeDraft.sourceTab || activeEntryTab || 'metals')
       : (activeEntryTab || activeDraft.sourceTab || 'metals');
 
-    const lineNature = editingLineId
-      ? (activeDraft.documentNature || documentNature)
-      : documentNature;
+    const isBankLine =
+      lineSourceTab === 'bank' ||
+      activeDraft.documentTab === 'bank';
+    const bankInferredNature: DocumentNature | null = isBankLine
+      ? activeDraft.details?.bankOperationKind === 'receive-from-customer'
+        ? 'received'
+        : activeDraft.details?.bankOperationKind === 'pay-to-customer' ||
+            activeDraft.details?.bankOperationKind === 'check-payment'
+          ? 'paid'
+          : null
+      : null;
+
+    const lineNature: DocumentNature =
+      bankInferredNature ||
+      (editingLineId
+        ? (activeDraft.documentNature || documentNature)
+        : (activeDraft.documentNature || documentNature));
+
+    const isClaimLine =
+      lineSourceTab === 'claim' || activeDraft.documentTab === 'claim';
 
     const docTypeLabel =
-      (lineSourceTab === 'cash' ||
-        lineSourceTab === 'bank' ||
-        lineSourceTab === 'stone' ||
-        lineSourceTab === 'workmanship' ||
-        activeDraft.documentTab === 'cash' ||
-        activeDraft.documentTab === 'bank' ||
-        activeDraft.documentTab === 'stone' ||
-        activeDraft.documentTab === 'workmanship') &&
-      activeDraft.documentTypeLabel
-        ? activeDraft.documentTypeLabel
-        : getLineDocumentTypeLabel(
-            lineNature,
-            lineSourceTab,
-            activeDraft.details.rawKind,
-            activeDraft.details.unsettledTrade,
-            activeDraft.details.refiningOpKind,
-            activeDraft.details.workmanshipOptionId,
-            activeDraft.documentSubType,
-          );
+      isClaimLine
+        ? (lineNature === 'received' ? 'بدهی ما' : 'طلب ما')
+        : (lineSourceTab === 'cash' ||
+            lineSourceTab === 'bank' ||
+            lineSourceTab === 'stone' ||
+            lineSourceTab === 'workmanship' ||
+            activeDraft.documentTab === 'cash' ||
+            activeDraft.documentTab === 'bank' ||
+            activeDraft.documentTab === 'stone' ||
+            activeDraft.documentTab === 'workmanship') &&
+          activeDraft.documentTypeLabel
+          ? activeDraft.documentTypeLabel
+          : getLineDocumentTypeLabel(
+              lineNature,
+              lineSourceTab,
+              activeDraft.details.rawKind,
+              activeDraft.details.unsettledTrade,
+              activeDraft.details.refiningOpKind,
+              activeDraft.details.workmanshipOptionId,
+              activeDraft.documentSubType,
+            );
 
-    const rawWeight =
-      activeDraft.details?.calculationMethod === 'money'
-        ? actualWeightFromMoney(activeDraft.details, purityForMetal(activeDraft.details?.metalType || 'gold'))
-        : numberValue(activeDraft.details?.rawWeight);
+    const effectiveTab = lineSourceTab || activeDraft.documentTab || activeEntryTab || 'metals';
+    const isMetal = isMetalBearingLine({ documentTab: effectiveTab, sourceTab: lineSourceTab, details: activeDraft.details });
     const baseKarat = purityForMetal(activeDraft.details?.metalType || 'gold');
-    const c750 =
-      lineSourceTab === 'stone' || activeDraft.documentTab === 'stone'
-        ? 0
-        : convertedTo750(String(rawWeight), activeDraft.details?.purity, baseKarat);
+    const rawWeight = isMetal
+      ? (activeDraft.details?.calculationMethod === 'money'
+          ? actualWeightFromMoney(activeDraft.details, baseKarat)
+          : numberValue(activeDraft.details?.claimWeight || activeDraft.details?.rawWeight))
+      : 0;
+    const c750 = isMetal
+      ? convertedTo750(String(rawWeight), activeDraft.details?.purity, baseKarat)
+      : 0;
 
     const effectiveCurrencyUnit =
       activeDraft.details.currencyUnit ||
@@ -792,20 +881,42 @@ export function useDocumentLines({
       activeDraft.details.settlementCurrencyUnit ||
       selectedCurrency ||
       'IRR';
+    const baseCurrency = (settings?.baseCurrency || 'IRR') as 'IRR' | 'IRT';
+
+    const cleanDetails = sanitizeLineDetailsForTab(
+      effectiveTab,
+      {
+        ...activeDraft.details,
+        baseKarat,
+        currencyUnit:
+          lineSourceTab === 'currency'
+            ? effectiveCurrencyUnit
+            : lineSourceTab === 'cash' || lineSourceTab === 'bank' || activeDraft.documentTab === 'bank'
+              ? activeDraft.details.currencyUnit
+              : isClaimLine
+                ? (activeDraft.details?.currencyUnit || baseCurrency)
+                : '',
+        baseCurrency: isClaimLine
+          ? (activeDraft.details?.baseCurrency || baseCurrency)
+          : activeDraft.details?.baseCurrency,
+        settlementCurrencyUnit: lineSourceTab === 'currency' ? effectiveSettlementUnit : activeDraft.details.settlementCurrencyUnit,
+      },
+      baseCurrency,
+      baseKarat,
+    );
 
     const lineToCommit: DocumentLine = {
       ...activeDraft,
       documentNature: lineNature,
       sourceTab: lineSourceTab,
+      documentTab: activeDraft.documentTab || (lineSourceTab as any),
+      documentSubType: isClaimLine
+        ? (lineNature === 'received' ? 'debt' : 'claim')
+        : activeDraft.documentSubType,
       documentTypeLabel: docTypeLabel,
       converted750: c750,
       description: activeDraft.description ? activeDraft.description.trim() : '',
-      details: {
-        ...activeDraft.details,
-        baseKarat,
-        currencyUnit: lineSourceTab === 'currency' ? effectiveCurrencyUnit : (lineSourceTab === 'cash' ? activeDraft.details.currencyUnit : ''),
-        settlementCurrencyUnit: lineSourceTab === 'currency' ? effectiveSettlementUnit : activeDraft.details.settlementCurrencyUnit,
-      },
+      details: cleanDetails,
     };
 
     const isSettledMetalTrade =
@@ -1249,6 +1360,7 @@ export function useDocumentLines({
         nextLine.details.isForeignCash = lineToCommit.details.isForeignCash;
       }
     } else if (lineSourceTab === 'bank' || lineToCommit.documentTab === 'bank') {
+      nextLine.documentNature = lineNature;
       if (lineToCommit.details?.bankAccountId) {
         nextLine.details.bankAccountId = lineToCommit.details.bankAccountId;
         nextLine.details.bankName = lineToCommit.details.bankName;
@@ -1256,13 +1368,28 @@ export function useDocumentLines({
         nextLine.details.accountNumber = lineToCommit.details.accountNumber;
         nextLine.details.bankOperationKind = lineToCommit.details.bankOperationKind;
         nextLine.details.bankAccountBalance = lineToCommit.details.bankAccountBalance;
+        nextLine.details.rawBankAccountBalance = lineToCommit.details.rawBankAccountBalance;
+      }
+      if (lineToCommit.details?.currencyUnit) {
+        nextLine.details.currencyUnit = lineToCommit.details.currencyUnit;
+      }
+      if (lineToCommit.details?.baseCurrency) {
+        nextLine.details.baseCurrency = lineToCommit.details.baseCurrency;
       }
       nextLine.details.totalAmount = '';
       nextLine.details.checkNumber = '';
       nextLine.details.sayadId = '';
       nextLine.details.dueDateJalali = formatJalaliDate();
       nextLine.details.transferFee = '';
-      nextLine.details.trackingNumber = '';
+      nextLine.description = '';
+    } else if (lineSourceTab === 'claim' || lineToCommit.documentTab === 'claim') {
+      nextLine.details.currencyUnit = baseCurrency;
+      nextLine.details.baseCurrency = baseCurrency;
+      nextLine.details.claimFinancial = '';
+      nextLine.details.claimWeight = '';
+      nextLine.details.claimPurpose = '';
+      nextLine.details.totalAmount = '';
+      nextLine.details.rawWeight = '';
       nextLine.description = '';
     }
     setDraftLine(nextLine);
@@ -1281,8 +1408,11 @@ export function useDocumentLines({
         return;
       }
     }
-    setEditingLineId(line.id);
-    setDraftLine({ ...line });
+    const baseCurr = (settings?.baseCurrency || 'IRR') as string;
+    const baseK = purityForMetal(line.details?.metalType || 'gold');
+    const cleanedLine = sanitizeDocumentLine(line, undefined, baseCurr, baseK);
+    setEditingLineId(cleanedLine.id);
+    setDraftLine(cleanedLine);
   };
 
   const cancelEdit = () => {
@@ -1355,7 +1485,7 @@ export function useDocumentLines({
     changeRawKind,
     purityForMetal,
     createSettingsLine,
-    draftReady: isLineReady(draftLine),
+    draftReady: isLineReady(draftLine, [], committedLines, editingLineId),
     lineValidationErrors,
     labInputRef,
     stampInputRef,

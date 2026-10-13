@@ -22,23 +22,32 @@ function applyTheme(mode: ThemeMode) {
   return theme;
 }
 
+function getStoredThemeMode(): ThemeMode {
+  if (typeof window === 'undefined') return 'system';
+  try {
+    const stored = window.localStorage.getItem(STORAGE_KEY) as ThemeMode | null;
+    return stored === 'light' || stored === 'dark' || stored === 'system' ? stored : 'system';
+  } catch {
+    return 'system';
+  }
+}
+
+if (typeof window !== 'undefined') {
+  applyTheme(getStoredThemeMode());
+}
+
 export default function ThemeProvider({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const [mode, setMode] = useState<ThemeMode>('system');
-  const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>('light');
+  const [mode, setMode] = useState<ThemeMode>(() => getStoredThemeMode());
+  const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>(() => resolveTheme(getStoredThemeMode()));
 
   useEffect(() => {
-    try {
-      const stored = window.localStorage.getItem(STORAGE_KEY) as ThemeMode | null;
-      const initialMode = stored === 'light' || stored === 'dark' || stored === 'system' ? stored : 'system';
-      setMode(initialMode);
-      setResolvedTheme(applyTheme(initialMode));
-    } catch {
-      setResolvedTheme(applyTheme('system'));
-    }
+    const initialMode = getStoredThemeMode();
+    setMode(initialMode);
+    setResolvedTheme(applyTheme(initialMode));
   }, []);
 
   useEffect(() => {

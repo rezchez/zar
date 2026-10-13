@@ -430,3 +430,389 @@ export function findCashVault<T extends { currencyCode?: string; currencyName?: 
   });
 }
 
+/**
+ * Returns true if the tab strictly deals with precious metals (gold, silver, platinum).
+ * Bank, Cash, Currency, Stone, Goods, and Income-Expense are strictly non-metal.
+ */
+export function isMetalBearingTab(tab: string | undefined): boolean {
+  if (!tab) return false;
+  return ['metals', 'raw-gold', 'gold-sale', 'coin', 'workmanship', 'refining'].includes(tab);
+}
+
+/**
+ * Returns true if a document line or draft represents a metal-bearing operation.
+ * Claim lines are only metal-bearing if they specifically have a claimWeight > 0.
+ */
+export function isMetalBearingLine(
+  line: { documentTab?: string; sourceTab?: string; details?: Partial<DetailState> | null } | undefined | null,
+): boolean {
+  if (!line) return false;
+  const tab = line.documentTab || line.sourceTab;
+  if (tab === 'claim') {
+    return numberValue(line.details?.claimWeight) > 0;
+  }
+  return isMetalBearingTab(tab);
+}
+
+/**
+ * Sanitizes and isolates DetailState strictly according to the active document tab.
+ * Any alien fields from previous tabs (e.g. coinName, coinYear, rawWeight, purity,
+ * bankAccountId, cashFundId, stone* fields) are completely stripped out to prevent
+ * cross-tab data leakage.
+ */
+export function sanitizeLineDetailsForTab(
+  tab: string,
+  details: Partial<DetailState> = {},
+  baseCurrency = 'IRR',
+  baseKarat = 750,
+): DetailState {
+  const normTab = tab || 'metals';
+
+  // Base clean object with required defaults
+  const baseDefaults: DetailState = {
+    metalType: 'gold',
+    baseKarat,
+    rawKind: 'molten',
+    rawWeight: '',
+    purity: '',
+    calculationMethod: 'weight',
+    metalPriceType: 'gram18',
+    metalPrice: '',
+    totalAmount: '',
+    labName: '',
+    stampNumber: '',
+    currencyUnit: details.currencyUnit || baseCurrency,
+    currencyQuantity: '',
+    currencyUnitPrice: '',
+    currencyTotalAmount: '',
+    unsettledTrade: false,
+    currencyTradeId: '',
+    settlementCurrencyUnit: '',
+    settlementQuantity: '',
+    settlesTradeId: '',
+    inventorySourceId: '',
+    baseCurrency: details.baseCurrency || baseCurrency,
+  };
+
+  switch (normTab) {
+    case 'bank': {
+      return {
+        ...baseDefaults,
+        totalAmount: String(details.totalAmount || ''),
+        bankAccountId: details.bankAccountId || undefined,
+        destinationBankId: details.destinationBankId || undefined,
+        bankName: details.bankName || undefined,
+        bankBranch: details.bankBranch || undefined,
+        accountNumber: details.accountNumber || undefined,
+        bankOperationKind: details.bankOperationKind || undefined,
+        bankAccountBalance: details.bankAccountBalance !== undefined ? details.bankAccountBalance : undefined,
+        rawBankAccountBalance: details.rawBankAccountBalance !== undefined ? details.rawBankAccountBalance : undefined,
+        checkNumber: details.checkNumber || undefined,
+        sayadId: details.sayadId || undefined,
+        dueDateJalali: details.dueDateJalali || undefined,
+        transferFee: details.transferFee || undefined,
+        trackingNumber: details.trackingNumber || undefined,
+        currencyUnit: details.currencyUnit || baseCurrency,
+        baseCurrency: details.baseCurrency || baseCurrency,
+        amountInIrr: details.amountInIrr,
+        rialAmountInIrr: details.rialAmountInIrr,
+        // Enforce 0 weight/purity for bank lines
+        rawWeight: '',
+        purity: '',
+      };
+    }
+
+    case 'cash': {
+      return {
+        ...baseDefaults,
+        totalAmount: String(details.totalAmount || ''),
+        cashFundId: details.cashFundId || undefined,
+        cashFundName: details.cashFundName || undefined,
+        cashFundCurrency: details.cashFundCurrency || undefined,
+        cashFundCurrencyId: details.cashFundCurrencyId || undefined,
+        cashFundBalance: details.cashFundBalance !== undefined ? details.cashFundBalance : undefined,
+        currencyUnit: details.currencyUnit || baseCurrency,
+        baseCurrency: details.baseCurrency || baseCurrency,
+        isForeignCash: details.isForeignCash,
+        settlesTradeId: details.settlesTradeId || '',
+        settlementCurrencyUnit: details.settlementCurrencyUnit || '',
+        settlementQuantity: details.settlementQuantity || '',
+        // Enforce 0 weight/purity for cash lines
+        rawWeight: '',
+        purity: '',
+      };
+    }
+
+    case 'currency': {
+      const curUnit = details.currencyUnit || 'USD';
+      return {
+        ...baseDefaults,
+        currencyUnit: curUnit,
+        currencyQuantity: String(details.currencyQuantity || ''),
+        currencyUnitPrice: String(details.currencyUnitPrice || ''),
+        currencyTotalAmount: String(details.currencyTotalAmount || ''),
+        totalAmount: String(details.totalAmount || details.currencyTotalAmount || ''),
+        unsettledTrade: Boolean(details.unsettledTrade),
+        currencyTradeId: details.currencyTradeId || '',
+        settlementCurrencyUnit: details.settlementCurrencyUnit || baseCurrency,
+        settlementQuantity: details.settlementQuantity || '',
+        settlesTradeId: details.settlesTradeId || '',
+        baseCurrency: details.baseCurrency || baseCurrency,
+        // Enforce 0 weight/purity for currency lines
+        rawWeight: '',
+        purity: '',
+      };
+    }
+
+    case 'stone': {
+      return {
+        ...baseDefaults,
+        totalAmount: String(details.totalAmount || details.stoneTotalAmount || ''),
+        currencyUnit: details.currencyUnit || details.settlementCurrencyUnit || baseCurrency,
+        baseCurrency: details.baseCurrency || baseCurrency,
+        unsettledTrade: Boolean(details.unsettledTrade),
+        settlesTradeId: details.settlesTradeId || '',
+        settlementCurrencyUnit: details.settlementCurrencyUnit || '',
+        settlementQuantity: details.settlementQuantity || '',
+        unsettledReferenceId: details.unsettledReferenceId || undefined,
+        // Stone specific attributes
+        stoneOperationKind: details.stoneOperationKind,
+        stoneRootCategory: details.stoneRootCategory,
+        stoneCategory: details.stoneCategory,
+        stoneSpecies: details.stoneSpecies,
+        stoneSpeciesName: details.stoneSpeciesName,
+        stoneVariety: details.stoneVariety,
+        stoneShape: details.stoneShape,
+        stoneShapeName: details.stoneShapeName,
+        stoneMode: details.stoneMode,
+        stoneCarats: details.stoneCarats,
+        stoneGrams: details.stoneGrams,
+        stonePieces: details.stonePieces,
+        stoneValuationMethod: details.stoneValuationMethod,
+        stoneUnitPrice: details.stoneUnitPrice,
+        stoneTotalAmount: details.stoneTotalAmount,
+        stoneColor: details.stoneColor,
+        stoneClarity: details.stoneClarity,
+        stoneCut: details.stoneCut,
+        stoneCertificateLab: details.stoneCertificateLab,
+        stoneCertificateNumber: details.stoneCertificateNumber,
+        stoneSieveSize: details.stoneSieveSize,
+        stoneColorRange: details.stoneColorRange,
+        stoneClarityRange: details.stoneClarityRange,
+        stoneLotNumber: details.stoneLotNumber,
+        stoneTreatment: details.stoneTreatment,
+        stoneOrigin: details.stoneOrigin,
+        stoneItemName: details.stoneItemName,
+        stoneDiamondType: details.stoneDiamondType,
+        stoneGrowthMethod: details.stoneGrowthMethod,
+        stonePostGrowthTreatment: details.stonePostGrowthTreatment,
+        stoneLaserInscription: details.stoneLaserInscription,
+        stoneColorMode: details.stoneColorMode,
+        stoneFancyIntensity: details.stoneFancyIntensity,
+        stoneFancyHue: details.stoneFancyHue,
+        stoneFancyOrigin: details.stoneFancyOrigin,
+        stonePolish: details.stonePolish,
+        stoneSymmetry: details.stoneSymmetry,
+        stoneFluorescence: details.stoneFluorescence,
+        stoneMeasurementsLength: details.stoneMeasurementsLength,
+        stoneMeasurementsWidth: details.stoneMeasurementsWidth,
+        stoneMeasurementsDepth: details.stoneMeasurementsDepth,
+        stoneColorHue: details.stoneColorHue,
+        stoneTone: details.stoneTone,
+        stoneSaturation: details.stoneSaturation,
+        stoneTransparency: details.stoneTransparency,
+        stoneOriginSource: details.stoneOriginSource,
+        stoneChemicalBasis: details.stoneChemicalBasis,
+        stoneTreatmentMethod: details.stoneTreatmentMethod,
+        stoneSizeUnit: details.stoneSizeUnit,
+        stoneSizeMin: details.stoneSizeMin,
+        stoneSizeMax: details.stoneSizeMax,
+        stoneStorageLocation: details.stoneStorageLocation,
+        stoneInternalCode: details.stoneInternalCode,
+        stoneVerificationStatus: details.stoneVerificationStatus,
+        isAmountRounded: details.isAmountRounded,
+        roundingDigits: details.roundingDigits,
+        roundingMode: details.roundingMode,
+        // Enforce 0 precious metal weight/purity for stone lines
+        rawWeight: '',
+        purity: '',
+      };
+    }
+
+    case 'coin': {
+      const coinKarat = details.baseKarat || 900;
+      return {
+        ...baseDefaults,
+        metalType: 'gold',
+        baseKarat: coinKarat,
+        rawKind: 'coin',
+        rawWeight: String(details.rawWeight || ''),
+        purity: String(details.purity || '900'),
+        quantity: String(details.quantity || ''),
+        coinType: details.coinType,
+        coinName: details.coinName,
+        coinYear: details.coinYear,
+        mintYear: details.mintYear || details.coinYear,
+        unitWeight: details.unitWeight,
+        convertedWeight: details.convertedWeight,
+        totalAmount: String(details.totalAmount || ''),
+        currencyQuantity: String(details.currencyQuantity || details.quantity || ''),
+        currencyUnitPrice: String(details.currencyUnitPrice || ''),
+        currencyTotalAmount: String(details.currencyTotalAmount || details.totalAmount || ''),
+        currencyUnit: details.currencyUnit || baseCurrency,
+        baseCurrency: details.baseCurrency || baseCurrency,
+        unsettledTrade: Boolean(details.unsettledTrade),
+      };
+    }
+
+    case 'workmanship': {
+      return {
+        ...baseDefaults,
+        metalType: details.metalType || 'gold',
+        baseKarat: details.baseKarat || baseKarat,
+        rawWeight: String(details.rawWeight || ''),
+        purity: String(details.purity || String(baseKarat)),
+        convertedWeight: details.convertedWeight,
+        totalAmount: String(details.totalAmount || ''),
+        quantity: details.quantity,
+        workmanshipName: details.workmanshipName,
+        workmanshipOptionId: details.workmanshipOptionId,
+        workmanshipOptionLabel: details.workmanshipOptionLabel,
+        wage: details.wage,
+        wageMode: details.wageMode,
+        goldenPercentage: details.goldenPercentage,
+        profitPercentage: details.profitPercentage,
+        metalTotalPrice: details.metalTotalPrice,
+        profitAmount: details.profitAmount,
+        discountAmount: details.discountAmount,
+        currencyUnit: details.currencyUnit || baseCurrency,
+        baseCurrency: details.baseCurrency || baseCurrency,
+      };
+    }
+
+    case 'claim': {
+      const hasWeight = numberValue(details.claimWeight) > 0;
+      return {
+        ...baseDefaults,
+        claimFinancial: details.claimFinancial || (hasWeight ? '' : details.totalAmount || ''),
+        claimWeight: details.claimWeight || '',
+        claimPurpose: details.claimPurpose || '',
+        totalAmount: details.totalAmount || details.claimFinancial || '',
+        rawWeight: hasWeight ? String(details.claimWeight) : '',
+        purity: hasWeight ? String(details.baseKarat || baseKarat) : '',
+        baseKarat: details.baseKarat || baseKarat,
+        metalType: details.metalType || 'gold',
+        currencyUnit: details.currencyUnit || baseCurrency,
+        baseCurrency: details.baseCurrency || baseCurrency,
+      };
+    }
+
+    case 'refining': {
+      return {
+        ...baseDefaults,
+        metalType: details.metalType || 'gold',
+        baseKarat: details.baseKarat || baseKarat,
+        rawWeight: String(details.rawWeight || ''),
+        purity: String(details.purity || String(baseKarat)),
+        totalAmount: String(details.totalAmount || ''),
+        labName: details.labName || '',
+        stampNumber: details.stampNumber || '',
+        refiningCaseId: details.refiningCaseId,
+        refiningCaseNumber: details.refiningCaseNumber,
+        refiningOpKind: details.refiningOpKind,
+        refiningPacketId: details.refiningPacketId,
+        refiningPacketNumber: details.refiningPacketNumber,
+        refiningSampleWeight: details.refiningSampleWeight,
+        refiningReturnedWeight: details.refiningReturnedWeight,
+        refiningWeightLoss: details.refiningWeightLoss,
+        currencyUnit: details.currencyUnit || baseCurrency,
+        baseCurrency: details.baseCurrency || baseCurrency,
+      };
+    }
+
+    case 'gold-sale': {
+      return {
+        ...baseDefaults,
+        metalType: details.metalType || 'gold',
+        baseKarat: details.baseKarat || baseKarat,
+        rawKind: details.rawKind || 'molten',
+        rawWeight: String(details.rawWeight || ''),
+        purity: String(details.purity || String(baseKarat)),
+        calculationMethod: details.calculationMethod || 'weight',
+        metalPriceType: details.metalPriceType || 'gram18',
+        metalPrice: String(details.metalPrice || ''),
+        totalAmount: String(details.totalAmount || ''),
+        labName: details.labName || '',
+        stampNumber: details.stampNumber || '',
+        inventorySourceId: details.inventorySourceId || '',
+        linkedLineId: details.linkedLineId,
+        currencyUnit: details.currencyUnit || baseCurrency,
+        baseCurrency: details.baseCurrency || baseCurrency,
+        unsettledTrade: Boolean(details.unsettledTrade),
+        roundingDifference: details.roundingDifference,
+        exactCalculatedAmount: details.exactCalculatedAmount,
+        isAmountRounded: details.isAmountRounded,
+        roundingDigits: details.roundingDigits,
+        roundingMode: details.roundingMode,
+      };
+    }
+
+    case 'metals':
+    case 'raw-gold':
+    default: {
+      return {
+        ...baseDefaults,
+        metalType: details.metalType || 'gold',
+        baseKarat: details.baseKarat || baseKarat,
+        rawKind: details.rawKind || 'molten',
+        rawWeight: String(details.rawWeight || ''),
+        purity: String(details.purity || String(baseKarat)),
+        calculationMethod: details.calculationMethod || 'weight',
+        metalPriceType: details.metalPriceType || 'gram18',
+        metalPrice: String(details.metalPrice || ''),
+        totalAmount: String(details.totalAmount || ''),
+        labName: details.labName || '',
+        stampNumber: details.stampNumber || '',
+        inventorySourceId: details.inventorySourceId || '',
+        linkedLineId: details.linkedLineId,
+        currencyUnit: details.currencyUnit || baseCurrency,
+        baseCurrency: details.baseCurrency || baseCurrency,
+        unsettledTrade: Boolean(details.unsettledTrade),
+      };
+    }
+  }
+}
+
+/**
+ * Sanitizes an entire DocumentLine ensuring its details and converted750 adhere
+ * to its documentTab / sourceTab boundaries.
+ */
+export function sanitizeDocumentLine(
+  line: DocumentLine,
+  tabOverride?: string,
+  baseCurrency = 'IRR',
+  baseKarat = 750,
+): DocumentLine {
+  const effectiveTab = tabOverride || line.documentTab || line.sourceTab || 'metals';
+  const cleanDetails = sanitizeLineDetailsForTab(effectiveTab, line.details, baseCurrency, baseKarat);
+
+  let c750 = 0;
+  if (isMetalBearingLine({ documentTab: effectiveTab, sourceTab: line.sourceTab, details: cleanDetails })) {
+    const rawW =
+      cleanDetails.calculationMethod === 'money'
+        ? actualWeightFromMoney(cleanDetails, Number(cleanDetails.baseKarat || baseKarat))
+        : numberValue(cleanDetails.claimWeight || cleanDetails.rawWeight);
+    const pVal = numberValue(cleanDetails.purity) || Number(cleanDetails.baseKarat || baseKarat);
+    c750 = line.converted750 !== undefined && line.converted750 > 0
+      ? line.converted750
+      : convertedTo750(String(rawW), pVal, Number(cleanDetails.baseKarat || baseKarat));
+  }
+
+  return {
+    ...line,
+    converted750: c750,
+    details: cleanDetails,
+  };
+}
+
+

@@ -157,12 +157,22 @@ export async function POST(request: Request) {
     for (const rawLine of lines) {
       if (!rawLine || typeof rawLine !== 'object' || Array.isArray(rawLine)) continue;
       const line = rawLine as Record<string, unknown>;
-      const lineNature = line.documentNature === 'paid' ? 'paid' : 'received';
-      const direction = lineNature === 'received' ? 1 : -1;
       const docTab = String(line.documentTab ?? line.sourceTab ?? '');
       const details = (line.details && typeof line.details === 'object' && !Array.isArray(line.details))
         ? (line.details as Record<string, unknown>)
         : {};
+      const bankOpKind = docTab === 'bank'
+        ? String(details.bankOperationKind || line.documentSubType || '')
+        : '';
+      const lineNature =
+        bankOpKind === 'receive-from-customer'
+          ? 'received'
+          : bankOpKind === 'pay-to-customer' || bankOpKind === 'check-payment'
+            ? 'paid'
+            : line.documentNature === 'paid'
+              ? 'paid'
+              : 'received';
+      const direction = lineNature === 'received' ? 1 : -1;
 
       // Metal Weight calculation
       if (docTab === 'raw-gold' || docTab === 'gold-sale' || (docTab === 'refining' && details.refiningOpKind !== 'fee')) {
@@ -193,8 +203,8 @@ export async function POST(request: Request) {
           ? line.converted750
           : numberValue(details.rawWeight);
         transactionEffect.gold += direction * weight;
-      } else if (docTab === 'claim' && details.claimWeight) {
-        const weight = numberValue(details.claimWeight);
+      } else if (docTab === 'claim' && (details.claimWeight || details.rawWeight)) {
+        const weight = numberValue(details.claimWeight || details.rawWeight);
         transactionEffect.gold += direction * weight;
       }
 
@@ -219,8 +229,13 @@ export async function POST(request: Request) {
         rialAmount = numberValue(details.totalAmount);
       } else if (docTab === 'workmanship') {
         rialAmount = numberValue(details.totalAmount || details.metalTotalPrice);
-      } else if (docTab === 'claim' && details.claimFinancial) {
-        rialAmount = numberValue(details.claimFinancial);
+      } else if (docTab === 'claim' && (details.claimFinancial || details.totalAmount)) {
+        const rawAmt = numberValue(details.claimFinancial || details.totalAmount);
+        const isToman =
+          details.currencyUnit === 'IRT' ||
+          details.baseCurrency === 'IRT' ||
+          body?.baseCurrency === 'IRT';
+        rialAmount = isToman && !details.rialAmountInIrr ? convertTomanToRial(rawAmt) : rawAmt;
       } else if (docTab === 'stone') {
         const isUnsettledStone =
           details.stoneOperationKind === 'unsettled_purchase' ||

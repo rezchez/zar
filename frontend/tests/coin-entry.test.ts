@@ -19,7 +19,7 @@ describe('Coin & Gold Bar Catalog & Domain Calculations', () => {
     // Emami Full
     const emami = STANDARD_COINS.find((c) => c.id === 'emami_full');
     expect(emami).toBeDefined();
-    expect(emami!.unitWeight).toBe(8.136);
+    expect(emami!.unitWeight).toBe(8.133);
     expect(emami!.purity).toBe(900);
     expect(emami!.isFixedWeight).toBe(true);
     expect(emami!.isFixedPurity).toBe(true);
@@ -27,13 +27,13 @@ describe('Coin & Gold Bar Catalog & Domain Calculations', () => {
     // Half Bahar
     const half = STANDARD_COINS.find((c) => c.id === 'half_bahar');
     expect(half).toBeDefined();
-    expect(half!.unitWeight).toBe(4.068);
+    expect(half!.unitWeight).toBe(4.066);
     expect(half!.purity).toBe(900);
 
     // Quarter Bahar
     const quarter = STANDARD_COINS.find((c) => c.id === 'quarter_bahar');
     expect(quarter).toBeDefined();
-    expect(quarter!.unitWeight).toBe(2.034);
+    expect(quarter!.unitWeight).toBe(2.033);
     expect(quarter!.purity).toBe(900);
 
     // Gram Coin
@@ -68,17 +68,17 @@ describe('Coin & Gold Bar Catalog & Domain Calculations', () => {
       id: 'row_1',
       coinTypeId: 'emami_full',
       quantity: '2',
-      unitWeight: '8.136',
+      unitWeight: '8.133',
       purity: '900',
       totalAmount: '1,500,000,000',
       description: 'دو عدد سکه امامی',
     };
 
     const calc = calculateCoinRow(row);
-    // totalWeight = 2 * 8.136 = 16.272
-    expect(calc.totalWeight).toBe(16.272);
-    // converted750 = (16.272 * 900) / 750 = 19.5264 -> rounded to 3 decimals: 19.526
-    expect(calc.converted750).toBe(19.526);
+    // totalWeight = 2 * 8.133 = 16.266
+    expect(calc.totalWeight).toBe(16.266);
+    // converted750 = (16.266 * 900) / 750 = 19.5192 -> rounded to 3 decimals: 19.519
+    expect(calc.converted750).toBe(19.519);
     expect(calc.totalAmount).toBe(1500000000);
     expect(calc.isFixedWeight).toBe(true);
     expect(calc.isFixedPurity).toBe(true);
@@ -157,7 +157,7 @@ describe('Coin & Gold Bar Catalog & Domain Calculations', () => {
         id: 'r1',
         coinTypeId: 'emami_full',
         quantity: '2',
-        unitWeight: '8.136',
+        unitWeight: '8.133',
         purity: '900',
         totalAmount: '1,500,000,000',
         description: '',
@@ -185,8 +185,8 @@ describe('Coin & Gold Bar Catalog & Domain Calculations', () => {
     const totals = calculateCoinTotals(rows);
 
     expect(totals.totalQuantity).toBe(8); // 2 + 5 + 1
-    expect(totals.totalWeight).toBe(31.272); // 16.272 + 5.0 + 10.0
-    expect(totals.totalConverted750).toBe(37.793); // 19.526 + 5.0 + 13.267
+    expect(totals.totalWeight).toBe(31.266); // 16.266 + 5.0 + 10.0
+    expect(totals.totalConverted750).toBe(37.786); // 19.519 + 5.0 + 13.267
     expect(totals.totalAmount).toBe(2450000000); // 1500M + 200M + 750M
   });
 
@@ -213,7 +213,7 @@ describe('Coin & Gold Bar Catalog & Domain Calculations', () => {
     expect(row.id).toBeDefined();
     expect(row.coinTypeId).toBe('emami_full');
     expect(row.quantity).toBe('1');
-    expect(row.unitWeight).toBe('8.136');
+    expect(row.unitWeight).toBe('8.133');
     expect(row.purity).toBe('900');
   });
 });

@@ -961,10 +961,10 @@ function computeDocumentCustomTableValues(
       } else if (metal === 'gold' || !metal) {
         effectGold += weightDirection * convertedWeight;
       }
-    } else if (docTab === 'workmanship') {
+    } else if (docTab === 'workmanship' || docTab === 'claim') {
       const weight = typeof line.converted750 === 'number' && Number.isFinite(line.converted750)
         ? line.converted750
-        : (Number(det.rawWeight) || 0);
+        : (Number(det.claimWeight || det.rawWeight) || 0);
       effectGold += direction * weight;
     }
 
@@ -979,8 +979,11 @@ function computeDocumentCustomTableValues(
     } else if (docTab === 'bank') {
       const rawBankAmt = Number(det.totalAmount || det.amount) || 0;
       lineRial = (isToman && !det.rialAmountInIrr) ? rawBankAmt * 10 : rawBankAmt;
-    } else if (docTab === 'coin' || docTab === 'workmanship' || docTab === 'claim') {
-      lineRial = Number(det.totalAmount || det.metalTotalPrice || det.claimFinancial) || 0;
+    } else if (docTab === 'claim') {
+      const rawClaimAmt = Number(det.claimFinancial || det.totalAmount) || 0;
+      lineRial = (isToman && !det.rialAmountInIrr) ? rawClaimAmt * 10 : rawClaimAmt;
+    } else if (docTab === 'coin' || docTab === 'workmanship') {
+      lineRial = Number(det.totalAmount || det.metalTotalPrice) || 0;
     }
     if (lineRial > 0) {
       effectRial += direction * lineRial;

@@ -1,7 +1,7 @@
 'use client';
 
 import { HandCoins, ListPlus } from 'lucide-react';
-import type React from 'react';
+import React, { useEffect } from 'react';
 
 import Field from '@/src/components/documents/Field';
 import MoneyInputField from '@/src/components/documents/MoneyInputField';
@@ -33,6 +33,17 @@ export default function ClaimTab({
   baseCurrency = 'IRR',
 }: ClaimTabProps) {
   const isPaid = nature === 'paid';
+  const effectiveCurrency: 'IRR' | 'IRT' = baseCurrency === 'IRT' ? 'IRT' : 'IRR';
+  const currencySuffix = effectiveCurrency === 'IRT' ? 'تومان' : 'ریال';
+
+  useEffect(() => {
+    if (draftLine.details?.currencyUnit !== effectiveCurrency) {
+      updateDraftDetail('currencyUnit', effectiveCurrency);
+    }
+    if (draftLine.details?.baseCurrency !== effectiveCurrency) {
+      updateDraftDetail('baseCurrency', effectiveCurrency);
+    }
+  }, [effectiveCurrency, draftLine.details?.currencyUnit, draftLine.details?.baseCurrency, updateDraftDetail]);
 
   return (
     <div className="space-y-4">
@@ -52,13 +63,16 @@ export default function ClaimTab({
         <div className="document-special-grid">
           {/* Field 1: Financial Claim / Debt */}
           <MoneyInputField
-            label={isPaid ? 'طلب مالی ما' : 'بدهی مالی ما'}
+            label={isPaid ? `طلب مالی ما (${currencySuffix})` : `بدهی مالی ما (${currencySuffix})`}
             value={draftLine.details.claimFinancial ?? draftLine.details.totalAmount ?? ''}
             onChange={(val) => {
               updateDraftDetail('claimFinancial', val);
               updateDraftDetail('totalAmount', val);
+              updateDraftDetail('currencyUnit', effectiveCurrency);
+              updateDraftDetail('baseCurrency', effectiveCurrency);
             }}
-            baseCurrency={baseCurrency}
+            baseCurrency={effectiveCurrency}
+            currencySuffix={currencySuffix}
             onKeyDown={handleKeyDownEnter}
             showWords
           />

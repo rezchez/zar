@@ -13,19 +13,231 @@ export async function GET(request: Request) {
   const filterNature = url.searchParams.get('nature') || url.searchParams.get('itemType');
 
   try {
-    let records = await context.pb.collection('coin_types').getFullList({
+    let records: Array<Record<string, unknown>> = await context.pb.collection('coin_types').getFullList({
       sort: 'sort_order,name',
     }).catch(() => []);
 
-    // Seed default standard coins if database collection is empty
-    if (records.length === 0) {
-      for (const item of STANDARD_COINS) {
+    // 1. Clean up any legacy Pahlavi records from the database
+    const pahlaviRecords = records.filter((r: Record<string, unknown>) => {
+      const name = String(r.name || '');
+      const code = String(r.code || '');
+      return name.includes('پهلوی') || code.toUpperCase().includes('PAHLAVI');
+    });
+
+    for (const p of pahlaviRecords) {
+      await context.pb.collection('coin_types').delete(String(p.id)).catch(() => null);
+    }
+
+    if (pahlaviRecords.length > 0) {
+      records = records.filter((r: Record<string, unknown>) => {
+        const name = String(r.name || '');
+        const code = String(r.code || '');
+        return !name.includes('پهلوی') && !code.toUpperCase().includes('PAHLAVI');
+      });
+    }
+
+    // 2. Edit/update existing coins if they have older names/codes or outdated weights
+    const updateMappings: Array<{
+      match: (r: Record<string, unknown>) => boolean;
+      update: { name: string; code: string; unit_weight: number; purity: number; description: string };
+    }> = [
+      {
+        match: (r) => {
+          const name = String(r.name || '');
+          const code = String(r.code || '');
+          return (
+            code === 'COIN-EMAMI-86' ||
+            code === 'COIN-EMAMI-FULL' ||
+            name === 'سکه تمام بهار آزادی (امامی)' ||
+            name === 'تمام سکه بانکی (بهار آزادی/امامی)' ||
+            name === 'تمام سکه بهار آزادی (امامی - ضرب ۱۳۸۶)' ||
+            name === 'سکه تمام امامی (ضرب ۱۳۸۶)'
+          );
+        },
+        update: {
+          name: 'سکه تمام امامی (ضرب ۱۳۸۶)',
+          code: 'COIN-EMAMI-86',
+          unit_weight: 8.133,
+          purity: 900,
+          description: 'سکه تمام امامی طرح جدید - سال ضرب ۱۳۸۶ (استاندارد اصلی بازار) - وزن ۸.۱۳۳ گرم با عیار ۹۰۰',
+        },
+      },
+      {
+        match: (r) => {
+          const name = String(r.name || '');
+          const code = String(r.code || '');
+          return (
+            code === 'COIN-EMAMI-PRE86' ||
+            name === 'سکه تمام امامی (قبل از ۸۶)' ||
+            name === 'تمام سکه بهار آزادی (امامی - قبل از ۸۶)'
+          );
+        },
+        update: {
+          name: 'سکه تمام امامی (قبل از ۸۶)',
+          code: 'COIN-EMAMI-PRE86',
+          unit_weight: 8.133,
+          purity: 900,
+          description: 'سکه تمام امامی طرح جدید - سال ضرب قبل از ۱۳۸۶ (زیر ۸۶) - وزن ۸.۱۳۳ گرم با عیار ۹۰۰',
+        },
+      },
+      {
+        match: (r) => {
+          const name = String(r.name || '');
+          const code = String(r.code || '');
+          return (
+            code === 'COIN-BAHAR-OLD' ||
+            name === 'سکه تمام بهار آزادی (طرح قدیم)' ||
+            name === 'تمام سکه بهار آزادی (طرح قدیم)'
+          );
+        },
+        update: {
+          name: 'سکه تمام بهار آزادی (طرح قدیم)',
+          code: 'COIN-BAHAR-OLD',
+          unit_weight: 8.133,
+          purity: 900,
+          description: 'سکه تمام بهار آزادی طرح قدیم (ضرب سال‌های ۱۳۵۸ الی ۱۳۷۰) - وزن ۸.۱۳۳ گرم با عیار ۹۰۰',
+        },
+      },
+      {
+        match: (r) => {
+          const name = String(r.name || '');
+          const code = String(r.code || '');
+          return (
+            code === 'COIN-BAHAR-HALF-86' ||
+            code === 'COIN-BAHAR-HALF' ||
+            name === 'نیم سکه بهار آزادی (ضرب ۱۳۸۶)' ||
+            name === 'نیم سکه بهار آزادی' ||
+            name === 'نیم سکه'
+          );
+        },
+        update: {
+          name: 'نیم سکه بهار آزادی (ضرب ۱۳۸۶)',
+          code: 'COIN-BAHAR-HALF-86',
+          unit_weight: 4.066,
+          purity: 900,
+          description: 'نیم سکه بهار آزادی بانکی - سال ضرب ۱۳۸۶ (استاندارد بازار) - وزن ۴.۰۶۶ گرم با عیار ۹۰۰',
+        },
+      },
+      {
+        match: (r) => {
+          const name = String(r.name || '');
+          const code = String(r.code || '');
+          return (
+            code === 'COIN-BAHAR-HALF-PRE86' ||
+            name === 'نیم سکه بهار آزادی (قبل از ۸۶)'
+          );
+        },
+        update: {
+          name: 'نیم سکه بهار آزادی (قبل از ۸۶)',
+          code: 'COIN-BAHAR-HALF-PRE86',
+          unit_weight: 4.066,
+          purity: 900,
+          description: 'نیم سکه بهار آزادی بانکی - سال ضرب قبل از ۱۳۸۶ (زیر ۸۶) - وزن ۴.۰۶۶ گرم با عیار ۹۰۰',
+        },
+      },
+      {
+        match: (r) => {
+          const name = String(r.name || '');
+          const code = String(r.code || '');
+          return (
+            code === 'COIN-BAHAR-QUARTER-86' ||
+            code === 'COIN-BAHAR-QUARTER' ||
+            name === 'ربع سکه بهار آزادی (ضرب ۱۳۸۶)' ||
+            name === 'ربع سکه بهار آزادی' ||
+            name === 'ربع سکه'
+          );
+        },
+        update: {
+          name: 'ربع سکه بهار آزادی (ضرب ۱۳۸۶)',
+          code: 'COIN-BAHAR-QUARTER-86',
+          unit_weight: 2.033,
+          purity: 900,
+          description: 'ربع سکه بهار آزادی بانکی - سال ضرب ۱۳۸۶ (استاندارد بازار) - وزن ۲.۰۳۳ گرم با عیار ۹۰۰',
+        },
+      },
+      {
+        match: (r) => {
+          const name = String(r.name || '');
+          const code = String(r.code || '');
+          return (
+            code === 'COIN-BAHAR-QUARTER-PRE86' ||
+            name === 'ربع سکه بهار آزادی (قبل از ۸۶)'
+          );
+        },
+        update: {
+          name: 'ربع سکه بهار آزادی (قبل از ۸۶)',
+          code: 'COIN-BAHAR-QUARTER-PRE86',
+          unit_weight: 2.033,
+          purity: 900,
+          description: 'ربع سکه بهار آزادی بانکی - سال ضرب قبل از ۱۳۸۶ (زیر ۸۶) - وزن ۲.۰۳۳ گرم با عیار ۹۰۰',
+        },
+      },
+      {
+        match: (r) => {
+          const name = String(r.name || '');
+          const code = String(r.code || '');
+          return (
+            code === 'COIN-BAHAR-QUARTER-1403' ||
+            name === 'ربع سکه بهار آزادی (ضرب ۱۴۰۳)' ||
+            name === 'ربع سکه بهار آزادی (ضرب ۱۴۰۳ / جدید)'
+          );
+        },
+        update: {
+          name: 'ربع سکه بهار آزادی (ضرب ۱۴۰۳)',
+          code: 'COIN-BAHAR-QUARTER-1403',
+          unit_weight: 2.033,
+          purity: 900,
+          description: 'ربع سکه بهار آزادی بانکی - سال ضرب جدید ۱۴۰۳ بانک مرکزی - وزن ۲.۰۳۳ گرم با عیار ۹۰۰',
+        },
+      },
+      {
+        match: (r) => {
+          const name = String(r.name || '');
+          const code = String(r.code || '');
+          return (
+            code === 'COIN-BAHAR-GRAM' ||
+            name === 'سکه یک گرمی بهار آزادی (بانک مرکزی)' ||
+            name === 'سکه گرمی (بانک مرکزی)' ||
+            name === 'سکه گرمی'
+          );
+        },
+        update: {
+          name: 'سکه یک گرمی بهار آزادی (بانک مرکزی)',
+          code: 'COIN-BAHAR-GRAM',
+          unit_weight: 1.018,
+          purity: 900,
+          description: 'سکه یک گرمی بهار آزادی بانک مرکزی - بدون تاریخ ضرب - وزن ۱.۰۱۸ گرم با عیار ۹۰۰',
+        },
+      },
+    ];
+
+    for (const mapping of updateMappings) {
+      const matchItem = records.find(mapping.match);
+      if (matchItem) {
+        await context.pb.collection('coin_types').update(String(matchItem.id), mapping.update).catch(() => null);
+        matchItem.name = mapping.update.name;
+        matchItem.code = mapping.update.code;
+        matchItem.unit_weight = mapping.update.unit_weight;
+        matchItem.purity = mapping.update.purity;
+        matchItem.description = mapping.update.description;
+      }
+    }
+
+    // 3. Seed missing standard coins into database collection
+    for (const item of STANDARD_COINS) {
+      const exists = records.some((r: Record<string, unknown>) => {
+        const name = String(r.name || '');
+        const code = String(r.code || '');
+        return name === item.name || (item.code && code === item.code);
+      });
+
+      if (!exists) {
         let nature = 'coin';
         if (item.category === 'bar') nature = 'bullion';
         if (item.category === 'custom') nature = 'coin';
 
         try {
-          await context.pb.collection('coin_types').create({
+          const created = await context.pb.collection('coin_types').create({
             name: item.name,
             code: item.code,
             nature,
@@ -36,14 +248,13 @@ export async function GET(request: Request) {
             is_active: item.isActive !== false,
             is_system: true,
           }).catch(() => null);
+          if (created) {
+            records.push(created);
+          }
         } catch {
           // ignore seeding duplicates
         }
       }
-
-      records = await context.pb.collection('coin_types').getFullList({
-        sort: 'sort_order,name',
-      }).catch(() => []);
     }
 
     let coinTypes = records.map((r: Record<string, unknown>) => ({
@@ -113,6 +324,10 @@ export async function POST(request: Request) {
 
     if (!name) {
       return NextResponse.json({ message: 'نام سکه/شمش الزامی است.' }, { status: 400 });
+    }
+
+    if (name.includes('پهلوی') || rawCode.toUpperCase().includes('PAHLAVI')) {
+      return NextResponse.json({ message: 'ثبت سکه‌های پهلوی در سیستم مجاز نمی‌باشد.' }, { status: 400 });
     }
 
     if (nature !== 'coin' && nature !== 'bullion') {

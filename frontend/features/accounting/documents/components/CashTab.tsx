@@ -19,6 +19,7 @@ import type { DetailState, DocumentLine } from '@/src/components/documents/RawGo
 import type { CashFundItem } from '@/src/components/inventory/CashFundsListClient';
 import InitialCashInventoryModal from '@/src/components/inventory/InitialCashInventoryModal';
 import { parseLocalizedAmount } from '@/lib/money';
+import { sanitizeLineDetailsForTab } from '../utils/document-helpers';
 
 type CashTabProps = {
   nature: 'received' | 'paid';
@@ -213,7 +214,8 @@ export default function CashTab({
         sourceTab: 'cash',
         documentNature: nature,
         documentTypeLabel: nature === 'received' ? `دریافت نقد (${activeFund.name})` : `پرداخت نقد (${activeFund.name})`,
-        details: {
+        converted750: 0,
+        details: sanitizeLineDetailsForTab('cash', {
           ...current.details,
           cashFundId: activeFund.id,
           cashFundName: activeFund.name,
@@ -222,7 +224,7 @@ export default function CashTab({
           cashFundBalance: activeFund.balance,
           currencyUnit: activeFund.currencySymbol || activeFund.currencyCode || activeFund.currencyName,
           isForeignCash: isForeign,
-        },
+        }, effectiveBaseCurrency),
       };
     });
   }, [activeFund, nature, setDraftLine]);

@@ -110,6 +110,7 @@ import {
 import type { StorageLocationItem } from '@/app/api/storage-locations/route';
 import { normalizeDigits, toPersianDigits } from '@/lib/jalali';
 import { formatNumberWithCommas, parseLocalizedAmount } from '@/lib/money';
+import { sanitizeLineDetailsForTab } from '../utils/document-helpers';
 
 export type StoneOperationKind =
   | 'entry' // ورود سنگ (تحویل فیزیکی)
@@ -1352,7 +1353,8 @@ export default function StoneTab({
       documentTypeLabel: opLabel,
       settlementMethod: isUnsettled ? 'unsettled' : isTrade ? 'cash' : 'weight',
       description: description || curr.description,
-      details: {
+      converted750: 0,
+      details: sanitizeLineDetailsForTab('stone', {
         ...curr.details,
         settlementCurrencyUnit: resolvedCurrency.code,
         stoneOperationKind: currentOp,
@@ -1417,7 +1419,7 @@ export default function StoneTab({
         isAmountRounded: roundingEnabled,
         roundingDigits,
         roundingMode,
-      },
+      }, resolvedCurrency.code),
     }));
   }, [
     nature,

@@ -71,8 +71,9 @@ export default function CoinEntryComponent({
   const groupedCoins = useMemo(() => {
     const all = [...STANDARD_COINS, ...customCoins];
     const groups: Record<CoinCategory, CoinDefinition[]> = {
+      emami_coin: [],
+      bahar_coin: [],
       bank_coin: [],
-      pahlavi_coin: [],
       parsian: [],
       bar: [],
       custom: [],
@@ -303,16 +304,8 @@ export default function CoinEntryComponent({
                         onChange={(e) => handleFieldChange(row.id, 'coinTypeId', e.target.value)}
                         className="h-10 w-full rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 text-xs font-bold text-slate-800 transition-all focus:border-amber-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-slate-800 dark:bg-slate-800/70 dark:text-slate-100 dark:focus:bg-slate-900"
                       >
-                        <optgroup label="سکه‌های بانکی (بهار آزادی)">
+                        <optgroup label="سکه‌های بانکی (بهار آزادی و امامی)">
                           {groupedCoins.bank_coin.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.name} ({c.unitWeight} گرم - عیار {c.purity})
-                            </option>
-                          ))}
-                        </optgroup>
-
-                        <optgroup label="سکه‌های پهلوی">
-                          {groupedCoins.pahlavi_coin.map((c) => (
                             <option key={c.id} value={c.id}>
                               {c.name} ({c.unitWeight} گرم - عیار {c.purity})
                             </option>
@@ -721,8 +714,7 @@ export default function CoinEntryComponent({
                     onChange={(e) => setNewCustomCategory(e.target.value as CoinCategory)}
                     className="h-10 w-full rounded-xl border border-slate-200 px-3 text-xs font-bold text-slate-900 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-100"
                   >
-                    <option value="bank_coin">سکه‌های بانکی</option>
-                    <option value="pahlavi_coin">سکه‌های پهلوی</option>
+                    <option value="bank_coin">سکه‌های بانکی (بهار آزادی و امامی)</option>
                     <option value="parsian">سکه‌های پارسیان</option>
                     <option value="bar">شمش‌های طلا</option>
                     <option value="custom">انواع سفارشی متفرقه</option>

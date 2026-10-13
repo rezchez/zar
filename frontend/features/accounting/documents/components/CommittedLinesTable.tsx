@@ -32,6 +32,7 @@ import {
   getLineDocumentTypeLabel,
   numberValue,
   toPersianDigits,
+  isMetalBearingLine,
 } from '../utils/document-helpers';
 
 export type ColumnKey =
@@ -172,7 +173,7 @@ function getLineSortValue(
       if (line.documentTab === 'currency' || line.documentTab === 'stone') return 0;
       return line.details?.calculationMethod === 'money'
         ? actualWeightFromMoney(line.details, Number(line.details?.baseKarat || 750))
-        : numberValue(line.details?.rawWeight);
+        : numberValue(line.details?.claimWeight || line.details?.rawWeight);
     }
     case 'purity': {
       if (line.documentTab === 'currency' || line.documentTab === 'stone') return 0;
@@ -183,7 +184,7 @@ function getLineSortValue(
       const rawW =
         line.details?.calculationMethod === 'money'
           ? actualWeightFromMoney(line.details, Number(line.details?.baseKarat || 750))
-          : numberValue(line.details?.rawWeight);
+          : numberValue(line.details?.claimWeight || line.details?.rawWeight);
       const p = numberValue(line.details?.purity) || Number(line.details?.baseKarat || 750);
       const c750 =
         line.converted750 ??
@@ -200,7 +201,7 @@ function getLineSortValue(
       const rawW =
         line.details?.calculationMethod === 'money'
           ? actualWeightFromMoney(line.details, Number(line.details?.baseKarat || 750))
-          : numberValue(line.details?.rawWeight);
+          : numberValue(line.details?.claimWeight || line.details?.rawWeight);
       const p = numberValue(line.details?.purity) || Number(line.details?.baseKarat || 750);
       const c750 =
         line.converted750 ??
@@ -264,7 +265,7 @@ function getLineSortValue(
       }
       return line.documentTab === 'currency'
         ? numberValue(line.details.currencyTotalAmount)
-        : numberValue(line.details.totalAmount);
+        : numberValue(line.details.claimFinancial || line.details.totalAmount);
     }
     case 'bostankarMali': {
       if (line.documentNature !== 'received') return 0;
@@ -276,7 +277,7 @@ function getLineSortValue(
       }
       return line.documentTab === 'currency'
         ? numberValue(line.details.currencyTotalAmount)
-        : numberValue(line.details.totalAmount);
+        : numberValue(line.details.claimFinancial || line.details.totalAmount);
     }
     case 'bankAccount': {
       const bName = line.details?.bankName?.trim() || '';
@@ -561,17 +562,8 @@ export default function CommittedLinesTable({
       activeTab === 'gold-sale' ||
       activeTab === 'workmanship' ||
       activeTab === 'refining' ||
-      committedLines.some(
-        (l) =>
-          l.documentTab !== 'currency' &&
-          l.documentTab !== 'stone' &&
-          (l.documentTab === 'gold-sale' ||
-            l.documentTab === 'raw-gold' ||
-            l.documentTab === 'refining' ||
-            l.documentTab === 'workmanship' ||
-            l.sourceTab === 'metals' ||
-            numberValue(l.details?.rawWeight) > 0),
-      )
+      activeTab === 'coin' ||
+      committedLines.some((l) => isMetalBearingLine(l))
     );
   }, [committedLines, activeTab]);
 
@@ -579,11 +571,10 @@ export default function CommittedLinesTable({
     if (typeof hasCheckLinesProp === 'boolean') return hasCheckLinesProp;
     return committedLines.some(
       (line) =>
-        line.details?.bankOperationKind === 'check-payment' ||
-        Boolean(line.details?.checkNumber?.trim()) ||
-        Boolean(line.details?.sayadId?.trim()) ||
-        (line.documentTab as string) === 'check' ||
-        (line.sourceTab as string) === 'check',
+        (line.documentTab === 'bank' || line.sourceTab === 'bank') &&
+        (line.details?.bankOperationKind === 'check-payment' ||
+          Boolean(line.details?.checkNumber?.trim()) ||
+          Boolean(line.details?.sayadId?.trim())),
     );
   }, [committedLines, hasCheckLinesProp]);
 
@@ -671,8 +662,7 @@ export default function CommittedLinesTable({
   const totalBedehkarVazni = useMemo(() => {
     return committedLines
       .filter((l) =>
-        l.documentTab !== 'currency' &&
-        l.documentTab !== 'stone' &&
+        isMetalBearingLine(l) &&
         (l.documentTab === 'gold-sale'
           ? l.documentNature === 'received'
           : l.documentNature === 'paid'),
@@ -681,7 +671,7 @@ export default function CommittedLinesTable({
         const rawW =
           l.details?.calculationMethod === 'money'
             ? actualWeightFromMoney(l.details, Number(l.details?.baseKarat || 750))
-            : numberValue(l.details?.rawWeight);
+            : numberValue(l.details?.claimWeight || l.details?.rawWeight);
         const p = numberValue(l.details?.purity) || Number(l.details?.baseKarat || 750);
         const c750 =
           l.converted750 ??
@@ -693,8 +683,7 @@ export default function CommittedLinesTable({
   const totalBostankarVazni = useMemo(() => {
     return committedLines
       .filter((l) =>
-        l.documentTab !== 'currency' &&
-        l.documentTab !== 'stone' &&
+        isMetalBearingLine(l) &&
         (l.documentTab === 'gold-sale'
           ? l.documentNature === 'paid'
           : l.documentNature === 'received'),
@@ -703,7 +692,7 @@ export default function CommittedLinesTable({
         const rawW =
           l.details?.calculationMethod === 'money'
             ? actualWeightFromMoney(l.details, Number(l.details?.baseKarat || 750))
-            : numberValue(l.details?.rawWeight);
+            : numberValue(l.details?.claimWeight || l.details?.rawWeight);
         const p = numberValue(l.details?.purity) || Number(l.details?.baseKarat || 750);
         const c750 =
           l.converted750 ??
@@ -765,7 +754,7 @@ export default function CommittedLinesTable({
         const amount =
           l.documentTab === 'currency'
             ? numberValue(l.details.currencyTotalAmount)
-            : numberValue(l.details.totalAmount);
+            : numberValue(l.details.claimFinancial || l.details.totalAmount);
         return sum + amount;
       }, 0);
   }, [committedLines]);
@@ -783,7 +772,7 @@ export default function CommittedLinesTable({
         const amount =
           l.documentTab === 'currency'
             ? numberValue(l.details.currencyTotalAmount)
-            : numberValue(l.details.totalAmount);
+            : numberValue(l.details.claimFinancial || l.details.totalAmount);
         return sum + amount;
       }, 0);
   }, [committedLines]);
@@ -1293,6 +1282,7 @@ export default function CommittedLinesTable({
                 hasCurrencyLines={hasCurrencyLines}
                 hasCheckLines={hasCheckLines}
                 hasWorkmanshipLines={hasWorkmanshipLines}
+                baseCurrency={baseCurrency}
               />
             ))}
           </TableBody>

@@ -1,5 +1,4 @@
 import type { Metadata } from 'next';
-import Script from 'next/script';
 import './globals.css';
 import './document-form.css';
 import ThemeProvider from '@/src/components/ThemeProvider';
@@ -35,8 +34,6 @@ export default async function RootLayout({
   const settings = await getServerAppSettings();
   const isPwaEnabled = settings.pwaEnabled;
 
-  const themeInitScript = `(function(){try{var m=localStorage.getItem('zarfolio-theme');var p=window.matchMedia('(prefers-color-scheme: dark)').matches;var t=(m==='dark'||(m!=='light'&&p))?'dark':'light';if(t==='dark'){document.documentElement.classList.add('dark');}else{document.documentElement.classList.remove('dark');}document.documentElement.dataset.theme=t;document.documentElement.style.colorScheme=t;}catch(e){}})();`;
-
   return (
     <html lang="fa" dir="rtl" suppressHydrationWarning>
       <head>
@@ -45,11 +42,6 @@ export default async function RootLayout({
         {isPwaEnabled && <link rel="apple-touch-icon" href="/favicon.ico" />}
       </head>
       <body suppressHydrationWarning>
-        <Script
-          id="zarfolio-theme-init"
-          strategy="beforeInteractive"
-          dangerouslySetInnerHTML={{ __html: themeInitScript }}
-        />
         <ThemeProvider>
           <SettingsProvider initialSettings={settings}>
             <ToastProvider>

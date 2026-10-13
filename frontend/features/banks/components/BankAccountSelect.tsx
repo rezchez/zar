@@ -22,6 +22,7 @@ export interface BankAccountSelectProps {
   error?: boolean;
   baseCurrency?: 'IRR' | 'IRT';
   currencies?: Array<{ id: string; code: string; name: string; symbol: string }>;
+  temporaryDeltas?: Map<string, number> | Record<string, number>;
 }
 
 export default function BankAccountSelect({
@@ -36,6 +37,7 @@ export default function BankAccountSelect({
   error = false,
   baseCurrency,
   currencies,
+  temporaryDeltas,
 }: BankAccountSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -68,6 +70,14 @@ export default function BankAccountSelect({
     };
   }, [isOpen]);
 
+  const getTempDelta = (bankId: string): number => {
+    if (!temporaryDeltas) return 0;
+    if (temporaryDeltas instanceof Map) {
+      return temporaryDeltas.get(bankId) || 0;
+    }
+    return temporaryDeltas[bankId] || 0;
+  };
+
   const formatBankDisplay = (bank: BankAccount) => {
     const cleanBankName = (bank.bankName || '').replace(/^بانک\s+/, '').trim();
     const cleanBranch = bank.branchName ? bank.branchName.replace(/^شعبه\s+/, '').trim() : '';
@@ -82,18 +92,22 @@ export default function BankAccountSelect({
     } else {
       formattedBalance = formatCurrencyAmount(rawBal, bank.currency);
     }
+    const tempDelta = getTempDelta(bank.id);
     return {
       title: `${cleanBankName}${branchPart}${typePart}`,
       accountNumber: accNum,
       balance: formattedBalance,
+      tempDelta,
       fullText: `${cleanBankName}${branchPart}${typePart}${accNum} موجودی: ${formattedBalance}`,
     };
   };
 
+  const selectedBankDisplay = selectedBank ? formatBankDisplay(selectedBank) : null;
+
   return (
     <div
       ref={containerRef}
-      className={`relative w-full text-right ${className}`}
+      className={`relative w-full min-w-0 text-right ${className}`}
       dir="rtl"
     >
       {/* Trigger Button */}
@@ -104,7 +118,7 @@ export default function BankAccountSelect({
         onClick={() => !disabled && setIsOpen((prev) => !prev)}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
-        className={`w-full flex items-center justify-between gap-2 px-3 rounded-xl border transition-all cursor-pointer select-none text-right ${
+        className={`w-full min-w-0 flex items-center justify-between gap-2 px-3 rounded-xl border transition-all cursor-pointer select-none text-right ${
           error
             ? 'border-rose-400 bg-rose-50/50 dark:border-rose-800 dark:bg-rose-950/20'
             : isOpen
@@ -114,20 +128,20 @@ export default function BankAccountSelect({
           disabled ? 'opacity-60 cursor-not-allowed bg-slate-100 dark:bg-slate-800' : ''
         } ${triggerClassName || 'h-10 text-xs'}`}
       >
-        {selectedBank ? (
+        {selectedBank && selectedBankDisplay ? (
           <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
             <div className="shrink-0 flex items-center justify-center">
               <BankLogo bankName={selectedBank.bankName} size={22} />
             </div>
-            <div className="flex items-center gap-1.5 truncate text-xs font-bold text-slate-800 dark:text-slate-100">
-              <span className="truncate">{formatBankDisplay(selectedBank).title}</span>
+            <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden whitespace-nowrap text-xs font-bold text-slate-800 dark:text-slate-100">
+              <span className="truncate">{selectedBankDisplay.title}</span>
               {selectedBank.accountNumber ? (
                 <span className="shrink-0 text-slate-500 dark:text-slate-400 font-mono text-[11px]">
-                  {formatBankDisplay(selectedBank).accountNumber}
+                  {selectedBankDisplay.accountNumber}
                 </span>
               ) : null}
               <span className="shrink-0 text-emerald-600 dark:text-emerald-400 font-extrabold mr-1 text-[11px]">
-                (موجودی: {formatBankDisplay(selectedBank).balance})
+                ({selectedBankDisplay.tempDelta !== 0 ? 'موجودی موقت' : 'موجودی'}: {selectedBankDisplay.balance})
               </span>
             </div>
           </div>
@@ -160,7 +174,7 @@ export default function BankAccountSelect({
           ) : (
             banks.map((bank) => {
               const isSelected = bank.id === value;
-              const { title, accountNumber, balance } = formatBankDisplay(bank);
+              const { title, accountNumber, balance, tempDelta } = formatBankDisplay(bank);
 
               return (
                 <button
@@ -197,12 +211,12 @@ export default function BankAccountSelect({
                           </span>
                         ) : null}
                       </div>
-                      <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 font-medium">
+                      <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 font-medium">
                         {accountNumber ? (
                           <span className="font-mono">{accountNumber}</span>
                         ) : null}
                         <span className="text-emerald-600 dark:text-emerald-400 font-bold mr-auto">
-                          موجودی: {balance}
+                          {tempDelta !== 0 ? 'موجودی موقت' : 'موجودی'}: {balance}
                         </span>
                       </div>
                     </div>

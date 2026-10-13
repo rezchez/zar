@@ -35,7 +35,7 @@ describe('Initial Coin & Bullion Inventory & Catalog Tests', () => {
 
   test('Calculates total weight, total amount, and converted weight correctly for initial coin entry', () => {
     const quantity = 10;
-    const unitWeight = 8.136; // Emami coin weight
+    const unitWeight = 8.133; // Emami coin weight
     const purity = 900;
     const unitPrice = 50000000;
     const baseKarat = 750;
@@ -44,9 +44,9 @@ describe('Initial Coin & Bullion Inventory & Catalog Tests', () => {
     const totalAmount = quantity * unitPrice;
     const convertedWeight = (totalWeight * purity) / baseKarat;
 
-    expect(totalWeight).toBeCloseTo(81.36, 3);
+    expect(totalWeight).toBeCloseTo(81.33, 3);
     expect(totalAmount).toBe(500000000);
-    expect(convertedWeight).toBeCloseTo(97.632, 3);
+    expect(convertedWeight).toBeCloseTo(97.596, 3);
   });
 
   test('Calculates total weight, total amount, and converted weight correctly for bullion entry', () => {
@@ -87,7 +87,7 @@ describe('Initial Coin & Bullion Inventory & Catalog Tests', () => {
       id: 'row-1',
       coinTypeId: 'emami_full',
       quantity: '4',
-      unitWeight: '8.136',
+      unitWeight: '8.133',
       purity: '900',
       totalAmount: '200000000',
       description: 'افتتاحیه ۴ عدد سکه امامی',
@@ -96,9 +96,9 @@ describe('Initial Coin & Bullion Inventory & Catalog Tests', () => {
     const calc = calculateCoinRow(row, [], 3);
 
     expect(calc.quantity).toBe(4);
-    expect(calc.unitWeight).toBe(8.136);
-    expect(calc.totalWeight).toBe(32.544); // 4 * 8.136
-    expect(calc.converted750).toBeCloseTo(39.053, 3); // (32.544 * 900) / 750
+    expect(calc.unitWeight).toBe(8.133);
+    expect(calc.totalWeight).toBe(32.532); // 4 * 8.133
+    expect(calc.converted750).toBeCloseTo(39.038, 3); // (32.532 * 900) / 750
   });
 
   test('itemName normalization prevents .trim() runtime error on undefined or non-string inputs', () => {
