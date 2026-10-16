@@ -23,18 +23,40 @@ function formatNumber(value: number) {
 }
 
 function transactionAmounts(transaction: CustomerTransaction) {
-  return [
-    transaction.goldAmount ? `${formatNumber(transaction.goldAmount)} گرم طلا` : '',
-    transaction.silverAmount ? `${formatNumber(transaction.silverAmount)} گرم نقره` : '',
-    transaction.platinumAmount ? `${formatNumber(transaction.platinumAmount)} گرم پلاتین` : '',
-    transaction.rialAmount ? `${formatNumber(transaction.rialAmount)} ریال` : '',
-    transaction.foreignAmount
-      ? `${formatNumber(transaction.foreignAmount)} ${currencyDisplay(transaction.foreignCurrency, transaction.foreignCurrencySymbol)}`
-      : '',
-    transaction.tertiaryAmount
-      ? `${formatNumber(transaction.tertiaryAmount)} ${currencyDisplay(transaction.tertiaryCurrency, transaction.tertiaryCurrencySymbol)}`
-      : '',
-  ].filter(Boolean).join(' | ') || 'بدون مبلغ';
+  const parts: string[] = [];
+  if (transaction.goldAmount) {
+    const abs = Math.abs(transaction.goldAmount);
+    const side = transaction.goldAmount > 0 ? 'بستانکار' : 'بدهکار';
+    parts.push(`${formatNumber(abs)} گرم طلا (${side})`);
+  }
+  if (transaction.silverAmount) {
+    const abs = Math.abs(transaction.silverAmount);
+    const side = transaction.silverAmount > 0 ? 'بستانکار' : 'بدهکار';
+    parts.push(`${formatNumber(abs)} گرم نقره (${side})`);
+  }
+  if (transaction.platinumAmount) {
+    const abs = Math.abs(transaction.platinumAmount);
+    const side = transaction.platinumAmount > 0 ? 'بستانکار' : 'بدهکار';
+    parts.push(`${formatNumber(abs)} گرم پلاتین (${side})`);
+  }
+  if (transaction.rialAmount) {
+    const abs = Math.abs(transaction.rialAmount);
+    const side = transaction.rialAmount > 0 ? 'بستانکار' : 'بدهکار';
+    parts.push(`${formatNumber(abs)} ریال (${side})`);
+  }
+  if (transaction.foreignAmount) {
+    const abs = Math.abs(transaction.foreignAmount);
+    const side = transaction.foreignAmount > 0 ? 'بستانکار' : 'بدهکار';
+    const cur = currencyDisplay(transaction.foreignCurrency, transaction.foreignCurrencySymbol);
+    parts.push(`${formatNumber(abs)} ${cur} (${side})`);
+  }
+  if (transaction.tertiaryAmount) {
+    const abs = Math.abs(transaction.tertiaryAmount);
+    const side = transaction.tertiaryAmount > 0 ? 'بستانکار' : 'بدهکار';
+    const cur = currencyDisplay(transaction.tertiaryCurrency, transaction.tertiaryCurrencySymbol);
+    parts.push(`${formatNumber(abs)} ${cur} (${side})`);
+  }
+  return parts.join(' | ') || 'بدون مبلغ';
 }
 
 export function createLedgerPdf(
@@ -193,12 +215,66 @@ export function createCustomersPdf(customers: Customer[], options: CustomerPdfOp
     phone1: { label: 'تلفن تماس', widthRatio: 0.12, align: 'center', getValue: (c) => c.phone1 || '—' },
     phone2: { label: 'تلفن ۲', widthRatio: 0.12, align: 'center', getValue: (c) => c.phone2 || '—' },
     address: { label: 'آدرس', widthRatio: 0.20, align: 'right', getValue: (c) => c.address1 || '—' },
-    goldBalance: { label: 'مانده طلا (گرم)', widthRatio: 0.14, align: 'center', getValue: (c) => `${c.goldBalance || 0}` },
-    silverBalance: { label: 'مانده نقره (گرم)', widthRatio: 0.14, align: 'center', getValue: (c) => `${c.silverBalance || 0}` },
-    platinumBalance: { label: 'مانده پلاتین (گرم)', widthRatio: 0.14, align: 'center', getValue: (c) => `${c.platinumBalance || 0}` },
-    rialBalance: { label: 'مانده ریالی', widthRatio: 0.16, align: 'center', getValue: (c) => `${new Intl.NumberFormat('fa-IR').format(c.rialBalance || 0)}` },
-    foreignBalance: { label: 'مانده ارز دوم', widthRatio: 0.14, align: 'center', getValue: (c) => `${c.foreignBalance || 0}` },
-    tertiaryBalance: { label: 'مانده ارز سوم', widthRatio: 0.14, align: 'center', getValue: (c) => `${c.tertiaryBalance || 0}` },
+    goldBalance: {
+      label: 'مانده طلا (گرم)',
+      widthRatio: 0.14,
+      align: 'center',
+      getValue: (c) => {
+        const v = c.goldBalance || 0;
+        if (Math.abs(v) < 0.0005) return 'تسویه';
+        return `${formatNumber(Math.abs(v))} ${v > 0 ? 'بستانکار' : 'بدهکار'}`;
+      },
+    },
+    silverBalance: {
+      label: 'مانده نقره (گرم)',
+      widthRatio: 0.14,
+      align: 'center',
+      getValue: (c) => {
+        const v = c.silverBalance || 0;
+        if (Math.abs(v) < 0.0005) return 'تسویه';
+        return `${formatNumber(Math.abs(v))} ${v > 0 ? 'بستانکار' : 'بدهکار'}`;
+      },
+    },
+    platinumBalance: {
+      label: 'مانده پلاتین (گرم)',
+      widthRatio: 0.14,
+      align: 'center',
+      getValue: (c) => {
+        const v = c.platinumBalance || 0;
+        if (Math.abs(v) < 0.0005) return 'تسویه';
+        return `${formatNumber(Math.abs(v))} ${v > 0 ? 'بستانکار' : 'بدهکار'}`;
+      },
+    },
+    rialBalance: {
+      label: 'مانده ریالی',
+      widthRatio: 0.16,
+      align: 'center',
+      getValue: (c) => {
+        const v = c.rialBalance || 0;
+        if (Math.abs(v) < 50) return 'تسویه';
+        return `${new Intl.NumberFormat('fa-IR').format(Math.abs(v))} ${v > 0 ? 'بستانکار' : 'بدهکار'}`;
+      },
+    },
+    foreignBalance: {
+      label: 'مانده ارز دوم',
+      widthRatio: 0.14,
+      align: 'center',
+      getValue: (c) => {
+        const v = c.foreignBalance || 0;
+        if (Math.abs(v) < 0.01) return 'تسویه';
+        return `${formatNumber(Math.abs(v))} ${v > 0 ? 'بستانکار' : 'بدهکار'}`;
+      },
+    },
+    tertiaryBalance: {
+      label: 'مانده ارز سوم',
+      widthRatio: 0.14,
+      align: 'center',
+      getValue: (c) => {
+        const v = c.tertiaryBalance || 0;
+        if (Math.abs(v) < 0.01) return 'تسویه';
+        return `${formatNumber(Math.abs(v))} ${v > 0 ? 'بستانکار' : 'بدهکار'}`;
+      },
+    },
   };
 
   // Determine Active Columns

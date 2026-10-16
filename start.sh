@@ -78,6 +78,11 @@ fi
 
 chmod +x "$ROOT_DIR/backend/pocketbase" 2>/dev/null
 
+# Conditional Pre-flight Optimization (Runs only when needed, skips on normal restarts)
+if [ -f "$ROOT_DIR/scripts/preflight-optimize.ts" ]; then
+    bun "$ROOT_DIR/scripts/preflight-optimize.ts"
+fi
+
 FRONTEND_PID=""
 BACKEND_PID=""
 

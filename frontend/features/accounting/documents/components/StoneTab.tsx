@@ -33,6 +33,7 @@ import ShapeSettingsModal, {
   type ShapePreferences,
 } from '@/features/gemstones/components/ShapeSettingsModal';
 import GemstoneShapeIcon from '@/features/gemstones/components/GemstoneShapeIcon';
+import GemstoneQuickSearch from '@/features/gemstones/components/GemstoneQuickSearch';
 import Field from '@/src/components/documents/Field';
 import MoneyInputField from '@/src/components/documents/MoneyInputField';
 import { PriceInput } from '@/components/ui/price-input';
@@ -2086,6 +2087,20 @@ export default function StoneTab({
 
       {/* 2. Main Parameters Card (Strictly Mirrored from InitialGemstoneInventoryModal) */}
       <div className="p-4 rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/50 space-y-4 shadow-xs">
+        {/* Quick Stone Search Section (جستجوی هوشمند و سریع سنگ) */}
+        <GemstoneQuickSearch
+          rootCategory={rootCategory}
+          selectedSpeciesId={species}
+          gemstoneTypes={gemstoneTypes}
+          onSelectSpecies={(speciesItem) => {
+            const targetRoot = speciesItem.rootCategory || 'natural';
+            if (targetRoot !== rootCategory) {
+              setRootCategory(targetRoot);
+            }
+            applySpeciesSelection(speciesItem, targetRoot);
+          }}
+        />
+
         {/* Section A: Root Classification Selector (GIA & CIBJO Standards) */}
         <div className="rounded-2xl border border-cyan-100 bg-cyan-50/40 p-3.5 transition-all duration-300 dark:border-cyan-900/40 dark:bg-cyan-950/20 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">

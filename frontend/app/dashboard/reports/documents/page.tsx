@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { getServerAuthContext } from '@/lib/auth';
 import DashboardShell from '@/src/components/dashboard/DashboardShell';
 import CustomerLedgerReport from '@/src/components/reports/CustomerLedgerReport';
-import { getCustomersWithBalances } from '@/lib/customer-service';
+import { getCustomers } from '@/lib/customer-service';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,7 +15,7 @@ export default async function DocumentsReportPage() {
   }
 
   // Load all customers for the filter dropdown.
-  const customers = await getCustomersWithBalances(context.pb);
+  const customers = await getCustomers(context.pb);
 
   return (
     <DashboardShell user={context.user}>

@@ -26,7 +26,7 @@ export type DocumentTab =
 
 export const documentTabs: Array<{ id: DocumentTab; label: string }> = [
   { id: 'general', label: 'ش' },
-  { id: 'goods', label: 'کالا' },
+  { id: 'goods', label: 'کالا و خدمات' },
   { id: 'currency', label: 'ارز' },
   { id: 'stone-main', label: 'سنگ(م)' },
   { id: 'base', label: 'پایه' },
@@ -34,7 +34,7 @@ export const documentTabs: Array<{ id: DocumentTab; label: string }> = [
   { id: 'expense', label: 'هزینه' },
   { id: 'coin', label: 'سکه' },
   { id: 'our-claim', label: 'طلب ما' },
-  { id: 'bank', label: 'حساب بانکی' },
+  { id: 'bank', label: 'عملیات بانکی' },
   { id: 'cash-conversion', label: 'پولی کردن' },
   { id: 'gold-sale', label: 'فروش طلا' },
   { id: 'check', label: 'چک' },

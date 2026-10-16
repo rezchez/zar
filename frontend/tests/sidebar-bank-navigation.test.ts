@@ -9,14 +9,14 @@ import DashboardSidebar from '@/src/components/dashboard/DashboardSidebar';
 import { EXACT_PATH_LABELS, SEGMENT_FALLBACK_LABELS, getBreadcrumbLabel } from '@/components/layout/Breadcrumbs';
 
 describe('Sidebar Bank Navigation & Route Configuration', () => {
-  it('includes the "بانکداری" menu item in navGroupsBase with correct icons, order and subitems', () => {
+  it('includes the "نقد و بانک" menu item in navGroupsBase with correct icons, order and subitems', () => {
     for (const navGroups of [navGroupsLayout, navGroupsSrc]) {
       const opsGroup = navGroups.find((g) => g.heading === 'عملیات و حسابداری');
       expect(opsGroup).toBeDefined();
 
       const bankItem = opsGroup?.items.find((item) => item.id === 'bank');
       expect(bankItem).toBeDefined();
-      expect(bankItem?.title).toBe('بانکداری');
+      expect(bankItem?.title).toBe('نقد و بانک');
       expect(bankItem?.icon).toBe(Landmark);
       expect(bankItem?.children).toBeDefined();
       expect(bankItem?.children?.length).toBe(3);
@@ -48,7 +48,7 @@ describe('Sidebar Bank Navigation & Route Configuration', () => {
     }
   });
 
-  it('renders "بانکداری" item in DashboardSidebar when expanded', () => {
+  it('renders "نقد و بانک" item in DashboardSidebar when expanded', () => {
     const html = ReactDOMServer.renderToStaticMarkup(
       React.createElement(DashboardSidebar, {
         sidebarOpen: true,
@@ -61,10 +61,10 @@ describe('Sidebar Bank Navigation & Route Configuration', () => {
       }),
     );
 
-    expect(html).toContain('بانکداری');
+    expect(html).toContain('نقد و بانک');
   });
 
-  it('renders "بانکداری" item with title tooltip when collapsed', () => {
+  it('renders "نقد و بانک" item with title tooltip when collapsed', () => {
     const html = ReactDOMServer.renderToStaticMarkup(
       React.createElement(DashboardSidebar, {
         sidebarOpen: false,
@@ -77,7 +77,7 @@ describe('Sidebar Bank Navigation & Route Configuration', () => {
       }),
     );
 
-    expect(html).toContain('title="بانکداری"');
+    expect(html).toContain('title="نقد و بانک"');
   });
 
   it('Breadcrumbs properly maps bank paths', () => {

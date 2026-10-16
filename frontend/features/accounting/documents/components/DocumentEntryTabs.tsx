@@ -105,7 +105,7 @@ export default function DocumentEntryTabs({
     },
     {
       id: 'bank',
-      label: 'حساب بانکی',
+      label: 'عملیات بانکی',
       icon: Landmark,
       content: bankTabContent ?? (
         <BankOperation
@@ -133,7 +133,7 @@ export default function DocumentEntryTabs({
       icon: Sparkles,
       content: stoneTabContent ?? <PlaceholderTab label="عملیات سنگ" />,
     },
-    { id: 'goods', label: 'کالا', icon: Package, content: <PlaceholderTab label="کالا" /> },
+    { id: 'goods', label: 'کالا و خدمات', icon: Package, content: <PlaceholderTab label="کالا و خدمات" /> },
     {
       id: 'income-expense',
       label: nature === 'received' ? 'درآمد' : 'هزینه',

@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 
 import { getServerAuthContext } from '@/lib/auth';
-import { getCustomersWithBalances } from '@/lib/customer-service';
+import { getCustomers } from '@/lib/customer-service';
 import { getCurrencies } from '@/lib/currencies';
 import { getLatestMarketQuotes } from '@/lib/price-api';
 import DashboardShell from '@/src/components/dashboard/DashboardShell';
@@ -21,7 +21,7 @@ export default async function NewDocumentPage({
   const editDocumentId = resolvedParams.editDocumentId || resolvedParams.editId || '';
 
   const [customers, currencies, quotes] = await Promise.all([
-    getCustomersWithBalances(context.pb),
+    getCustomers(context.pb),
     getCurrencies(context.pb),
     getLatestMarketQuotes(context.pb),
   ]);

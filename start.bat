@@ -15,6 +15,10 @@ echo.
 
 set "ROOT_DIR=%~dp0"
 
+if exist "%ROOT_DIR%scripts\preflight-optimize.ts" (
+    bun "%ROOT_DIR%scripts\preflight-optimize.ts"
+)
+
 echo ▶ [1/2] در حال اجرای فرانت‌اند (bun run dev)...
 start "Zarfolio - Frontend (Next.js)" /D "%ROOT_DIR%frontend" cmd /k "bun run dev"
 

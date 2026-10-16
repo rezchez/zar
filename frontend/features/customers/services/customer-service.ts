@@ -108,6 +108,18 @@ export async function getCustomerWithBalances(
   };
 }
 
+/**
+ * Loads all active customers quickly without pulling all system transactions.
+ * Ideal for document entry, dropdowns, and selectors.
+ */
+export async function getCustomers(pb: PocketBase): Promise<Customer[]> {
+  const records = await pb.collection('customers').getFullList({
+    sort: '-customerCode',
+    filter: 'is_deleted = false',
+  });
+  return records.map((record) => mapCustomer(pb, record));
+}
+
 export async function getCustomersWithBalances(pb: PocketBase) {
   const records = await pb.collection('customers').getFullList({
     sort: '-customerCode',

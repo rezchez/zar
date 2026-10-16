@@ -335,14 +335,22 @@ export async function GET(request: Request) {
 
     const documentIdParam = url.searchParams.get('documentId');
     if (documentIdParam) {
-      const records = await context.pb.collection('transactions').getFullList({
-        filter: context.pb.filter(
-          'documentId = {:documentId} && is_deleted = false',
-          { documentId: documentIdParam },
+      let reader = context.pb;
+      try {
+        const { getPocketBaseServiceClient } = await import('@/lib/pocketbase-service');
+        const servicePb = await getPocketBaseServiceClient();
+        if (servicePb) reader = servicePb;
+      } catch {}
+
+      const records = await reader.collection('transactions').getFullList({
+        filter: reader.filter(
+          '(documentId = {:docId} || id = {:docId} || documentNumber = {:docId}) && is_deleted = false',
+          { docId: documentIdParam },
         ),
-        sort: 'documentLineNumber, created',
+        sort: 'created',
         expand: 'customer',
-      });
+      }).catch(() => []);
+
       if (records.length === 0) {
         return NextResponse.json({ message: 'سند مورد نظر یافت نشد.' }, { status: 404 });
       }
@@ -361,6 +369,7 @@ export async function GET(request: Request) {
         }
       }
       const lines = records.map(transactionRecordToDocumentLine);
+      lines.sort((a, b) => (Number((a as any).documentLineNumber) || 0) - (Number((b as any).documentLineNumber) || 0));
       return NextResponse.json({
         documentId: primary.documentId || documentIdParam,
         documentNumber: String(primary.documentNumber ?? ''),

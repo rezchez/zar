@@ -48,7 +48,20 @@ export interface NormalizedDocumentLine {
   dateIso: string;
   dateJalali: string;
   nature: 'received' | 'paid';
-  kind: 'melted' | 'conditional' | 'misc' | 'coin' | 'general_metal' | 'cash' | 'bank' | 'currency' | 'claim';
+  kind:
+    | 'melted'
+    | 'conditional'
+    | 'misc'
+    | 'coin'
+    | 'general_metal'
+    | 'cash'
+    | 'bank'
+    | 'currency'
+    | 'claim'
+    | 'sale'
+    | 'purchase'
+    | 'wage'
+    | 'opening';
   metalType: 'gold' | 'silver' | 'none';
   weight: number;
   grade: number;
@@ -64,6 +77,12 @@ export interface NormalizedDocumentLine {
   description: string;
   unitPrice?: number;
   isConditional: boolean;
+  signedGoldAmount?: number;
+  signedRialAmount?: number;
+  signedForeignAmount?: number;
+  goldNature?: 'received' | 'paid' | 'none';
+  moneyNature?: 'received' | 'paid' | 'none';
+  partySide?: 'debtor' | 'creditor';
   raw: Record<string, unknown>;
 }
 

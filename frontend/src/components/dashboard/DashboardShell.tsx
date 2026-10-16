@@ -91,7 +91,7 @@ export const navGroupsBase: NavGroupData[] = [
       },
       {
         id: 'bank',
-        title: 'بانکداری',
+        title: 'نقد و بانک',
         icon: Landmark,
         children: [
           {

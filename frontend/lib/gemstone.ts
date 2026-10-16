@@ -2110,4 +2110,224 @@ export function areParcelsHomogeneous(
   return true;
 }
 
+/**
+ * Normalizes Persian and English text for forgiving, fast gemstone searching.
+ */
+export function normalizeGemstoneSearchText(text: string): string {
+  if (!text) return '';
+  return String(text)
+    .toLowerCase()
+    .replace(/[\u064B-\u065F\u0640]/g, '') // Strip Arabic/Persian diacritics and tatweel
+    .replace(/[ي]/g, 'ی')
+    .replace(/[ك]/g, 'ک')
+    .replace(/[آأإ]/g, 'ا')
+    .replace(/[ة]/g, 'ه')
+    .replace(/[\u200c\u200b\s_\-./\\]+/g, ' ')
+    .trim();
+}
+
+/**
+ * Rich domain keywords and colloquial aliases for gemstone species in the Iranian gold/jewelry market.
+ */
+export const GEMSTONE_SEARCH_KEYWORDS: Record<string, string[]> = {
+  // Diamonds
+  diamond: ['برلیان', 'الماس', 'تراش برلیان', 'برلیانت', 'diamond', 'brilliant', 'طبیعی'],
+  lab_diamond_cvd: ['برلیان', 'الماس', 'سی وی دی', 'cvd', 'لاب', 'lab', 'مصنوعی', 'آزمایشگاهی'],
+  lab_diamond_hpht: ['برلیان', 'الماس', 'اچ پی اچ تی', 'hpht', 'لاب', 'lab', 'آزمایشگاهی'],
+  lab_diamond: ['برلیان', 'الماس', 'لاب', 'lab', 'آزمایشگاهی'],
+  diamond_irradiated: ['برلیان', 'الماس', 'پرتودیده', 'رنگی', 'تیمار', 'بهسازی'],
+
+  // Corundum - Ruby
+  corundum_ruby: ['یاقوت', 'روبی', 'سرخ', 'قرمز', 'یاقوت سرخ', 'یاقوت قرمز', 'بهرمان', 'ruby'],
+  corundum_ruby_songea: ['یاقوت', 'سونگی', 'سونژا', 'تانزانیا', 'songea', 'ruby'],
+  lab_ruby: ['یاقوت', 'روبی', 'سرخ', 'آزمایشگاهی', 'لاب', 'lab'],
+  synthetic_ruby_verneuil: ['یاقوت', 'روبی', 'سرخ', 'ورنویل', 'سنتتیک'],
+  corundum_ruby_beryllium: ['یاقوت', 'روبی', 'سرخ', 'بریلیوم', 'دیفیوژن', 'بهسازی'],
+  corundum_ruby_lead_glass: ['یاقوت', 'لیدگلس', 'شیشه سربی', 'پرشده', 'فیلد', 'تیمار'],
+
+  // Corundum - Sapphire
+  corundum_sapphire: ['یاقوت', 'سفایر', 'سافایر', 'کبود', 'آبی', 'یاقوت کبود', 'نیلم', 'یاقوت آبی', 'یاقوت زرد', 'sapphire'],
+  lab_sapphire: ['یاقوت', 'سفایر', 'کبود', 'آزمایشگاهی', 'لاب'],
+  synthetic_sapphire_verneuil: ['یاقوت', 'سفایر', 'کبود', 'ورنویل', 'سنتتیک'],
+  corundum_sapphire_beryllium: ['یاقوت', 'سفایر', 'کبود', 'بریلیوم', 'دیفیوژن'],
+
+  // Beryl - Emerald
+  beryl_emerald: ['زمرد', 'امرالد', 'سبز', 'معدنی', 'emerald'],
+  lab_emerald: ['زمرد', 'امرالد', 'سبز', 'آزمایشگاهی', 'لاب'],
+  synthetic_emerald_hydrothermal: ['زمرد', 'امرالد', 'هیدروترمال', 'سنتتیک'],
+  synthetic_emerald_flux: ['زمرد', 'امرالد', 'فلاکس', 'گدازآور', 'سنتتیک'],
+  emerald_oiled_resin: ['زمرد', 'روغن', 'رزین', 'بهسازی', 'تیمار', 'oiled'],
+
+  // Other Beryl
+  beryl_aquamarine: ['آکوامارین', 'اکوامارین', 'بریل آبی', 'aquamarine'],
+
+  // Alexandrite
+  chrysoberyl_alexandrite: ['الکساندریت', 'الکساندرایت', 'تغییر رنگ', 'چند رنگ', 'هفت رنگ', 'alexandrite'],
+  lab_alexandrite: ['الکساندریت', 'الکساندرایت', 'آزمایشگاهی', 'لاب'],
+  synthetic_alexandrite: ['الکساندریت', 'چکرالسکی', 'سنتتیک'],
+
+  // Spinel
+  spinel: ['اسپینل', 'لعل', 'لعل بدخشان', 'spinel'],
+  synthetic_spinel: ['اسپینل', 'لعل', 'سنتتیک', 'ورنویل'],
+
+  // Tanzanite
+  tanzanite: ['تانزانیت', 'تنزانیت', 'آبی بنفش', 'تانزانیا', 'tanzanite'],
+
+  // Tourmaline
+  tourmaline: ['تورمالین', 'تورمالین سبز', 'روبلیت', 'وردیلیت', 'tourmaline'],
+
+  // Topaz
+  topaz: ['توپاز', 'توپاز طلایی', 'ایمپریال', 'بی‌رنگ', 'topaz'],
+  topaz_london_blue: ['توپاز', 'لندن بلو', 'لندن', 'آبی سیر', 'پرتودیده', 'london blue'],
+  topaz_swiss_blue: ['توپاز', 'سوئیس بلو', 'سوئیس', 'آبی روشن', 'پرتودیده', 'swiss blue'],
+
+  // Garnet
+  garnet: ['گارنت', 'دمانتوئید', 'لعل', 'پیروپ', 'آلماندین', 'سبز', 'garnet'],
+
+  // Peridot
+  peridot: ['زبرجد', 'پریدوت', 'سبز زیتونی', 'peridot', 'chrysolite'],
+
+  // Quartz / Amethyst
+  quartz_amethyst: ['آمتیست', 'امتیست', 'کوارتز', 'بنفش', 'در', 'amethyst'],
+  synthetic_quartz: ['کوارتز', 'آمتیست', 'هیدروترمال', 'سنتتیک'],
+
+  // Turquoise
+  turquoise: ['فیروزه', 'نیشابور', 'کرمان', 'عجمی', 'شجری', 'شجر', 'turquoise'],
+  turquoise_imitation: ['فیروزه', 'مصنوعی', 'پودر فشرده', 'بدل', 'چینی'],
+  turquoise_stabilized: ['فیروزه', 'تثبیت‌شده', 'رزین', 'بهسازی'],
+
+  // Opal
+  opal: ['اوپال', 'اپال', 'اتیوپی', 'استرالیا', 'هفت رنگ', 'opal'],
+  synthetic_opal_gilson: ['اوپال', 'ژیلسون', 'سنتتیک', 'gilson'],
+  opalite: ['اوپالیت', 'شیشه مات', 'بدل اوپال', 'opalite'],
+
+  // Jade
+  jade: ['یشم', 'ژادئیت', 'نفریت', 'سبز یشمی', 'jade'],
+
+  // Pearl
+  pearl: ['مروارید', 'پرورشی', 'غلطان', 'طبیعی', 'صدف', 'pearl'],
+
+  // Agate
+  agate_dyed: ['عقیق', 'رنگ‌آمیزی', 'رنگ‌شده', 'یمانی', 'شرف شمس', 'عقیق زرد', 'agate'],
+
+  // Simulants (CZ, Moissanite, Glass)
+  cubic_zirconia: ['اتمی', 'نگین اتمی', 'کیوبیک', 'زیرکونیا', 'برلیان اتمی', 'cz', 'cubic zirconia', 'زیرکن'],
+  colored_cubic_zirconia: ['اتمی رنگی', 'نگین اتمی رنگی', 'زیرکونیا رنگی', 'کیوبیک رنگی'],
+  moissanite_simulant: ['موزانایت', 'مویزنایت', 'موزانیت', 'شبه برلیان', 'شبیه‌ساز', 'بدل برلیان', 'moissanite'],
+  synthetic_moissanite: ['موزانایت', 'مویزنایت', 'موزانیت', 'کاربید سیلیسیم', 'سنتتیک', 'sic', 'moissanite'],
+  glass_paste: ['شیشه', 'نگین شیشه‌ای', 'خمیر شیشه', 'پست', 'کریستال', 'paste', 'glass'],
+  doublet_triplet: ['دابلت', 'تریپلت', 'مرکب', 'چندلایه', 'doublet', 'triplet'],
+  plastic_resin_simulant: ['پلاستیک', 'رزین', 'نگین پلاستیکی', 'بدل', 'plastic', 'resin'],
+};
+
+/**
+ * Curated list of popular stones for fast beginner lookup
+ */
+export const POPULAR_BEGINNER_GEMSTONES: readonly string[] = [
+  'diamond',
+  'cubic_zirconia',
+  'corundum_ruby',
+  'corundum_sapphire',
+  'beryl_emerald',
+  'synthetic_moissanite',
+  'lab_diamond_cvd',
+  'turquoise',
+  'pearl',
+  'agate_dyed',
+] as const;
+
+/**
+ * Calculates a search relevance score for a gemstone item against a normalized query string.
+ */
+export function scoreGemstoneMatch(item: GemstoneSpeciesItem, normQuery: string): number {
+  const normFa = normalizeGemstoneSearchText(item.nameFa);
+  const normEn = normalizeGemstoneSearchText(item.nameEn || '');
+  const normVariety = normalizeGemstoneSearchText(item.defaultVariety || '');
+  const normItemName = normalizeGemstoneSearchText(item.defaultItemName || '');
+
+  let score = 0;
+  if (normFa === normQuery || normEn === normQuery) score += 100;
+  else if (normFa.startsWith(normQuery)) score += 50;
+  else if (normFa.includes(normQuery)) score += 30;
+  else if (normEn.startsWith(normQuery)) score += 25;
+  else if (normEn.includes(normQuery)) score += 15;
+
+  if (normVariety === normQuery || normItemName === normQuery) score += 95;
+  else if (normVariety.startsWith(normQuery) || normItemName.startsWith(normQuery)) score += 45;
+  else if (normVariety.includes(normQuery) || normItemName.includes(normQuery)) score += 25;
+
+  const keywords = GEMSTONE_SEARCH_KEYWORDS[item.id] || [];
+  for (const kw of keywords) {
+    const normKw = normalizeGemstoneSearchText(kw);
+    if (normKw === normQuery) {
+      score += 45;
+      break;
+    } else if (normKw.startsWith(normQuery)) {
+      score += 25;
+      break;
+    } else if (normKw.includes(normQuery)) {
+      score += 15;
+      break;
+    }
+  }
+
+  // Natural diamond priority for general "برلیان" queries in the gold/jewelry market
+  if (item.id === 'diamond' && (normQuery === 'برلیان' || normQuery === 'الماس')) {
+    score += 50;
+  }
+
+  // Root Category priority weighting
+  if (item.rootCategory === 'natural') score += 10;
+  else if (item.rootCategory === 'laboratory_grown') score += 7;
+  else if (item.rootCategory === 'simulant') score += 5;
+  else if (item.rootCategory === 'synthetic') score += 4;
+  else if (item.rootCategory === 'treated_natural') score += 3;
+
+  return score;
+}
+
+/**
+ * Searches and ranks gemstone species across all categories or within a specific root.
+ */
+export function searchGemstoneSpecies(
+  query: string,
+  speciesList: GemstoneSpeciesItem[],
+  filterRoot?: RootCategory,
+): GemstoneSpeciesItem[] {
+  const normQuery = normalizeGemstoneSearchText(query);
+  if (!normQuery) return [];
+
+  const queryTokens = normQuery.split(/\s+/).filter(Boolean);
+
+  const matched = speciesList.filter((item) => {
+    if (filterRoot && item.rootCategory !== filterRoot) {
+      return false;
+    }
+
+    const keywords = GEMSTONE_SEARCH_KEYWORDS[item.id] || [];
+    const rootLabel = formatRootCategoryShortFa(item.rootCategory);
+
+    const corpus = [
+      item.nameFa,
+      item.nameEn,
+      item.defaultVariety,
+      item.defaultItemName,
+      item.id,
+      rootLabel,
+      ...keywords,
+    ]
+      .filter(Boolean)
+      .map((s) => normalizeGemstoneSearchText(String(s)))
+      .join(' ');
+
+    return queryTokens.every((token) => corpus.includes(token));
+  });
+
+  return matched.sort((a, b) => {
+    const scoreA = scoreGemstoneMatch(a, normQuery);
+    const scoreB = scoreGemstoneMatch(b, normQuery);
+    return scoreB - scoreA;
+  });
+}
+
 

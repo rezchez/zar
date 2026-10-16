@@ -47,7 +47,7 @@ export function validateTahesabMigration(
     if (!mapping) {
       warnings.push({
         code: 'WARN_UNMAPPED_PARTY',
-        message: `طرف‌حساب "${party.name}" (کد ${party.sourceCode}) فاقد وضعیت نگاشت مشخص است.`,
+        message: `طرف‌حساب "${party.name}" (کد منبع ${party.sourceCode}) فاقد وضعیت نگاشت است. علت ناهماهنگی: در سیستم زرفولیو مشتری با نام یا شماره تلفن یکسان یافت نشد و باید تعیین شود که به صورت خودکار به عنوان مشتری جدید تعریف شود یا به مشتری موجود الصاق گردد.`,
         severity: 'WARNING',
         sourceType: 'party',
         sourceId: party.sourceCode,
@@ -63,7 +63,7 @@ export function validateTahesabMigration(
       needsReviewPartiesCount++;
       warnings.push({
         code: 'WARN_PARTY_NEEDS_REVIEW',
-        message: `طرف‌حساب "${party.name}" (کد ${party.sourceCode}) نیازمند تعیین تکلیف و بررسی دستی است.`,
+        message: `طرف‌حساب "${party.name}" (کد ${party.sourceCode}) نیازمند بررسی است. علت ناهماهنگی: شباهت اسمی تقریبی با مشتریان موجود شناسایی شده و جهت جلوگیری از تداخل حساب‌های مالی، نیازمند تأیید دستی شماست.`,
         severity: 'WARNING',
         sourceType: 'party',
         sourceId: party.sourceCode,
@@ -74,7 +74,7 @@ export function validateTahesabMigration(
     if (party.openingGoldWeight < 0) {
       info.push({
         code: 'INFO_PARTY_GOLD_DEBTOR',
-        message: `طرف‌حساب "${party.name}" مانده اول دوره منفی طلا دارد (${party.openingGoldWeight} گرم بدهکار).`,
+        message: `طرف‌حساب "${party.name}" مانده اول دوره منفی طلا دارد (${party.openingGoldWeight} گرم بدهکار). علت: در ته‌حساب بدهی طلا به صورت منفی ثبت شده است.`,
         severity: 'INFO',
         sourceType: 'party',
         sourceId: party.sourceCode,
@@ -87,7 +87,7 @@ export function validateTahesabMigration(
     if (acc.status === 'needs_review' || !acc.targetAccountId) {
       warnings.push({
         code: 'WARN_ACCOUNT_UNMAPPED',
-        message: `سرفصل حساب "${acc.sourceName}" به هیچ حسابی در دفتر کل زرفولیو لینک نشده است.`,
+        message: `سرفصل حساب "${acc.sourceName}" به هیچ حسابی در دفتر کل زرفولیو متصل نیست. علت ناهماهنگی: سرفصل متناظر در نمودار حساب‌های استاندارد انتخاب نشده و سیستم از حساب واسط موقت استفاده خواهد کرد.`,
         severity: 'WARNING',
         sourceType: 'account',
         sourceId: acc.sourceCode,
@@ -109,7 +109,7 @@ export function validateTahesabMigration(
     if (doc.lines.length === 0) {
       warnings.push({
         code: 'WARN_EMPTY_DOCUMENT',
-        message: `سند شماره ${doc.documentNumber} فاقد ردیف‌های تفصیلی مالی است.`,
+        message: `سند شماره ${doc.documentNumber} فاقد ردیف‌های مالی است. علت ناهماهنگی: فاکتور در نرم‌افزار ته‌حساب بدون ردیف ذخیره شده یا ردیف‌های آن ابطال شده است.`,
         severity: 'WARNING',
         sourceType: 'document',
         sourceId: doc.sourceFactorCode,
@@ -127,7 +127,7 @@ export function validateTahesabMigration(
         if (line.grade < 1 || line.grade > 1000) {
           errors.push({
             code: 'ERR_INVALID_GRADE',
-            message: `عیار نامعتبر ${line.grade} در ردیف ${line.lineNumber} سند ${doc.documentNumber}.`,
+            message: `عیار نامعتبر ${line.grade} در ردیف ${line.lineNumber} سند ${doc.documentNumber}. علت: عیار طلا باید بین ۱ تا ۱۰۰۰ باشد.`,
             severity: 'ERROR',
             sourceType: 'document_line',
             sourceId: `${doc.sourceFactorCode}:${line.lineNumber}`,
@@ -143,6 +143,15 @@ export function validateTahesabMigration(
 
         if (line.isConditional) {
           conditionalLots++;
+          if (!line.assayStampNumber || line.assayStampNumber.trim() === '') {
+            warnings.push({
+              code: 'WARN_CONDITIONAL_NO_STAMP',
+              message: `سند شماره ${doc.documentNumber} ردیف ${line.lineNumber}: طلای شرطی بدون شناسه قبض یا انگ آزمایشگاه. علت ناهماهنگی: در سیستم مبدأ شماره ری‌گیری ثبت نشده است و در انبار شرطی با شناسه موقت رهگیری خواهد شد.`,
+              severity: 'WARNING',
+              sourceType: 'document_line',
+              sourceId: `${doc.sourceFactorCode}:${line.lineNumber}`,
+            });
+          }
         }
       }
 
@@ -180,7 +189,7 @@ export function validateTahesabMigration(
       if (diff > 0.01) {
         warnings.push({
           code: 'WARN_TRANSFER_DISCREPANCY',
-          message: `عدم تطابق وزن/مبلغ در دو طرف حواله با توکن ${token.slice(0, 12)}... (مبدأ: ${pair.source}, مقصد: ${pair.dest}).`,
+          message: `عدم تطابق دو سر حواله با توکن ${token.slice(0, 12)}... علت ناهماهنگی: مقدار ارسال‌شده (${pair.source}) با مقدار دریافت‌شده (${pair.dest}) برابر نیست.`,
           severity: 'WARNING',
           sourceType: 'transfer',
           sourceId: token,

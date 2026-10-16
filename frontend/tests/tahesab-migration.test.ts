@@ -13,6 +13,8 @@ import {
   validateTahesabMigration,
   importTahesabData,
   rollbackTahesabMigration,
+  wipeAllPreviousTahesabData,
+  deleteMigrationJob,
 } from '../features/migration/tahesab';
 
 const FIXTURE_PATH = path.resolve(process.cwd(), '../migration/tahesab/fixtures/1.mcbk');
@@ -664,4 +666,427 @@ describe('Tahesab Accounting Migration Engine Tests', () => {
     expect(chunk3.importedDocuments).toBe(1);
     expect(chunk3.nextOffset).toBeNull();
   });
+
+  // 17. Party Side & Double-Entry Journal Lines
+  it('17. Party Side & Double-Entry Journal Lines: distinguishes debtor vs creditor party side and properly assigns partyId', async () => {
+    const postedEntries: any[] = [];
+    const createdTx: any[] = [];
+
+    const mockPb = {
+      filter: () => '',
+      collection: (name: string) => ({
+        getFullList: async () => [],
+        getFirstListItem: async () => { throw new Error('Not found'); },
+        create: async (data: any) => {
+          if (name === 'transactions') createdTx.push(data);
+          if (name === 'journal_entries') postedEntries.push(data);
+          return { id: `rec_${Math.random()}`, ...data };
+        },
+      }),
+    } as any;
+
+    const mockData = {
+      backupInfo: { mohitCount: 1, dbType: 'SQL', version: '10.0', archiveCount: 0 },
+      parties: [
+        { sourceCode: '101', name: 'طرف حساب بستانکار', openingGoldWeight: 0, openingRialBalance: 0, currency: 'IRR', raw: {} },
+        { sourceCode: '102', name: 'طرف حساب بدهکار', openingGoldWeight: 0, openingRialBalance: 0, currency: 'IRR', raw: {} },
+      ],
+      bankAccounts: [],
+      documents: [
+        {
+          sourceFactorCode: 'DOC_CREDITOR',
+          documentNumber: '1',
+          sourceCustomerCode: '101',
+          dateIso: '2026-09-01T12:00:00Z',
+          dateJalali: '1405/06/10',
+          totalGoldIn: 10,
+          totalGoldOut: 0,
+          totalRialIn: 5000000,
+          totalRialOut: 0,
+          currency: 'IRR',
+          metalType: 'gold' as const,
+          lines: [
+            {
+              sourceFactorCode: 'DOC_CREDITOR',
+              lineNumber: 1,
+              dateIso: '2026-09-01T12:00:00Z',
+              dateJalali: '1405/06/10',
+              nature: 'received' as const,
+              kind: 'cash' as const,
+              metalType: 'gold' as const,
+              weight: 0,
+              grade: 750,
+              convertedWeight750: 0,
+              amountIrr: 5000000,
+              signedGoldAmount: 0,
+              signedRialAmount: 5000000,
+              partySide: 'creditor' as const,
+              description: 'واریز وجه نقد توسط مشتری',
+              isConditional: false,
+              raw: {},
+            },
+          ],
+          raw: {},
+        },
+        {
+          sourceFactorCode: 'DOC_DEBTOR',
+          documentNumber: '2',
+          sourceCustomerCode: '102',
+          dateIso: '2026-09-01T12:00:00Z',
+          dateJalali: '1405/06/10',
+          totalGoldIn: 0,
+          totalGoldOut: 5,
+          totalRialIn: 0,
+          totalRialOut: 12000000,
+          currency: 'IRR',
+          metalType: 'gold' as const,
+          lines: [
+            {
+              sourceFactorCode: 'DOC_DEBTOR',
+              lineNumber: 1,
+              dateIso: '2026-09-01T12:00:00Z',
+              dateJalali: '1405/06/10',
+              nature: 'paid' as const,
+              kind: 'sale' as const,
+              metalType: 'gold' as const,
+              weight: 5,
+              grade: 750,
+              convertedWeight750: 5,
+              amountIrr: 12000000,
+              signedGoldAmount: -5,
+              signedRialAmount: -12000000,
+              partySide: 'debtor' as const,
+              description: 'فروش طلا به مشتری',
+              isConditional: false,
+              raw: {},
+            },
+          ],
+          raw: {},
+        },
+      ],
+      coins: [],
+      gemstones: [],
+      assayLabs: [],
+    };
+
+    const mockMappings = {
+      accounts: [],
+      parties: [
+        { sourceCode: '101', sourceName: 'طرف حساب بستانکار', status: 'new_party' as const },
+        { sourceCode: '102', sourceName: 'طرف حساب بدهکار', status: 'new_party' as const },
+      ],
+      defaultMetalKarat: 750,
+      defaultCurrency: 'IRR',
+    };
+
+    const result = await importTahesabData(mockPb, mockData as any, mockMappings, {
+      migrationId: 'test_side_mig',
+      userId: 'user_admin_001',
+    });
+
+    expect(result.importedDocuments).toBe(2);
+    expect(result.importedLines).toBe(2);
+    expect(result.importedJournalEntries).toBe(2);
+
+    // Verify Creditor Transaction:
+    const txCreditor = createdTx.find((t) => t.sourceKey.includes('DOC_CREDITOR'));
+    expect(txCreditor).toBeDefined();
+    expect(txCreditor.rialAmount).toBe(5000000); // positive for received cash
+
+    // Verify Debtor Transaction:
+    const txDebtor = createdTx.find((t) => t.sourceKey.includes('DOC_DEBTOR'));
+    expect(txDebtor).toBeDefined();
+    expect(txDebtor.goldAmount).toBe(-5); // negative for gold delivered to customer
+    expect(txDebtor.rialAmount).toBe(-12000000); // negative for rials charged
+  });
+
+  // 18. Wipe All Previous Tahesab Data
+  it('18. Wipe All Previous Tahesab Data: thoroughly cleans up all transactions, journals, lots and jobs', async () => {
+    const transactions = [
+      { id: 'tx_old_1', sourceKey: 'tahesab:mig_1:F1:1', description: 'سند ته‌حساب' },
+      { id: 'tx_old_2', sourceKey: 'tahesab:mig_2:F2:1', description: 'سند ته‌حساب' },
+      { id: 'tx_manual', sourceKey: 'manual_created', description: 'سند دستی' },
+    ];
+    const journalEntries = [
+      { id: 'je_1', sourceKey: 'tahesab:mig_1:F1:1' },
+      { id: 'je_2', sourceKey: 'manual' },
+    ];
+    const journalLines = [
+      { id: 'jl_1', journal_entry_id: 'je_1' },
+      { id: 'jl_2', journal_entry_id: 'je_2' },
+    ];
+    const metalLots = [
+      { id: 'metal_1', description: 'ثبت‌شده در مهاجرت ته‌حساب' },
+      { id: 'metal_2', description: 'موجودی دستی' },
+    ];
+    const customers = [
+      { id: 'cust_mig', name: 'مشتری مهاجرتی', privateDescription: 'کد منبع: 999' },
+      { id: 'cust_regular', name: 'مشتری اصلی', privateDescription: 'عادی' },
+    ];
+    const jobs = [
+      { id: 'job_1', sourceSystem: 'tahesab' },
+    ];
+
+    const mockPb: any = {
+      filter: (tmpl: string, params: any) => tmpl,
+      collection: (col: string) => ({
+        getFullList: async ({ filter }: any = {}) => {
+          if (col === 'transactions') return transactions.filter((t) => t.sourceKey.startsWith('tahesab:'));
+          if (col === 'journal_entries') return journalEntries.filter((j) => j.sourceKey.startsWith('tahesab:'));
+          if (col === 'journal_lines') return journalLines.filter((l) => l.journal_entry_id === 'je_1');
+          if (col === 'metal_inventory') return metalLots.filter((m) => m.description.includes('ته‌حساب'));
+          if (col === 'customers') return customers.filter((c) => c.privateDescription.includes('کد منبع:'));
+          if (col === 'migration_jobs') return jobs;
+          return [];
+        },
+        delete: async (id: string) => {
+          if (col === 'transactions') {
+            const idx = transactions.findIndex((t) => t.id === id);
+            if (idx >= 0) transactions.splice(idx, 1);
+          }
+          if (col === 'journal_entries') {
+            const idx = journalEntries.findIndex((j) => j.id === id);
+            if (idx >= 0) journalEntries.splice(idx, 1);
+          }
+          if (col === 'customers') {
+            const idx = customers.findIndex((c) => c.id === id);
+            if (idx >= 0) customers.splice(idx, 1);
+          }
+          if (col === 'metal_inventory') {
+            const idx = metalLots.findIndex((m) => m.id === id);
+            if (idx >= 0) metalLots.splice(idx, 1);
+          }
+          if (col === 'migration_jobs') {
+            const idx = jobs.findIndex((j) => j.id === id);
+            if (idx >= 0) jobs.splice(idx, 1);
+          }
+          return true;
+        },
+      }),
+    };
+
+    // Test default wipe behavior: wipes parties by default
+    const wipeResult = await wipeAllPreviousTahesabData(mockPb);
+    expect(wipeResult.success).toBe(true);
+    expect(wipeResult.deletedTransactions).toBe(2);
+    expect(wipeResult.deletedJournalEntries).toBe(1);
+    expect(wipeResult.deletedCustomers).toBe(1);
+    expect(wipeResult.deletedMetalLots).toBe(1);
+    expect(wipeResult.deletedJobs).toBe(1);
+
+    // Verify non-tahesab data is preserved
+    expect(transactions.length).toBe(1);
+    expect(transactions[0].id).toBe('tx_manual');
+    expect(customers.length).toBe(1);
+    expect(customers[0].id).toBe('cust_regular');
+  });
+
+  // 19. Fast In-Memory Duplicate Verification Bypass
+  it('19. Fast Duplicate Verification: verifies matching records and skips DB write instantly', async () => {
+    let createCallCount = 0;
+    const existingTransactions = [
+      {
+        id: 'tx_dup_1',
+        customer: 'cust_target_1',
+        goldAmount: 10.5,
+        rialAmount: 5000000,
+        sourceKey: 'tahesab:prev_mig:FAC_100:1',
+        documentNumber: 'ZF-100',
+      },
+    ];
+
+    const mockPb: any = {
+      filter: (tmpl: string) => tmpl,
+      collection: (col: string) => ({
+        getFullList: async () => {
+          if (col === 'transactions') return existingTransactions;
+          if (col === 'customers') return [{ id: 'cust_target_1', customerCode: 101, name: 'علی رضایی' }];
+          return [];
+        },
+        getFirstListItem: async () => {
+          throw new Error('Not found');
+        },
+        create: async (data: any) => {
+          createCallCount++;
+          return { id: 'new_id', ...data };
+        },
+      }),
+    };
+
+    const mockData = {
+      parties: [{ sourceCode: '101', name: 'علی رضایی', openingGoldWeight: 0, openingRialBalance: 0, currency: 'IRR', raw: {} }],
+      bankAccounts: [],
+      documents: [
+        {
+          sourceFactorCode: 'FAC_100',
+          documentNumber: '100',
+          sourceCustomerCode: '101',
+          dateIso: '2026-09-01T12:00:00Z',
+          dateJalali: '1405/06/10',
+          totalGoldIn: 10.5,
+          totalGoldOut: 0,
+          totalRialIn: 5000000,
+          totalRialOut: 0,
+          currency: 'IRR',
+          metalType: 'gold' as const,
+          lines: [
+            {
+              sourceFactorCode: 'FAC_100',
+              lineNumber: 1,
+              dateIso: '2026-09-01T12:00:00Z',
+              dateJalali: '1405/06/10',
+              nature: 'received' as const,
+              kind: 'melted' as const,
+              metalType: 'gold' as const,
+              weight: 10.5,
+              grade: 750,
+              convertedWeight750: 10.5,
+              amountIrr: 5000000,
+              signedGoldAmount: 10.5,
+              signedRialAmount: 5000000,
+              description: 'دریافت طلای آبشده',
+              isConditional: false,
+              raw: {},
+            },
+          ],
+          raw: {},
+        },
+      ],
+      coins: [],
+      gemstones: [],
+      assayLabs: [],
+    };
+
+    const mockMappings = {
+      accounts: [],
+      parties: [{ sourceCode: '101', sourceName: 'علی رضایی', targetCustomerId: 'cust_target_1', status: 'mapped' as const }],
+      defaultMetalKarat: 750,
+      defaultCurrency: 'IRR',
+    };
+
+    const result = await importTahesabData(mockPb, mockData as any, mockMappings, {
+      migrationId: 'new_run_mig',
+      userId: 'user_admin_001',
+    });
+
+    expect(result.skippedDuplicates).toBe(1);
+    expect(createCallCount).toBe(0); // Zero DB insertions performed!
+    expect(result.warnings.length).toBe(0); // No warnings because data matched perfectly!
+  });
+
+  // 20. Duplicate Data Mismatch Discrepancy Diagnosis
+  it('20. Duplicate Mismatch Diagnosis: detects discrepancy and produces detailed warning explanation', async () => {
+    const existingTransactions = [
+      {
+        id: 'tx_dup_mismatch',
+        customer: 'cust_target_1',
+        goldAmount: 5.0, // Existing in DB is 5.0
+        rialAmount: 2000000, // Existing in DB is 2000000
+        sourceKey: 'tahesab:prev_mig:FAC_200:1',
+        documentNumber: 'ZF-200',
+      },
+    ];
+
+    const mockPb: any = {
+      filter: (tmpl: string) => tmpl,
+      collection: (col: string) => ({
+        getFullList: async () => {
+          if (col === 'transactions') return existingTransactions;
+          if (col === 'customers') return [{ id: 'cust_target_1', customerCode: 101, name: 'علی رضایی' }];
+          return [];
+        },
+        getFirstListItem: async () => { throw new Error('Not found'); },
+        create: async (data: any) => ({ id: 'new_id', ...data }),
+      }),
+    };
+
+    const mockData = {
+      parties: [{ sourceCode: '101', name: 'علی رضایی', openingGoldWeight: 0, openingRialBalance: 0, currency: 'IRR', raw: {} }],
+      bankAccounts: [],
+      documents: [
+        {
+          sourceFactorCode: 'FAC_200',
+          documentNumber: '200',
+          sourceCustomerCode: '101',
+          dateIso: '2026-09-01T12:00:00Z',
+          dateJalali: '1405/06/10',
+          totalGoldIn: 10.0,
+          totalGoldOut: 0,
+          totalRialIn: 4000000,
+          totalRialOut: 0,
+          currency: 'IRR',
+          metalType: 'gold' as const,
+          lines: [
+            {
+              sourceFactorCode: 'FAC_200',
+              lineNumber: 1,
+              dateIso: '2026-09-01T12:00:00Z',
+              dateJalali: '1405/06/10',
+              nature: 'received' as const,
+              kind: 'melted' as const,
+              metalType: 'gold' as const,
+              weight: 10.0, // Different weight in file (10.0 vs 5.0)
+              grade: 750,
+              convertedWeight750: 10.0,
+              amountIrr: 4000000, // Different amount in file (4000000 vs 2000000)
+              signedGoldAmount: 10.0,
+              signedRialAmount: 4000000,
+              description: 'دریافت طلا',
+              isConditional: false,
+              raw: {},
+            },
+          ],
+          raw: {},
+        },
+      ],
+      coins: [],
+      gemstones: [],
+      assayLabs: [],
+    };
+
+    const mockMappings = {
+      accounts: [],
+      parties: [{ sourceCode: '101', sourceName: 'علی رضایی', targetCustomerId: 'cust_target_1', status: 'mapped' as const }],
+      defaultMetalKarat: 750,
+      defaultCurrency: 'IRR',
+    };
+
+    const result = await importTahesabData(mockPb, mockData as any, mockMappings, {
+      migrationId: 'mismatch_mig',
+      userId: 'user_admin_001',
+    });
+
+    expect(result.skippedDuplicates).toBe(1);
+    expect(result.warnings.length).toBe(1);
+    expect(result.warnings[0].code).toBe('WARN_DUPLICATE_DATA_MISMATCH');
+    expect(result.warnings[0].message).toContain('مغایرت');
+    expect(result.warnings[0].message).toContain('علت ناهماهنگی');
+  });
+
+  // 21. Delete Single Migration Job
+  it('21. Delete Single Migration Job: deletes job record from migration_jobs with rollback option', async () => {
+    const jobs = [
+      { id: 'job_rec_1', migrationId: 'mig_test_001', status: 'completed' },
+      { id: 'job_rec_2', migrationId: 'mig_test_002', status: 'rolled_back' },
+    ];
+    let rollbackCalledWith = '';
+
+    const mockPb: any = {
+      filter: (tmpl: string, params: any) => tmpl,
+      collection: (col: string) => ({
+        getFirstListItem: async () => jobs.find((j) => j.id === 'job_rec_2' || j.migrationId === 'mig_test_002'),
+        delete: async (id: string) => {
+          const idx = jobs.findIndex((j) => j.id === id);
+          if (idx >= 0) jobs.splice(idx, 1);
+          return true;
+        },
+      }),
+    };
+
+    const res = await deleteMigrationJob(mockPb, 'mig_test_002');
+    expect(res.success).toBe(true);
+    expect(jobs.length).toBe(1);
+    expect(jobs[0].id).toBe('job_rec_1');
+  });
 });
+

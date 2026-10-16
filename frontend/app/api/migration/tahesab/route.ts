@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { NextResponse } from 'next/server';
 import { getServerAuthContext } from '@/lib/auth';
+import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
 import { hasPermission } from '@/lib/authorization';
 import { recordAuditEvent } from '@/lib/audit';
 import {
@@ -12,6 +13,8 @@ import {
   validateTahesabMigration,
   importTahesabData,
   rollbackTahesabMigration,
+  wipeAllPreviousTahesabData,
+  deleteMigrationJob,
 } from '@/features/migration/tahesab';
 import type { MigrationMappings } from '@/features/migration/tahesab/types';
 
@@ -49,7 +52,12 @@ export async function GET() {
   }
 
   try {
-    const jobs = await context.pb.collection('migration_jobs').getFullList({
+    let servicePb = context.pb;
+    try {
+      servicePb = await getPocketBaseServiceClient();
+    } catch {}
+
+    const jobs = await servicePb.collection('migration_jobs').getFullList({
       sort: '-created',
     }).catch(() => []);
 
@@ -70,6 +78,13 @@ export async function POST(request: Request) {
 
   if (!hasPermission(context.user, 'settings.manage') && !hasPermission(context.user, 'settings.edit')) {
     return NextResponse.json({ message: 'دسترسی لازم برای اجرای مهاجرت حسابداری را ندارید.' }, { status: 403 });
+  }
+
+  let servicePb = context.pb;
+  try {
+    servicePb = await getPocketBaseServiceClient();
+  } catch (err) {
+    console.warn('Could not acquire superuser service client, falling back to user client:', err);
   }
 
   let body: Record<string, unknown> = {};
@@ -147,13 +162,13 @@ export async function POST(request: Request) {
       const normalized = normalizeTahesabData(rawDb, detection.backupInfo!);
 
       // Fetch existing customers for mapping
-      const existingCustomers = await context.pb
+      const existingCustomers = await servicePb
         .collection('customers')
         .getFullList({ fields: 'id,name,phone1,customerCode' })
         .catch(() => []);
 
       // Fetch existing chart of accounts for mapping
-      const existingAccounts = await context.pb
+      const existingAccounts = await servicePb
         .collection('chart_of_accounts')
         .getFullList({ fields: 'id,code,name,isActive' })
         .catch(() => []);
@@ -228,8 +243,8 @@ export async function POST(request: Request) {
       // Fallback or user provided mappings
       let mappings = userMappings;
       if (!mappings) {
-        const existingCustomers = await context.pb.collection('customers').getFullList().catch(() => []);
-        const existingAccounts = await context.pb.collection('chart_of_accounts').getFullList().catch(() => []);
+        const existingCustomers = await servicePb.collection('customers').getFullList().catch(() => []);
+        const existingAccounts = await servicePb.collection('chart_of_accounts').getFullList().catch(() => []);
         mappings = buildInitialMappings(
           normalized,
           existingCustomers.map((c) => ({
@@ -251,7 +266,7 @@ export async function POST(request: Request) {
       let jobRecordId: string | undefined;
       if (docOffset === 0) {
         try {
-          const job = await context.pb.collection('migration_jobs').create({
+          const job = await servicePb.collection('migration_jobs').create({
             migrationId,
             sourceSystem: 'tahesab',
             sourceFileName,
@@ -265,7 +280,7 @@ export async function POST(request: Request) {
         }
       }
 
-      const result = await importTahesabData(context.pb, normalized, mappings, {
+      const result = await importTahesabData(servicePb, normalized, mappings, {
         migrationId,
         userId: context.user.id,
         batchSize: 100,
@@ -277,7 +292,7 @@ export async function POST(request: Request) {
       // Update job status if final or in progress
       if (jobRecordId) {
         try {
-          await context.pb.collection('migration_jobs').update(jobRecordId, {
+          await servicePb.collection('migration_jobs').update(jobRecordId, {
             status: result.status,
             results: result,
             errors: result.errors,
@@ -318,7 +333,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ message: 'شناسه مهاجرت برای Rollback الزامی است.' }, { status: 400 });
       }
 
-      const rollbackResult = await rollbackTahesabMigration(context.pb, migrationId);
+      const rollbackResult = await rollbackTahesabMigration(servicePb, migrationId);
 
       await recordAuditEvent({
         userId: context.user.id,
@@ -334,6 +349,86 @@ export async function POST(request: Request) {
       });
     }
 
+    // -------------------------------------------------------------
+    // ACTION: WIPE ALL MIGRATIONS / DELETE ALL MIGRATIONS
+    // -------------------------------------------------------------
+    if (action === 'wipe_previous' || action === 'delete_all_migrations') {
+      const wipeParties = body.wipeParties !== undefined ? Boolean(body.wipeParties) : true;
+      const wipeResult = await wipeAllPreviousTahesabData(servicePb, { wipeParties });
+
+      await recordAuditEvent({
+        userId: context.user.id,
+        event: 'transaction_deleted',
+        entityType: 'migration_jobs',
+        entityId: 'all_tahesab',
+        details: { ...wipeResult, wipeParties },
+      }).catch(() => null);
+
+      return NextResponse.json({
+        success: wipeResult.success,
+        wipeResult,
+      });
+    }
+
+    // -------------------------------------------------------------
+    // ACTION: DELETE SPECIFIC MIGRATION JOB FROM HISTORY
+    // -------------------------------------------------------------
+    if (action === 'delete_job') {
+      const targetId = String(body.jobId || body.migrationId || '').trim();
+      if (!targetId) {
+        return NextResponse.json({ message: 'شناسه مهاجرت برای حذف الزامی است.' }, { status: 400 });
+      }
+
+      const rollbackFirst = body.rollbackFirst !== undefined ? Boolean(body.rollbackFirst) : true;
+      const deleteResult = await deleteMigrationJob(servicePb, targetId, { rollbackFirst });
+
+      await recordAuditEvent({
+        userId: context.user.id,
+        event: 'transaction_deleted',
+        entityType: 'migration_jobs',
+        entityId: targetId,
+        details: { targetId, rollbackFirst, ...deleteResult },
+      }).catch(() => null);
+
+      return NextResponse.json({
+        success: deleteResult.success,
+        deleteResult,
+      });
+    }
+
+    // -------------------------------------------------------------
+    // ACTION: SCHEDULE MIGRATION
+    // -------------------------------------------------------------
+    if (action === 'schedule') {
+      const scheduledAtJalali = String(body.scheduledAtJalali || '');
+      const scheduledAtIso = String(body.scheduledAtIso || '');
+      if (!scheduledAtIso) {
+        return NextResponse.json({ message: 'تاریخ و زمان مشخص برای زمانبندی الزامی است.' }, { status: 400 });
+      }
+
+      const schedMigId = `mig_sched_${Date.now()}`;
+      const job = await servicePb.collection('migration_jobs').create({
+        migrationId: schedMigId,
+        sourceSystem: 'tahesab',
+        sourceFileName,
+        status: 'scheduled',
+        stats: {
+          scheduledAtJalali,
+          scheduledAtIso,
+          details: body.stats || {},
+        },
+        mappings: body.mappings || {},
+      }).catch((e: any) => {
+        throw new Error(`خطا در ذخیره زمانبندی مهاجرت: ${e?.message || e}`);
+      });
+
+      return NextResponse.json({
+        success: true,
+        migrationId: schedMigId,
+        job,
+      });
+    }
+
     return NextResponse.json({ message: `عملیات "${action}" پشتیبانی نمی‌شود.` }, { status: 400 });
   } catch (err) {
     return NextResponse.json(
@@ -342,3 +437,48 @@ export async function POST(request: Request) {
     );
   }
 }
+
+export async function DELETE(request: Request) {
+  const context = await getServerAuthContext();
+  if (!context) {
+    return NextResponse.json({ message: 'دسترسی مجاز نیست.' }, { status: 401 });
+  }
+
+  if (!hasPermission(context.user, 'settings.manage')) {
+    return NextResponse.json({ message: 'دسترسی غیرمجاز.' }, { status: 403 });
+  }
+
+  try {
+    let servicePb = context.pb;
+    try {
+      servicePb = await getPocketBaseServiceClient();
+    } catch {}
+
+    const { searchParams } = new URL(request.url);
+    const targetId = searchParams.get('id');
+    const wipeParties = searchParams.get('wipeParties') !== null ? searchParams.get('wipeParties') === 'true' : true;
+
+    if (targetId) {
+      const rollbackFirst = searchParams.get('rollback') !== 'false';
+      const deleteResult = await deleteMigrationJob(servicePb, targetId, { rollbackFirst });
+      return NextResponse.json(deleteResult);
+    }
+
+    const wipeResult = await wipeAllPreviousTahesabData(servicePb, { wipeParties });
+    await recordAuditEvent({
+      userId: context.user.id,
+      event: 'transaction_deleted',
+      entityType: 'migration_jobs',
+      entityId: 'all_migrations',
+      details: { ...wipeResult, wipeParties },
+    }).catch(() => null);
+
+    return NextResponse.json({ success: wipeResult.success, wipeResult });
+  } catch (err) {
+    return NextResponse.json(
+      { message: `خطا در حذف مهاجرت‌ها: ${err instanceof Error ? err.message : String(err)}` },
+      { status: 500 },
+    );
+  }
+}
+

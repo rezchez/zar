@@ -213,9 +213,64 @@ export function normalizeTahesabData(
       const rkh = Math.round(parseNum(dRow.rial_kh, 0));
 
       const converted750 = tv > 0 ? tv : tkh > 0 ? tkh : vazn > 0 ? Math.round((vazn * ayar) / 750 * 1000) / 1000 : 0;
-      const amountIrr = rv > 0 ? rv : rkh > 0 ? rkh : 0;
+      
+      const rowNo = parseText(dRow.no);
+      const isUsd = parseText(dRow.Arz) === 'USD' || parseText(hRow.Arz) === 'USD';
+      const foreignAmt = isUsd ? parseNum(dRow.rial_V || dRow.rial_kh, 0) : undefined;
+      const amountIrr = !isUsd ? (rv > 0 ? rv : rkh > 0 ? rkh : 0) : 0;
 
-      const nature: 'received' | 'paid' = tv > 0 || rv > 0 ? 'received' : 'paid';
+      // Determine Gold Direction (ورود / خروج)
+      let goldNature: 'received' | 'paid' | 'none' = 'none';
+      if (tv > 0) {
+        goldNature = 'received';
+      } else if (tkh > 0) {
+        goldNature = 'paid';
+      } else if (vazn > 0) {
+        if (rowNo.includes('ورود') || rowNo.includes('خرید') || rowNo.includes('بدهی')) {
+          goldNature = 'received';
+        } else if (rowNo.includes('خروج') || rowNo.includes('فروش') || rowNo.includes('طلب') || rowNo.includes('درصد')) {
+          goldNature = 'paid';
+        } else if (parseNum(hRow.geram_v, 0) > 0) {
+          goldNature = 'received';
+        } else if (parseNum(hRow.geram_kh, 0) > 0) {
+          goldNature = 'paid';
+        } else {
+          goldNature = 'received';
+        }
+      }
+
+      // Determine Money Direction (ورود / خروج)
+      let moneyNature: 'received' | 'paid' | 'none' = 'none';
+      if (rv > 0) {
+        moneyNature = 'received';
+      } else if (rkh > 0) {
+        moneyNature = 'paid';
+      } else if (amountIrr > 0 || (foreignAmt && foreignAmt > 0)) {
+        if (rowNo.includes('ورود') || rowNo.includes('خرید') || rowNo.includes('بدهی')) {
+          moneyNature = 'received';
+        } else if (rowNo.includes('خروج') || rowNo.includes('فروش') || rowNo.includes('طلب')) {
+          moneyNature = 'paid';
+        } else if (parseNum(hRow.rial_v, 0) > 0) {
+          moneyNature = 'received';
+        } else if (parseNum(hRow.rial_kh, 0) > 0) {
+          moneyNature = 'paid';
+        } else {
+          moneyNature = 'received';
+        }
+      }
+
+      const signedGoldAmount = goldNature === 'received' ? converted750 : goldNature === 'paid' ? -converted750 : 0;
+      const signedRialAmount = moneyNature === 'received' ? amountIrr : moneyNature === 'paid' ? -amountIrr : 0;
+      const signedForeignAmount = foreignAmt ? (moneyNature === 'received' ? foreignAmt : -foreignAmt) : 0;
+
+      const nature: 'received' | 'paid' =
+        goldNature === 'received' || moneyNature === 'received' ? 'received' : 'paid';
+
+      // Party side in double-entry:
+      // If customer brings gold or pays cash -> customer is Creditor (بستانکار)
+      // If customer receives gold or gets cash, or is charged for goods/services -> customer is Debtor (بدهکار)
+      const partySide: 'debtor' | 'creditor' =
+        (moneyNature === 'received' || (moneyNature === 'none' && goldNature === 'received')) ? 'creditor' : 'debtor';
 
       // Check Command for transfer tokens
       const cmd = parseText(dRow.Command);
@@ -242,13 +297,19 @@ export function normalizeTahesabData(
         kind = 'melted';
       } else if (isConditional) {
         kind = 'conditional';
+      } else if (isUsd || rowNo.includes('ارز')) {
+        kind = 'currency';
       } else if (amountIrr > 0 && vazn === 0) {
         kind = 'cash';
-      } else if (parseText(dRow.Arz) === 'USD') {
-        kind = 'currency';
+      } else if (rowNo.includes('فروش')) {
+        kind = 'sale';
+      } else if (rowNo.includes('خرید')) {
+        kind = 'purchase';
+      } else if (rowNo.includes('درصد') || rowNo.includes('اجرت')) {
+        kind = 'wage';
+      } else if (rowNo === 'از قبل') {
+        kind = 'opening';
       }
-
-      const foreignAmt = parseText(dRow.Arz) === 'USD' ? parseNum(dRow.rial_V || dRow.rial_kh, 0) : undefined;
 
       lines.push({
         sourceFactorCode: factorCode,
@@ -270,6 +331,12 @@ export function normalizeTahesabData(
         transferPartnerName: parseText(dRow.name_az) || undefined,
         description: parseText(dRow.Sharh) || parseText(dRow.NO_kar),
         isConditional,
+        signedGoldAmount,
+        signedRialAmount,
+        signedForeignAmount,
+        goldNature,
+        moneyNature,
+        partySide,
         raw: dRow,
       });
     }

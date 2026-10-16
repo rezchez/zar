@@ -119,9 +119,11 @@ export async function GET(request: Request) {
         'جنسیت': customer.gender === 'male' ? 'آقا' : customer.gender === 'female' ? 'خانم' : '',
         'تلفن': customer.phone1,
         'طلا (گرم)': customer.goldBalance,
+        'وضعیت طلا': customer.goldBalance > 0.0005 ? 'بستانکار' : customer.goldBalance < -0.0005 ? 'بدهکار' : 'تسویه',
         'نقره (گرم)': customer.silverBalance,
         'پلاتین (گرم)': customer.platinumBalance,
         'مانده ریالی': customer.rialBalance,
+        'وضعیت ریالی': customer.rialBalance > 50 ? 'بستانکار' : customer.rialBalance < -50 ? 'بدهکار' : 'تسویه',
         [`مانده ارز دوم (${currencyDisplay(customer.secondaryCurrency, customer.secondaryCurrencySymbol)})`]: customer.foreignBalance,
         [`مانده ارز سوم (${currencyDisplay(customer.tertiaryCurrency, customer.tertiaryCurrencySymbol)})`]: customer.tertiaryBalance,
       }));
@@ -129,8 +131,9 @@ export async function GET(request: Request) {
       const worksheet = XLSX.utils.json_to_sheet(rows);
       worksheet['!cols'] = [
         { wch: 12 }, { wch: 28 }, { wch: 16 }, { wch: 16 },
-        { wch: 18 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 18 },
-        { wch: 18 }, { wch: 22 }, { wch: 22 }, { wch: 16 },
+        { wch: 18 }, { wch: 14 }, { wch: 14 }, { wch: 14 },
+        { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 18 },
+        { wch: 14 }, { wch: 22 }, { wch: 22 },
       ];
       XLSX.utils.book_append_sheet(workbook, worksheet, 'طرف حساب‌ها');
       const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });

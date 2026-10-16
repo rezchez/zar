@@ -84,6 +84,7 @@ import type { Currency } from '@/lib/currencies';
 import type { StorageLocationItem } from '@/app/api/storage-locations/route';
 import { dateToJalaliString } from '@/lib/jalali';
 import { convertRialToToman, formatNumberWithCommas } from '@/lib/money';
+import GemstoneQuickSearch from './GemstoneQuickSearch';
 
 export type InitialGemstoneInventoryModalProps = {
   isOpen: boolean;
@@ -908,6 +909,20 @@ export default function InitialGemstoneInventoryModal({
                 <span>{error}</span>
               </div>
             )}
+
+            {/* Quick Stone Search Section (جستجوی هوشمند و سریع سنگ) */}
+            <GemstoneQuickSearch
+              rootCategory={rootCategory}
+              selectedSpeciesId={species}
+              gemstoneTypes={gemstoneTypes}
+              onSelectSpecies={(speciesItem) => {
+                const targetRoot = speciesItem.rootCategory || 'natural';
+                if (targetRoot !== rootCategory) {
+                  setRootCategory(targetRoot);
+                }
+                applySpeciesSelection(speciesItem, targetRoot);
+              }}
+            />
 
             {/* Root Classification Selector (GIA & CIBJO Standards) */}
             <div className="rounded-2xl border border-cyan-100 bg-cyan-50/40 p-3.5 transition-all duration-300 dark:border-cyan-900/40 dark:bg-cyan-950/20 space-y-3">

@@ -84,12 +84,12 @@ export default function CustomerLedgerReport({ availableCustomers }: { available
       [],
       ['تاریخ', 'شماره سند', 'نوع عملیات', 'شرح', 'بدهکار طلا', 'بستانکار طلا', 'مانده طلا', 'بدهکار مالی', 'بستانکار مالی', 'مانده مالی'],
       ['ابتدای دوره', '---', '---', 'مانده از قبل',
-        openingBalances.goldAmount > 0 ? openingBalances.goldAmount : 0,
         openingBalances.goldAmount < 0 ? Math.abs(openingBalances.goldAmount) : 0,
-        openingBalances.goldAmount,
-        openingBalances.rialAmount > 0 ? openingBalances.rialAmount : 0,
+        openingBalances.goldAmount > 0 ? openingBalances.goldAmount : 0,
+        openingBalances.goldAmount > 0 ? `${openingBalances.goldAmount} (بستانکار)` : openingBalances.goldAmount < 0 ? `${Math.abs(openingBalances.goldAmount)} (بدهکار)` : 'تسویه',
         openingBalances.rialAmount < 0 ? Math.abs(openingBalances.rialAmount) : 0,
-        openingBalances.rialAmount
+        openingBalances.rialAmount > 0 ? openingBalances.rialAmount : 0,
+        openingBalances.rialAmount > 0 ? `${openingBalances.rialAmount} (بستانکار)` : openingBalances.rialAmount < 0 ? `${Math.abs(openingBalances.rialAmount)} (بدهکار)` : 'تسویه'
       ]
     ];
 
@@ -105,12 +105,12 @@ export default function CustomerLedgerReport({ availableCustomers }: { available
         t.documentNumber,
         t.documentSubType || t.transactionType,
         t.description,
-        t.goldAmount > 0 ? t.goldAmount : 0,
         t.goldAmount < 0 ? Math.abs(t.goldAmount) : 0,
-        runningGold,
-        t.rialAmount > 0 ? t.rialAmount : 0,
+        t.goldAmount > 0 ? t.goldAmount : 0,
+        runningGold > 0.0005 ? `${runningGold} (بستانکار)` : runningGold < -0.0005 ? `${Math.abs(runningGold)} (بدهکار)` : 'تسویه',
         t.rialAmount < 0 ? Math.abs(t.rialAmount) : 0,
-        runningRial
+        t.rialAmount > 0 ? t.rialAmount : 0,
+        runningRial > 50 ? `${runningRial} (بستانکار)` : runningRial < -50 ? `${Math.abs(runningRial)} (بدهکار)` : 'تسویه'
       ]);
     }
 
@@ -119,6 +119,9 @@ export default function CustomerLedgerReport({ availableCustomers }: { available
     xlsx.utils.book_append_sheet(wb, ws, 'Ledger');
     xlsx.writeFile(wb, `Ledger_Report_${Date.now()}.xlsx`);
   }
+
+  const finalGold = openingBalances.goldAmount + transactions.reduce((a, b) => a + (b.goldAmount || 0), 0);
+  const finalRial = openingBalances.rialAmount + transactions.reduce((a, b) => a + (b.rialAmount || 0), 0);
 
   return (
     <div className="space-y-4 text-sm dashboard-panel p-6">
@@ -198,10 +201,10 @@ export default function CustomerLedgerReport({ availableCustomers }: { available
             <tbody>
               <tr className="bg-amber-50 dark:bg-amber-900/20 font-bold">
                 <td className="p-3 border-b border-slate-200 dark:border-slate-800 text-slate-500" colSpan={4}>مانده ابتدای دوره</td>
-                <td className="p-3 border-b border-slate-200 dark:border-slate-800 text-left text-green-600">{openingBalances.goldAmount > 0 ? formatWeight(openingBalances.goldAmount) : ''}</td>
-                <td className="p-3 border-b border-slate-200 dark:border-slate-800 text-left text-red-600">{openingBalances.goldAmount < 0 ? formatWeight(Math.abs(openingBalances.goldAmount)) : ''}</td>
-                <td className="p-3 border-b border-slate-200 dark:border-slate-800 text-left text-green-600">{openingBalances.rialAmount > 0 ? formatMoney(openingBalances.rialAmount) : ''}</td>
-                <td className="p-3 border-b border-slate-200 dark:border-slate-800 text-left text-red-600">{openingBalances.rialAmount < 0 ? formatMoney(Math.abs(openingBalances.rialAmount)) : ''}</td>
+                <td className="p-3 border-b border-slate-200 dark:border-slate-800 text-left text-rose-600 dark:text-rose-400 font-mono" dir="ltr">{openingBalances.goldAmount < 0 ? formatWeight(Math.abs(openingBalances.goldAmount)) : '—'}</td>
+                <td className="p-3 border-b border-slate-200 dark:border-slate-800 text-left text-emerald-600 dark:text-emerald-400 font-mono" dir="ltr">{openingBalances.goldAmount > 0 ? formatWeight(openingBalances.goldAmount) : '—'}</td>
+                <td className="p-3 border-b border-slate-200 dark:border-slate-800 text-left text-rose-600 dark:text-rose-400 font-mono" dir="ltr">{openingBalances.rialAmount < 0 ? formatMoney(Math.abs(openingBalances.rialAmount)) : '—'}</td>
+                <td className="p-3 border-b border-slate-200 dark:border-slate-800 text-left text-emerald-600 dark:text-emerald-400 font-mono" dir="ltr">{openingBalances.rialAmount > 0 ? formatMoney(openingBalances.rialAmount) : '—'}</td>
               </tr>
               {transactions.length === 0 ? (
                 <tr><td colSpan={8} className="p-8 text-center text-slate-500">سندی یافت نشد.</td></tr>
@@ -212,10 +215,10 @@ export default function CustomerLedgerReport({ availableCustomers }: { available
                     <td className="p-3 border-b border-slate-100 dark:border-slate-800 font-mono text-slate-600 dark:text-slate-400">{t.documentNumber}</td>
                     <td className="p-3 border-b border-slate-100 dark:border-slate-800">{t.documentSubType || t.transactionType}</td>
                     <td className="p-3 border-b border-slate-100 dark:border-slate-800 max-w-[200px] truncate" title={t.description}>{t.description || '—'}</td>
-                    <td className="p-3 border-b border-slate-100 dark:border-slate-800 text-left text-green-600" dir="ltr">{t.goldAmount > 0 ? formatWeight(t.goldAmount) : ''}</td>
-                    <td className="p-3 border-b border-slate-100 dark:border-slate-800 text-left text-red-600" dir="ltr">{t.goldAmount < 0 ? formatWeight(Math.abs(t.goldAmount)) : ''}</td>
-                    <td className="p-3 border-b border-slate-100 dark:border-slate-800 text-left text-green-600" dir="ltr">{t.rialAmount > 0 ? formatMoney(t.rialAmount) : ''}</td>
-                    <td className="p-3 border-b border-slate-100 dark:border-slate-800 text-left text-red-600" dir="ltr">{t.rialAmount < 0 ? formatMoney(Math.abs(t.rialAmount)) : ''}</td>
+                    <td className="p-3 border-b border-slate-100 dark:border-slate-800 text-left text-rose-600 dark:text-rose-400 font-mono" dir="ltr">{t.goldAmount < 0 ? formatWeight(Math.abs(t.goldAmount)) : '—'}</td>
+                    <td className="p-3 border-b border-slate-100 dark:border-slate-800 text-left text-emerald-600 dark:text-emerald-400 font-mono" dir="ltr">{t.goldAmount > 0 ? formatWeight(t.goldAmount) : '—'}</td>
+                    <td className="p-3 border-b border-slate-100 dark:border-slate-800 text-left text-rose-600 dark:text-rose-400 font-mono" dir="ltr">{t.rialAmount < 0 ? formatMoney(Math.abs(t.rialAmount)) : '—'}</td>
+                    <td className="p-3 border-b border-slate-100 dark:border-slate-800 text-left text-emerald-600 dark:text-emerald-400 font-mono" dir="ltr">{t.rialAmount > 0 ? formatMoney(t.rialAmount) : '—'}</td>
                   </tr>
                 ))
               )}
@@ -225,10 +228,14 @@ export default function CustomerLedgerReport({ availableCustomers }: { available
                 <tr>
                   <td colSpan={4} className="p-3 text-left">مانده نهایی پایان دوره:</td>
                   <td colSpan={2} className="p-3 text-center" dir="ltr">
-                    {formatWeight(openingBalances.goldAmount + transactions.reduce((a, b) => a + (b.goldAmount || 0), 0))} گرم طلا
+                    <span className={finalGold > 0.0005 ? 'text-emerald-600 dark:text-emerald-400' : finalGold < -0.0005 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500'}>
+                      {formatWeight(Math.abs(finalGold))} گرم طلا {finalGold > 0.0005 ? '(بستانکار / طلب از ما)' : finalGold < -0.0005 ? '(بدهکار / به ما)' : '(تسویه)'}
+                    </span>
                   </td>
                   <td colSpan={2} className="p-3 text-center" dir="ltr">
-                    {formatMoney(openingBalances.rialAmount + transactions.reduce((a, b) => a + (b.rialAmount || 0), 0))}
+                    <span className={finalRial > 50 ? 'text-emerald-600 dark:text-emerald-400' : finalRial < -50 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500'}>
+                      {formatMoney(Math.abs(finalRial))} {finalRial > 50 ? '(بستانکار / طلب از ما)' : finalRial < -50 ? '(بدهکار / به ما)' : '(تسویه)'}
+                    </span>
                   </td>
                 </tr>
               </tfoot>

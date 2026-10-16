@@ -149,10 +149,10 @@ export default function CustomerManagement({ initialCustomers, initialMeta, canD
   }
 
   function balanceLabel(value: number, unit: string, isCurrency = false) {
-    if (value === 0) return 'بدون مانده';
+    if (value === 0) return 'تسویه (بی‌حساب)';
     const absVal = Math.abs(value);
     const formatted = isCurrency ? formatMoney(absVal) : `${formatWeight(absVal)} ${unit}`;
-    return `${formatted} ${value > 0 ? 'بدهی ما' : 'طلب ما'}`;
+    return `${formatted} ${value > 0 ? 'بستانکار' : 'بدهکار'}`;
   }
 
   return (
@@ -328,7 +328,7 @@ function BalanceSummaryCard({ label, formattedValue, value, unit }: { label: str
     <article className={`customer-balance-summary ${balanceTone(value)}`}>
       <span>{label}</span>
       <strong>{value === 0 ? '۰' : formattedValue}</strong>
-      <small>{value === 0 ? 'بدون مانده' : value > 0 ? `بدهی ما به طرف‌حساب · ${unit}` : `طلب ما از طرف‌حساب · ${unit}`}</small>
+      <small>{value === 0 ? 'تسویه (بدون مانده)' : value > 0 ? `بستانکار (طلب طرف‌حساب) · ${unit}` : `بدهکار (بدهی طرف‌حساب) · ${unit}`}</small>
     </article>
   );
 }
