@@ -75,7 +75,7 @@ export function useAuthLogic(initialMode: 'login' | 'signup' = 'login') {
 
   const handleForgotPassword = () => {
     if (!email) {
-      setErrorMessage('لطفاً ابتدا ایمیل خود را وارد کنید.');
+      setErrorMessage('لطفاً ابتدا ایمیل یا شماره همراه خود را وارد کنید.');
       return;
     }
     setNoticeMessage(`لینک بازیابی رمز عبور به ${email} ارسال شد.`);
@@ -209,7 +209,7 @@ export function useAuthLogic(initialMode: 'login' | 'signup' = 'login') {
     const submittedTotpCode = digitsOnly(totpCode);
 
     if (!submittedEmail || !submittedPassword) {
-      setErrorMessage('لطفاً ایمیل و رمز عبور خود را وارد کنید.');
+      setErrorMessage('لطفاً ایمیل یا شماره همراه و رمز عبور خود را وارد کنید.');
       return;
     }
 

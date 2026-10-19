@@ -4,10 +4,12 @@ import { postJournalEntry, SYSTEM_ACCOUNT_CODES, type JournalLineInput } from '@
 import { getNextDocumentSequenceForCustomer, buildDocumentNumber, getActiveDocumentPrefix } from '@/lib/document-service';
 import { getNextAutoCustomerCode } from '@/features/accounting/chart-of-accounts/services/account-code';
 import { generateZfDocumentNumber } from '@/lib/document-number';
+import { normalizeAssayLabText, stripAssayLabAffixes } from '../mapper/tahesab-mapper';
 import type {
   NormalizedMigrationData,
   NormalizedDocument,
   MigrationMappings,
+  AssayLabMappingItem,
   MigrationResult,
   MigrationIssue,
   MigrationProgress,
@@ -24,12 +26,48 @@ export interface ImporterOptions {
   onProgress?: (progress: MigrationProgress) => void;
 }
 
+export interface ExistingTxMeta {
+  id: string;
+  customer: string;
+  goldAmount: number;
+  rialAmount: number;
+  sourceKey: string;
+  documentNumber?: string;
+}
+
+export interface MigrationSessionState {
+  migrationId: string;
+  loadedAt: number;
+  customerIdBySourceCode: Map<string, string>;
+  customerCodeBySourceCode: Map<string, number>;
+  customerSequenceMap: Map<string, number>;
+  usedCustomerCodes: Set<number>;
+  usedDocNumbers: Set<string>;
+  customerById: Map<string, { id: string; name: string; customerCode: number }>;
+  customerByName: Map<string, { id: string; name: string; customerCode: number }>;
+  bankAccountMap: Map<string, string>;
+  existingTxByExactKey: Map<string, ExistingTxMeta>;
+  existingTxByFactorAndLine: Map<string, ExistingTxMeta>;
+  assayLabMapByName: Map<string, { id: string; name: string }>;
+  activePrefix: string;
+}
+
+const migrationSessionCache = new Map<string, MigrationSessionState>();
+
+export function clearMigrationSession(migrationId?: string) {
+  if (migrationId) {
+    migrationSessionCache.delete(migrationId);
+  } else {
+    migrationSessionCache.clear();
+  }
+}
+
 /**
  * High-Speed & Resilient Importer Engine:
  * Migrates normalized Tahesab data into Zarfolio using the existing domain entities,
  * PocketBase collections, and posting engine.
- * Fully Idempotent via deterministic sourceKey and optimized with in-memory sequence caches
- * and batch concurrency.
+ * Fully Idempotent via deterministic sourceKey and optimized with in-memory sequence caches,
+ * cross-chunk session caching, and parallelized document line processing.
  */
 export async function importTahesabData(
   pb: PocketBase,
@@ -43,8 +81,8 @@ export async function importTahesabData(
   const {
     migrationId,
     userId,
-    batchSize = 200,
-    concurrency = 6,
+    batchSize = 400,
+    concurrency = 12,
     dryRun = false,
     docOffset = 0,
     docLimit,
@@ -56,6 +94,7 @@ export async function importTahesabData(
 
   let importedParties = 0;
   let importedBankAccounts = 0;
+  let importedAssayLabs = 0;
   let importedDocuments = 0;
   let importedLines = 0;
   let importedJournalEntries = 0;
@@ -83,66 +122,136 @@ export async function importTahesabData(
     } catch {}
   }
 
-  // Maps to resolve target customer ID, customerCode, and cached sequence by source code
-  const customerIdBySourceCode = new Map<string, string>();
-  const customerCodeBySourceCode = new Map<string, number>();
-  const customerSequenceMap = new Map<string, number>();
+  // Get or initialize in-memory session cache for this migration run
+  let session = migrationSessionCache.get(migrationId);
+  if (!session) {
+    session = {
+      migrationId,
+      loadedAt: Date.now(),
+      customerIdBySourceCode: new Map(),
+      customerCodeBySourceCode: new Map(),
+      customerSequenceMap: new Map(),
+      usedCustomerCodes: new Set(),
+      usedDocNumbers: new Set(),
+      customerById: new Map(),
+      customerByName: new Map(),
+      bankAccountMap: new Map(),
+      existingTxByExactKey: new Map(),
+      existingTxByFactorAndLine: new Map(),
+      assayLabMapByName: new Map(),
+      activePrefix: 'ZF',
+    };
+    migrationSessionCache.set(migrationId, session);
+  }
 
-  const usedCustomerCodes = new Set<number>();
-  const usedDocNumbers = new Set<string>();
-  const customerById = new Map<string, { id: string; name: string; customerCode: number }>();
-  const customerByName = new Map<string, { id: string; name: string; customerCode: number }>();
+  // Clean up any stale sessions (> 2 hours old) to prevent memory leaks
+  const twoHoursAgo = Date.now() - 2 * 3600 * 1000;
+  for (const [k, v] of migrationSessionCache.entries()) {
+    if (v.loadedAt < twoHoursAgo && k !== migrationId) {
+      migrationSessionCache.delete(k);
+    }
+  }
 
-  // If executing live (not dry run), pre-load existing customers and codes
-  if (!dryRun) {
+  // Pre-load all collections in parallel on cold start
+  if (!dryRun && session.customerById.size === 0) {
     try {
-      const existingCustomers = await writer.collection('customers').getFullList({
-        fields: 'id,name,customerCode,privateDescription',
-      });
+      const [existingCustomers, existingLabs, existingBanks, existingTxList, activePrefix] = await Promise.all([
+        writer.collection('customers').getFullList({
+          fields: 'id,name,customerCode,privateDescription',
+        }).catch(() => []),
+        writer.collection('assay_laboratories').getFullList({
+          fields: 'id,name,phone,city,province,code',
+        }).catch(() => []),
+        writer.collection('bank_accounts').getFullList({
+          fields: 'id,accountNumber',
+        }).catch(() => []),
+        writer.collection('transactions').getFullList({
+          fields: 'id,sourceKey,customer,goldAmount,rialAmount,documentNumber,documentSequence',
+        }).catch(() => []),
+        getActiveDocumentPrefix(pb).catch(() => 'ZF'),
+      ]);
+
+      session.activePrefix = activePrefix;
 
       for (const c of existingCustomers) {
         const codeNum = Number(c.customerCode) || 0;
-        if (codeNum > 0) {
-          usedCustomerCodes.add(codeNum);
-        }
-        customerById.set(c.id, { id: c.id, name: c.name, customerCode: codeNum });
-        if (c.name) {
-          customerByName.set(c.name.trim(), { id: c.id, name: c.name, customerCode: codeNum });
-        }
-        // Match by Tahesab source code if tagged in privateDescription
+        if (codeNum > 0) session.usedCustomerCodes.add(codeNum);
+        session.customerById.set(c.id, { id: c.id, name: c.name, customerCode: codeNum });
+        if (c.name) session.customerByName.set(c.name.trim(), { id: c.id, name: c.name, customerCode: codeNum });
         const match = String(c.privateDescription || '').match(/کد منبع:\s*([^\s,)]+)/);
         if (match && match[1]) {
-          customerIdBySourceCode.set(match[1], c.id);
-          customerCodeBySourceCode.set(match[1], codeNum);
+          session.customerIdBySourceCode.set(match[1], c.id);
+          session.customerCodeBySourceCode.set(match[1], codeNum);
         }
       }
 
-      // Also map from mappings.parties
-      for (const p of mappings.parties) {
-        if (p.targetCustomerId && !customerIdBySourceCode.has(p.sourceCode)) {
-          customerIdBySourceCode.set(p.sourceCode, p.targetCustomerId);
-          const c = customerById.get(p.targetCustomerId);
-          if (c && c.customerCode) {
-            customerCodeBySourceCode.set(p.sourceCode, c.customerCode);
-          }
-        } else if (!customerIdBySourceCode.has(p.sourceCode)) {
-          const c = customerByName.get(p.sourceName.trim());
-          if (c) {
-            customerIdBySourceCode.set(p.sourceCode, c.id);
-            if (c.customerCode) customerCodeBySourceCode.set(p.sourceCode, c.customerCode);
-          }
-        }
+      for (const b of existingBanks) {
+        if (b.accountNumber) session.bankAccountMap.set(String(b.accountNumber), b.id);
       }
 
-      // Pre-load used document numbers
-      const existingTxDocs = await writer.collection('transactions').getFullList({
-        fields: 'documentNumber',
-      }).catch(() => []);
-      for (const tx of existingTxDocs) {
-        if (tx.documentNumber) usedDocNumbers.add(tx.documentNumber);
+      for (const lab of existingLabs) {
+        const item = { id: String(lab.id), name: String(lab.name) };
+        const norm = normalizeAssayLabText(lab.name);
+        const stripped = normalizeAssayLabText(stripAssayLabAffixes(lab.name));
+        if (norm) session.assayLabMapByName.set(norm, item);
+        if (stripped) session.assayLabMapByName.set(stripped, item);
+        session.assayLabMapByName.set(String(lab.name).trim(), item);
+      }
+
+      for (const r of existingTxList) {
+        if (r.documentNumber) session.usedDocNumbers.add(r.documentNumber);
+        if (r.customer) {
+          const cId = String(r.customer);
+          const seq = typeof r.documentSequence === 'number' && Number.isFinite(r.documentSequence) ? r.documentSequence : 0;
+          const curMax = session.customerSequenceMap.get(cId) || 0;
+          if (seq > curMax) session.customerSequenceMap.set(cId, seq);
+        }
+        if (r.sourceKey) {
+          const meta: ExistingTxMeta = {
+            id: r.id,
+            customer: String(r.customer || ''),
+            goldAmount: Number(r.goldAmount) || 0,
+            rialAmount: Number(r.rialAmount) || 0,
+            sourceKey: r.sourceKey,
+            documentNumber: r.documentNumber,
+          };
+          session.existingTxByExactKey.set(r.sourceKey, meta);
+          const parts = r.sourceKey.split(':');
+          if (parts.length >= 4) {
+            session.existingTxByFactorAndLine.set(`${parts[2]}:${parts[3]}`, meta);
+          }
+        }
       }
     } catch {
       // In tests or offline mode, continue
+    }
+  }
+
+  // Pre-seed mappings
+  for (const p of mappings.parties) {
+    if (p.targetCustomerId && !session.customerIdBySourceCode.has(p.sourceCode)) {
+      session.customerIdBySourceCode.set(p.sourceCode, p.targetCustomerId);
+      const c = session.customerById.get(p.targetCustomerId);
+      if (c && c.customerCode) session.customerCodeBySourceCode.set(p.sourceCode, c.customerCode);
+    } else if (!session.customerIdBySourceCode.has(p.sourceCode)) {
+      const c = session.customerByName.get(p.sourceName.trim());
+      if (c) {
+        session.customerIdBySourceCode.set(p.sourceCode, c.id);
+        if (c.customerCode) session.customerCodeBySourceCode.set(p.sourceCode, c.customerCode);
+      }
+    }
+  }
+
+  if (mappings.assayLabs) {
+    for (const m of mappings.assayLabs) {
+      if (m.targetAssayLabId && m.targetAssayLabName) {
+        const item = { id: m.targetAssayLabId, name: m.targetAssayLabName };
+        const srcNorm = normalizeAssayLabText(m.sourceName);
+        const srcStripped = normalizeAssayLabText(stripAssayLabAffixes(m.sourceName));
+        if (srcNorm) session.assayLabMapByName.set(srcNorm, item);
+        if (srcStripped) session.assayLabMapByName.set(srcStripped, item);
+        session.assayLabMapByName.set(m.sourceName.trim(), item);
+      }
     }
   }
 
@@ -160,21 +269,18 @@ export async function importTahesabData(
 
     for (const party of data.parties) {
       const mapping = partyMapByCode.get(party.sourceCode);
-      let targetCustomerId = mapping?.targetCustomerId || customerIdBySourceCode.get(party.sourceCode);
-      let targetCustomerCode = customerCodeBySourceCode.get(party.sourceCode);
+      let targetCustomerId = mapping?.targetCustomerId || session.customerIdBySourceCode.get(party.sourceCode);
+      let targetCustomerCode = session.customerCodeBySourceCode.get(party.sourceCode);
 
       if (!targetCustomerId && mapping?.status === 'new_party') {
         if (!dryRun) {
           try {
             // Check if already created by name in this or previous migration
-            const existing = await pb
-              .collection('customers')
-              .getFirstListItem(pb.filter('name = {:name}', { name: party.name }))
-              .catch(() => null);
+            const existing = session.customerByName.get(party.name.trim());
 
             if (existing) {
               targetCustomerId = existing.id;
-              targetCustomerCode = Number(existing.customerCode);
+              targetCustomerCode = existing.customerCode;
             } else {
               // Determine next unique customer code
               let assignedCode: number;
@@ -182,13 +288,13 @@ export async function importTahesabData(
               if (
                 Number.isInteger(numericSourceCode) &&
                 numericSourceCode > 0 &&
-                !usedCustomerCodes.has(numericSourceCode)
+                !session.usedCustomerCodes.has(numericSourceCode)
               ) {
                 assignedCode = numericSourceCode;
               } else {
-                assignedCode = getNextAutoCustomerCode(Array.from(usedCustomerCodes));
+                assignedCode = getNextAutoCustomerCode(Array.from(session.usedCustomerCodes));
               }
-              usedCustomerCodes.add(assignedCode);
+              session.usedCustomerCodes.add(assignedCode);
 
               const newCust = await writer.collection('customers').create({
                 customerCode: assignedCode,
@@ -207,6 +313,8 @@ export async function importTahesabData(
 
               targetCustomerId = newCust.id;
               targetCustomerCode = assignedCode;
+              session.customerById.set(newCust.id, { id: newCust.id, name: party.name, customerCode: assignedCode });
+              session.customerByName.set(party.name.trim(), { id: newCust.id, name: party.name, customerCode: assignedCode });
               importedParties++;
             }
           } catch (err) {
@@ -226,9 +334,9 @@ export async function importTahesabData(
       }
 
       if (targetCustomerId) {
-        customerIdBySourceCode.set(party.sourceCode, targetCustomerId);
+        session.customerIdBySourceCode.set(party.sourceCode, targetCustomerId);
         if (targetCustomerCode) {
-          customerCodeBySourceCode.set(party.sourceCode, targetCustomerCode);
+          session.customerCodeBySourceCode.set(party.sourceCode, targetCustomerCode);
         }
       }
     }
@@ -245,13 +353,8 @@ export async function importTahesabData(
     for (const bAcc of data.bankAccounts) {
       if (!dryRun) {
         try {
-          const existing = await writer
-            .collection('bank_accounts')
-            .getFirstListItem(writer.filter('accountNumber = {:acc}', { acc: bAcc.accountNumber }))
-            .catch(() => null);
-
-          if (!existing) {
-            await writer.collection('bank_accounts').create({
+          if (!session.bankAccountMap.has(bAcc.accountNumber)) {
+            const createdBank = await writer.collection('bank_accounts').create({
               bankName: bAcc.bankName,
               accountNumber: bAcc.accountNumber,
               balance: Math.max(0, bAcc.currentBalanceIrr),
@@ -259,6 +362,7 @@ export async function importTahesabData(
               currency: 'IRR',
               createdBy: effectiveUserId || undefined,
             });
+            session.bankAccountMap.set(bAcc.accountNumber, createdBank.id);
             importedBankAccounts++;
           }
         } catch (err) {
@@ -274,22 +378,84 @@ export async function importTahesabData(
         importedBankAccounts++;
       }
     }
+
+    onProgress?.({
+      stage: 'importing',
+      percent: 35,
+      currentStep: 3,
+      totalSteps: 5,
+      message: 'در حال تطبیق و ایجاد ری‌گیری‌ها و آزمایشگاه‌ها (Assay Laboratories)...',
+    });
+
+    // 3. Process Assay Laboratories
+    const assayLabsToProcess: AssayLabMappingItem[] = (mappings.assayLabs && mappings.assayLabs.length > 0)
+      ? mappings.assayLabs
+      : (data.assayLabs || []).map((l) => ({
+          sourceName: l.name,
+          sourcePhone: l.phone,
+          sourceAddress: l.address,
+          status: 'new_lab' as const,
+        }));
+
+    for (const labItem of assayLabsToProcess) {
+      const srcNorm = normalizeAssayLabText(labItem.sourceName);
+      const srcStripped = normalizeAssayLabText(stripAssayLabAffixes(labItem.sourceName));
+      const existing = session.assayLabMapByName.get(srcNorm) ||
+                       session.assayLabMapByName.get(srcStripped) ||
+                       session.assayLabMapByName.get(labItem.sourceName.trim());
+
+      if (existing) {
+        continue;
+      }
+
+      if (labItem.status === 'new_lab' || !existing) {
+        if (!dryRun) {
+          try {
+            const created = await writer.collection('assay_laboratories').create({
+              name: labItem.sourceName,
+              phone: labItem.sourcePhone || '',
+              address: labItem.sourceAddress || '',
+              city: labItem.targetCity || '',
+              province: labItem.targetProvince || 'تهران',
+              is_active: true,
+              is_custom: true,
+              created_by: effectiveUserId || undefined,
+            });
+            const newItem = { id: created.id, name: labItem.sourceName };
+            if (srcNorm) session.assayLabMapByName.set(srcNorm, newItem);
+            if (srcStripped) session.assayLabMapByName.set(srcStripped, newItem);
+            session.assayLabMapByName.set(labItem.sourceName.trim(), newItem);
+            importedAssayLabs++;
+          } catch (err) {
+            warnings.push({
+              code: 'WARN_CREATE_ASSAY_LAB',
+              message: `خطا در ایجاد ری‌گیری "${labItem.sourceName}": ${err instanceof Error ? err.message : String(err)}`,
+              severity: 'WARNING',
+              sourceType: 'assay_lab',
+              sourceId: labItem.sourceName,
+            });
+          }
+        } else {
+          importedAssayLabs++;
+        }
+      }
+    }
   } else {
     // If not first chunk, populate customer maps from existing mapped list or fallback
     for (const party of data.parties) {
       const mapping = mappings.parties.find((p) => p.sourceCode === party.sourceCode);
-      if (mapping?.targetCustomerId && !customerIdBySourceCode.has(party.sourceCode)) {
-        customerIdBySourceCode.set(party.sourceCode, mapping.targetCustomerId);
-        const c = customerById.get(mapping.targetCustomerId);
-        if (c && c.customerCode) customerCodeBySourceCode.set(party.sourceCode, c.customerCode);
-      } else if (!customerIdBySourceCode.has(party.sourceCode)) {
-        const c = customerByName.get(party.name.trim());
+      if (mapping?.targetCustomerId && !session.customerIdBySourceCode.has(party.sourceCode)) {
+        session.customerIdBySourceCode.set(party.sourceCode, mapping.targetCustomerId);
+        const c = session.customerById.get(mapping.targetCustomerId);
+        if (c && c.customerCode) session.customerCodeBySourceCode.set(party.sourceCode, c.customerCode);
+      } else if (!session.customerIdBySourceCode.has(party.sourceCode)) {
+        const c = session.customerByName.get(party.name.trim());
         if (c) {
-          customerIdBySourceCode.set(party.sourceCode, c.id);
-          if (c.customerCode) customerCodeBySourceCode.set(party.sourceCode, c.customerCode);
+          session.customerIdBySourceCode.set(party.sourceCode, c.id);
+          if (c.customerCode) session.customerCodeBySourceCode.set(party.sourceCode, c.customerCode);
         } else {
-          customerIdBySourceCode.set(party.sourceCode, `cust_${party.sourceCode}`);
-          customerCodeBySourceCode.set(party.sourceCode, Number(party.sourceCode) || 1000);
+          session.customerIdBySourceCode.set(party.sourceCode, `cust_${party.sourceCode}`);
+          session.customerCodeBySourceCode.set(party.sourceCode, Number(party.sourceCode) || 1000);
         }
       }
     }
@@ -303,53 +469,11 @@ export async function importTahesabData(
     message: 'در حال ثبت اسناد و تراکنش‌های مالی در موتور حسابداری زرفولیو...',
   });
 
-  const activePrefix = await getActiveDocumentPrefix(pb);
+  const activePrefix = session.activePrefix || 'ZF';
   const totalDocs = data.documents.length;
   const startIndex = Math.max(0, docOffset);
   const endIndex = typeof docLimit === 'number' ? Math.min(totalDocs, startIndex + docLimit) : totalDocs;
   const docsSlice = data.documents.slice(startIndex, endIndex);
-
-  interface ExistingTxMeta {
-    id: string;
-    customer: string;
-    goldAmount: number;
-    rialAmount: number;
-    sourceKey: string;
-    documentNumber?: string;
-  }
-
-  // Pre-load known transactions originating from Tahesab to avoid per-line HTTP roundtrips
-  // and enable instantaneous duplicate verification.
-  const existingTxByExactKey = new Map<string, ExistingTxMeta>();
-  const existingTxByFactorAndLine = new Map<string, ExistingTxMeta>();
-
-  if (!dryRun) {
-    try {
-      const existingList = await writer.collection('transactions').getFullList({
-        filter: writer.filter("sourceKey ~ 'tahesab:'"),
-        fields: 'id,sourceKey,customer,goldAmount,rialAmount,documentNumber',
-      });
-      for (const r of existingList) {
-        if (r.sourceKey) {
-          const meta: ExistingTxMeta = {
-            id: r.id,
-            customer: String(r.customer || ''),
-            goldAmount: Number(r.goldAmount) || 0,
-            rialAmount: Number(r.rialAmount) || 0,
-            sourceKey: r.sourceKey,
-            documentNumber: r.documentNumber,
-          };
-          existingTxByExactKey.set(r.sourceKey, meta);
-          const parts = r.sourceKey.split(':');
-          if (parts.length >= 4) {
-            existingTxByFactorAndLine.set(`${parts[2]}:${parts[3]}`, meta);
-          }
-        }
-      }
-    } catch {
-      // In offline tests or when collection is empty, continue
-    }
-  }
 
   // 3. Process Documents & Lines in Parallel Sub-Batches for High Throughput
   for (let i = 0; i < docsSlice.length; i += batchSize) {
@@ -360,19 +484,19 @@ export async function importTahesabData(
 
       await Promise.all(
         subBatch.map(async (doc) => {
-          let targetCustId = customerIdBySourceCode.get(doc.sourceCustomerCode);
-          let targetCustCode = customerCodeBySourceCode.get(doc.sourceCustomerCode) || 0;
+          let targetCustId = session.customerIdBySourceCode.get(doc.sourceCustomerCode);
+          let targetCustCode = session.customerCodeBySourceCode.get(doc.sourceCustomerCode) || 0;
 
           if (!targetCustId) {
             // Fallback match by party name
             const party = data.parties.find((p) => p.sourceCode === doc.sourceCustomerCode);
             if (party) {
-              const matchedCust = customerByName.get(party.name.trim());
+              const matchedCust = session.customerByName.get(party.name.trim());
               if (matchedCust) {
                 targetCustId = matchedCust.id;
                 targetCustCode = matchedCust.customerCode;
-                customerIdBySourceCode.set(doc.sourceCustomerCode, targetCustId);
-                customerCodeBySourceCode.set(doc.sourceCustomerCode, targetCustCode);
+                session.customerIdBySourceCode.set(doc.sourceCustomerCode, targetCustId);
+                session.customerCodeBySourceCode.set(doc.sourceCustomerCode, targetCustCode);
               }
             }
           }
@@ -390,336 +514,338 @@ export async function importTahesabData(
 
           const docUuid = randomUUID();
 
-          // Cached sequence increment to eliminate per-document HTTP calls
-          let docSeq = customerSequenceMap.get(targetCustId);
-          if (docSeq === undefined) {
-            try {
-              docSeq = await getNextDocumentSequenceForCustomer(writer, targetCustId);
-            } catch {
-              docSeq = 1;
-            }
-          } else {
-            docSeq += 1;
-          }
-          customerSequenceMap.set(targetCustId, docSeq);
+          // In-memory atomic sequence increment to eliminate per-document HTTP calls
+          let docSeq = (session.customerSequenceMap.get(targetCustId) || 0) + 1;
+          session.customerSequenceMap.set(targetCustId, docSeq);
 
           let docImported = false;
 
-          for (const line of doc.lines) {
-            const lineSourceKey = `tahesab:${migrationId}:${doc.sourceFactorCode}:${line.lineNumber}`;
-            const factorLineKey = `${doc.sourceFactorCode}:${line.lineNumber}`;
+          await Promise.all(
+            doc.lines.map(async (line) => {
+              const lineSourceKey = `tahesab:${migrationId}:${doc.sourceFactorCode}:${line.lineNumber}`;
+              const factorLineKey = `${doc.sourceFactorCode}:${line.lineNumber}`;
 
-            if (!dryRun) {
-              try {
-                // High-performance idempotency & duplicate verification check
-                let existingTx = existingTxByExactKey.get(lineSourceKey) || existingTxByFactorAndLine.get(factorLineKey);
-                if (!existingTx) {
-                  try {
-                    const fallback = await writer
-                      .collection('transactions')
-                      .getFirstListItem(writer.filter('sourceKey = {:key}', { key: lineSourceKey }));
-                    if (fallback) {
-                      existingTx = {
-                        id: fallback.id,
-                        customer: String(fallback.customer || ''),
-                        goldAmount: Number(fallback.goldAmount) || 0,
-                        rialAmount: Number(fallback.rialAmount) || 0,
-                        sourceKey: fallback.sourceKey,
-                        documentNumber: fallback.documentNumber,
-                      };
-                      existingTxByExactKey.set(lineSourceKey, existingTx);
-                      existingTxByFactorAndLine.set(factorLineKey, existingTx);
+              if (!dryRun) {
+                try {
+                  // High-performance in-memory duplicate verification check
+                  const existingTx = session.existingTxByExactKey.get(lineSourceKey) ||
+                                     session.existingTxByFactorAndLine.get(factorLineKey);
+
+                  if (existingTx) {
+                    const expectedGold =
+                      line.metalType === 'gold'
+                        ? (typeof line.signedGoldAmount === 'number'
+                            ? line.signedGoldAmount
+                            : (line.convertedWeight750 || line.weight || 0))
+                        : 0;
+                    const expectedRial =
+                      typeof line.signedRialAmount === 'number'
+                        ? line.signedRialAmount
+                        : (line.amountIrr || 0);
+
+                    const goldMatches = Math.abs((existingTx.goldAmount || 0) - expectedGold) < 0.005;
+                    const rialMatches = Math.abs((existingTx.rialAmount || 0) - expectedRial) <= 1;
+                    const custMatches = !targetCustId || !existingTx.customer || existingTx.customer === targetCustId;
+
+                    if (goldMatches && rialMatches && custMatches) {
+                      // Verified duplicate: accurately migrated before, skip DB write to maximize throughput
+                      skippedDuplicates++;
+                      return;
+                    } else {
+                      const reasons: string[] = [];
+                      if (!custMatches) {
+                        reasons.push(`مغایرت طرف‌حساب (ثبت‌شده: ${existingTx.customer}، فایل جدید: ${targetCustId})`);
+                      }
+                      if (!goldMatches) {
+                        reasons.push(`مغایرت وزن طلا (ثبت‌شده: ${existingTx.goldAmount} گرم، فایل جدید: ${expectedGold} گرم)`);
+                      }
+                      if (!rialMatches) {
+                        reasons.push(`مغایرت مبلغ ریالی (ثبت‌شده: ${existingTx.rialAmount} ریال، فایل جدید: ${expectedRial} ریال)`);
+                      }
+
+                      warnings.push({
+                        code: 'WARN_DUPLICATE_DATA_MISMATCH',
+                        message: `سند شماره ${doc.documentNumber} ردیف ${line.lineNumber}: سند قبلاً در سیستم ثبت شده اما مقادیر با فایل جدید مغایرت دارد [علت ناهماهنگی: ${reasons.join(', ')}]. جهت حفظ سلامت دفاتر مالی بازنویسی نشد.`,
+                        severity: 'WARNING',
+                        sourceType: 'document',
+                        sourceId: doc.sourceFactorCode,
+                        details: {
+                          existingId: existingTx.id,
+                          expectedGold,
+                          actualGold: existingTx.goldAmount,
+                          expectedRial,
+                          actualRial: existingTx.rialAmount,
+                          mismatchReasons: reasons,
+                        },
+                      });
+                      skippedDuplicates++;
+                      return;
                     }
-                  } catch {
-                    // Not found, proceed with insertion
                   }
-                }
 
-                if (existingTx) {
-                  // Fast verify in-memory
-                  const expectedGold =
-                    line.metalType === 'gold'
-                      ? (typeof line.signedGoldAmount === 'number'
-                          ? line.signedGoldAmount
-                          : (line.convertedWeight750 || line.weight || 0))
-                      : 0;
-                  const expectedRial =
-                    typeof line.signedRialAmount === 'number'
-                      ? line.signedRialAmount
-                      : (line.amountIrr || 0);
-
-                  const goldMatches = Math.abs((existingTx.goldAmount || 0) - expectedGold) < 0.005;
-                  const rialMatches = Math.abs((existingTx.rialAmount || 0) - expectedRial) <= 1;
-                  const custMatches = !targetCustId || !existingTx.customer || existingTx.customer === targetCustId;
-
-                  if (goldMatches && rialMatches && custMatches) {
-                    // Verified duplicate: accurately migrated before, skip DB write to maximize throughput
-                    skippedDuplicates++;
-                    continue;
-                  } else {
-                    const reasons: string[] = [];
-                    if (!custMatches) {
-                      reasons.push(`مغایرت طرف‌حساب (ثبت‌شده: ${existingTx.customer}، فایل جدید: ${targetCustId})`);
+                  let matchedAssayLabName = line.assayLabName || '';
+                  let matchedAssayLabId = '';
+                  if (matchedAssayLabName) {
+                    const m = session.assayLabMapByName.get(normalizeAssayLabText(matchedAssayLabName)) ||
+                              session.assayLabMapByName.get(normalizeAssayLabText(stripAssayLabAffixes(matchedAssayLabName))) ||
+                              session.assayLabMapByName.get(matchedAssayLabName.trim());
+                    if (m) {
+                      matchedAssayLabName = m.name;
+                      matchedAssayLabId = m.id;
                     }
-                    if (!goldMatches) {
-                      reasons.push(`مغایرت وزن طلا (ثبت‌شده: ${existingTx.goldAmount} گرم، فایل جدید: ${expectedGold} گرم)`);
-                    }
-                    if (!rialMatches) {
-                      reasons.push(`مغایرت مبلغ ریالی (ثبت‌شده: ${existingTx.rialAmount} ریال، فایل جدید: ${expectedRial} ریال)`);
-                    }
-
-                    warnings.push({
-                      code: 'WARN_DUPLICATE_DATA_MISMATCH',
-                      message: `سند شماره ${doc.documentNumber} ردیف ${line.lineNumber}: سند قبلاً در سیستم ثبت شده اما مقادیر با فایل جدید مغایرت دارد [علت ناهماهنگی: ${reasons.join(', ')}]. جهت حفظ سلامت دفاتر مالی بازنویسی نشد.`,
-                      severity: 'WARNING',
-                      sourceType: 'document',
-                      sourceId: doc.sourceFactorCode,
-                      details: {
-                        existingId: existingTx.id,
-                        expectedGold,
-                        actualGold: existingTx.goldAmount,
-                        expectedRial,
-                        actualRial: existingTx.rialAmount,
-                        mismatchReasons: reasons,
-                      },
-                    });
-                    skippedDuplicates++;
-                    continue;
                   }
+
+                  const docDetailsObj = {
+                    sourceSystem: 'tahesab',
+                    sourceFactorCode: doc.sourceFactorCode,
+                    sourceLineNumber: line.lineNumber,
+                    migrationId,
+                    metalType: line.metalType === 'silver' ? 'silver' : 'gold',
+                    baseKarat: line.metalType === 'silver' ? 999 : 750,
+                    rawKind: line.kind === 'conditional' ? 'conditional' : line.kind === 'melted' ? 'molten' : 'misc',
+                    rawWeight: line.weight > 0 ? String(line.weight) : '',
+                    purity: line.grade > 0 ? String(line.grade) : '',
+                    stampNumber: line.assayStampNumber || '',
+                    labName: matchedAssayLabName || undefined,
+                    assayStampNumber: line.assayStampNumber,
+                    assayLabName: matchedAssayLabName || undefined,
+                    assayLaboratoryId: matchedAssayLabId || undefined,
+                    transferToken: line.transferToken,
+                    transferSide: line.transferSide,
+                    transferPartnerName: line.transferPartnerName,
+                    weight: line.weight,
+                    grade: line.grade,
+                    convertedWeight750: line.convertedWeight750,
+                    isConditional: line.isConditional,
+                    partySide: line.partySide,
+                    signedGoldAmount: line.signedGoldAmount,
+                    signedRialAmount: line.signedRialAmount,
+                    signedForeignAmount: line.signedForeignAmount,
+                  };
+
+                  let lineDocNum = generateZfDocumentNumber();
+                  while (session.usedDocNumbers.has(lineDocNum)) {
+                    lineDocNum = generateZfDocumentNumber();
+                  }
+                  session.usedDocNumbers.add(lineDocNum);
+
+                  const txRecord = await writer.collection('transactions').create({
+                    customer: targetCustId,
+                    customerCode: targetCustCode,
+                    createdBy: effectiveUserId || undefined,
+                    updatedBy: effectiveUserId || undefined,
+                    transactionType: 'document',
+                    status: 'posted',
+                    isOpeningBalance: false,
+                    transactionDate: line.dateIso || new Date().toISOString(),
+                    documentId: docUuid,
+                    documentSequence: docSeq,
+                    documentNumberPrefixSnapshot: activePrefix,
+                    documentNumber: lineDocNum,
+                    description: line.description || `سند ته‌حساب #${doc.documentNumber}`,
+                    goldAmount:
+                      line.metalType === 'gold'
+                        ? (typeof line.signedGoldAmount === 'number'
+                            ? line.signedGoldAmount
+                            : line.nature === 'received'
+                            ? line.convertedWeight750
+                            : -line.convertedWeight750)
+                        : 0,
+                    silverAmount:
+                      line.metalType === 'silver'
+                        ? (typeof line.signedGoldAmount === 'number'
+                            ? line.signedGoldAmount
+                            : line.nature === 'received'
+                            ? line.convertedWeight750
+                            : -line.convertedWeight750)
+                        : 0,
+                    platinumAmount: 0,
+                    rialAmount:
+                      typeof line.signedRialAmount === 'number'
+                        ? line.signedRialAmount
+                        : line.amountIrr > 0
+                        ? line.nature === 'received'
+                          ? line.amountIrr
+                          : -line.amountIrr
+                        : 0,
+                    foreignAmount:
+                      typeof line.signedForeignAmount === 'number'
+                        ? line.signedForeignAmount
+                        : line.foreignAmount || 0,
+                    foreignCurrency: line.foreignCurrency || '',
+                    foreignCurrencySymbol: line.foreignCurrency ? String(line.foreignCurrency) : '',
+                    documentNature: line.nature,
+                    documentTab:
+                      line.kind === 'melted' || line.kind === 'conditional'
+                        ? 'raw-gold'
+                        : line.kind === 'claim'
+                        ? 'our-claim'
+                        : line.kind === 'cash'
+                        ? 'cash'
+                        : line.kind === 'currency'
+                        ? 'currency'
+                        : 'general',
+                    documentSubType:
+                      line.kind === 'melted'
+                        ? line.nature === 'received'
+                          ? 'incoming-molten'
+                          : 'outgoing-molten'
+                        : line.kind === 'conditional'
+                        ? line.nature === 'received'
+                          ? 'incoming-conditional'
+                          : 'outgoing-conditional'
+                        : '',
+                    documentDateJalali: line.dateJalali || doc.dateJalali,
+                    settlementMethod: line.kind === 'cash' ? 'cash' : 'unsettled',
+                    balanceSource: 'current',
+                    documentDetails: JSON.stringify(docDetailsObj),
+                    sourceKey: lineSourceKey,
+                  });
+
+                  const createdMeta: ExistingTxMeta = {
+                    id: txRecord.id,
+                    customer: targetCustId,
+                    goldAmount: (txRecord as any).goldAmount || 0,
+                    rialAmount: (txRecord as any).rialAmount || 0,
+                    sourceKey: lineSourceKey,
+                    documentNumber: lineDocNum,
+                  };
+                  session.existingTxByExactKey.set(lineSourceKey, createdMeta);
+                  session.existingTxByFactorAndLine.set(factorLineKey, createdMeta);
+
+                  importedLines++;
+                  docImported = true;
+
+                  // Register in metal_inventory if raw/melted/conditional metal (both incoming and outgoing)
+                  if (
+                    line.weight > 0 &&
+                    (line.kind === 'melted' || line.kind === 'conditional') &&
+                    (line.metalType === 'gold' || line.metalType === 'silver')
+                  ) {
+                    try {
+                      const baseKarat = line.metalType === 'silver' ? 999 : 750;
+                      const invDirection = line.nature === 'received' ? 'in' : 'out';
+                      const invTxType =
+                        line.kind === 'melted'
+                          ? invDirection === 'in'
+                            ? 'incoming-molten'
+                            : 'outgoing-molten'
+                          : invDirection === 'in'
+                          ? 'incoming-conditional'
+                          : 'outgoing-conditional';
+
+                      await writer.collection('metal_inventory').create({
+                        metal: line.metalType,
+                        inventory_type: line.kind === 'conditional' ? 'conditional' : 'melted',
+                        direction: invDirection,
+                        transaction_type: invTxType,
+                        raw_weight: line.weight,
+                        purity: line.grade,
+                        base_karat: baseKarat,
+                        converted_weight: line.convertedWeight750,
+                        stamp_number: line.assayStampNumber || '',
+                        lab_name: matchedAssayLabName || '',
+                        date: line.dateIso || new Date().toISOString(),
+                        transaction_id: txRecord.id,
+                        document_id: docUuid,
+                        customer: targetCustId,
+                        created_by: effectiveUserId || undefined,
+                        description: `مهاجرت از ته‌حساب سند #${doc.documentNumber}`,
+                      });
+                      importedMetalLots++;
+                    } catch {
+                      // Non-blocking lot registration
+                    }
+                  }
+
+                  // Post double-entry journal entry via posting engine if financial value exists
+                  if (line.amountIrr > 0) {
+                    try {
+                      const journalSourceKey = `doc_mig:${lineSourceKey}`;
+                      const partySide = line.partySide || (line.nature === 'received' ? 'creditor' : 'debtor');
+
+                      let counterpartAccountId: string = SYSTEM_ACCOUNT_CODES.CASH_AND_BANK; // 1110
+                      if (line.kind === 'sale') {
+                        counterpartAccountId = SYSTEM_ACCOUNT_CODES.GOLD_SALES_REVENUE; // 4110
+                      } else if (line.kind === 'purchase') {
+                        counterpartAccountId = SYSTEM_ACCOUNT_CODES.GOLD_INVENTORY; // 1130
+                      } else if (line.kind === 'wage') {
+                        counterpartAccountId = '4120'; // درآمد اجرت و خدمات
+                      } else if (line.kind === 'opening') {
+                        counterpartAccountId = SYSTEM_ACCOUNT_CODES.OPENING_EQUITY; // 3100
+                      }
+
+                      const journalLines: JournalLineInput[] = [];
+
+                      if (partySide === 'creditor') {
+                        journalLines.push({
+                          accountId: counterpartAccountId,
+                          debit: line.amountIrr,
+                          credit: 0,
+                          description: line.description || `سند ته‌حساب #${doc.documentNumber}`,
+                        });
+                        journalLines.push({
+                          accountId: SYSTEM_ACCOUNT_CODES.COUNTERPARTY_LIABILITY,
+                          debit: 0,
+                          credit: line.amountIrr,
+                          description: line.description || `سند ته‌حساب #${doc.documentNumber}`,
+                          partyId: targetCustId,
+                        });
+                      } else {
+                        journalLines.push({
+                          accountId: SYSTEM_ACCOUNT_CODES.NOTES_RECEIVABLE,
+                          debit: line.amountIrr,
+                          credit: 0,
+                          description: line.description || `سند ته‌حساب #${doc.documentNumber}`,
+                          partyId: targetCustId,
+                        });
+                        journalLines.push({
+                          accountId: counterpartAccountId,
+                          debit: 0,
+                          credit: line.amountIrr,
+                          description: line.description || `سند ته‌حساب #${doc.documentNumber}`,
+                        });
+                      }
+
+                      await postJournalEntry(
+                        {
+                          entryDate: line.dateIso ? line.dateIso.slice(0, 10) : undefined,
+                          entryDateJalali: line.dateJalali || doc.dateJalali,
+                          description: `سند #${doc.documentNumber} ته‌حساب: ${line.description || ''}`,
+                          sourceType: 'document',
+                          sourceId: txRecord.id,
+                          sourceKey: journalSourceKey,
+                          userId: effectiveUserId,
+                          lines: journalLines,
+                        },
+                        writer,
+                      );
+                      importedJournalEntries++;
+                    } catch (jErr) {
+                      warnings.push({
+                        code: 'WARN_JOURNAL_POST',
+                        message: `هشدار در ثبت سند دوبل برای ردیف ${line.lineNumber}: ${jErr instanceof Error ? jErr.message : String(jErr)}`,
+                        severity: 'WARNING',
+                        sourceType: 'journal',
+                        sourceId: lineSourceKey,
+                      });
+                    }
+                  }
+                } catch (err) {
+                  errors.push({
+                    code: 'ERR_IMPORT_LINE',
+                    message: `خطا در ثبت ردیف ${line.lineNumber} سند ${doc.documentNumber}: ${err instanceof Error ? err.message : String(err)}`,
+                    severity: 'ERROR',
+                    sourceType: 'document_line',
+                    sourceId: lineSourceKey,
+                  });
                 }
-
-                const docDetailsObj = {
-                  sourceSystem: 'tahesab',
-                  sourceFactorCode: doc.sourceFactorCode,
-                  sourceLineNumber: line.lineNumber,
-                  migrationId,
-                  assayStampNumber: line.assayStampNumber,
-                  transferToken: line.transferToken,
-                  transferSide: line.transferSide,
-                  transferPartnerName: line.transferPartnerName,
-                  weight: line.weight,
-                  grade: line.grade,
-                  convertedWeight750: line.convertedWeight750,
-                  isConditional: line.isConditional,
-                  partySide: line.partySide,
-                  signedGoldAmount: line.signedGoldAmount,
-                  signedRialAmount: line.signedRialAmount,
-                  signedForeignAmount: line.signedForeignAmount,
-                };
-
-                let lineDocNum = generateZfDocumentNumber();
-                while (usedDocNumbers.has(lineDocNum)) {
-                  lineDocNum = generateZfDocumentNumber();
-                }
-                usedDocNumbers.add(lineDocNum);
-
-                const txRecord = await writer.collection('transactions').create({
-                  customer: targetCustId,
-                  customerCode: targetCustCode,
-                  createdBy: effectiveUserId || undefined,
-                  updatedBy: effectiveUserId || undefined,
-                  transactionType: 'document',
-                  status: 'posted',
-                  isOpeningBalance: false,
-                  transactionDate: line.dateIso || new Date().toISOString(),
-                  documentId: docUuid,
-                  documentSequence: docSeq,
-                  documentNumberPrefixSnapshot: activePrefix,
-                  documentNumber: lineDocNum,
-                  description: line.description || `سند ته‌حساب #${doc.documentNumber}`,
-                  goldAmount:
-                    line.metalType === 'gold'
-                      ? (typeof line.signedGoldAmount === 'number'
-                          ? line.signedGoldAmount
-                          : line.nature === 'received'
-                          ? line.convertedWeight750
-                          : -line.convertedWeight750)
-                      : 0,
-                  silverAmount:
-                    line.metalType === 'silver'
-                      ? (typeof line.signedGoldAmount === 'number'
-                          ? line.signedGoldAmount
-                          : line.nature === 'received'
-                          ? line.convertedWeight750
-                          : -line.convertedWeight750)
-                      : 0,
-                  platinumAmount: 0,
-                  rialAmount:
-                    typeof line.signedRialAmount === 'number'
-                      ? line.signedRialAmount
-                      : line.amountIrr > 0
-                      ? line.nature === 'received'
-                        ? line.amountIrr
-                        : -line.amountIrr
-                      : 0,
-                  foreignAmount:
-                    typeof line.signedForeignAmount === 'number'
-                      ? line.signedForeignAmount
-                      : line.foreignAmount || 0,
-                  foreignCurrency: line.foreignCurrency || '',
-                  foreignCurrencySymbol: line.foreignCurrency ? String(line.foreignCurrency) : '',
-                  documentNature: line.nature,
-                  documentTab:
-                    line.kind === 'melted' || line.kind === 'conditional'
-                      ? 'raw-gold'
-                      : line.kind === 'claim'
-                      ? 'our-claim'
-                      : line.kind === 'cash'
-                      ? 'cash'
-                      : line.kind === 'currency'
-                      ? 'currency'
-                      : 'general',
-                  documentSubType:
-                    line.kind === 'melted'
-                      ? line.nature === 'received'
-                        ? 'incoming-molten'
-                        : 'outgoing-molten'
-                      : line.kind === 'conditional'
-                      ? line.nature === 'received'
-                        ? 'incoming-conditional'
-                        : 'outgoing-conditional'
-                      : '',
-                  documentDateJalali: line.dateJalali || doc.dateJalali,
-                  settlementMethod: line.kind === 'cash' ? 'cash' : 'unsettled',
-                  balanceSource: 'current',
-                  documentDetails: JSON.stringify(docDetailsObj),
-                  sourceKey: lineSourceKey,
-                });
-
-                const createdMeta: ExistingTxMeta = {
-                  id: txRecord.id,
-                  customer: targetCustId,
-                  goldAmount: (txRecord as any).goldAmount || 0,
-                  rialAmount: (txRecord as any).rialAmount || 0,
-                  sourceKey: lineSourceKey,
-                  documentNumber: lineDocNum,
-                };
-                existingTxByExactKey.set(lineSourceKey, createdMeta);
-                existingTxByFactorAndLine.set(factorLineKey, createdMeta);
-
+              } else {
                 importedLines++;
                 docImported = true;
-
-                // Register in metal_inventory if raw gold
-                if (line.weight > 0 && (line.kind === 'melted' || line.kind === 'conditional') && line.nature === 'received') {
-                  try {
-                    await writer.collection('metal_inventory').create({
-                      metal: line.metalType === 'silver' ? 'silver' : 'gold',
-                      inventory_type: line.kind === 'conditional' ? 'conditional' : 'melted',
-                      direction: 'in',
-                      transaction_type: 'document',
-                      raw_weight: line.weight,
-                      purity: line.grade,
-                      base_karat: line.metalType === 'silver' ? 999 : 750,
-                      converted_weight: line.convertedWeight750,
-                      stamp_number: line.assayStampNumber || '',
-                      date: line.dateIso || new Date().toISOString(),
-                      transaction_id: txRecord.id,
-                      document_id: docUuid,
-                      customer: targetCustId,
-                      created_by: effectiveUserId || undefined,
-                      description: `مهاجرت از ته‌حساب سند #${doc.documentNumber}`,
-                    });
-                    importedMetalLots++;
-                  } catch {
-                    // Non-blocking lot registration
-                  }
-                }
-
-                // Post double-entry journal entry via posting engine if financial value exists
-                if (line.amountIrr > 0) {
-                  try {
-                    const journalSourceKey = `doc_mig:${lineSourceKey}`;
-                    const partySide = line.partySide || (line.nature === 'received' ? 'creditor' : 'debtor');
-
-                    // Determine counterpart account based on transaction kind
-                    let counterpartAccountId: string = SYSTEM_ACCOUNT_CODES.CASH_AND_BANK; // 1110
-                    if (line.kind === 'sale') {
-                      counterpartAccountId = SYSTEM_ACCOUNT_CODES.GOLD_SALES_REVENUE; // 4110
-                    } else if (line.kind === 'purchase') {
-                      counterpartAccountId = SYSTEM_ACCOUNT_CODES.GOLD_INVENTORY; // 1130
-                    } else if (line.kind === 'wage') {
-                      counterpartAccountId = '4120'; // درآمد اجرت و خدمات
-                    } else if (line.kind === 'opening') {
-                      counterpartAccountId = SYSTEM_ACCOUNT_CODES.OPENING_EQUITY; // 3100
-                    }
-
-                    const journalLines: JournalLineInput[] = [];
-
-                    if (partySide === 'creditor') {
-                      // Customer is Creditor (بستانکار)
-                      // 1. Counterpart account is Debited (بدهکار)
-                      journalLines.push({
-                        accountId: counterpartAccountId,
-                        debit: line.amountIrr,
-                        credit: 0,
-                        description: line.description || `سند ته‌حساب #${doc.documentNumber}`,
-                      });
-                      // 2. Customer liability account (2120) is Credited (بستانکار)
-                      journalLines.push({
-                        accountId: SYSTEM_ACCOUNT_CODES.COUNTERPARTY_LIABILITY,
-                        debit: 0,
-                        credit: line.amountIrr,
-                        description: line.description || `سند ته‌حساب #${doc.documentNumber}`,
-                        partyId: targetCustId,
-                      });
-                    } else {
-                      // Customer is Debtor (بدهکار)
-                      // 1. Customer receivable account (1120) is Debited (بدهکار)
-                      journalLines.push({
-                        accountId: SYSTEM_ACCOUNT_CODES.NOTES_RECEIVABLE,
-                        debit: line.amountIrr,
-                        credit: 0,
-                        description: line.description || `سند ته‌حساب #${doc.documentNumber}`,
-                        partyId: targetCustId,
-                      });
-                      // 2. Counterpart account is Credited (بستانکار)
-                      journalLines.push({
-                        accountId: counterpartAccountId,
-                        debit: 0,
-                        credit: line.amountIrr,
-                        description: line.description || `سند ته‌حساب #${doc.documentNumber}`,
-                      });
-                    }
-
-                    await postJournalEntry(
-                      {
-                        entryDate: line.dateIso ? line.dateIso.slice(0, 10) : undefined,
-                        entryDateJalali: line.dateJalali || doc.dateJalali,
-                        description: `سند #${doc.documentNumber} ته‌حساب: ${line.description || ''}`,
-                        sourceType: 'document',
-                        sourceId: txRecord.id,
-                        sourceKey: journalSourceKey,
-                        userId: effectiveUserId,
-                        lines: journalLines,
-                      },
-                      writer,
-                    );
-                    importedJournalEntries++;
-                  } catch (jErr) {
-                    warnings.push({
-                      code: 'WARN_JOURNAL_POST',
-                      message: `هشدار در ثبت سند دوبل برای ردیف ${line.lineNumber}: ${jErr instanceof Error ? jErr.message : String(jErr)}`,
-                      severity: 'WARNING',
-                      sourceType: 'journal',
-                      sourceId: lineSourceKey,
-                    });
-                  }
-                }
-              } catch (err) {
-                errors.push({
-                  code: 'ERR_IMPORT_LINE',
-                  message: `خطا در ثبت ردیف ${line.lineNumber} سند ${doc.documentNumber}: ${err instanceof Error ? err.message : String(err)}`,
-                  severity: 'ERROR',
-                  sourceType: 'document_line',
-                  sourceId: lineSourceKey,
-                });
               }
-            } else {
-              importedLines++;
-              docImported = true;
-            }
-          }
+            }),
+          );
 
           if (docImported) {
             importedDocuments++;
@@ -744,6 +870,72 @@ export async function importTahesabData(
   const isFinished = nextOffset === null;
 
   if (isFinished) {
+    if (!dryRun) {
+      for (const party of data.parties) {
+        const custId = session.customerIdBySourceCode.get(party.sourceCode);
+        const custCode = session.customerCodeBySourceCode.get(party.sourceCode);
+        if (!custId) continue;
+
+        const hasGoldOpening = Math.abs(party.openingGoldWeight || 0) >= 0.001;
+        const hasRialOpening = Math.abs(party.openingRialBalance || 0) >= 1;
+
+        if (!hasGoldOpening && !hasRialOpening) continue;
+
+        const hasDocs = data.documents.some((d) => d.sourceCustomerCode === party.sourceCode);
+        if (hasDocs) continue;
+
+        const openKey = `tahesab:${migrationId}:cust_open:${party.sourceCode}`;
+        if (session.existingTxByExactKey.has(openKey)) continue;
+
+        try {
+          let openDocNum = generateZfDocumentNumber();
+          while (session.usedDocNumbers.has(openDocNum)) {
+            openDocNum = generateZfDocumentNumber();
+          }
+          session.usedDocNumbers.add(openDocNum);
+
+          const openTx = await writer.collection('transactions').create({
+            customer: custId,
+            customerCode: custCode,
+            createdBy: effectiveUserId || undefined,
+            updatedBy: effectiveUserId || undefined,
+            transactionType: 'opening_balance',
+            status: 'posted',
+            isOpeningBalance: true,
+            transactionDate: new Date().toISOString(),
+            documentNumber: openDocNum,
+            description: `مانده اول دوره ته‌حساب (${party.name})`,
+            goldAmount: party.openingGoldWeight || 0,
+            silverAmount: 0,
+            platinumAmount: 0,
+            rialAmount: party.openingRialBalance || 0,
+            documentNature: (party.openingGoldWeight || 0) >= 0 && (party.openingRialBalance || 0) >= 0 ? 'received' : 'paid',
+            documentTab: 'general',
+            settlementMethod: 'unsettled',
+            balanceSource: 'opening',
+            sourceKey: openKey,
+          });
+
+          session.existingTxByExactKey.set(openKey, {
+            id: openTx.id,
+            customer: custId,
+            goldAmount: party.openingGoldWeight || 0,
+            rialAmount: party.openingRialBalance || 0,
+            sourceKey: openKey,
+            documentNumber: openDocNum,
+          });
+        } catch (openErr) {
+          warnings.push({
+            code: 'WARN_OPENING_TX',
+            message: `خطا در ایجاد سند مانده اول دوره برای طرف‌حساب "${party.name}": ${openErr instanceof Error ? openErr.message : String(openErr)}`,
+            severity: 'WARNING',
+            sourceType: 'party',
+            sourceId: party.sourceCode,
+          });
+        }
+      }
+    }
+
     onProgress?.({
       stage: 'finalizing',
       percent: 100,
@@ -780,6 +972,7 @@ export async function importTahesabData(
     status: isFinished ? (errors.length === 0 ? 'completed' : 'completed') : 'in_progress',
     importedParties,
     importedBankAccounts,
+    importedAssayLabs,
     importedDocuments,
     importedLines,
     importedJournalEntries,

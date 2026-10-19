@@ -20,6 +20,7 @@ import { PriceInput } from '@/components/ui/price-input';
 import Field from '@/src/components/documents/Field';
 import type { DetailState, DocumentLine } from '@/src/components/documents/RawGoldTab';
 import { normalizeDigits, toPersianDigits } from '@/lib/jalali';
+import { generateUUID } from '@/lib/uuid';
 import { parseLocalizedAmount, formatMoney } from '@/lib/money';
 
 export type WorkmanshipOperationType =
@@ -365,7 +366,7 @@ export default function WorkmanshipTab({
 
     if (onAddLine) {
       const newLine: DocumentLine = {
-        id: crypto.randomUUID(),
+        id: generateUUID(),
         documentNature: nature,
         documentTab: 'workmanship',
         sourceTab: 'workmanship',

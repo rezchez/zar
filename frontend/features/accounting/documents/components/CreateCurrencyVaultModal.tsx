@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { Wallet, X, Check, AlertCircle, Loader2, Info, ExternalLink } from 'lucide-react';
 import { findCashVault, type CashVault } from '../utils/document-helpers';
+import { generateUUID } from '@/lib/uuid';
 import { useToastManager } from '@/components/ui/toast';
 
 export interface CreateCurrencyVaultModalProps {
@@ -93,7 +94,7 @@ export default function CreateCurrencyVaultModal({
 
       toast.success(`صندوق «${cleanName}» با موفقیت ایجاد شد.`);
       const createdVault: CashVault = {
-        id: data.fund?.id || crypto.randomUUID(),
+        id: data.fund?.id || generateUUID(),
         name: cleanName,
         currencyCode: data.fund?.currencyCode || selectedCurrency,
         currencyName: data.fund?.currencyName || selectedCurrency,

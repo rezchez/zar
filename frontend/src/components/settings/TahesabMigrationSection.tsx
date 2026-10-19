@@ -123,6 +123,7 @@ export default function TahesabMigrationSection() {
   const [preview, setPreview] = useState<MigrationPreviewStats | null>(null);
   const [mappings, setMappings] = useState<MigrationMappings | null>(null);
   const [validation, setValidation] = useState<MigrationValidationResult | null>(null);
+  const [mappingTab, setMappingTab] = useState<'accounts' | 'assayLabs' | 'parties'>('accounts');
   const [importResult, setImportResult] = useState<MigrationResult | null>(null);
   const [migrationId, setMigrationId] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string>('');
@@ -1122,41 +1123,199 @@ export default function TahesabMigrationSection() {
           </div>
 
           <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-4 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-800/20 dark:text-slate-300">
-            موتور تطبیق هوشمند زرفولیو سرفصل‌های ته‌حساب را به صورت خودکار به استانداردهای دوطرفه زرفولیو مپ کرده است.
+            موتور تطبیق هوشمند زرفولیو سرفصل‌ها، طرف‌حساب‌ها و مراکز ری‌گیری ته‌حساب را به صورت خودکار با داده‌های پایه و استانداردهای زرفولیو تطبیق داده است.
           </div>
 
-          {/* Accounts Mapping Preview Table */}
-          <div className="space-y-3">
-            <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300">
-              تطبیق سرفصل‌های دفتر کل ({toFa(mappings.accounts.length)} سرفصل)
-            </h4>
-            <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
-              <table className="w-full text-right text-xs">
-                <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500">
-                  <tr>
-                    <th className="p-3">سرفصل در ته‌حساب</th>
-                    <th className="p-3">سرفصل متناظر در زرفولیو</th>
-                    <th className="p-3">کد حساب زرفولیو</th>
-                    <th className="p-3">وضعیت تطبیق</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {mappings.accounts.map((acc, idx) => (
-                    <tr key={idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
-                      <td className="p-3 font-semibold text-slate-700 dark:text-slate-200">{acc.sourceName}</td>
-                      <td className="p-3 text-slate-600 dark:text-slate-400">{acc.targetAccountName}</td>
-                      <td className="p-3 font-mono text-amber-600 dark:text-amber-400">{acc.targetAccountCode}</td>
-                      <td className="p-3">
-                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
-                          تطبیق خودکار
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          {/* Sub-tabs for Mappings */}
+          <div className="flex border-b border-slate-200 dark:border-slate-800 gap-2">
+            <button
+              type="button"
+              onClick={() => setMappingTab('accounts')}
+              className={`px-4 py-2 text-xs font-bold border-b-2 transition-colors ${
+                mappingTab === 'accounts'
+                  ? 'border-amber-500 text-amber-600 dark:text-amber-400'
+                  : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+              }`}
+            >
+              سرفصل‌های دفتر کل ({toFa(mappings.accounts.length)})
+            </button>
+            <button
+              type="button"
+              onClick={() => setMappingTab('assayLabs')}
+              className={`px-4 py-2 text-xs font-bold border-b-2 transition-colors flex items-center gap-1.5 ${
+                mappingTab === 'assayLabs'
+                  ? 'border-amber-500 text-amber-600 dark:text-amber-400'
+                  : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+              }`}
+            >
+              <Scale className="h-3.5 w-3.5" />
+              ری‌گیری‌ها و عیارسنجی‌ها ({toFa(mappings.assayLabs?.length || 0)})
+            </button>
+            <button
+              type="button"
+              onClick={() => setMappingTab('parties')}
+              className={`px-4 py-2 text-xs font-bold border-b-2 transition-colors flex items-center gap-1.5 ${
+                mappingTab === 'parties'
+                  ? 'border-amber-500 text-amber-600 dark:text-amber-400'
+                  : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+              }`}
+            >
+              <Users className="h-3.5 w-3.5" />
+              طرف‌حساب‌ها ({toFa(mappings.parties.length)})
+            </button>
           </div>
+
+          {/* Tab 1: Accounts Mapping */}
+          {mappingTab === 'accounts' && (
+            <div className="space-y-3">
+              <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                تطبیق سرفصل‌های دفتر کل ({toFa(mappings.accounts.length)} سرفصل)
+              </h4>
+              <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
+                <table className="w-full text-right text-xs">
+                  <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500">
+                    <tr>
+                      <th className="p-3">سرفصل در ته‌حساب</th>
+                      <th className="p-3">سرفصل متناظر در زرفولیو</th>
+                      <th className="p-3">کد حساب زرفولیو</th>
+                      <th className="p-3">وضعیت تطبیق</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {mappings.accounts.map((acc, idx) => (
+                      <tr key={idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
+                        <td className="p-3 font-semibold text-slate-700 dark:text-slate-200">{acc.sourceName}</td>
+                        <td className="p-3 text-slate-600 dark:text-slate-400">{acc.targetAccountName}</td>
+                        <td className="p-3 font-mono text-amber-600 dark:text-amber-400">{acc.targetAccountCode}</td>
+                        <td className="p-3">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
+                            تطبیق خودکار
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Tab 2: Assay Laboratories Mapping */}
+          {mappingTab === 'assayLabs' && mappings.assayLabs && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                  تطبیق آزمایشگاه‌ها و مراکز عیارسنجی ({toFa(mappings.assayLabs.length)} مرکز)
+                </h4>
+                <div className="flex items-center gap-2 text-[11px]">
+                  <span className="text-emerald-600 font-semibold">
+                    {toFa(mappings.assayLabs.filter((l) => l.status === 'mapped').length)} تطبیق‌یافته با کاتالوگ و دیتابیس
+                  </span>
+                  <span className="text-slate-400">|</span>
+                  <span className="text-blue-600 font-semibold">
+                    {toFa(mappings.assayLabs.filter((l) => l.status === 'new_lab').length)} ری‌گیری جدید
+                  </span>
+                </div>
+              </div>
+
+              <div className="max-h-96 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-800">
+                <table className="w-full text-right text-xs">
+                  <thead className="sticky top-0 bg-slate-50 dark:bg-slate-800/80 text-slate-500 backdrop-blur-sm">
+                    <tr>
+                      <th className="p-3">نام در ته‌حساب</th>
+                      <th className="p-3">شماره تماس / موقعیت</th>
+                      <th className="p-3">ری‌گیری متناظر در زرفولیو</th>
+                      <th className="p-3">روش تطبیق</th>
+                      <th className="p-3">وضعیت</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {mappings.assayLabs.slice(0, 100).map((lab, idx) => (
+                      <tr key={idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
+                        <td className="p-3 font-semibold text-slate-700 dark:text-slate-200">{lab.sourceName}</td>
+                        <td className="p-3 text-slate-500 font-mono text-[11px]">
+                          {lab.sourcePhone || lab.targetCity || '-'}
+                        </td>
+                        <td className="p-3 text-slate-600 dark:text-slate-300 font-medium">
+                          {lab.targetAssayLabName || (
+                            <span className="italic text-slate-400">ایجاد ری‌گیری جدید</span>
+                          )}
+                        </td>
+                        <td className="p-3 text-[11px] text-slate-500">
+                          {lab.matchType === 'exact_phone' && 'شماره تماس یکسان'}
+                          {lab.matchType === 'exact_name' && 'نام رسمی یکسان'}
+                          {lab.matchType === 'canonical_name' && 'عنوان ساختاری یکسان'}
+                          {lab.matchType === 'stem_keyword' && 'تطبیق کلیدواژه عنوان'}
+                          {lab.matchType === 'create_new' && 'ثبت به عنوان ری‌گیری جدید'}
+                        </td>
+                        <td className="p-3">
+                          {lab.status === 'mapped' ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
+                              تطبیق‌یافته
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700 dark:bg-blue-950/60 dark:text-blue-300">
+                              مرکز جدید
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {mappings.assayLabs.length > 100 && (
+                <p className="text-[11px] text-slate-400 text-center">
+                  نمایش ۱۰۰ ری‌گیری اول از مجموع {toFa(mappings.assayLabs.length)} مرکز (تمامی ری‌گیری‌ها در هنگام ایمپورت با اسناد مطابقت داده می‌شوند).
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Tab 3: Parties Mapping */}
+          {mappingTab === 'parties' && (
+            <div className="space-y-3">
+              <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                تطبیق طرف‌حساب‌ها ({toFa(mappings.parties.length)} طرف‌حساب)
+              </h4>
+              <div className="max-h-96 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-800">
+                <table className="w-full text-right text-xs">
+                  <thead className="sticky top-0 bg-slate-50 dark:bg-slate-800/80 text-slate-500 backdrop-blur-sm">
+                    <tr>
+                      <th className="p-3">کد / نام در ته‌حساب</th>
+                      <th className="p-3">شماره تماس</th>
+                      <th className="p-3">طرف‌حساب متناظر در زرفولیو</th>
+                      <th className="p-3">وضعیت</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {mappings.parties.slice(0, 100).map((p, idx) => (
+                      <tr key={idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
+                        <td className="p-3 font-semibold text-slate-700 dark:text-slate-200">
+                          <span className="font-mono text-slate-400 ml-1">#{p.sourceCode}</span> {p.sourceName}
+                        </td>
+                        <td className="p-3 text-slate-500 font-mono text-[11px]">{p.sourcePhone || '-'}</td>
+                        <td className="p-3 text-slate-600 dark:text-slate-300 font-medium">
+                          {p.targetCustomerName || <span className="italic text-slate-400">مشتری جدید</span>}
+                        </td>
+                        <td className="p-3">
+                          {p.status === 'mapped' ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
+                              تطبیق دقیق
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700 dark:bg-blue-950/60 dark:text-blue-300">
+                              مشتری جدید
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           <div className="flex justify-between pt-4 border-t border-slate-100 dark:border-slate-800">
             <button
@@ -1181,7 +1340,7 @@ export default function TahesabMigrationSection() {
       {/* STEP 4: Validation & Preview */}
       {step === 4 && preview && (
         <div className="space-y-6">
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
             <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
               <span className="text-xs text-slate-400">اسناد و فاکتورها</span>
               <p className="mt-1 text-2xl font-bold text-slate-800 dark:text-slate-100">
@@ -1196,6 +1355,16 @@ export default function TahesabMigrationSection() {
                 {toFa(preview.totalParties)}
               </p>
               <span className="text-[11px] text-emerald-600">{toFa(preview.totalNewParties)} مشتری جدید</span>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+              <span className="text-xs text-slate-400">ری‌گیری‌ها و عیارسنجی‌ها</span>
+              <p className="mt-1 text-2xl font-bold text-teal-600 dark:text-teal-400">
+                {toFa(preview.totalAssayLabs)}
+              </p>
+              <span className="text-[11px] text-slate-500">
+                {toFa(preview.totalMappedAssayLabs || 0)} تطبیق‌یافته | {toFa(preview.totalNewAssayLabs || 0)} جدید
+              </span>
             </div>
 
             <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -1653,69 +1822,74 @@ export default function TahesabMigrationSection() {
           </div>
 
           <div className="mt-4 divide-y divide-slate-100 dark:divide-slate-800">
-            {historyJobs.map((job) => (
-              <div key={job.id} className="flex items-center justify-between py-3 text-xs">
-                <div>
-                  <span className="font-mono font-semibold">{job.migrationId}</span>
-                  <span className="text-slate-400 mr-2">({job.sourceFileName || 'ته‌حساب'})</span>
-                  <span
-                    className={`mr-2 rounded px-2 py-0.5 text-[10px] font-bold ${
-                      job.status === 'completed'
-                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
-                        : job.status === 'rolled_back'
-                        ? 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
-                        : job.status === 'scheduled'
-                        ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300'
-                        : job.status === 'in_progress' || job.status === 'importing'
-                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
-                        : job.status === 'paused'
-                        ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'
-                        : job.status === 'failed'
-                        ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300'
-                        : 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'
-                    }`}
-                  >
-                    {job.status === 'completed'
-                      ? 'تکمیل‌شده'
-                      : job.status === 'rolled_back'
-                      ? 'بازگشت‌داده‌شده'
-                      : job.status === 'scheduled'
-                      ? `زمانبندی‌شده (${job.stats?.scheduledAtJalali || 'آینده'})`
-                      : job.status === 'in_progress'
-                      ? 'در حال انجام'
-                      : job.status === 'importing'
-                      ? 'در حال انتقال'
-                      : job.status === 'paused'
-                      ? 'متوقف‌شده (پاز)'
-                      : job.status === 'failed'
-                      ? 'ناموفق'
-                      : job.status}
-                  </span>
-                </div>
+            {historyJobs.map((job) => {
+              const isCurrentSessionActive = loading && job.migrationId === migrationId;
+              const isJobCompleted =
+                job.status === 'completed' ||
+                (!isCurrentSessionActive && (job.status === 'in_progress' || job.status === 'importing'));
 
-                <div className="flex items-center gap-2">
-                  {job.status === 'completed' && (
-                    <button
-                      onClick={() => handleRollback(job.migrationId)}
-                      disabled={rollbackLoading}
-                      className="inline-flex items-center gap-1 rounded border border-rose-200 px-2.5 py-1 text-[11px] font-semibold text-rose-600 hover:bg-rose-50"
-                      title="Rollback و حذف اسناد این مهاجرت"
+              return (
+                <div key={job.id} className="flex items-center justify-between py-3 text-xs">
+                  <div>
+                    <span className="font-mono font-semibold">{job.migrationId}</span>
+                    <span className="text-slate-400 mr-2">({job.sourceFileName || 'ته‌حساب'})</span>
+                    <span
+                      className={`mr-2 rounded px-2 py-0.5 text-[10px] font-bold ${
+                        isJobCompleted
+                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
+                          : job.status === 'rolled_back'
+                          ? 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                          : job.status === 'scheduled'
+                          ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300'
+                          : isCurrentSessionActive
+                          ? 'bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
+                          : job.status === 'paused'
+                          ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'
+                          : job.status === 'failed'
+                          ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300'
+                          : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
+                      }`}
                     >
-                      <RotateCcw className="h-3 w-3" />
-                      Rollback
+                      {isJobCompleted
+                        ? 'تکمیل‌شده (پایان‌یافته)'
+                        : job.status === 'rolled_back'
+                        ? 'بازگشت‌داده‌شده'
+                        : job.status === 'scheduled'
+                        ? `زمانبندی‌شده (${job.stats?.scheduledAtJalali || 'آینده'})`
+                        : isCurrentSessionActive
+                        ? 'در حال انجام'
+                        : job.status === 'paused'
+                        ? 'متوقف‌شده (پاز)'
+                        : job.status === 'failed'
+                        ? 'ناموفق'
+                        : 'تکمیل‌شده (پایان‌یافته)'}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {isJobCompleted && (
+                      <button
+                        onClick={() => handleRollback(job.migrationId)}
+                        disabled={rollbackLoading}
+                        className="inline-flex items-center gap-1 rounded border border-rose-200 px-2.5 py-1 text-[11px] font-semibold text-rose-600 hover:bg-rose-50"
+                        title="Rollback و حذف اسناد این مهاجرت"
+                      >
+                        <RotateCcw className="h-3 w-3" />
+                        Rollback
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleDeleteJob(job.id, job.migrationId, isJobCompleted)}
+                      className="inline-flex items-center gap-1 rounded border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-500 hover:bg-rose-50 hover:text-rose-600 dark:border-slate-700 dark:text-slate-400 dark:hover:text-rose-400"
+                      title="حذف سابقه از سیستم"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      حذف
                     </button>
-                  )}
-                  <button
-                    onClick={() => handleDeleteJob(job.id, job.migrationId, job.status === 'completed')}
-                    className="inline-flex items-center gap-1 rounded border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-500 hover:bg-rose-50 hover:text-rose-600 dark:border-slate-700 dark:text-slate-400 dark:hover:text-rose-400"
-                    title="حذف سابقه از سیستم"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                    حذف
-                  </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

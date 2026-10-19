@@ -57,9 +57,27 @@ export async function GET() {
       servicePb = await getPocketBaseServiceClient();
     } catch {}
 
-    const jobs = await servicePb.collection('migration_jobs').getFullList({
+    const rawJobs = await servicePb.collection('migration_jobs').getFullList({
       sort: '-created',
     }).catch(() => []);
+
+    // Ensure any previously executed jobs that were left in_progress or importing
+    // are automatically reconciled and persisted as 'completed'.
+    const jobs = await Promise.all(
+      rawJobs.map(async (job) => {
+        if (job.status === 'in_progress' || job.status === 'importing') {
+          try {
+            await servicePb.collection('migration_jobs').update(job.id, {
+              status: 'completed',
+            });
+            return { ...job, status: 'completed' };
+          } catch {
+            return { ...job, status: 'completed' };
+          }
+        }
+        return job;
+      }),
+    );
 
     return NextResponse.json({ jobs });
   } catch (err) {
@@ -156,7 +174,7 @@ export async function POST(request: Request) {
         );
       }
 
-      const maxDetailRows = typeof body.maxDetailRows === 'number' ? body.maxDetailRows : 50000;
+      const maxDetailRows = typeof body.maxDetailRows === 'number' ? body.maxDetailRows : undefined;
       const { rawDb, stats } = await parseTahesabBackup(fileBuffer, { maxDetailRows });
 
       const normalized = normalizeTahesabData(rawDb, detection.backupInfo!);
@@ -173,6 +191,12 @@ export async function POST(request: Request) {
         .getFullList({ fields: 'id,code,name,isActive' })
         .catch(() => []);
 
+      // Fetch existing assay laboratories for mapping
+      const existingAssayLabs = await servicePb
+        .collection('assay_laboratories')
+        .getFullList({ fields: 'id,name,phone,city,province,code,is_active,is_custom' })
+        .catch(() => []);
+
       const mappings = buildInitialMappings(
         normalized,
         existingCustomers.map((c) => ({
@@ -186,6 +210,16 @@ export async function POST(request: Request) {
           code: a.code,
           name: a.name,
           isActive: a.isActive,
+        })),
+        existingAssayLabs.map((l) => ({
+          id: l.id,
+          name: l.name,
+          phone: l.phone,
+          city: l.city,
+          province: l.province,
+          code: l.code,
+          isActive: l.is_active,
+          isCustom: l.is_custom,
         })),
       );
 
@@ -245,6 +279,7 @@ export async function POST(request: Request) {
       if (!mappings) {
         const existingCustomers = await servicePb.collection('customers').getFullList().catch(() => []);
         const existingAccounts = await servicePb.collection('chart_of_accounts').getFullList().catch(() => []);
+        const existingAssayLabs = await servicePb.collection('assay_laboratories').getFullList().catch(() => []);
         mappings = buildInitialMappings(
           normalized,
           existingCustomers.map((c) => ({
@@ -258,6 +293,16 @@ export async function POST(request: Request) {
             code: String(a.code || ''),
             name: String(a.name || ''),
             isActive: a.isActive,
+          })),
+          existingAssayLabs.map((l) => ({
+            id: l.id,
+            name: String(l.name || ''),
+            phone: String(l.phone || ''),
+            city: String(l.city || ''),
+            province: String(l.province || ''),
+            code: String(l.code || ''),
+            isActive: l.is_active,
+            isCustom: l.is_custom,
           })),
         );
       }
@@ -280,27 +325,39 @@ export async function POST(request: Request) {
         }
       }
 
+      const batchSize = typeof body.batchSize === 'number' ? body.batchSize : 400;
+      const concurrency = typeof body.concurrency === 'number' ? body.concurrency : 12;
+
       const result = await importTahesabData(servicePb, normalized, mappings, {
         migrationId,
         userId: context.user.id,
-        batchSize: 100,
+        batchSize,
+        concurrency,
         dryRun: Boolean(body.dryRun),
         docOffset,
         docLimit,
       });
 
       // Update job status if final or in progress
-      if (jobRecordId) {
-        try {
-          await servicePb.collection('migration_jobs').update(jobRecordId, {
+      try {
+        let targetJobId = jobRecordId;
+        if (!targetJobId) {
+          const existingJob = await servicePb.collection('migration_jobs').getFirstListItem(
+            servicePb.filter('migrationId = {:id}', { id: migrationId }),
+          ).catch(() => null);
+          if (existingJob) targetJobId = existingJob.id;
+        }
+
+        if (targetJobId) {
+          await servicePb.collection('migration_jobs').update(targetJobId, {
             status: result.status,
             results: result,
             errors: result.errors,
             warnings: result.warnings,
           });
-        } catch {
-          // ignore
         }
+      } catch {
+        // ignore
       }
 
       if (result.status === 'completed') {

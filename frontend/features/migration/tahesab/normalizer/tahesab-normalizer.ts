@@ -61,8 +61,8 @@ export function normalizeTahesabData(
     if (!name || seenPartyCodes.has(code)) continue;
     seenPartyCodes.add(code);
 
-    const goldBal = parseNum(row.tahesabtala, 0);
-    const rialBal = Math.round(parseNum(row.tahesabriali, 0));
+    const goldBal = parseNum(row.JamV_T || row.tahesabtala, 0);
+    const rialBal = Math.round(parseNum(row.JamV_P || row.tahesabriali, 0));
 
     parties.push({
       sourceCode: code,
@@ -195,8 +195,8 @@ export function normalizeTahesabData(
       }
     }
 
-    const metalCode = parseText(hRow.Jens_Felez);
-    const metalType = metalCode === '2' ? 'silver' : 'gold';
+    const headerMetalCode = parseText(hRow.Jens_Felez);
+    const docMetalType = headerMetalCode === '2' ? 'silver' : 'gold';
     const currency = parseText(hRow.Arz) || 'IRR';
 
     const childDetailRows = detailsByFactor.get(factorCode) || [];
@@ -206,26 +206,67 @@ export function normalizeTahesabData(
     for (const dRow of childDetailRows) {
       lineSeq++;
       const vazn = parseNum(dRow.vazn, 0);
-      const ayar = parseNum(dRow.ayar, metalType === 'silver' ? 999 : 750);
+      const rowNo = parseText(dRow.no);
+      const dSharh = parseText(dRow.Sharh);
+      const dNoKar = parseText(dRow.NO_kar);
+      const isStone = rowNo.includes('سنگ') || dNoKar.includes('سنگ') || dSharh.includes('سنگ');
+
+      const dJens = parseText(dRow.Jens_Felez);
+      const metalCode = dJens || headerMetalCode;
+      const rawAyar = parseNum(dRow.ayar, 0);
+
+      const isSilver =
+        metalCode === '2' ||
+        rawAyar === 925 ||
+        dSharh.includes('نقره') ||
+        dNoKar.includes('نقره') ||
+        parseText(hRow.Rec).includes('نقره');
+
       const tv = parseNum(dRow.tabdil750_v, 0);
       const tkh = parseNum(dRow.tabdil750_kh, 0);
       const rv = Math.round(parseNum(dRow.rial_V, 0));
       const rkh = Math.round(parseNum(dRow.rial_kh, 0));
 
-      const converted750 = tv > 0 ? tv : tkh > 0 ? tkh : vazn > 0 ? Math.round((vazn * ayar) / 750 * 1000) / 1000 : 0;
-      
-      const rowNo = parseText(dRow.no);
+      const tabdil = tv > 0 ? tv : tkh > 0 ? tkh : 0;
+      let ayar = rawAyar;
+
+      let metalType: 'gold' | 'silver' | 'none' = 'none';
+      if (tabdil > 0) {
+        metalType = isSilver ? 'silver' : 'gold';
+        if (ayar <= 0 && vazn > 0) {
+          const baseKaratForDeduction = metalType === 'silver' ? 925 : 750;
+          ayar = Math.round((tabdil * baseKaratForDeduction) / vazn);
+        } else if (ayar <= 0) {
+          ayar = metalType === 'silver' ? 999 : 750;
+        }
+      } else if (isStone || rowNo.includes('کالا') || dNoKar.includes('رزین')) {
+        metalType = 'none';
+      } else if (isSilver) {
+        metalType = 'silver';
+      } else if (vazn > 0 && !rowNo.includes('وجه') && !rowNo.includes('بانک') && !rowNo.includes('ارز')) {
+        metalType = 'gold';
+      }
+
+      const baseKaratForConv = metalType === 'silver' ? 999 : 750;
+      const converted750 = tabdil > 0
+        ? tabdil
+        : (vazn > 0 && ayar > 0 && !isStone && metalType !== 'none')
+        ? Math.round(((vazn * ayar) / baseKaratForConv) * 1000) / 1000
+        : 0;
+
       const isUsd = parseText(dRow.Arz) === 'USD' || parseText(hRow.Arz) === 'USD';
       const foreignAmt = isUsd ? parseNum(dRow.rial_V || dRow.rial_kh, 0) : undefined;
       const amountIrr = !isUsd ? (rv > 0 ? rv : rkh > 0 ? rkh : 0) : 0;
 
       // Determine Gold Direction (ورود / خروج)
       let goldNature: 'received' | 'paid' | 'none' = 'none';
-      if (tv > 0) {
+      if (metalType === 'none' || converted750 === 0) {
+        goldNature = 'none';
+      } else if (tv > 0) {
         goldNature = 'received';
       } else if (tkh > 0) {
         goldNature = 'paid';
-      } else if (vazn > 0) {
+      } else if (converted750 > 0) {
         if (rowNo.includes('ورود') || rowNo.includes('خرید') || rowNo.includes('بدهی')) {
           goldNature = 'received';
         } else if (rowNo.includes('خروج') || rowNo.includes('فروش') || rowNo.includes('طلب') || rowNo.includes('درصد')) {
@@ -288,15 +329,15 @@ export function normalizeTahesabData(
       // Check conditional gold and assay receipt
       const shSharti = parseText(dRow.sh_sharti);
       const isAbshode = dRow.Abshode === '-1' || parseText(dRow.Abshode).toLowerCase() === 'true';
-      const isConditional = (shSharti !== '' && shSharti !== '0') || isAbshode;
+      const isConditional = shSharti !== '' && shSharti !== '0';
 
       let kind: NormalizedDocumentLine['kind'] = 'general_metal';
       if (transferToken) {
         kind = 'claim';
-      } else if (isAbshode) {
-        kind = 'melted';
       } else if (isConditional) {
         kind = 'conditional';
+      } else if (isAbshode) {
+        kind = 'melted';
       } else if (isUsd || rowNo.includes('ارز')) {
         kind = 'currency';
       } else if (amountIrr > 0 && vazn === 0) {
@@ -318,7 +359,7 @@ export function normalizeTahesabData(
         dateJalali,
         nature,
         kind,
-        metalType: vazn > 0 ? metalType : 'none',
+        metalType,
         weight: vazn,
         grade: ayar,
         convertedWeight750: converted750,
@@ -326,6 +367,7 @@ export function normalizeTahesabData(
         foreignAmount: foreignAmt,
         foreignCurrency: foreignAmt ? 'USD' : undefined,
         assayStampNumber: shSharti || undefined,
+        assayLabName: parseText(dRow.name_az) || undefined,
         transferToken,
         transferSide,
         transferPartnerName: parseText(dRow.name_az) || undefined,
@@ -352,7 +394,7 @@ export function normalizeTahesabData(
       totalRialIn: Math.round(parseNum(hRow.rial_v, 0)),
       totalRialOut: Math.round(parseNum(hRow.rial_kh, 0)),
       currency,
-      metalType,
+      metalType: docMetalType,
       lines,
       raw: hRow,
     });

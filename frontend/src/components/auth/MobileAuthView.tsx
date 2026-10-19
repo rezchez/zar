@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useRef } from 'react';
+import Link from 'next/link';
 import { AnimatePresence, motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import { ArrowLeft, Check, Eye, EyeOff, LockKeyhole, Mail, Phone, ShieldCheck, Sparkles, UserRound } from 'lucide-react';
 
@@ -98,26 +99,26 @@ export function MobileAuthView({ logic }: { logic: AuthLogicReturn }) {
           </div>
 
           {/* Form & Transitions */}
-          <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
-            <AnimatePresence mode="wait">
+          <form ref={formRef} action="#" method="POST" onSubmit={handleSubmit} className="space-y-4">
+            <AnimatePresence initial={false} mode="popLayout">
               <motion.div
                 key={mode + (mfaChallenge ? '-mfa' : '') + (loginMethod === 'phone' ? '-phone' : '')}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.2, ease: 'easeOut' }}
+                transition={{ duration: 0.15, ease: 'easeOut' }}
                 className="space-y-3.5"
               >
                 {/* Signup Full Name */}
                 {mode === 'signup' && (
                   <div className="space-y-1.5">
-                    <label htmlFor="auth-name" className="block text-xs font-medium text-neutral-300">
+                    <label htmlFor="mobile-auth-name" className="block text-xs font-medium text-neutral-300">
                       نام و نام خانوادگی
                     </label>
                     <div className="relative group">
                       <UserRound className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-purple-400/70 group-focus-within:text-purple-300 transition-colors pointer-events-none" />
                       <input
-                        id="auth-name"
+                        id="mobile-auth-name"
                         name="name"
                         type="text"
                         autoComplete="name"
@@ -131,16 +132,16 @@ export function MobileAuthView({ logic }: { logic: AuthLogicReturn }) {
                   </div>
                 )}
 
-                {/* Phone Input for Signup or Phone Login */}
+                {/* Phone Input for Signup or Bale Login */}
                 {(mode === 'signup' || (mode === 'login' && loginMethod === 'phone')) && (
                   <div className="space-y-1.5">
-                    <label htmlFor="auth-phone" className="block text-xs font-medium text-neutral-300">
-                      شماره تلفن همراه
+                    <label htmlFor="mobile-auth-phone" className="block text-xs font-medium text-neutral-300">
+                      {loginMethod === 'phone' ? 'شماره تلفن همراه (پیام‌رسان بله)' : 'شماره تلفن همراه'}
                     </label>
                     <div className="relative group">
                       <Phone className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-purple-400/70 group-focus-within:text-purple-300 transition-colors pointer-events-none" />
                       <input
-                        id="auth-phone"
+                        id="mobile-auth-phone"
                         name="phone"
                         type="tel"
                         inputMode="tel"
@@ -158,13 +159,13 @@ export function MobileAuthView({ logic }: { logic: AuthLogicReturn }) {
                 {/* Bale Code Challenge Input */}
                 {mode === 'login' && loginMethod === 'phone' && phoneChallenge && (
                   <div className="space-y-1.5">
-                    <label htmlFor="bale-code" className="block text-xs font-medium text-neutral-300">
+                    <label htmlFor="mobile-bale-code" className="block text-xs font-medium text-neutral-300">
                       کد ورود پیام‌رسان بله
                     </label>
                     <div className="relative group">
                       <ShieldCheck className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-purple-400/70 group-focus-within:text-purple-300 transition-colors pointer-events-none" />
                       <input
-                        id="bale-code"
+                        id="mobile-bale-code"
                         name="phoneCode"
                         type="text"
                         inputMode="numeric"
@@ -179,21 +180,21 @@ export function MobileAuthView({ logic }: { logic: AuthLogicReturn }) {
                   </div>
                 )}
 
-                {/* Email Input */}
+                {/* Email / Username Input */}
                 {(mode === 'signup' || (mode === 'login' && loginMethod === 'email')) && (
                   <div className="space-y-1.5">
-                    <label htmlFor="auth-email" className="block text-xs font-medium text-neutral-300">
-                      ایمیل
+                    <label htmlFor="mobile-auth-email" className="block text-xs font-medium text-neutral-300">
+                      {mode === 'login' ? 'ایمیل یا شماره تلفن همراه' : 'ایمیل'}
                     </label>
                     <div className="relative group">
                       <Mail className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-purple-400/70 group-focus-within:text-purple-300 transition-colors pointer-events-none" />
                       <input
-                        id="auth-email"
+                        id="mobile-auth-email"
                         name="email"
-                        type="email"
-                        inputMode="email"
-                        autoComplete="email"
-                        placeholder="you@example.com"
+                        type={mode === 'login' ? 'text' : 'email'}
+                        inputMode={mode === 'login' ? 'text' : 'email'}
+                        autoComplete={mode === 'login' ? 'username' : 'email'}
+                        placeholder={mode === 'login' ? 'you@example.com یا ۰۹۱۲۱۲۳۴۵۶۷' : 'you@example.com'}
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         required
@@ -206,13 +207,13 @@ export function MobileAuthView({ logic }: { logic: AuthLogicReturn }) {
                 {/* Password Input */}
                 {mode === 'login' && loginMethod === 'email' && !mfaChallenge && (
                   <div className="space-y-1.5">
-                    <label htmlFor="auth-password" className="block text-xs font-medium text-neutral-300">
+                    <label htmlFor="mobile-auth-password" className="block text-xs font-medium text-neutral-300">
                       رمز عبور
                     </label>
                     <div className="relative group">
                       <LockKeyhole className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-purple-400/70 group-focus-within:text-purple-300 transition-colors pointer-events-none" />
                       <input
-                        id="auth-password"
+                        id="mobile-auth-password"
                         name="password"
                         type={showPassword ? 'text' : 'password'}
                         autoComplete="current-password"
@@ -224,8 +225,13 @@ export function MobileAuthView({ logic }: { logic: AuthLogicReturn }) {
                       />
                       <button
                         type="button"
-                        onClick={() => setShowPassword((v) => !v)}
-                        className="absolute left-1 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-white transition-colors p-3 min-w-[44px] min-h-[44px] flex items-center justify-center"
+                        tabIndex={-1}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setShowPassword((v) => !v);
+                        }}
+                        className="absolute left-1.5 top-1/2 -translate-y-1/2 z-20 text-neutral-400 hover:text-white active:text-purple-300 transition-colors p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center cursor-pointer select-none"
                         aria-label={showPassword ? 'مخفی کردن رمز عبور' : 'نمایش رمز عبور'}
                       >
                         {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -238,13 +244,13 @@ export function MobileAuthView({ logic }: { logic: AuthLogicReturn }) {
                 {mode === 'signup' && (
                   <>
                     <div className="space-y-1.5">
-                      <label htmlFor="auth-password" className="block text-xs font-medium text-neutral-300">
+                      <label htmlFor="mobile-signup-password" className="block text-xs font-medium text-neutral-300">
                         رمز عبور (حداقل ۸ کاراکتر)
                       </label>
                       <div className="relative group">
                         <LockKeyhole className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-purple-400/70 group-focus-within:text-purple-300 transition-colors pointer-events-none" />
                         <input
-                          id="auth-password"
+                          id="mobile-signup-password"
                           name="password"
                           type={showPassword ? 'text' : 'password'}
                           autoComplete="new-password"
@@ -256,8 +262,13 @@ export function MobileAuthView({ logic }: { logic: AuthLogicReturn }) {
                         />
                         <button
                           type="button"
-                          onClick={() => setShowPassword((v) => !v)}
-                          className="absolute left-1 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-white transition-colors p-3 min-w-[44px] min-h-[44px] flex items-center justify-center"
+                          tabIndex={-1}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setShowPassword((v) => !v);
+                          }}
+                          className="absolute left-1.5 top-1/2 -translate-y-1/2 z-20 text-neutral-400 hover:text-white active:text-purple-300 transition-colors p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center cursor-pointer select-none"
                           aria-label={showPassword ? 'مخفی کردن رمز عبور' : 'نمایش رمز عبور'}
                         >
                           {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -266,13 +277,13 @@ export function MobileAuthView({ logic }: { logic: AuthLogicReturn }) {
                     </div>
 
                     <div className="space-y-1.5">
-                      <label htmlFor="auth-password-confirm" className="block text-xs font-medium text-neutral-300">
+                      <label htmlFor="mobile-auth-password-confirm" className="block text-xs font-medium text-neutral-300">
                         تکرار رمز عبور
                       </label>
                       <div className="relative group">
                         <LockKeyhole className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-purple-400/70 group-focus-within:text-purple-300 transition-colors pointer-events-none" />
                         <input
-                          id="auth-password-confirm"
+                          id="mobile-auth-password-confirm"
                           name="passwordConfirm"
                           type={showPasswordConfirm ? 'text' : 'password'}
                           autoComplete="new-password"
@@ -284,8 +295,13 @@ export function MobileAuthView({ logic }: { logic: AuthLogicReturn }) {
                         />
                         <button
                           type="button"
-                          onClick={() => setShowPasswordConfirm((v) => !v)}
-                          className="absolute left-1 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-white transition-colors p-3 min-w-[44px] min-h-[44px] flex items-center justify-center"
+                          tabIndex={-1}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setShowPasswordConfirm((v) => !v);
+                          }}
+                          className="absolute left-1.5 top-1/2 -translate-y-1/2 z-20 text-neutral-400 hover:text-white active:text-purple-300 transition-colors p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center cursor-pointer select-none"
                           aria-label={showPasswordConfirm ? 'مخفی کردن تکرار رمز عبور' : 'نمایش تکرار رمز عبور'}
                         >
                           {showPasswordConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -297,7 +313,14 @@ export function MobileAuthView({ logic }: { logic: AuthLogicReturn }) {
 
                 {/* MFA Challenge Screen */}
                 {mode === 'login' && mfaChallenge && (
-                  <div className="space-y-3 bg-neutral-900/80 p-4 rounded-2xl border border-purple-500/30">
+                  <div className="space-y-3 bg-neutral-900/90 p-4 rounded-2xl border border-purple-500/40">
+                    <div className="flex items-center gap-2 text-purple-300 text-xs font-bold">
+                      <ShieldCheck className="w-4 h-4 text-purple-400 shrink-0" />
+                      <span>تأیید هویت دومرحله‌ای حساب شما فعال است</span>
+                    </div>
+                    <p className="text-[11px] text-neutral-300 leading-relaxed">
+                      رمز عبور تأیید شد. لطفاً کد ۶ رقمی را از برنامه رمزساز (Authenticator) یا ایمیل وارد نمایید:
+                    </p>
                     <div className="flex gap-2 p-1 bg-black/40 rounded-xl border border-white/10">
                       {mfaChallenge.emailOtpAvailable && (
                         <button
@@ -328,11 +351,11 @@ export function MobileAuthView({ logic }: { logic: AuthLogicReturn }) {
                     </div>
 
                     <div className="space-y-1.5">
-                      <label htmlFor="mfa-code" className="block text-xs font-medium text-neutral-300">
+                      <label htmlFor="mobile-mfa-code" className="block text-xs font-medium text-neutral-300">
                         {mfaAuthMethod === 'email' ? 'کد تأیید ایمیل' : 'کد 6 رقمی Authenticator'}
                       </label>
                       <input
-                        id="mfa-code"
+                        id="mobile-mfa-code"
                         type="text"
                         inputMode="numeric"
                         placeholder="123456"
@@ -349,34 +372,34 @@ export function MobileAuthView({ logic }: { logic: AuthLogicReturn }) {
                   </div>
                 )}
 
-                {/* Mode Options: Remember Me & Login Method Switcher */}
+                {/* Mode Options: Remember Me & Forgot Password */}
                 {mode === 'login' && !mfaChallenge && (
-                  <div className="flex items-center justify-between pt-1 text-xs text-neutral-400">
-                    <label className="flex items-center gap-2 cursor-pointer select-none group min-h-[44px] py-1">
-                      <div className="relative">
-                        <input
-                          type="checkbox"
-                          checked={rememberMe}
-                          onChange={(e) => setRememberMe(e.target.checked)}
-                          className="sr-only"
-                        />
-                        <div
-                          className={`w-4 h-4 rounded border transition-all flex items-center justify-center ${
-                            rememberMe
-                              ? 'bg-purple-600 border-purple-500 text-white'
-                              : 'bg-neutral-900 border-white/20 group-hover:border-white/40'
-                          }`}
-                        >
-                          {rememberMe && <Check className="w-3 h-3 stroke-[3]" />}
-                        </div>
+                  <div className="flex items-center justify-between pt-1 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setRememberMe((v) => !v)}
+                      className="flex items-center gap-2.5 min-h-[44px] py-1 cursor-pointer select-none group active:scale-95 transition-transform"
+                      role="checkbox"
+                      aria-checked={rememberMe}
+                    >
+                      <div
+                        className={`w-5 h-5 rounded-md border-2 transition-all flex items-center justify-center ${
+                          rememberMe
+                            ? 'bg-purple-600 border-purple-500 text-white shadow-[0_0_12px_rgba(168,85,247,0.4)]'
+                            : 'bg-neutral-900 border-white/40 group-hover:border-purple-400'
+                        }`}
+                      >
+                        {rememberMe && <Check className="w-3.5 h-3.5 stroke-[3]" />}
                       </div>
-                      <span className="group-hover:text-neutral-200 transition-colors">مرا به خاطر بسپار</span>
-                    </label>
+                      <span className="text-xs font-semibold text-neutral-200 group-hover:text-white transition-colors">
+                        مرا به خاطر بسپار
+                      </span>
+                    </button>
 
                     <button
                       type="button"
                       onClick={handleForgotPassword}
-                      className="text-purple-400 hover:text-purple-300 transition-colors hover:underline p-2 -mr-2 min-h-[44px] flex items-center"
+                      className="text-purple-400 hover:text-purple-300 transition-colors hover:underline p-2 -mr-2 min-h-[44px] flex items-center text-xs"
                     >
                       رمز عبور را فراموش کرده‌اید؟
                     </button>
@@ -401,7 +424,7 @@ export function MobileAuthView({ logic }: { logic: AuthLogicReturn }) {
                       : 'text-neutral-500 hover:text-neutral-300'
                   }`}
                 >
-                  ورود با ایمیل
+                  ورود با رمز عبور
                 </button>
                 <span className="text-neutral-700">•</span>
                 <button
@@ -416,40 +439,34 @@ export function MobileAuthView({ logic }: { logic: AuthLogicReturn }) {
                       : 'text-neutral-500 hover:text-neutral-300'
                   }`}
                 >
-                  ورود با شماره تلفن (بله)
+                  ورود با پیام‌رسان بله
                 </button>
               </div>
             )}
 
             {/* Messages / Alerts */}
             {errorMessage && (
-              <motion.div
-                initial={{ opacity: 0, y: -6 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-300 text-xs leading-relaxed"
+              <div
+                className="p-3.5 rounded-xl bg-red-500/15 border border-red-500/30 text-red-200 text-xs leading-relaxed font-medium shadow-sm"
                 role="alert"
               >
                 {errorMessage}
-              </motion.div>
+              </div>
             )}
 
             {noticeMessage && (
-              <motion.div
-                initial={{ opacity: 0, y: -6 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="p-3 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-200 text-xs leading-relaxed"
+              <div
+                className="p-3.5 rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-200 text-xs leading-relaxed font-medium shadow-sm"
               >
                 {noticeMessage}
-              </motion.div>
+              </div>
             )}
 
             {/* Submit Button */}
-            <motion.button
-              whileHover={{ scale: 1.01 }}
-              whileTap={{ scale: 0.98 }}
+            <button
               type="submit"
               disabled={loading}
-              className="relative w-full h-11 mt-2 rounded-xl bg-gradient-to-r from-white via-neutral-100 to-neutral-200 text-black font-bold text-sm shadow-[0_0_20px_rgba(255,255,255,0.12)] hover:shadow-[0_0_25px_rgba(255,255,255,0.2)] disabled:opacity-60 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 overflow-hidden"
+              className="relative z-10 w-full h-11 mt-2 rounded-xl bg-gradient-to-r from-white via-neutral-100 to-neutral-200 text-black font-bold text-sm shadow-[0_0_20px_rgba(255,255,255,0.12)] hover:shadow-[0_0_25px_rgba(255,255,255,0.2)] active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 overflow-hidden cursor-pointer select-none"
             >
               {loading ? (
                 <span className="flex items-center gap-2 text-neutral-800">
@@ -461,18 +478,18 @@ export function MobileAuthView({ logic }: { logic: AuthLogicReturn }) {
                   <span>
                     {mode === 'login'
                       ? mfaChallenge
-                        ? 'تأیید و ورود'
+                        ? 'تأیید و ورود به حساب'
                         : loginMethod === 'phone'
                         ? phoneChallenge
                           ? 'تأیید کد بله'
                           : 'ارسال کد ورود'
-                        : 'ورود به داشبورد'
+                        : 'ورود به حساب'
                       : 'ساخت حساب جدید'}
                   </span>
                   <ArrowLeft className="w-4 h-4 text-black/80" />
                 </>
               )}
-            </motion.button>
+            </button>
           </form>
 
           {/* Cancel MFA Button */}
@@ -519,24 +536,30 @@ export function MobileAuthView({ logic }: { logic: AuthLogicReturn }) {
             {mode === 'login' ? (
               <p>
                 حساب کاربری ندارید؟{' '}
-                <button
-                  type="button"
-                  onClick={() => handleSwitchMode('signup')}
-                  className="text-purple-300 font-semibold hover:text-purple-200 transition-colors hover:underline inline-flex items-center justify-center gap-1 min-h-[44px] px-2 py-2 -my-2"
+                <Link
+                  href="/register"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    handleSwitchMode('signup');
+                  }}
+                  className="text-purple-300 font-semibold hover:text-purple-200 transition-colors hover:underline inline-flex items-center justify-center gap-1 min-h-[44px] px-2 py-2 -my-2 cursor-pointer"
                 >
                   ثبت‌نام کنید
-                </button>
+                </Link>
               </p>
             ) : (
               <p>
                 قبلاً حساب ساخته‌اید؟{' '}
-                <button
-                  type="button"
-                  onClick={() => handleSwitchMode('login')}
-                  className="text-purple-300 font-semibold hover:text-purple-200 transition-colors hover:underline inline-flex items-center justify-center gap-1 min-h-[44px] px-2 py-2 -my-2"
+                <Link
+                  href="/"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    handleSwitchMode('login');
+                  }}
+                  className="text-purple-300 font-semibold hover:text-purple-200 transition-colors hover:underline inline-flex items-center justify-center gap-1 min-h-[44px] px-2 py-2 -my-2 cursor-pointer"
                 >
                   وارد شوید
-                </button>
+                </Link>
               </p>
             )}
           </div>

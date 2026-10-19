@@ -9,6 +9,7 @@ import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
 import { decryptTotpSecret, verifyTotpCode } from '@/lib/totp';
 import { isSecureRequest } from '@/lib/request';
 import { rateLimit, getClientIp } from '@/lib/rate-limit';
+import { isIranianMobile, normalizePhone } from '@/lib/bale';
 
 type LoginBody = {
   email?: unknown;
@@ -57,7 +58,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const email = typeof body.email === 'string' ? body.email.trim() : '';
+  const emailInput = typeof body.email === 'string' ? body.email.trim() : '';
   const password = typeof body.password === 'string' ? body.password : '';
   const mfaId = typeof body.mfaId === 'string' ? body.mfaId : '';
   const otpId = typeof body.otpId === 'string' ? body.otpId : '';
@@ -68,16 +69,31 @@ export async function POST(request: Request) {
     : '';
 
   if (
-    !email
+    !emailInput
     || !password
     || password.length > 256
     || (mfaId && authMethod === 'email' && (!otpId || !otpCode))
     || (mfaId && authMethod === 'totp' && !totpCode)
   ) {
     return NextResponse.json(
-      { message: 'ایمیل و رمز عبور را وارد کنید.' },
+      { message: 'ایمیل یا شماره همراه و رمز عبور را وارد کنید.' },
       { status: 400 },
     );
+  }
+
+  let email = emailInput;
+  if (isIranianMobile(normalizePhone(emailInput))) {
+    try {
+      const service = await getPocketBaseServiceClient();
+      const userByPhone = await service.collection('users').getFirstListItem(
+        service.filter('phone = {:phone}', { phone: normalizePhone(emailInput) }),
+      );
+      if (userByPhone?.email) {
+        email = userByPhone.email;
+      }
+    } catch {
+      // Keep resolved email as emailInput so PocketBase authWithPassword fails naturally with generic 401
+    }
   }
 
   const pb = createPocketBaseClient();

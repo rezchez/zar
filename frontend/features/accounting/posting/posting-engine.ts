@@ -88,6 +88,18 @@ export const SYSTEM_ACCOUNT_CODES = {
   BANK_EXPENSE: '6300',
 } as const;
 
+const pbAccountCaches = new WeakMap<object, Map<string, { id: string; code: string; name: string }>>();
+
+function getPbAccountCache(pb: PocketBase): Map<string, { id: string; code: string; name: string }> | null {
+  if (!pb || typeof pb !== 'object') return null;
+  let cache = pbAccountCaches.get(pb);
+  if (!cache) {
+    cache = new Map();
+    pbAccountCaches.set(pb, cache);
+  }
+  return cache;
+}
+
 /**
  * Resolves account details from Chart of Accounts by ID or fallback Code.
  */
@@ -96,6 +108,12 @@ async function resolveAccount(
   accountIdOrCode: string,
   strict = false,
 ): Promise<{ id: string; code: string; name: string }> {
+  const cache = getPbAccountCache(pb);
+  const cacheKey = `${accountIdOrCode}:${strict}`;
+  const cached = cache?.get(cacheKey);
+  if (cached) return cached;
+
+  let resolved: { id: string; code: string; name: string } | null = null;
   try {
     // Try by ID first
     const record = await pb.collection('chart_of_accounts').getOne(accountIdOrCode).catch(() => null);
@@ -103,7 +121,9 @@ async function resolveAccount(
       if (record.isActive === false) {
         throw new Error(`سرفصل حساب "${record.name}" (${record.code}) غیرفعال است.`);
       }
-      return { id: record.id, code: record.code, name: record.name };
+      resolved = { id: record.id, code: record.code, name: record.name };
+      cache?.set(cacheKey, resolved);
+      return resolved;
     }
 
     // Try by code
@@ -114,7 +134,9 @@ async function resolveAccount(
       if (byCode.isActive === false) {
         throw new Error(`سرفصل حساب "${byCode.name}" (${byCode.code}) غیرفعال است.`);
       }
-      return { id: byCode.id, code: byCode.code, name: byCode.name };
+      resolved = { id: byCode.id, code: byCode.code, name: byCode.name };
+      cache?.set(cacheKey, resolved);
+      return resolved;
     }
     // Try parent code prefix if accountIdOrCode is a sub-account (e.g. 113040 -> 1130)
     if (accountIdOrCode.length > 4) {
@@ -126,7 +148,9 @@ async function resolveAccount(
         if (byParent.isActive === false) {
           throw new Error(`سرفصل حساب "${byParent.name}" (${byParent.code}) غیرفعال است.`);
         }
-        return { id: byParent.id, code: byParent.code, name: byParent.name };
+        resolved = { id: byParent.id, code: byParent.code, name: byParent.name };
+        cache?.set(cacheKey, resolved);
+        return resolved;
       }
     }
   } catch (err) {
@@ -148,14 +172,18 @@ async function resolveAccount(
         if (dbAcc.isActive === false) {
           throw new Error(`سرفصل حساب "${dbAcc.name}" (${dbAcc.code}) غیرفعال است.`);
         }
-        return { id: dbAcc.id, code: dbAcc.code, name: dbAcc.name };
+        resolved = { id: dbAcc.id, code: dbAcc.code, name: dbAcc.name };
+        cache?.set(cacheKey, resolved);
+        return resolved;
       }
     } catch (err) {
       if (err instanceof Error && err.message.includes('غیرفعال')) {
         throw err;
       }
     }
-    return { id: defaultAcc.id, code: defaultAcc.code, name: defaultAcc.name };
+    resolved = { id: defaultAcc.id, code: defaultAcc.code, name: defaultAcc.name };
+    cache?.set(cacheKey, resolved);
+    return resolved;
   }
 
   // If still not found and length > 4, check parent in DEFAULT_CHART_OF_ACCOUNTS
@@ -171,14 +199,18 @@ async function resolveAccount(
           if (dbAcc.isActive === false) {
             throw new Error(`سرفصل حساب "${dbAcc.name}" (${dbAcc.code}) غیرفعال است.`);
           }
-          return { id: dbAcc.id, code: dbAcc.code, name: dbAcc.name };
+          resolved = { id: dbAcc.id, code: dbAcc.code, name: dbAcc.name };
+          cache?.set(cacheKey, resolved);
+          return resolved;
         }
       } catch (err) {
         if (err instanceof Error && err.message.includes('غیرفعال')) {
           throw err;
         }
       }
-      return { id: parentDefaultAcc.id, code: parentDefaultAcc.code, name: parentDefaultAcc.name };
+      resolved = { id: parentDefaultAcc.id, code: parentDefaultAcc.code, name: parentDefaultAcc.name };
+      cache?.set(cacheKey, resolved);
+      return resolved;
     }
   }
 
@@ -192,17 +224,21 @@ async function resolveAccount(
       pb.filter('code = {:code}', { code: SYSTEM_ACCOUNT_CODES.GOLD_INVENTORY }),
     ).catch(() => null);
     if (fallbackGold?.id) {
-      return { id: fallbackGold.id, code: fallbackGold.code, name: fallbackGold.name };
+      resolved = { id: fallbackGold.id, code: fallbackGold.code, name: fallbackGold.name };
+      cache?.set(cacheKey, resolved);
+      return resolved;
     }
   } catch {
     //
   }
 
-  return {
+  resolved = {
     id: accountIdOrCode,
     code: accountIdOrCode,
     name: `سرفصل حساب ${accountIdOrCode}`,
   };
+  cache?.set(cacheKey, resolved);
+  return resolved;
 }
 
 /**
@@ -325,35 +361,37 @@ export async function postJournalEntry(
         await pb.collection('journal_lines').delete(oldLine.id).catch(() => undefined);
       }
 
-      for (const line of resolvedLines) {
-        const linePayload: Record<string, unknown> = {
-          journal_entry_id: existing.id,
-          account_id: line.accountId,
-          debit: line.debit,
-          credit: line.credit,
-          description: line.description || '',
-        };
-        if (line.partyId && typeof line.partyId === 'string' && line.partyId.trim()) {
-          linePayload.party_id = line.partyId.trim();
-        }
-        if (line.bankAccountId && typeof line.bankAccountId === 'string' && line.bankAccountId.trim()) {
-          linePayload.bank_account_id = line.bankAccountId.trim();
-        }
-        if (line.chequeId && typeof line.chequeId === 'string' && line.chequeId.trim()) {
-          linePayload.cheque_id = line.chequeId.trim();
-        }
-
-        try {
-          await pb.collection('journal_lines').create(linePayload);
-        } catch (lineCreateErr: any) {
-          const respData = lineCreateErr?.response?.data || lineCreateErr?.data;
-          if (respData?.party_id && linePayload.party_id) {
-            const fallbackPayload = { ...linePayload };
-            delete fallbackPayload.party_id;
-            await pb.collection('journal_lines').create(fallbackPayload);
+      await Promise.all(
+        resolvedLines.map(async (line) => {
+          const linePayload: Record<string, unknown> = {
+            journal_entry_id: existing.id,
+            account_id: line.accountId,
+            debit: line.debit,
+            credit: line.credit,
+            description: line.description || '',
+          };
+          if (line.partyId && typeof line.partyId === 'string' && line.partyId.trim()) {
+            linePayload.party_id = line.partyId.trim();
           }
-        }
-      }
+          if (line.bankAccountId && typeof line.bankAccountId === 'string' && line.bankAccountId.trim()) {
+            linePayload.bank_account_id = line.bankAccountId.trim();
+          }
+          if (line.chequeId && typeof line.chequeId === 'string' && line.chequeId.trim()) {
+            linePayload.cheque_id = line.chequeId.trim();
+          }
+
+          try {
+            await pb.collection('journal_lines').create(linePayload);
+          } catch (lineCreateErr: any) {
+            const respData = lineCreateErr?.response?.data || lineCreateErr?.data;
+            if (respData?.party_id && linePayload.party_id) {
+              const fallbackPayload = { ...linePayload };
+              delete fallbackPayload.party_id;
+              await pb.collection('journal_lines').create(fallbackPayload);
+            }
+          }
+        }),
+      );
     } catch (err) {
       console.warn('Failed to update child journal lines:', err);
     }
@@ -413,51 +451,53 @@ export async function postJournalEntry(
   // Create Dedicated Child Journal Lines in `journal_lines` Collection
   const createdLineIds: string[] = [];
   try {
-    for (const line of resolvedLines) {
-      const linePayload: Record<string, unknown> = {
-        journal_entry_id: createdJournal.id,
-        account_id: line.accountId,
-        debit: line.debit,
-        credit: line.credit,
-        description: line.description || '',
-      };
-      if (line.partyId && typeof line.partyId === 'string' && line.partyId.trim()) {
-        linePayload.party_id = line.partyId.trim();
-      }
-      if (line.bankAccountId && typeof line.bankAccountId === 'string' && line.bankAccountId.trim()) {
-        linePayload.bank_account_id = line.bankAccountId.trim();
-      }
-      if (line.chequeId && typeof line.chequeId === 'string' && line.chequeId.trim()) {
-        linePayload.cheque_id = line.chequeId.trim();
-      }
+    await Promise.all(
+      resolvedLines.map(async (line) => {
+        const linePayload: Record<string, unknown> = {
+          journal_entry_id: createdJournal.id,
+          account_id: line.accountId,
+          debit: line.debit,
+          credit: line.credit,
+          description: line.description || '',
+        };
+        if (line.partyId && typeof line.partyId === 'string' && line.partyId.trim()) {
+          linePayload.party_id = line.partyId.trim();
+        }
+        if (line.bankAccountId && typeof line.bankAccountId === 'string' && line.bankAccountId.trim()) {
+          linePayload.bank_account_id = line.bankAccountId.trim();
+        }
+        if (line.chequeId && typeof line.chequeId === 'string' && line.chequeId.trim()) {
+          linePayload.cheque_id = line.chequeId.trim();
+        }
 
-      let createdLine: any;
-      try {
-        createdLine = await pb.collection('journal_lines').create(linePayload);
-      } catch (lineCreateErr: any) {
-        const respData = lineCreateErr?.response?.data || lineCreateErr?.data;
-        if (respData?.party_id && linePayload.party_id) {
-          const fallbackPayload = { ...linePayload };
-          delete fallbackPayload.party_id;
-          createdLine = await pb.collection('journal_lines').create(fallbackPayload);
-        } else if (respData?.account_id) {
-          // If account_id relation failed (e.g. sub-account not in DB), fallback to base account 1130 or 3100
-          const fallbackCode = line.debit > 0 ? SYSTEM_ACCOUNT_CODES.GOLD_INVENTORY : SYSTEM_ACCOUNT_CODES.OPENING_EQUITY;
-          const fallbackAcc = await pb.collection('chart_of_accounts').getFirstListItem(
-            pb.filter('code = {:code}', { code: fallbackCode }),
-          ).catch(() => null);
-          if (fallbackAcc?.id) {
-            const fallbackPayload = { ...linePayload, account_id: fallbackAcc.id };
+        let createdLine: any;
+        try {
+          createdLine = await pb.collection('journal_lines').create(linePayload);
+        } catch (lineCreateErr: any) {
+          const respData = lineCreateErr?.response?.data || lineCreateErr?.data;
+          if (respData?.party_id && linePayload.party_id) {
+            const fallbackPayload = { ...linePayload };
+            delete fallbackPayload.party_id;
             createdLine = await pb.collection('journal_lines').create(fallbackPayload);
+          } else if (respData?.account_id) {
+            // If account_id relation failed (e.g. sub-account not in DB), fallback to base account 1130 or 3100
+            const fallbackCode = line.debit > 0 ? SYSTEM_ACCOUNT_CODES.GOLD_INVENTORY : SYSTEM_ACCOUNT_CODES.OPENING_EQUITY;
+            const fallbackAcc = await pb.collection('chart_of_accounts').getFirstListItem(
+              pb.filter('code = {:code}', { code: fallbackCode }),
+            ).catch(() => null);
+            if (fallbackAcc?.id) {
+              const fallbackPayload = { ...linePayload, account_id: fallbackAcc.id };
+              createdLine = await pb.collection('journal_lines').create(fallbackPayload);
+            } else {
+              throw lineCreateErr;
+            }
           } else {
             throw lineCreateErr;
           }
-        } else {
-          throw lineCreateErr;
         }
-      }
-      createdLineIds.push(createdLine.id);
-    }
+        createdLineIds.push(createdLine.id);
+      }),
+    );
   } catch (lineError: any) {
     // Rollback created journal entry and any lines if line creation fails
     for (const lineId of createdLineIds) {

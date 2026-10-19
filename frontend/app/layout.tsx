@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import './document-form.css';
+import '@/lib/uuid';
 import ThemeProvider from '@/src/components/ThemeProvider';
 import { SettingsProvider } from '@/src/components/SettingsProvider';
 import PwaInstallPrompt from '@/src/components/PwaInstallPrompt';

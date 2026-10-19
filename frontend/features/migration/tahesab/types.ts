@@ -177,9 +177,25 @@ export interface PartyMappingItem {
   notes?: string;
 }
 
+export type AssayLabMappingStatus = 'mapped' | 'unmapped' | 'needs_review' | 'new_lab';
+
+export interface AssayLabMappingItem {
+  sourceName: string;
+  sourcePhone?: string;
+  sourceAddress?: string;
+  targetAssayLabId?: string;
+  targetAssayLabName?: string;
+  targetProvince?: string;
+  targetCity?: string;
+  status: AssayLabMappingStatus;
+  matchType?: 'exact_name' | 'exact_phone' | 'canonical_name' | 'stem_keyword' | 'manual' | 'create_new';
+  notes?: string;
+}
+
 export interface MigrationMappings {
   accounts: AccountMappingItem[];
   parties: PartyMappingItem[];
+  assayLabs?: AssayLabMappingItem[];
   defaultMetalKarat: number; // default 750
   defaultCurrency: string; // default IRR
 }
@@ -195,6 +211,8 @@ export interface MigrationPreviewStats {
   totalCoins: number;
   totalGemstones: number;
   totalAssayLabs: number;
+  totalMappedAssayLabs?: number;
+  totalNewAssayLabs?: number;
   totalConditionalLots: number;
   totalTransferPairs: number;
   totalGoldVolumeGrams: number;
@@ -232,6 +250,7 @@ export interface MigrationResult {
   status: 'completed' | 'failed' | 'rolled_back' | 'in_progress';
   importedParties: number;
   importedBankAccounts: number;
+  importedAssayLabs?: number;
   importedDocuments: number;
   importedLines: number;
   importedJournalEntries: number;

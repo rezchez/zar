@@ -132,7 +132,8 @@ export async function parseTahesabBackup(
       cacheKey = `${source}:${st.size}:${st.mtimeMs}`;
       const cached = parserCache.get(cacheKey);
       if (cached) {
-        if (!options.maxDetailRows || (cached.maxDetailRows && cached.maxDetailRows >= options.maxDetailRows)) {
+        const isCacheSufficient = !cached.maxDetailRows || (typeof options.maxDetailRows === 'number' && cached.maxDetailRows >= options.maxDetailRows);
+        if (isCacheSufficient) {
           return { rawDb: cached.rawDb, stats: cached.stats };
         }
       }
@@ -143,7 +144,8 @@ export async function parseTahesabBackup(
     cacheKey = `buf:${source.length}:${source.readUInt32LE(0)}:${source.readUInt32LE(Math.max(0, source.length - 8))}`;
     const cached = parserCache.get(cacheKey);
     if (cached) {
-      if (!options.maxDetailRows || (cached.maxDetailRows && cached.maxDetailRows >= options.maxDetailRows)) {
+      const isCacheSufficient = !cached.maxDetailRows || (typeof options.maxDetailRows === 'number' && cached.maxDetailRows >= options.maxDetailRows);
+      if (isCacheSufficient) {
         return { rawDb: cached.rawDb, stats: cached.stats };
       }
     }

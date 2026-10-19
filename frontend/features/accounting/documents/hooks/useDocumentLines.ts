@@ -10,6 +10,7 @@ import type {
 } from '@/src/components/documents/RawGoldTab';
 import type { AppSettings } from '@/lib/settings';
 import { useToastManager } from '@/components/ui/toast';
+import { generateUUID } from '@/lib/uuid';
 import { formatJalaliDate, normalizeDigits } from '@/lib/jalali';
 import {
   actualWeightFromMoney,
@@ -126,7 +127,7 @@ export function createLine(nature: DocumentNature = 'received', sourceTab = 'met
 
   const isMetal = isMetalBearingTab(sourceTab);
   return {
-    id: crypto.randomUUID(),
+    id: generateUUID(),
     documentNature: nature,
     documentTab: docTab,
     sourceTab,
@@ -1008,7 +1009,7 @@ export function useDocumentLines({
               return l;
             });
           } else {
-            const physicalLineId = crypto.randomUUID();
+            const physicalLineId = generateUUID();
             tradeLine.details.linkedLineId = physicalLineId;
             const newPhysical: DocumentLine = {
               id: physicalLineId,
@@ -1138,7 +1139,7 @@ export function useDocumentLines({
                 return l;
               });
             } else {
-              const claimLineId = crypto.randomUUID();
+              const claimLineId = generateUUID();
               tradeLine.details.linkedLineId = claimLineId;
               const newClaim: DocumentLine = {
                 id: claimLineId,
@@ -1198,8 +1199,8 @@ export function useDocumentLines({
       }
     } else {
       if (isSettledMetalTrade) {
-        const tradeLineId = activeDraft.id || crypto.randomUUID();
-        const physicalLineId = crypto.randomUUID();
+        const tradeLineId = activeDraft.id || generateUUID();
+        const physicalLineId = generateUUID();
 
         const tradeLineToCommit: DocumentLine = {
           ...lineToCommit,
@@ -1252,10 +1253,10 @@ export function useDocumentLines({
             : 'ردیف فروش و ردیف خروج فیزیکی طلا به سند اضافه شدند.',
         );
       } else if (isCurrencyTrade) {
-        const tradeLineId = activeDraft.id || crypto.randomUUID();
+        const tradeLineId = activeDraft.id || generateUUID();
 
         if (isUnsettledCurrency) {
-          const claimLineId = crypto.randomUUID();
+          const claimLineId = generateUUID();
 
           const tradeLineToCommit: DocumentLine = {
             ...lineToCommit,

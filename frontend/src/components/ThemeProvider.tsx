@@ -1,5 +1,6 @@
 'use client';
 
+import '@/lib/uuid';
 import { createContext, useContext, useEffect, useState } from 'react';
 
 export type ThemeMode = 'light' | 'dark' | 'system';

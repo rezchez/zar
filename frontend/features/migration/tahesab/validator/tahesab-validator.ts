@@ -124,10 +124,10 @@ export function validateTahesabMigration(
 
       // Weights & Grades validation
       if (line.weight > 0) {
-        if (line.grade < 1 || line.grade > 1000) {
+        if (line.metalType !== 'none' && (line.grade < 1 || line.grade > 1000)) {
           errors.push({
             code: 'ERR_INVALID_GRADE',
-            message: `عیار نامعتبر ${line.grade} در ردیف ${line.lineNumber} سند ${doc.documentNumber}. علت: عیار طلا باید بین ۱ تا ۱۰۰۰ باشد.`,
+            message: `عیار نامعتبر ${line.grade} در ردیف ${line.lineNumber} سند ${doc.documentNumber}. علت: عیار فلز باید بین ۱ تا ۱۰۰۰ باشد.`,
             severity: 'ERROR',
             sourceType: 'document_line',
             sourceId: `${doc.sourceFactorCode}:${line.lineNumber}`,
@@ -136,7 +136,7 @@ export function validateTahesabMigration(
 
         if (line.metalType === 'silver') {
           totalSilverGrams += line.convertedWeight750 || line.weight;
-        } else {
+        } else if (line.metalType === 'gold') {
           totalGoldGrams += line.convertedWeight750 || line.weight;
           docGoldSum += line.convertedWeight750 || line.weight;
         }
@@ -198,6 +198,9 @@ export function validateTahesabMigration(
     }
   }
 
+  const mappedAssayLabsCount = (mappings.assayLabs || []).filter((l) => l.status === 'mapped').length;
+  const newAssayLabsCount = (mappings.assayLabs || []).filter((l) => l.status === 'new_lab').length;
+
   const isBlocked = errors.some((e) => e.severity === 'BLOCKING');
   const preview: MigrationPreviewStats = {
     totalDocuments: data.documents.length,
@@ -210,6 +213,8 @@ export function validateTahesabMigration(
     totalCoins: data.coins.length,
     totalGemstones: data.gemstones.length,
     totalAssayLabs: data.assayLabs.length,
+    totalMappedAssayLabs: mappedAssayLabsCount,
+    totalNewAssayLabs: newAssayLabsCount,
     totalConditionalLots: conditionalLots,
     totalTransferPairs: matchedTransferPairs,
     totalGoldVolumeGrams: Math.round(totalGoldGrams * 1000) / 1000,

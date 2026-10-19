@@ -10,6 +10,7 @@ import { useAppSettings } from '@/src/components/SettingsProvider';
 import { normalizeCurrencyCode, type Customer } from '@/lib/customer';
 import type { DocumentNature } from '@/lib/document';
 import { formatJalaliDate } from '@/lib/jalali';
+import { generateUUID } from '@/lib/uuid';
 import { convertTomanToRial } from '@/lib/money';
 import {
   DEFAULT_STANDARD_CURRENCIES,
@@ -150,7 +151,7 @@ export default function DocumentForm({
   // Document metadata state
   const [documentNature, setDocumentNature] = useState<DocumentNature>('received');
   const [documentDateJalali, setDocumentDateJalali] = useState(() => formatJalaliDate());
-  const [documentId, setDocumentId] = useState(() => crypto.randomUUID());
+  const [documentId, setDocumentId] = useState(() => generateUUID());
   const [documentNumberDisplay, setDocumentNumberDisplay] = useState('');
   const [documentNumberLoading, setDocumentNumberLoading] = useState(false);
 
@@ -1318,7 +1319,7 @@ export default function DocumentForm({
 
       // Reset document state
       setCommittedLines([]);
-      setDocumentId(crypto.randomUUID());
+      setDocumentId(generateUUID());
       setDraftLine(createSettingsLine(documentNature, activeEntryTab));
       setDateWarningAcknowledged(false);
     } catch (error) {
@@ -1517,7 +1518,7 @@ export default function DocumentForm({
               setIsEditingExistingDoc(false);
               setEditingExistingDocId('');
               setCommittedLines([]);
-              setDocumentId(crypto.randomUUID());
+              setDocumentId(generateUUID());
               router.push('/dashboard/documents/new');
             }}
             className="text-xs px-3 py-1.5 rounded-lg font-semibold bg-amber-500/20 hover:bg-amber-500/30 text-amber-900 dark:text-amber-200 transition-colors shrink-0"

@@ -1,5 +1,6 @@
 import type PocketBase from 'pocketbase';
 import { defaultSettings, normalizeSettings } from '@/lib/settings';
+import { generateUUID } from '@/lib/uuid';
 
 export async function getActiveDocumentPrefix(pb: PocketBase): Promise<string> {
   try {
@@ -164,7 +165,7 @@ export function transactionRecordToDocumentLine(
   );
 
   return {
-    id: String(record.id || (typeof crypto !== 'undefined' ? crypto.randomUUID() : Math.random().toString(36).substring(2))),
+    id: String(record.id || generateUUID()),
     documentNature: nature,
     documentTab: tab,
     sourceTab: (details as any).sourceTab || tab,

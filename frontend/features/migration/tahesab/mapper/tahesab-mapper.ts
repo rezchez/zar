@@ -1,10 +1,13 @@
 import { normalizePersianDigits } from '@/lib/normalize-persian-digits';
+import { DEFAULT_ASSAY_LABORATORIES } from '@/lib/assay-laboratories';
 import type {
   NormalizedMigrationData,
   NormalizedParty,
+  NormalizedAssayLab,
   MigrationMappings,
   PartyMappingItem,
   AccountMappingItem,
+  AssayLabMappingItem,
 } from '../types';
 
 export interface ExistingCustomerSummary {
@@ -19,6 +22,17 @@ export interface ExistingAccountSummary {
   code: string;
   name: string;
   isActive?: boolean;
+}
+
+export interface ExistingAssayLabSummary {
+  id: string;
+  name: string;
+  phone?: string;
+  city?: string;
+  province?: string;
+  code?: string;
+  isActive?: boolean;
+  isCustom?: boolean;
 }
 
 function cleanString(val?: string): string {
@@ -56,6 +70,7 @@ export function buildInitialMappings(
   data: NormalizedMigrationData,
   existingCustomers: ExistingCustomerSummary[] = [],
   existingAccounts: ExistingAccountSummary[] = [],
+  existingAssayLabs: ExistingAssayLabSummary[] = [],
 ): MigrationMappings {
   // Index existing customers by clean name and clean phone
   const customersByName = new Map<string, ExistingCustomerSummary[]>();
@@ -175,10 +190,235 @@ export function buildInitialMappings(
     }
   }
 
+  // 3. Assay Laboratory Mappings
+  const assayLabMappings = buildAssayLabMappings(data.assayLabs || [], existingAssayLabs);
+
   return {
     accounts: accountMappings,
     parties: partyMappings,
+    assayLabs: assayLabMappings,
     defaultMetalKarat: 750,
     defaultCurrency: 'IRR',
   };
+}
+
+export function normalizeAssayLabText(val?: string): string {
+  if (!val) return '';
+  return normalizePersianDigits(val)
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/[ي]/g, 'ی')
+    .replace(/[ك]/g, 'ک')
+    .replace(/[ۀة]/g, 'ه')
+    .replace(/[أإآ]/g, 'ا')
+    .replace(/[\s\-_.,()\[\]]/g, '')
+    .toLowerCase();
+}
+
+export function stripAssayLabAffixes(val?: string): string {
+  if (!val) return '';
+  let s = normalizePersianDigits(val)
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/[ي]/g, 'ی')
+    .replace(/[ك]/g, 'ک')
+    .replace(/[ۀة]/g, 'ه')
+    .replace(/[أإآ]/g, 'ا')
+    .trim();
+  s = s.replace(/^(?:ری‌گیری|ری گیری|ریگیری|آزمایشگاه طلا و نقره|آزمایشگاه عیارسنجی|آزمایشگاه|عیارسنجی و ذوب|عیارسنجی|دفتر ری‌گیری|مرکز استعلام و عیارسنجی|سواله|مرکز عیارسنجی|کارگاه عیارسنجی)\s*/gi, '');
+  s = s.replace(/\s*\([^)]*\)\s*$/g, '');
+  s = s.replace(/\s*(?:تهران|مشهد|اصفهان|تبریز|شیراز|اردبیل|ساری|رشت|یزد|قم|کرج|اهواز|همدان|زنجان|قزوین|کرمان|ارومیه|اسلامشهر|ورامین|ملارد|اندیشه)\s*$/gi, '');
+  return s.trim();
+}
+
+function cleanPhoneDigits(p?: string): string {
+  if (!p) return '';
+  const digits = normalizePersianDigits(p).replace(/\D/g, '');
+  return digits.length >= 7 ? digits.slice(-8) : '';
+}
+
+function pickBestMatch(matches: ExistingAssayLabSummary[]): ExistingAssayLabSummary | null {
+  if (!matches || matches.length === 0) return null;
+  const dbMatch = matches.find((m) => m.id.startsWith('db_') || m.id.length === 15);
+  if (dbMatch) return dbMatch;
+  return matches[0];
+}
+
+function isConsistentMatches(matches: ExistingAssayLabSummary[]): boolean {
+  if (matches.length <= 1) return true;
+  if (matches.some((m) => m.id.startsWith('db_') || m.id.length === 15)) return true;
+  const firstStripped = normalizeAssayLabText(stripAssayLabAffixes(matches[0].name));
+  return matches.every((m) => normalizeAssayLabText(stripAssayLabAffixes(m.name)) === firstStripped);
+}
+
+/**
+ * Reconciles Tahesab assay laboratories with Zarfolio's official catalog and existing DB records.
+ */
+export function buildAssayLabMappings(
+  sourceLabs: NormalizedAssayLab[],
+  existingDbLabs: ExistingAssayLabSummary[] = [],
+): AssayLabMappingItem[] {
+  const catalogLabs: ExistingAssayLabSummary[] = [];
+  const seenIds = new Set<string>();
+
+  // 1. Existing DB records take highest precedence
+  for (const dbLab of existingDbLabs) {
+    if (dbLab.id && !seenIds.has(dbLab.id)) {
+      seenIds.add(dbLab.id);
+      catalogLabs.push(dbLab);
+    }
+  }
+
+  // 2. Default nationwide catalog records
+  for (const def of DEFAULT_ASSAY_LABORATORIES) {
+    if (!seenIds.has(def.id)) {
+      seenIds.add(def.id);
+      catalogLabs.push({
+        id: def.id,
+        name: def.name,
+        phone: def.phone,
+        city: def.city,
+        province: def.province,
+        code: def.code,
+        isActive: def.isActive,
+      });
+    }
+  }
+
+  const labsByPhone = new Map<string, ExistingAssayLabSummary[]>();
+  const labsByExactName = new Map<string, ExistingAssayLabSummary[]>();
+  const labsByStrippedName = new Map<string, ExistingAssayLabSummary[]>();
+
+  for (const lab of catalogLabs) {
+    const p = cleanPhoneDigits(lab.phone);
+    if (p) {
+      const list = labsByPhone.get(p) || [];
+      list.push(lab);
+      labsByPhone.set(p, list);
+    }
+
+    const exact = normalizeAssayLabText(lab.name);
+    if (exact) {
+      const list = labsByExactName.get(exact) || [];
+      list.push(lab);
+      labsByExactName.set(exact, list);
+    }
+
+    const stripped = normalizeAssayLabText(stripAssayLabAffixes(lab.name));
+    if (stripped) {
+      const list = labsByStrippedName.get(stripped) || [];
+      list.push(lab);
+      labsByStrippedName.set(stripped, list);
+    }
+  }
+
+  const results: AssayLabMappingItem[] = [];
+
+  for (const src of sourceLabs) {
+    const srcPhone = cleanPhoneDigits(src.phone);
+    const srcExact = normalizeAssayLabText(src.name);
+    const srcStripped = normalizeAssayLabText(stripAssayLabAffixes(src.name));
+
+    // 1. Phone match
+    if (srcPhone && labsByPhone.has(srcPhone)) {
+      const matches = labsByPhone.get(srcPhone)!;
+      if (isConsistentMatches(matches)) {
+        const m = pickBestMatch(matches)!;
+        results.push({
+          sourceName: src.name,
+          sourcePhone: src.phone,
+          sourceAddress: src.address,
+          targetAssayLabId: m.id,
+          targetAssayLabName: m.name,
+          targetProvince: m.province,
+          targetCity: m.city,
+          status: 'mapped',
+          matchType: 'exact_phone',
+          notes: `تطبیق قطعی با ری‌گیری (${m.name}) از طریق شماره تماس`,
+        });
+        continue;
+      }
+    }
+
+    // 2. Exact clean name match
+    if (srcExact && labsByExactName.has(srcExact)) {
+      const matches = labsByExactName.get(srcExact)!;
+      if (isConsistentMatches(matches)) {
+        const m = pickBestMatch(matches)!;
+        results.push({
+          sourceName: src.name,
+          sourcePhone: src.phone,
+          sourceAddress: src.address,
+          targetAssayLabId: m.id,
+          targetAssayLabName: m.name,
+          targetProvince: m.province,
+          targetCity: m.city,
+          status: 'mapped',
+          matchType: 'exact_name',
+          notes: `تطبیق دقیق نام با ری‌گیری (${m.name})`,
+        });
+        continue;
+      }
+    }
+
+    // 3. Stripped canonical name match
+    if (srcStripped && labsByStrippedName.has(srcStripped)) {
+      const matches = labsByStrippedName.get(srcStripped)!;
+      if (isConsistentMatches(matches)) {
+        const m = pickBestMatch(matches)!;
+        results.push({
+          sourceName: src.name,
+          sourcePhone: src.phone,
+          sourceAddress: src.address,
+          targetAssayLabId: m.id,
+          targetAssayLabName: m.name,
+          targetProvince: m.province,
+          targetCity: m.city,
+          status: 'mapped',
+          matchType: 'canonical_name',
+          notes: `تطبیق ساختاری عنوان با ری‌گیری (${m.name})`,
+        });
+        continue;
+      }
+    }
+
+    // 4. City-aware / Containment stem match
+    let stemMatch: ExistingAssayLabSummary | null = null;
+    if (srcStripped.length >= 3) {
+      for (const [st, list] of labsByStrippedName.entries()) {
+        if (st.includes(srcStripped) || srcStripped.includes(st)) {
+          if (Math.abs(st.length - srcStripped.length) <= 8) {
+            stemMatch = pickBestMatch(list);
+            if (stemMatch) break;
+          }
+        }
+      }
+    }
+
+    if (stemMatch) {
+      results.push({
+        sourceName: src.name,
+        sourcePhone: src.phone,
+        sourceAddress: src.address,
+        targetAssayLabId: stemMatch.id,
+        targetAssayLabName: stemMatch.name,
+        targetProvince: stemMatch.province,
+        targetCity: stemMatch.city,
+        status: 'mapped',
+        matchType: 'stem_keyword',
+        notes: `تطبیق کلیدواژه عنوان با ری‌گیری (${stemMatch.name})`,
+      });
+      continue;
+    }
+
+    // 5. New laboratory
+    results.push({
+      sourceName: src.name,
+      sourcePhone: src.phone,
+      sourceAddress: src.address,
+      status: 'new_lab',
+      matchType: 'create_new',
+      notes: 'ری‌گیری جدید (در زمان ایمپورت به صورت خودکار به لیست ری‌گیری‌های سیستم افزوده خواهد شد)',
+    });
+  }
+
+  return results;
 }

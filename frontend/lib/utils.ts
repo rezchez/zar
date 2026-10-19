@@ -77,3 +77,6 @@ export function fa(value: number | string | undefined | null): string {
   if (value === undefined || value === null) return '';
   return String(value).replace(/\d/g, (digit) => PERSIAN_DIGITS[parseInt(digit, 10)]);
 }
+
+export { generateUUID } from './uuid';
+

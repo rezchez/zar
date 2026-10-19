@@ -1,4 +1,5 @@
 import type PocketBase from 'pocketbase';
+import { clearMigrationSession } from './tahesab-importer';
 
 export interface RollbackResult {
   migrationId: string;
@@ -29,6 +30,8 @@ export async function rollbackTahesabMigration(
   if (!migrationId || migrationId.trim() === '') {
     throw new Error('شناسه معتبر مهاجرت برای عملیات Rollback الزامی است.');
   }
+
+  clearMigrationSession(migrationId);
 
   let writer = pb;
   if (pb && typeof (pb as any).authStore?.isValid === 'boolean') {
@@ -196,6 +199,8 @@ export async function wipeAllPreviousTahesabData(
       writer = pb;
     }
   }
+
+  clearMigrationSession();
 
   try {
     // 1. Delete all transactions originating from Tahesab

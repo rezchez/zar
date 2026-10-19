@@ -16,6 +16,7 @@ import {
   wipeAllPreviousTahesabData,
   deleteMigrationJob,
 } from '../features/migration/tahesab';
+import type { TahesabRawDatabase } from '../features/migration/tahesab/parser/tahesab-parser';
 
 const FIXTURE_PATH = path.resolve(process.cwd(), '../migration/tahesab/fixtures/1.mcbk');
 const SYMLINK_FIXTURE_PATH = path.resolve(process.cwd(), '../migration/tahesab/fixtures/Tahesab_Backup_1405-06-26.Mcbk');
@@ -1088,5 +1089,429 @@ describe('Tahesab Accounting Migration Engine Tests', () => {
     expect(jobs.length).toBe(1);
     expect(jobs[0].id).toBe('job_rec_1');
   });
+
+  // 22. Assay Laboratory Reconciliation & Matching
+  it('22. Assay Laboratory Reconciliation: accurately reconciles Tahesab raygiri with Zarfolio catalog and document lines', async () => {
+    const { rawDb } = await parseTahesabBackup(FIXTURE_PATH, { maxDetailRows: 200 });
+    const info = parseBackupInfo('Version=10.0');
+    const normalized = normalizeTahesabData(rawDb, info);
+
+    expect(normalized.assayLabs.length).toBe(305);
+
+    // Verify document line assayLabName extraction from name_az
+    const docWithAssay = normalized.documents.find((d) => d.lines.some((l) => l.assayLabName));
+    expect(docWithAssay).toBeDefined();
+    const assayLine = docWithAssay?.lines.find((l) => l.assayLabName);
+    expect(assayLine?.assayLabName).toBeTruthy();
+
+    // Verify buildAssayLabMappings matches against official Zarfolio catalog
+    const existingDbLabs = [
+      { id: 'db_lab_kaveh', name: 'آزمایشگاه طلا و نقره کاوه', phone: '02155555555' },
+      { id: 'db_lab_daghigh', name: 'ری‌گیری دقیق ری', phone: '02155933299' },
+    ];
+
+    const mappings = buildInitialMappings(normalized, [], [], existingDbLabs);
+    expect(mappings.assayLabs).toBeDefined();
+    expect(mappings.assayLabs?.length).toBe(305);
+
+    // Check specific known laboratories
+    const daghighMatch = mappings.assayLabs?.find((l) => l.sourceName === 'دقیق ری تهران');
+    expect(daghighMatch).toBeDefined();
+    expect(daghighMatch?.status).toBe('mapped');
+    expect(daghighMatch?.targetAssayLabName).toContain('ری');
+
+    const masoudMatch = mappings.assayLabs?.find((l) => l.sourceName === 'مسعود تهران');
+    expect(masoudMatch).toBeDefined();
+    expect(masoudMatch?.status).toBe('mapped');
+    expect(masoudMatch?.matchType).toBe('exact_phone');
+
+    // Test validation stats
+    const validation = validateTahesabMigration(normalized, mappings);
+    expect(validation.preview.totalAssayLabs).toBe(305);
+    expect(validation.preview.totalMappedAssayLabs).toBeGreaterThan(200);
+    expect(validation.preview.totalNewAssayLabs).toBeLessThan(100);
+
+    // Test import linking to metal_inventory and docDetails
+    const createdTransactions: any[] = [];
+    const createdMetalInventory: any[] = [];
+    const mockPb: any = {
+      filter: (tmpl: string) => tmpl,
+      collection: (col: string) => ({
+        getFirstListItem: async () => { throw new Error('Not found'); },
+        getFullList: async () => [],
+        create: async (data: any) => {
+          if (col === 'transactions') createdTransactions.push(data);
+          if (col === 'metal_inventory') createdMetalInventory.push(data);
+          return { id: `rec_${col}_${Date.now()}`, ...data };
+        },
+      }),
+    };
+
+    const mockDocData = {
+      backupInfo: { mohitCount: 1, dbType: 'SQL', version: '10.0', archiveCount: 0 },
+      parties: [{ sourceCode: '100', name: 'مشتری طلا', openingGoldWeight: 0, openingRialBalance: 0, currency: 'IRR', raw: {} }],
+      bankAccounts: [],
+      coins: [],
+      gemstones: [],
+      inventory: [],
+      assayLabs: [{ name: 'دقیق ری تهران', phone: '02155933299', raw: {} }],
+      documents: [
+        {
+          sourceFactorCode: 'DOC_TEST_ASSAY',
+          documentNumber: '9001',
+          dateIso: '2026-09-01T10:00:00Z',
+          dateJalali: '1405/06/11',
+          sourceCustomerCode: '100',
+          currency: 'IRR',
+          lines: [
+            {
+              sourceFactorCode: 'DOC_TEST_ASSAY',
+              lineNumber: 1,
+              nature: 'received',
+              kind: 'melted',
+              metalType: 'gold',
+              weight: 50,
+              grade: 750,
+              convertedWeight750: 50,
+              amountIrr: 0,
+              assayStampNumber: '78451',
+              assayLabName: 'دقیق ری تهران',
+              isConditional: false,
+              signedGoldAmount: 50,
+              signedRialAmount: 0,
+              raw: {},
+            },
+          ],
+        },
+      ],
+    };
+
+    const testMappings = buildInitialMappings(mockDocData as any, [], [], existingDbLabs);
+    const impRes = await importTahesabData(mockPb, mockDocData as any, testMappings, {
+      migrationId: 'test_assay_mig',
+      userId: 'test_user',
+    });
+
+    expect(impRes.importedDocuments).toBe(1);
+    expect(createdMetalInventory.length).toBe(1);
+    expect(createdMetalInventory[0].lab_name).toContain('ری');
+    expect(createdMetalInventory[0].stamp_number).toBe('78451');
+
+    expect(createdTransactions.length).toBe(1);
+    const docDetails = JSON.parse(createdTransactions[0].documentDetails);
+    expect(docDetails.assayStampNumber).toBe('78451');
+    expect(docDetails.assayLabName).toContain('ری');
+    expect(docDetails.labName).toContain('ری');
+  });
+
+  // 23. Metal Type & Karat Precision Detection
+  it('23. Metal Type & Karat Detection: accurately distinguishes silver vs gold, extracts line-level ayar and deduces missing ayar from tabdil', () => {
+    const rawDb: any = {
+      moshtarian: [{ mcode: '10', name: 'مشتری طلا و نقره' }],
+      hesab: [
+        {
+          Factor_Code: 'F_MIXED_1',
+          sh_factor: '101',
+          mcode: '10',
+          Tarikh: '2026-09-01 12:00:00',
+          Jens_Felez: '0', // Factor header says gold
+        },
+      ],
+      hesab_detail: [
+        {
+          Factor_Code: 'F_MIXED_1',
+          no: 'ورود طلا',
+          vazn: '100',
+          ayar: '750',
+          tabdil750_v: '100',
+          Jens_Felez: '0',
+          Abshode: '-1',
+        },
+        {
+          Factor_Code: 'F_MIXED_1',
+          no: 'ورود طلا',
+          vazn: '200',
+          ayar: '925',
+          tabdil750_v: '200',
+          Jens_Felez: '2', // Detail explicitly silver
+          Abshode: '-1',
+        },
+        {
+          Factor_Code: 'F_MIXED_1',
+          no: 'ورود طلا',
+          vazn: '10',
+          ayar: '0', // Missing ayar, but tabdil is 10
+          tabdil750_v: '10',
+          Jens_Felez: '0',
+          Abshode: '-1',
+        },
+        {
+          Factor_Code: 'F_MIXED_1',
+          no: 'خرید سنگ',
+          vazn: '5.5',
+          ayar: null,
+          Jens_Felez: null,
+          Sharh: 'یاقوت قرمز',
+        },
+      ],
+      Hesab_bank: [],
+      bank: [],
+      Sekeh_Shemsh: [],
+      Sang: [],
+      raygiri: [],
+      khar_sakhte: [],
+      Cities: [],
+      Hazine_Baabat: [],
+      gorooh: [],
+      otherTables: {},
+    };
+
+    const norm = normalizeTahesabData(rawDb, { mohitCount: 1, dbType: 'SQL', version: '10.0', archiveCount: 0 });
+    const doc = norm.documents[0];
+    expect(doc.lines.length).toBe(4);
+
+    // Line 1: Gold 750
+    expect(doc.lines[0].metalType).toBe('gold');
+    expect(doc.lines[0].grade).toBe(750);
+    expect(doc.lines[0].convertedWeight750).toBe(100);
+
+    // Line 2: Silver 925
+    expect(doc.lines[1].metalType).toBe('silver');
+    expect(doc.lines[1].grade).toBe(925);
+
+    // Line 3: Gold with missing ayar deduced as 750 from tabdil 10 / vazn 10
+    expect(doc.lines[2].metalType).toBe('gold');
+    expect(doc.lines[2].grade).toBe(750);
+    expect(doc.lines[2].convertedWeight750).toBe(10);
+
+    // Line 4: Stone -> metalType is none
+    expect(doc.lines[3].metalType).toBe('none');
+    expect(doc.lines[3].signedGoldAmount).toBe(0);
+  });
+
+  // 24. Customer Balance Accuracy
+  it('24. Customer Balance Accuracy: customer balances computed from migrated records match Tahesab balances', async () => {
+    const rawDb: TahesabRawDatabase = {
+      moshtarian: [
+        {
+          code: '101',
+          name: 'محمد رضایی',
+          tahesabtala: '0',
+          tahesabriali: '0',
+          JamV_T: '85.250',
+          JamV_P: '15000000',
+          Tel: '09121111111',
+        },
+        {
+          code: '102',
+          name: 'حساب انتقالی بدون سند',
+          tahesabtala: '0',
+          tahesabriali: '0',
+          JamV_T: '-12.500',
+          JamV_P: '-2500000',
+          Tel: '09122222222',
+        },
+      ],
+      hesab: [
+        {
+          Factor_Code: 'F_1',
+          sh_factor: '1',
+          mcode: '101',
+          Tarikh: '2026-01-01 10:00:00',
+          geram_v: '0',
+          geram_kh: '10',
+          rial_v: '0',
+          rial_kh: '5000000',
+        },
+        {
+          Factor_Code: 'F_2',
+          sh_factor: '2',
+          mcode: '101',
+          Tarikh: '2026-01-02 11:00:00',
+          geram_v: '100',
+          geram_kh: '0',
+          rial_v: '20000000',
+          rial_kh: '0',
+        },
+        {
+          Factor_Code: 'F_3',
+          sh_factor: '3',
+          mcode: '101',
+          Tarikh: '2026-01-03 12:00:00',
+          geram_v: '0',
+          geram_kh: '4.750',
+          rial_v: '0',
+          rial_kh: '0',
+        },
+        {
+          Factor_Code: 'F_4',
+          sh_factor: '4',
+          mcode: '101',
+          Tarikh: '2026-01-04 13:00:00',
+          geram_v: '0',
+          geram_kh: '0',
+          rial_v: '0',
+          rial_kh: '0',
+        },
+      ],
+      hesab_detail: [
+        // F_1: Opening balance (از قبل) -> Gold exit 10g, Rial exit 5M
+        {
+          Factor_Code: 'F_1',
+          mcode: '101',
+          no: 'از قبل',
+          tabdil750_v: '0',
+          tabdil750_kh: '10',
+          rial_V: '0',
+          rial_kh: '5000000',
+          Jens_Felez: '0',
+        },
+        // F_2: Entry -> Gold in 100g, Rial in 20M
+        {
+          Factor_Code: 'F_2',
+          mcode: '101',
+          no: 'ورود طلا',
+          tabdil750_v: '100',
+          tabdil750_kh: '0',
+          rial_V: '20000000',
+          rial_kh: '0',
+          Jens_Felez: '0',
+        },
+        // F_3: Exit -> Gold out 4.750g
+        {
+          Factor_Code: 'F_3',
+          mcode: '101',
+          no: 'خروج طلا',
+          tabdil750_v: '0',
+          tabdil750_kh: '4.750',
+          rial_V: '0',
+          rial_kh: '0',
+          Jens_Felez: '0',
+        },
+        // F_4 Row 1: Sale of goods (Resin) with vazn: 0.89 but tv=0, tkh=0 -> MUST NOT affect gold!
+        {
+          Factor_Code: 'F_4',
+          mcode: '101',
+          no: 'فروش کالا',
+          NO_kar: 'رزین قالب‌گیری',
+          vazn: '0.89',
+          ayar: null,
+          tabdil750_v: '0',
+          tabdil750_kh: '0',
+          rial_V: '0',
+          rial_kh: '0',
+          Jens_Felez: null,
+        },
+        // F_4 Row 2: Silver entry -> Goes to silver, MUST NOT affect gold!
+        {
+          Factor_Code: 'F_4',
+          mcode: '101',
+          no: 'ورود طلا',
+          NO_kar: 'شمش نقره',
+          vazn: '50',
+          ayar: '925',
+          tabdil750_v: '50',
+          tabdil750_kh: '0',
+          rial_V: '0',
+          rial_kh: '0',
+          Jens_Felez: '2',
+        },
+      ],
+      Hesab_bank: [],
+      bank: [],
+      Sekeh_Shemsh: [],
+      Sang: [],
+      raygiri: [],
+      khar_sakhte: [],
+      Cities: [],
+      Hazine_Baabat: [],
+      gorooh: [],
+      otherTables: {},
+    };
+
+    const norm = normalizeTahesabData(rawDb, { mohitCount: 1, dbType: 'SQL', version: '10.0', archiveCount: 0 });
+
+    // Customer 101 verification
+    const party101 = norm.parties.find((p) => p.sourceCode === '101');
+    expect(party101).toBeDefined();
+    expect(party101?.openingGoldWeight).toBe(85.250);
+    expect(party101?.openingRialBalance).toBe(15000000);
+
+    const docs101 = norm.documents.filter((d) => d.sourceCustomerCode === '101');
+    let sumGold101 = 0;
+    let sumSilver101 = 0;
+    let sumRial101 = 0;
+    for (const d of docs101) {
+      for (const l of d.lines) {
+        if (l.metalType === 'gold') sumGold101 += l.signedGoldAmount || 0;
+        if (l.metalType === 'silver') sumSilver101 += l.signedGoldAmount || 0;
+        sumRial101 += l.signedRialAmount || 0;
+      }
+    }
+
+    // Exact gold balance match: -10 + 100 - 4.750 = 85.250g
+    expect(Math.round(sumGold101 * 1000) / 1000).toBe(85.250);
+    expect(Math.round(sumGold101 * 1000) / 1000).toBe(party101?.openingGoldWeight ?? 0);
+
+    // Exact rial balance match: -5,000,000 + 20,000,000 = 15,000,000 IRR
+    expect(sumRial101).toBe(15000000);
+    expect(sumRial101).toBe(party101?.openingRialBalance ?? 0);
+
+    // Silver segregated accurately: 50g silver
+    expect(sumSilver101).toBe(50);
+
+    // Customer 102 (Party with opening balance and no documents)
+    const party102 = norm.parties.find((p) => p.sourceCode === '102');
+    expect(party102).toBeDefined();
+    expect(party102?.openingGoldWeight).toBe(-12.500);
+    expect(party102?.openingRialBalance).toBe(-2500000);
+
+    // Test import process creates opening balance transaction for documentless party 102
+    const createdRecords: Record<string, any[]> = {};
+    const createdKeys = new Set<string>();
+    const mockWriter = {
+      filter: (tmpl: string, params: Record<string, any>) => {
+        let res = tmpl;
+        for (const [k, v] of Object.entries(params)) {
+          res = res.replace(`{:${k}}`, String(v));
+        }
+        return res;
+      },
+      collection: (col: string) => ({
+        getFirstListItem: async (filterStr: string) => {
+          for (const key of createdKeys) {
+            if (filterStr.includes(key)) {
+              return { id: `rec_${key}`, sourceKey: key };
+            }
+          }
+          throw new Error('Not found');
+        },
+        create: async (data: Record<string, any>) => {
+          if (!createdRecords[col]) createdRecords[col] = [];
+          const rec = { id: `created_${col}_${Date.now()}_${Math.random()}`, ...data };
+          createdRecords[col].push(rec);
+          if (data.sourceKey) {
+            createdKeys.add(data.sourceKey);
+          }
+          return rec;
+        },
+        getFullList: async () => createdRecords[col] || [],
+      }),
+    } as any;
+
+    await importTahesabData(
+      mockWriter as any,
+      norm,
+      buildInitialMappings(norm, [], []),
+      { migrationId: 'test_bal_mig', dryRun: false },
+    );
+
+    const txRecords = createdRecords['transactions'] || [];
+    const openTx102 = txRecords.find((tx) => tx.customerCode === 102 && tx.isOpeningBalance);
+    expect(openTx102).toBeDefined();
+    expect(openTx102.goldAmount).toBe(-12.500);
+    expect(openTx102.rialAmount).toBe(-2500000);
+  });
 });
+
 
