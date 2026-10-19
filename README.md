@@ -166,6 +166,8 @@ Security is deeply integrated into the codebase:
 
 ## Deployment
 
+For local Docker deployment with the existing PocketBase data, see [the Docker guide](docs/docker.md).
+
 Zarfolio can be deployed in a standard Next.js environment:
 
 1. Setup PocketBase independently on your production server.

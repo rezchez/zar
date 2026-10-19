@@ -9,6 +9,7 @@ backend/node_modules/
 # Next.js / Frontend build outputs
 # =========================
 frontend/.next/
+frontend/.next-docker-check/
 frontend/out/
 frontend/build/
 frontend/.turbo/

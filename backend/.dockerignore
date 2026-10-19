@@ -1,0 +1,6 @@
+*
+!Dockerfile
+!.dockerignore
+!pocketbase
+!pb_migrations
+!pb_migrations/**
