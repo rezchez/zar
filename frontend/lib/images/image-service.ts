@@ -1,4 +1,5 @@
 import type PocketBase from 'pocketbase';
+import { getPublicFileUrl } from '@/lib/pocketbase/public-file-url';
 import { getImageConfig } from './config';
 import {
   detectMagicBytes,
@@ -137,7 +138,8 @@ export class ImageService {
     }
 
     try {
-      const rawUrl = pbClient.files.getURL(
+      const rawUrl = getPublicFileUrl(
+        pbClient,
         userRecord as unknown as Parameters<typeof pbClient.files.getURL>[0],
         userRecord.avatar,
       );

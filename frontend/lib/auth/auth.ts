@@ -8,6 +8,7 @@ import {
   PB_AUTH_COOKIE,
 } from '@/lib/pocketbase';
 import { buildVersionedUrl } from '@/lib/images';
+import { getPublicFileUrl } from '@/lib/pocketbase/public-file-url';
 import { BALE_PHONE_COOKIE } from '@/lib/bale';
 import { hashPhoneSessionToken } from '@/lib/phone-session';
 
@@ -169,7 +170,7 @@ function mapAuthenticatedUser(
         ? record.avatar
         : undefined,
       avatarUrl: typeof record.avatar === 'string' && record.avatar
-        ? buildVersionedUrl(pb.files.getURL(record, record.avatar), record.updated)
+        ? buildVersionedUrl(getPublicFileUrl(pb, record, record.avatar), record.updated)
         : undefined,
       customPermissions,
     };

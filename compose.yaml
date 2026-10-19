@@ -11,6 +11,7 @@ services:
     ports:
       - "127.0.0.1:8090:8090"
       - "127.0.0.1:${WEB_PORT:-3000}:3000"
+      - "443:443"
     volumes:
       - type: bind
         source: ./backend/pb_data
@@ -38,6 +39,7 @@ services:
       NODE_ENV: production
       NEXT_TELEMETRY_DISABLED: "1"
       POCKETBASE_URL: http://127.0.0.1:8090
+      POCKETBASE_PUBLIC_URL: "https://${ZAR_PUBLIC_IP:-86.104.86.188}"
       HOSTNAME: 0.0.0.0
       PORT: "3000"
       NEXT_DIST_DIR: .next
@@ -56,3 +58,22 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+
+  caddy:
+    image: caddy:2.11.7-alpine
+    network_mode: service:pocketbase
+    restart: "on-failure:5"
+    init: true
+    environment:
+      ZAR_PUBLIC_IP: "${ZAR_PUBLIC_IP:-86.104.86.188}"
+    depends_on:
+      frontend:
+        condition: service_healthy
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

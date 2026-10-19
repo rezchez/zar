@@ -1,5 +1,6 @@
 import PocketBase from 'pocketbase';
 import type { RecordModel } from 'pocketbase';
+import { getPublicFileUrl } from '@/lib/pocketbase/public-file-url';
 
 export const customerTextFields = [
   'name',
@@ -241,7 +242,7 @@ export function mapCustomer(
     openingBalances,
     showBalanceByUnit: record.showBalanceByUnit === true,
     hasPrivateDescription: Boolean(record.privateDescription && String(record.privateDescription).trim().length > 0),
-    avatarUrl: record.avatar ? pb.files.getURL(record, record.avatar) : undefined,
+    avatarUrl: record.avatar ? getPublicFileUrl(pb, record, record.avatar) : undefined,
     created: record.created,
     updated: record.updated,
   };

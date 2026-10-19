@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { getServerAuthContext } from '@/lib/auth';
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
+import { getPublicFileUrl } from '@/lib/pocketbase/public-file-url';
 import { BANKS_REGISTRY } from '@/features/banks/services/bank';
 
 export async function GET() {
@@ -42,7 +43,7 @@ export async function GET() {
         let logoUrl: string | null = null;
         if (record.logo && typeof record.logo === 'string') {
           try {
-            logoUrl = context.pb.files.getURL(record, record.logo);
+            logoUrl = getPublicFileUrl(context.pb, record, record.logo);
           } catch {
             logoUrl = null;
           }

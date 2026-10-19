@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getServerAuthContext } from '@/lib/auth';
 import { recordAuditEvent } from '@/lib/audit';
+import { getPublicFileUrl } from '@/lib/pocketbase/public-file-url';
 
 function isAllowed(context: Awaited<ReturnType<typeof getServerAuthContext>>) {
   return context && (context.user.role === 'admin' || context.user.role === 'manager');
@@ -33,7 +34,7 @@ export async function GET() {
 
     const fonts: CustomFontRecord[] = records.map((record) => {
       const file = String(record.fontFile ?? '');
-      const fontUrl = context.pb.files.getURL(record, file);
+      const fontUrl = getPublicFileUrl(context.pb, record, file);
       let weights: number[] = [400];
       if (Array.isArray(record.availableWeights)) {
         weights = record.availableWeights.map(Number).filter((n) => !Number.isNaN(n));
@@ -143,7 +144,7 @@ export async function POST(request: Request) {
       authenticatedClient: context.pb,
     });
 
-    const fontUrl = context.pb.files.getURL(record, record.fontFile);
+    const fontUrl = getPublicFileUrl(context.pb, record, record.fontFile);
 
     return NextResponse.json({
       font: {

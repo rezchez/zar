@@ -1,0 +1,29 @@
+{
+	auto_https disable_redirects
+	default_sni {$ZAR_PUBLIC_IP}
+	admin off
+	servers {
+		protocols h1 h2
+	}
+}
+
+https://{$ZAR_PUBLIC_IP} {
+	tls {
+		issuer acme {
+			dir https://acme-v02.api.letsencrypt.org/directory
+			profile shortlived
+			disable_http_challenge
+		}
+	}
+
+	@files {
+		path /api/files/*
+		method GET HEAD
+	}
+	handle @files {
+		reverse_proxy 127.0.0.1:8090
+	}
+	handle {
+		reverse_proxy 127.0.0.1:3000
+	}
+}
