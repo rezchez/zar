@@ -228,6 +228,21 @@ export function isLineReady(
     line.documentTab === 'bank' ||
     line.sourceTab === 'bank';
   if (isBankOrCheckLine) {
+    if (line.details?.bankOperationKind === 'check-receipt') {
+      return (
+        numberValue(line.details?.totalAmount) > 0 &&
+        Boolean(line.details?.bankName?.trim()) &&
+        Boolean(line.details?.checkNumber?.trim()) &&
+        normalizeDigits(line.details?.sayadId || '').replace(/\D/g, '').length === 16 &&
+        Boolean(line.details?.dueDateJalali)
+      );
+    }
+    if (line.details?.bankOperationKind === 'transfer-received-check') {
+      return (
+        numberValue(line.details?.totalAmount) > 0 &&
+        (Boolean(line.details?.checkId) || Boolean(line.details?.checkNumber?.trim()) || Boolean(line.details?.sayadId?.trim()))
+      );
+    }
     if (line.details?.bankOperationKind === 'check-payment') {
       return (
         numberValue(line.details?.totalAmount) > 0 &&
@@ -406,14 +421,32 @@ export function validateLine(
     line.sourceTab === 'bank';
   if (isBankOrCheckLine) {
     const opKind = line.details?.bankOperationKind || '';
-    const isCheck = opKind === 'check-payment' || Boolean(line.details?.checkNumber);
+    const isCheck = opKind === 'check-payment' || opKind === 'check-receipt' || opKind === 'transfer-received-check' || Boolean(line.details?.checkNumber);
 
     const amount = numberValue(line.details?.totalAmount);
-    if (amount <= 0) {
-      return 'مبلغ تراکنش بانکی باید بیشتر از صفر باشد.';
-    }
 
-    if (isCheck) {
+    if (opKind === 'transfer-received-check') {
+      if (!line.details?.checkId && !line.details?.checkNumber?.trim() && !line.details?.sayadId?.trim()) {
+        return 'چک دریافتی مورد نظر جهت واگذاری یا عودت را انتخاب کنید.';
+      }
+      if (amount <= 0) {
+        return 'مبلغ چک باید بیشتر از صفر باشد.';
+      }
+    } else if (opKind === 'check-receipt') {
+      if (!line.details?.bankName?.trim()) {
+        return 'نام بانک صادرکننده چک را انتخاب کنید.';
+      }
+      if (!line.details?.checkNumber?.trim()) {
+        return 'شماره چک الزامی است.';
+      }
+      const sayad = (line.details?.sayadId || '').replace(/\D/g, '');
+      if (sayad.length !== 16) {
+        return 'شناسه صیاد باید ۱۶ رقم باشد.';
+      }
+      if (amount <= 0) {
+        return 'مبلغ چک باید بیشتر از صفر باشد.';
+      }
+    } else if (isCheck) {
       if (!line.details?.bankAccountId) {
         return 'حساب بانکی پرداخت‌کننده را انتخاب کنید.';
       }
@@ -424,13 +457,21 @@ export function validateLine(
       if (sayad.length !== 16) {
         return 'شناسه صیاد باید ۱۶ رقم باشد.';
       }
-    } else if (opKind === 'pay-to-customer') {
-      if (!line.details?.bankAccountId) {
-        return 'حساب بانکی پرداخت‌کننده را انتخاب کنید.';
+      if (amount <= 0) {
+        return 'مبلغ چک باید بیشتر از صفر باشد.';
       }
-    } else if (opKind === 'receive-from-customer') {
-      if (!line.details?.bankAccountId) {
-        return 'حساب بانکی واریزشونده را انتخاب کنید.';
+    } else {
+      if (amount <= 0) {
+        return 'مبلغ تراکنش بانکی باید بیشتر از صفر باشد.';
+      }
+      if (opKind === 'pay-to-customer') {
+        if (!line.details?.bankAccountId) {
+          return 'حساب بانکی پرداخت‌کننده را انتخاب کنید.';
+        }
+      } else if (opKind === 'receive-from-customer') {
+        if (!line.details?.bankAccountId) {
+          return 'حساب بانکی واریزشونده را انتخاب کنید.';
+        }
       }
     }
 
@@ -444,7 +485,7 @@ export function validateLine(
         if (cl.documentTab !== 'bank' && cl.sourceTab !== 'bank') return acc;
         if (cl.details?.bankAccountId !== line.details?.bankAccountId) return acc;
         const clOpKind = cl.details?.bankOperationKind || '';
-        const clIsCheck = clOpKind === 'check-payment' || Boolean(cl.details?.checkNumber);
+        const clIsCheck = clOpKind === 'check-payment' || clOpKind === 'check-receipt' || clOpKind === 'transfer-received-check' || Boolean(cl.details?.checkNumber);
         if (clIsCheck) return acc;
         const clIsToman =
           cl.details?.currencyUnit === 'IRT' ||
@@ -823,10 +864,12 @@ export function useDocumentLines({
       lineSourceTab === 'bank' ||
       activeDraft.documentTab === 'bank';
     const bankInferredNature: DocumentNature | null = isBankLine
-      ? activeDraft.details?.bankOperationKind === 'receive-from-customer'
+      ? activeDraft.details?.bankOperationKind === 'receive-from-customer' ||
+        activeDraft.details?.bankOperationKind === 'check-receipt'
         ? 'received'
         : activeDraft.details?.bankOperationKind === 'pay-to-customer' ||
-            activeDraft.details?.bankOperationKind === 'check-payment'
+            activeDraft.details?.bankOperationKind === 'check-payment' ||
+            activeDraft.details?.bankOperationKind === 'transfer-received-check'
           ? 'paid'
           : null
       : null;

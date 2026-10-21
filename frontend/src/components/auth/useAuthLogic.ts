@@ -42,6 +42,36 @@ export function useAuthLogic(initialMode: 'login' | 'signup' = 'login') {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
 
+  // Restore remembered credentials on mount
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const savedRemember = localStorage.getItem('zar_remember_me') === 'true';
+        const savedIdentity = localStorage.getItem('zar_remembered_identity');
+        if (savedRemember && savedIdentity) {
+          setEmail(savedIdentity);
+          setPhone(savedIdentity);
+          setRememberMe(true);
+        }
+      }
+    } catch {
+      // Ignore localStorage errors (e.g. private browsing or disabled storage)
+    }
+  }, []);
+
+  const handleSetRememberMe: React.Dispatch<React.SetStateAction<boolean>> = (value) => {
+    setRememberMe((prev) => {
+      const next = typeof value === 'function' ? value(prev) : value;
+      if (!next) {
+        try {
+          localStorage.removeItem('zar_remember_me');
+          localStorage.removeItem('zar_remembered_identity');
+        } catch {}
+      }
+      return next;
+    });
+  };
+
   // Sync mode if initialMode changes
   const [prevInitialMode, setPrevInitialMode] = useState(initialMode);
   if (initialMode !== prevInitialMode) {
@@ -192,8 +222,26 @@ export function useAuthLogic(initialMode: 'login' | 'signup' = 'login') {
           return;
         }
 
-        router.replace('/dashboard');
-        router.refresh();
+        if (rememberMe && submittedPhone) {
+          try {
+            localStorage.setItem('zar_remember_me', 'true');
+            localStorage.setItem('zar_remembered_identity', submittedPhone);
+          } catch {}
+        } else {
+          try {
+            localStorage.removeItem('zar_remember_me');
+            localStorage.removeItem('zar_remembered_identity');
+          } catch {}
+        }
+
+        if (typeof window !== 'undefined' && typeof window.location?.assign === 'function') {
+          window.location.assign('/dashboard');
+        } else if (typeof window !== 'undefined' && window.location) {
+          window.location.href = '/dashboard';
+        } else {
+          router.replace('/dashboard');
+          router.refresh();
+        }
       } catch {
         setErrorMessage('ارتباط با سرور برقرار نشد. مطمئن شوید PocketBase در حال اجراست.');
       } finally {
@@ -266,11 +314,29 @@ export function useAuthLogic(initialMode: 'login' | 'signup' = 'login') {
         return;
       }
 
+      if (rememberMe && submittedEmail) {
+        try {
+          localStorage.setItem('zar_remember_me', 'true');
+          localStorage.setItem('zar_remembered_identity', submittedEmail);
+        } catch {}
+      } else {
+        try {
+          localStorage.removeItem('zar_remember_me');
+          localStorage.removeItem('zar_remembered_identity');
+        } catch {}
+      }
+
       setMfaChallenge(null);
       setOtpCode('');
       setTotpCode('');
-      router.replace('/dashboard');
-      router.refresh();
+      if (typeof window !== 'undefined' && typeof window.location?.assign === 'function') {
+        window.location.assign('/dashboard');
+      } else if (typeof window !== 'undefined' && window.location) {
+        window.location.href = '/dashboard';
+      } else {
+        router.replace('/dashboard');
+        router.refresh();
+      }
     } catch {
       setErrorMessage('ارتباط با سرور برقرار نشد. مطمئن شوید PocketBase در حال اجراست.');
     } finally {
@@ -285,7 +351,7 @@ export function useAuthLogic(initialMode: 'login' | 'signup' = 'login') {
     phone, setPhone,
     password, setPassword,
     passwordConfirm, setPasswordConfirm,
-    rememberMe, setRememberMe,
+    rememberMe, setRememberMe: handleSetRememberMe,
     loginMethod, setLoginMethod,
     phoneChallenge, setPhoneChallenge,
     phoneCode, setPhoneCode,

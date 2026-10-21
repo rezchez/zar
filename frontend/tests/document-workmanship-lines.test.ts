@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { getLineDocumentTypeLabel } from '@/features/accounting/documents/utils/document-helpers';
 import { createLine } from '@/features/accounting/documents/hooks/useDocumentLines';
 import type { DocumentLine } from '@/src/components/documents/RawGoldTab';
+import { normalizeDigits, toPersianDigits } from '@/lib/jalali';
 
 describe('Document Workmanship Lines (ردیف سند تب کار ساخته) Tests', () => {
   describe('getLineDocumentTypeLabel for Workmanship Operations', () => {
@@ -192,6 +193,57 @@ describe('Document Workmanship Lines (ردیف سند تب کار ساخته) Te
 
       const workmanshipName = lines[0].details?.workmanshipName?.trim();
       expect(workmanshipName).toBe('دستبند کارتیر');
+    });
+
+    it('restricts workmanship quantity input to a maximum of 4 digits and normalizes input', () => {
+      const sanitizeQuantity = (val: string) => {
+        return normalizeDigits(val).replace(/\D/g, '').slice(0, 4);
+      };
+
+      expect(sanitizeQuantity('1')).toBe('1');
+      expect(sanitizeQuantity('12')).toBe('12');
+      expect(sanitizeQuantity('1234')).toBe('1234');
+      expect(sanitizeQuantity('12345')).toBe('1234');
+      expect(sanitizeQuantity('۹۸۷۶۵')).toBe('9876');
+      expect(sanitizeQuantity('۱۲')).toBe('12');
+      expect(sanitizeQuantity('abc12xyz3')).toBe('123');
+      expect(sanitizeQuantity('')).toBe('');
+      expect(toPersianDigits(sanitizeQuantity('4567'))).toBe('۴۵۶۷');
+    });
+
+    it('restricts workmanship purity input to a maximum of 4 digits and normalizes input', () => {
+      const sanitizePurity = (val: string) => {
+        return normalizeDigits(val).replace(/\D/g, '').slice(0, 4);
+      };
+
+      expect(sanitizePurity('750')).toBe('750');
+      expect(sanitizePurity('1000')).toBe('1000');
+      expect(sanitizePurity('10000')).toBe('1000');
+      expect(sanitizePurity('۷۵۰')).toBe('750');
+      expect(sanitizePurity('')).toBe('');
+    });
+
+    it('normalizes golden and profit percentage input up to 5 chars (decimal)', () => {
+      const sanitizePercentage = (val: string) => {
+        return normalizeDigits(val).replace(/[^\d.]/g, '').slice(0, 5);
+      };
+
+      expect(sanitizePercentage('5')).toBe('5');
+      expect(sanitizePercentage('12.5')).toBe('12.5');
+      expect(sanitizePercentage('۱۲.۵')).toBe('12.5');
+      expect(sanitizePercentage('100')).toBe('100');
+      expect(sanitizePercentage('12.3456')).toBe('12.34');
+    });
+
+    it('normalizes workmanship raw weight input up to 9 chars (decimal)', () => {
+      const sanitizeWeight = (val: string) => {
+        return normalizeDigits(val).replace(/[^\d.]/g, '').slice(0, 9);
+      };
+
+      expect(sanitizeWeight('12.350')).toBe('12.350');
+      expect(sanitizeWeight('۱۲.۳۵۰')).toBe('12.350');
+      expect(sanitizeWeight('1250.750')).toBe('1250.750');
+      expect(sanitizeWeight('1234567890')).toBe('123456789');
     });
   });
 });

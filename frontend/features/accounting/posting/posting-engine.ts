@@ -35,6 +35,7 @@ export interface CreateJournalEntryParams {
     | 'cheque_uncollect'
     | 'cheque_unclear'
     | 'cheque_return_to_drawer'
+    | 'cheque_transfer'
     | 'document'
     | 'bank_transfer'
     | 'settlement'
@@ -1415,23 +1416,31 @@ export async function postReceivableChequeReceipt(
     id: string;
     amount: number;
     sayadId: string;
+    checkNumber?: string;
+    bankName?: string;
     description: string;
     dueDateJalali: string;
+    issueDateJalali?: string;
     customer: string;
     receivableAccountId?: string | null;
   },
-  customer: { id: string; name: string },
+  customer: { id: string; name: string; customerCode?: number; accountId?: string | null },
   userId: string,
   pb: PocketBase,
 ): Promise<JournalEntryResult> {
   const amount = Math.round(cheque.amount);
   const receivableAccount = cheque.receivableAccountId || SYSTEM_ACCOUNT_CODES.NOTES_RECEIVABLE;
-  const counterpartyAccount = SYSTEM_ACCOUNT_CODES.COUNTERPARTY_LIABILITY;
+  const counterpartyAccount = customer.accountId || SYSTEM_ACCOUNT_CODES.COUNTERPARTY_LIABILITY;
 
-  const desc = `دریافت چک صیادی ${cheque.sayadId} به سررسید ${cheque.dueDateJalali} از ${customer.name} — ${cheque.description}`;
+  const chequeLabel = cheque.checkNumber
+    ? (cheque.sayadId ? `شماره ${cheque.checkNumber} (صیاد ${cheque.sayadId})` : `شماره ${cheque.checkNumber}`)
+    : (cheque.sayadId ? `صیاد ${cheque.sayadId}` : cheque.id);
+  const bankSuffix = cheque.bankName ? ` - ${cheque.bankName}` : '';
+  const desc = `دریافت چک ${chequeLabel}${bankSuffix} به سررسید ${cheque.dueDateJalali} از ${customer.name} — ${cheque.description}`;
 
   return postJournalEntry(
     {
+      entryDateJalali: cheque.issueDateJalali,
       description: desc,
       sourceType: 'cheque_receive',
       sourceId: cheque.id,
@@ -1442,7 +1451,7 @@ export async function postReceivableChequeReceipt(
           accountId: receivableAccount,
           debit: amount,
           credit: 0,
-          description: `بدهکار اسناد دریافتنی (چک وارده ${cheque.sayadId})`,
+          description: `بدهکار اسناد دریافتنی (چک ${chequeLabel}${bankSuffix})`,
           partyId: customer.id,
           chequeId: cheque.id,
         },
@@ -1450,7 +1459,7 @@ export async function postReceivableChequeReceipt(
           accountId: counterpartyAccount,
           debit: 0,
           credit: amount,
-          description: `بستانکار طرف‌حساب: ${customer.name}`,
+          description: `بستانکار طرف‌حساب: ${customer.name} (بابت دریافت چک ${chequeLabel})`,
           partyId: customer.id,
           chequeId: cheque.id,
         },
@@ -1762,6 +1771,66 @@ export async function postReceivableChequeReturnToDrawer(
           debit: 0,
           credit: amount,
           description: `تسویه اسناد دریافتنی بابت عودت چک صیادی ${cheque.sayadId} به صادرکننده`,
+          chequeId: cheque.id,
+        },
+      ],
+    },
+    pb,
+  );
+
+  return { journal };
+}
+
+/**
+ * Posts double-entry journal entry for transferring/passing a receivable check to another counterparty (خرج / واگذاری چک دریافتی به غیر).
+ * - Debit: Receiving Counterparty (2120 / طرف‌حساب دریافت‌کننده چک)
+ * - Credit: Notes Receivable (1120 اسناد دریافتنی)
+ */
+export async function postReceivableChequeTransfer(
+  cheque: {
+    id: string;
+    amount: number;
+    sayadId: string;
+    checkNumber?: string;
+    bankName?: string;
+    description?: string;
+    receivableAccountId?: string | null;
+  },
+  customer: { id: string; name: string; accountId?: string | null },
+  userId: string,
+  pb: PocketBase,
+  transferDateJalali?: string,
+): Promise<{ journal: JournalEntryResult }> {
+  const amount = Math.round(cheque.amount);
+  const receivableAccount = cheque.receivableAccountId || SYSTEM_ACCOUNT_CODES.NOTES_RECEIVABLE;
+  const customerAccount = customer.accountId || SYSTEM_ACCOUNT_CODES.COUNTERPARTY_LIABILITY;
+
+  const desc =
+    cheque.description ||
+    `واگذاری و خرج چک دریافتی ${cheque.checkNumber || cheque.sayadId} به طرف‌حساب ${customer.name}`;
+
+  const journal = await postJournalEntry(
+    {
+      entryDateJalali: transferDateJalali,
+      description: desc,
+      sourceType: 'cheque_transfer',
+      sourceId: cheque.id,
+      sourceKey: `cheque:transfer:${cheque.id}:${Date.now()}`,
+      userId,
+      lines: [
+        {
+          accountId: customerAccount,
+          debit: amount,
+          credit: 0,
+          description: `تسویه حساب/بدهکاری طرف‌حساب ${customer.name} بابت واگذاری چک صیادی ${cheque.sayadId || cheque.checkNumber}`,
+          partyId: customer.id,
+          chequeId: cheque.id,
+        },
+        {
+          accountId: receivableAccount,
+          debit: 0,
+          credit: amount,
+          description: `کاهش اسناد دریافتنی بابت واگذاری و خرج چک صیادی ${cheque.sayadId || cheque.checkNumber}`,
           chequeId: cheque.id,
         },
       ],

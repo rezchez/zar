@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Sparkles } from 'lucide-react';
+import { LoaderCircle, Sparkles } from 'lucide-react';
 import type { Customer } from '@/lib/customer';
 import { currencyDisplay, getCurrencyMeta } from '@/lib/customer';
 import { convertRialToToman } from '@/lib/money';
@@ -15,12 +15,14 @@ interface CustomerBalanceLiquidProps {
   customer: Customer;
   baseCurrency?: 'IRR' | 'IRT';
   committedLines?: DocumentLine[];
+  loading?: boolean;
 }
 
 export default function CustomerBalanceLiquid({
   customer,
   baseCurrency = 'IRR',
   committedLines = [],
+  loading = false,
 }: CustomerBalanceLiquidProps) {
   const [isStoneModalOpen, setIsStoneModalOpen] = useState(false);
 
@@ -194,7 +196,7 @@ export default function CustomerBalanceLiquid({
         exit={{ opacity: 0, height: 0, y: -8 }}
         transition={{ type: 'spring', stiffness: 260, damping: 26 }}
       >
-        <div className="document-liquid-title mb-1.5 sm:mb-0 shrink-0">
+        <div className="document-liquid-title mb-1.5 sm:mb-0 shrink-0 flex items-center gap-2">
           <span className="document-liquid-orb w-7 h-7 sm:w-8 sm:h-8">
             <Sparkles size={15} />
           </span>
@@ -203,17 +205,35 @@ export default function CustomerBalanceLiquid({
               وضعیت طلب و بدهی {customer.name}
             </strong>
           </div>
+          {loading ? (
+            <span className="text-[10.5px] font-bold text-amber-700 dark:text-amber-300 flex items-center gap-1 bg-amber-200/50 dark:bg-amber-900/40 px-2 py-0.5 rounded-md animate-pulse">
+              <LoaderCircle size={12} className="spin text-amber-600 dark:text-amber-400" />
+              <span>در حال به‌روزرسانی مانده...</span>
+            </span>
+          ) : null}
         </div>
         <div className="document-liquid-items gap-2">
           {visibleBalances.map((balance: any, index) => {
             const isStone = balance.id === 'stone' || balance.id === 'stone-credit' || balance.id === 'stone-debit';
-            const statusLabel = balance.statusLabel || (balance.value > 0 ? 'بستانکار' : balance.value < 0 ? 'بدهکار' : 'تسویه');
+            const isEffectivelyZero =
+              balance.digits === 3
+                ? Math.abs(balance.value) < 0.0005
+                : balance.digits === 2
+                ? Math.abs(balance.value) < 0.005
+                : balance.digits === 0
+                ? Math.abs(balance.value) < 1
+                : balance.value === 0;
+
+            const statusLabel =
+              balance.statusLabel ||
+              (isEffectivelyZero ? 'تسویه' : balance.value > 0 ? 'بستانکار' : 'بدهکار');
+
             const fullTooltip = balance.tooltip || (isStone
               ? `${balance.label}: ${balance.exactDisplay || formatExactGemWeight(Math.abs(balance.value))} ${balance.unit} (${
                   balance.value > 0 ? 'بستانکار از ما' : balance.value < 0 ? 'بدهکار به ما' : 'تسویه حساب'
                 }) · کلیک برای مشاهده تمام وزن‌ها به صورت دقیق`
               : `${balance.label}: ${faNumber(Math.abs(balance.value), balance.digits)} ${balance.unit} (${
-                  balance.value > 0 ? 'بستانکار از ما' : balance.value < 0 ? 'بدهکار به ما' : 'تسویه حساب'
+                  isEffectivelyZero ? 'تسویه حساب' : balance.value > 0 ? 'بستانکار از ما' : 'بدهکار به ما'
                 })`);
 
             const toneClass = balance.isDualStone
@@ -224,12 +244,11 @@ export default function CustomerBalanceLiquid({
                   : balance.debitValue > 0
                   ? 'is-debit'
                   : 'is-zero')
-              : (balance.value > 0 ? 'is-credit' : balance.value < 0 ? 'is-debit' : 'is-zero');
+              : (isEffectivelyZero ? 'is-zero' : balance.value > 0 ? 'is-credit' : 'is-debit');
 
             return (
-              <motion.div
-                layout
-                className={`document-liquid-item ${toneClass} ${
+              <div
+                className={`document-liquid-item ${toneClass} transition-all duration-200 ${
                   isStone
                     ? 'cursor-pointer hover:border-amber-400 dark:hover:border-amber-500 focus:outline-hidden focus:ring-1 focus:ring-amber-500/40 select-none'
                     : ''
@@ -249,14 +268,6 @@ export default function CustomerBalanceLiquid({
                       }
                     : undefined
                 }
-                initial={{ opacity: 0, scale: 0.85, x: 8 }}
-                animate={{ opacity: 1, scale: 1, x: 0 }}
-                transition={{
-                  type: 'spring',
-                  stiffness: 340,
-                  damping: 22,
-                  delay: index * 0.045,
-                }}
               >
                 <small className="document-liquid-item-label">{balance.label}:</small>
                 <div className="document-liquid-item-value-wrap">
@@ -291,7 +302,7 @@ export default function CustomerBalanceLiquid({
                   <span className="document-liquid-item-unit">{balance.unit}</span>
                 </div>
                 <em className="document-liquid-item-status">{statusLabel}</em>
-              </motion.div>
+              </div>
             );
           })}
         </div>

@@ -141,23 +141,7 @@ migrate((app) => {
     { code: '082', name: 'ویپاد', iconKey: 'bank-pasargad' },
     { code: '083', name: 'توبانک', iconKey: 'bank-gardeshgari' },
     { code: '084', name: 'فردابانک', iconKey: 'bank-iran-zamin' },
-    { code: '085', name: 'آبانک', iconKey: 'bank-ayandeh' },
-    { code: '086', name: 'نشان‌بانک', iconKey: 'bank-melli' },
-    { code: '075', name: 'موسسه اعتباری ملل', iconKey: 'bank-melall' },
-    { code: '076', name: 'موسسه اعتباری نور', iconKey: 'bank-noor' },
-    { code: '077', name: 'موسسه اعتباری کاسپین', iconKey: 'bank-caspian' },
-    { code: '073', name: 'موسسه اعتباری کوثر', iconKey: 'bank-kosar' },
-    { code: '063', name: 'بانک انصار', iconKey: 'bank-ansar' },
-    { code: '052', name: 'بانک قوامین', iconKey: 'bank-ghavamin' },
-    { code: '065', name: 'بانک حکمت ایرانیان', iconKey: 'bank-hekmat' },
-    { code: '079', name: 'بانک مهر اقتصاد', iconKey: 'bank-mehr-eghtesad' },
-    { code: '010', name: 'بانک مرکزی جمهوری اسلامی ایران', iconKey: 'bank-bank-markazi' },
-    { code: '087', name: 'بانک ایران و اروپا', iconKey: 'bank-iran-europe' },
-    { code: '088', name: 'بانک ایران و ونزوئلا', iconKey: 'bank-iran-venezuela' },
-    { code: '089', name: 'موسسه اعتباری توسعه', iconKey: 'bank-tosee' },
-    { code: '090', name: 'بانک تعاون اسلامی', iconKey: 'bank-taavon-eslami' },
-    { code: '091', name: 'بانک استاندارد چارترد', iconKey: 'bank-standard-chartered' },
-    { code: '092', name: 'فیوچر بانک', iconKey: 'bank-futurebank' }
+    { code: '085', name: 'آبانک', iconKey: 'bank-ayandeh' }
   ];
 
   const banksCol = app.findCollectionByNameOrId("banks");

@@ -187,11 +187,11 @@ export default function WorkmanshipTab({
   }, [operationOptions, selectedOptionId]);
 
   const rawWeightStr = draftLine?.details?.rawWeight || '';
-  const quantityStr = draftLine?.details?.quantity || '1';
+  const quantityStr = draftLine?.details?.quantity !== undefined ? draftLine.details.quantity : '1';
   const workmanshipName = draftLine?.details?.workmanshipName || '';
   const wageStr = draftLine?.details?.wage || '';
   const wageMode: WageMode = (draftLine?.details?.wageMode as WageMode) || 'per_gram';
-  const purityStr = draftLine?.details?.purity || String(basePurity);
+  const purityStr = draftLine?.details?.purity !== undefined ? draftLine.details.purity : String(basePurity);
   const goldenPercentageStr = draftLine?.details?.goldenPercentage || '';
   const profitPercentageStr = draftLine?.details?.profitPercentage || '';
   const metalPriceStr = draftLine?.details?.metalPrice || '';
@@ -380,7 +380,7 @@ export default function WorkmanshipTab({
           metalType: currentMetalType,
           rawKind: 'molten',
           rawWeight: rawWeightStr,
-          purity: purityStr,
+          purity: purityStr || String(basePurity),
           calculationMethod: 'weight',
           metalPriceType: 'gram18',
           metalPrice: metalPriceStr,
@@ -398,7 +398,7 @@ export default function WorkmanshipTab({
           settlesTradeId: '',
           inventorySourceId: '',
           workmanshipName: workmanshipName,
-          quantity: quantityStr,
+          quantity: quantityStr || '1',
           wage: wageStr,
           wageMode: wageMode,
           goldenPercentage: goldenPercentageStr,
@@ -564,38 +564,62 @@ export default function WorkmanshipTab({
           </Field>
 
           {/* Field: وزن (Weight in grams) */}
-          <Field label={`وزن ${metalName} (گرم)`} required>
-            <div className="relative">
+          <Field label={`وزن ${metalName} (گرم)`} required className="!w-[115px] !max-w-[115px]">
+            <div className="relative !w-[115px] !max-w-[115px]">
               <input
                 type="text"
                 inputMode="decimal"
-                value={rawWeightStr}
-                onChange={(e) => updateField('rawWeight', e.target.value, true)}
+                maxLength={9}
+                value={rawWeightStr ? toPersianDigits(rawWeightStr) : ''}
+                onChange={(e) => {
+                  const cleaned = normalizeDigits(e.target.value).replace(/[^\d.]/g, '').slice(0, 9);
+                  updateField('rawWeight', cleaned, true);
+                }}
                 onKeyDown={handleKeyDownEnter}
                 placeholder="۰.۰۰۰"
-                className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-xs font-black text-slate-800 focus:border-amber-500 focus:bg-white focus:outline-none dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-100 dark:focus:border-amber-500"
+                style={{ width: '115px', maxWidth: '115px' }}
+                className="!w-[115px] !max-w-[115px] text-center rounded-xl border border-slate-200 bg-slate-50/50 px-2 py-2.5 text-xs font-black text-slate-800 focus:border-amber-500 focus:bg-white focus:outline-none dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-100 dark:focus:border-amber-500"
               />
-              <span className="pointer-events-none absolute left-3 top-2.5 text-[11px] font-bold text-slate-400">
-                گرم
-              </span>
+            </div>
+          </Field>
+
+          {/* Field: عیار (Purity) */}
+          <Field label={`عیار ${metalName}`} className="!w-[88px] !max-w-[88px]">
+            <div className="relative !w-[88px] !max-w-[88px]">
+              <input
+                type="text"
+                inputMode="numeric"
+                maxLength={4}
+                value={purityStr ? toPersianDigits(purityStr) : ''}
+                onChange={(e) => {
+                  const cleaned = normalizeDigits(e.target.value).replace(/\D/g, '').slice(0, 4);
+                  updateField('purity', cleaned, true);
+                }}
+                onKeyDown={handleKeyDownEnter}
+                placeholder={toPersianDigits(String(basePurity))}
+                style={{ width: '88px', maxWidth: '88px' }}
+                className="!w-[88px] !max-w-[88px] text-center rounded-xl border border-slate-200 bg-slate-50/50 px-2 py-2.5 text-xs font-black text-slate-800 focus:border-amber-500 focus:bg-white focus:outline-none dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-100 dark:focus:border-amber-500"
+              />
             </div>
           </Field>
 
           {/* Field: تعداد (Quantity/Count) */}
-          <Field label="تعداد (عدد)">
-            <div className="relative">
+          <Field label="تعداد (عدد)" className="!w-[88px] !max-w-[88px]">
+            <div className="relative !w-[88px] !max-w-[88px]">
               <input
                 type="text"
                 inputMode="numeric"
-                value={quantityStr}
-                onChange={(e) => updateField('quantity', e.target.value, true)}
+                maxLength={4}
+                value={quantityStr ? toPersianDigits(quantityStr) : ''}
+                onChange={(e) => {
+                  const cleaned = normalizeDigits(e.target.value).replace(/\D/g, '').slice(0, 4);
+                  updateField('quantity', cleaned, true);
+                }}
                 onKeyDown={handleKeyDownEnter}
                 placeholder="۱"
-                className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-xs font-black text-slate-800 focus:border-amber-500 focus:bg-white focus:outline-none dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-100 dark:focus:border-amber-500"
+                style={{ width: '88px', maxWidth: '88px' }}
+                className="!w-[88px] !max-w-[88px] text-center rounded-xl border border-slate-200 bg-slate-50/50 px-2 py-2.5 text-xs font-black text-slate-800 focus:border-amber-500 focus:bg-white focus:outline-none dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-100 dark:focus:border-amber-500"
               />
-              <span className="pointer-events-none absolute left-3 top-2.5 text-[11px] font-bold text-slate-400">
-                عدد
-              </span>
             </div>
           </Field>
 
@@ -650,24 +674,6 @@ export default function WorkmanshipTab({
             )}
           </div>
 
-          {/* Field: عیار (Purity) */}
-          <Field label={`عیار ${metalName}`}>
-            <div className="relative">
-              <input
-                type="text"
-                inputMode="numeric"
-                value={purityStr}
-                onChange={(e) => updateField('purity', e.target.value, true)}
-                onKeyDown={handleKeyDownEnter}
-                placeholder={String(basePurity)}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-xs font-black text-slate-800 focus:border-amber-500 focus:bg-white focus:outline-none dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-100 dark:focus:border-amber-500"
-              />
-              <span className="pointer-events-none absolute left-3 top-2.5 text-[11px] font-bold text-slate-400">
-                / ۱۰۰۰
-              </span>
-            </div>
-          </Field>
-
           {/* Field: تبدیل به x (Calculated field based on metal base purity) */}
           <Field label={`تبدیل به ${toPersianDigits(String(basePurity))} (عیار معیار)`}>
             <div className="flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50/70 px-3 py-2.5 text-xs font-black text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
@@ -684,20 +690,22 @@ export default function WorkmanshipTab({
           {/* Dynamic Option Fields: Option 1 & 3 vs Option 2 & 4 */}
           {selectedOptionId === 1 || selectedOptionId === 3 ? (
             /* Option 1 & 3 Specific Field: درصد طلایی (Golden Percentage) */
-            <Field label="درصد طلایی (٪)">
-              <div className="relative">
+            <Field label="درصد طلایی (٪)" className="!w-[96px] !max-w-[96px]">
+              <div className="relative !w-[96px] !max-w-[96px]">
                 <input
                   type="text"
                   inputMode="decimal"
-                  value={goldenPercentageStr}
-                  onChange={(e) => updateField('goldenPercentage', e.target.value, true)}
+                  maxLength={5}
+                  value={goldenPercentageStr ? toPersianDigits(goldenPercentageStr) : ''}
+                  onChange={(e) => {
+                    const cleaned = normalizeDigits(e.target.value).replace(/[^\d.]/g, '').slice(0, 5);
+                    updateField('goldenPercentage', cleaned, true);
+                  }}
                   onKeyDown={handleKeyDownEnter}
                   placeholder="۰"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-xs font-black text-slate-800 focus:border-amber-500 focus:bg-white focus:outline-none dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-100 dark:focus:border-amber-500"
+                  style={{ width: '96px', maxWidth: '96px' }}
+                  className="!w-[96px] !max-w-[96px] text-center rounded-xl border border-slate-200 bg-slate-50/50 px-2 py-2.5 text-xs font-black text-slate-800 focus:border-amber-500 focus:bg-white focus:outline-none dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-100 dark:focus:border-amber-500"
                 />
-                <span className="pointer-events-none absolute left-3 top-2.5 text-[11px] font-bold text-slate-400">
-                  ٪
-                </span>
               </div>
             </Field>
           ) : (
@@ -720,20 +728,22 @@ export default function WorkmanshipTab({
               </div>
 
               {/* Field: درصد سود (Profit Percentage) */}
-              <Field label="درصد سود (٪)">
-                <div className="relative">
+              <Field label="درصد سود (٪)" className="!w-[96px] !max-w-[96px]">
+                <div className="relative !w-[96px] !max-w-[96px]">
                   <input
                     type="text"
                     inputMode="decimal"
-                    value={profitPercentageStr}
-                    onChange={(e) => updateField('profitPercentage', e.target.value, true)}
+                    maxLength={5}
+                    value={profitPercentageStr ? toPersianDigits(profitPercentageStr) : ''}
+                    onChange={(e) => {
+                      const cleaned = normalizeDigits(e.target.value).replace(/[^\d.]/g, '').slice(0, 5);
+                      updateField('profitPercentage', cleaned, true);
+                    }}
                     onKeyDown={handleKeyDownEnter}
                     placeholder="۰"
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-xs font-black text-slate-800 focus:border-amber-500 focus:bg-white focus:outline-none dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-100 dark:focus:border-amber-500"
+                    style={{ width: '96px', maxWidth: '96px' }}
+                    className="!w-[96px] !max-w-[96px] text-center rounded-xl border border-slate-200 bg-slate-50/50 px-2 py-2.5 text-xs font-black text-slate-800 focus:border-amber-500 focus:bg-white focus:outline-none dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-100 dark:focus:border-amber-500"
                   />
-                  <span className="pointer-events-none absolute left-3 top-2.5 text-[11px] font-bold text-slate-400">
-                    ٪
-                  </span>
                 </div>
               </Field>
 

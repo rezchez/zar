@@ -1,6 +1,7 @@
 export type CheckStatus =
   | 'draft'
   | 'issued'
+  | 'received'
   | 'delivered'
   | 'pending'
   | 'due'
@@ -16,6 +17,7 @@ export type ChequeType = 'payable' | 'receivable';
 export const CHEQUE_STATUS_LABELS: Record<CheckStatus, string> = {
   draft: 'پیش‌نویس',
   issued: 'صادرشده',
+  received: 'دریافت‌شده',
   delivered: 'تحویل داده‌شده',
   pending: 'در انتظار وصول',
   due: 'رسیده به سررسید',
@@ -30,6 +32,7 @@ export const CHEQUE_STATUS_LABELS: Record<CheckStatus, string> = {
 export const CHEQUE_STATUS_COLORS: Record<CheckStatus, { bg: string; text: string; border: string }> = {
   draft: { bg: 'bg-slate-100 dark:bg-slate-800', text: 'text-slate-900 dark:text-slate-100 font-extrabold', border: 'border-slate-300 dark:border-slate-700' },
   issued: { bg: 'bg-blue-100 dark:bg-blue-950/70', text: 'text-blue-950 dark:text-blue-200 font-extrabold', border: 'border-blue-300 dark:border-blue-700' },
+  received: { bg: 'bg-teal-100 dark:bg-teal-950/70', text: 'text-teal-950 dark:text-teal-200 font-extrabold', border: 'border-teal-300 dark:border-teal-700' },
   delivered: { bg: 'bg-indigo-100 dark:bg-indigo-950/70', text: 'text-indigo-950 dark:text-indigo-200 font-extrabold', border: 'border-indigo-300 dark:border-indigo-700' },
   pending: { bg: 'bg-amber-100 dark:bg-amber-950/70', text: 'text-amber-950 dark:text-amber-200 font-extrabold', border: 'border-amber-300 dark:border-amber-700' },
   due: { bg: 'bg-orange-100 dark:bg-orange-950/70', text: 'text-orange-950 dark:text-orange-200 font-extrabold', border: 'border-orange-300 dark:border-orange-700' },
@@ -109,6 +112,7 @@ export function canTransitionChequeStatus(
   const allowedTransitions: Record<CheckStatus, CheckStatus[]> = {
     draft: ['issued', 'cancelled'],
     issued: ['delivered', 'pending', 'clearing', 'due', 'cleared', 'returned', 'returned_to_drawer', 'cancelled', 'paid'],
+    received: ['delivered', 'pending', 'clearing', 'due', 'cleared', 'returned', 'returned_to_drawer', 'cancelled'],
     delivered: ['pending', 'clearing', 'due', 'cleared', 'returned', 'returned_to_drawer', 'cancelled'],
     pending: ['clearing', 'due', 'cleared', 'returned', 'returned_to_drawer', 'cancelled'],
     clearing: ['cleared', 'returned', 'pending', 'returned_to_drawer', 'cancelled'],
@@ -184,6 +188,7 @@ export function mapCheckRecord(record: Record<string, unknown>): CheckRecord {
   const validStatuses: CheckStatus[] = [
     'draft',
     'issued',
+    'received',
     'delivered',
     'pending',
     'due',
@@ -198,7 +203,11 @@ export function mapCheckRecord(record: Record<string, unknown>): CheckRecord {
     ? (rawStatus as CheckStatus)
     : 'issued';
 
-  const chequeType: ChequeType = record.chequeType === 'receivable' ? 'receivable' : 'payable';
+  const isReceivable =
+    record.chequeType === 'receivable' ||
+    record.cheque_type === 'receivable' ||
+    record.type === 'receivable';
+  const chequeType: ChequeType = isReceivable ? 'receivable' : 'payable';
 
   const recId = typeof record.id === 'string' ? record.id : '';
   const rawImage = typeof record.image === 'string' && record.image ? record.image : undefined;

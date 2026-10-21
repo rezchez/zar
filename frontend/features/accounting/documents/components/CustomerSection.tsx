@@ -111,6 +111,7 @@ interface CustomerSectionProps {
   documentNumberLoading: boolean;
   baseCurrency?: 'IRR' | 'IRT';
   committedLines?: DocumentLine[];
+  isCustomerBalanceLoading?: boolean;
 }
 
 export default function CustomerSection({
@@ -128,6 +129,7 @@ export default function CustomerSection({
   documentNumberLoading,
   baseCurrency = 'IRR',
   committedLines = [],
+  isCustomerBalanceLoading = false,
 }: CustomerSectionProps) {
   const [customerQuery, setCustomerQuery] = useState('');
   const [isCustomerDropdownOpen, setIsCustomerDropdownOpen] = useState(false);
@@ -821,6 +823,7 @@ export default function CustomerSection({
             customer={selectedCustomer}
             baseCurrency={baseCurrency}
             committedLines={committedLines}
+            loading={isCustomerBalanceLoading}
           />
         ) : null}
       </AnimatePresence>

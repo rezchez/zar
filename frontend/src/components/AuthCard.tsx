@@ -1,6 +1,5 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { useAuthLogic } from './auth/useAuthLogic';
 import { DesktopAuthView } from './auth/DesktopAuthView';
 import { MobileAuthView } from './auth/MobileAuthView';
@@ -11,23 +10,17 @@ interface AuthCardProps {
 
 export default function AuthCard({ initialMode = 'login' }: AuthCardProps) {
   const logic = useAuthLogic(initialMode);
-  const [isDesktop, setIsDesktop] = useState(false);
 
-  useEffect(() => {
-    const media = window.matchMedia('(min-width: 768px)');
-    setIsDesktop(media.matches);
-
-    const listener = (e: MediaQueryListEvent) => {
-      setIsDesktop(e.matches);
-    };
-
-    media.addEventListener('change', listener);
-    return () => media.removeEventListener('change', listener);
-  }, []);
-
-  return isDesktop ? (
-    <DesktopAuthView logic={logic} />
-  ) : (
-    <MobileAuthView logic={logic} />
+  return (
+    <>
+      {/* Desktop: shown via CSS media query — no JS swap, no hydration mismatch */}
+      <div className="hidden md:block">
+        <DesktopAuthView logic={logic} />
+      </div>
+      {/* Mobile: shown via CSS media query */}
+      <div className="block md:hidden">
+        <MobileAuthView logic={logic} />
+      </div>
+    </>
   );
 }

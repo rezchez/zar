@@ -748,11 +748,11 @@ export default function GoldSaleTab({
             {numericPrice > 0 && !isSilver && !isPlatinum ? (
               <div className="col-span-full flex flex-wrap items-center gap-3 rounded-xl border border-slate-200/80 bg-slate-50/80 dark:border-slate-800 dark:bg-slate-900/40 p-2.5 text-[11px] font-bold text-slate-600 dark:text-slate-300">
                 <span className="text-amber-600 dark:text-amber-400">معادل قیمت در سایر واحدها:</span>
-                <span>گرم ۱۸: {faNumber(priceTriple.gram18)} {baseCurrency === 'IRT' ? 'تومان' : 'ریال'}</span>
+                <span>گرم ۱۸: {faNumber(priceTriple.gram18, 0)} {baseCurrency === 'IRT' ? 'تومان' : 'ریال'}</span>
                 <span>·</span>
-                <span>مثقال ۱۷: {faNumber(priceTriple.mesghal17)} {baseCurrency === 'IRT' ? 'تومان' : 'ریال'}</span>
+                <span>مثقال ۱۷: {faNumber(priceTriple.mesghal17, 0)} {baseCurrency === 'IRT' ? 'تومان' : 'ریال'}</span>
                 <span>·</span>
-                <span>اونس: {faNumber(priceTriple.ounceUsd)} {baseCurrency === 'IRT' ? 'تومان' : 'ریال'}</span>
+                <span>اونس: {faNumber(priceTriple.ounceUsd, 2)} دلار</span>
               </div>
             ) : null}
 
@@ -819,7 +819,7 @@ export default function GoldSaleTab({
                   ? ` · عیار ${toPersianDigits(draftLine.details.purity)}`
                   : ''}
                 {numberValue(draftLine.details.totalAmount) > 0
-                  ? ` · مبلغ کل: ${toPersianDigits(faNumber(numberValue(draftLine.details.totalAmount)))} ${baseCurrency === 'IRT' ? 'تومان' : 'ریال'}`
+                  ? ` · مبلغ کل: ${toPersianDigits(faNumber(numberValue(draftLine.details.totalAmount), 0))} ${baseCurrency === 'IRT' ? 'تومان' : 'ریال'}`
                   : ''}
               </span>
             </div>

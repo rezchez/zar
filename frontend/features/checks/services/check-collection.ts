@@ -32,7 +32,7 @@ const checkCollectionPayload = {
       type: 'select',
       required: true,
       maxSelect: 1,
-      values: ['draft', 'issued', 'delivered', 'pending', 'due', 'cleared', 'returned', 'cancelled', 'paid', 'clearing', 'returned_to_drawer'],
+      values: ['draft', 'issued', 'received', 'delivered', 'pending', 'due', 'cleared', 'returned', 'cancelled', 'paid', 'clearing', 'returned_to_drawer'],
     },
     { id: 'payable_account_rel', name: 'payableAccountId', type: 'relation', collectionId: 'chart_of_accounts', maxSelect: 1, required: false },
     { id: 'receivable_account_rel', name: 'receivableAccountId', type: 'relation', collectionId: 'chart_of_accounts', maxSelect: 1, required: false },
@@ -132,8 +132,8 @@ export async function ensureChecksCollection(pb: PocketBase) {
         const statusField = (existing.fields || []).find((f: any) => f.name === 'status');
         if (statusField && statusField.type === 'select') {
           const currentVals = new Set(statusField.values || []);
-          if (!currentVals.has('clearing') || !currentVals.has('returned_to_drawer')) {
-            statusField.values = Array.from(new Set([...(statusField.values || []), 'clearing', 'returned_to_drawer']));
+          if (!currentVals.has('clearing') || !currentVals.has('returned_to_drawer') || !currentVals.has('received')) {
+            statusField.values = Array.from(new Set([...(statusField.values || []), 'clearing', 'returned_to_drawer', 'received']));
             needsUpdate = true;
           }
         }

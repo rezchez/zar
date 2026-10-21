@@ -32,14 +32,26 @@ export async function GET(request: Request) {
   }
 
   const url = new URL(request.url);
-  const status = text(url.searchParams.get('status'), 20);
+  const statusParam = text(url.searchParams.get('status'), 80);
+  const chequeType = text(url.searchParams.get('chequeType'), 20);
   const upcomingDays = Number(url.searchParams.get('upcomingDays'));
 
   let filter = '';
   const filters: string[] = [];
 
-  if (status) {
-    filters.push(context.pb.filter('status = {:status}', { status }));
+  if (chequeType) {
+    filters.push(context.pb.filter('chequeType = {:chequeType}', { chequeType }));
+  }
+
+  if (statusParam) {
+    const statuses = statusParam.split(',').map((s) => s.trim()).filter(Boolean);
+    if (statuses.length === 1) {
+      filters.push(context.pb.filter('status = {:status}', { status: statuses[0] }));
+    } else if (statuses.length > 1) {
+      const statusFilters = statuses.map((s, idx) => `status = {:status_${idx}}`);
+      const statusParams = Object.fromEntries(statuses.map((s, idx) => [`status_${idx}`, s]));
+      filters.push(context.pb.filter(`(${statusFilters.join(' || ')})`, statusParams));
+    }
   }
 
   if (Number.isFinite(upcomingDays) && upcomingDays > 0) {

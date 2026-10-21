@@ -143,7 +143,7 @@ export function DesktopAuthView({ logic }: { logic: AuthLogicReturn }) {
           </div>
 
           {/* Form & Transitions */}
-          <form ref={formRef} action="#" method="POST" onSubmit={handleSubmit} className="space-y-4">
+          <form ref={formRef} method="POST" action="/api/auth/login" onSubmit={handleSubmit} className="space-y-4">
             <AnimatePresence initial={false} mode="popLayout">
               <motion.div
                 key={mode + (mfaChallenge ? '-mfa' : '') + (loginMethod === 'phone' ? '-phone' : '')}
@@ -418,32 +418,38 @@ export function DesktopAuthView({ logic }: { logic: AuthLogicReturn }) {
 
                 {/* Mode Options: Remember Me & Forgot Password */}
                 {mode === 'login' && !mfaChallenge && (
-                  <div className="flex items-center justify-between pt-1 text-xs">
-                    <button
-                      type="button"
-                      onClick={() => setRememberMe((v) => !v)}
-                      className="flex items-center gap-2.5 min-h-[44px] py-1 cursor-pointer select-none group active:scale-95 transition-transform"
-                      role="checkbox"
-                      aria-checked={rememberMe}
+                  <div className="flex items-center justify-between gap-2 pt-1 text-xs">
+                    <label
+                      htmlFor="desktop-auth-remember-me"
+                      className="flex items-center gap-2.5 min-h-[44px] py-1 cursor-pointer select-none group touch-manipulation shrink-0"
                     >
+                      <input
+                        id="desktop-auth-remember-me"
+                        name="rememberMe"
+                        type="checkbox"
+                        checked={rememberMe}
+                        onChange={(e) => setRememberMe(e.target.checked)}
+                        className="sr-only"
+                      />
                       <div
-                        className={`w-5 h-5 rounded-md border-2 transition-all flex items-center justify-center ${
+                        className={`w-5 h-5 rounded-md border-2 shrink-0 transition-all flex items-center justify-center ${
                           rememberMe
                             ? 'bg-purple-600 border-purple-500 text-white shadow-[0_0_12px_rgba(168,85,247,0.4)]'
                             : 'bg-neutral-900 border-white/40 group-hover:border-purple-400'
                         }`}
+                        aria-hidden="true"
                       >
                         {rememberMe && <Check className="w-3.5 h-3.5 stroke-[3]" />}
                       </div>
                       <span className="text-xs font-semibold text-neutral-200 group-hover:text-white transition-colors">
                         مرا به خاطر بسپار
                       </span>
-                    </button>
+                    </label>
 
                     <button
                       type="button"
                       onClick={handleForgotPassword}
-                      className="text-purple-400 hover:text-purple-300 transition-colors hover:underline p-2 -mr-2 min-h-[44px] flex items-center text-xs"
+                      className="text-purple-400 hover:text-purple-300 transition-colors hover:underline p-2 min-h-[44px] flex items-center text-xs text-left"
                     >
                       رمز عبور را فراموش کرده‌اید؟
                     </button>

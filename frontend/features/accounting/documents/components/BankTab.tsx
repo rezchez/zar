@@ -6,13 +6,16 @@ import {
   ArrowRightLeft,
   ArrowUpRight,
   Building2,
+  ChevronDown,
   CreditCard,
   Edit3,
+  FileCheck,
   FileText,
   Landmark,
   ListPlus,
   LoaderCircle,
   Plus,
+  RefreshCw,
   Wallet,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -24,16 +27,20 @@ import {
   getConvertedBankAmount,
   isDomesticBankCurrency,
   type BankAccount,
+  BANKS_REGISTRY,
 } from '@/lib/bank';
 import type { Customer } from '@/lib/customer';
+import type { CheckRecord } from '@/lib/check';
 import { formatJalaliDate, isTodayOrPastJalaliDate, normalizeDigits } from '@/lib/jalali';
 import {
+  convertRialToToman,
   formatCurrencyAmount,
   parseLocalizedAmount,
 } from '@/lib/money';
 
 const getBankOptionLabel = formatBankSelectOptionLabel;
 import Field from '@/src/components/documents/Field';
+import BankLogo from '@/src/components/documents/BankLogo';
 import { useAppSettings } from '@/src/components/SettingsProvider';
 import DatePicker from '@/components/ui/date-picker';
 import { PriceInput } from '@/components/ui/price-input';
@@ -46,6 +53,8 @@ import { sanitizeLineDetailsForTab, sanitizeDocumentLine } from '../utils/docume
 
 type BankOperationKind =
   | 'check-payment'
+  | 'check-receipt'
+  | 'transfer-received-check'
   | 'pay-to-customer'
   | 'receive-from-customer'
   | 'cash-to-bank'
@@ -73,13 +82,17 @@ const BANKS_CACHE_STORAGE_KEY = 'zarfolio_banks_cache';
 let cachedBanks: BankAccount[] | null = null;
 let banksFetchPromise: Promise<BankAccount[]> | null = null;
 
+export function setCachedBanksForTesting(banks: BankAccount[] | null) {
+  cachedBanks = banks;
+}
+
 export function getInitialCachedBanks(): BankAccount[] | null {
   if (cachedBanks && cachedBanks.length > 0) {
     return cachedBanks;
   }
-  if (typeof window !== 'undefined') {
+  if (typeof window !== 'undefined' || typeof localStorage !== 'undefined') {
     try {
-      const stored = localStorage.getItem(BANKS_CACHE_STORAGE_KEY);
+      const stored = typeof localStorage !== 'undefined' ? localStorage.getItem(BANKS_CACHE_STORAGE_KEY) : null;
       if (stored) {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed) && parsed.length > 0) {
@@ -177,7 +190,7 @@ export function computeCommittedBankDeltas(
     const lineFee = toEffectiveBase(rawLineFee);
     const opKind = line.details?.bankOperationKind || '';
     const bankId = line.details?.bankAccountId;
-    const isCheck = opKind === 'check-payment' || Boolean(line.details?.checkNumber);
+    const isCheck = opKind === 'check-payment' || opKind === 'check-receipt' || Boolean(line.details?.checkNumber);
 
     if (bankId && !isCheck) {
       const currentDelta = deltas.get(bankId) || 0;
@@ -232,7 +245,19 @@ export default function BankTab({
   const [search, setSearch] = useState('');
   const [selectedSource, setSelectedSource] = useState(() => (initialCached && initialCached.length > 0 ? initialCached[0].id : ''));
   const [selectedDestination, setSelectedDestination] = useState('');
-  const [kind, setKind] = useState<BankOperationKind>('check-payment');
+  const [kind, setKind] = useState<BankOperationKind>(() => {
+    const fromDraft = draftLine.details?.bankOperationKind as BankOperationKind;
+    if (fromDraft) {
+      if (nature === 'received' && (fromDraft === 'check-payment' || fromDraft === 'transfer-received-check')) {
+        return 'check-receipt';
+      }
+      if (nature === 'paid' && fromDraft === 'check-receipt') {
+        return 'check-payment';
+      }
+      return fromDraft;
+    }
+    return nature === 'received' ? 'check-receipt' : 'check-payment';
+  });
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
   const [loading, setLoading] = useState(false);
@@ -240,26 +265,63 @@ export default function BankTab({
   // Bank Creation Modal States
   const [showCreateModal, setShowCreateModal] = useState(false);
 
-  // Check Issuance States
+  // Check Issuance / Receipt States
   const [checkNumber, setCheckNumber] = useState('');
   const [sayadId, setSayadId] = useState('');
   const [dueDateJalali, setDueDateJalali] = useState(() => formatJalaliDate());
+  const [receivedBankName, setReceivedBankName] = useState<string>(() => draftLine.details?.bankName || BANKS_REGISTRY[0]?.name || 'بانک ملی ایران');
 
   // Transfer Fee & Tracking States
   const [transferFee, setTransferFee] = useState('');
   const [trackingNumber, setTrackingNumber] = useState('');
 
+  // Received Checks In-Hand States (خرج یا عودت چک)
+  const [receivedChecks, setReceivedChecks] = useState<CheckRecord[]>([]);
+  const [isFetchingReceivedChecks, setIsFetchingReceivedChecks] = useState(false);
+  const [selectedCheckId, setSelectedCheckId] = useState<string>(() => draftLine.details?.checkId || '');
+  const [originalCustomerId, setOriginalCustomerId] = useState<string>(() => draftLine.details?.originalCustomerId || '');
+  const [originalCustomerName, setOriginalCustomerName] = useState<string>(() => draftLine.details?.originalCustomerName || '');
+
   const customerName = selectedCustomer ? selectedCustomer.name : 'طرف‌حساب';
 
+  const isReceived = nature === 'received';
   const operationOptions: Array<{
     value: BankOperationKind;
     label: string;
     icon: typeof ArrowRightLeft;
-  }> = [
-    { value: 'check-payment', label: 'پرداخت چک از حساب بانکی', icon: CreditCard },
-    { value: 'pay-to-customer', label: `پرداخت وجه به ${customerName} از حساب بانکی`, icon: ArrowUpRight },
-    { value: 'receive-from-customer', label: `دریافت وجه از ${customerName} به حساب بانکی`, icon: ArrowDownLeft },
-  ];
+  }> = isReceived
+    ? [
+        { value: 'check-receipt', label: 'دریافت چک', icon: CreditCard },
+        { value: 'receive-from-customer', label: `دریافت وجه از ${customerName} به حساب بانکی`, icon: ArrowDownLeft },
+      ]
+    : [
+        { value: 'check-payment', label: 'پرداخت چک از حساب بانکی', icon: CreditCard },
+        { value: 'transfer-received-check', label: 'خرج / عودت چک دریافتی', icon: FileCheck },
+        { value: 'pay-to-customer', label: `پرداخت وجه به ${customerName} از حساب بانکی`, icon: ArrowUpRight },
+      ];
+
+  const loadReceivedChecks = async () => {
+    setIsFetchingReceivedChecks(true);
+    try {
+      const res = await fetch('/api/checks?chequeType=receivable', { cache: 'no-store' });
+      if (res.ok) {
+        const data = (await res.json()) as { checks?: CheckRecord[] };
+        if (Array.isArray(data.checks)) {
+          setReceivedChecks(data.checks);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch receivable checks:', error);
+    } finally {
+      setIsFetchingReceivedChecks(false);
+    }
+  };
+
+  useEffect(() => {
+    if (nature === 'paid' || kind === 'transfer-received-check') {
+      loadReceivedChecks();
+    }
+  }, [nature, kind]);
 
   async function loadBanks() {
     setIsFetchingBanks(true);
@@ -277,18 +339,22 @@ export default function BankTab({
     if (typeof window === 'undefined') return;
     const searchParams = new URLSearchParams(window.location.search);
     const paramKind = searchParams.get('kind') || searchParams.get('operation');
-    if (paramKind && ['check-payment', 'pay-to-customer', 'receive-from-customer', 'cash-to-bank', 'bank-to-cash', 'bank-to-bank'].includes(paramKind)) {
-      setKind(paramKind as BankOperationKind);
+    if (paramKind) {
+      if ((paramKind === 'check-payment' || paramKind === 'transfer-received-check') && nature === 'received') {
+        setKind('check-receipt');
+      } else if (['check-payment', 'check-receipt', 'transfer-received-check', 'pay-to-customer', 'receive-from-customer', 'cash-to-bank', 'bank-to-cash', 'bank-to-bank'].includes(paramKind)) {
+        setKind(paramKind as BankOperationKind);
+      }
     }
-  }, []);
+  }, [nature]);
 
   // Synchronize kind when document nature changes (received vs paid)
   useEffect(() => {
     if (editingLineId) return;
     if (nature === 'received') {
-      setKind('receive-from-customer');
+      setKind((prev) => (prev === 'check-payment' || prev === 'transfer-received-check' ? 'check-receipt' : prev === 'pay-to-customer' ? 'receive-from-customer' : prev === 'check-receipt' ? 'check-receipt' : 'check-receipt'));
     } else {
-      setKind((prev) => (prev === 'receive-from-customer' ? 'check-payment' : prev));
+      setKind((prev) => (prev === 'check-receipt' ? 'check-payment' : prev === 'receive-from-customer' ? 'pay-to-customer' : prev === 'check-payment' || prev === 'transfer-received-check' ? prev : 'check-payment'));
     }
   }, [nature, editingLineId]);
 
@@ -365,13 +431,80 @@ export default function BankTab({
     return effectiveBanks.filter((b) => Boolean(b.hasCheckbook || b.hasVirtualCheck));
   }, [effectiveBanks]);
 
+  const availableReceivedChecks = useMemo(() => {
+    const committedCheckIds = new Set(
+      (committedLines || [])
+        .filter((cl) => cl.documentTab === 'bank' || cl.sourceTab === 'bank')
+        .map((cl) => cl.details?.checkId)
+        .filter(Boolean)
+    );
+    return receivedChecks.filter((c) => {
+      if (editingLineId && draftLine.details?.checkId === c.id) return true;
+      if (committedCheckIds.has(c.id)) return false;
+      const isReceivable = c.chequeType === 'receivable';
+      const isTerminal =
+        c.status === 'cleared' ||
+        c.status === 'paid' ||
+        c.status === 'cancelled' ||
+        c.status === 'delivered' ||
+        c.status === 'returned_to_drawer';
+      return isReceivable && !isTerminal;
+    });
+  }, [receivedChecks, committedLines, editingLineId, draftLine.details?.checkId]);
+
+  const handleSelectReceivedCheck = (checkId: string) => {
+    setSelectedCheckId(checkId);
+    const chosen = availableReceivedChecks.find((c) => c.id === checkId);
+    if (chosen) {
+      const chosenCheckNum = chosen.checkNumber || '';
+      const chosenSayad = chosen.sayadId || '';
+      const chosenBank = chosen.bankName || BANKS_REGISTRY[0]?.name || 'بانک ملی ایران';
+      const chosenDue = chosen.dueDateJalali || formatJalaliDate();
+      const origCustId = chosen.customer || '';
+      const origCustName = (chosen.expand as any)?.customer?.name || (chosen as any).customerName || '';
+      const convertedAmt = effectiveBaseCurrency === 'IRT' ? convertRialToToman(chosen.amount) : chosen.amount;
+
+      setCheckNumber(chosenCheckNum);
+      setSayadId(chosenSayad);
+      setReceivedBankName(chosenBank);
+      setDueDateJalali(chosenDue);
+      setOriginalCustomerId(origCustId);
+      setOriginalCustomerName(origCustName);
+      setAmount(String(convertedAmt));
+
+      updateDraftDetail?.('checkId', chosen.id);
+      updateDraftDetail?.('checkNumber', chosenCheckNum);
+      updateDraftDetail?.('sayadId', chosenSayad);
+      updateDraftDetail?.('bankName', chosenBank);
+      updateDraftDetail?.('dueDateJalali', chosenDue);
+      updateDraftDetail?.('originalCustomerId', origCustId);
+      updateDraftDetail?.('originalCustomerName', origCustName);
+      updateDraftDetail?.('totalAmount', String(convertedAmt));
+
+      const isReturn = Boolean(selectedCustomer && origCustId === selectedCustomer.id);
+      const autoDesc = isReturn
+        ? `عودت چک صیادی ${chosenSayad || chosenCheckNum} به صادرکننده (${selectedCustomer?.name || ''})`
+        : `واگذاری و خرج چک دریافتی ${chosenSayad || chosenCheckNum}${origCustName ? ` (صادره توسط ${origCustName})` : ''} به ${customerName}`;
+      setDescription(autoDesc);
+      setDraftLine((curr) => ({ ...curr, description: autoDesc }));
+    } else if (!checkId) {
+      setSelectedCheckId('');
+      setCheckNumber('');
+      setSayadId('');
+      setAmount('');
+      setOriginalCustomerId('');
+      setOriginalCustomerName('');
+      setDescription('');
+    }
+  };
+
   useEffect(() => {
     if (kind === 'check-payment') {
       const isValid = checkPaymentBanks.some((b) => b.id === selectedSource);
       if (!isValid && checkPaymentBanks.length > 0) {
         setSelectedSource(checkPaymentBanks[0].id);
       }
-    } else {
+    } else if (kind !== 'check-receipt' && kind !== 'transfer-received-check') {
       const isValid = effectiveBanks.some((b) => b.id === selectedSource);
       if (!isValid && effectiveBanks.length > 0) {
         setSelectedSource(effectiveBanks[0].id);
@@ -404,7 +537,7 @@ export default function BankTab({
     : 0;
 
   const effectiveNature: 'received' | 'paid' =
-    kind === 'receive-from-customer' ? 'received' : 'paid';
+    kind === 'receive-from-customer' || kind === 'check-receipt' ? 'received' : 'paid';
 
   const normalizedSayad = normalizeDigits(sayadId).replace(/\D/g, '');
   const isSayadValid = normalizedSayad.length === 16;
@@ -429,6 +562,18 @@ export default function BankTab({
         setSayadId(draftLine.details?.sayadId || '');
         setDueDateJalali(draftLine.details?.dueDateJalali || formatJalaliDate());
         setDescription(draftLine.description || '');
+        if (draftLine.details?.checkId) {
+          setSelectedCheckId(draftLine.details.checkId);
+        }
+        if (draftLine.details?.originalCustomerId) {
+          setOriginalCustomerId(draftLine.details.originalCustomerId);
+        }
+        if (draftLine.details?.originalCustomerName) {
+          setOriginalCustomerName(draftLine.details.originalCustomerName);
+        }
+        if (draftLine.details?.bankName) {
+          setReceivedBankName(draftLine.details.bankName);
+        }
         if (draftLine.details?.bankAccountId) {
           setSelectedSource(draftLine.details.bankAccountId);
         }
@@ -436,7 +581,14 @@ export default function BankTab({
           setSelectedDestination(draftLine.details.destinationBankId);
         }
         if (draftLine.details?.bankOperationKind) {
-          setKind(draftLine.details.bankOperationKind as BankOperationKind);
+          const loadedKind = draftLine.details.bankOperationKind as BankOperationKind;
+          if (nature === 'received' && (loadedKind === 'check-payment' || loadedKind === 'transfer-received-check')) {
+            setKind('check-receipt');
+          } else if (nature === 'paid' && loadedKind === 'check-receipt') {
+            setKind('check-payment');
+          } else {
+            setKind(loadedKind);
+          }
         }
       }
     } else if (!editingLineId && lastEditingLineIdRef.current !== null) {
@@ -448,7 +600,11 @@ export default function BankTab({
       setTrackingNumber('');
       setCheckNumber('');
       setSayadId('');
+      setSelectedCheckId('');
+      setOriginalCustomerId('');
+      setOriginalCustomerName('');
       setDueDateJalali(formatJalaliDate());
+      setReceivedBankName(BANKS_REGISTRY[0]?.name || 'بانک ملی ایران');
       setDescription('');
       setSelectedDestination('');
     } else if (!editingLineId && lastDraftIdRef.current !== draftLine.id) {
@@ -459,23 +615,34 @@ export default function BankTab({
       setTrackingNumber('');
       setCheckNumber('');
       setSayadId('');
+      setSelectedCheckId('');
+      setOriginalCustomerId('');
+      setOriginalCustomerName('');
       setDueDateJalali(formatJalaliDate());
       setDescription('');
       setSelectedDestination('');
     }
-  }, [draftLine.id, editingLineId]);
+  }, [draftLine.id, editingLineId, nature]);
 
   // Keep draftLine details synchronized so external commit (e.g. from pinned lines panel) works seamlessly
   useEffect(() => {
-    const opLabel = operationOptions.find((o) => o.value === kind)?.label || 'عملیات بانکی';
+    const opLabel = operationOptions.find((o) => o.value === kind)?.label || (kind === 'check-receipt' ? 'دریافت چک' : kind === 'check-payment' ? 'پرداخت چک از حساب بانکی' : kind === 'transfer-received-check' ? 'خرج / عودت چک دریافتی' : 'عملیات بانکی');
     const trimmedDesc = description.trim();
     const strAmount = String(numericAmount);
     const strFee = numericTransferFee > 0 ? String(numericTransferFee) : '';
     const trimmedTracking = trackingNumber.trim();
     const trimmedCheckNum = checkNumber.trim();
-    const bName = selectedSourceAccount?.bankName || '';
-    const bBranch = selectedSourceAccount?.branchName || '';
-    const accNum = selectedSourceAccount?.accountNumber || '';
+    const isCheckReceipt = kind === 'check-receipt';
+    const isCheckTransfer = kind === 'transfer-received-check';
+    const isNonBankOutflow = isCheckReceipt || isCheckTransfer;
+    const bName = isNonBankOutflow ? receivedBankName : (selectedSourceAccount?.bankName || '');
+    const bBranch = isNonBankOutflow ? '' : (selectedSourceAccount?.branchName || '');
+    const accNum = isNonBankOutflow ? '' : (selectedSourceAccount?.accountNumber || '');
+    const effectiveSource = isNonBankOutflow ? '' : selectedSource;
+    const effectiveBankBalance = isNonBankOutflow ? 0 : baseConvertedSourceBalance;
+    const effectiveRawBankBalance = isNonBankOutflow ? 0 : rawBaseSourceBalance;
+    const isReturn = Boolean(selectedCustomer && originalCustomerId === selectedCustomer.id);
+    const transferType = isCheckTransfer ? (isReturn ? 'return_to_drawer' : 'transfer_to_customer') : undefined;
 
     setDraftLine((current) => {
       const d = current.details;
@@ -489,16 +656,20 @@ export default function BankTab({
         d?.totalAmount === strAmount &&
         (d?.transferFee || '') === strFee &&
         (d?.trackingNumber || '') === trimmedTracking &&
-        (d?.bankAccountId || '') === selectedSource &&
+        (d?.bankAccountId || '') === effectiveSource &&
         (d?.destinationBankId || '') === selectedDestination &&
         (d?.bankName || '') === bName &&
         (d?.bankBranch || '') === bBranch &&
         (d?.accountNumber || '') === accNum &&
-        d?.bankAccountBalance === baseConvertedSourceBalance &&
-        d?.rawBankAccountBalance === rawBaseSourceBalance &&
+        d?.bankAccountBalance === effectiveBankBalance &&
+        d?.rawBankAccountBalance === effectiveRawBankBalance &&
         (d?.checkNumber || '') === trimmedCheckNum &&
         (d?.sayadId || '') === normalizedSayad &&
         (d?.dueDateJalali || '') === dueDateJalali &&
+        d?.checkId === (isCheckTransfer ? selectedCheckId : undefined) &&
+        d?.originalCustomerId === (isCheckTransfer ? originalCustomerId : undefined) &&
+        d?.originalCustomerName === (isCheckTransfer ? originalCustomerName : undefined) &&
+        d?.transferType === transferType &&
         d?.bankOperationKind === kind &&
         d?.currencyUnit === effectiveBaseCurrency &&
         d?.baseCurrency === effectiveBaseCurrency
@@ -519,16 +690,20 @@ export default function BankTab({
           totalAmount: strAmount,
           transferFee: strFee,
           trackingNumber: trimmedTracking,
-          bankAccountId: selectedSource,
+          bankAccountId: effectiveSource,
           destinationBankId: selectedDestination,
           bankName: bName,
           bankBranch: bBranch,
           accountNumber: accNum,
-          bankAccountBalance: baseConvertedSourceBalance,
-          rawBankAccountBalance: rawBaseSourceBalance,
+          bankAccountBalance: effectiveBankBalance,
+          rawBankAccountBalance: effectiveRawBankBalance,
           checkNumber: trimmedCheckNum,
           sayadId: normalizedSayad,
           dueDateJalali,
+          checkId: isCheckTransfer ? selectedCheckId : undefined,
+          originalCustomerId: isCheckTransfer ? originalCustomerId : undefined,
+          originalCustomerName: isCheckTransfer ? originalCustomerName : undefined,
+          transferType,
           bankOperationKind: kind,
           currencyUnit: effectiveBaseCurrency,
           baseCurrency: effectiveBaseCurrency,
@@ -549,9 +724,14 @@ export default function BankTab({
     selectedSourceAccount?.bankName,
     selectedSourceAccount?.branchName,
     selectedSourceAccount?.accountNumber,
+    receivedBankName,
     checkNumber,
     normalizedSayad,
     dueDateJalali,
+    selectedCheckId,
+    originalCustomerId,
+    originalCustomerName,
+    selectedCustomer?.id,
     effectiveBaseCurrency,
     setDraftLine,
   ]);
@@ -560,35 +740,9 @@ export default function BankTab({
   function handleCommitLine() {
     if (!commitDraftLine) return;
 
-    if (!selectedSourceAccount) {
-      toast.error('حساب بانکی پرداخت‌کننده را انتخاب کنید.');
-      return;
-    }
-
-    if (selectedSourceAccount.isBlocked) {
-      toast.error('این حساب بانکی مسدود است و امکان ثبت تراکنش جدید برای آن وجود ندارد.');
-      return;
-    }
-
-    if (kind === 'bank-to-bank') {
-      if (!selectedDestination) {
-        toast.error('حساب بانکی مقصد را انتخاب کنید.');
-        return;
-      }
-      if (selectedSource === selectedDestination) {
-        toast.error('حساب مبدأ و مقصد نمی‌توانند یکسان باشند.');
-        return;
-      }
-      const destAccount = banks.find((b) => b.id === selectedDestination);
-      if (destAccount?.isBlocked) {
-        toast.error('حساب بانکی مقصد مسدود است و امکان ثبت تراکنش جدید برای آن وجود ندارد.');
-        return;
-      }
-    }
-
-    if (kind === 'check-payment') {
-      if (!selectedSourceAccount.hasCheckbook && !selectedSourceAccount.hasVirtualCheck) {
-        toast.error('حساب بانکی انتخاب شده دارای دسته چک فیزیکی یا مجازی فعال نیست.');
+    if (kind === 'check-receipt') {
+      if (!receivedBankName.trim()) {
+        toast.error('نام بانک صادرکننده چک را انتخاب کنید.');
         return;
       }
       if (!checkNumber.trim()) {
@@ -599,22 +753,80 @@ export default function BankTab({
         toast.error('شناسه صیاد باید ۱۶ رقم باشد.');
         return;
       }
-    }
-
-    if (kind === 'pay-to-customer') {
       if (numericAmount <= 0) {
-        toast.error('مبلغ پرداختی به طرف‌حساب باید بیشتر از صفر باشد.');
+        toast.error('مبلغ چک باید بیشتر از صفر باشد.');
         return;
       }
-      if (!isPayToCustomerBalanceSufficient) {
-        toast.error(`مجموع مبلغ پرداختی و کارمزد (${formatCurrencyAmount(totalBankDeduction, effectiveBaseCurrency)}) از موجودی حساب بانکی (${formatCurrencyAmount(convertedSourceBalance, effectiveBaseCurrency)}) بیشتر است. امکان برداشت بیش از موجودی وجود ندارد.`);
+      if (!dueDateJalali) {
+        toast.error('تاریخ سررسید چک الزامی است.');
         return;
       }
-    }
+    } else if (kind === 'transfer-received-check') {
+      if (!selectedCheckId) {
+        toast.error('چک دریافتی مورد نظر جهت واگذاری یا عودت را انتخاب کنید.');
+        return;
+      }
+      if (numericAmount <= 0) {
+        toast.error('مبلغ چک باید بیشتر از صفر باشد.');
+        return;
+      }
+    } else {
+      if (!selectedSourceAccount) {
+        toast.error('حساب بانکی پرداخت‌کننده را انتخاب کنید.');
+        return;
+      }
 
-    if (numericAmount <= 0) {
-      toast.error('مبلغ تراکنش بانکی باید بیشتر از صفر باشد.');
-      return;
+      if (selectedSourceAccount.isBlocked) {
+        toast.error('این حساب بانکی مسدود است و امکان ثبت تراکنش جدید برای آن وجود ندارد.');
+        return;
+      }
+
+      if (kind === 'bank-to-bank') {
+        if (!selectedDestination) {
+          toast.error('حساب بانکی مقصد را انتخاب کنید.');
+          return;
+        }
+        if (selectedSource === selectedDestination) {
+          toast.error('حساب مبدأ و مقصد نمی‌توانند یکسان باشند.');
+          return;
+        }
+        const destAccount = banks.find((b) => b.id === selectedDestination);
+        if (destAccount?.isBlocked) {
+          toast.error('حساب بانکی مقصد مسدود است و امکان ثبت تراکنش جدید برای آن وجود ندارد.');
+          return;
+        }
+      }
+
+      if (kind === 'check-payment') {
+        if (!selectedSourceAccount.hasCheckbook && !selectedSourceAccount.hasVirtualCheck) {
+          toast.error('حساب بانکی انتخاب شده دارای دسته چک فیزیکی یا مجازی فعال نیست.');
+          return;
+        }
+        if (!checkNumber.trim()) {
+          toast.error('شماره چک الزامی است.');
+          return;
+        }
+        if (!isSayadValid) {
+          toast.error('شناسه صیاد باید ۱۶ رقم باشد.');
+          return;
+        }
+      }
+
+      if (kind === 'pay-to-customer') {
+        if (numericAmount <= 0) {
+          toast.error('مبلغ پرداختی به طرف‌حساب باید بیشتر از صفر باشد.');
+          return;
+        }
+        if (!isPayToCustomerBalanceSufficient) {
+          toast.error(`مجموع مبلغ پرداختی و کارمزد (${formatCurrencyAmount(totalBankDeduction, effectiveBaseCurrency)}) از موجودی حساب بانکی (${formatCurrencyAmount(convertedSourceBalance, effectiveBaseCurrency)}) بیشتر است. امکان برداشت بیش از موجودی وجود ندارد.`);
+          return;
+        }
+      }
+
+      if (numericAmount <= 0) {
+        toast.error('مبلغ تراکنش بانکی باید بیشتر از صفر باشد.');
+        return;
+      }
     }
 
     // Check day warning
@@ -622,7 +834,10 @@ export default function BankTab({
       toast.warning('با توجه به اینکه چک در حال صدور به تاریخ امروز می‌باشد، لذا نسبت به افزایش موجودی حساب بانکی اقدام نمایید و سپس چک را صادر کنید.');
     }
 
-    const opLabel = operationOptions.find((o) => o.value === kind)?.label || 'عملیات بانکی';
+    const opLabel = operationOptions.find((o) => o.value === kind)?.label || (kind === 'check-receipt' ? 'دریافت چک' : kind === 'check-payment' ? 'پرداخت چک از حساب بانکی' : kind === 'transfer-received-check' ? 'خرج / عودت چک دریافتی' : 'عملیات بانکی');
+    const isReceivedCheckTransfer = kind === 'transfer-received-check';
+    const isReturnToDrawer = Boolean(selectedCustomer && originalCustomerId === selectedCustomer.id);
+    const transferType = isReceivedCheckTransfer ? (isReturnToDrawer ? 'return_to_drawer' : 'transfer_to_customer') : undefined;
 
     const completeLine: DocumentLine = sanitizeDocumentLine({
       ...draftLine,
@@ -637,15 +852,19 @@ export default function BankTab({
         totalAmount: String(numericAmount),
         transferFee: numericTransferFee > 0 ? String(numericTransferFee) : '',
         trackingNumber: trackingNumber.trim(),
-        bankAccountId: selectedSource,
-        destinationBankId: selectedDestination,
-        bankName: selectedSourceAccount?.bankName || '',
-        bankBranch: selectedSourceAccount?.branchName || '',
-        accountNumber: selectedSourceAccount?.accountNumber || '',
-        bankAccountBalance: baseConvertedSourceBalance,
-        rawBankAccountBalance: rawBaseSourceBalance,
+        bankAccountId: (kind === 'check-receipt' || isReceivedCheckTransfer) ? '' : selectedSource,
+        destinationBankId: kind === 'bank-to-bank' ? selectedDestination : undefined,
+        bankName: (kind === 'check-receipt' || isReceivedCheckTransfer) ? receivedBankName : (selectedSourceAccount?.bankName || ''),
+        bankBranch: (kind === 'check-receipt' || isReceivedCheckTransfer) ? '' : (selectedSourceAccount?.branchName || ''),
+        accountNumber: (kind === 'check-receipt' || isReceivedCheckTransfer) ? '' : (selectedSourceAccount?.accountNumber || ''),
+        bankAccountBalance: (kind === 'check-receipt' || isReceivedCheckTransfer) ? 0 : baseConvertedSourceBalance,
+        rawBankAccountBalance: (kind === 'check-receipt' || isReceivedCheckTransfer) ? 0 : rawBaseSourceBalance,
         checkNumber: checkNumber.trim(),
         sayadId: normalizedSayad,
+        checkId: isReceivedCheckTransfer ? selectedCheckId : undefined,
+        originalCustomerId: isReceivedCheckTransfer ? originalCustomerId : undefined,
+        originalCustomerName: isReceivedCheckTransfer ? originalCustomerName : undefined,
+        transferType,
         dueDateJalali,
         bankOperationKind: kind,
         currencyUnit: effectiveBaseCurrency,
@@ -666,6 +885,9 @@ export default function BankTab({
     setTrackingNumber('');
     setCheckNumber('');
     setSayadId('');
+    setSelectedCheckId('');
+    setOriginalCustomerId('');
+    setOriginalCustomerName('');
     setDueDateJalali(formatJalaliDate());
     setDescription('');
     setSelectedDestination('');
@@ -732,7 +954,269 @@ export default function BankTab({
       </div>
 
       {/* Dynamic Operation Form */}
-      {isFetchingBanks && banks.length === 0 ? (
+      {kind === 'check-receipt' ? (
+        /* Received Check Form (دریافت چک از طرف‌حساب) */
+        <div className="grid gap-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-900/60">
+          <div className="grid gap-3 grid-cols-1 sm:grid-cols-12 items-start">
+            <div className="sm:col-span-12 flex flex-col sm:flex-row items-start gap-3 min-w-0">
+              <Field
+                label="نام بانک"
+                className="w-full sm:w-auto sm:min-w-[42%] sm:max-w-[58%] sm:flex-[0_1_auto]"
+              >
+                <div className="flex items-center gap-2">
+                  <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white border border-slate-200 p-1 dark:bg-slate-800 dark:border-slate-700 shadow-sm">
+                    <BankLogo bankName={receivedBankName} size={28} />
+                  </div>
+                  <div className="relative flex-1">
+                    <select
+                      value={receivedBankName}
+                      onChange={(e) => {
+                        const newBank = e.target.value;
+                        setReceivedBankName(newBank);
+                        updateDraftDetail?.('bankName', newBank);
+                      }}
+                      className="h-10 w-full appearance-none rounded-xl border border-slate-200 bg-white pr-3 pl-8 text-xs font-bold text-slate-800 focus:border-amber-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                    >
+                      {BANKS_REGISTRY.map((b) => (
+                        <option
+                          key={b.id}
+                          value={b.name}
+                          className="bg-white text-slate-900 dark:bg-slate-800 dark:text-slate-100 font-bold"
+                        >
+                          {b.name}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400">
+                      <ChevronDown size={14} />
+                    </div>
+                  </div>
+                </div>
+              </Field>
+
+              <Field label="شماره چک" className="w-full sm:w-auto sm:flex-1 sm:min-w-[120px]">
+                <input
+                  value={checkNumber}
+                  onChange={(e) => {
+                    setCheckNumber(e.target.value);
+                    updateDraftDetail?.('checkNumber', e.target.value);
+                  }}
+                  onKeyDown={handleInputKeyDown}
+                  placeholder="۱۲۳۴۵۶"
+                  className="h-10 text-xs font-mono"
+                />
+              </Field>
+
+              {/* PersianLabs Jalali Due Date */}
+              <Field label="تاریخ سررسید چک" className="w-full sm:w-auto sm:flex-1 sm:min-w-[150px]">
+                <DatePicker
+                  value={dueDateJalali}
+                  onValueChange={(_iso, jalali) => {
+                    if (jalali) {
+                      setDueDateJalali(jalali);
+                      updateDraftDetail?.('dueDateJalali', jalali);
+                    }
+                  }}
+                  calendarType="shamsi"
+                  showSecondary={false}
+                  format="yyyy/MM/dd"
+                  placeholder="انتخاب تاریخ سررسید"
+                />
+              </Field>
+            </div>
+
+            <Field label={`مبلغ چک (${currencySuffix})`} className="sm:col-span-6">
+              <PriceInput
+                value={amount}
+                min={0}
+                allowDecimals={false}
+                onValueChange={(parsed, rawVal) => {
+                  setAmount(rawVal);
+                  updateDraftDetail?.('totalAmount', String(parsed || 0));
+                }}
+                onKeyDown={handleInputKeyDown}
+                baseCurrency={effectiveBaseCurrency}
+                currencySuffix={currencySuffix}
+                placeholder="۰"
+                showWords
+              />
+            </Field>
+
+            <Field label="شناسه ۱۶ رقمی صیاد" className="sm:col-span-6">
+              <SayadInput
+                value={sayadId}
+                onChange={(e) => {
+                  setSayadId(e.target.value);
+                  updateDraftDetail?.('sayadId', e.target.value);
+                }}
+                placeholder="۱۲۳۴ ۵۶۷۸ ۹۰۱۲ ۳۴۵۶"
+                className="h-10"
+              />
+            </Field>
+
+            <Field label="بابت / شرح چک" className="sm:col-span-12" wide>
+              <textarea
+                value={description}
+                onChange={(e) => {
+                  setDescription(e.target.value);
+                  setDraftLine((curr) => ({ ...curr, description: e.target.value }));
+                }}
+                placeholder={`شرح دریافت چک از ${customerName}...`}
+              />
+            </Field>
+          </div>
+
+          {/* Received Check Information Banner */}
+          {numericAmount > 0 ? (
+            <div className="flex items-start gap-2.5 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-900 dark:text-emerald-200 text-xs leading-relaxed">
+              <FileText size={16} className="shrink-0 text-emerald-600 mt-0.5" />
+              <span>
+                <strong>ثبت چک دریافتی:</strong> چک {receivedBankName} به عنوان اسناد دریافتنی از {customerName} ثبت می‌شود و تا زمان سررسید ({dueDateJalali}) و وصول در بانک، تاثیری بر موجودی حساب‌های بانکی شما نخواهد داشت.
+              </span>
+            </div>
+          ) : null}
+        </div>
+      ) : kind === 'transfer-received-check' ? (
+        /* Transfer / Return Received Check Form (خرج یا عودت چک دریافتی) */
+        <div className="grid gap-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-900/60">
+          <div className="grid gap-3 grid-cols-1 sm:grid-cols-12 items-start">
+            <Field
+              label="انتخاب چک دریافتی (جهت واگذاری یا عودت)"
+              className="sm:col-span-12"
+              wide
+              action={
+                <button
+                  type="button"
+                  onClick={() => void loadReceivedChecks()}
+                  disabled={isFetchingReceivedChecks}
+                  className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-300 transition cursor-pointer"
+                  title="به‌روزرسانی لیست چک‌ها"
+                >
+                  <RefreshCw size={12} className={isFetchingReceivedChecks ? 'animate-spin' : ''} />
+                  <span>به‌روزرسانی لیست چک‌ها</span>
+                </button>
+              }
+            >
+              <div className="relative">
+                <select
+                  value={selectedCheckId}
+                  onChange={(e) => handleSelectReceivedCheck(e.target.value)}
+                  className="w-full appearance-none rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2.5 text-xs font-bold text-slate-800 dark:text-slate-100 shadow-sm focus:border-amber-500 focus:outline-none pr-9 cursor-pointer"
+                  disabled={isFetchingReceivedChecks}
+                >
+                  <option value="">
+                    {isFetchingReceivedChecks
+                      ? 'در حال دریافت لیست چک‌های دریافتی...'
+                      : availableReceivedChecks.length === 0
+                        ? 'هیچ چک دریافتی در دسترسی برای واگذاری یا عودت وجود ندارد'
+                        : '-- انتخاب چک دریافتی از کارتابل اسناد دریافتنی --'}
+                  </option>
+                  {availableReceivedChecks.map((chk) => {
+                    const checkAmt =
+                      effectiveBaseCurrency === 'IRT'
+                        ? convertRialToToman(chk.amount)
+                        : chk.amount;
+                    const drawerName =
+                      (chk.expand as any)?.customer?.name ||
+                      (chk as any).customerName ||
+                      'نامشخص';
+                    return (
+                      <option key={chk.id} value={chk.id}>
+                        {chk.bankName || 'بانک'} | صیاد: {chk.sayadId || chk.checkNumber || '---'} | سررسید: {chk.dueDateJalali || '---'} | مبلغ: {formatCurrencyAmount(checkAmt, effectiveBaseCurrency)} | صادرکننده: {drawerName}
+                      </option>
+                    );
+                  })}
+                </select>
+                <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                  {isFetchingReceivedChecks ? (
+                    <LoaderCircle size={16} className="animate-spin text-amber-500" />
+                  ) : (
+                    <ChevronDown size={16} />
+                  )}
+                </div>
+              </div>
+            </Field>
+
+            {selectedCheckId ? (
+              <div className="sm:col-span-12 grid grid-cols-1 sm:grid-cols-3 gap-3 p-3.5 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 shadow-sm">
+                <div className="flex items-center gap-2.5">
+                  <div className="size-9 shrink-0 flex items-center justify-center rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-1">
+                    <BankLogo bankName={receivedBankName} className="h-6 w-6 object-contain" />
+                  </div>
+                  <div className="min-w-0">
+                    <span className="text-[10px] text-slate-500 block">بانک و شماره چک</span>
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate block">
+                      {receivedBankName} {checkNumber ? `- شماره: ${checkNumber}` : ''}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="min-w-0">
+                  <span className="text-[10px] text-slate-500 block">شناسه صیادی و سررسید</span>
+                  <span className="text-xs font-bold text-slate-800 dark:text-slate-100 font-mono tracking-wider block">
+                    {sayadId || '---'}
+                  </span>
+                  <span className="text-[10px] text-slate-500 block mt-0.5">
+                    سررسید: {dueDateJalali}
+                  </span>
+                </div>
+
+                <div className="min-w-0 sm:text-left">
+                  <span className="text-[10px] text-slate-500 block">مبلغ چک</span>
+                  <span className="text-sm font-extrabold text-amber-600 dark:text-amber-400 block">
+                    {formatCurrencyAmount(numericAmount, effectiveBaseCurrency)}
+                  </span>
+                  <span className="text-[10px] text-slate-500 block mt-0.5">
+                    صادرکننده اولیه: {originalCustomerName || 'نامشخص'}
+                  </span>
+                </div>
+              </div>
+            ) : null}
+
+            {/* Explanation & Action Type Banner */}
+            {selectedCheckId ? (
+              <div
+                className={`sm:col-span-12 flex items-start gap-2.5 p-3 rounded-xl border text-xs leading-relaxed ${
+                  selectedCustomer && originalCustomerId && selectedCustomer.id === originalCustomerId
+                    ? 'bg-amber-500/10 border-amber-500/30 text-amber-900 dark:text-amber-200'
+                    : 'bg-blue-500/10 border-blue-500/30 text-blue-900 dark:text-blue-200'
+                }`}
+              >
+                {selectedCustomer && originalCustomerId && selectedCustomer.id === originalCustomerId ? (
+                  <>
+                    <ArrowRightLeft size={16} className="shrink-0 text-amber-600 mt-0.5" />
+                    <div>
+                      <strong>عودت چک به صادرکننده:</strong> چک دریافتی به خود صادرکننده (<strong>{selectedCustomer.name}</strong>) عودت داده می‌شود. با این ثبت، اسناد دریافتنی کاهش یافته و بدهی/طلب طرف‌حساب به درستی به‌روزرسانی خواهد شد.
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <ArrowUpRight size={16} className="shrink-0 text-blue-600 mt-0.5" />
+                    <div>
+                      <strong>خرج / واگذاری چک دریافتی:</strong> چک دریافتی از <strong>{originalCustomerName || 'طرف‌حساب دیگر'}</strong> به <strong>{customerName}</strong> واگذار می‌شود. طرف‌حساب دریافت‌کننده چک بدهکار و حساب اسناد دریافتنی بستانکار خواهد شد.
+                    </div>
+                  </>
+                )}
+              </div>
+            ) : availableReceivedChecks.length === 0 && !isFetchingReceivedChecks ? (
+              <div className="sm:col-span-12 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-800 dark:text-amber-300 text-xs">
+                چک دریافتی در وضعیت «دریافت شده» یا «در جریان وصول» در کارتابل چک‌ها یافت نشد. برای خرج یا عودت چک، ابتدا باید یک چک دریافتی در سیستم ثبت شده باشد.
+              </div>
+            ) : null}
+
+            <Field label="بابت / شرح خرج یا عودت چک" className="sm:col-span-12" wide>
+              <textarea
+                value={description}
+                onChange={(e) => {
+                  setDescription(e.target.value);
+                  setDraftLine((curr) => ({ ...curr, description: e.target.value }));
+                }}
+                placeholder="شرح واگذاری یا عودت چک..."
+              />
+            </Field>
+          </div>
+        </div>
+      ) : isFetchingBanks && banks.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 px-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30">
           <LoaderCircle className="animate-spin text-amber-500 mb-3" size={28} />
           <p className="text-xs font-bold text-slate-700 dark:text-slate-300">در حال دریافت حساب‌های بانکی...</p>
@@ -866,7 +1350,7 @@ export default function BankTab({
             </Field>
           </div>
 
-          {/* Insufficient Balance Alert */}
+          {/* Insufficient Balance Alert for Check Payment */}
           {numericAmount > 0 && !isBalanceSufficient ? (
             isTodayCheck ? (
               <div className="flex items-start gap-2.5 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-200 text-xs font-semibold leading-relaxed">
@@ -1155,7 +1639,7 @@ export default function BankTab({
       </div>
 
       {/* Blocked Bank Account Warning */}
-      {selectedSourceAccount?.isBlocked ? (
+      {kind !== 'check-receipt' && kind !== 'transfer-received-check' && selectedSourceAccount?.isBlocked ? (
         <div className="flex items-center gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-900 dark:text-red-200 text-xs font-bold">
           <AlertCircle size={16} className="shrink-0 text-red-600" />
           <span>این حساب بانکی مسدود است و امکان ثبت تراکنش جدید برای آن وجود ندارد.</span>
@@ -1168,11 +1652,19 @@ export default function BankTab({
           <button
             type="button"
             className={`document-commit-line-button shadow-lg max-w-sm ${
-              selectedSourceAccount?.isBlocked || (kind === 'pay-to-customer' && numericAmount > 0 && !isPayToCustomerBalanceSufficient)
+              (kind === 'transfer-received-check' && (!selectedCheckId || numericAmount <= 0)) ||
+              (kind === 'check-receipt' && (numericAmount <= 0 || !isSayadValid || !checkNumber.trim())) ||
+              (kind !== 'check-receipt' && kind !== 'transfer-received-check' && Boolean(selectedSourceAccount?.isBlocked)) ||
+              (kind === 'pay-to-customer' && numericAmount > 0 && !isPayToCustomerBalanceSufficient)
                 ? 'opacity-50 cursor-not-allowed bg-slate-400 dark:bg-slate-700'
                 : 'cursor-pointer'
             }`}
-            disabled={Boolean(selectedSourceAccount?.isBlocked) || (kind === 'pay-to-customer' && numericAmount > 0 && !isPayToCustomerBalanceSufficient)}
+            disabled={
+              (kind === 'transfer-received-check' && (!selectedCheckId || numericAmount <= 0)) ||
+              (kind === 'check-receipt' && (numericAmount <= 0 || !isSayadValid || !checkNumber.trim())) ||
+              (kind !== 'check-receipt' && kind !== 'transfer-received-check' && Boolean(selectedSourceAccount?.isBlocked)) ||
+              (kind === 'pay-to-customer' && numericAmount > 0 && !isPayToCustomerBalanceSufficient)
+            }
             onClick={handleCommitLine}
           >
             <ListPlus size={16} /> {editingLineId ? 'ثبت اصلاح ردیف' : 'ثبت ردیف'}

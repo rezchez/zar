@@ -78,7 +78,9 @@ export default function AccountSettings({ user }: { user: AccountUser }) {
 
       setMessage(data?.message ?? 'اطلاعات ذخیره شد.');
       setAvatarFile(null);
-      if (removeAvatar && !avatarFile) {
+      if ((data as { avatarUrl?: string | null } | null)?.avatarUrl !== undefined) {
+        setAvatarUrl((data as { avatarUrl?: string | null })?.avatarUrl ?? '');
+      } else if (removeAvatar && !avatarFile) {
         setAvatarUrl('');
       }
       setRemoveAvatar(false);
@@ -235,7 +237,11 @@ export default function AccountSettings({ user }: { user: AccountUser }) {
             <div className="account-avatar-preview">
               {avatarUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={avatarUrl} alt="آواتار کاربر" />
+                <img
+                  src={avatarUrl}
+                  alt="آواتار کاربر"
+                  onError={() => setAvatarUrl('')}
+                />
               ) : (
                 <span>{(name || email || 'ک').charAt(0)}</span>
               )}

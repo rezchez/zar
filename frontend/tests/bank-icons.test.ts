@@ -81,8 +81,11 @@ describe('Iranian Banks Registry & Icon Mapping', () => {
     expect(findBank('بلوبانک')?.id).toBe('blubank');
     expect(findBank('بلو')?.id).toBe('blubank');
     expect(findBank('بانکینو')?.id).toBe('bankino');
-    expect(findBank('انصار')?.id).toBe('ansar');
-    expect(findBank('قوامین')?.id).toBe('ghavamin');
+    expect(findBank('ویپاد')?.id).toBe('wepod');
+    expect(findBank('آبانک')?.id).toBe('abank');
+    expect(findBank('نشان‌بانک')).toBeUndefined();
+    expect(findBank('انصار')).toBeUndefined();
+    expect(findBank('قوامین')).toBeUndefined();
   });
 
   test('normalizeBankKey handles Persian/Arabic letter variants and zero-width characters', () => {

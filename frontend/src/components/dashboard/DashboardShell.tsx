@@ -410,7 +410,9 @@ export default function DashboardShell({
           <DashboardTopbar
             user={user}
             sidebarCollapsed={sidebarCollapsed}
-            onMobileMenuOpen={() => setSidebarOpen(true)}
+            mobileMenuOpen={sidebarOpen}
+            onMobileMenuToggle={() => setSidebarOpen((prev) => !prev)}
+            onMobileMenuOpen={() => setSidebarOpen((prev) => !prev)}
             onSidebarToggle={toggleSidebarCollapsed}
             topbarPinned={topbarPinned}
             onTogglePin={toggleTopbarPin}

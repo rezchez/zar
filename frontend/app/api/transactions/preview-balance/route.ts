@@ -165,9 +165,9 @@ export async function POST(request: Request) {
         ? String(details.bankOperationKind || line.documentSubType || '')
         : '';
       const lineNature =
-        bankOpKind === 'receive-from-customer'
+        bankOpKind === 'receive-from-customer' || bankOpKind === 'check-receipt'
           ? 'received'
-          : bankOpKind === 'pay-to-customer' || bankOpKind === 'check-payment'
+          : bankOpKind === 'pay-to-customer' || bankOpKind === 'check-payment' || bankOpKind === 'transfer-received-check'
             ? 'paid'
             : line.documentNature === 'paid'
               ? 'paid'

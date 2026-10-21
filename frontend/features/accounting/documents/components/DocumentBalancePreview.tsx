@@ -105,7 +105,7 @@ export default function DocumentBalancePreview({
         </span>
         <div className="inline-flex flex-wrap items-center gap-x-2 font-black">
           <div className="text-slate-900 dark:text-slate-100 whitespace-nowrap">
-            {faNumber(Math.abs(displayPreviousRial))} {currencyUnitLabel}
+            {faNumber(Math.abs(displayPreviousRial), 0)} {currencyUnitLabel}
             <small className="text-[10px] text-slate-500 font-bold mr-1">
               ({previewData.previousBalance.rial > 0 ? 'بستانکار' : previewData.previousBalance.rial < 0 ? 'بدهکار' : 'تسویه'})
             </small>
@@ -184,7 +184,7 @@ export default function DocumentBalancePreview({
                   }`}
                 >
                   {displayEffectRial >= 0 ? '+' : ''}
-                  {faNumber(displayEffectRial)} {currencyUnitLabel}
+                  {faNumber(displayEffectRial, 0)} {currencyUnitLabel}
                 </div>
               ) : null}
               {previewData.transactionEffect.gold !== 0 ? (
@@ -280,7 +280,7 @@ export default function DocumentBalancePreview({
         </span>
         <div className="inline-flex flex-wrap items-center gap-x-2 font-black">
           <div className="text-slate-900 dark:text-slate-100 whitespace-nowrap">
-            {faNumber(Math.abs(displayProjectedRial))} {currencyUnitLabel}
+            {faNumber(Math.abs(displayProjectedRial), 0)} {currencyUnitLabel}
             <small className="text-[10px] text-slate-500 font-bold mr-1">
               ({previewData.projectedBalance.rial > 0 ? 'بستانکار' : previewData.projectedBalance.rial < 0 ? 'بدهکار' : 'تسویه'})
             </small>

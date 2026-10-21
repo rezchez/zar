@@ -142,7 +142,7 @@ export function DesktopAuthView({ logic }: { logic: AuthLogicReturn }) {
           </div>
 
           {/* Form & Transitions */}
-          <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
+          <form ref={formRef} method="POST" action="/api/auth/login" onSubmit={handleSubmit} className="space-y-4">
             <AnimatePresence mode="wait">
               <motion.div
                 key={mode + (mfaChallenge ? '-mfa' : '') + (loginMethod === 'phone' ? '-phone' : '')}
@@ -395,10 +395,15 @@ export function DesktopAuthView({ logic }: { logic: AuthLogicReturn }) {
 
                 {/* Mode Options: Remember Me & Login Method Switcher */}
                 {mode === 'login' && !mfaChallenge && (
-                  <div className="flex items-center justify-between pt-1 text-xs text-neutral-400">
-                    <label className="flex items-center gap-2 cursor-pointer select-none group min-h-[44px] py-1">
-                      <div className="relative">
+                  <div className="flex items-center justify-between gap-2 pt-1 text-xs text-neutral-400">
+                    <label
+                      htmlFor="shared-desktop-auth-remember-me"
+                      className="flex items-center gap-2 cursor-pointer select-none group min-h-[44px] py-1 touch-manipulation shrink-0"
+                    >
+                      <div className="relative shrink-0">
                         <input
+                          id="shared-desktop-auth-remember-me"
+                          name="rememberMe"
                           type="checkbox"
                           checked={rememberMe}
                           onChange={(e) => setRememberMe(e.target.checked)}
@@ -410,6 +415,7 @@ export function DesktopAuthView({ logic }: { logic: AuthLogicReturn }) {
                               ? 'bg-purple-600 border-purple-500 text-white'
                               : 'bg-neutral-900 border-white/20 group-hover:border-white/40'
                           }`}
+                          aria-hidden="true"
                         >
                           {rememberMe && <Check className="w-3 h-3 stroke-[3]" />}
                         </div>
@@ -420,7 +426,7 @@ export function DesktopAuthView({ logic }: { logic: AuthLogicReturn }) {
                     <button
                       type="button"
                       onClick={handleForgotPassword}
-                      className="text-purple-400 hover:text-purple-300 transition-colors hover:underline p-2 -mr-2 min-h-[44px] flex items-center"
+                      className="text-purple-400 hover:text-purple-300 transition-colors hover:underline p-2 min-h-[44px] flex items-center text-left"
                     >
                       رمز عبور را فراموش کرده‌اید؟
                     </button>

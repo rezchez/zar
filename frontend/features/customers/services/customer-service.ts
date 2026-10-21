@@ -20,8 +20,15 @@ export async function getCustomerTransactions(
   pb: PocketBase,
   customerId: string,
 ) {
-  const records = await pb.collection('transactions').getFullList({
-    filter: pb.filter('customer = {:customerId} && is_deleted = false', { customerId }),
+  let client = pb;
+  try {
+    const { getPocketBaseServiceClient } = await import('@/lib/pocketbase-service');
+    const servicePb = await getPocketBaseServiceClient();
+    if (servicePb) client = servicePb;
+  } catch {}
+
+  const records = await client.collection('transactions').getFullList({
+    filter: client.filter('customer = {:customerId} && is_deleted = false', { customerId }),
     sort: '-transactionDate,-created',
   });
   return records.map(mapTransaction);
@@ -121,14 +128,21 @@ export async function getCustomers(pb: PocketBase): Promise<Customer[]> {
 }
 
 export async function getCustomersWithBalances(pb: PocketBase) {
-  const records = await pb.collection('customers').getFullList({
+  let client = pb;
+  try {
+    const { getPocketBaseServiceClient } = await import('@/lib/pocketbase-service');
+    const servicePb = await getPocketBaseServiceClient();
+    if (servicePb) client = servicePb;
+  } catch {}
+
+  const records = await client.collection('customers').getFullList({
     sort: '-customerCode',
     filter: 'is_deleted = false',
   });
 
   let transactionRecords: RecordModel[] = [];
   try {
-    transactionRecords = await pb.collection('transactions').getFullList({
+    transactionRecords = await client.collection('transactions').getFullList({
       sort: '-transactionDate,-created',
       filter: 'is_deleted = false',
     });

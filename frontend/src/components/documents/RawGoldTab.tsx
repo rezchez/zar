@@ -48,6 +48,10 @@ export type DetailState = {
   checkNumber?: string;
   sayadId?: string;
   dueDateJalali?: string;
+  checkId?: string;
+  originalCustomerId?: string;
+  originalCustomerName?: string;
+  transferType?: string;
   bankOperationKind?: string;
   bankAccountBalance?: number;
   rawBankAccountBalance?: number;

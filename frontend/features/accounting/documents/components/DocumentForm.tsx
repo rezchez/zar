@@ -29,7 +29,7 @@ import CoinTab from '@/src/components/documents/CoinTab';
 import CashTab, { fetchCashFunds, invalidateCashFundsCache } from '@/src/components/documents/CashTab';
 import BankTab, { fetchBankAccounts, invalidateBankAccountsCache } from './BankTab';
 import ClaimTab from '@/src/components/documents/ClaimTab';
-import WorkmanshipTab from '@/src/components/documents/WorkmanshipTab';
+import WorkmanshipTab from './WorkmanshipTab';
 
 // Subcomponents
 import CustomerSection from './CustomerSection';
@@ -310,6 +310,7 @@ export default function DocumentForm({
   // Preview Balance state
   const [previewData, setPreviewData] = useState<DocumentBalancePreviewData | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [customerBalanceLoading, setCustomerBalanceLoading] = useState(false);
 
   // Line operations hook
   const {
@@ -690,6 +691,28 @@ export default function DocumentForm({
         .then((resData) => {
           if (resData?.success && resData?.data) {
             setPreviewData(resData.data);
+            const prev = resData.data.previousBalance;
+            if (prev) {
+              setActiveCustomerOverride((curr) => {
+                const base = (curr && curr.id === selectedCustomerId)
+                  ? curr
+                  : customers.find((c) => c.id === selectedCustomerId);
+                if (!base) return curr;
+                return {
+                  ...base,
+                  rialBalance: typeof prev.rial === 'number' ? prev.rial : base.rialBalance,
+                  goldBalance: typeof prev.gold === 'number' ? prev.gold : base.goldBalance,
+                  silverBalance: typeof prev.silver === 'number' ? prev.silver : base.silverBalance,
+                  platinumBalance: typeof prev.platinum === 'number' ? prev.platinum : base.platinumBalance,
+                  stoneCaratBalance: typeof prev.stone === 'number' ? prev.stone : base.stoneCaratBalance,
+                  stoneCreditCarats: typeof prev.stoneCredit === 'number' ? prev.stoneCredit : base.stoneCreditCarats,
+                  stoneDebitCarats: typeof prev.stoneDebit === 'number' ? prev.stoneDebit : base.stoneDebitCarats,
+                  foreignBalance: typeof prev.foreign === 'number' ? prev.foreign : base.foreignBalance,
+                  tertiaryBalance: typeof prev.tertiary === 'number' ? prev.tertiary : base.tertiaryBalance,
+                  currencyBalances: prev.currencyBalances || base.currencyBalances || {},
+                };
+              });
+            }
           }
         })
         .catch(() => {})
@@ -702,7 +725,35 @@ export default function DocumentForm({
       clearTimeout(timer);
       controller.abort();
     };
-  }, [selectedCustomerId, committedLines]);
+  }, [selectedCustomerId, committedLines, customers]);
+
+  // Fetch fresh customer details with balances whenever selected customer changes
+  useEffect(() => {
+    if (!selectedCustomerId) {
+      setCustomerBalanceLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setCustomerBalanceLoading(true);
+    fetch(`/api/customers/${encodeURIComponent(selectedCustomerId)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!cancelled && data?.customer) {
+          const freshCustomer = data.customer as Customer;
+          setActiveCustomerOverride(freshCustomer);
+          setCustomers((prev) =>
+            prev.map((item) => (item.id === freshCustomer.id ? freshCustomer : item)),
+          );
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setCustomerBalanceLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCustomerId]);
 
   // Tab change handler
   const changeEntryTab = (tab: string) => {
@@ -1533,7 +1584,10 @@ export default function DocumentForm({
         <CustomerSection
           selectedCustomer={selectedCustomer}
           customers={customers}
-          onSelectCustomer={(c) => setSelectedCustomerId(c ? c.id : '')}
+          onSelectCustomer={(c) => {
+            setSelectedCustomerId(c ? c.id : '');
+            setActiveCustomerOverride(c || null);
+          }}
           isCustomerLocked={isCustomerLocked}
           onToggleCustomerLock={handleToggleCustomerLock}
           showLockInfo={showLockInfo}
@@ -1545,6 +1599,7 @@ export default function DocumentForm({
           documentNumberLoading={documentNumberLoading}
           baseCurrency={baseCurrency}
           committedLines={committedLines}
+          isCustomerBalanceLoading={customerBalanceLoading || previewLoading}
         />
       </div>
 

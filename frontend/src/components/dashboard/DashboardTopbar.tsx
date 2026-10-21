@@ -5,6 +5,7 @@ import {
   Pin,
   PinOff,
   Search,
+  X,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -29,7 +30,9 @@ export type { DashboardTopbarSearchItem };
 type DashboardTopbarProps = {
   user?: DashboardTopbarUser;
   sidebarCollapsed: boolean;
-  onMobileMenuOpen: () => void;
+  mobileMenuOpen?: boolean;
+  onMobileMenuToggle?: () => void;
+  onMobileMenuOpen?: () => void;
   onSidebarToggle: () => void;
   topbarPinned: boolean;
   onTogglePin: () => void;
@@ -40,6 +43,8 @@ type DashboardTopbarProps = {
 export default function DashboardTopbar({
   user: _user,
   sidebarCollapsed,
+  mobileMenuOpen = false,
+  onMobileMenuToggle,
   onMobileMenuOpen,
   onSidebarToggle,
   topbarPinned,
@@ -50,6 +55,9 @@ export default function DashboardTopbar({
   const [searchOpen, setSearchOpen] = useState(false);
   const { data: stickyData, isActive: isStickyActive } = useDocumentStickyHeader();
   const showStickyDoc = Boolean(isStickyActive && stickyData);
+
+  const handleMobileMenuClick = onMobileMenuToggle ?? onMobileMenuOpen;
+  const mobileMenuLabel = mobileMenuOpen ? 'بستن منو' : 'باز کردن منو';
 
   return (
     <>
@@ -66,10 +74,12 @@ export default function DashboardTopbar({
             <button
               type="button"
               className="dashboard-icon-button dashboard-mobile-menu"
-              onClick={onMobileMenuOpen}
-              aria-label="باز کردن منو"
+              onClick={handleMobileMenuClick}
+              aria-label={mobileMenuLabel}
+              title={mobileMenuLabel}
+              aria-expanded={mobileMenuOpen}
             >
-              <Menu size={19} />
+              {mobileMenuOpen ? <X size={19} /> : <Menu size={19} />}
             </button>
 
             <SidebarToggleButton
@@ -130,7 +140,7 @@ export default function DashboardTopbar({
           {stickyData && (
             <DocumentStickyBar
               data={stickyData}
-              onOpenMobileMenu={onMobileMenuOpen}
+              onOpenMobileMenu={handleMobileMenuClick}
             />
           )}
         </div>

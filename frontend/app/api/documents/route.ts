@@ -29,6 +29,9 @@ import {
   postStoneSale,
   postStonePurchase,
   postPayableChequeIssue,
+  postReceivableChequeReceipt,
+  postReceivableChequeReturnToDrawer,
+  postReceivableChequeTransfer,
   postBankPaymentToCustomer,
   postBankReceiptFromCustomer,
 } from '@/features/accounting/posting/posting-engine';
@@ -359,13 +362,17 @@ export async function GET(request: Request) {
       let customer: any = null;
       if (customerRecord) {
         try {
-          customer = mapCustomer(context.pb, customerRecord);
+          customer = (await getCustomerWithBalances(reader, customerRecord)).customer;
         } catch {
-          customer = {
-            id: customerRecord.id || '',
-            name: (customerRecord as any).name || '',
-            customerCode: (customerRecord as any).customerCode || '',
-          } as any;
+          try {
+            customer = mapCustomer(context.pb, customerRecord);
+          } catch {
+            customer = {
+              id: customerRecord.id || '',
+              name: (customerRecord as any).name || '',
+              customerCode: (customerRecord as any).customerCode || '',
+            } as any;
+          }
         }
       }
       const lines = records.map(transactionRecordToDocumentLine);
@@ -535,9 +542,9 @@ export async function POST(request: Request) {
         ? String(details.bankOperationKind || line.documentSubType || '')
         : '';
       const lineNature: 'received' | 'paid' =
-        bankOpKind === 'receive-from-customer'
+        bankOpKind === 'receive-from-customer' || bankOpKind === 'check-receipt'
           ? 'received'
-          : bankOpKind === 'pay-to-customer' || bankOpKind === 'check-payment'
+          : bankOpKind === 'pay-to-customer' || bankOpKind === 'check-payment' || bankOpKind === 'transfer-received-check'
             ? 'paid'
             : line.documentNature === 'paid'
               ? 'paid'
@@ -875,16 +882,16 @@ export async function POST(request: Request) {
         }
 
         const opKind = String(prepared.documentDetails.bankOperationKind || prepared.line.documentSubType || '');
-        const isCheckPayment = opKind === 'check-payment' || Boolean(prepared.documentDetails.checkNumber?.trim()) || Boolean(prepared.documentDetails.sayadId?.trim());
+        const isCheck = opKind === 'check-payment' || opKind === 'check-receipt' || opKind === 'transfer-received-check' || Boolean(prepared.documentDetails.checkNumber?.trim()) || Boolean(prepared.documentDetails.sayadId?.trim());
         const isBankTab = prepared.line.documentTab === 'bank' || prepared.line.sourceTab === 'bank';
-        const isBankOutflow = isBankTab && !isCheckPayment && (
+        const isBankOutflow = isBankTab && !isCheck && (
           opKind === 'pay-to-customer'
             ? true
             : opKind === 'receive-from-customer'
               ? false
               : prepared.lineNature === 'paid'
         );
-        const isBankInflow = isBankTab && !isCheckPayment && (
+        const isBankInflow = isBankTab && !isCheck && (
           opKind === 'receive-from-customer'
             ? true
             : opKind === 'pay-to-customer'
@@ -1437,7 +1444,9 @@ export async function POST(request: Request) {
             if (!isBankTab) continue;
 
             const opKind = String(prepared.documentDetails.bankOperationKind || prepared.line.documentSubType || '');
-            const isCheckPayment = opKind === 'check-payment' || Boolean(prepared.documentDetails.checkNumber?.trim()) || Boolean(prepared.documentDetails.sayadId?.trim());
+            const isCheckTransfer = opKind === 'transfer-received-check';
+            const isCheckPayment = !isCheckTransfer && (opKind === 'check-payment' || (opKind !== 'check-receipt' && (Boolean(prepared.documentDetails.checkNumber?.trim()) || Boolean(prepared.documentDetails.sayadId?.trim())))) && prepared.lineNature === 'paid';
+            const isCheckReceipt = !isCheckTransfer && (opKind === 'check-receipt' || (opKind !== 'check-payment' && (Boolean(prepared.documentDetails.checkNumber?.trim()) || Boolean(prepared.documentDetails.sayadId?.trim())))) && prepared.lineNature === 'received';
             const rawBankId = String(prepared.documentDetails.bankAccountId || '');
             const amount = Math.abs(prepared.lineAmounts.rialAmount ?? 0) || Math.abs(Number(prepared.documentDetails.totalAmount) || 0);
             if (amount <= 0) continue;
@@ -1525,6 +1534,214 @@ export async function POST(request: Request) {
               } catch (checkErr) {
                 console.error('Failed to post payable cheque in document:', checkErr);
               }
+            } else if (isCheckReceipt) {
+              const rawCheckNumber = normalizeDigits(String(prepared.documentDetails.checkNumber || '')).trim();
+              const rawSayad = normalizeDigits(String(prepared.documentDetails.sayadId || '')).replace(/\D/g, '');
+              const checkDueDateJalali = String(prepared.documentDetails.dueDateJalali || documentDateJalali);
+              const checkDueDateIso = jalaliDateToIso(checkDueDateJalali) || new Date().toISOString();
+              const checkBankName = String(prepared.documentDetails.bankName || mappedBank?.bankName || '').trim();
+              const checkBranchName = String(prepared.documentDetails.bankBranch || prepared.documentDetails.branchName || mappedBank?.branchName || '').trim();
+
+              try {
+                await ensureChecksCollection(writer);
+
+                let existingCheck = null;
+                if (rawSayad) {
+                  existingCheck = await writer.collection('checks').getFirstListItem(
+                    writer.filter('sayadId = {:sayadId}', { sayadId: rawSayad }),
+                  ).catch(() => null);
+                }
+                if (!existingCheck && rawCheckNumber && (rawBankId || checkBankName)) {
+                  existingCheck = await writer.collection('checks').getFirstListItem(
+                    rawBankId
+                      ? writer.filter('bankAccount = {:bankId} && (checkNumber = {:cNum} || check_number = {:cNum})', { bankId: rawBankId, cNum: rawCheckNumber })
+                      : writer.filter('bankName = {:bName} && (checkNumber = {:cNum} || check_number = {:cNum})', { bName: checkBankName, cNum: rawCheckNumber }),
+                  ).catch(() => null);
+                }
+
+                let checkRecord = existingCheck;
+                if (!checkRecord) {
+                  try {
+                    checkRecord = await writer.collection('checks').create({
+                      bankAccount: mappedBank?.id || null,
+                      customer: customer.id,
+                      sayadId: rawSayad,
+                      checkNumber: rawCheckNumber,
+                      check_number: rawCheckNumber,
+                      amount,
+                      currency: mappedBank?.currency || 'IRR',
+                      chequeType: 'receivable',
+                      issueDate: new Date().toISOString(),
+                      issueDateJalali: documentDateJalali,
+                      dueDate: checkDueDateIso,
+                      dueDateJalali: checkDueDateJalali,
+                      status: 'received',
+                      document: documentId,
+                      bankName: checkBankName,
+                      branchName: checkBranchName,
+                      created_by: context.user.id,
+                      createdBy: context.user.id,
+                      updated_by: context.user.id,
+                      updatedBy: context.user.id,
+                    });
+                  } catch {
+                    checkRecord = await writer.collection('checks').create({
+                      bankAccount: mappedBank?.id || null,
+                      customer: customer.id,
+                      sayadId: rawSayad,
+                      checkNumber: rawCheckNumber,
+                      check_number: rawCheckNumber,
+                      amount,
+                      currency: mappedBank?.currency || 'IRR',
+                      chequeType: 'receivable',
+                      issueDate: new Date().toISOString(),
+                      issueDateJalali: documentDateJalali,
+                      dueDate: checkDueDateIso,
+                      dueDateJalali: checkDueDateJalali,
+                      status: 'pending',
+                      document: documentId,
+                      bankName: checkBankName,
+                      branchName: checkBranchName,
+                      created_by: context.user.id,
+                      createdBy: context.user.id,
+                      updated_by: context.user.id,
+                      updatedBy: context.user.id,
+                    });
+                  }
+                }
+
+                if (checkRecord) {
+                  const journalResult = await postReceivableChequeReceipt(
+                    {
+                      id: checkRecord.id,
+                      amount,
+                      sayadId: rawSayad || rawCheckNumber,
+                      checkNumber: rawCheckNumber,
+                      bankName: checkBankName,
+                      description: readString(prepared.line.description ?? body.description, 500) || `دریافت چک شماره ${rawCheckNumber || rawSayad}${checkBankName ? ` (${checkBankName})` : ''}`,
+                      dueDateJalali: checkDueDateJalali,
+                      issueDateJalali: documentDateJalali,
+                      customer: customer.id,
+                    },
+                    {
+                      id: customer.id,
+                      name: customer.name,
+                      customerCode: Number(customer.customerCode ?? 0),
+                      accountId: (customer as any).accountId || null,
+                    },
+                    context.user.id,
+                    writer,
+                  );
+
+                  if (journalResult?.id) {
+                    await writer.collection('checks').update(checkRecord.id, {
+                      journalEntryId: journalResult.id,
+                    }).catch(() => undefined);
+                  }
+                }
+              } catch (checkErr) {
+                console.error('Failed to post receivable cheque in document:', checkErr);
+              }
+            } else if (isCheckTransfer) {
+              const rawCheckId = String(prepared.documentDetails.checkId || '').trim();
+              const rawCheckNumber = normalizeDigits(String(prepared.documentDetails.checkNumber || '')).trim();
+              const rawSayad = normalizeDigits(String(prepared.documentDetails.sayadId || '')).replace(/\D/g, '');
+              const transferType = String(prepared.documentDetails.transferType || '');
+
+              try {
+                await ensureChecksCollection(writer);
+
+                let checkRecord = null;
+                if (rawCheckId) {
+                  checkRecord = await writer.collection('checks').getOne(rawCheckId).catch(() => null);
+                }
+                if (!checkRecord && rawSayad) {
+                  checkRecord = await writer.collection('checks').getFirstListItem(
+                    writer.filter('chequeType = "receivable" && sayadId = {:sayadId}', { sayadId: rawSayad }),
+                  ).catch(() => null);
+                }
+                if (!checkRecord && rawCheckNumber) {
+                  checkRecord = await writer.collection('checks').getFirstListItem(
+                    writer.filter('chequeType = "receivable" && (checkNumber = {:cNum} || check_number = {:cNum})', { cNum: rawCheckNumber }),
+                  ).catch(() => null);
+                }
+
+                if (checkRecord) {
+                  const isReturnToDrawer = transferType === 'return_to_drawer' || checkRecord.customer === customer.id;
+                  const targetStatus = isReturnToDrawer ? 'returned_to_drawer' : 'delivered';
+
+                  const updateData: Record<string, unknown> = {
+                    status: targetStatus,
+                    document: documentId,
+                    updated_by: context.user.id,
+                    updatedBy: context.user.id,
+                  };
+
+                  if (isReturnToDrawer) {
+                    updateData.returnedToDrawerDate = new Date().toISOString();
+                    updateData.returnedToDrawerDateJalali = documentDateJalali;
+                  } else {
+                    updateData.deliveredDate = new Date().toISOString();
+                    updateData.deliveredDateJalali = documentDateJalali;
+                    updateData.transferredToCustomer = customer.id;
+                  }
+
+                  await writer.collection('checks').update(checkRecord.id, updateData).catch(() => undefined);
+
+                  let journalResult = null;
+                  if (isReturnToDrawer) {
+                    const res = await postReceivableChequeReturnToDrawer(
+                      {
+                        id: checkRecord.id,
+                        amount,
+                        sayadId: checkRecord.sayadId || rawSayad,
+                        description: readString(prepared.line.description ?? body.description, 500) || `عودت چک صیادی ${checkRecord.sayadId || rawSayad} به صادرکننده (${customer.name})`,
+                        receivableAccountId: checkRecord.receivableAccountId || null,
+                      },
+                      {
+                        id: customer.id,
+                        name: customer.name,
+                        accountId: (customer as any).accountId || null,
+                      },
+                      null,
+                      false,
+                      context.user.id,
+                      writer,
+                      documentDateJalali,
+                    );
+                    journalResult = res?.journal;
+                  } else {
+                    const res = await postReceivableChequeTransfer(
+                      {
+                        id: checkRecord.id,
+                        amount,
+                        sayadId: checkRecord.sayadId || rawSayad,
+                        checkNumber: checkRecord.checkNumber || rawCheckNumber,
+                        bankName: checkRecord.bankName || String(prepared.documentDetails.bankName || ''),
+                        description: readString(prepared.line.description ?? body.description, 500) || `واگذاری و خرج چک دریافتی ${checkRecord.sayadId || rawSayad} به ${customer.name}`,
+                        receivableAccountId: checkRecord.receivableAccountId || null,
+                      },
+                      {
+                        id: customer.id,
+                        name: customer.name,
+                        accountId: (customer as any).accountId || null,
+                      },
+                      context.user.id,
+                      writer,
+                      documentDateJalali,
+                    );
+                    journalResult = res?.journal;
+                  }
+
+                  if (journalResult?.id) {
+                    await writer.collection('checks').update(checkRecord.id, {
+                      journalEntryId: journalResult.id,
+                    }).catch(() => undefined);
+                  }
+                }
+              } catch (checkErr) {
+                console.error('Failed to post receivable cheque exit/return in document:', checkErr);
+              }
             } else if (mappedBank) {
               // Direct bank-customer transfers (pay-to-customer / receive-from-customer)
               if (!bankWorkingBalances.has(mappedBank.id)) {
@@ -1536,7 +1753,7 @@ export async function POST(request: Request) {
                   ? true
                   : opKind === 'receive-from-customer'
                     ? false
-                    : prepared.lineNature === 'paid' && !isCheckPayment;
+                    : prepared.lineNature === 'paid' && !isCheckPayment && !isCheckReceipt;
               const transferFee = Math.abs(Number(prepared.documentDetails.transferFee) || 0);
               const totalDeduction = isOutflow ? amount + transferFee : amount;
               const nextBal = isOutflow ? currentBal - totalDeduction : currentBal + amount;

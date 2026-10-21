@@ -226,7 +226,19 @@ export default function DashboardSidebar({
   const [changelogOpen, setChangelogOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [pinnedBottomOffset, setPinnedBottomOffset] = useState<number>(0);
+  const [isDesktop, setIsDesktop] = useState(true);
   const router = useRouter();
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsDesktop(window.innerWidth >= 1024);
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const effectiveCollapsed = isDesktop && sidebarCollapsed;
 
   useEffect(() => {
     function handleEscape(event: KeyboardEvent) {
@@ -287,8 +299,8 @@ export default function DashboardSidebar({
           height: `calc(100vh - ${pinnedBottomOffset}px)`,
           maxHeight: `calc(100vh - ${pinnedBottomOffset}px)`,
         } : undefined}
-        className={`fixed top-0 right-0 z-50 flex h-screen flex-col border-l border-slate-200 bg-white shadow-xl transition-all duration-300 dark:border-slate-800 dark:bg-slate-900 lg:sticky lg:top-0 lg:h-screen lg:z-30 lg:shadow-none ${
-          sidebarCollapsed ? 'w-[72px]' : 'w-64'
+        className={`fixed top-0 right-0 z-50 flex h-screen h-[100dvh] max-h-[100dvh] flex-col border-l border-slate-200 bg-white shadow-xl transition-all duration-300 dark:border-slate-800 dark:bg-slate-900 lg:sticky lg:top-0 lg:h-screen lg:z-30 lg:shadow-none ${
+          effectiveCollapsed ? 'w-[72px]' : 'w-64'
         } ${
           sidebarOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'
         }`}
@@ -300,7 +312,7 @@ export default function DashboardSidebar({
               <Sparkles size={18} className="animate-pulse" />
             </div>
 
-            {!sidebarCollapsed && (
+            {!effectiveCollapsed && (
               <div className="flex flex-col">
                 <div className="flex items-center gap-1.5">
                   <span className="font-extrabold text-sm tracking-tight text-slate-900 dark:text-white">
@@ -340,7 +352,7 @@ export default function DashboardSidebar({
         <div className="flex flex-1 flex-col gap-5 overflow-y-auto p-2.5 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800">
           {navGroups.map((group, index) => (
             <div key={group.heading ?? index} className="space-y-1">
-              {group.heading && !sidebarCollapsed && (
+              {group.heading && !effectiveCollapsed && (
                 <div className="px-3 py-1 text-[11px] font-extrabold tracking-wider text-slate-600 dark:text-slate-300 uppercase select-none">
                   {group.heading}
                 </div>
@@ -353,7 +365,7 @@ export default function DashboardSidebar({
                     item={item}
                     activeId={activeId}
                     onSelect={onSelect}
-                    isCollapsed={sidebarCollapsed}
+                    isCollapsed={effectiveCollapsed}
                   />
                 ))}
               </div>
@@ -363,121 +375,27 @@ export default function DashboardSidebar({
 
         {/* فوتر چسبان سایدبار (Sticky Footer) */}
         <div className="mt-auto shrink-0 sticky bottom-0 border-t border-slate-100 bg-white/95 p-2 backdrop-blur dark:border-slate-800/80 dark:bg-slate-900/95">
-          {!sidebarCollapsed ? (
-            <div className="relative flex items-center justify-between gap-1.5">
-              {/* بخش اطلاعات کاربر (جایگزین سامانه فعال و برخط) */}
-              <div className="relative min-w-0 flex-1">
-                <button
-                  type="button"
-                  onClick={() => setUserMenuOpen((v) => !v)}
-                  className="group flex w-full items-center gap-2 rounded-xl p-1.5 text-right transition-colors hover:bg-slate-100 dark:hover:bg-slate-800/70 cursor-pointer"
-                  aria-expanded={userMenuOpen}
-                  aria-haspopup="menu"
-                  title="حساب کاربری و تنظیمات"
-                >
-                  {/* آواتار کاربر به همراه نشانگر وضعیت برخط */}
-                  <div className="relative shrink-0">
-                    <span className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-xs font-black text-white dark:bg-amber-500 dark:text-slate-950 shadow-xs">
-                      {user?.avatarUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={user.avatarUrl} alt="" className="size-full rounded-xl object-cover" />
-                      ) : (
-                        (user?.name || user?.email || 'کاربر').charAt(0)
-                      )}
-                    </span>
-                    <span
-                      className="absolute -bottom-0.5 -left-0.5 size-2.5 rounded-full border-2 border-white bg-emerald-500 animate-pulse dark:border-slate-900"
-                      title="سامانه فعال و برخط"
-                    />
-                  </div>
-
-                  {/* نام و نقش کاربر */}
-                  <div className="flex flex-col min-w-0 pr-0.5">
-                    <span className="truncate text-xs font-black text-slate-800 group-hover:text-amber-600 dark:text-slate-200 dark:group-hover:text-amber-400 transition-colors">
-                      {user?.name || 'کاربر سیستم'}
-                    </span>
-                    <span className="truncate text-[10px] font-semibold text-slate-400 dark:text-slate-500">
-                      {getRoleLabel(user?.role)}
-                    </span>
-                  </div>
-
-                  <ChevronDown
-                    size={14}
-                    className={`mr-auto shrink-0 text-slate-400 transition-transform duration-200 ${
-                      userMenuOpen ? 'rotate-180 text-amber-500' : 'group-hover:text-slate-600 dark:group-hover:text-slate-300'
-                    }`}
-                  />
-                </button>
-
-                {/* منوی بازشونده حساب کاربری (رو به بالا) */}
-                {userMenuOpen && (
-                  <>
-                    <button
-                      type="button"
-                      className="fixed inset-0 z-40 bg-transparent cursor-default"
-                      aria-label="بستن منوی حساب"
-                      onClick={() => setUserMenuOpen(false)}
-                    />
-                    <div
-                      role="menu"
-                      className="absolute bottom-full right-0 mb-2 w-56 rounded-2xl border border-slate-200/90 bg-white/95 p-1.5 shadow-xl shadow-slate-900/10 backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/95 z-50 animate-in fade-in-50 zoom-in-95 duration-150"
-                    >
-                      <div className="px-3 py-2 border-b border-slate-100 dark:border-slate-800/80 mb-1">
-                        <div className="text-xs font-black text-slate-900 dark:text-white truncate">
-                          {user?.name || 'کاربر سیستم'}
-                        </div>
-                        <div className="text-[10px] text-slate-500 dark:text-slate-400 font-mono truncate">
-                          {user?.email || ''}
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          setUserMenuOpen(false);
-                          router.push('/dashboard/account');
-                        }}
-                        className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 transition-colors text-right"
-                      >
-                        <Settings size={15} className="text-slate-500" />
-                        <span>مدیریت حساب کاربری</span>
-                      </button>
-
-                      <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
-
-                      <div className="p-0.5">
-                        <LogoutButton />
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-
-              {/* اکشن‌های فوتر: اعلانات، تغییر تم و بازسازی کَش */}
-              <div className="flex items-center gap-1.5 shrink-0">
-                <NotificationCenter
-                  userRole={user?.role || 'user'}
-                  direction="up"
-                  buttonClassName="group relative inline-flex size-7 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 p-1 text-slate-500 hover:border-amber-400 hover:bg-amber-50 hover:text-amber-700 dark:border-slate-800 dark:bg-slate-800/80 dark:text-slate-400 dark:hover:border-amber-500/50 dark:hover:bg-amber-950/40 dark:hover:text-amber-300 transition-all duration-150 cursor-pointer"
-                />
-                <ThemeToggle />
-                <CacheRebuildButton collapsed={false} />
-              </div>
-            </div>
-          ) : (
+          {/* در حالت دسکتاپ جمع‌شده فقط آواتار کوچک نمایش داده می‌شود؛ در موبایل همیشه حالت کامل فعال است */}
+          {effectiveCollapsed && (
             <div className="relative flex flex-col items-center gap-2 mx-auto">
               {/* در حالت بسته: آواتار کاربر با نشانگر آنلاین */}
               <button
                 type="button"
                 onClick={() => setUserMenuOpen((v) => !v)}
-                className="relative flex size-9 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-xs font-black text-white hover:ring-2 hover:ring-amber-500/50 dark:bg-amber-500 dark:text-slate-950 transition-all cursor-pointer"
+                className="relative flex size-9 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-xs font-black text-white hover:ring-2 hover:ring-amber-500/50 dark:bg-amber-500 dark:text-slate-950 transition-all cursor-pointer overflow-hidden"
                 title={`${user?.name || 'کاربر'} (${getRoleLabel(user?.role)})`}
                 aria-label="حساب کاربری"
               >
                 {user?.avatarUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={user.avatarUrl} alt="" className="size-full rounded-xl object-cover" />
+                  <img
+                    src={user.avatarUrl}
+                    alt=""
+                    className="size-full rounded-xl object-cover"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                    }}
+                  />
                 ) : (
                   (user?.name || user?.email || 'کاربر').charAt(0)
                 )}
@@ -539,6 +457,118 @@ export default function DashboardSidebar({
               <CacheRebuildButton collapsed={true} />
             </div>
           )}
+
+          {/* حالت کامل (همیشه در موبایل و در دسکتاپ هنگام باز بودن) */}
+          {!effectiveCollapsed && (
+            <div className="relative flex items-center justify-between gap-1.5">
+            {/* بخش اطلاعات کاربر */}
+            <div className="relative min-w-0 flex-1">
+              <button
+                type="button"
+                onClick={() => setUserMenuOpen((v) => !v)}
+                className="group flex w-full items-center gap-2 rounded-xl p-1.5 text-right transition-colors hover:bg-slate-100 dark:hover:bg-slate-800/70 cursor-pointer"
+                aria-expanded={userMenuOpen}
+                aria-haspopup="menu"
+                title="حساب کاربری و تنظیمات"
+              >
+                {/* آواتار کاربر به همراه نشانگر وضعیت برخط */}
+                <div className="relative shrink-0">
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-xs font-black text-white dark:bg-amber-500 dark:text-slate-950 shadow-xs overflow-hidden">
+                    {user?.avatarUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={user.avatarUrl}
+                        alt=""
+                        className="size-full rounded-xl object-cover"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                        }}
+                      />
+                    ) : (
+                      (user?.name || user?.email || 'کاربر').charAt(0)
+                    )}
+                  </span>
+                  <span
+                    className="absolute -bottom-0.5 -left-0.5 size-2.5 rounded-full border-2 border-white bg-emerald-500 animate-pulse dark:border-slate-900"
+                    title="سامانه فعال و برخط"
+                  />
+                </div>
+
+                {/* نام و نقش کاربر */}
+                <div className="flex flex-col min-w-0 pr-0.5">
+                  <span className="truncate text-xs font-black text-slate-800 group-hover:text-amber-600 dark:text-slate-200 dark:group-hover:text-amber-400 transition-colors">
+                    {user?.name || 'کاربر سیستم'}
+                  </span>
+                  <span className="truncate text-[10px] font-semibold text-slate-400 dark:text-slate-500">
+                    {getRoleLabel(user?.role)}
+                  </span>
+                </div>
+
+                <ChevronDown
+                  size={14}
+                  className={`mr-auto shrink-0 text-slate-400 transition-transform duration-200 ${
+                    userMenuOpen ? 'rotate-180 text-amber-500' : 'group-hover:text-slate-600 dark:group-hover:text-slate-300'
+                  }`}
+                />
+              </button>
+
+              {/* منوی بازشونده حساب کاربری (رو به بالا) */}
+              {userMenuOpen && (
+                <>
+                  <button
+                    type="button"
+                    className="fixed inset-0 z-40 bg-transparent cursor-default"
+                    aria-label="بستن منوی حساب"
+                    onClick={() => setUserMenuOpen(false)}
+                  />
+                  <div
+                    role="menu"
+                    className="absolute bottom-full right-0 mb-2 w-56 rounded-2xl border border-slate-200/90 bg-white/95 p-1.5 shadow-xl shadow-slate-900/10 backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/95 z-50 animate-in fade-in-50 zoom-in-95 duration-150"
+                  >
+                    <div className="px-3 py-2 border-b border-slate-100 dark:border-slate-800/80 mb-1">
+                      <div className="text-xs font-black text-slate-900 dark:text-white truncate">
+                        {user?.name || 'کاربر سیستم'}
+                      </div>
+                      <div className="text-[10px] text-slate-500 dark:text-slate-400 font-mono truncate">
+                        {user?.email || ''}
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setUserMenuOpen(false);
+                        router.push('/dashboard/account');
+                      }}
+                      className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 transition-colors text-right"
+                    >
+                      <Settings size={15} className="text-slate-500" />
+                      <span>مدیریت حساب کاربری</span>
+                    </button>
+
+                    <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
+
+                    <div className="p-0.5">
+                      <LogoutButton />
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* اکشن‌های فوتر: اعلانات، تغییر تم و بازسازی کَش */}
+            <div className="flex items-center gap-1.5 shrink-0">
+              <NotificationCenter
+                userRole={user?.role || 'user'}
+                direction="up"
+                buttonClassName="group relative inline-flex size-7 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 p-1 text-slate-500 hover:border-amber-400 hover:bg-amber-50 hover:text-amber-700 dark:border-slate-800 dark:bg-slate-800/80 dark:text-slate-400 dark:hover:border-amber-500/50 dark:hover:bg-amber-950/40 dark:hover:text-amber-300 transition-all duration-150 cursor-pointer"
+              />
+              <ThemeToggle />
+              <CacheRebuildButton collapsed={false} />
+            </div>
+          </div>
+        )}
         </div>
       </aside>
 
