@@ -106,10 +106,14 @@ export function createLine(nature: DocumentNature = 'received', sourceTab = 'met
                     ? 'claim'
                     : sourceTab === 'refining'
                       ? 'refining'
-                      : 'raw-gold';
+                      : sourceTab === 'discount'
+                        ? 'discount'
+                        : 'raw-gold';
 
   const docSubType =
-    sourceTab === 'gold-sale'
+    sourceTab === 'discount'
+      ? (nature === 'received' ? 'discount-given' : 'discount-received')
+      : sourceTab === 'gold-sale'
       ? `${nature === 'received' ? 'gold-purchase' : 'gold-sale'}-molten`
       : sourceTab === 'stone'
         ? (nature === 'received' ? 'stone-purchase' : 'stone-sale')
@@ -320,6 +324,9 @@ export function isLineReady(
     const wt = numberValue(line.details.claimWeight || line.details.rawWeight);
     return fin > 0 || wt > 0;
   }
+  if (line.documentTab === 'discount' || line.sourceTab === 'discount') {
+    return numberValue(line.details.discountAmount || line.details.totalAmount) > 0;
+  }
   const isRawGoldOrGoldSale =
     line.documentTab === 'raw-gold' ||
     line.documentTab === 'gold-sale' ||
@@ -416,6 +423,11 @@ export function validateLine(
       const purityNum = numberValue(line.details.purity);
       if (purityNum <= 0 || purityNum > 1000) return 'عیار باید عددی معتبر و بین ۱ تا ۱۰۰۰ باشد.';
     }
+    return '';
+  }
+  if (line.documentTab === 'discount' || line.sourceTab === 'discount') {
+    const amt = numberValue(line.details.discountAmount || line.details.totalAmount);
+    if (amt <= 0) return 'مبلغ تخفیف باید بیشتر از صفر باشد.';
     return '';
   }
   const isBankOrCheckLine =
@@ -624,7 +636,7 @@ export function useDocumentLines({
               selectedCurrency || 'IRR',
             )
           : createLine(nature, sourceTab);
-      if (sourceTab === 'claim') {
+      if (sourceTab === 'claim' || sourceTab === 'discount') {
         line.details.currencyUnit = baseCurr;
         line.details.baseCurrency = baseCurr;
       }

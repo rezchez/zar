@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import { ArrowLeftRight, Coins, Flame, PencilLine, Scale, Sparkles, Trash2 } from 'lucide-react';
+import { ArrowLeftRight, Coins, Flame, PencilLine, Scale, Sparkles, Tag, Trash2 } from 'lucide-react';
 import { TableRow, TableCell } from '@/components/ui/data-table';
 import type { DocumentLine } from '@/src/components/documents/RawGoldTab';
 import {
@@ -279,6 +279,12 @@ export default function CommittedLineRow({
               سکه و شمش
             </span>
           ) : null}
+          {(line.documentTab === 'discount' || line.sourceTab === 'discount') ? (
+            <span className="inline-flex items-center gap-0.5 rounded bg-purple-100 px-1 py-0.5 text-[9px] font-extrabold text-purple-900 border border-purple-300/80 dark:bg-purple-950/60 dark:text-purple-300 dark:border-purple-800 shrink-0">
+              <Tag size={10} className="text-purple-600 dark:text-purple-400 shrink-0" />
+              تخفیف
+            </span>
+          ) : null}
           <div className="min-w-0 flex-1">
             <span className="font-semibold text-xs text-slate-800 dark:text-slate-200 truncate block w-full" title={docType}>
               {line.details?.linkedLineId && (line.documentSubType === 'workmanship-golden-percentage' || line.documentSubType === 'workmanship-wage') ? (
@@ -298,6 +304,15 @@ export default function CommittedLineRow({
               >
                 {line.details.coinName}
                 {line.details.quantity ? ` (${toPersianDigits(line.details.quantity)} عدد)` : ''}
+              </span>
+            ) : null}
+            {(line.documentTab === 'discount' || line.sourceTab === 'discount') && (line.details?.discountPercentage || line.details?.claimPurpose) ? (
+              <span
+                className="text-[10px] text-purple-600 dark:text-purple-400 font-bold truncate block"
+                title={`${line.details.discountPercentage ? `${toPersianDigits(line.details.discountPercentage)}٪` : ''} ${line.details.claimPurpose || ''}`.trim()}
+              >
+                {line.details.discountPercentage ? `${toPersianDigits(line.details.discountPercentage)}٪ تخفیف` : ''}
+                {line.details.claimPurpose ? ` (${line.details.claimPurpose})` : ''}
               </span>
             ) : null}
           </div>

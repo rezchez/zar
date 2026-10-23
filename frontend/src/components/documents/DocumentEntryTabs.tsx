@@ -9,6 +9,7 @@ import {
   Landmark,
   Package,
   Sparkles,
+  Tag,
   Wallet,
   Wrench,
   type LucideIcon,
@@ -35,6 +36,7 @@ type DocumentEntryTabsProps = {
   bankTabContent?: ReactNode;
   claimTabContent?: ReactNode;
   workmanshipTabContent?: ReactNode;
+  discountTabContent?: ReactNode;
   accountCodeZero?: string;
   selectedCustomer?: Customer | null;
   documentId?: string;
@@ -64,6 +66,7 @@ export default function DocumentEntryTabs({
   bankTabContent,
   claimTabContent,
   workmanshipTabContent,
+  discountTabContent,
   accountCodeZero = '0',
   selectedCustomer,
   documentId,
@@ -145,6 +148,12 @@ export default function DocumentEntryTabs({
       label: 'کار ساخته',
       icon: Wrench,
       content: workmanshipTabContent ?? <PlaceholderTab label="کار ساخته" />,
+    },
+    {
+      id: 'discount',
+      label: 'تخفیف',
+      icon: Tag,
+      content: discountTabContent ?? <PlaceholderTab label="تخفیف" />,
     },
   ];
 

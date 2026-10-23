@@ -16,6 +16,7 @@ import {
   Settings,
   ShieldCheck,
   SlidersHorizontal,
+  Tag,
   UserPlus,
   Users,
 } from 'lucide-react';
@@ -138,6 +139,13 @@ export const navGroupsBase: NavGroupData[] = [
             href: '/dashboard/documents/new',
           },
         ],
+      },
+      {
+        id: 'etiquette',
+        title: 'اتیکت',
+        icon: Tag,
+        href: '/dashboard/etiquette',
+        badge: 'آلفا',
       },
       {
         id: 'reports',

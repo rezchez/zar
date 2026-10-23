@@ -261,6 +261,13 @@ export async function POST(request: Request) {
           const rawVal = numberValue(details.totalAmount || details.stoneTotalAmount);
           rialAmount = stoneCur === 'IRT' && !details.rialAmountInIrr ? convertTomanToRial(rawVal) : rawVal;
         }
+      } else if (docTab === 'discount') {
+        const rawAmt = numberValue(details.discountAmount || details.totalAmount);
+        const isToman =
+          details.currencyUnit === 'IRT' ||
+          details.baseCurrency === 'IRT' ||
+          body?.baseCurrency === 'IRT';
+        rialAmount = isToman && !details.rialAmountInIrr ? convertTomanToRial(rawAmt) : rawAmt;
       }
       if (rialAmount > 0) {
         transactionEffect.rial += direction * rialAmount;

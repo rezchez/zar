@@ -40,6 +40,7 @@ export const EXACT_PATH_LABELS: Record<string, string> = {
   '/dashboard/account': 'حساب کاربری',
   '/dashboard/refining': 'مدیریت ری‌گیری',
   '/dashboard/refining/packets': 'پاکت‌های نزد ریگیری',
+  '/dashboard/etiquette': 'اتیکت',
 };
 
 /**
@@ -69,6 +70,7 @@ export const SEGMENT_FALLBACK_LABELS: Record<string, string> = {
   'audit-logs': 'لاگ حسابرسی',
   refining: 'ری‌گیری طلا',
   packets: 'پاکت‌های نزد ریگیری',
+  etiquette: 'اتیکت',
 };
 
 /**

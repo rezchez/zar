@@ -38,6 +38,7 @@ import {
   postWorkmanshipReturnExit,
   postWorkmanshipSale,
   postWorkmanshipPurchase,
+  postDiscountJournalEntry,
 } from '@/features/accounting/posting/posting-engine';
 import { ensureChecksCollection } from '@/lib/check-collection';
 import { mapBankAccount } from '@/lib/bank';
@@ -744,6 +745,33 @@ export async function POST(request: Request) {
           details.rawWeight = String(rawClaimWeight);
           details.claimWeight = String(rawClaimWeight);
         }
+      }
+
+      const isDiscountLine = line.documentTab === 'discount' || line.sourceTab === 'discount';
+      if (isDiscountLine) {
+        const discountCurrency = normalizeCurrencyCode(String(details.currencyUnit || details.baseCurrency || ''));
+        const isToman = discountCurrency === 'IRT' || details.baseCurrency === 'IRT' || body?.baseCurrency === 'IRT';
+        const rawLineRial = Math.abs(readAmount(line.rialAmount) || 0);
+        const detailTotal = Math.abs(readAmount(details.discountAmount) || readAmount(details.totalAmount) || 0);
+        const alreadyInIrr = details.rialAmountInIrr === true;
+
+        const effectiveAbsRial = isToman
+          ? (alreadyInIrr && rawLineRial > 0 && rawLineRial !== detailTotal
+              ? rawLineRial
+              : convertTomanToRial(detailTotal || rawLineRial))
+          : (rawLineRial || detailTotal);
+
+        // Direction:
+        // 'received' = تخفیف اعطایی به طرف‌حساب -> مشتری بستانکار می‌شود (+1)
+        // 'paid' = تخفیف دریافتی از طرف‌حساب -> مشتری بدهکار می‌شود (-1)
+        const discountDirection = lineNature === 'received' ? 1 : -1;
+        lineAmounts.rialAmount = Math.round(effectiveAbsRial) * discountDirection;
+        details.currencyUnit = isToman ? 'IRT' : 'IRR';
+        details.baseCurrency = isToman ? 'IRT' : 'IRR';
+        details.amountInIrr = Math.round(effectiveAbsRial);
+        details.rialAmountInIrr = true;
+        details.discountAmount = String(Math.round(effectiveAbsRial));
+        details.totalAmount = String(Math.round(effectiveAbsRial));
       }
 
       const hasStoneQuantity =
@@ -1466,6 +1494,39 @@ export async function POST(request: Request) {
                 );
               } catch (journalErr) {
                 console.error('Failed to post workmanship purchase journal entry:', journalErr);
+              }
+            }
+          }
+
+          if (prepared.line.documentTab === 'discount' || prepared.line.sourceTab === 'discount') {
+            const rialAmount = Math.abs(prepared.lineAmounts.rialAmount ?? Number(prepared.documentDetails.totalAmount) ?? 0);
+            if (rialAmount > 0) {
+              const direction: 'given' | 'received' =
+                prepared.lineNature === 'received' ? 'given' : 'received';
+              const discountPct = Number(prepared.documentDetails.discountPercentage) || undefined;
+              const baseAmt = Number(prepared.documentDetails.discountBaseAmount) || undefined;
+              try {
+                await postDiscountJournalEntry(
+                  {
+                    documentId: `${documentId}:${prepared.lineNumber}`,
+                    documentNumber: lineDocumentNumbers[index] || finalDocumentNumber,
+                    entryDateJalali: documentDateJalali,
+                    amountRials: rialAmount,
+                    direction,
+                    discountPercentage: discountPct,
+                    baseAmountRials: baseAmt,
+                    customer: {
+                      id: customer.id,
+                      name: customer.name,
+                      customerCode: Number(customer.customerCode ?? 0),
+                    },
+                    userId: context.user.id,
+                    description: readString(prepared.line.description ?? body.description, 500) || undefined,
+                  },
+                  writer,
+                );
+              } catch (journalErr) {
+                console.error('Failed to post discount journal entry:', journalErr);
               }
             }
           }

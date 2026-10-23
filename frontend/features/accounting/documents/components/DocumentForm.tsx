@@ -30,6 +30,7 @@ import CashTab, { fetchCashFunds, invalidateCashFundsCache } from '@/src/compone
 import BankTab, { fetchBankAccounts, invalidateBankAccountsCache } from './BankTab';
 import ClaimTab from '@/src/components/documents/ClaimTab';
 import WorkmanshipTab from './WorkmanshipTab';
+import DiscountTab from './DiscountTab';
 
 // Subcomponents
 import CustomerSection from './CustomerSection';
@@ -87,6 +88,7 @@ export const VALID_ENTRY_TABS = [
   'goods',
   'income-expense',
   'workmanship',
+  'discount',
 ] as const;
 
 export const LOCKED_CUSTOMER_STORAGE_KEY = 'zar_document_locked_customer_id';
@@ -821,6 +823,8 @@ export default function DocumentForm({
             ? (nextNature === 'received' ? 'currency-purchase' : 'currency-sale')
             : current.sourceTab === 'claim' || activeEntryTab === 'claim'
               ? (nextNature === 'received' ? 'debt' : 'claim')
+            : current.sourceTab === 'discount' || activeEntryTab === 'discount'
+              ? (nextNature === 'received' ? 'discount-given' : 'discount-received')
               : current.sourceTab === 'gold-sale' || activeEntryTab === 'gold-sale'
               ? `${nextNature === 'received' ? 'gold-purchase' : 'gold-sale'}-${current.details?.rawKind || 'molten'}`
               : current.sourceTab === 'workmanship' || activeEntryTab === 'workmanship'
@@ -1492,6 +1496,7 @@ export default function DocumentForm({
         line.documentTab === 'cash' ||
         line.documentTab === 'bank' ||
         line.documentTab === 'gold-sale' ||
+        line.documentTab === 'discount' ||
         numberValue(line.details?.claimFinancial) > 0 ||
         numberValue(line.details?.totalAmount) > 0 ||
         numberValue(line.details?.currencyTotalAmount) > 0,
@@ -1928,6 +1933,23 @@ export default function DocumentForm({
               currencyLabel={activeCurrencies.find((c) => c.code.toUpperCase() === (selectedCurrency || '').toUpperCase())?.name}
               activeCurrencies={activeCurrencies}
               selectedCustomer={selectedCustomer}
+            />
+          )}
+          discountTabContent={(
+            <DiscountTab
+              nature={documentNature}
+              draftLine={draftLine}
+              setDraftLine={setDraftLine}
+              committedLines={committedLines}
+              editingLineId={editingLineId}
+              isLinesPinned={isLinesPinned}
+              commitDraftLine={handleCommitDraft}
+              updateDraftDetail={updateDraftDetail}
+              handleKeyDownEnter={handleKeyDownEnter}
+              draftReady={draftReady}
+              baseCurrency={baseCurrency}
+              selectedCustomer={selectedCustomer}
+              onNatureChange={changeNature}
             />
           )}
         />

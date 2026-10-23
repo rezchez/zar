@@ -95,6 +95,10 @@ export function getLineDocumentTypeLabel(
     return nature === 'received' ? 'بدهی ما' : 'طلب ما';
   }
 
+  if (tab === 'discount') {
+    return nature === 'received' ? 'تخفیف اعطایی' : 'تخفیف دریافتی';
+  }
+
   if (tab === 'workmanship') {
     if (workmanshipSubType === 'workmanship-golden-percentage') {
       return `${getWorkmanshipPercentageLabel(metalType)} کارساخته`;
@@ -728,6 +732,23 @@ export function sanitizeLineDetailsForTab(
         metalType: details.metalType || 'gold',
         currencyUnit: details.currencyUnit || baseCurrency,
         baseCurrency: details.baseCurrency || baseCurrency,
+      };
+    }
+
+    case 'discount': {
+      return {
+        ...baseDefaults,
+        totalAmount: String(details.totalAmount || details.discountAmount || ''),
+        discountAmount: String(details.discountAmount || details.totalAmount || ''),
+        discountPercentage: String(details.discountPercentage || ''),
+        discountBaseAmount: String(details.discountBaseAmount || ''),
+        discountType: details.discountType || 'percent',
+        discountDirection: details.discountDirection,
+        claimPurpose: details.claimPurpose || '',
+        currencyUnit: details.currencyUnit || baseCurrency,
+        baseCurrency: details.baseCurrency || baseCurrency,
+        rawWeight: '',
+        purity: '',
       };
     }
 
