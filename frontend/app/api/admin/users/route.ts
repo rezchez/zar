@@ -64,6 +64,127 @@ export async function GET() {
   }
 }
 
+export async function POST(request: Request) {
+  const context = await getServerAuthContext();
+
+  if (
+    !context ||
+    (!hasPermission(context.user, 'user.create') && !hasPermission(context.user, 'user.manage'))
+  ) {
+    return NextResponse.json({ message: 'دسترسی غیرمجاز به ایجاد کاربر جدید.' }, { status: 403 });
+  }
+
+  let body: {
+    name?: unknown;
+    email?: unknown;
+    password?: unknown;
+    role?: unknown;
+    phone?: unknown;
+  };
+
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return NextResponse.json({ message: 'اطلاعات ارسالی نامعتبر است.' }, { status: 400 });
+  }
+
+  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+  const password = typeof body.password === 'string' ? body.password : '';
+  const role = typeof body.role === 'string' ? body.role : 'user';
+  const phone = typeof body.phone === 'string' ? body.phone.trim() : '';
+
+  if (!name || name.length < 2 || name.length > 80) {
+    return NextResponse.json({ message: 'نام کاربر باید بین ۲ تا ۸۰ کاراکتر باشد.' }, { status: 400 });
+  }
+
+  if (!email || !email.includes('@')) {
+    return NextResponse.json({ message: 'ایمیل وارد شده معتبر نیست.' }, { status: 400 });
+  }
+
+  if (!password || password.length < 8) {
+    return NextResponse.json({ message: 'رمز عبور باید حداقل ۸ کاراکتر باشد.' }, { status: 400 });
+  }
+
+  if (!allowedRoles.has(role)) {
+    return NextResponse.json({ message: 'نقش کاربری انتخاب‌شده معتبر نیست.' }, { status: 400 });
+  }
+
+  // Manager cannot create an Admin
+  if (context.user.role === 'manager' && role === 'admin') {
+    return NextResponse.json({ message: 'مدیر (Manager) اجازه ایجاد حساب با نقش Admin را ندارد.' }, { status: 403 });
+  }
+
+  try {
+    let queryClient = context.pb;
+    try {
+      const { getPocketBaseServiceClient } = await import('@/lib/pocketbase-service');
+      queryClient = await getPocketBaseServiceClient();
+    } catch {
+      queryClient = context.pb;
+    }
+
+    // Check if email already exists
+    const existing = await queryClient.collection('users').getFirstListItem(
+      queryClient.filter('email = {:email}', { email }),
+    ).catch(() => null);
+
+    if (existing) {
+      return NextResponse.json({ message: 'این نشانی ایمیل قبلاً ثبت شده است.' }, { status: 409 });
+    }
+
+    const createdUser = await queryClient.collection('users').create({
+      name,
+      email,
+      emailVisibility: true,
+      password,
+      passwordConfirm: password,
+      role,
+      status: 'active',
+      phone,
+      verified: true,
+    });
+
+    await recordAuditEvent({
+      userId: context.user.id,
+      event: 'user_created',
+      request,
+      details: `حساب کاربری جدید برای ${name} (${email}) با نقش ${role} توسط ${context.user.name || context.user.email || 'مدیر'} ایجاد شد`,
+      entityType: 'user',
+      entityId: createdUser.id,
+      entityLabel: `${name} · ${email}`,
+      changes: {
+        name: { label: 'نام', after: name },
+        email: { label: 'ایمیل', after: email },
+        role: { label: 'نقش', after: role },
+      },
+      authenticatedClient: queryClient,
+    });
+
+    return NextResponse.json({
+      user: {
+        id: createdUser.id,
+        name: String(createdUser.name ?? ''),
+        email: String(createdUser.email ?? ''),
+        role: createdUser.role ?? role,
+        status: createdUser.status ?? 'active',
+        blockedUntil: null,
+        nationalCodeEditable: false,
+        phone: String(createdUser.phone ?? ''),
+        phoneEditable: false,
+        verified: true,
+        created: createdUser.created,
+        lastLoginAt: null,
+        lastLogoutAt: null,
+        customPermissions: { grants: [], denies: [] },
+      },
+    }, { status: 201 });
+  } catch (err: any) {
+    const errorMsg = err?.data?.message || err?.message || 'ثبت کاربر جدید انجام نشد.';
+    return NextResponse.json({ message: errorMsg }, { status: 400 });
+  }
+}
+
 export async function PATCH(request: Request) {
   const context = await getServerAuthContext();
 

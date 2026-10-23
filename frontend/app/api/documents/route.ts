@@ -380,7 +380,12 @@ export async function GET(request: Request) {
           }
         }
       }
-      const lines = records.map(transactionRecordToDocumentLine);
+      const lines = records.map((rec, idx) => {
+        const line = transactionRecordToDocumentLine(rec);
+        const lineNum = Number(String(rec.sourceKey || '').split(':')[2]) || idx + 1;
+        (line as any).documentLineNumber = lineNum;
+        return line;
+      });
       lines.sort((a, b) => (Number((a as any).documentLineNumber) || 0) - (Number((b as any).documentLineNumber) || 0));
       return NextResponse.json({
         documentId: primary.documentId || documentIdParam,
@@ -547,49 +552,60 @@ export async function POST(request: Request) {
     ).catch(() => null);
     const existingDocument = await writer.collection('transactions').getFullList({
       filter: writer.filter(
-        'documentId = {:documentId} && is_deleted = false',
+        'documentId = {:documentId}',
         { documentId },
       ),
-      sort: 'documentLineNumber',
+      sort: 'created',
     }).catch(() => []);
 
     if (existingDocument.length > 0 || existingFirstLine) {
       if (!isEditMode) {
-        const records = existingDocument.length > 0 ? existingDocument : (existingFirstLine ? [existingFirstLine] : []);
+        const activeRecords = existingDocument.filter((r) => !r.is_deleted);
+        const records = activeRecords.length > 0 ? activeRecords : (existingFirstLine ? [existingFirstLine] : []);
         const primaryRecord = records[0];
-        return NextResponse.json({
-          transactions: records.map(mapDocument),
-          transaction: primaryRecord ? mapDocument(primaryRecord) : null,
-          documentId,
-          documentNumber: String(primaryRecord?.documentNumber ?? ''),
-          documentSequence: Number(primaryRecord?.documentSequence ?? 1),
-          alreadyExists: true,
-        }, { status: 200 });
+        if (primaryRecord) {
+          return NextResponse.json({
+            transactions: records.map(mapDocument),
+            transaction: mapDocument(primaryRecord),
+            documentId,
+            documentNumber: String(primaryRecord?.documentNumber ?? ''),
+            documentSequence: Number(primaryRecord?.documentSequence ?? 1),
+            alreadyExists: true,
+          }, { status: 200 });
+        }
       } else {
         const recordsToDelete = existingDocument.length > 0 ? existingDocument : (existingFirstLine ? [existingFirstLine] : []);
         if (recordsToDelete.length > 0) {
-          preservedSequence = typeof recordsToDelete[0].documentSequence === 'number' ? recordsToDelete[0].documentSequence : undefined;
-          preservedNumber = String(recordsToDelete[0].documentNumber ?? '');
+          const activePrimary = recordsToDelete.find((r) => !r.is_deleted) || recordsToDelete[0];
+          preservedSequence = typeof activePrimary.documentSequence === 'number' ? activePrimary.documentSequence : undefined;
+          const rawDocNumber = String(activePrimary.documentNumber ?? '');
+          preservedNumber = rawDocNumber.replace(/:edited:.*$/, '').replace(/:deleted:.*$/, '');
           const deletedAt = new Date().toISOString();
           const timestamp = Date.now();
           for (let idx = 0; idx < recordsToDelete.length; idx++) {
             const sibling = recordsToDelete[idx];
-            const oldSourceKey = sibling.sourceKey || `document:${documentId}:${sibling.documentLineNumber || idx + 1}`;
+            if (sibling.is_deleted && sibling.sourceKey && (sibling.sourceKey.includes(':edited:') || sibling.sourceKey.includes(':deleted:'))) {
+              continue;
+            }
+            const oldSourceKey = sibling.sourceKey || `document:${documentId}:${idx + 1}`;
             const oldDocNumber = String(sibling.documentNumber ?? '');
             await writer.collection('transactions').update(sibling.id, {
               is_deleted: true,
               deleted_at: deletedAt,
               deleted_by: context.user.id,
               sourceKey: `${oldSourceKey}:edited:${timestamp}:${sibling.id}`,
-              documentNumber: oldDocNumber ? `${oldDocNumber}:edited:${timestamp}:${sibling.id}` : '',
+              documentNumber: oldDocNumber && !oldDocNumber.includes(':edited:') ? `${oldDocNumber}:edited:${timestamp}:${sibling.id}` : oldDocNumber,
             });
           }
         }
         const oldMetalInv = await writer.collection('metal_inventory').getFullList({
-          filter: writer.filter('document_id = {:docId} && is_deleted = false', { docId: documentId }),
+          filter: writer.filter('document_id = {:docId}', { docId: documentId }),
         }).catch(() => []);
         const invTimestamp = Date.now();
         for (const inv of oldMetalInv) {
+          if (inv.is_deleted && inv.source_key && (inv.source_key.includes(':edited:') || inv.source_key.includes(':deleted:'))) {
+            continue;
+          }
           const oldSourceKey = inv.source_key || `document:${documentId}:metal`;
           await writer.collection('metal_inventory').update(inv.id, {
             is_deleted: true,
@@ -1111,6 +1127,19 @@ export async function POST(request: Request) {
       const currentCreatedInventoryRecords = [];
       try {
         for (const payload of documentPayloads) {
+          // Extra safety guard: ensure no active or soft-deleted record in transactions still holds this sourceKey
+          const lingering = await writer.collection('transactions').getFirstListItem(
+            writer.filter('sourceKey = {:sk}', { sk: payload.sourceKey }),
+          ).catch(() => null);
+          if (lingering && lingering.id) {
+            await writer.collection('transactions').update(lingering.id, {
+              is_deleted: true,
+              deleted_at: new Date().toISOString(),
+              deleted_by: context.user.id,
+              sourceKey: `${lingering.sourceKey}:edited:${Date.now()}:${lingering.id}`,
+            }).catch(() => null);
+          }
+
           try {
             currentCreatedRecords.push(await writer.collection('transactions').create(payload));
           } catch (createErr: any) {

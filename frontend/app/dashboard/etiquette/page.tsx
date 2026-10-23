@@ -118,7 +118,7 @@ export default async function EtiquettePage() {
             {/* Official Traffic Sign Road Label */}
             <div className="mt-4 inline-flex items-center gap-2 rounded-2xl bg-amber-500 px-6 py-2.5 text-slate-950 font-black shadow-md border-2 border-amber-600 text-lg sm:text-xl">
               <span>⚠️</span>
-              <span>کارگران مشغول کارند</span>
+              <span>این بخش به زودی فعال خواهد شد</span>
               <span>⚠️</span>
             </div>
           </div>

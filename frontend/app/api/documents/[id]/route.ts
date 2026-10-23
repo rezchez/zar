@@ -23,12 +23,32 @@ export async function DELETE(
       : context.pb.filter('id = {:id}', { id });
     const siblings = await context.pb.collection('transactions').getFullList({ filter });
     const deletedAt = new Date().toISOString();
-    for (const sibling of siblings) {
+    const delTimestamp = Date.now();
+    for (let idx = 0; idx < siblings.length; idx++) {
+      const sibling = siblings[idx];
+      const oldSourceKey = sibling.sourceKey || `document:${record.documentId || id}:${idx + 1}`;
+      const oldDocNumber = String(sibling.documentNumber ?? '');
       await context.pb.collection('transactions').update(sibling.id, {
         is_deleted: true,
         deleted_at: deletedAt,
         deleted_by: context.user.id,
+        sourceKey: `${oldSourceKey}:deleted:${delTimestamp}:${sibling.id}`,
+        documentNumber: oldDocNumber && !oldDocNumber.includes(':deleted:') ? `${oldDocNumber}:deleted:${delTimestamp}:${sibling.id}` : oldDocNumber,
       });
+    }
+
+    if (record.documentId) {
+      const relatedMetal = await context.pb.collection('metal_inventory').getFullList({
+        filter: context.pb.filter('document_id = {:docId} && is_deleted = false', { docId: record.documentId }),
+      }).catch(() => []);
+      for (const inv of relatedMetal) {
+        const oldInvSource = inv.source_key || `document:${record.documentId}:metal`;
+        await context.pb.collection('metal_inventory').update(inv.id, {
+          is_deleted: true,
+          updated_by: context.user.id,
+          source_key: `${oldInvSource}:deleted:${delTimestamp}:${inv.id}`,
+        }).catch(() => null);
+      }
     }
 
     await recordAuditEvent({

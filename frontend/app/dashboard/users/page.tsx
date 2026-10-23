@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 
 import { getServerAuthContext } from '@/lib/auth';
+import { imageService } from '@/lib/images';
 import DashboardShell from '@/src/components/dashboard/DashboardShell';
 import UserManagement, { type ManagedUser } from '@/src/components/UserManagement';
 
@@ -48,9 +49,11 @@ export default async function UserManagementPage() {
       phone: String(record.phone ?? ''),
       phoneEditable: record.phoneEditable === true,
       verified: record.verified === true,
+      avatarUrl: record.avatar ? imageService.buildAvatarUrl(record, queryClient) : null,
       created: record.created,
       lastLoginAt: record.lastLoginAt ?? null,
       lastLogoutAt: record.lastLogoutAt ?? null,
+      customPermissions: record.customPermissions ?? { grants: [], denies: [] },
     }));
   } catch {
     initialUsers = [];

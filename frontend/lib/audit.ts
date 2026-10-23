@@ -22,6 +22,7 @@ export type AuditEvent =
   | 'permission_failed_attempt'
   | 'user_blocked'
   | 'user_unblocked'
+  | 'user_created'
   | 'national_code_permission_granted'
   | 'phone_permission_granted'
   | 'password_reset_requested'
