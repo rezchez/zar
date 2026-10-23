@@ -91,6 +91,8 @@ export const SYSTEM_ACCOUNT_CODES = {
   ROUNDING_EXPENSE: '6500',
   ROUNDING_INCOME: '4300',
   BANK_EXPENSE: '6300',
+  SALES_DISCOUNT: '4160',
+  PURCHASE_DISCOUNT: '5160',
 } as const;
 
 const pbAccountCaches = new WeakMap<object, Map<string, { id: string; code: string; name: string }>>();
@@ -2797,5 +2799,76 @@ export async function postWorkmanshipPurchase(
     writer,
   );
 }
+
+export async function postDiscountJournalEntry(
+  params: {
+    documentId: string;
+    documentNumber: string;
+    entryDateJalali?: string;
+    amountRials: number;
+    direction: 'given' | 'received';
+    discountPercentage?: number;
+    baseAmountRials?: number;
+    customer: {
+      id: string;
+      name: string;
+      customerCode?: number;
+    };
+    userId: string;
+    description?: string;
+    mapping?: Record<string, string>;
+  },
+  pb: PocketBase,
+): Promise<JournalEntryResult> {
+  const roundedAmount = Math.round(params.amountRials);
+  if (roundedAmount <= 0) {
+    throw new Error('مبلغ تخفیف باید بزرگتر از صفر باشد.');
+  }
+
+  let writer = pb;
+  if (!(pb as any)._store) {
+    try {
+      const { getPocketBaseServiceClient } = await import('@/lib/pocketbase-service');
+      writer = await getPocketBaseServiceClient();
+    } catch {
+      writer = pb;
+    }
+  }
+
+  const { buildDiscountJournalLines, resolveDiscountAccountMapping } = await import('./discount-accounting');
+  const accountMapping = await resolveDiscountAccountMapping(writer);
+  const mapping = { ...accountMapping, ...params.mapping };
+
+  const lines = buildDiscountJournalLines({
+    direction: params.direction,
+    amountRials: roundedAmount,
+    discountPercentage: params.discountPercentage,
+    baseAmountRials: params.baseAmountRials,
+    customerId: params.customer.id,
+    customerName: params.customer.name,
+    documentNumber: params.documentNumber,
+    description: params.description,
+    mapping,
+  });
+
+  const directionLabel = params.direction === 'given' ? 'تخفیف اعطایی به' : 'تخفیف دریافتی از';
+  const desc =
+    params.description ||
+    `${directionLabel} طرف‌حساب ${params.customer.name} (سند ${params.documentNumber})`;
+
+  return postJournalEntry(
+    {
+      description: desc,
+      sourceType: 'document',
+      sourceId: params.documentId,
+      sourceKey: `discount:${params.direction}:${params.documentId}`,
+      entryDateJalali: params.entryDateJalali,
+      userId: params.userId,
+      lines,
+    },
+    writer,
+  );
+}
+
 
 

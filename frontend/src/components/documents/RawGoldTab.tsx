@@ -85,6 +85,10 @@ export type DetailState = {
   metalTotalPrice?: string;
   profitAmount?: string;
   discountAmount?: string;
+  discountPercentage?: string;
+  discountBaseAmount?: string;
+  discountType?: 'percent' | 'amount';
+  discountDirection?: 'given' | 'received';
   convertedWeight?: string;
   refiningCaseId?: string;
   refiningCaseNumber?: string;
