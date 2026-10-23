@@ -81,7 +81,11 @@ export const SYSTEM_ACCOUNT_CODES = {
   COUNTERPARTY_LIABILITY: '2120',
   OPENING_EQUITY: '3100',
   GOLD_SALES_REVENUE: '4110',
+  WORKMANSHIP_SALES_REVENUE: '4120',
+  SALES_RETURNS: '4150',
+  PURCHASE_RETURNS: '5150',
   GOLD_COST_OF_SALES: '5200',
+  WORKMANSHIP_COST_OF_SALES: '5300',
   PROFIT_LOSS: '3500',
   REFINING_EXPENSE: '5500',
   ROUNDING_EXPENSE: '6500',
@@ -2491,6 +2495,302 @@ export async function postBankReceiptFromCustomer(
       sourceType: 'bank_transfer',
       sourceId: params.documentId,
       sourceKey: `bank:receipt:${params.documentId}`,
+      userId: params.userId,
+      lines,
+    },
+    writer,
+  );
+}
+
+export async function postWorkmanshipReturnEntry(
+  params: {
+    documentId: string;
+    documentNumber: string;
+    entryDateJalali?: string;
+    amountRials: number;
+    exactAmountRials?: number;
+    roundingDifference?: number;
+    workmanshipName: string;
+    weightGrams?: number;
+    convertedWeight750?: number;
+    quantity?: number;
+    customer: {
+      id: string;
+      name: string;
+      customerCode?: number;
+    };
+    userId: string;
+    description?: string;
+    mapping?: Record<string, string>;
+  },
+  pb: PocketBase,
+): Promise<JournalEntryResult> {
+  const roundedAmount = Math.round(params.amountRials);
+  if (roundedAmount <= 0) {
+    throw new Error('مبلغ برگشت از فروش کار ساخته باید بزرگتر از صفر باشد.');
+  }
+
+  let writer = pb;
+  if (!(pb as any)._store) {
+    try {
+      const { getPocketBaseServiceClient } = await import('@/lib/pocketbase-service');
+      writer = await getPocketBaseServiceClient();
+    } catch {
+      writer = pb;
+    }
+  }
+
+  const { buildWorkmanshipReturnEntryJournalLines, resolveWorkmanshipAccountMapping } = await import('./workmanship-accounting');
+  const accountMapping = await resolveWorkmanshipAccountMapping(writer);
+  const mapping = { ...accountMapping, ...params.mapping };
+
+  const lines = buildWorkmanshipReturnEntryJournalLines({
+    amountRials: roundedAmount,
+    exactAmountRials: params.exactAmountRials,
+    roundingDifference: params.roundingDifference,
+    workmanshipName: params.workmanshipName,
+    weightGrams: params.weightGrams,
+    convertedWeight750: params.convertedWeight750,
+    quantity: params.quantity,
+    customerId: params.customer.id,
+    customerName: params.customer.name,
+    mapping,
+  });
+
+  const weightDesc = params.weightGrams && params.weightGrams > 0 ? ` (${params.weightGrams.toFixed(3)} گرم)` : '';
+  const desc =
+    params.description ||
+    `برگشت از فروش (ورود مرجوعی) کار ساخته ${params.workmanshipName}${weightDesc} از طرف‌حساب ${params.customer.name} (سند ${params.documentNumber})`;
+
+  return postJournalEntry(
+    {
+      description: desc,
+      sourceType: 'document',
+      sourceId: params.documentId,
+      sourceKey: `workmanship:return_entry:${params.documentId}`,
+      entryDateJalali: params.entryDateJalali,
+      userId: params.userId,
+      lines,
+    },
+    writer,
+  );
+}
+
+export async function postWorkmanshipReturnExit(
+  params: {
+    documentId: string;
+    documentNumber: string;
+    entryDateJalali?: string;
+    amountRials: number;
+    exactAmountRials?: number;
+    roundingDifference?: number;
+    workmanshipName: string;
+    weightGrams?: number;
+    convertedWeight750?: number;
+    quantity?: number;
+    customer: {
+      id: string;
+      name: string;
+      customerCode?: number;
+    };
+    userId: string;
+    description?: string;
+    mapping?: Record<string, string>;
+  },
+  pb: PocketBase,
+): Promise<JournalEntryResult> {
+  const roundedAmount = Math.round(params.amountRials);
+  if (roundedAmount <= 0) {
+    throw new Error('مبلغ برگشت از خرید کار ساخته باید بزرگتر از صفر باشد.');
+  }
+
+  let writer = pb;
+  if (!(pb as any)._store) {
+    try {
+      const { getPocketBaseServiceClient } = await import('@/lib/pocketbase-service');
+      writer = await getPocketBaseServiceClient();
+    } catch {
+      writer = pb;
+    }
+  }
+
+  const { buildWorkmanshipReturnExitJournalLines, resolveWorkmanshipAccountMapping } = await import('./workmanship-accounting');
+  const accountMapping = await resolveWorkmanshipAccountMapping(writer);
+  const mapping = { ...accountMapping, ...params.mapping };
+
+  const lines = buildWorkmanshipReturnExitJournalLines({
+    amountRials: roundedAmount,
+    exactAmountRials: params.exactAmountRials,
+    roundingDifference: params.roundingDifference,
+    workmanshipName: params.workmanshipName,
+    weightGrams: params.weightGrams,
+    convertedWeight750: params.convertedWeight750,
+    quantity: params.quantity,
+    customerId: params.customer.id,
+    customerName: params.customer.name,
+    mapping,
+  });
+
+  const weightDesc = params.weightGrams && params.weightGrams > 0 ? ` (${params.weightGrams.toFixed(3)} گرم)` : '';
+  const desc =
+    params.description ||
+    `برگشت از خرید (خروج مرجوعی) کار ساخته ${params.workmanshipName}${weightDesc} به طرف‌حساب ${params.customer.name} (سند ${params.documentNumber})`;
+
+  return postJournalEntry(
+    {
+      description: desc,
+      sourceType: 'document',
+      sourceId: params.documentId,
+      sourceKey: `workmanship:return_exit:${params.documentId}`,
+      entryDateJalali: params.entryDateJalali,
+      userId: params.userId,
+      lines,
+    },
+    writer,
+  );
+}
+
+export async function postWorkmanshipSale(
+  params: {
+    documentId: string;
+    documentNumber: string;
+    entryDateJalali?: string;
+    amountRials: number;
+    exactAmountRials?: number;
+    roundingDifference?: number;
+    workmanshipName: string;
+    weightGrams?: number;
+    convertedWeight750?: number;
+    quantity?: number;
+    customer: {
+      id: string;
+      name: string;
+      customerCode?: number;
+    };
+    userId: string;
+    description?: string;
+    mapping?: Record<string, string>;
+  },
+  pb: PocketBase,
+): Promise<JournalEntryResult> {
+  const roundedAmount = Math.round(params.amountRials);
+  if (roundedAmount <= 0) {
+    throw new Error('مبلغ فروش کار ساخته باید بزرگتر از صفر باشد.');
+  }
+
+  let writer = pb;
+  if (!(pb as any)._store) {
+    try {
+      const { getPocketBaseServiceClient } = await import('@/lib/pocketbase-service');
+      writer = await getPocketBaseServiceClient();
+    } catch {
+      writer = pb;
+    }
+  }
+
+  const { buildWorkmanshipSaleJournalLines, resolveWorkmanshipAccountMapping } = await import('./workmanship-accounting');
+  const accountMapping = await resolveWorkmanshipAccountMapping(writer);
+  const mapping = { ...accountMapping, ...params.mapping };
+
+  const lines = buildWorkmanshipSaleJournalLines({
+    amountRials: roundedAmount,
+    exactAmountRials: params.exactAmountRials,
+    roundingDifference: params.roundingDifference,
+    workmanshipName: params.workmanshipName,
+    weightGrams: params.weightGrams,
+    convertedWeight750: params.convertedWeight750,
+    quantity: params.quantity,
+    customerId: params.customer.id,
+    customerName: params.customer.name,
+    mapping,
+  });
+
+  const weightDesc = params.weightGrams && params.weightGrams > 0 ? ` (${params.weightGrams.toFixed(3)} گرم)` : '';
+  const desc =
+    params.description ||
+    `فروش کار ساخته ${params.workmanshipName}${weightDesc} به طرف‌حساب ${params.customer.name} (سند ${params.documentNumber})`;
+
+  return postJournalEntry(
+    {
+      description: desc,
+      sourceType: 'document',
+      sourceId: params.documentId,
+      sourceKey: `workmanship:sale:${params.documentId}`,
+      entryDateJalali: params.entryDateJalali,
+      userId: params.userId,
+      lines,
+    },
+    writer,
+  );
+}
+
+export async function postWorkmanshipPurchase(
+  params: {
+    documentId: string;
+    documentNumber: string;
+    entryDateJalali?: string;
+    amountRials: number;
+    exactAmountRials?: number;
+    roundingDifference?: number;
+    workmanshipName: string;
+    weightGrams?: number;
+    convertedWeight750?: number;
+    quantity?: number;
+    customer: {
+      id: string;
+      name: string;
+      customerCode?: number;
+    };
+    userId: string;
+    description?: string;
+    mapping?: Record<string, string>;
+  },
+  pb: PocketBase,
+): Promise<JournalEntryResult> {
+  const roundedAmount = Math.round(params.amountRials);
+  if (roundedAmount <= 0) {
+    throw new Error('مبلغ خرید کار ساخته باید بزرگتر از صفر باشد.');
+  }
+
+  let writer = pb;
+  if (!(pb as any)._store) {
+    try {
+      const { getPocketBaseServiceClient } = await import('@/lib/pocketbase-service');
+      writer = await getPocketBaseServiceClient();
+    } catch {
+      writer = pb;
+    }
+  }
+
+  const { buildWorkmanshipPurchaseJournalLines, resolveWorkmanshipAccountMapping } = await import('./workmanship-accounting');
+  const accountMapping = await resolveWorkmanshipAccountMapping(writer);
+  const mapping = { ...accountMapping, ...params.mapping };
+
+  const lines = buildWorkmanshipPurchaseJournalLines({
+    amountRials: roundedAmount,
+    exactAmountRials: params.exactAmountRials,
+    roundingDifference: params.roundingDifference,
+    workmanshipName: params.workmanshipName,
+    weightGrams: params.weightGrams,
+    convertedWeight750: params.convertedWeight750,
+    quantity: params.quantity,
+    customerId: params.customer.id,
+    customerName: params.customer.name,
+    mapping,
+  });
+
+  const weightDesc = params.weightGrams && params.weightGrams > 0 ? ` (${params.weightGrams.toFixed(3)} گرم)` : '';
+  const desc =
+    params.description ||
+    `خرید کار ساخته ${params.workmanshipName}${weightDesc} از طرف‌حساب ${params.customer.name} (سند ${params.documentNumber})`;
+
+  return postJournalEntry(
+    {
+      description: desc,
+      sourceType: 'document',
+      sourceId: params.documentId,
+      sourceKey: `workmanship:purchase:${params.documentId}`,
+      entryDateJalali: params.entryDateJalali,
       userId: params.userId,
       lines,
     },

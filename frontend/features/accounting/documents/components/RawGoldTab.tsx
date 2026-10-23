@@ -151,6 +151,9 @@ export type DetailState = {
   stoneInternalCode?: string;
   stoneVerificationStatus?: string;
   unsettledReferenceId?: string;
+  wageTotalAmount?: string;
+  hasChildLines?: boolean;
+  isChildLine?: boolean;
 };
 
 export type DocumentLine = {

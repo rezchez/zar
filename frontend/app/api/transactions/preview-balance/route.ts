@@ -199,10 +199,12 @@ export async function POST(request: Request) {
           transactionEffect.gold += weightDirection * convertedWeight;
         }
       } else if (docTab === 'workmanship') {
-        const weight = typeof line.converted750 === 'number' && Number.isFinite(line.converted750)
-          ? line.converted750
-          : numberValue(details.rawWeight);
-        transactionEffect.gold += direction * weight;
+        if (line.documentSubType !== 'workmanship-wage') {
+          const weight = typeof line.converted750 === 'number' && Number.isFinite(line.converted750)
+            ? line.converted750
+            : numberValue(details.rawWeight);
+          transactionEffect.gold += direction * weight;
+        }
       } else if (docTab === 'claim' && (details.claimWeight || details.rawWeight)) {
         const weight = numberValue(details.claimWeight || details.rawWeight);
         transactionEffect.gold += direction * weight;
@@ -228,7 +230,18 @@ export async function POST(request: Request) {
       } else if (docTab === 'coin') {
         rialAmount = numberValue(details.totalAmount);
       } else if (docTab === 'workmanship') {
-        rialAmount = numberValue(details.totalAmount || details.metalTotalPrice);
+        if (line.documentSubType !== 'workmanship-golden-percentage') {
+          const wageCur = normalizeCurrencyCode(String(details.wageCurrency || details.currencyUnit || ''));
+          const isForeignWage = Boolean(wageCur && wageCur !== 'IRR' && wageCur !== 'IRT');
+          if (!isForeignWage) {
+            const rawAmt = numberValue(details.totalAmount || details.metalTotalPrice);
+            const isToman =
+              wageCur === 'IRT' ||
+              details.baseCurrency === 'IRT' ||
+              body?.baseCurrency === 'IRT';
+            rialAmount = isToman && !details.rialAmountInIrr ? convertTomanToRial(rawAmt) : rawAmt;
+          }
+        }
       } else if (docTab === 'claim' && (details.claimFinancial || details.totalAmount)) {
         const rawAmt = numberValue(details.claimFinancial || details.totalAmount);
         const isToman =
@@ -327,6 +340,20 @@ export async function POST(request: Request) {
         foreignAmount = numberValue(details.totalAmount);
         if (foreignAmount > 0) {
           transactionEffect.foreign += direction * foreignAmount;
+        }
+      } else if (docTab === 'workmanship') {
+        if (line.documentSubType !== 'workmanship-golden-percentage') {
+          const wageCur = normalizeCurrencyCode(String(details.wageCurrency || details.currencyUnit || ''));
+          const isForeignWage = Boolean(wageCur && wageCur !== 'IRR' && wageCur !== 'IRT');
+          if (isForeignWage) {
+            foreignAmount = numberValue(details.totalAmount || details.wage);
+            if (foreignAmount > 0) {
+              transactionEffect.foreign += direction * foreignAmount;
+              if (!previousBalance.secondaryCurrency) {
+                previousBalance.secondaryCurrency = wageCur;
+              }
+            }
+          }
         }
       }
     }

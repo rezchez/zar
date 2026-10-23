@@ -959,6 +959,12 @@ export default function DocumentForm({
     (curr: string) => {
       setSelectedCurrency(curr);
       updateDraftDetail('settlementCurrencyUnit', curr);
+      updateDraftDetail('wageCurrency', curr);
+      updateDraftDetail('wageCurrencyUnit', curr);
+      const quoteRate = getQuoteRateInRials(quotes, curr);
+      if (quoteRate > 0) {
+        updateDraftDetail('wageCurrencyRate', String(quoteRate));
+      }
       const isCurrency =
         draftLine.documentTab === 'currency' ||
         draftLine.sourceTab === 'currency' ||
@@ -1212,7 +1218,8 @@ export default function DocumentForm({
                 line.documentTab === 'gold-sale' ||
                 line.documentTab === 'refining' ||
                 line.documentTab === 'workmanship') &&
-              line.details.refiningOpKind !== 'fee';
+              line.details.refiningOpKind !== 'fee' &&
+              line.documentSubType !== 'workmanship-wage';
 
             const hasLinkedPhysical = line.documentTab === 'gold-sale' && Boolean(line.details?.linkedLineId);
 
@@ -1269,6 +1276,27 @@ export default function DocumentForm({
               ? numberValue(line.details.claimWeight || line.details.rawWeight || '')
               : 0;
 
+            const isWorkmanshipRow = line.documentTab === 'workmanship' || line.sourceTab === 'workmanship';
+            const wageCurrency = String(line.details?.wageCurrency || line.details?.currencyUnit || '').trim().toUpperCase();
+            const isForeignWorkmanship = Boolean(
+              isWorkmanshipRow &&
+              line.documentSubType !== 'workmanship-golden-percentage' &&
+              wageCurrency &&
+              wageCurrency !== 'IRR' &&
+              wageCurrency !== 'IRT'
+            );
+            const isWorkmanshipToman =
+              isWorkmanshipRow &&
+              !isForeignWorkmanship &&
+              line.documentSubType !== 'workmanship-golden-percentage' &&
+              (wageCurrency === 'IRT' || line.details?.baseCurrency === 'IRT' || baseCurrency === 'IRT');
+            const rawWorkmanshipAmount = isWorkmanshipRow && line.documentSubType !== 'workmanship-golden-percentage'
+              ? numberValue(line.details?.totalAmount || '')
+              : 0;
+            const workmanshipRialAmount = isWorkmanshipToman
+              ? convertTomanToRial(rawWorkmanshipAmount)
+              : Math.round(rawWorkmanshipAmount);
+
             return {
               documentNature: line.documentNature,
               documentTab: line.documentTab,
@@ -1277,6 +1305,7 @@ export default function DocumentForm({
               settlementMethod: line.settlementMethod,
               balanceSource: line.balanceSource,
               description: line.description,
+              foreignCurrency: isForeignWorkmanship ? wageCurrency : undefined,
               documentDetails: isStoneRow
                 ? {
                     ...line.details,
@@ -1301,7 +1330,13 @@ export default function DocumentForm({
                         claimFinancial: rawClaimFinancial > 0 ? String(rawClaimFinancial) : line.details.claimFinancial,
                         claimWeight: rawClaimWeight > 0 ? String(rawClaimWeight) : line.details.claimWeight,
                       }
-                    : line.details,
+                    : isWorkmanshipRow && isWorkmanshipToman && workmanshipRialAmount > 0
+                      ? {
+                          ...line.details,
+                          amountInIrr: workmanshipRialAmount,
+                          rialAmountInIrr: true,
+                        }
+                      : line.details,
               goldAmount: isMetalRow && metalType === 'gold' ? weightValue : (isClaimRow && metalType === 'gold' ? rawClaimWeight : 0),
               silverAmount: isMetalRow && metalType === 'silver' ? weightValue : (isClaimRow && metalType === 'silver' ? rawClaimWeight : 0),
               platinumAmount: isMetalRow && metalType === 'platinum' ? weightValue : (isClaimRow && metalType === 'platinum' ? rawClaimWeight : 0),
@@ -1312,17 +1347,19 @@ export default function DocumentForm({
                     ? bankRialAmount
                     : isClaimRow
                       ? claimRialAmount
-                      : line.documentTab === 'currency'
-                        ? (line.documentSubType === 'currency-claim' || line.documentSubType === 'currency-debt'
-                            ? 0
-                            : numberValue(line.details.currencyTotalAmount))
-                        : line.documentTab === 'cash' && !line.details.isForeignCash
-                          ? numberValue(line.details.totalAmount)
-                          : line.documentTab === 'gold-sale'
+                      : isWorkmanshipRow
+                        ? (isForeignWorkmanship || line.documentSubType === 'workmanship-golden-percentage' ? 0 : workmanshipRialAmount)
+                        : line.documentTab === 'currency'
+                          ? (line.documentSubType === 'currency-claim' || line.documentSubType === 'currency-debt'
+                              ? 0
+                              : numberValue(line.details.currencyTotalAmount))
+                          : line.documentTab === 'cash' && !line.details.isForeignCash
                             ? numberValue(line.details.totalAmount)
-                            : line.documentTab === 'refining' && line.details.refiningOpKind === 'fee'
+                            : line.documentTab === 'gold-sale'
                               ? numberValue(line.details.totalAmount)
-                              : numberValue(line.details.totalAmount || ''),
+                              : line.documentTab === 'refining' && line.details.refiningOpKind === 'fee'
+                                ? numberValue(line.details.totalAmount)
+                                : numberValue(line.details.totalAmount || ''),
               foreignAmount:
                 isStoneRow
                   ? stoneForeignAmount
@@ -1334,7 +1371,9 @@ export default function DocumentForm({
                         : 0)
                     : line.documentTab === 'cash' && line.details.isForeignCash
                       ? numberValue(line.details.totalAmount)
-                      : 0,
+                      : isForeignWorkmanship && line.documentSubType === 'workmanship-wage'
+                        ? rawWorkmanshipAmount
+                        : 0,
               tertiaryAmount: 0,
             };
           }),
@@ -1527,6 +1566,7 @@ export default function DocumentForm({
           currentRefiningOpKind,
           currentLine?.details?.workmanshipOptionId,
           currentLine?.documentSubType,
+          currentLine?.details?.metalType,
         );
 
   const commitRowLabel = editingLineId
@@ -1884,6 +1924,10 @@ export default function DocumentForm({
               handleKeyDownEnter={handleKeyDownEnter}
               draftReady={draftReady}
               baseCurrency={baseCurrency}
+              selectedCurrency={selectedCurrency}
+              currencyLabel={activeCurrencies.find((c) => c.code.toUpperCase() === (selectedCurrency || '').toUpperCase())?.name}
+              activeCurrencies={activeCurrencies}
+              selectedCustomer={selectedCustomer}
             />
           )}
         />

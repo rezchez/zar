@@ -68,6 +68,7 @@ export type DetailState = {
   workmanshipName?: string;
   workmanshipOptionId?: number;
   workmanshipOptionLabel?: string;
+  workmanshipReturnSourceId?: string;
   quantity?: string;
   coinType?: string;
   coinName?: string;
@@ -76,6 +77,9 @@ export type DetailState = {
   unitWeight?: string;
   wage?: string;
   wageMode?: 'per_gram' | 'per_item';
+  wageCurrency?: string;
+  wageCurrencyUnit?: string;
+  wageCurrencyRate?: string;
   goldenPercentage?: string;
   profitPercentage?: string;
   metalTotalPrice?: string;
@@ -151,6 +155,9 @@ export type DetailState = {
   stoneInternalCode?: string;
   stoneVerificationStatus?: string;
   unsettledReferenceId?: string;
+  wageTotalAmount?: string;
+  hasChildLines?: boolean;
+  isChildLine?: boolean;
 };
 
 export type DocumentLine = {

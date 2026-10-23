@@ -154,6 +154,7 @@ function getLineSortValue(
           line.details.refiningOpKind,
           line.details.workmanshipOptionId,
           line.documentSubType,
+          line.details.metalType,
         );
       return docType || '';
     }
@@ -229,6 +230,13 @@ function getLineSortValue(
         }
         return 0;
       }
+      if (line.documentTab === 'workmanship' || line.sourceTab === 'workmanship') {
+        const wc = String(line.details.wageCurrency || line.details.currencyUnit || '').trim().toUpperCase();
+        if (wc && wc !== 'IRR' && wc !== 'IRT' && line.documentNature === 'paid') {
+          return numberValue(line.details.totalAmount || line.details.wage);
+        }
+        return 0;
+      }
       if (line.documentTab !== 'currency') return 0;
       if (
         line.documentSubType === 'currency-claim' ||
@@ -243,6 +251,13 @@ function getLineSortValue(
         const sc = String(line.details.settlementCurrencyUnit || 'USD').trim().toUpperCase();
         if (sc !== 'IRR' && sc !== 'IRT' && line.documentNature === 'received') {
           return numberValue(line.details.stoneTotalAmount || line.details.totalAmount);
+        }
+        return 0;
+      }
+      if (line.documentTab === 'workmanship' || line.sourceTab === 'workmanship') {
+        const wc = String(line.details.wageCurrency || line.details.currencyUnit || '').trim().toUpperCase();
+        if (wc && wc !== 'IRR' && wc !== 'IRT' && line.documentNature === 'received') {
+          return numberValue(line.details.totalAmount || line.details.wage);
         }
         return 0;
       }
@@ -263,6 +278,12 @@ function getLineSortValue(
           ? numberValue(line.details.stoneTotalAmount || line.details.totalAmount)
           : 0;
       }
+      if (line.documentTab === 'workmanship' || line.sourceTab === 'workmanship') {
+        const wc = String(line.details.wageCurrency || line.details.currencyUnit || '').trim().toUpperCase();
+        return (wc === 'IRR' || wc === 'IRT' || !wc)
+          ? numberValue(line.details.totalAmount)
+          : 0;
+      }
       return line.documentTab === 'currency'
         ? numberValue(line.details.currencyTotalAmount)
         : numberValue(line.details.claimFinancial || line.details.totalAmount);
@@ -273,6 +294,12 @@ function getLineSortValue(
         const sc = String(line.details.settlementCurrencyUnit || 'USD').trim().toUpperCase();
         return sc === 'IRR' || sc === 'IRT'
           ? numberValue(line.details.stoneTotalAmount || line.details.totalAmount)
+          : 0;
+      }
+      if (line.documentTab === 'workmanship' || line.sourceTab === 'workmanship') {
+        const wc = String(line.details.wageCurrency || line.details.currencyUnit || '').trim().toUpperCase();
+        return (wc === 'IRR' || wc === 'IRT' || !wc)
+          ? numberValue(line.details.totalAmount)
           : 0;
       }
       return line.documentTab === 'currency'
@@ -550,6 +577,10 @@ export default function CommittedLinesTable({
           const sc = String(l.details?.settlementCurrencyUnit || 'USD').trim().toUpperCase();
           return sc !== 'IRR' && sc !== 'IRT';
         }
+        if (l.documentTab === 'workmanship' || l.sourceTab === 'workmanship') {
+          const wc = String(l.details?.wageCurrency || l.details?.currencyUnit || '').trim().toUpperCase();
+          return Boolean(wc && wc !== 'IRR' && wc !== 'IRT');
+        }
         return false;
       })
     );
@@ -710,6 +741,13 @@ export default function CommittedLinesTable({
         }
         return sum;
       }
+      if (l.documentTab === 'workmanship' || l.sourceTab === 'workmanship') {
+        const wc = String(l.details.wageCurrency || l.details.currencyUnit || '').trim().toUpperCase();
+        if (wc && wc !== 'IRR' && wc !== 'IRT' && l.documentNature === 'paid' && l.documentSubType !== 'workmanship-golden-percentage') {
+          return sum + numberValue(l.details.totalAmount || l.details.wage);
+        }
+        return sum;
+      }
       if (
         l.documentTab === 'currency' &&
         (l.documentSubType === 'currency-claim' ||
@@ -730,6 +768,13 @@ export default function CommittedLinesTable({
         }
         return sum;
       }
+      if (l.documentTab === 'workmanship' || l.sourceTab === 'workmanship') {
+        const wc = String(l.details.wageCurrency || l.details.currencyUnit || '').trim().toUpperCase();
+        if (wc && wc !== 'IRR' && wc !== 'IRT' && l.documentNature === 'received' && l.documentSubType !== 'workmanship-golden-percentage') {
+          return sum + numberValue(l.details.totalAmount || l.details.wage);
+        }
+        return sum;
+      }
       if (
         l.documentTab === 'currency' &&
         (l.documentSubType === 'currency-debt' ||
@@ -743,12 +788,18 @@ export default function CommittedLinesTable({
 
   const totalBedehkarMali = useMemo(() => {
     return committedLines
-      .filter((l) => l.documentNature === 'paid' && l.documentSubType !== 'currency-claim' && l.documentSubType !== 'currency-debt')
+      .filter((l) => l.documentNature === 'paid' && l.documentSubType !== 'currency-claim' && l.documentSubType !== 'currency-debt' && l.documentSubType !== 'workmanship-golden-percentage')
       .reduce((sum, l) => {
         if (l.documentTab === 'stone') {
           const sc = String(l.details.settlementCurrencyUnit || 'USD').trim().toUpperCase();
           return sc === 'IRR' || sc === 'IRT'
             ? sum + numberValue(l.details.stoneTotalAmount || l.details.totalAmount)
+            : sum;
+        }
+        if (l.documentTab === 'workmanship' || l.sourceTab === 'workmanship') {
+          const wc = String(l.details.wageCurrency || l.details.currencyUnit || '').trim().toUpperCase();
+          return (wc === 'IRR' || wc === 'IRT' || !wc)
+            ? sum + numberValue(l.details.totalAmount)
             : sum;
         }
         const amount =
@@ -761,12 +812,18 @@ export default function CommittedLinesTable({
 
   const totalBostankarMali = useMemo(() => {
     return committedLines
-      .filter((l) => l.documentNature === 'received' && l.documentSubType !== 'currency-claim' && l.documentSubType !== 'currency-debt')
+      .filter((l) => l.documentNature === 'received' && l.documentSubType !== 'currency-claim' && l.documentSubType !== 'currency-debt' && l.documentSubType !== 'workmanship-golden-percentage')
       .reduce((sum, l) => {
         if (l.documentTab === 'stone') {
           const sc = String(l.details.settlementCurrencyUnit || 'USD').trim().toUpperCase();
           return sc === 'IRR' || sc === 'IRT'
             ? sum + numberValue(l.details.stoneTotalAmount || l.details.totalAmount)
+            : sum;
+        }
+        if (l.documentTab === 'workmanship' || l.sourceTab === 'workmanship') {
+          const wc = String(l.details.wageCurrency || l.details.currencyUnit || '').trim().toUpperCase();
+          return (wc === 'IRR' || wc === 'IRT' || !wc)
+            ? sum + numberValue(l.details.totalAmount)
             : sum;
         }
         const amount =

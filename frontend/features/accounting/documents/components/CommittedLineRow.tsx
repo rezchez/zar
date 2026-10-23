@@ -1,13 +1,14 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import { ArrowLeftRight, Coins, Flame, PencilLine, Sparkles, Trash2 } from 'lucide-react';
+import { ArrowLeftRight, Coins, Flame, PencilLine, Scale, Sparkles, Trash2 } from 'lucide-react';
 import { TableRow, TableCell } from '@/components/ui/data-table';
 import type { DocumentLine } from '@/src/components/documents/RawGoldTab';
 import {
   actualWeightFromMoney,
   faNumber,
   getLineDocumentTypeLabel,
+  getWorkmanshipPercentageLabel,
   numberValue,
   toPersianDigits,
   isMetalBearingLine,
@@ -73,6 +74,7 @@ export default function CommittedLineRow({
       line.details.refiningOpKind,
       line.details.workmanshipOptionId,
       line.documentSubType,
+      line.details.metalType,
     );
 
   const isMetalLine = isMetalBearingLine(line);
@@ -127,12 +129,28 @@ export default function CommittedLineRow({
     }
   }
 
+  // Workmanship foreign currency check
+  const isWorkmanship = line.documentTab === 'workmanship' || line.sourceTab === 'workmanship';
+  const workmanshipWageCurrency = String(line.details?.wageCurrency || line.details?.currencyUnit || '').trim().toUpperCase();
+  const isForeignWorkmanship = Boolean(
+    isWorkmanship &&
+    line.documentSubType !== 'workmanship-golden-percentage' &&
+    workmanshipWageCurrency &&
+    workmanshipWageCurrency !== 'IRR' &&
+    workmanshipWageCurrency !== 'IRT'
+  );
+  const workmanshipWageAmount = isForeignWorkmanship
+    ? numberValue(line.details?.totalAmount || line.details?.wage)
+    : 0;
+
   // Currency column values
   const currencyQty = isCurrency ? numberValue(line.details.currencyQuantity) : 0;
   const currencyUnit = isCurrency
     ? (line.details.currencyUnit || 'USD')
     : isForeignStone
     ? stoneCurrency
+    : isForeignWorkmanship
+    ? workmanshipWageCurrency
     : '-';
 
   let bedehkarArzi: string | null = null;
@@ -151,6 +169,13 @@ export default function CommittedLineRow({
     } else if (isReceived) {
       bostankarArzi = faNumber(stoneAmount, decimals);
     }
+  } else if (isForeignWorkmanship && workmanshipWageAmount > 0) {
+    const decimals = Number.isInteger(workmanshipWageAmount) ? 0 : 2;
+    if (isPaid) {
+      bedehkarArzi = faNumber(workmanshipWageAmount, decimals);
+    } else if (isReceived) {
+      bostankarArzi = faNumber(workmanshipWageAmount, decimals);
+    }
   }
 
   // Financial amounts
@@ -158,6 +183,10 @@ export default function CommittedLineRow({
     ? (isClaimLine || isDebtLine ? 0 : numberValue(line.details.currencyTotalAmount))
     : isStone
     ? (isForeignStone ? 0 : stoneAmount)
+    : isForeignWorkmanship
+    ? 0
+    : line.documentSubType === 'workmanship-golden-percentage'
+    ? 0
     : numberValue(line.details.claimFinancial || line.details.totalAmount);
 
   const bedehkarMali = isPaid && financialAmount > 0 ? faNumber(financialAmount, 0) : null;
@@ -228,7 +257,17 @@ export default function CommittedLineRow({
               ری‌گیری
             </span>
           ) : null}
-          {(line.documentTab === 'workmanship' || line.sourceTab === 'workmanship') ? (
+          {line.documentSubType === 'workmanship-golden-percentage' ? (
+            <span className="inline-flex items-center gap-0.5 rounded bg-amber-100 px-1 py-0.5 text-[9px] font-extrabold text-amber-900 border border-amber-300/80 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800 shrink-0">
+              <Scale size={10} className="text-amber-600 dark:text-amber-400 shrink-0" />
+              {getWorkmanshipPercentageLabel(line.details?.metalType)}
+            </span>
+          ) : line.documentSubType === 'workmanship-wage' ? (
+            <span className="inline-flex items-center gap-0.5 rounded bg-emerald-100 px-1 py-0.5 text-[9px] font-extrabold text-emerald-900 border border-emerald-300/80 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800 shrink-0">
+              <Coins size={10} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+              اجرت مالی
+            </span>
+          ) : (line.documentTab === 'workmanship' || line.sourceTab === 'workmanship') ? (
             <span className="inline-flex items-center gap-0.5 rounded bg-amber-100 px-1 py-0.5 text-[9px] font-extrabold text-amber-900 border border-amber-300/80 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800 shrink-0">
               <Sparkles size={10} className="text-amber-600 dark:text-amber-400 shrink-0" />
               کار ساخته
@@ -242,6 +281,9 @@ export default function CommittedLineRow({
           ) : null}
           <div className="min-w-0 flex-1">
             <span className="font-semibold text-xs text-slate-800 dark:text-slate-200 truncate block w-full" title={docType}>
+              {line.details?.linkedLineId && (line.documentSubType === 'workmanship-golden-percentage' || line.documentSubType === 'workmanship-wage') ? (
+                <span className="text-slate-400 dark:text-slate-500 font-bold ml-1">↳</span>
+              ) : null}
               {docType}
             </span>
             {line.details?.workmanshipName && !hasWorkmanshipLines && (line.documentTab === 'workmanship' || line.sourceTab === 'workmanship') ? (

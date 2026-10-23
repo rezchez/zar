@@ -962,10 +962,12 @@ function computeDocumentCustomTableValues(
         effectGold += weightDirection * convertedWeight;
       }
     } else if (docTab === 'workmanship' || docTab === 'claim') {
-      const weight = typeof line.converted750 === 'number' && Number.isFinite(line.converted750)
-        ? line.converted750
-        : (Number(det.claimWeight || det.rawWeight) || 0);
-      effectGold += direction * weight;
+      if (line.documentSubType !== 'workmanship-wage') {
+        const weight = typeof line.converted750 === 'number' && Number.isFinite(line.converted750)
+          ? line.converted750
+          : (Number(det.claimWeight || det.rawWeight) || 0);
+        effectGold += direction * weight;
+      }
     }
 
     // Financial effect
@@ -983,7 +985,9 @@ function computeDocumentCustomTableValues(
       const rawClaimAmt = Number(det.claimFinancial || det.totalAmount) || 0;
       lineRial = (isToman && !det.rialAmountInIrr) ? rawClaimAmt * 10 : rawClaimAmt;
     } else if (docTab === 'coin' || docTab === 'workmanship') {
-      lineRial = Number(det.totalAmount || det.metalTotalPrice) || 0;
+      if (line.documentSubType !== 'workmanship-golden-percentage') {
+        lineRial = Number(det.totalAmount || det.metalTotalPrice) || 0;
+      }
     }
     if (lineRial > 0) {
       effectRial += direction * lineRial;

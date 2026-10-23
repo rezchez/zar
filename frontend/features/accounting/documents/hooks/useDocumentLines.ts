@@ -16,7 +16,9 @@ import {
   actualWeightFromMoney,
   convertedTo750,
   getLineDocumentTypeLabel,
+  getWorkmanshipPercentageLabel,
   numberValue,
+  toPersianDigits,
   isMetalBearingTab,
   isMetalBearingLine,
   sanitizeLineDetailsForTab,
@@ -904,6 +906,7 @@ export function useDocumentLines({
               activeDraft.details.refiningOpKind,
               activeDraft.details.workmanshipOptionId,
               activeDraft.documentSubType,
+              activeDraft.details.metalType,
             );
 
     const effectiveTab = lineSourceTab || activeDraft.documentTab || activeEntryTab || 'metals';
@@ -1001,6 +1004,137 @@ export function useDocumentLines({
       physicalDocNature === 'received'
         ? activeDraft.details.rawKind === 'misc' ? 'incoming-misc' : 'incoming-molten'
         : activeDraft.details.rawKind === 'misc' ? 'outgoing-misc' : 'outgoing-molten';
+
+    // Workmanship Operation details & Sub-rows preparation (ورود/خروج کار ساخته و مرجوعی)
+    const isWorkmanshipLine =
+      lineSourceTab === 'workmanship' ||
+      activeDraft.documentTab === 'workmanship' ||
+      activeEntryTab === 'workmanship';
+
+    const workmanshipOptId = Number(activeDraft.details.workmanshipOptionId || 1);
+    const isWorkmanshipPhysicalOp = isWorkmanshipLine && (workmanshipOptId === 1 || workmanshipOptId === 3);
+
+    const numGoldenPct = numberValue(activeDraft.details.goldenPercentage);
+    const numWage = numberValue(activeDraft.details.wage);
+    const wageMode = activeDraft.details.wageMode || 'per_gram';
+    const quantity = parseInt(activeDraft.details.quantity || '1', 10) || 1;
+    const wageCurrency = (activeDraft.details.wageCurrency || activeDraft.details.currencyUnit || effectiveCurrencyUnit).trim().toUpperCase();
+    const isForeignWage = wageCurrency !== 'IRR' && wageCurrency !== 'IRT';
+    const rawTWage = wageMode === 'per_gram' ? rawWeight * numWage : quantity * numWage;
+    const calcTWage = isForeignWage ? Math.round(rawTWage * 100) / 100 : Math.round(rawTWage);
+    const totalWageAmount = numberValue(activeDraft.details.totalAmount) || calcTWage;
+    const weightPrecision = settings?.weightDecimalPlaces ?? 3;
+
+    const hasWorkmanshipGoldenPct = isWorkmanshipPhysicalOp && numGoldenPct > 0 && rawWeight > 0;
+    const hasWorkmanshipWage = isWorkmanshipPhysicalOp && (totalWageAmount > 0 || numWage > 0);
+    const hasWorkmanshipSubRows = isWorkmanshipPhysicalOp && (hasWorkmanshipGoldenPct || hasWorkmanshipWage);
+
+    const workmanshipLinesToCommit: DocumentLine[] = [];
+    if (isWorkmanshipPhysicalOp) {
+      const mainLineId = editingLineId || activeDraft.id || generateUUID();
+      const stdConvertedWeight = baseKarat > 0 ? (rawWeight * Number(activeDraft.details?.purity || baseKarat)) / baseKarat : rawWeight;
+      const wName = activeDraft.details.workmanshipName?.trim() || '';
+
+      const mainLineToCommit: DocumentLine = {
+        ...lineToCommit,
+        id: mainLineId,
+        converted750: stdConvertedWeight,
+        details: {
+          ...lineToCommit.details,
+          baseKarat,
+          convertedWeight: stdConvertedWeight.toFixed(weightPrecision),
+          totalAmount: hasWorkmanshipWage ? '' : (lineToCommit.details.totalAmount || ''),
+          currencyTotalAmount: hasWorkmanshipWage ? '' : (lineToCommit.details.currencyTotalAmount || ''),
+          wageTotalAmount: totalWageAmount > 0 ? String(totalWageAmount) : '',
+          hasChildLines: hasWorkmanshipSubRows,
+        },
+      };
+
+      workmanshipLinesToCommit.push(mainLineToCommit);
+
+      if (hasWorkmanshipGoldenPct) {
+        const goldenWeight = rawWeight * (numGoldenPct / 100);
+        const goldenWeightStr = goldenWeight.toFixed(weightPrecision);
+        const goldenLineId = generateUUID();
+        const metalType = activeDraft.details.metalType || 'gold';
+        const pctLabel = getWorkmanshipPercentageLabel(metalType);
+        const goldenLineToCommit: DocumentLine = {
+          id: goldenLineId,
+          documentNature: lineNature,
+          documentTab: 'workmanship',
+          sourceTab: 'workmanship',
+          documentSubType: 'workmanship-golden-percentage',
+          documentTypeLabel: `${pctLabel} کارساخته (${toPersianDigits(activeDraft.details.goldenPercentage || '')}٪)`,
+          settlementMethod: 'weight',
+          balanceSource: 'current',
+          converted750: goldenWeight,
+          description: wName
+            ? `بابت ${pctLabel} کارساخته (${toPersianDigits(activeDraft.details.goldenPercentage || '')}٪) - ${wName}`
+            : `بابت ${pctLabel} کارساخته (${toPersianDigits(activeDraft.details.goldenPercentage || '')}٪)`,
+          details: {
+            ...cleanDetails,
+            metalType,
+            rawKind: 'molten',
+            rawWeight: goldenWeightStr,
+            purity: String(baseKarat),
+            baseKarat,
+            convertedWeight: goldenWeightStr,
+            workmanshipName: wName,
+            goldenPercentage: activeDraft.details.goldenPercentage,
+            totalAmount: '',
+            currencyTotalAmount: '',
+            currencyQuantity: '',
+            currencyUnitPrice: '',
+            wage: '',
+            linkedLineId: mainLineId,
+            isChildLine: true,
+          },
+        };
+        workmanshipLinesToCommit.push(goldenLineToCommit);
+      }
+
+      if (hasWorkmanshipWage) {
+        const wageLineId = generateUUID();
+        const wageSuffix = wageCurrency === 'IRT' ? 'تومان' : wageCurrency === 'IRR' ? 'ریال' : wageCurrency;
+        const wageRateDesc = numWage > 0 ? ` (${toPersianDigits(activeDraft.details.wage || '')} ${wageSuffix} ${wageMode === 'per_gram' ? 'فی گرم' : 'عددی'})` : '';
+        const wageLineToCommit: DocumentLine = {
+          id: wageLineId,
+          documentNature: lineNature,
+          documentTab: 'workmanship',
+          sourceTab: 'workmanship',
+          documentSubType: 'workmanship-wage',
+          documentTypeLabel: 'اجرت کارساخته',
+          settlementMethod: 'cash',
+          balanceSource: 'current',
+          converted750: 0,
+          description: wName
+            ? `بابت اجرت کارساخته - ${wName}${wageRateDesc}`
+            : `بابت اجرت کارساخته${wageRateDesc}`,
+          details: {
+            ...cleanDetails,
+            metalType: activeDraft.details.metalType || 'gold',
+            rawKind: 'molten',
+            rawWeight: '',
+            purity: '',
+            baseKarat,
+            convertedWeight: '0',
+            workmanshipName: wName,
+            wage: activeDraft.details.wage,
+            wageMode: wageMode,
+            totalAmount: String(totalWageAmount),
+            currencyTotalAmount: isForeignWage ? String(totalWageAmount) : '',
+            currencyUnitPrice: isForeignWage ? String(numWage) : '',
+            currencyQuantity: isForeignWage ? String(totalWageAmount) : '',
+            wageCurrency: wageCurrency,
+            currencyUnit: wageCurrency,
+            wageCurrencyUnit: wageCurrency,
+            linkedLineId: mainLineId,
+            isChildLine: true,
+          },
+        };
+        workmanshipLinesToCommit.push(wageLineToCommit);
+      }
+    }
 
     if (editingLineId) {
       if (isSettledMetalTrade) {
@@ -1228,6 +1362,23 @@ export function useDocumentLines({
                 ? 'ردیف خرید ارز با تسویه آنی ویرایش شد.'
                 : 'ردیف فروش ارز با تسویه آنی ویرایش شد.')
         );
+      } else if (isWorkmanshipPhysicalOp) {
+        setCommittedLines((current) => {
+          const updated: DocumentLine[] = [];
+          for (const line of current) {
+            if (line.id === editingLineId) {
+              updated.push(...workmanshipLinesToCommit);
+            } else if (line.details?.linkedLineId === editingLineId) {
+              // Existing child line, replace with new child lines
+              continue;
+            } else {
+              updated.push(line);
+            }
+          }
+          return updated;
+        });
+        setEditingLineId(null);
+        toast.success('ردیف کار ساخته با ردیف‌های فرعی ویرایش شد.');
       } else {
         const linkedId = draftLine.details?.linkedLineId;
         setCommittedLines((current) => {
@@ -1373,6 +1524,13 @@ export function useDocumentLines({
               : 'ردیف فروش ارز با تسویه آنی ثبت شد.',
           );
         }
+      } else if (isWorkmanshipPhysicalOp && hasWorkmanshipSubRows) {
+        setCommittedLines((current) => [...current, ...workmanshipLinesToCommit]);
+        toast.success(
+          lineNature === 'received'
+            ? 'ردیف ورود کار ساخته و ردیف‌های مربوطه به سند اضافه شدند.'
+            : 'ردیف خروج کار ساخته و ردیف‌های مربوطه به سند اضافه شدند.',
+        );
       } else {
         setCommittedLines((current) => [...current, lineToCommit]);
         toast.success('ردیف به سند اضافه شد.');
@@ -1442,21 +1600,32 @@ export function useDocumentLines({
 
   const editLine = (line: DocumentLine) => {
     if (
-      (line.documentSubType === 'currency-claim' || line.documentSubType === 'currency-debt') &&
+      (line.documentSubType === 'currency-claim' ||
+        line.documentSubType === 'currency-debt' ||
+        line.documentSubType === 'workmanship-golden-percentage' ||
+        line.documentSubType === 'workmanship-wage') &&
       line.details?.linkedLineId
     ) {
       const parentLine = committedLines.find((l) => l.id === line.details.linkedLineId);
       if (parentLine) {
         setEditingLineId(parentLine.id);
-        setDraftLine({ ...parentLine });
+        const restoredDetails = {
+          ...parentLine.details,
+          totalAmount: parentLine.details.wageTotalAmount || parentLine.details.totalAmount || '',
+        };
+        setDraftLine({ ...parentLine, details: restoredDetails });
         return;
       }
     }
     const baseCurr = (settings?.baseCurrency || 'IRR') as string;
     const baseK = purityForMetal(line.details?.metalType || 'gold');
     const cleanedLine = sanitizeDocumentLine(line, undefined, baseCurr, baseK);
+    const restoredDetails = {
+      ...cleanedLine.details,
+      totalAmount: cleanedLine.details.wageTotalAmount || cleanedLine.details.totalAmount || '',
+    };
     setEditingLineId(cleanedLine.id);
-    setDraftLine(cleanedLine);
+    setDraftLine({ ...cleanedLine, details: restoredDetails });
   };
 
   const cancelEdit = () => {

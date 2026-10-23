@@ -34,6 +34,10 @@ import {
   postReceivableChequeTransfer,
   postBankPaymentToCustomer,
   postBankReceiptFromCustomer,
+  postWorkmanshipReturnEntry,
+  postWorkmanshipReturnExit,
+  postWorkmanshipSale,
+  postWorkmanshipPurchase,
 } from '@/features/accounting/posting/posting-engine';
 import { ensureChecksCollection } from '@/lib/check-collection';
 import { mapBankAccount } from '@/lib/bank';
@@ -399,6 +403,66 @@ export async function GET(request: Request) {
       });
     }
 
+    const workmanshipReturns = url.searchParams.get('workmanshipReturns') || url.searchParams.get('workmanshipExits') || url.searchParams.get('workmanshipEntries');
+    if (workmanshipReturns) {
+      const targetCustomerId = (url.searchParams.get('customerId') ?? '').trim();
+      if (!targetCustomerId) {
+        return NextResponse.json({ items: [] });
+      }
+
+      const reqNature = (url.searchParams.get('nature') ?? (url.searchParams.has('workmanshipEntries') ? 'received' : 'paid')).trim().toLowerCase();
+      const isPaidSearch = reqNature === 'paid' || reqNature === 'pay';
+      const natureFilter = isPaidSearch
+        ? '(documentNature = "paid" || documentNature = "pay")'
+        : '(documentNature = "received" || documentNature = "receive")';
+
+      let reader = context.pb;
+      try {
+        const { getPocketBaseServiceClient } = await import('@/lib/pocketbase-service');
+        const servicePb = await getPocketBaseServiceClient();
+        if (servicePb) reader = servicePb;
+      } catch {}
+
+      const records = await reader.collection('transactions').getFullList({
+        filter: reader.filter(
+          `customer = {:customerId} && (documentTab = "workmanship" || sourceTab = "workmanship") && ${natureFilter} && is_deleted = false`,
+          { customerId: targetCustomerId },
+        ),
+        sort: '-transactionDate,-created',
+      }).catch(() => []);
+
+      const items = records
+        .map((rec) => {
+          let details: Record<string, any> = {};
+          try {
+            if (typeof rec.documentDetails === 'string') {
+              details = JSON.parse(rec.documentDetails);
+            } else if (rec.documentDetails && typeof rec.documentDetails === 'object') {
+              details = rec.documentDetails;
+            }
+          } catch {}
+
+          return {
+            id: rec.id,
+            documentId: rec.documentId,
+            documentNumber: rec.documentNumber,
+            documentDateJalali: rec.documentDateJalali,
+            workmanshipName: String(details.workmanshipName || rec.description || 'کار ساخته').trim(),
+            goldenPercentage: String(details.goldenPercentage || '').trim(),
+            purity: String(details.purity || details.baseKarat || '750').trim(),
+            wage: String(details.wage || '').trim(),
+            wageMode: (details.wageMode as 'per_gram' | 'per_item') || 'per_gram',
+            rawWeight: String(details.rawWeight || Math.abs(Number(rec.goldAmount) || 0) || '').trim(),
+            quantity: String(details.quantity || '1').trim(),
+            metalType: String(details.metalType || 'gold').trim(),
+            description: String(rec.description || '').trim(),
+          };
+        })
+        .filter((item) => Boolean(item.workmanshipName));
+
+      return NextResponse.json({ items });
+    }
+
     const customerId = url.searchParams.get('customerId') ?? '';
     if (customerId) {
       const docInfo = await getNextDocumentNumber(context.pb, customerId);
@@ -464,17 +528,24 @@ export async function POST(request: Request) {
     let preservedSequence: number | undefined;
     let preservedNumber: string | undefined;
 
+    let writer = context.pb;
+    try {
+      writer = await getPocketBaseServiceClient();
+    } catch {
+      // fallback
+    }
+
     // The document ID is the user-facing idempotency token; sourceKey is the
     // storage-level guard used for each row. Check both before creating a
     // financial document so a retry can never create another first line.
-    const existingFirstLine = await context.pb.collection('transactions').getFirstListItem(
-      context.pb.filter(
+    const existingFirstLine = await writer.collection('transactions').getFirstListItem(
+      writer.filter(
         'sourceKey = {:sourceKey} && is_deleted = false',
         { sourceKey: `document:${documentId}:1` },
       ),
     ).catch(() => null);
-    const existingDocument = await context.pb.collection('transactions').getFullList({
-      filter: context.pb.filter(
+    const existingDocument = await writer.collection('transactions').getFullList({
+      filter: writer.filter(
         'documentId = {:documentId} && is_deleted = false',
         { documentId },
       ),
@@ -499,23 +570,30 @@ export async function POST(request: Request) {
           preservedSequence = typeof recordsToDelete[0].documentSequence === 'number' ? recordsToDelete[0].documentSequence : undefined;
           preservedNumber = String(recordsToDelete[0].documentNumber ?? '');
           const deletedAt = new Date().toISOString();
-          for (const sibling of recordsToDelete) {
-            await context.pb.collection('transactions').update(sibling.id, {
+          const timestamp = Date.now();
+          for (let idx = 0; idx < recordsToDelete.length; idx++) {
+            const sibling = recordsToDelete[idx];
+            const oldSourceKey = sibling.sourceKey || `document:${documentId}:${sibling.documentLineNumber || idx + 1}`;
+            const oldDocNumber = String(sibling.documentNumber ?? '');
+            await writer.collection('transactions').update(sibling.id, {
               is_deleted: true,
               deleted_at: deletedAt,
               deleted_by: context.user.id,
-              sourceKey: `${sibling.sourceKey}:edited:${Date.now()}`,
+              sourceKey: `${oldSourceKey}:edited:${timestamp}:${sibling.id}`,
+              documentNumber: oldDocNumber ? `${oldDocNumber}:edited:${timestamp}:${sibling.id}` : '',
             });
           }
         }
-        const oldMetalInv = await context.pb.collection('metal_inventory').getFullList({
-          filter: context.pb.filter('document_id = {:docId} && is_deleted = false', { docId: documentId }),
+        const oldMetalInv = await writer.collection('metal_inventory').getFullList({
+          filter: writer.filter('document_id = {:docId} && is_deleted = false', { docId: documentId }),
         }).catch(() => []);
+        const invTimestamp = Date.now();
         for (const inv of oldMetalInv) {
-          await context.pb.collection('metal_inventory').update(inv.id, {
+          const oldSourceKey = inv.source_key || `document:${documentId}:metal`;
+          await writer.collection('metal_inventory').update(inv.id, {
             is_deleted: true,
             updated_by: context.user.id,
-            source_key: `${inv.source_key}:edited:${Date.now()}`,
+            source_key: `${oldSourceKey}:edited:${invTimestamp}:${inv.id}`,
           }).catch(() => null);
         }
       }
@@ -763,13 +841,6 @@ export async function POST(request: Request) {
         documentDetails: details,
       };
     });
-
-    let writer = context.pb;
-    try {
-      writer = await getPocketBaseServiceClient();
-    } catch {
-      // fallback
-    }
 
     // Validate that referenced cash funds and bank accounts are not blocked, and have sufficient balance
     const simulatedVaultBalances = new Map<string, number>();
@@ -1266,6 +1337,136 @@ export async function POST(request: Request) {
               );
             } catch (journalErr) {
               console.error('Failed to post stone purchase journal entry:', journalErr);
+            }
+          }
+
+          const isWorkmanship = prepared.line.documentTab === 'workmanship' || prepared.line.sourceTab === 'workmanship';
+          if (isWorkmanship && rialAmount > 0) {
+            const optId = Number(prepared.documentDetails.workmanshipOptionId || 1);
+            const subType = String(prepared.line.documentSubType || '');
+            const workmanshipName = String(prepared.documentDetails.workmanshipName || 'کار ساخته').trim();
+            const rawWeight = Number(prepared.documentDetails.rawWeight) || 0;
+            const purity = Number(prepared.documentDetails.purity) || 750;
+            const convertedWeight750 = (rawWeight * purity) / 750;
+            const quantity = Number(prepared.documentDetails.quantity) || 1;
+            const roundingDiff = Number(prepared.documentDetails.roundingDifference ?? 0);
+            const exactAmount = Number(prepared.documentDetails.exactCalculatedAmount ?? 0) || (rialAmount - roundingDiff);
+
+            // ۱. ورود مرجوعی (برگشت از فروش / Sales Return)
+            if (prepared.lineNature === 'received' && (optId === 3 || subType === 'return_entry' || subType === 'return_sale')) {
+              try {
+                await postWorkmanshipReturnEntry(
+                  {
+                    documentId: `${documentId}:${prepared.lineNumber}`,
+                    documentNumber: lineDocumentNumbers[index] || finalDocumentNumber,
+                    entryDateJalali: documentDateJalali,
+                    amountRials: rialAmount,
+                    exactAmountRials: exactAmount,
+                    roundingDifference: roundingDiff,
+                    workmanshipName,
+                    weightGrams: rawWeight,
+                    convertedWeight750,
+                    quantity,
+                    customer: {
+                      id: customer.id,
+                      name: customer.name,
+                      customerCode: Number(customer.customerCode ?? 0),
+                    },
+                    userId: context.user.id,
+                    description: readString(prepared.line.description ?? body.description, 500) || undefined,
+                  },
+                  writer,
+                );
+              } catch (journalErr) {
+                console.error('Failed to post workmanship return entry (sales return) journal entry:', journalErr);
+              }
+            }
+            // ۲. خروج مرجوعی (برگشت از خرید / Purchase Return)
+            else if (prepared.lineNature === 'paid' && (optId === 3 || subType === 'return_exit' || subType === 'return_buy')) {
+              try {
+                await postWorkmanshipReturnExit(
+                  {
+                    documentId: `${documentId}:${prepared.lineNumber}`,
+                    documentNumber: lineDocumentNumbers[index] || finalDocumentNumber,
+                    entryDateJalali: documentDateJalali,
+                    amountRials: rialAmount,
+                    exactAmountRials: exactAmount,
+                    roundingDifference: roundingDiff,
+                    workmanshipName,
+                    weightGrams: rawWeight,
+                    convertedWeight750,
+                    quantity,
+                    customer: {
+                      id: customer.id,
+                      name: customer.name,
+                      customerCode: Number(customer.customerCode ?? 0),
+                    },
+                    userId: context.user.id,
+                    description: readString(prepared.line.description ?? body.description, 500) || undefined,
+                  },
+                  writer,
+                );
+              } catch (journalErr) {
+                console.error('Failed to post workmanship return exit (purchase return) journal entry:', journalErr);
+              }
+            }
+            // ۳. فروش کار ساخته (Sale)
+            else if (prepared.lineNature === 'paid' && (optId === 2 || subType === 'sale_manufactured' || optId === 1 || subType === 'exit_manufactured')) {
+              try {
+                await postWorkmanshipSale(
+                  {
+                    documentId: `${documentId}:${prepared.lineNumber}`,
+                    documentNumber: lineDocumentNumbers[index] || finalDocumentNumber,
+                    entryDateJalali: documentDateJalali,
+                    amountRials: rialAmount,
+                    exactAmountRials: exactAmount,
+                    roundingDifference: roundingDiff,
+                    workmanshipName,
+                    weightGrams: rawWeight,
+                    convertedWeight750,
+                    quantity,
+                    customer: {
+                      id: customer.id,
+                      name: customer.name,
+                      customerCode: Number(customer.customerCode ?? 0),
+                    },
+                    userId: context.user.id,
+                    description: readString(prepared.line.description ?? body.description, 500) || undefined,
+                  },
+                  writer,
+                );
+              } catch (journalErr) {
+                console.error('Failed to post workmanship sale journal entry:', journalErr);
+              }
+            }
+            // ۴. خرید کار ساخته (Purchase)
+            else if (prepared.lineNature === 'received' && (optId === 2 || subType === 'buy_manufactured' || optId === 1 || subType === 'entry_manufactured')) {
+              try {
+                await postWorkmanshipPurchase(
+                  {
+                    documentId: `${documentId}:${prepared.lineNumber}`,
+                    documentNumber: lineDocumentNumbers[index] || finalDocumentNumber,
+                    entryDateJalali: documentDateJalali,
+                    amountRials: rialAmount,
+                    exactAmountRials: exactAmount,
+                    roundingDifference: roundingDiff,
+                    workmanshipName,
+                    weightGrams: rawWeight,
+                    convertedWeight750,
+                    quantity,
+                    customer: {
+                      id: customer.id,
+                      name: customer.name,
+                      customerCode: Number(customer.customerCode ?? 0),
+                    },
+                    userId: context.user.id,
+                    description: readString(prepared.line.description ?? body.description, 500) || undefined,
+                  },
+                  writer,
+                );
+              } catch (journalErr) {
+                console.error('Failed to post workmanship purchase journal entry:', journalErr);
+              }
             }
           }
         }

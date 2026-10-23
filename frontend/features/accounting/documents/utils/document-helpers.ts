@@ -29,6 +29,13 @@ export function convertedTo750(weight: string | number, purity: string | number,
   return (w * p) / baseKarat;
 }
 
+export function getWorkmanshipPercentageLabel(metalType?: string): string {
+  const m = (metalType || 'gold').toLowerCase().trim();
+  if (m === 'silver') return 'درصد نقره‌ای';
+  if (m === 'platinum') return 'درصد پلاتینی';
+  return 'درصد طلایی';
+}
+
 export function getLineDocumentTypeLabel(
   nature: 'received' | 'paid',
   tab: string,
@@ -37,6 +44,7 @@ export function getLineDocumentTypeLabel(
   refiningOpKind?: string,
   workmanshipOptionId?: number | string,
   workmanshipSubType?: string,
+  metalType?: string,
 ): string {
   if (tab === 'refining') {
     if (nature === 'paid') {
@@ -88,6 +96,10 @@ export function getLineDocumentTypeLabel(
   }
 
   if (tab === 'workmanship') {
+    if (workmanshipSubType === 'workmanship-golden-percentage') {
+      return `${getWorkmanshipPercentageLabel(metalType)} کارساخته`;
+    }
+    if (workmanshipSubType === 'workmanship-wage') return 'اجرت کارساخته';
     const optId = Number(workmanshipOptionId);
     if (nature === 'paid') {
       if (optId === 2 || workmanshipSubType === 'sale_manufactured') return 'فروش کارساخته';
@@ -444,9 +456,10 @@ export function isMetalBearingTab(tab: string | undefined): boolean {
  * Claim lines are only metal-bearing if they specifically have a claimWeight > 0.
  */
 export function isMetalBearingLine(
-  line: { documentTab?: string; sourceTab?: string; details?: Partial<DetailState> | null } | undefined | null,
+  line: { documentTab?: string; sourceTab?: string; documentSubType?: string; details?: Partial<DetailState> | null } | undefined | null,
 ): boolean {
   if (!line) return false;
+  if (line.documentSubType === 'workmanship-wage') return false;
   const tab = line.documentTab || line.sourceTab;
   if (tab === 'claim') {
     return numberValue(line.details?.claimWeight) > 0;
@@ -678,15 +691,26 @@ export function sanitizeLineDetailsForTab(
         workmanshipName: details.workmanshipName,
         workmanshipOptionId: details.workmanshipOptionId,
         workmanshipOptionLabel: details.workmanshipOptionLabel,
+        workmanshipReturnSourceId: details.workmanshipReturnSourceId,
         wage: details.wage,
         wageMode: details.wageMode,
+        wageCurrency: details.wageCurrency,
+        wageCurrencyUnit: details.wageCurrencyUnit,
+        wageCurrencyRate: details.wageCurrencyRate,
         goldenPercentage: details.goldenPercentage,
         profitPercentage: details.profitPercentage,
         metalTotalPrice: details.metalTotalPrice,
         profitAmount: details.profitAmount,
         discountAmount: details.discountAmount,
         currencyUnit: details.currencyUnit || baseCurrency,
+        currencyTotalAmount: details.currencyTotalAmount || '',
+        currencyQuantity: details.currencyQuantity || '',
+        currencyUnitPrice: details.currencyUnitPrice || '',
         baseCurrency: details.baseCurrency || baseCurrency,
+        linkedLineId: details.linkedLineId,
+        wageTotalAmount: details.wageTotalAmount,
+        hasChildLines: details.hasChildLines,
+        isChildLine: details.isChildLine,
       };
     }
 

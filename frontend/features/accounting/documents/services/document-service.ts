@@ -162,6 +162,7 @@ export function transactionRecordToDocumentLine(
     (details as any).refiningOpKind,
     (details as any).workmanshipOptionId,
     (details as any).workmanshipSubType,
+    (details as any).metalType,
   );
 
   return {
