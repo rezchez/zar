@@ -136,7 +136,7 @@ export const navGroupsBase: NavGroupData[] = [
             id: 'conditional-karat',
             title: 'عیار شرطی',
             icon: HandCoins,
-            href: '/dashboard/documents/new',
+            href: '/dashboard/conditional-karat',
           },
         ],
       },

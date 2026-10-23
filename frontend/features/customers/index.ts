@@ -10,3 +10,4 @@ export { default as CustomerTransactionLedger } from './components/CustomerTrans
 export { default as CustomerReports } from './components/CustomerReports';
 export { default as CustomerPdfExportModal } from './components/CustomerPdfExportModal';
 export { default as CustomerLedgerReport } from './components/CustomerLedgerReport';
+export * from './utils/document-breakdown';

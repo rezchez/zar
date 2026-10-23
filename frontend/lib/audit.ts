@@ -51,7 +51,8 @@ export type AuditEvent =
   | 'refining_sample_created'
   | 'refining_sample_received'
   | 'refining_fee_recorded'
-  | 'refining_status_changed';
+  | 'refining_status_changed'
+  | 'conditional_purity_settled';
 
 export function getRequestMetadata(request?: Request) {
   if (!request || !request.headers) {
