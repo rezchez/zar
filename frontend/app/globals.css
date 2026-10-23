@@ -109,6 +109,24 @@ body {
   letter-spacing: -0.01em;
 }
 
+/* Ensure all tables and table elements strictly follow the application's body font */
+table,
+table th,
+table td,
+table thead,
+table tbody,
+table tfoot,
+table tr {
+  font-family: var(--app-font-body, "Vazirmatn", Tahoma, "Segoe UI", sans-serif);
+}
+
+/* Ensure monospace numbers inside tables use the app body font with tabular figures */
+table .font-mono,
+table [class*="font-mono"] {
+  font-family: var(--app-font-body, "Vazirmatn", Tahoma, "Segoe UI", sans-serif) !important;
+  font-variant-numeric: tabular-nums;
+}
+
 h1,
 h2,
 h3,
