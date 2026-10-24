@@ -77,6 +77,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: 'طرف حساب انتخاب نشده است.' }, { status: 400 });
     }
 
+    const excludeDocId = typeof body.excludeDocumentId === 'string'
+      ? body.excludeDocumentId.trim()
+      : typeof body.documentId === 'string' && Boolean(body.isEditing)
+        ? body.documentId.trim()
+        : '';
+    const excludeDocNumber = typeof body.excludeDocumentNumber === 'string'
+      ? body.excludeDocumentNumber.trim()
+      : '';
+
     let client = context.pb;
     try {
       client = await getPocketBaseServiceClient();
@@ -90,7 +99,29 @@ export async function POST(request: Request) {
       sort: '-transactionDate,-created',
     });
 
-    const transactions = records.map(mapTransaction);
+    const transactions = records
+      .map(mapTransaction)
+      .filter((t) => {
+        if (!excludeDocId && !excludeDocNumber) return true;
+        if (excludeDocId) {
+          const target = excludeDocId.toLowerCase();
+          if (t.documentId && t.documentId.toLowerCase() === target) return false;
+          if (t.id && t.id.toLowerCase() === target) return false;
+          if (t.documentNumber && t.documentNumber.toLowerCase() === target) return false;
+          if (t.sourceKey && (
+            t.sourceKey.toLowerCase() === `document:${target}` ||
+            t.sourceKey.toLowerCase().startsWith(`document:${target}:`)
+          )) {
+            return false;
+          }
+        }
+        if (excludeDocNumber) {
+          const targetNum = excludeDocNumber.toLowerCase();
+          if (t.documentNumber && t.documentNumber.toLowerCase() === targetNum) return false;
+          if (t.documentId && t.documentId.toLowerCase() === targetNum) return false;
+        }
+        return true;
+      });
     const totals = sumPostedTransactions(transactions);
     const currencyBalances = calculateCustomerCurrencyBalances(transactions);
     const stoneBalances = calculateCustomerStoneBalances(transactions);
@@ -175,10 +206,21 @@ export async function POST(request: Request) {
       const direction = lineNature === 'received' ? 1 : -1;
 
       // Metal Weight calculation
-      if (docTab === 'raw-gold' || docTab === 'gold-sale' || (docTab === 'refining' && details.refiningOpKind !== 'fee')) {
-        const metal = String(details.metalType || 'gold');
+      if (
+        docTab === 'raw-gold' ||
+        docTab === 'metals' ||
+        docTab === 'silver' ||
+        docTab === 'platinum' ||
+        docTab === 'gold-sale' ||
+        (docTab === 'refining' && details.refiningOpKind !== 'fee')
+      ) {
+        const metal = String(
+          details.metalType ||
+          (docTab === 'silver' ? 'silver' : docTab === 'platinum' ? 'platinum' : 'gold')
+        );
         const calcMethod = String(details.calculationMethod || 'weight');
-        const baseKarat = numberValue(details.baseKarat) || 750;
+        const defaultBaseKarat = (metal === 'silver' || metal === 'platinum') ? 999 : 750;
+        const baseKarat = numberValue(details.baseKarat) || defaultBaseKarat;
         const rawWeight = calcMethod === 'money'
           ? actualWeightFromMoney(details.totalAmount, String(details.metalPriceType || ''), details.metalPrice, details.purity, baseKarat)
           : numberValue(details.rawWeight);
@@ -206,29 +248,60 @@ export async function POST(request: Request) {
           transactionEffect.gold += direction * weight;
         }
       } else if (docTab === 'claim' && (details.claimWeight || details.rawWeight)) {
+        const metal = String(details.metalType || 'gold');
         const weight = numberValue(details.claimWeight || details.rawWeight);
-        transactionEffect.gold += direction * weight;
+        if (metal === 'silver') {
+          transactionEffect.silver += direction * weight;
+        } else if (metal === 'platinum') {
+          transactionEffect.platinum += direction * weight;
+        } else {
+          transactionEffect.gold += direction * weight;
+        }
       }
 
       // Financial (Rial) calculation
       let rialAmount = 0;
       if (docTab === 'currency') {
-        rialAmount = numberValue(details.currencyTotalAmount);
+        const rawAmt = numberValue(details.currencyTotalAmount);
+        const isToman =
+          details.baseCurrency === 'IRT' ||
+          body?.baseCurrency === 'IRT';
+        rialAmount = isToman ? convertTomanToRial(rawAmt) : rawAmt;
       } else if (docTab === 'cash' && !details.isForeignCash) {
-        rialAmount = numberValue(details.totalAmount);
+        const rawAmt = numberValue(details.totalAmount);
+        const isToman =
+          details.currencyUnit === 'IRT' ||
+          details.baseCurrency === 'IRT' ||
+          body?.baseCurrency === 'IRT';
+        rialAmount = isToman ? convertTomanToRial(rawAmt) : rawAmt;
       } else if (docTab === 'gold-sale') {
-        rialAmount = numberValue(details.totalAmount);
+        const rawAmt = numberValue(details.totalAmount);
+        const isToman =
+          details.currencyUnit === 'IRT' ||
+          details.baseCurrency === 'IRT' ||
+          body?.baseCurrency === 'IRT';
+        rialAmount = isToman ? convertTomanToRial(rawAmt) : rawAmt;
       } else if (docTab === 'refining' && details.refiningOpKind === 'fee') {
-        rialAmount = numberValue(details.totalAmount);
+        const rawAmt = numberValue(details.totalAmount);
+        const isToman =
+          details.currencyUnit === 'IRT' ||
+          details.baseCurrency === 'IRT' ||
+          body?.baseCurrency === 'IRT';
+        rialAmount = isToman ? convertTomanToRial(rawAmt) : rawAmt;
       } else if (docTab === 'bank') {
         const rawBankAmt = numberValue(details.totalAmount || details.amount);
         const isToman =
           details.currencyUnit === 'IRT' ||
           details.baseCurrency === 'IRT' ||
           body?.baseCurrency === 'IRT';
-        rialAmount = isToman && !details.rialAmountInIrr ? convertTomanToRial(rawBankAmt) : rawBankAmt;
+        rialAmount = isToman ? convertTomanToRial(rawBankAmt) : rawBankAmt;
       } else if (docTab === 'coin') {
-        rialAmount = numberValue(details.totalAmount);
+        const rawAmt = numberValue(details.totalAmount || details.currencyTotalAmount);
+        const isToman =
+          details.currencyUnit === 'IRT' ||
+          details.baseCurrency === 'IRT' ||
+          body?.baseCurrency === 'IRT';
+        rialAmount = isToman ? convertTomanToRial(rawAmt) : rawAmt;
       } else if (docTab === 'workmanship') {
         if (line.documentSubType !== 'workmanship-golden-percentage') {
           const wageCur = normalizeCurrencyCode(String(details.wageCurrency || details.currencyUnit || ''));
@@ -239,7 +312,7 @@ export async function POST(request: Request) {
               wageCur === 'IRT' ||
               details.baseCurrency === 'IRT' ||
               body?.baseCurrency === 'IRT';
-            rialAmount = isToman && !details.rialAmountInIrr ? convertTomanToRial(rawAmt) : rawAmt;
+            rialAmount = isToman ? convertTomanToRial(rawAmt) : rawAmt;
           }
         }
       } else if (docTab === 'claim' && (details.claimFinancial || details.totalAmount)) {
@@ -248,7 +321,7 @@ export async function POST(request: Request) {
           details.currencyUnit === 'IRT' ||
           details.baseCurrency === 'IRT' ||
           body?.baseCurrency === 'IRT';
-        rialAmount = isToman && !details.rialAmountInIrr ? convertTomanToRial(rawAmt) : rawAmt;
+        rialAmount = isToman ? convertTomanToRial(rawAmt) : rawAmt;
       } else if (docTab === 'stone') {
         const isUnsettledStone =
           details.stoneOperationKind === 'unsettled_purchase' ||
@@ -259,7 +332,8 @@ export async function POST(request: Request) {
         const isForeignStone = Boolean(stoneCur && stoneCur !== 'IRR' && stoneCur !== 'IRT');
         if (isUnsettledStone && !isForeignStone) {
           const rawVal = numberValue(details.totalAmount || details.stoneTotalAmount);
-          rialAmount = stoneCur === 'IRT' && !details.rialAmountInIrr ? convertTomanToRial(rawVal) : rawVal;
+          const isToman = stoneCur === 'IRT' || body?.baseCurrency === 'IRT';
+          rialAmount = isToman ? convertTomanToRial(rawVal) : rawVal;
         }
       } else if (docTab === 'discount') {
         const rawAmt = numberValue(details.discountAmount || details.totalAmount);
@@ -267,7 +341,7 @@ export async function POST(request: Request) {
           details.currencyUnit === 'IRT' ||
           details.baseCurrency === 'IRT' ||
           body?.baseCurrency === 'IRT';
-        rialAmount = isToman && !details.rialAmountInIrr ? convertTomanToRial(rawAmt) : rawAmt;
+        rialAmount = isToman ? convertTomanToRial(rawAmt) : rawAmt;
       }
       if (rialAmount > 0) {
         transactionEffect.rial += direction * rialAmount;
@@ -286,9 +360,13 @@ export async function POST(request: Request) {
           if (!isTradeWithSeparateClaim) {
             foreignAmount = numberValue(details.currencyQuantity);
             // In unsettled currency trade:
-            // If received (خرید ارز بدون تسویه): customer owes currency delivery -> -foreignAmount
-            // If paid (فروش ارز بدون تسویه): customer is owed currency delivery -> +foreignAmount
-            const currencyDirection = lineNature === 'received' ? -1 : 1;
+            // If claim (طلب ارزی): customer owes currency delivery -> -foreignAmount
+            // If debt (بدهی ارزی): customer is owed currency delivery -> +foreignAmount
+            const isClaim =
+              line.documentSubType === 'currency-claim' ||
+              details.documentSubType === 'currency-claim' ||
+              (!details.linkedLineId && lineNature === 'received');
+            const currencyDirection = isClaim ? -1 : 1;
             transactionEffect.foreign += currencyDirection * foreignAmount;
           }
         }

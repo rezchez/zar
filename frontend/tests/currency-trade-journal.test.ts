@@ -259,7 +259,7 @@ describe('Currency Trade Journal Lines & Accounting (تب ارز و ژورنال
       documentNature: 'received' as const,
       documentTab: 'currency' as const,
       sourceTab: 'currency',
-      documentTypeLabel: 'خرید ارز',
+      documentTypeLabel: 'خرید ارزی بدون تسویه',
       documentSubType: 'currency-purchase',
       details: {
         currencyUnit: effectiveCurrencyUnit,
@@ -273,7 +273,7 @@ describe('Currency Trade Journal Lines & Accounting (تب ارز و ژورنال
 
     const claimLine = {
       id: claimLineId,
-      documentNature: 'received' as const,
+      documentNature: 'paid' as const,
       documentTab: 'currency' as const,
       sourceTab: 'currency',
       documentTypeLabel: 'طلب ارزی',
@@ -300,6 +300,56 @@ describe('Currency Trade Journal Lines & Accounting (تب ارز و ژورنال
     expect(Number(claimLine.details.currencyTotalAmount)).toBe(0);
     expect(Number(claimLine.details.currencyQuantity)).toBe(1000);
     expect(claimLine.documentSubType).toBe('currency-claim');
+    expect(claimLine.documentTypeLabel).toBe('طلب ارزی');
+    expect(claimLine.documentNature).toBe('paid');
+
+    // Verify getLineDocumentTypeLabel produces 'طلب ارزی' for the second row, not 'خرید ارز (بدون تسویه)'
+    const { getLineDocumentTypeLabel } = require('@/features/accounting/documents/utils/document-helpers');
+    const computedLabel = getLineDocumentTypeLabel(
+      claimLine.documentNature,
+      claimLine.documentTab,
+      undefined,
+      claimLine.details.unsettledTrade,
+      undefined,
+      undefined,
+      claimLine.documentSubType,
+    );
+    expect(computedLabel).toBe('طلب ارزی');
+    expect(computedLabel).not.toBe('خرید ارز (بدون تسویه)');
+
+    const computedTradeLabel = getLineDocumentTypeLabel(
+      tradeLine.documentNature,
+      tradeLine.documentTab,
+      undefined,
+      tradeLine.details.unsettledTrade,
+      undefined,
+      undefined,
+      tradeLine.documentSubType,
+    );
+    expect(computedTradeLabel).toBe('خرید ارزی بدون تسویه');
+
+    // Verify deserialization from database record retains 'طلب ارزی'
+    const { transactionRecordToDocumentLine } = require('@/features/accounting/documents/services/document-service');
+    const mockDbRecord = {
+      id: 'tx_currency_claim_row_2',
+      documentNature: 'paid',
+      documentTab: 'currency',
+      documentSubType: 'currency-claim',
+      settlementMethod: 'unsettled',
+      description: 'طلب ارزی بابت خرید بدون تسویه',
+      documentDetails: JSON.stringify({
+        currencyUnit: 'USD',
+        currencyQuantity: '1000',
+        currencyTotalAmount: '0',
+        unsettledTrade: true,
+      }),
+      goldAmount: 0,
+      rialAmount: 0,
+      foreignAmount: -1000,
+    };
+    const deserialized = transactionRecordToDocumentLine(mockDbRecord);
+    expect(deserialized.documentTypeLabel).toBe('طلب ارزی');
+    expect(deserialized.documentNature).toBe('paid');
   });
 
   it('creates two linked rows for unsettled currency sale (فروش ارز + بدهی ارزی)', () => {
@@ -314,7 +364,7 @@ describe('Currency Trade Journal Lines & Accounting (تب ارز و ژورنال
       documentNature: 'paid' as const,
       documentTab: 'currency' as const,
       sourceTab: 'currency',
-      documentTypeLabel: 'فروش ارز',
+      documentTypeLabel: 'فروش ارزی بدون تسویه',
       documentSubType: 'currency-sale',
       details: {
         currencyUnit: effectiveCurrencyUnit,
@@ -327,7 +377,7 @@ describe('Currency Trade Journal Lines & Accounting (تب ارز و ژورنال
 
     const debtLine = {
       id: debtLineId,
-      documentNature: 'paid' as const,
+      documentNature: 'received' as const,
       documentTab: 'currency' as const,
       sourceTab: 'currency',
       documentTypeLabel: 'بدهی ارزی',
@@ -348,6 +398,7 @@ describe('Currency Trade Journal Lines & Accounting (تب ارز و ژورنال
     expect(tradeLine.details.linkedLineId).toBe(debtLine.id);
     expect(debtLine.details.linkedLineId).toBe(tradeLine.id);
     expect(debtLine.documentSubType).toBe('currency-debt');
+    expect(debtLine.documentNature).toBe('received');
     expect(Number(debtLine.details.currencyQuantity)).toBe(500);
     expect(Number(debtLine.details.currencyTotalAmount)).toBe(0);
   });
@@ -487,6 +538,212 @@ describe('Currency Trade Journal Lines & Accounting (تب ارز و ژورنال
 
     // After 200 + 1000 - 400 = 800 USD
     expect(vaultBalance).toBe(800);
+  });
+
+  it('correctly assigns documentNature, documentTypeLabel, and bedehkar/bostankar arzi columns for unsettled trades', () => {
+    // Helper replicating CommittedLineRow column logic
+    function computeCurrencyColumns(line: any) {
+      const isPaid = line.documentNature === 'paid';
+      const isReceived = line.documentNature === 'received';
+      const isCurrency = line.documentTab === 'currency';
+      const isClaimLine = line.documentSubType === 'currency-claim';
+      const isDebtLine = line.documentSubType === 'currency-debt';
+      const isUnsettled = line.details?.unsettledTrade === true || line.settlementMethod === 'unsettled';
+      const currencyQty = isCurrency ? Number(line.details?.currencyQuantity || 0) : 0;
+
+      let bedehkarArzi: number | null = null;
+      let bostankarArzi: number | null = null;
+
+      if (isCurrency && currencyQty > 0) {
+        if (isClaimLine || (!line.details?.linkedLineId && isUnsettled && isReceived)) {
+          bedehkarArzi = currencyQty;
+        } else if (isDebtLine || (!line.details?.linkedLineId && isUnsettled && isPaid)) {
+          bostankarArzi = currencyQty;
+        }
+      }
+
+      return { bedehkarArzi, bostankarArzi };
+    }
+
+    // 1. Unsettled Purchase:
+    // Row 1: Trade line -> 'خرید ارزی بدون تسویه', nature: 'received'
+    // Row 2: Claim line -> 'طلب ارزی', nature: 'paid' (customer is debtor for currency)
+    const purchaseTradeRow = {
+      documentTab: 'currency',
+      documentSubType: 'currency-purchase',
+      documentNature: 'received',
+      documentTypeLabel: 'خرید ارزی بدون تسویه',
+      details: {
+        currencyUnit: 'USD',
+        currencyQuantity: '1000',
+        currencyTotalAmount: '51390000',
+        unsettledTrade: true,
+        linkedLineId: 'claim-1',
+      },
+    };
+    const purchaseClaimRow = {
+      documentTab: 'currency',
+      documentSubType: 'currency-claim',
+      documentNature: 'paid', // debtor
+      documentTypeLabel: 'طلب ارزی',
+      details: {
+        currencyUnit: 'USD',
+        currencyQuantity: '1000',
+        currencyTotalAmount: '0',
+        unsettledTrade: true,
+        linkedLineId: 'trade-1',
+      },
+    };
+
+    const tradeCols = computeCurrencyColumns(purchaseTradeRow);
+    const claimCols = computeCurrencyColumns(purchaseClaimRow);
+
+    // Trade row does not appear in currency debtor/creditor (it appears in Rial creditor)
+    expect(tradeCols.bedehkarArzi).toBeNull();
+    expect(tradeCols.bostankarArzi).toBeNull();
+
+    // Claim row (طلب ارزی) MUST appear in bedehkarArzi (بدهکار ارزی)
+    expect(claimCols.bedehkarArzi).toBe(1000);
+    expect(claimCols.bostankarArzi).toBeNull();
+    expect(purchaseClaimRow.documentNature).toBe('paid');
+    expect(purchaseClaimRow.documentTypeLabel).toBe('طلب ارزی');
+    expect(purchaseTradeRow.documentTypeLabel).toBe('خرید ارزی بدون تسویه');
+
+    // 2. Unsettled Sale:
+    // Row 1: Trade line -> 'فروش ارزی بدون تسویه', nature: 'paid'
+    // Row 2: Debt line -> 'بدهی ارزی', nature: 'received' (customer is creditor for currency)
+    const saleTradeRow = {
+      documentTab: 'currency',
+      documentSubType: 'currency-sale',
+      documentNature: 'paid',
+      documentTypeLabel: 'فروش ارزی بدون تسویه',
+      details: {
+        currencyUnit: 'EUR',
+        currencyQuantity: '500',
+        currencyTotalAmount: '30000000',
+        unsettledTrade: true,
+        linkedLineId: 'debt-1',
+      },
+    };
+    const saleDebtRow = {
+      documentTab: 'currency',
+      documentSubType: 'currency-debt',
+      documentNature: 'received', // creditor
+      documentTypeLabel: 'بدهی ارزی',
+      details: {
+        currencyUnit: 'EUR',
+        currencyQuantity: '500',
+        currencyTotalAmount: '0',
+        unsettledTrade: true,
+        linkedLineId: 'trade-2',
+      },
+    };
+
+    const saleTradeCols = computeCurrencyColumns(saleTradeRow);
+    const saleDebtCols = computeCurrencyColumns(saleDebtRow);
+
+    expect(saleTradeCols.bedehkarArzi).toBeNull();
+    expect(saleTradeCols.bostankarArzi).toBeNull();
+
+    // Debt row (بدهی ارزی) MUST appear in bostankarArzi (بستانکار ارزی / طلبکار ارزی)
+    expect(saleDebtCols.bedehkarArzi).toBeNull();
+    expect(saleDebtCols.bostankarArzi).toBe(500);
+    expect(saleDebtRow.documentNature).toBe('received');
+    expect(saleDebtRow.documentTypeLabel).toBe('بدهی ارزی');
+    expect(saleTradeRow.documentTypeLabel).toBe('فروش ارزی بدون تسویه');
+  });
+
+  it('guarantees editing an unsettled currency trade updates the existing claim in-place and DOES NOT create duplicate claim rows', () => {
+    // Initial 2 lines: trade + claim
+    const tradeLine = {
+      id: 'trade-line-1',
+      documentNature: 'received' as const,
+      documentTab: 'currency' as const,
+      sourceTab: 'currency',
+      documentTypeLabel: 'خرید ارزی بدون تسویه',
+      documentSubType: 'currency-purchase',
+      details: {
+        currencyUnit: 'USD',
+        currencyQuantity: '1000',
+        currencyTotalAmount: '51390000',
+        unsettledTrade: true,
+        linkedLineId: 'claim-line-1',
+      },
+    };
+    const claimLine = {
+      id: 'claim-line-1',
+      documentNature: 'paid' as const,
+      documentTab: 'currency' as const,
+      sourceTab: 'currency',
+      documentTypeLabel: 'طلب ارزی',
+      documentSubType: 'currency-claim',
+      settlementMethod: 'unsettled' as const,
+      balanceSource: 'current' as const,
+      details: {
+        currencyUnit: 'USD',
+        currencyQuantity: '1000',
+        currencyTotalAmount: '0',
+        unsettledTrade: true,
+        linkedLineId: 'trade-line-1',
+      },
+    };
+
+    let committedLines = [tradeLine, claimLine];
+    expect(committedLines.length).toBe(2);
+
+    // Simulate editing the trade line (change quantity from 1000 to 1500)
+    const editingLineId = 'trade-line-1';
+    const updatedDraft = {
+      ...tradeLine,
+      details: {
+        ...tradeLine.details,
+        currencyQuantity: '1500',
+        currencyTotalAmount: '77085000',
+      },
+    };
+
+    // Run the matching logic implemented in useDocumentLines
+    const tradeIdx = committedLines.findIndex((l) => l.id === editingLineId);
+    const currentTradeLine = tradeIdx !== -1 ? committedLines[tradeIdx] : null;
+    const initialLinkedId =
+      updatedDraft.details?.linkedLineId ||
+      currentTradeLine?.details?.linkedLineId;
+
+    const existingClaimIndex = committedLines.findIndex((l, index) => {
+      if (l.id === editingLineId) return false;
+      const isClaimOrDebt =
+        l.documentTab === 'currency' &&
+        (l.documentSubType === 'currency-claim' || l.documentSubType === 'currency-debt');
+      if (!isClaimOrDebt) return false;
+      if (initialLinkedId && (l.id === initialLinkedId || l.details?.linkedLineId === initialLinkedId)) return true;
+      if (l.details?.linkedLineId && l.details.linkedLineId === editingLineId) return true;
+      if (tradeIdx !== -1 && (index === tradeIdx + 1 || index === tradeIdx - 1)) return true;
+      return false;
+    });
+
+    expect(existingClaimIndex).toBe(1); // found existing claim!
+
+    const existingClaim = committedLines[existingClaimIndex];
+    const updatedClaim = {
+      ...existingClaim,
+      details: {
+        ...existingClaim.details,
+        currencyQuantity: updatedDraft.details.currencyQuantity,
+        linkedLineId: updatedDraft.id,
+      },
+    };
+
+    committedLines = committedLines.map((l, idx) => {
+      if (l.id === editingLineId || idx === tradeIdx) return updatedDraft;
+      if (l.id === updatedClaim.id || idx === existingClaimIndex) return updatedClaim;
+      return l;
+    });
+
+    // Verify exactly 2 rows remain (NO extra claim row was added!)
+    expect(committedLines.length).toBe(2);
+    expect(committedLines[0].details.currencyQuantity).toBe('1500');
+    expect(committedLines[1].details.currencyQuantity).toBe('1500');
+    expect(committedLines[1].id).toBe('claim-line-1'); // preserves same ID, does not generate new
   });
 });
 

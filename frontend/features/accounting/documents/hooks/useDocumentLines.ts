@@ -990,15 +990,18 @@ export function useDocumentLines({
       isCurrencyTrade &&
       (Boolean(activeDraft.details.unsettledTrade) || activeDraft.settlementMethod === 'unsettled');
 
-    const currencyTradeDocTypeLabel =
-      lineNature === 'received' ? 'خرید ارز' : 'فروش ارز';
+    const currencyTradeDocTypeLabel = isUnsettledCurrency
+      ? (lineNature === 'received' ? 'خرید ارزی بدون تسویه' : 'فروش ارزی بدون تسویه')
+      : (lineNature === 'received' ? 'خرید ارز' : 'فروش ارز');
     const currencyTradeSubType =
       lineNature === 'received' ? 'currency-purchase' : 'currency-sale';
 
     const currencyClaimDocTypeLabel =
-      lineNature === 'received' ? 'بدهی ارزی' : 'طلب ارزی';
+      lineNature === 'received' ? 'طلب ارزی' : 'بدهی ارزی';
     const currencyClaimSubType =
-      lineNature === 'received' ? 'currency-debt' : 'currency-claim';
+      lineNature === 'received' ? 'currency-claim' : 'currency-debt';
+    const currencyClaimNature =
+      lineNature === 'received' ? 'paid' : 'received';
 
     const tradeDocTypeLabel =
       lineNature === 'received'
@@ -1278,6 +1281,9 @@ export function useDocumentLines({
         toast.success('ردیف با موفقیت ویرایش شد.');
       } else if (isCurrencyTrade) {
         setCommittedLines((current) => {
+          const tradeIdx = current.findIndex((l) => l.id === editingLineId);
+          const currentTradeLine = tradeIdx !== -1 ? current[tradeIdx] : null;
+
           const tradeLine: DocumentLine = {
             ...lineToCommit,
             documentNature: lineNature,
@@ -1293,19 +1299,68 @@ export function useDocumentLines({
             },
           };
 
-          const existingClaimIndex = current.findIndex(
-            (l) =>
-              (tradeLine.details.linkedLineId && l.id === tradeLine.details.linkedLineId) ||
-              (l.details?.linkedLineId === editingLineId &&
-                (l.documentSubType === 'currency-claim' || l.documentSubType === 'currency-debt')),
-          );
+          const initialLinkedId =
+            tradeLine.details?.linkedLineId ||
+            currentTradeLine?.details?.linkedLineId ||
+            draftLine.details?.linkedLineId;
+          if (initialLinkedId) {
+            tradeLine.details.linkedLineId = initialLinkedId;
+          }
+
+          const existingClaimIndex = current.findIndex((l, index) => {
+            if (l.id === editingLineId) return false;
+            const isClaimOrDebt =
+              l.documentTab === 'currency' &&
+              (l.documentSubType === 'currency-claim' ||
+                l.documentSubType === 'currency-debt' ||
+                (l.details as any)?.documentSubType === 'currency-claim' ||
+                (l.details as any)?.documentSubType === 'currency-debt');
+            if (!isClaimOrDebt) return false;
+
+            // Direct ID or link match
+            if (initialLinkedId && (l.id === initialLinkedId || l.details?.linkedLineId === initialLinkedId)) {
+              return true;
+            }
+            if (
+              l.details?.linkedLineId &&
+              (l.details.linkedLineId === editingLineId ||
+                l.details.linkedLineId === tradeLine.id ||
+                (currentTradeLine && l.details.linkedLineId === currentTradeLine.id))
+            ) {
+              return true;
+            }
+
+            // Client line ID match
+            const lClientId = (l.details as any)?.clientLineId;
+            const tClientId = (tradeLine.details as any)?.clientLineId || (currentTradeLine?.details as any)?.clientLineId;
+            if (initialLinkedId && lClientId && initialLinkedId === lClientId) return true;
+            if (l.details?.linkedLineId && tClientId && l.details.linkedLineId === tClientId) return true;
+
+            // Adjacent sibling row in the same document
+            if (tradeIdx !== -1 && (index === tradeIdx + 1 || index === tradeIdx - 1)) {
+              return true;
+            }
+
+            // Any claim/debt row not linked to other trade rows
+            const otherTradesWithLink = current.filter(
+              (other) =>
+                other.id !== editingLineId &&
+                other.documentTab === 'currency' &&
+                other.details?.linkedLineId === l.id,
+            );
+            if (otherTradesWithLink.length === 0) {
+              return true;
+            }
+
+            return false;
+          });
 
           if (isUnsettledCurrency) {
             if (existingClaimIndex !== -1) {
               const existingClaim = current[existingClaimIndex];
               const updatedClaim: DocumentLine = {
                 ...existingClaim,
-                documentNature: lineNature,
+                documentNature: currencyClaimNature,
                 documentTab: 'currency',
                 sourceTab: 'currency',
                 documentTypeLabel: currencyClaimDocTypeLabel,
@@ -1313,6 +1368,8 @@ export function useDocumentLines({
                 settlementMethod: 'unsettled',
                 details: {
                   ...existingClaim.details,
+                  documentTypeLabel: currencyClaimDocTypeLabel,
+                  documentSubType: currencyClaimSubType,
                   currencyUnit: effectiveCurrencyUnit,
                   currencyQuantity: draftLine.details.currencyQuantity,
                   currencyUnitPrice: '0',
@@ -1322,9 +1379,9 @@ export function useDocumentLines({
                 },
               };
               tradeLine.details.linkedLineId = updatedClaim.id;
-              return current.map((l) => {
-                if (l.id === editingLineId) return tradeLine;
-                if (l.id === updatedClaim.id) return updatedClaim;
+              return current.map((l, idx) => {
+                if (l.id === editingLineId || idx === tradeIdx) return tradeLine;
+                if (l.id === updatedClaim.id || idx === existingClaimIndex) return updatedClaim;
                 return l;
               });
             } else {
@@ -1332,7 +1389,7 @@ export function useDocumentLines({
               tradeLine.details.linkedLineId = claimLineId;
               const newClaim: DocumentLine = {
                 id: claimLineId,
-                documentNature: lineNature,
+                documentNature: currencyClaimNature,
                 documentTab: 'currency',
                 sourceTab: 'currency',
                 documentTypeLabel: currencyClaimDocTypeLabel,
@@ -1346,6 +1403,8 @@ export function useDocumentLines({
                     : 'بدهی ارزی بابت فروش بدون تسویه',
                 details: {
                   ...draftLine.details,
+                  documentTypeLabel: currencyClaimDocTypeLabel,
+                  documentSubType: currencyClaimSubType,
                   currencyUnit: effectiveCurrencyUnit,
                   currencyQuantity: draftLine.details.currencyQuantity,
                   currencyUnitPrice: '0',
@@ -1368,8 +1427,8 @@ export function useDocumentLines({
         toast.success(
           isUnsettledCurrency
             ? (lineNature === 'received'
-                ? 'ردیف خرید ارز و ردیف بدهی ارزی با موفقیت ویرایش شدند.'
-                : 'ردیف فروش ارز و ردیف طلب ارزی با موفقیت ویرایش شدند.')
+                ? 'ردیف خرید ارز و ردیف طلب ارزی با موفقیت ویرایش شدند.'
+                : 'ردیف فروش ارز و ردیف بدهی ارزی با موفقیت ویرایش شدند.')
             : (lineNature === 'received'
                 ? 'ردیف خرید ارز با تسویه آنی ویرایش شد.'
                 : 'ردیف فروش ارز با تسویه آنی ویرایش شد.')
@@ -1474,6 +1533,8 @@ export function useDocumentLines({
             documentSubType: currencyTradeSubType,
             details: {
               ...lineToCommit.details,
+              documentTypeLabel: currencyTradeDocTypeLabel,
+              documentSubType: currencyTradeSubType,
               currencyUnit: effectiveCurrencyUnit,
               settlementCurrencyUnit: effectiveCurrencyUnit,
               unsettledTrade: true,
@@ -1483,7 +1544,7 @@ export function useDocumentLines({
 
           const claimLineToCommit: DocumentLine = {
             id: claimLineId,
-            documentNature: lineNature,
+            documentNature: currencyClaimNature,
             documentTab: 'currency',
             sourceTab: 'currency',
             documentTypeLabel: currencyClaimDocTypeLabel,
@@ -1493,10 +1554,12 @@ export function useDocumentLines({
             description: activeDraft.description
               ? activeDraft.description.trim()
               : lineNature === 'received'
-                ? 'بدهی ارزی بابت خرید بدون تسویه'
-                : 'طلب ارزی بابت فروش بدون تسویه',
+                ? 'طلب ارزی بابت خرید بدون تسویه'
+                : 'بدهی ارزی بابت فروش بدون تسویه',
             details: {
               ...activeDraft.details,
+              documentTypeLabel: currencyClaimDocTypeLabel,
+              documentSubType: currencyClaimSubType,
               currencyUnit: effectiveCurrencyUnit,
               currencyQuantity: activeDraft.details.currencyQuantity,
               currencyUnitPrice: '0',
@@ -1509,8 +1572,8 @@ export function useDocumentLines({
           setCommittedLines((current) => [...current, tradeLineToCommit, claimLineToCommit]);
           toast.success(
             lineNature === 'received'
-              ? 'ردیف خرید ارز و ردیف بدهی ارزی به سند اضافه شدند.'
-              : 'ردیف فروش ارز و ردیف طلب ارزی به سند اضافه شدند.',
+              ? 'ردیف خرید ارز و ردیف طلب ارزی به سند اضافه شدند.'
+              : 'ردیف فروش ارز و ردیف بدهی ارزی به سند اضافه شدند.',
           );
         } else {
           const tradeLineToCommit: DocumentLine = {
@@ -1612,13 +1675,21 @@ export function useDocumentLines({
 
   const editLine = (line: DocumentLine) => {
     if (
-      (line.documentSubType === 'currency-claim' ||
-        line.documentSubType === 'currency-debt' ||
-        line.documentSubType === 'workmanship-golden-percentage' ||
-        line.documentSubType === 'workmanship-wage') &&
-      line.details?.linkedLineId
+      line.documentSubType === 'currency-claim' ||
+      line.documentSubType === 'currency-debt' ||
+      line.documentSubType === 'workmanship-golden-percentage' ||
+      line.documentSubType === 'workmanship-wage'
     ) {
-      const parentLine = committedLines.find((l) => l.id === line.details.linkedLineId);
+      const parentLine = committedLines.find(
+        (l) =>
+          (line.details?.linkedLineId && l.id === line.details.linkedLineId) ||
+          (l.details?.linkedLineId && l.details.linkedLineId === line.id) ||
+          (line.details?.linkedLineId && l.details?.linkedLineId === line.details.linkedLineId) ||
+          ((line.documentSubType === 'currency-claim' || line.documentSubType === 'currency-debt') &&
+            l.documentTab === 'currency' &&
+            l.documentSubType !== 'currency-claim' &&
+            l.documentSubType !== 'currency-debt'),
+      );
       if (parentLine) {
         setEditingLineId(parentLine.id);
         const restoredDetails = {

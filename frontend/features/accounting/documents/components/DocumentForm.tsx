@@ -131,6 +131,8 @@ export default function DocumentForm({
 
   // Customers state
   const [customers, setCustomers] = useState<Customer[]>(initialCustomers);
+  const customersRef = useRef(customers);
+  customersRef.current = customers;
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [activeCustomerOverride, setActiveCustomerOverride] = useState<Customer | null>(null);
   const [isCustomerLocked, setIsCustomerLocked] = useState(false);
@@ -311,6 +313,8 @@ export default function DocumentForm({
 
   // Preview Balance state
   const [previewData, setPreviewData] = useState<DocumentBalancePreviewData | null>(null);
+  const previewDataRef = useRef<DocumentBalancePreviewData | null>(null);
+  previewDataRef.current = previewData;
   const [previewLoading, setPreviewLoading] = useState(false);
   const [customerBalanceLoading, setCustomerBalanceLoading] = useState(false);
 
@@ -657,6 +661,14 @@ export default function DocumentForm({
     return () => controller.abort();
   }, [baseCurrency]);
 
+  // Stable fingerprint of committed lines - only changes when lines are added, removed, or edited
+  const committedLinesFingerprint = useMemo(() => {
+    if (committedLines.length === 0) return '';
+    return committedLines.map((l) => l.id).join(',') + ':' + committedLines.length;
+  }, [committedLines]);
+  const committedLinesRef = useRef(committedLines);
+  committedLinesRef.current = committedLines;
+
   // Debounced preview balance calculation
   useEffect(() => {
     if (!selectedCustomerId) {
@@ -665,27 +677,54 @@ export default function DocumentForm({
       return;
     }
 
+    // Only fetch when there are committed lines
+    if (committedLinesFingerprint === '') {
+      setPreviewData(null);
+      setPreviewLoading(false);
+      return;
+    }
+
     const controller = new AbortController();
     setPreviewLoading(true);
 
+    const docToExclude = (isEditingExistingDoc && (documentId || editingExistingDocId))
+      ? (documentId || editingExistingDocId)
+      : undefined;
+    const docNumToExclude = isEditingExistingDoc
+      ? (documentNumberDisplay || (editingExistingDocId?.startsWith('ZF') ? editingExistingDocId : undefined))
+      : undefined;
+
     const timer = setTimeout(() => {
+      const currentLines = committedLinesRef.current;
       fetch('/api/transactions/preview-balance', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           customerId: selectedCustomerId,
           baseCurrency,
-          lines: committedLines.map((line) => ({
-            documentNature: line.documentNature,
-            documentTab: line.documentTab,
-            sourceTab: line.sourceTab,
-            converted750: line.converted750,
-            details: {
-              ...line.details,
-              currencyUnit: line.details?.currencyUnit || (line.documentTab === 'bank' || line.sourceTab === 'bank' || line.documentTab === 'claim' || line.sourceTab === 'claim' ? baseCurrency : undefined),
-              baseCurrency: line.details?.baseCurrency || (line.documentTab === 'bank' || line.sourceTab === 'bank' || line.documentTab === 'claim' || line.sourceTab === 'claim' ? baseCurrency : undefined),
-            },
-          })),
+          excludeDocumentId: docToExclude || undefined,
+          excludeDocumentNumber: docNumToExclude || undefined,
+          lines: currentLines.map((line) => {
+            const rawLine = line as unknown as Record<string, unknown>;
+            return {
+              documentNature: line.documentNature,
+              documentTab: line.documentTab,
+              sourceTab: line.sourceTab,
+              converted750: line.converted750,
+              goldAmount: rawLine.goldAmount as number | undefined,
+              silverAmount: rawLine.silverAmount as number | undefined,
+              platinumAmount: rawLine.platinumAmount as number | undefined,
+              foreignAmount: rawLine.foreignAmount as number | undefined,
+              rialAmount: rawLine.rialAmount as number | undefined,
+              details: {
+                ...line.details,
+                currencyUnit: line.details?.currencyUnit || baseCurrency,
+                baseCurrency: line.details?.baseCurrency || baseCurrency,
+                metalType: line.details?.metalType || (line.sourceTab === 'silver' ? 'silver' : line.sourceTab === 'platinum' ? 'platinum' : 'gold'),
+                rialAmountInIrr: baseCurrency === 'IRR',
+              },
+            };
+          }),
         }),
         signal: controller.signal,
       })
@@ -698,7 +737,7 @@ export default function DocumentForm({
               setActiveCustomerOverride((curr) => {
                 const base = (curr && curr.id === selectedCustomerId)
                   ? curr
-                  : customers.find((c) => c.id === selectedCustomerId);
+                  : customersRef.current.find((c) => c.id === selectedCustomerId);
                 if (!base) return curr;
                 return {
                   ...base,
@@ -721,41 +760,72 @@ export default function DocumentForm({
         .finally(() => {
           if (!controller.signal.aborted) setPreviewLoading(false);
         });
-    }, 150);
+    }, 300);
 
     return () => {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [selectedCustomerId, committedLines, customers]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCustomerId, committedLinesFingerprint, baseCurrency, isEditingExistingDoc, editingExistingDocId, documentId]);
+
+  // Fetch fresh customer details with balances
+  const refreshCustomerBalances = useCallback(
+    async (customerId: string, forceNotEditing = false) => {
+      if (!customerId) {
+        setCustomerBalanceLoading(false);
+        return;
+      }
+      setCustomerBalanceLoading(true);
+      try {
+        const res = await fetch(`/api/customers/${encodeURIComponent(customerId)}`, {
+          cache: 'no-store',
+          headers: { 'Cache-Control': 'no-cache' },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.customer) {
+            const freshCustomer = data.customer as Customer;
+            const isEditing = !forceNotEditing && isEditingExistingDoc && Boolean(editingExistingDocId);
+            setActiveCustomerOverride((curr) => {
+              if (isEditing && previewDataRef.current?.previousBalance) {
+                const prev = previewDataRef.current.previousBalance;
+                return {
+                  ...freshCustomer,
+                  rialBalance: prev.rial,
+                  goldBalance: prev.gold,
+                  silverBalance: prev.silver,
+                  platinumBalance: prev.platinum,
+                  stoneCaratBalance: prev.stone ?? freshCustomer.stoneCaratBalance,
+                  stoneCreditCarats: prev.stoneCredit ?? freshCustomer.stoneCreditCarats,
+                  stoneDebitCarats: prev.stoneDebit ?? freshCustomer.stoneDebitCarats,
+                  foreignBalance: prev.foreign,
+                  tertiaryBalance: prev.tertiary,
+                };
+              }
+              if (isEditing && curr) {
+                return curr;
+              }
+              return freshCustomer;
+            });
+            setCustomers((prev) =>
+              prev.map((item) => (item.id === freshCustomer.id ? freshCustomer : item)),
+            );
+          }
+        }
+      } catch {
+        // ignore
+      } finally {
+        setCustomerBalanceLoading(false);
+      }
+    },
+    [isEditingExistingDoc, editingExistingDocId],
+  );
 
   // Fetch fresh customer details with balances whenever selected customer changes
   useEffect(() => {
-    if (!selectedCustomerId) {
-      setCustomerBalanceLoading(false);
-      return;
-    }
-    let cancelled = false;
-    setCustomerBalanceLoading(true);
-    fetch(`/api/customers/${encodeURIComponent(selectedCustomerId)}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (!cancelled && data?.customer) {
-          const freshCustomer = data.customer as Customer;
-          setActiveCustomerOverride(freshCustomer);
-          setCustomers((prev) =>
-            prev.map((item) => (item.id === freshCustomer.id ? freshCustomer : item)),
-          );
-        }
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (!cancelled) setCustomerBalanceLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedCustomerId]);
+    void refreshCustomerBalances(selectedCustomerId);
+  }, [selectedCustomerId, refreshCustomerBalances]);
 
   // Tab change handler
   const changeEntryTab = (tab: string) => {
@@ -1301,6 +1371,115 @@ export default function DocumentForm({
               ? convertTomanToRial(rawWorkmanshipAmount)
               : Math.round(rawWorkmanshipAmount);
 
+            const isGoldSaleRow = line.documentTab === 'gold-sale' || line.sourceTab === 'gold-sale';
+            const isGoldSaleToman = isGoldSaleRow && (line.details?.currencyUnit === 'IRT' || line.details?.baseCurrency === 'IRT' || baseCurrency === 'IRT');
+            const rawGoldSaleAmount = isGoldSaleRow ? numberValue(line.details?.totalAmount || '') : 0;
+            const goldSaleRialAmount = isGoldSaleToman ? convertTomanToRial(rawGoldSaleAmount) : Math.round(rawGoldSaleAmount);
+
+            const isCashRow = (line.documentTab === 'cash' || line.sourceTab === 'cash') && !line.details?.isForeignCash;
+            const isCashToman = isCashRow && (line.details?.currencyUnit === 'IRT' || line.details?.baseCurrency === 'IRT' || baseCurrency === 'IRT');
+            const rawCashAmount = isCashRow ? numberValue(line.details?.totalAmount || '') : 0;
+            const cashRialAmount = isCashToman ? convertTomanToRial(rawCashAmount) : Math.round(rawCashAmount);
+
+            const isCoinRow = line.documentTab === 'coin' || line.sourceTab === 'coin';
+            const isCoinToman = isCoinRow && (line.details?.currencyUnit === 'IRT' || line.details?.baseCurrency === 'IRT' || baseCurrency === 'IRT');
+            const rawCoinAmount = isCoinRow ? numberValue(line.details?.totalAmount || line.details?.currencyTotalAmount || '') : 0;
+            const coinRialAmount = isCoinToman ? convertTomanToRial(rawCoinAmount) : Math.round(rawCoinAmount);
+
+            const isRefiningFeeRow = (line.documentTab === 'refining' || line.sourceTab === 'refining') && line.details?.refiningOpKind === 'fee';
+            const isRefiningFeeToman = isRefiningFeeRow && (line.details?.currencyUnit === 'IRT' || line.details?.baseCurrency === 'IRT' || baseCurrency === 'IRT');
+            const rawRefiningFee = isRefiningFeeRow ? numberValue(line.details?.totalAmount || '') : 0;
+            const refiningFeeRialAmount = isRefiningFeeToman ? convertTomanToRial(rawRefiningFee) : Math.round(rawRefiningFee);
+
+            const isCurrencyRow = line.documentTab === 'currency' || line.sourceTab === 'currency';
+            const isCurrencyToman = isCurrencyRow && (line.details?.baseCurrency === 'IRT' || baseCurrency === 'IRT');
+            const rawCurrencyRial = isCurrencyRow ? numberValue(line.details?.currencyTotalAmount || '') : 0;
+            const currencyRialAmount = isCurrencyToman ? convertTomanToRial(rawCurrencyRial) : Math.round(rawCurrencyRial);
+
+            const isDiscountRow = line.documentTab === 'discount' || line.sourceTab === 'discount';
+            const isDiscountToman = isDiscountRow && (line.details?.currencyUnit === 'IRT' || line.details?.baseCurrency === 'IRT' || baseCurrency === 'IRT');
+            const rawDiscountAmount = isDiscountRow ? numberValue(line.details?.discountAmount || line.details?.totalAmount || '') : 0;
+            const discountRialAmount = isDiscountToman ? convertTomanToRial(rawDiscountAmount) : Math.round(rawDiscountAmount);
+
+            const baseLineDetails = isStoneRow
+              ? {
+                  ...line.details,
+                  settlementCurrencyUnit: stoneCurrency || line.details.settlementCurrencyUnit || baseCurrency,
+                  rialAmountInIrr: true,
+                }
+              : isBankRow
+                ? {
+                    ...line.details,
+                    currencyUnit: isBankToman ? 'IRT' : 'IRR',
+                    baseCurrency,
+                    amountInIrr: bankRialAmount,
+                    rialAmountInIrr: true,
+                  }
+                : isClaimRow
+                  ? {
+                      ...line.details,
+                      currencyUnit: isClaimToman ? 'IRT' : 'IRR',
+                      baseCurrency,
+                      amountInIrr: claimRialAmount,
+                      rialAmountInIrr: true,
+                      claimFinancial: rawClaimFinancial > 0 ? String(rawClaimFinancial) : line.details.claimFinancial,
+                      claimWeight: rawClaimWeight > 0 ? String(rawClaimWeight) : line.details.claimWeight,
+                    }
+                  : isWorkmanshipRow && isWorkmanshipToman && workmanshipRialAmount > 0
+                    ? {
+                        ...line.details,
+                        amountInIrr: workmanshipRialAmount,
+                        rialAmountInIrr: true,
+                      }
+                    : isGoldSaleRow && isGoldSaleToman
+                      ? {
+                          ...line.details,
+                          currencyUnit: 'IRT',
+                          baseCurrency,
+                          amountInIrr: goldSaleRialAmount,
+                          rialAmountInIrr: true,
+                        }
+                      : isCashRow && isCashToman
+                        ? {
+                            ...line.details,
+                            currencyUnit: 'IRT',
+                            baseCurrency,
+                            amountInIrr: cashRialAmount,
+                            rialAmountInIrr: true,
+                          }
+                        : isCoinRow && isCoinToman
+                          ? {
+                              ...line.details,
+                              currencyUnit: 'IRT',
+                              baseCurrency,
+                              amountInIrr: coinRialAmount,
+                              rialAmountInIrr: true,
+                            }
+                          : isRefiningFeeRow && isRefiningFeeToman
+                            ? {
+                                ...line.details,
+                                currencyUnit: 'IRT',
+                                baseCurrency,
+                                amountInIrr: refiningFeeRialAmount,
+                                rialAmountInIrr: true,
+                              }
+                            : isCurrencyRow && isCurrencyToman
+                              ? {
+                                  ...line.details,
+                                  baseCurrency,
+                                  amountInIrr: currencyRialAmount,
+                                  rialAmountInIrr: true,
+                                }
+                              : isDiscountRow && isDiscountToman
+                                ? {
+                                    ...line.details,
+                                    currencyUnit: 'IRT',
+                                    baseCurrency,
+                                    amountInIrr: discountRialAmount,
+                                    rialAmountInIrr: true,
+                                  }
+                                : line.details;
+
             return {
               documentNature: line.documentNature,
               documentTab: line.documentTab,
@@ -1310,37 +1489,12 @@ export default function DocumentForm({
               balanceSource: line.balanceSource,
               description: line.description,
               foreignCurrency: isForeignWorkmanship ? wageCurrency : undefined,
-              documentDetails: isStoneRow
-                ? {
-                    ...line.details,
-                    settlementCurrencyUnit: stoneCurrency || line.details.settlementCurrencyUnit || baseCurrency,
-                    rialAmountInIrr: true,
-                  }
-                : isBankRow
-                  ? {
-                      ...line.details,
-                      currencyUnit: isBankToman ? 'IRT' : 'IRR',
-                      baseCurrency,
-                      amountInIrr: bankRialAmount,
-                      rialAmountInIrr: true,
-                    }
-                  : isClaimRow
-                    ? {
-                        ...line.details,
-                        currencyUnit: isClaimToman ? 'IRT' : 'IRR',
-                        baseCurrency,
-                        amountInIrr: claimRialAmount,
-                        rialAmountInIrr: true,
-                        claimFinancial: rawClaimFinancial > 0 ? String(rawClaimFinancial) : line.details.claimFinancial,
-                        claimWeight: rawClaimWeight > 0 ? String(rawClaimWeight) : line.details.claimWeight,
-                      }
-                    : isWorkmanshipRow && isWorkmanshipToman && workmanshipRialAmount > 0
-                      ? {
-                          ...line.details,
-                          amountInIrr: workmanshipRialAmount,
-                          rialAmountInIrr: true,
-                        }
-                      : line.details,
+              documentDetails: {
+                ...baseLineDetails,
+                clientLineId: line.id,
+                documentTypeLabel: line.documentTypeLabel,
+                documentSubType: line.documentSubType,
+              },
               goldAmount: isMetalRow && metalType === 'gold' ? weightValue : (isClaimRow && metalType === 'gold' ? rawClaimWeight : 0),
               silverAmount: isMetalRow && metalType === 'silver' ? weightValue : (isClaimRow && metalType === 'silver' ? rawClaimWeight : 0),
               platinumAmount: isMetalRow && metalType === 'platinum' ? weightValue : (isClaimRow && metalType === 'platinum' ? rawClaimWeight : 0),
@@ -1353,17 +1507,21 @@ export default function DocumentForm({
                       ? claimRialAmount
                       : isWorkmanshipRow
                         ? (isForeignWorkmanship || line.documentSubType === 'workmanship-golden-percentage' ? 0 : workmanshipRialAmount)
-                        : line.documentTab === 'currency'
-                          ? (line.documentSubType === 'currency-claim' || line.documentSubType === 'currency-debt'
-                              ? 0
-                              : numberValue(line.details.currencyTotalAmount))
-                          : line.documentTab === 'cash' && !line.details.isForeignCash
-                            ? numberValue(line.details.totalAmount)
-                            : line.documentTab === 'gold-sale'
-                              ? numberValue(line.details.totalAmount)
-                              : line.documentTab === 'refining' && line.details.refiningOpKind === 'fee'
-                                ? numberValue(line.details.totalAmount)
-                                : numberValue(line.details.totalAmount || ''),
+                        : isDiscountRow
+                          ? discountRialAmount
+                          : isCurrencyRow
+                            ? (line.documentSubType === 'currency-claim' || line.documentSubType === 'currency-debt'
+                                ? 0
+                                : currencyRialAmount)
+                            : isCashRow
+                              ? cashRialAmount
+                              : isGoldSaleRow
+                                ? goldSaleRialAmount
+                                : isRefiningFeeRow
+                                  ? refiningFeeRialAmount
+                                  : isCoinRow
+                                    ? coinRialAmount
+                                    : (baseCurrency === 'IRT' ? convertTomanToRial(numberValue(line.details?.totalAmount || '')) : Math.round(numberValue(line.details?.totalAmount || ''))),
               foreignAmount:
                 isStoneRow
                   ? stoneForeignAmount
@@ -1389,6 +1547,8 @@ export default function DocumentForm({
         throw new Error(data?.message ?? 'ثبت سند انجام نشد.');
       }
 
+      const targetCustomerId = selectedCustomerId;
+
       if (isEditingExistingDoc) {
         toast.success(`سند شماره ${data?.documentNumber || documentNumberDisplay} با موفقیت ویرایش و ذخیره شد.`);
         setIsEditingExistingDoc(false);
@@ -1403,6 +1563,11 @@ export default function DocumentForm({
         const updatedCust = data.customer as Customer;
         setActiveCustomerOverride(updatedCust);
         setCustomers((prev) => prev.map((c) => (c.id === updatedCust.id ? updatedCust : c)));
+      }
+
+      // Proactively refresh customer balances in background to guarantee full state consistency
+      if (targetCustomerId) {
+        void refreshCustomerBalances(targetCustomerId, true);
       }
 
       // Invalidate banks and cash funds caches so bank & cash tabs reflect fresh balances immediately
@@ -1611,11 +1776,17 @@ export default function DocumentForm({
           <button
             type="button"
             onClick={() => {
+              const currentCustId = selectedCustomerId;
               setIsEditingExistingDoc(false);
               setEditingExistingDocId('');
               setCommittedLines([]);
               setDocumentId(generateUUID());
-              router.push('/dashboard/documents/new');
+              setDocumentNumberDisplay('');
+              setPreviewData(null);
+              if (currentCustId) {
+                void refreshCustomerBalances(currentCustId, true);
+              }
+              router.replace('/dashboard/documents/new');
             }}
             className="text-xs px-3 py-1.5 rounded-lg font-semibold bg-amber-500/20 hover:bg-amber-500/30 text-amber-900 dark:text-amber-200 transition-colors shrink-0"
           >
@@ -1996,6 +2167,7 @@ export default function DocumentForm({
           previewLoading={previewLoading}
           baseCurrency={baseCurrency}
           weightPrecision={weightPrecision}
+          hasCommittedLines={committedLines.length > 0}
         />
       </section>
 

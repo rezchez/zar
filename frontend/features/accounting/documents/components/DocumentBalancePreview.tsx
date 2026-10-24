@@ -53,6 +53,7 @@ interface DocumentBalancePreviewProps {
   previewLoading: boolean;
   baseCurrency?: 'IRR' | 'IRT';
   weightPrecision?: number;
+  hasCommittedLines?: boolean;
 }
 
 export default function DocumentBalancePreview({
@@ -61,38 +62,77 @@ export default function DocumentBalancePreview({
   previewLoading,
   baseCurrency = 'IRR',
   weightPrecision = 3,
+  hasCommittedLines = true,
 }: DocumentBalancePreviewProps) {
-  if (!selectedCustomer || !previewData) return null;
+  if (!selectedCustomer) return null;
+  if (!previewData && hasCommittedLines) return null;
+
+  const isZeroOrNoLines = !hasCommittedLines;
+
+  const effectivePreviewData: DocumentBalancePreviewData = (isZeroOrNoLines || !previewData)
+    ? {
+        previousBalance: {
+          rial: 0,
+          gold: 0,
+          silver: 0,
+          platinum: 0,
+          foreign: 0,
+          tertiary: 0,
+          stoneCredit: 0,
+          stoneDebit: 0,
+        },
+        transactionEffect: {
+          rial: 0,
+          gold: 0,
+          silver: 0,
+          platinum: 0,
+          foreign: 0,
+          tertiary: 0,
+          stoneCredit: 0,
+          stoneDebit: 0,
+        },
+        projectedBalance: {
+          rial: 0,
+          gold: 0,
+          silver: 0,
+          platinum: 0,
+          foreign: 0,
+          tertiary: 0,
+          stoneCredit: 0,
+          stoneDebit: 0,
+        },
+      }
+    : previewData;
 
   const isToman = baseCurrency === 'IRT';
   const currencyUnitLabel = isToman ? 'تومان' : 'ریال';
 
   const foreignMeta = getCurrencyMeta(
-    previewData.previousBalance.secondaryCurrency,
-    previewData.previousBalance.secondaryCurrencySymbol,
+    effectivePreviewData.previousBalance.secondaryCurrency,
+    effectivePreviewData.previousBalance.secondaryCurrencySymbol,
   );
 
   const displayPreviousRial = isToman
-    ? (previewData.previousBalance.rial < 0
-        ? -convertRialToToman(Math.abs(previewData.previousBalance.rial))
-        : convertRialToToman(previewData.previousBalance.rial))
-    : previewData.previousBalance.rial;
+    ? (effectivePreviewData.previousBalance.rial < 0
+        ? -convertRialToToman(Math.abs(effectivePreviewData.previousBalance.rial))
+        : convertRialToToman(effectivePreviewData.previousBalance.rial))
+    : effectivePreviewData.previousBalance.rial;
 
   const displayEffectRial = isToman
-    ? (previewData.transactionEffect.rial < 0
-        ? -convertRialToToman(Math.abs(previewData.transactionEffect.rial))
-        : convertRialToToman(previewData.transactionEffect.rial))
-    : previewData.transactionEffect.rial;
+    ? (effectivePreviewData.transactionEffect.rial < 0
+        ? -convertRialToToman(Math.abs(effectivePreviewData.transactionEffect.rial))
+        : convertRialToToman(effectivePreviewData.transactionEffect.rial))
+    : effectivePreviewData.transactionEffect.rial;
 
   const displayProjectedRial = isToman
-    ? (previewData.projectedBalance.rial < 0
-        ? -convertRialToToman(Math.abs(previewData.projectedBalance.rial))
-        : convertRialToToman(previewData.projectedBalance.rial))
-    : previewData.projectedBalance.rial;
+    ? (effectivePreviewData.projectedBalance.rial < 0
+        ? -convertRialToToman(Math.abs(effectivePreviewData.projectedBalance.rial))
+        : convertRialToToman(effectivePreviewData.projectedBalance.rial))
+    : effectivePreviewData.projectedBalance.rial;
 
   return (
     <div className="mt-2.5 flex flex-wrap items-center gap-2">
-      {previewLoading ? (
+      {previewLoading && !isZeroOrNoLines ? (
         <span className="text-[10px] text-amber-600 dark:text-amber-400 font-bold flex items-center gap-1 w-full">
           <LoaderCircle size={11} className="spin" /> در حال به‌روزرسانی مانده...
         </span>
@@ -107,54 +147,65 @@ export default function DocumentBalancePreview({
           <div className="text-slate-900 dark:text-slate-100 whitespace-nowrap">
             {faNumber(Math.abs(displayPreviousRial), 0)} {currencyUnitLabel}
             <small className="text-[10px] text-slate-500 font-bold mr-1">
-              ({previewData.previousBalance.rial > 0 ? 'بستانکار' : previewData.previousBalance.rial < 0 ? 'بدهکار' : 'تسویه'})
+              ({effectivePreviewData.previousBalance.rial > 0 ? 'بستانکار' : effectivePreviewData.previousBalance.rial < 0 ? 'بدهکار' : 'تسویه'})
             </small>
           </div>
-          {previewData.previousBalance.gold !== 0 || previewData.transactionEffect.gold !== 0 ? (
+          {effectivePreviewData.previousBalance.gold !== 0 || effectivePreviewData.transactionEffect.gold !== 0 ? (
             <div className="text-amber-700 dark:text-amber-300 whitespace-nowrap">
-              طلا: {faNumber(Math.abs(previewData.previousBalance.gold), weightPrecision)} گرم
+              طلا: {faNumber(Math.abs(effectivePreviewData.previousBalance.gold), weightPrecision)} گرم
               <small className="text-[10px] text-slate-500 font-bold mr-1">
-                ({previewData.previousBalance.gold > 0 ? 'بستانکار' : previewData.previousBalance.gold < 0 ? 'بدهکار' : 'تسویه'})
+                ({effectivePreviewData.previousBalance.gold > 0 ? 'بستانکار' : effectivePreviewData.previousBalance.gold < 0 ? 'بدهکار' : 'تسویه'})
               </small>
             </div>
           ) : null}
-          {previewData.previousBalance.silver !== 0 || previewData.transactionEffect.silver !== 0 ? (
+          {effectivePreviewData.previousBalance.silver !== 0 || effectivePreviewData.transactionEffect.silver !== 0 ? (
             <div className="text-slate-600 dark:text-slate-300 whitespace-nowrap">
-              نقره: {faNumber(Math.abs(previewData.previousBalance.silver), weightPrecision)} گرم
+              نقره: {faNumber(Math.abs(effectivePreviewData.previousBalance.silver), weightPrecision)} گرم
+              <small className="text-[10px] text-slate-500 font-bold mr-1">
+                ({effectivePreviewData.previousBalance.silver > 0 ? 'بستانکار' : effectivePreviewData.previousBalance.silver < 0 ? 'بدهکار' : 'تسویه'})
+              </small>
             </div>
           ) : null}
-          {previewData.previousBalance.platinum !== 0 || previewData.transactionEffect.platinum !== 0 ? (
+          {effectivePreviewData.previousBalance.platinum !== 0 || effectivePreviewData.transactionEffect.platinum !== 0 ? (
             <div className="text-purple-600 dark:text-purple-300 whitespace-nowrap">
-              پلاتین: {faNumber(Math.abs(previewData.previousBalance.platinum), weightPrecision)} گرم
+              پلاتین: {faNumber(Math.abs(effectivePreviewData.previousBalance.platinum), weightPrecision)} گرم
+              <small className="text-[10px] text-slate-500 font-bold mr-1">
+                ({effectivePreviewData.previousBalance.platinum > 0 ? 'بستانکار' : effectivePreviewData.previousBalance.platinum < 0 ? 'بدهکار' : 'تسویه'})
+              </small>
             </div>
           ) : null}
-          {previewData.previousBalance.stoneCredit !== undefined || previewData.previousBalance.stoneDebit !== undefined ? (
-            ((previewData.previousBalance.stoneCredit ?? 0) !== 0 || (previewData.previousBalance.stoneDebit ?? 0) !== 0 ||
-             (previewData.transactionEffect.stoneCredit ?? 0) !== 0 || (previewData.transactionEffect.stoneDebit ?? 0) !== 0) ? (
+          {effectivePreviewData.previousBalance.stoneCredit !== undefined || effectivePreviewData.previousBalance.stoneDebit !== undefined ? (
+            ((effectivePreviewData.previousBalance.stoneCredit ?? 0) !== 0 || (effectivePreviewData.previousBalance.stoneDebit ?? 0) !== 0 ||
+             (effectivePreviewData.transactionEffect.stoneCredit ?? 0) !== 0 || (effectivePreviewData.transactionEffect.stoneDebit ?? 0) !== 0) ? (
               <div className="text-amber-800 dark:text-amber-300 whitespace-nowrap inline-flex items-center gap-1">
                 <span>سنگ:</span>
                 <span className="text-emerald-700 dark:text-emerald-300">
-                  طلب {faNumber(previewData.previousBalance.stoneCredit || 0, 2)}
+                  طلب {faNumber(effectivePreviewData.previousBalance.stoneCredit || 0, 2)}
                 </span>
                 <span className="text-slate-300 dark:text-slate-600 font-light">|</span>
                 <span className="text-rose-700 dark:text-rose-300">
-                  بدهی {faNumber(previewData.previousBalance.stoneDebit || 0, 2)}
+                  بدهی {faNumber(effectivePreviewData.previousBalance.stoneDebit || 0, 2)}
                 </span>
                 <span className="text-slate-500 font-bold">قیراط</span>
               </div>
             ) : null
-          ) : previewData.previousBalance.stone !== undefined &&
-          (previewData.previousBalance.stone !== 0 || (previewData.transactionEffect.stone && previewData.transactionEffect.stone !== 0)) ? (
+          ) : effectivePreviewData.previousBalance.stone !== undefined &&
+          (effectivePreviewData.previousBalance.stone !== 0 || (effectivePreviewData.transactionEffect.stone && effectivePreviewData.transactionEffect.stone !== 0)) ? (
             <div className="text-amber-600 dark:text-amber-400 whitespace-nowrap">
-              سنگ: {faNumber(Math.abs(previewData.previousBalance.stone), 2)} قیراط
+              سنگ: {faNumber(Math.abs(effectivePreviewData.previousBalance.stone), 2)} قیراط
               <small className="text-[10px] text-slate-500 font-bold mr-1">
-                ({previewData.previousBalance.stone > 0 ? 'بستانکار' : previewData.previousBalance.stone < 0 ? 'بدهکار' : 'تسویه'})
+                ({effectivePreviewData.previousBalance.stone > 0 ? 'بستانکار' : effectivePreviewData.previousBalance.stone < 0 ? 'بدهکار' : 'تسویه'})
               </small>
             </div>
           ) : null}
-          {previewData.previousBalance.foreign !== 0 || previewData.transactionEffect.foreign !== 0 ? (
+          {effectivePreviewData.previousBalance.foreign !== 0 || effectivePreviewData.transactionEffect.foreign !== 0 ? (
             <div className="text-teal-600 dark:text-teal-400 whitespace-nowrap">
-              {foreignMeta.name}: {faNumber(Math.abs(previewData.previousBalance.foreign), 2)} {foreignMeta.symbol}
+              {foreignMeta.name}: {faNumber(Math.abs(effectivePreviewData.previousBalance.foreign), 2)} {foreignMeta.symbol}
+              {effectivePreviewData.previousBalance.foreign !== 0 ? (
+                <small className="text-[10px] text-slate-500 font-bold mr-1">
+                  ({effectivePreviewData.previousBalance.foreign > 0 ? 'بستانکار' : 'بدهکار'})
+                </small>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -166,19 +217,21 @@ export default function DocumentBalancePreview({
           اثر این سند:
         </span>
         <div className="inline-flex flex-wrap items-center gap-x-2 font-black">
-          {previewData.transactionEffect.rial === 0 &&
-          previewData.transactionEffect.gold === 0 &&
-          previewData.transactionEffect.silver === 0 &&
-          previewData.transactionEffect.platinum === 0 &&
-          previewData.transactionEffect.foreign === 0 &&
-          (!previewData.transactionEffect.stone || previewData.transactionEffect.stone === 0) ? (
+          {effectivePreviewData.transactionEffect.rial === 0 &&
+          effectivePreviewData.transactionEffect.gold === 0 &&
+          effectivePreviewData.transactionEffect.silver === 0 &&
+          effectivePreviewData.transactionEffect.platinum === 0 &&
+          effectivePreviewData.transactionEffect.foreign === 0 &&
+          (!effectivePreviewData.transactionEffect.stone || effectivePreviewData.transactionEffect.stone === 0) &&
+          (!effectivePreviewData.transactionEffect.stoneCredit || effectivePreviewData.transactionEffect.stoneCredit === 0) &&
+          (!effectivePreviewData.transactionEffect.stoneDebit || effectivePreviewData.transactionEffect.stoneDebit === 0) ? (
             <div className="text-slate-400 font-medium whitespace-nowrap">بدون اثر</div>
           ) : (
             <>
-              {previewData.transactionEffect.rial !== 0 ? (
+              {effectivePreviewData.transactionEffect.rial !== 0 ? (
                 <div
                   className={`whitespace-nowrap ${
-                    previewData.transactionEffect.rial >= 0
+                    effectivePreviewData.transactionEffect.rial >= 0
                       ? 'text-emerald-600 dark:text-emerald-400'
                       : 'text-rose-600 dark:text-rose-400'
                   }`}
@@ -187,84 +240,84 @@ export default function DocumentBalancePreview({
                   {faNumber(displayEffectRial, 0)} {currencyUnitLabel}
                 </div>
               ) : null}
-              {previewData.transactionEffect.gold !== 0 ? (
+              {effectivePreviewData.transactionEffect.gold !== 0 ? (
                 <div
                   className={`whitespace-nowrap ${
-                    previewData.transactionEffect.gold >= 0
+                    effectivePreviewData.transactionEffect.gold >= 0
                       ? 'text-emerald-600 dark:text-emerald-400'
                       : 'text-rose-600 dark:text-rose-400'
                   }`}
                 >
-                  طلا: {previewData.transactionEffect.gold >= 0 ? '+' : ''}
-                  {faNumber(previewData.transactionEffect.gold, weightPrecision)} گرم
+                  طلا: {effectivePreviewData.transactionEffect.gold >= 0 ? '+' : ''}
+                  {faNumber(effectivePreviewData.transactionEffect.gold, weightPrecision)} گرم
                 </div>
               ) : null}
-              {previewData.transactionEffect.silver !== 0 ? (
+              {effectivePreviewData.transactionEffect.silver !== 0 ? (
                 <div
                   className={`whitespace-nowrap ${
-                    previewData.transactionEffect.silver >= 0
+                    effectivePreviewData.transactionEffect.silver >= 0
                       ? 'text-emerald-600 dark:text-emerald-400'
                       : 'text-rose-600 dark:text-rose-400'
                   }`}
                 >
-                  نقره: {previewData.transactionEffect.silver >= 0 ? '+' : ''}
-                  {faNumber(previewData.transactionEffect.silver, weightPrecision)} گرم
+                  نقره: {effectivePreviewData.transactionEffect.silver >= 0 ? '+' : ''}
+                  {faNumber(effectivePreviewData.transactionEffect.silver, weightPrecision)} گرم
                 </div>
               ) : null}
-              {previewData.transactionEffect.platinum !== 0 ? (
+              {effectivePreviewData.transactionEffect.platinum !== 0 ? (
                 <div
                   className={`whitespace-nowrap ${
-                    previewData.transactionEffect.platinum >= 0
+                    effectivePreviewData.transactionEffect.platinum >= 0
                       ? 'text-emerald-600 dark:text-emerald-400'
                       : 'text-rose-600 dark:text-rose-400'
                   }`}
                 >
-                  پلاتین: {previewData.transactionEffect.platinum >= 0 ? '+' : ''}
-                  {faNumber(previewData.transactionEffect.platinum, weightPrecision)} گرم
+                  پلاتین: {effectivePreviewData.transactionEffect.platinum >= 0 ? '+' : ''}
+                  {faNumber(effectivePreviewData.transactionEffect.platinum, weightPrecision)} گرم
                 </div>
               ) : null}
-              {previewData.transactionEffect.stoneCredit !== undefined || previewData.transactionEffect.stoneDebit !== undefined ? (
-                ((previewData.transactionEffect.stoneCredit ?? 0) !== 0 || (previewData.transactionEffect.stoneDebit ?? 0) !== 0) ? (
+              {effectivePreviewData.transactionEffect.stoneCredit !== undefined || effectivePreviewData.transactionEffect.stoneDebit !== undefined ? (
+                ((effectivePreviewData.transactionEffect.stoneCredit ?? 0) !== 0 || (effectivePreviewData.transactionEffect.stoneDebit ?? 0) !== 0) ? (
                   <div className="whitespace-nowrap inline-flex items-center gap-1">
                     <span className="text-amber-800 dark:text-amber-300 font-bold">سنگ:</span>
-                    {(previewData.transactionEffect.stoneCredit ?? 0) !== 0 ? (
+                    {(effectivePreviewData.transactionEffect.stoneCredit ?? 0) !== 0 ? (
                       <span className="text-emerald-600 dark:text-emerald-400 font-black">
-                        طلب +{faNumber(previewData.transactionEffect.stoneCredit || 0, 2)}
+                        طلب +{faNumber(effectivePreviewData.transactionEffect.stoneCredit || 0, 2)}
                       </span>
                     ) : null}
-                    {(previewData.transactionEffect.stoneCredit ?? 0) !== 0 && (previewData.transactionEffect.stoneDebit ?? 0) !== 0 ? (
+                    {(effectivePreviewData.transactionEffect.stoneCredit ?? 0) !== 0 && (effectivePreviewData.transactionEffect.stoneDebit ?? 0) !== 0 ? (
                       <span className="text-slate-300 dark:text-slate-600 font-light">|</span>
                     ) : null}
-                    {(previewData.transactionEffect.stoneDebit ?? 0) !== 0 ? (
+                    {(effectivePreviewData.transactionEffect.stoneDebit ?? 0) !== 0 ? (
                       <span className="text-rose-600 dark:text-rose-400 font-black">
-                        بدهی +{faNumber(previewData.transactionEffect.stoneDebit || 0, 2)}
+                        بدهی +{faNumber(effectivePreviewData.transactionEffect.stoneDebit || 0, 2)}
                       </span>
                     ) : null}
                     <span className="text-slate-500 font-bold">قیراط</span>
                   </div>
                 ) : null
-              ) : previewData.transactionEffect.stone !== undefined && previewData.transactionEffect.stone !== 0 ? (
+              ) : effectivePreviewData.transactionEffect.stone !== undefined && effectivePreviewData.transactionEffect.stone !== 0 ? (
                 <div
                   className={`whitespace-nowrap ${
-                    previewData.transactionEffect.stone >= 0
+                    effectivePreviewData.transactionEffect.stone >= 0
                       ? 'text-emerald-600 dark:text-emerald-400'
                       : 'text-rose-600 dark:text-rose-400'
                   }`}
                 >
-                  سنگ: {previewData.transactionEffect.stone >= 0 ? '+' : ''}
-                  {faNumber(previewData.transactionEffect.stone, 2)} قیراط
+                  سنگ: {effectivePreviewData.transactionEffect.stone >= 0 ? '+' : ''}
+                  {faNumber(effectivePreviewData.transactionEffect.stone, 2)} قیراط
                 </div>
               ) : null}
-              {previewData.transactionEffect.foreign !== 0 ? (
+              {effectivePreviewData.transactionEffect.foreign !== 0 ? (
                 <div
                   className={`whitespace-nowrap ${
-                    previewData.transactionEffect.foreign >= 0
+                    effectivePreviewData.transactionEffect.foreign >= 0
                       ? 'text-emerald-600 dark:text-emerald-400'
                       : 'text-rose-600 dark:text-rose-400'
                   }`}
                 >
-                  {foreignMeta.name}: {previewData.transactionEffect.foreign >= 0 ? '+' : ''}
-                  {faNumber(previewData.transactionEffect.foreign, 2)}{' '}
+                  {foreignMeta.name}: {effectivePreviewData.transactionEffect.foreign >= 0 ? '+' : ''}
+                  {faNumber(effectivePreviewData.transactionEffect.foreign, 2)}{' '}
                   {foreignMeta.symbol}
                 </div>
               ) : null}
@@ -282,55 +335,66 @@ export default function DocumentBalancePreview({
           <div className="text-slate-900 dark:text-slate-100 whitespace-nowrap">
             {faNumber(Math.abs(displayProjectedRial), 0)} {currencyUnitLabel}
             <small className="text-[10px] text-slate-500 font-bold mr-1">
-              ({previewData.projectedBalance.rial > 0 ? 'بستانکار' : previewData.projectedBalance.rial < 0 ? 'بدهکار' : 'تسویه'})
+              ({effectivePreviewData.projectedBalance.rial > 0 ? 'بستانکار' : effectivePreviewData.projectedBalance.rial < 0 ? 'بدهکار' : 'تسویه'})
             </small>
           </div>
-          {previewData.projectedBalance.gold !== 0 || previewData.transactionEffect.gold !== 0 ? (
+          {effectivePreviewData.projectedBalance.gold !== 0 || effectivePreviewData.transactionEffect.gold !== 0 ? (
             <div className="text-amber-700 dark:text-amber-300 whitespace-nowrap">
-              طلا: {faNumber(Math.abs(previewData.projectedBalance.gold), weightPrecision)} گرم
+              طلا: {faNumber(Math.abs(effectivePreviewData.projectedBalance.gold), weightPrecision)} گرم
               <small className="text-[10px] text-slate-500 font-bold mr-1">
-                ({previewData.projectedBalance.gold > 0 ? 'بستانکار' : previewData.projectedBalance.gold < 0 ? 'بدهکار' : 'تسویه'})
+                ({effectivePreviewData.projectedBalance.gold > 0 ? 'بستانکار' : effectivePreviewData.projectedBalance.gold < 0 ? 'بدهکار' : 'تسویه'})
               </small>
             </div>
           ) : null}
-          {previewData.projectedBalance.silver !== 0 || previewData.transactionEffect.silver !== 0 ? (
+          {effectivePreviewData.projectedBalance.silver !== 0 || effectivePreviewData.transactionEffect.silver !== 0 ? (
             <div className="text-slate-600 dark:text-slate-300 whitespace-nowrap">
-              نقره: {faNumber(Math.abs(previewData.projectedBalance.silver), weightPrecision)} گرم
+              نقره: {faNumber(Math.abs(effectivePreviewData.projectedBalance.silver), weightPrecision)} گرم
+              <small className="text-[10px] text-slate-500 font-bold mr-1">
+                ({effectivePreviewData.projectedBalance.silver > 0 ? 'بستانکار' : effectivePreviewData.projectedBalance.silver < 0 ? 'بدهکار' : 'تسویه'})
+              </small>
             </div>
           ) : null}
-          {previewData.projectedBalance.platinum !== 0 || previewData.transactionEffect.platinum !== 0 ? (
+          {effectivePreviewData.projectedBalance.platinum !== 0 || effectivePreviewData.transactionEffect.platinum !== 0 ? (
             <div className="text-purple-600 dark:text-purple-300 whitespace-nowrap">
-              پلاتین: {faNumber(Math.abs(previewData.projectedBalance.platinum), weightPrecision)} گرم
+              پلاتین: {faNumber(Math.abs(effectivePreviewData.projectedBalance.platinum), weightPrecision)} گرم
+              <small className="text-[10px] text-slate-500 font-bold mr-1">
+                ({effectivePreviewData.projectedBalance.platinum > 0 ? 'بستانکار' : effectivePreviewData.projectedBalance.platinum < 0 ? 'بدهکار' : 'تسویه'})
+              </small>
             </div>
           ) : null}
-          {previewData.projectedBalance.stoneCredit !== undefined || previewData.projectedBalance.stoneDebit !== undefined ? (
-            ((previewData.projectedBalance.stoneCredit ?? 0) !== 0 || (previewData.projectedBalance.stoneDebit ?? 0) !== 0 ||
-             (previewData.previousBalance.stoneCredit ?? 0) !== 0 || (previewData.previousBalance.stoneDebit ?? 0) !== 0) ? (
+          {effectivePreviewData.projectedBalance.stoneCredit !== undefined || effectivePreviewData.projectedBalance.stoneDebit !== undefined ? (
+            ((effectivePreviewData.projectedBalance.stoneCredit ?? 0) !== 0 || (effectivePreviewData.projectedBalance.stoneDebit ?? 0) !== 0 ||
+             (effectivePreviewData.previousBalance.stoneCredit ?? 0) !== 0 || (effectivePreviewData.previousBalance.stoneDebit ?? 0) !== 0) ? (
               <div className="text-amber-800 dark:text-amber-300 whitespace-nowrap inline-flex items-center gap-1">
                 <span>سنگ:</span>
                 <span className="text-emerald-700 dark:text-emerald-300">
-                  طلب {faNumber(previewData.projectedBalance.stoneCredit || 0, 2)}
+                  طلب {faNumber(effectivePreviewData.projectedBalance.stoneCredit || 0, 2)}
                 </span>
                 <span className="text-slate-300 dark:text-slate-600 font-light">|</span>
                 <span className="text-rose-700 dark:text-rose-300">
-                  بدهی {faNumber(previewData.projectedBalance.stoneDebit || 0, 2)}
+                  بدهی {faNumber(effectivePreviewData.projectedBalance.stoneDebit || 0, 2)}
                 </span>
                 <span className="text-slate-500 font-bold">قیراط</span>
               </div>
             ) : null
-          ) : previewData.projectedBalance.stone !== undefined &&
-          (previewData.projectedBalance.stone !== 0 || (previewData.previousBalance.stone && previewData.previousBalance.stone !== 0)) ? (
+          ) : effectivePreviewData.projectedBalance.stone !== undefined &&
+          (effectivePreviewData.projectedBalance.stone !== 0 || (effectivePreviewData.previousBalance.stone && effectivePreviewData.previousBalance.stone !== 0)) ? (
             <div className="text-amber-600 dark:text-amber-400 whitespace-nowrap">
-              سنگ: {faNumber(Math.abs(previewData.projectedBalance.stone), 2)} قیراط
+              سنگ: {faNumber(Math.abs(effectivePreviewData.projectedBalance.stone), 2)} قیراط
               <small className="text-[10px] text-slate-500 font-bold mr-1">
-                ({previewData.projectedBalance.stone > 0 ? 'بستانکار' : previewData.projectedBalance.stone < 0 ? 'بدهکار' : 'تسویه'})
+                ({effectivePreviewData.projectedBalance.stone > 0 ? 'بستانکار' : effectivePreviewData.projectedBalance.stone < 0 ? 'بدهکار' : 'تسویه'})
               </small>
             </div>
           ) : null}
-          {previewData.projectedBalance.foreign !== 0 || previewData.transactionEffect.foreign !== 0 ? (
+          {effectivePreviewData.projectedBalance.foreign !== 0 || effectivePreviewData.transactionEffect.foreign !== 0 ? (
             <div className="text-teal-600 dark:text-teal-400 whitespace-nowrap">
-              {foreignMeta.name}: {faNumber(Math.abs(previewData.projectedBalance.foreign), 2)}{' '}
+              {foreignMeta.name}: {faNumber(Math.abs(effectivePreviewData.projectedBalance.foreign), 2)}{' '}
               {foreignMeta.symbol}
+              {effectivePreviewData.projectedBalance.foreign !== 0 ? (
+                <small className="text-[10px] text-slate-500 font-bold mr-1">
+                  ({effectivePreviewData.projectedBalance.foreign > 0 ? 'بستانکار' : 'بدهکار'})
+                </small>
+              ) : null}
             </div>
           ) : null}
         </div>

@@ -146,6 +146,7 @@ function getLineSortValue(
     case 'docType': {
       const docType =
         line.documentTypeLabel ||
+        (line.details as any)?.documentTypeLabel ||
         getLineDocumentTypeLabel(
           line.documentNature,
           line.sourceTab || line.documentTab,
@@ -153,7 +154,7 @@ function getLineSortValue(
           line.details.unsettledTrade,
           line.details.refiningOpKind,
           line.details.workmanshipOptionId,
-          line.documentSubType,
+          line.documentSubType || (line.details as any)?.documentSubType,
           line.details.metalType,
         );
       return docType || '';
@@ -751,9 +752,9 @@ export default function CommittedLinesTable({
       if (
         l.documentTab === 'currency' &&
         (l.documentSubType === 'currency-claim' ||
-          (l.details.unsettledTrade && l.documentNature === 'received' && !l.details.linkedLineId))
+          ((l.details?.unsettledTrade || l.settlementMethod === 'unsettled') && l.documentNature === 'received' && !l.details?.linkedLineId))
       ) {
-        return sum + numberValue(l.details.currencyQuantity);
+        return sum + numberValue(l.details?.currencyQuantity);
       }
       return sum;
     }, 0);
@@ -778,9 +779,9 @@ export default function CommittedLinesTable({
       if (
         l.documentTab === 'currency' &&
         (l.documentSubType === 'currency-debt' ||
-          (l.details.unsettledTrade && l.documentNature === 'paid' && !l.details.linkedLineId))
+          ((l.details?.unsettledTrade || l.settlementMethod === 'unsettled') && l.documentNature === 'paid' && !l.details?.linkedLineId))
       ) {
-        return sum + numberValue(l.details.currencyQuantity);
+        return sum + numberValue(l.details?.currencyQuantity);
       }
       return sum;
     }, 0);

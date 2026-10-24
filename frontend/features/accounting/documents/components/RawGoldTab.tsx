@@ -154,6 +154,9 @@ export type DetailState = {
   wageTotalAmount?: string;
   hasChildLines?: boolean;
   isChildLine?: boolean;
+  documentTypeLabel?: string;
+  documentSubType?: string;
+  clientLineId?: string;
 };
 
 export type DocumentLine = {

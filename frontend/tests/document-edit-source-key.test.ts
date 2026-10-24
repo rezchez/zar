@@ -3,7 +3,7 @@ import { POST as postDocuments } from '@/app/api/documents/route';
 import { sharedMockPb, setMockAuthUser } from './setup';
 
 describe('Document Edit Mode sourceKey Uniqueness & Lifecycle', () => {
-  it('successfully edits an existing document without sourceKey unique collision', async () => {
+  it('successfully edits an existing document without sourceKey unique collision and cleans up previous rows', async () => {
     setMockAuthUser({
       id: 'admin_user',
       name: 'مدیر تست',
@@ -14,9 +14,9 @@ describe('Document Edit Mode sourceKey Uniqueness & Lifecycle', () => {
 
     const docId = 'edit_lifecycle_doc_1';
     const originalDocNumber = 'ZF12345678';
-    const updatedTransactions: Array<{ id: string; data: any }> = [];
+    const deletedTransactions: string[] = [];
     const createdTransactions: any[] = [];
-    const updatedMetalInv: Array<{ id: string; data: any }> = [];
+    const deletedMetalInv: string[] = [];
 
     const originalCollection = sharedMockPb.collection.bind(sharedMockPb);
     sharedMockPb.collection = ((name: string) => {
@@ -37,7 +37,6 @@ describe('Document Edit Mode sourceKey Uniqueness & Lifecycle', () => {
         const coll = originalCollection(name);
         coll.getFirstListItem = async () => null;
         coll.getFullList = async (opts: any) => {
-          // If filtering by documentId
           return [
             {
               id: 'tx_old_line_1',
@@ -52,16 +51,16 @@ describe('Document Edit Mode sourceKey Uniqueness & Lifecycle', () => {
               id: 'tx_old_line_2',
               documentId: docId,
               documentLineNumber: 2,
-              documentNumber: 'ZF87654321',
+              documentNumber: originalDocNumber,
               documentSequence: 42,
               sourceKey: `document:${docId}:2`,
               is_deleted: false,
             },
           ];
         };
-        coll.update = async (id: string, data: any) => {
-          updatedTransactions.push({ id, data });
-          return { id, ...data };
+        coll.delete = async (id: string) => {
+          deletedTransactions.push(id);
+          return true;
         };
         coll.create = async (data: any) => {
           createdTransactions.push(data);
@@ -80,9 +79,9 @@ describe('Document Edit Mode sourceKey Uniqueness & Lifecycle', () => {
             is_deleted: false,
           },
         ];
-        coll.update = async (id: string, data: any) => {
-          updatedMetalInv.push({ id, data });
-          return { id, ...data };
+        coll.delete = async (id: string) => {
+          deletedMetalInv.push(id);
+          return true;
         };
         coll.getFirstListItem = async () => null;
         coll.create = async (d: any) => ({ id: 'inv_new_1', ...d });
@@ -128,18 +127,14 @@ describe('Document Edit Mode sourceKey Uniqueness & Lifecycle', () => {
       expect(resJson.documentNumber).toBe(originalDocNumber);
       expect(resJson.documentSequence).toBe(42);
 
-      // Verify old transactions were soft-deleted and had sourceKey and documentNumber renamed
-      expect(updatedTransactions.length).toBe(2);
-      expect(updatedTransactions[0].data.is_deleted).toBe(true);
-      expect(updatedTransactions[0].data.sourceKey).toContain(`document:${docId}:1:edited:`);
-      expect(updatedTransactions[0].data.documentNumber).toContain(`${originalDocNumber}:edited:`);
-      expect(updatedTransactions[1].data.is_deleted).toBe(true);
-      expect(updatedTransactions[1].data.sourceKey).toContain(`document:${docId}:2:edited:`);
+      // Verify old transactions were cleanly deleted (no zombie records in transactions)
+      expect(deletedTransactions.length).toBe(2);
+      expect(deletedTransactions).toContain('tx_old_line_1');
+      expect(deletedTransactions).toContain('tx_old_line_2');
 
-      // Verify old metal_inventory was soft-deleted and source_key renamed
-      expect(updatedMetalInv.length).toBe(1);
-      expect(updatedMetalInv[0].data.is_deleted).toBe(true);
-      expect(updatedMetalInv[0].data.source_key).toContain(`document:${docId}:1:metal:edited:`);
+      // Verify old metal_inventory was cleanly deleted
+      expect(deletedMetalInv.length).toBe(1);
+      expect(deletedMetalInv).toContain('inv_old_1');
 
       // Verify new transaction was created with clean canonical sourceKey and preserved number
       expect(createdTransactions.length).toBe(1);
@@ -151,7 +146,7 @@ describe('Document Edit Mode sourceKey Uniqueness & Lifecycle', () => {
     }
   });
 
-  it('successfully edits an existing multi-line document and adds a discount line without sourceKey collision', async () => {
+  it('successfully edits an existing multi-line document and adds a discount line without leaving zombie records', async () => {
     setMockAuthUser({
       id: 'admin_user',
       name: 'مدیر تست',
@@ -162,7 +157,7 @@ describe('Document Edit Mode sourceKey Uniqueness & Lifecycle', () => {
 
     const docId = 'edit_discount_doc_2';
     const originalDocNumber = 'ZF99887766';
-    const updatedTransactions: Array<{ id: string; data: any }> = [];
+    const deletedTransactions: string[] = [];
     const createdTransactions: any[] = [];
 
     const originalCollection = sharedMockPb.collection.bind(sharedMockPb);
@@ -184,7 +179,6 @@ describe('Document Edit Mode sourceKey Uniqueness & Lifecycle', () => {
         const coll = originalCollection(name);
         coll.getFirstListItem = async () => null;
         coll.getFullList = async (opts: any) => {
-          // Verify sort is NOT 'documentLineNumber' (which PocketBase rejects)
           expect(opts?.sort).not.toBe('documentLineNumber');
           return [
             {
@@ -198,16 +192,16 @@ describe('Document Edit Mode sourceKey Uniqueness & Lifecycle', () => {
             {
               id: 'tx_line_2',
               documentId: docId,
-              documentNumber: 'ZF11223344',
+              documentNumber: originalDocNumber,
               documentSequence: 10,
               sourceKey: `document:${docId}:2`,
               is_deleted: false,
             },
           ];
         };
-        coll.update = async (id: string, data: any) => {
-          updatedTransactions.push({ id, data });
-          return { id, ...data };
+        coll.delete = async (id: string) => {
+          deletedTransactions.push(id);
+          return true;
         };
         coll.create = async (data: any) => {
           createdTransactions.push(data);
@@ -220,7 +214,6 @@ describe('Document Edit Mode sourceKey Uniqueness & Lifecycle', () => {
     }) as any;
 
     try {
-      // Edit payload has 3 lines: original 2 lines + 1 discount line
       const payload = {
         customerId: 'cust_edit_discount',
         documentId: docId,
@@ -285,16 +278,19 @@ describe('Document Edit Mode sourceKey Uniqueness & Lifecycle', () => {
       expect(resJson.documentNumber).toBe(originalDocNumber);
       expect(resJson.documentSequence).toBe(10);
 
-      // Both previous transactions should be marked deleted with :edited: suffix
-      expect(updatedTransactions.length).toBe(2);
-      expect(updatedTransactions[0].data.sourceKey).toContain(`document:${docId}:1:edited:`);
-      expect(updatedTransactions[1].data.sourceKey).toContain(`document:${docId}:2:edited:`);
+      // Previous transactions should be deleted
+      expect(deletedTransactions.length).toBe(2);
+      expect(deletedTransactions).toContain('tx_line_1');
+      expect(deletedTransactions).toContain('tx_line_2');
 
-      // All 3 new lines created with unique canonical sourceKeys
+      // All 3 new lines created with unique canonical sourceKeys and shared documentNumber
       expect(createdTransactions.length).toBe(3);
       expect(createdTransactions[0].sourceKey).toBe(`document:${docId}:1`);
+      expect(createdTransactions[0].documentNumber).toBe(originalDocNumber);
       expect(createdTransactions[1].sourceKey).toBe(`document:${docId}:2`);
+      expect(createdTransactions[1].documentNumber).toBe(originalDocNumber);
       expect(createdTransactions[2].sourceKey).toBe(`document:${docId}:3`);
+      expect(createdTransactions[2].documentNumber).toBe(originalDocNumber);
       expect(createdTransactions[2].documentTab).toBe('discount');
     } finally {
       sharedMockPb.collection = originalCollection;

@@ -285,8 +285,7 @@ describe('Document API Route Recent & Edit Endpoints', () => {
       status: 'active',
     });
 
-    const updatedTxIds: string[] = [];
-    const updatedPayloads: any[] = [];
+    const deletedTxIds: string[] = [];
     const createdPayloads: any[] = [];
 
     const originalCollection = sharedMockPb.collection.bind(sharedMockPb);
@@ -314,10 +313,9 @@ describe('Document API Route Recent & Edit Endpoints', () => {
             is_deleted: false,
           },
         ];
-        coll.update = async (id: string, data: any) => {
-          updatedTxIds.push(id);
-          updatedPayloads.push(data);
-          return { id, ...data };
+        coll.delete = async (id: string) => {
+          deletedTxIds.push(id);
+          return true;
         };
         coll.create = async (data: any) => {
           createdPayloads.push(data);
@@ -328,6 +326,7 @@ describe('Document API Route Recent & Edit Endpoints', () => {
       if (name === 'metal_inventory') {
         const coll = originalCollection(name);
         coll.getFullList = async () => [];
+        coll.delete = async () => true;
         coll.getFirstListItem = async () => null;
         coll.create = async (d: any) => ({ id: 'metal_inv_1', ...d });
         return coll;
@@ -365,10 +364,8 @@ describe('Document API Route Recent & Edit Endpoints', () => {
     const res = await postDocuments(req);
     expect(res.status).toBe(200);
 
-    // Assert that the old sibling record was marked is_deleted: true
-    expect(updatedTxIds).toContain('old_tx_1');
-    expect(updatedPayloads[0].is_deleted).toBe(true);
-    expect(updatedPayloads[0].sourceKey).toContain('edited');
+    // Assert that the old sibling record was cleanly deleted (no zombie records in transactions)
+    expect(deletedTxIds).toContain('old_tx_1');
 
     // Assert that the new record preserved the original document number and sequence
     expect(createdPayloads).toHaveLength(1);

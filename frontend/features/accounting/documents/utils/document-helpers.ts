@@ -58,8 +58,22 @@ export function getLineDocumentTypeLabel(
   }
 
   if (tab === 'currency') {
+    if (
+      workmanshipSubType === 'currency-claim' ||
+      workmanshipSubType === 'claim' ||
+      workmanshipSubType?.includes('claim')
+    ) {
+      return 'طلب ارزی';
+    }
+    if (
+      workmanshipSubType === 'currency-debt' ||
+      workmanshipSubType === 'debt' ||
+      workmanshipSubType?.includes('debt')
+    ) {
+      return 'بدهی ارزی';
+    }
     if (unsettledTrade) {
-      return nature === 'received' ? 'خرید ارز (بدون تسویه)' : 'فروش ارز (بدون تسویه)';
+      return nature === 'received' ? 'خرید ارزی بدون تسویه' : 'فروش ارزی بدون تسویه';
     }
     return nature === 'received' ? 'خرید ارز' : 'فروش ارز';
   }
@@ -575,6 +589,10 @@ export function sanitizeLineDetailsForTab(
         settlementQuantity: details.settlementQuantity || '',
         settlesTradeId: details.settlesTradeId || '',
         baseCurrency: details.baseCurrency || baseCurrency,
+        linkedLineId: details.linkedLineId,
+        documentTypeLabel: details.documentTypeLabel,
+        documentSubType: details.documentSubType,
+        clientLineId: (details as any).clientLineId,
         // Enforce 0 weight/purity for currency lines
         rawWeight: '',
         purity: '',

@@ -146,7 +146,8 @@ export function transactionRecordToDocumentLine(
     details.rawWeight = String(Math.abs(goldAmount));
   }
   if (!details.totalAmount && rialAmount !== 0) {
-    details.totalAmount = String(Math.abs(rialAmount));
+    const isToman = details.currencyUnit === 'IRT' || details.baseCurrency === 'IRT';
+    details.totalAmount = isToman ? String(Math.floor(Math.abs(rialAmount) / 10)) : String(Math.abs(rialAmount));
   }
 
   const nature = (record.documentNature === 'paid' ? 'paid' : 'received') as DocumentNature;
@@ -161,7 +162,7 @@ export function transactionRecordToDocumentLine(
     details.unsettledTrade,
     (details as any).refiningOpKind,
     (details as any).workmanshipOptionId,
-    (details as any).workmanshipSubType,
+    subType || (details as any).workmanshipSubType || (details as any).documentSubType,
     (details as any).metalType,
   );
 

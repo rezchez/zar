@@ -66,6 +66,7 @@ export default function CommittedLineRow({
 
   const docType =
     line.documentTypeLabel ||
+    (line.details as any)?.documentTypeLabel ||
     getLineDocumentTypeLabel(
       line.documentNature,
       line.sourceTab || line.documentTab,
@@ -73,7 +74,7 @@ export default function CommittedLineRow({
       line.details.unsettledTrade,
       line.details.refiningOpKind,
       line.details.workmanshipOptionId,
-      line.documentSubType,
+      line.documentSubType || (line.details as any)?.documentSubType,
       line.details.metalType,
     );
 
@@ -157,9 +158,9 @@ export default function CommittedLineRow({
   let bostankarArzi: string | null = null;
 
   if (isCurrency && currencyQty > 0) {
-    if (isDebtLine || (isClaimLine && isReceived) || (isUnsettled && isReceived && !line.details.linkedLineId)) {
+    if (isClaimLine || (!line.details.linkedLineId && isUnsettled && isReceived)) {
       bedehkarArzi = faNumber(currencyQty, 0);
-    } else if (isClaimLine || (isDebtLine && isPaid) || (isUnsettled && isPaid && !line.details.linkedLineId)) {
+    } else if (isDebtLine || (!line.details.linkedLineId && isUnsettled && isPaid)) {
       bostankarArzi = faNumber(currencyQty, 0);
     }
   } else if (isForeignStone && stoneAmount > 0) {

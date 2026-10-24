@@ -387,6 +387,44 @@ export async function GET(request: Request) {
         return line;
       });
       lines.sort((a, b) => (Number((a as any).documentLineNumber) || 0) - (Number((b as any).documentLineNumber) || 0));
+
+      // Remap linkedLineIds if records used temporary client UUIDs
+      const clientToRecordIdMap = new Map<string, string>();
+      for (const line of lines) {
+        const cId = (line.details as any)?.clientLineId;
+        if (cId) clientToRecordIdMap.set(cId, line.id);
+      }
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (line.details?.linkedLineId && clientToRecordIdMap.has(line.details.linkedLineId)) {
+          line.details.linkedLineId = clientToRecordIdMap.get(line.details.linkedLineId)!;
+        }
+      }
+      // Pairwise fallback for 2-row currency or gold trades where linkedLineId does not match any line.id
+      for (let i = 0; i < lines.length; i++) {
+        const l1 = lines[i];
+        if (l1.details?.linkedLineId && !lines.some((o) => o.id === l1.details.linkedLineId)) {
+          const sibling = lines.find((l2, j) => {
+            if (i === j) return false;
+            if (l1.documentTab === 'currency' && l2.documentTab === 'currency') {
+              const isL1Claim = l1.documentSubType === 'currency-claim' || l1.documentSubType === 'currency-debt';
+              const isL2Claim = l2.documentSubType === 'currency-claim' || l2.documentSubType === 'currency-debt';
+              return (isL1Claim && !isL2Claim) || (!isL1Claim && isL2Claim);
+            }
+            if (
+              (l1.documentTab === 'gold-sale' && l2.documentTab === 'raw-gold') ||
+              (l1.documentTab === 'raw-gold' && l2.documentTab === 'gold-sale')
+            ) {
+              return true;
+            }
+            return false;
+          });
+          if (sibling) {
+            l1.details.linkedLineId = sibling.id;
+            if (sibling.details) sibling.details.linkedLineId = l1.id;
+          }
+        }
+      }
       return NextResponse.json({
         documentId: primary.documentId || documentIdParam,
         documentNumber: String(primary.documentNumber ?? ''),
@@ -580,38 +618,16 @@ export async function POST(request: Request) {
           preservedSequence = typeof activePrimary.documentSequence === 'number' ? activePrimary.documentSequence : undefined;
           const rawDocNumber = String(activePrimary.documentNumber ?? '');
           preservedNumber = rawDocNumber.replace(/:edited:.*$/, '').replace(/:deleted:.*$/, '');
-          const deletedAt = new Date().toISOString();
-          const timestamp = Date.now();
           for (let idx = 0; idx < recordsToDelete.length; idx++) {
             const sibling = recordsToDelete[idx];
-            if (sibling.is_deleted && sibling.sourceKey && (sibling.sourceKey.includes(':edited:') || sibling.sourceKey.includes(':deleted:'))) {
-              continue;
-            }
-            const oldSourceKey = sibling.sourceKey || `document:${documentId}:${idx + 1}`;
-            const oldDocNumber = String(sibling.documentNumber ?? '');
-            await writer.collection('transactions').update(sibling.id, {
-              is_deleted: true,
-              deleted_at: deletedAt,
-              deleted_by: context.user.id,
-              sourceKey: `${oldSourceKey}:edited:${timestamp}:${sibling.id}`,
-              documentNumber: oldDocNumber && !oldDocNumber.includes(':edited:') ? `${oldDocNumber}:edited:${timestamp}:${sibling.id}` : oldDocNumber,
-            });
+            await writer.collection('transactions').delete(sibling.id).catch(() => null);
           }
         }
         const oldMetalInv = await writer.collection('metal_inventory').getFullList({
           filter: writer.filter('document_id = {:docId}', { docId: documentId }),
         }).catch(() => []);
-        const invTimestamp = Date.now();
         for (const inv of oldMetalInv) {
-          if (inv.is_deleted && inv.source_key && (inv.source_key.includes(':edited:') || inv.source_key.includes(':deleted:'))) {
-            continue;
-          }
-          const oldSourceKey = inv.source_key || `document:${documentId}:metal`;
-          await writer.collection('metal_inventory').update(inv.id, {
-            is_deleted: true,
-            updated_by: context.user.id,
-            source_key: `${oldSourceKey}:edited:${invTimestamp}:${inv.id}`,
-          }).catch(() => null);
+          await writer.collection('metal_inventory').delete(inv.id).catch(() => null);
         }
       }
     }
@@ -653,9 +669,22 @@ export async function POST(request: Request) {
         }
         const isMetalAmount = field === 'goldAmount' || field === 'silverAmount' || field === 'platinumAmount';
         const isCurrencyForeign = line.documentTab === 'currency' && field === 'foreignAmount';
-        const direction = (line.documentTab === 'gold-sale' && isMetalAmount) || isCurrencyForeign
-          ? (lineNature === 'received' ? -1 : 1)
-          : (lineNature === 'received' ? 1 : -1);
+        let direction = lineNature === 'received' ? 1 : -1;
+        if (line.documentTab === 'gold-sale' && isMetalAmount) {
+          direction = lineNature === 'received' ? -1 : 1;
+        } else if (isCurrencyForeign) {
+          const isCurrencyClaim =
+            line.documentSubType === 'currency-claim' || details.documentSubType === 'currency-claim';
+          const isCurrencyDebt =
+            line.documentSubType === 'currency-debt' || details.documentSubType === 'currency-debt';
+          if (isCurrencyClaim) {
+            direction = -1;
+          } else if (isCurrencyDebt) {
+            direction = 1;
+          } else {
+            direction = lineNature === 'received' ? -1 : 1;
+          }
+        }
         lineAmounts[field] = Math.abs(amount) * direction;
       }
 
@@ -788,6 +817,100 @@ export async function POST(request: Request) {
         details.rialAmountInIrr = true;
         details.discountAmount = String(Math.round(effectiveAbsRial));
         details.totalAmount = String(Math.round(effectiveAbsRial));
+      }
+
+      const isGoldSaleLine = line.documentTab === 'gold-sale' || line.sourceTab === 'gold-sale';
+      if (isGoldSaleLine) {
+        const saleCurrency = normalizeCurrencyCode(String(details.currencyUnit || details.baseCurrency || body?.baseCurrency || ''));
+        const isToman = saleCurrency === 'IRT' || details.baseCurrency === 'IRT' || body?.baseCurrency === 'IRT';
+        const rawLineRial = Math.abs(readAmount(line.rialAmount) || 0);
+        const detailTotal = Math.abs(readAmount(details.totalAmount) || 0);
+        const alreadyInIrr = details.rialAmountInIrr === true;
+
+        const effectiveAbsRial = isToman
+          ? (alreadyInIrr && rawLineRial > 0 && rawLineRial !== detailTotal
+              ? rawLineRial
+              : convertTomanToRial(detailTotal || rawLineRial))
+          : (rawLineRial || detailTotal);
+
+        lineAmounts.rialAmount = Math.round(effectiveAbsRial) * (lineNature === 'received' ? 1 : -1);
+        details.rialAmountInIrr = true;
+      }
+
+      const isCashLine = (line.documentTab === 'cash' || line.sourceTab === 'cash') && !details.isForeignCash;
+      if (isCashLine) {
+        const cashCurrency = normalizeCurrencyCode(String(details.currencyUnit || details.baseCurrency || body?.baseCurrency || ''));
+        const isToman = cashCurrency === 'IRT' || details.baseCurrency === 'IRT' || body?.baseCurrency === 'IRT';
+        const rawLineRial = Math.abs(readAmount(line.rialAmount) || 0);
+        const detailTotal = Math.abs(readAmount(details.totalAmount) || 0);
+        const alreadyInIrr = details.rialAmountInIrr === true;
+
+        const effectiveAbsRial = isToman
+          ? (alreadyInIrr && rawLineRial > 0 && rawLineRial !== detailTotal
+              ? rawLineRial
+              : convertTomanToRial(detailTotal || rawLineRial))
+          : (rawLineRial || detailTotal);
+
+        lineAmounts.rialAmount = Math.round(effectiveAbsRial) * (lineNature === 'received' ? 1 : -1);
+        details.rialAmountInIrr = true;
+      }
+
+      const isCoinLine = line.documentTab === 'coin' || line.sourceTab === 'coin';
+      if (isCoinLine) {
+        const coinCurrency = normalizeCurrencyCode(String(details.currencyUnit || details.baseCurrency || body?.baseCurrency || ''));
+        const isToman = coinCurrency === 'IRT' || details.baseCurrency === 'IRT' || body?.baseCurrency === 'IRT';
+        const rawLineRial = Math.abs(readAmount(line.rialAmount) || 0);
+        const detailTotal = Math.abs(readAmount(details.totalAmount) || readAmount(details.currencyTotalAmount) || 0);
+        const alreadyInIrr = details.rialAmountInIrr === true;
+
+        const effectiveAbsRial = isToman
+          ? (alreadyInIrr && rawLineRial > 0 && rawLineRial !== detailTotal
+              ? rawLineRial
+              : convertTomanToRial(detailTotal || rawLineRial))
+          : (rawLineRial || detailTotal);
+
+        lineAmounts.rialAmount = Math.round(effectiveAbsRial) * (lineNature === 'received' ? 1 : -1);
+        details.rialAmountInIrr = true;
+      }
+
+      const isRefiningFeeLine = (line.documentTab === 'refining' || line.sourceTab === 'refining') && details.refiningOpKind === 'fee';
+      if (isRefiningFeeLine) {
+        const feeCurrency = normalizeCurrencyCode(String(details.currencyUnit || details.baseCurrency || body?.baseCurrency || ''));
+        const isToman = feeCurrency === 'IRT' || details.baseCurrency === 'IRT' || body?.baseCurrency === 'IRT';
+        const rawLineRial = Math.abs(readAmount(line.rialAmount) || 0);
+        const detailTotal = Math.abs(readAmount(details.totalAmount) || 0);
+        const alreadyInIrr = details.rialAmountInIrr === true;
+
+        const effectiveAbsRial = isToman
+          ? (alreadyInIrr && rawLineRial > 0 && rawLineRial !== detailTotal
+              ? rawLineRial
+              : convertTomanToRial(detailTotal || rawLineRial))
+          : (rawLineRial || detailTotal);
+
+        lineAmounts.rialAmount = Math.round(effectiveAbsRial) * (lineNature === 'received' ? 1 : -1);
+        details.rialAmountInIrr = true;
+      }
+
+      const isCurrencyLine = line.documentTab === 'currency' || line.sourceTab === 'currency';
+      if (isCurrencyLine) {
+        const isTradeWithSeparateClaim =
+          (line.documentSubType === 'currency-claim' || line.documentSubType === 'currency-debt');
+        if (!isTradeWithSeparateClaim) {
+          const baseCur = normalizeCurrencyCode(String(details.baseCurrency || body?.baseCurrency || ''));
+          const isToman = baseCur === 'IRT' || body?.baseCurrency === 'IRT';
+          const rawLineRial = Math.abs(readAmount(line.rialAmount) || 0);
+          const detailTotal = Math.abs(readAmount(details.currencyTotalAmount) || 0);
+          const alreadyInIrr = details.rialAmountInIrr === true;
+
+          const effectiveAbsRial = isToman
+            ? (alreadyInIrr && rawLineRial > 0 && rawLineRial !== detailTotal
+                ? rawLineRial
+                : convertTomanToRial(detailTotal || rawLineRial))
+            : (rawLineRial || detailTotal);
+
+          lineAmounts.rialAmount = Math.round(effectiveAbsRial) * (lineNature === 'received' ? 1 : -1);
+          details.rialAmountInIrr = true;
+        }
       }
 
       const hasStoneQuantity =
@@ -1057,19 +1180,15 @@ export async function POST(request: Request) {
       finalSequence = (isEditMode && preservedSequence !== undefined)
         ? preservedSequence
         : await getNextDocumentSequenceForCustomer(writer, customer.id);
-      const usedNumbers = new Set<string>();
-      const lineDocumentNumbers: string[] = [];
-      for (let i = 0; i < preparedLines.length; i++) {
-        if (i === 0 && isEditMode && preservedNumber) {
-          lineDocumentNumbers.push(preservedNumber);
-          usedNumbers.add(preservedNumber);
-        } else {
-          const num = await generateUniqueZfDocumentNumber(writer, 10, usedNumbers);
-          lineDocumentNumbers.push(num);
-          usedNumbers.add(num);
-        }
+
+      if (isEditMode && preservedNumber) {
+        finalDocumentNumber = preservedNumber;
+      } else if (!finalDocumentNumber) {
+        const candidateNum = (typeof body.documentNumber === 'string' && body.documentNumber.trim())
+          ? body.documentNumber.trim()
+          : (preservedNumber || await generateUniqueZfDocumentNumber(writer, 10));
+        finalDocumentNumber = candidateNum;
       }
-      finalDocumentNumber = lineDocumentNumbers[0] || (preservedNumber || '');
 
       const documentPayloads = preparedLines.map((prepared, idx) => {
         const isStone = prepared.line.documentTab === 'stone' || prepared.line.sourceTab === 'stone';
@@ -1103,7 +1222,7 @@ export async function POST(request: Request) {
           documentId,
           documentSequence: finalSequence,
           documentNumberPrefixSnapshot: activePrefix,
-          documentNumber: lineDocumentNumbers[idx],
+          documentNumber: finalDocumentNumber,
           description: readString(prepared.line.description ?? body.description, 2000),
           documentNature: prepared.lineNature,
           documentTab: readString(prepared.line.documentTab ?? body.documentTab, 40) || 'general',
@@ -1127,17 +1246,12 @@ export async function POST(request: Request) {
       const currentCreatedInventoryRecords = [];
       try {
         for (const payload of documentPayloads) {
-          // Extra safety guard: ensure no active or soft-deleted record in transactions still holds this sourceKey
+          // Extra safety guard: ensure no lingering record in transactions still holds this sourceKey
           const lingering = await writer.collection('transactions').getFirstListItem(
             writer.filter('sourceKey = {:sk}', { sk: payload.sourceKey }),
           ).catch(() => null);
           if (lingering && lingering.id) {
-            await writer.collection('transactions').update(lingering.id, {
-              is_deleted: true,
-              deleted_at: new Date().toISOString(),
-              deleted_by: context.user.id,
-              sourceKey: `${lingering.sourceKey}:edited:${Date.now()}:${lingering.id}`,
-            }).catch(() => null);
+            await writer.collection('transactions').delete(lingering.id).catch(() => null);
           }
 
           try {
@@ -1270,7 +1384,7 @@ export async function POST(request: Request) {
               await postMetalSale(
                 {
                   documentId: `${documentId}:${prepared.lineNumber}`,
-                  documentNumber: lineDocumentNumbers[index] || finalDocumentNumber,
+                  documentNumber: finalDocumentNumber,
                   entryDateJalali: documentDateJalali,
                   salesRevenueRials: rialAmount,
                   exactRevenueRials: exactAmount,
@@ -1301,7 +1415,7 @@ export async function POST(request: Request) {
               await postMetalPurchase(
                 {
                   documentId: `${documentId}:${prepared.lineNumber}`,
-                  documentNumber: lineDocumentNumbers[index] || finalDocumentNumber,
+                  documentNumber: finalDocumentNumber,
                   entryDateJalali: documentDateJalali,
                   amountRials: rialAmount,
                   exactAmountRials: exactAmount,
@@ -1339,7 +1453,7 @@ export async function POST(request: Request) {
               await postStoneSale(
                 {
                   documentId: `${documentId}:${prepared.lineNumber}`,
-                  documentNumber: lineDocumentNumbers[index] || finalDocumentNumber,
+                  documentNumber: finalDocumentNumber,
                   entryDateJalali: documentDateJalali,
                   salesRevenueRials: rialAmount,
                   exactRevenueRials: exactAmount,
@@ -1373,7 +1487,7 @@ export async function POST(request: Request) {
               await postStonePurchase(
                 {
                   documentId: `${documentId}:${prepared.lineNumber}`,
-                  documentNumber: lineDocumentNumbers[index] || finalDocumentNumber,
+                  documentNumber: finalDocumentNumber,
                   entryDateJalali: documentDateJalali,
                   amountRials: rialAmount,
                   exactAmountRials: exactAmount,
@@ -1415,7 +1529,7 @@ export async function POST(request: Request) {
                 await postWorkmanshipReturnEntry(
                   {
                     documentId: `${documentId}:${prepared.lineNumber}`,
-                    documentNumber: lineDocumentNumbers[index] || finalDocumentNumber,
+                    documentNumber: finalDocumentNumber,
                     entryDateJalali: documentDateJalali,
                     amountRials: rialAmount,
                     exactAmountRials: exactAmount,
@@ -1444,7 +1558,7 @@ export async function POST(request: Request) {
                 await postWorkmanshipReturnExit(
                   {
                     documentId: `${documentId}:${prepared.lineNumber}`,
-                    documentNumber: lineDocumentNumbers[index] || finalDocumentNumber,
+                    documentNumber: finalDocumentNumber,
                     entryDateJalali: documentDateJalali,
                     amountRials: rialAmount,
                     exactAmountRials: exactAmount,
@@ -1473,7 +1587,7 @@ export async function POST(request: Request) {
                 await postWorkmanshipSale(
                   {
                     documentId: `${documentId}:${prepared.lineNumber}`,
-                    documentNumber: lineDocumentNumbers[index] || finalDocumentNumber,
+                    documentNumber: finalDocumentNumber,
                     entryDateJalali: documentDateJalali,
                     amountRials: rialAmount,
                     exactAmountRials: exactAmount,
@@ -1502,7 +1616,7 @@ export async function POST(request: Request) {
                 await postWorkmanshipPurchase(
                   {
                     documentId: `${documentId}:${prepared.lineNumber}`,
-                    documentNumber: lineDocumentNumbers[index] || finalDocumentNumber,
+                    documentNumber: finalDocumentNumber,
                     entryDateJalali: documentDateJalali,
                     amountRials: rialAmount,
                     exactAmountRials: exactAmount,
@@ -1538,7 +1652,7 @@ export async function POST(request: Request) {
                 await postDiscountJournalEntry(
                   {
                     documentId: `${documentId}:${prepared.lineNumber}`,
-                    documentNumber: lineDocumentNumbers[index] || finalDocumentNumber,
+                    documentNumber: finalDocumentNumber,
                     entryDateJalali: documentDateJalali,
                     amountRials: rialAmount,
                     direction,
@@ -1655,7 +1769,7 @@ export async function POST(request: Request) {
             await postCurrencyTrade(
               {
                 documentId: `${documentId}:${prepared.lineNumber}`,
-                documentNumber: lineDocumentNumbers[index] || finalDocumentNumber,
+                documentNumber: finalDocumentNumber,
                 entryDateJalali: documentDateJalali,
                 tradeType: prepared.lineNature === 'received' ? 'purchase' : 'sale',
                 isUnsettled,
@@ -1717,8 +1831,8 @@ export async function POST(request: Request) {
               direction: prepared.lineNature === 'received' ? 'in' : 'out',
               transaction_type: prepared.lineNature === 'received' ? 'cash_in' : 'cash_out',
               description: prepared.lineNature === 'received'
-                ? `دریافت وجه نقد از ${customer.name} (سند ${lineDocumentNumbers[index] || finalDocumentNumber})`
-                : `پرداخت وجه نقد به ${customer.name} (سند ${lineDocumentNumbers[index] || finalDocumentNumber})`,
+                ? `دریافت وجه نقد از ${customer.name} (سند ${finalDocumentNumber})`
+                : `پرداخت وجه نقد به ${customer.name} (سند ${finalDocumentNumber})`,
               source_key: cashSourceKey,
               created_by: context.user.id,
             });
@@ -2061,7 +2175,7 @@ export async function POST(request: Request) {
                   await postBankPaymentToCustomer(
                     {
                       documentId: `${documentId}:${prepared.lineNumber}`,
-                      documentNumber: lineDocumentNumbers[index] || finalDocumentNumber,
+                      documentNumber: finalDocumentNumber,
                       entryDateJalali: documentDateJalali,
                       amount,
                       transferFee,
@@ -2086,7 +2200,7 @@ export async function POST(request: Request) {
                   await postBankReceiptFromCustomer(
                     {
                       documentId: `${documentId}:${prepared.lineNumber}`,
-                      documentNumber: lineDocumentNumbers[index] || finalDocumentNumber,
+                      documentNumber: finalDocumentNumber,
                       entryDateJalali: documentDateJalali,
                       amount,
                       customer: {
