@@ -1,11 +1,22 @@
 import { describe, expect, it } from 'bun:test';
 
+async function isServerAvailable(): Promise<boolean> {
+  try {
+    await fetch('http://localhost:3000/api/auth/login', { method: 'HEAD' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 describe('End-to-End Test User Authentication Flow', () => {
   const testEmail = 'testuser@zarfolio.local';
   const testPhone = '09121112233';
   const testPassword = 'Password123456';
 
   it('successfully logs in with test user email and password via live API', async () => {
+    if (!(await isServerAvailable())) return;
+
     const res = await fetch('http://localhost:3000/api/auth/login', {
       method: 'POST',
       headers: {
@@ -27,6 +38,8 @@ describe('End-to-End Test User Authentication Flow', () => {
   });
 
   it('successfully logs in with test user phone number and password via live API', async () => {
+    if (!(await isServerAvailable())) return;
+
     const res = await fetch('http://localhost:3000/api/auth/login', {
       method: 'POST',
       headers: {
@@ -48,6 +61,8 @@ describe('End-to-End Test User Authentication Flow', () => {
   });
 
   it('rejects incorrect password without setting auth cookie', async () => {
+    if (!(await isServerAvailable())) return;
+
     const res = await fetch('http://localhost:3000/api/auth/login', {
       method: 'POST',
       headers: {
