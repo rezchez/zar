@@ -595,8 +595,9 @@ export default function DocumentForm({
 
   // Fetch document number when customer changes
   useEffect(() => {
-    if (!selectedCustomerId || isEditingExistingDoc) {
-      if (!isEditingExistingDoc) setDocumentNumberDisplay('');
+    if (!selectedCustomerId || editingExistingDocId || isEditingExistingDoc) {
+      setDocumentNumberLoading(false);
+      if (!editingExistingDocId && !isEditingExistingDoc) setDocumentNumberDisplay('');
       return;
     }
     let cancelled = false;
@@ -617,7 +618,7 @@ export default function DocumentForm({
     return () => {
       cancelled = true;
     };
-  }, [selectedCustomerId, isEditingExistingDoc]);
+  }, [selectedCustomerId, editingExistingDocId, isEditingExistingDoc]);
 
   // Fetch melted inventory
   useEffect(() => {
