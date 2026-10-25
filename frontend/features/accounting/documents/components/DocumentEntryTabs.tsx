@@ -35,6 +35,7 @@ type DocumentEntryTabsProps = {
   cashTabLabel?: string;
   bankTabContent?: ReactNode;
   claimTabContent?: ReactNode;
+  incomeExpenseTabContent?: ReactNode;
   workmanshipTabContent?: ReactNode;
   discountTabContent?: ReactNode;
   accountCodeZero?: string;
@@ -65,6 +66,7 @@ export default function DocumentEntryTabs({
   cashTabLabel,
   bankTabContent,
   claimTabContent,
+  incomeExpenseTabContent,
   workmanshipTabContent,
   discountTabContent,
   accountCodeZero = '0',
@@ -141,7 +143,7 @@ export default function DocumentEntryTabs({
       id: 'income-expense',
       label: nature === 'received' ? 'درآمد' : 'هزینه',
       icon: Banknote,
-      content: <PlaceholderTab label={nature === 'received' ? 'ثبت درآمد' : 'ثبت هزینه'} />,
+      content: incomeExpenseTabContent ?? <PlaceholderTab label={nature === 'received' ? 'ثبت درآمد' : 'ثبت هزینه'} />,
     },
     {
       id: 'workmanship',

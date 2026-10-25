@@ -82,6 +82,10 @@ export type DetailState = {
   profitAmount?: string;
   discountAmount?: string;
   convertedWeight?: string;
+  incomeExpenseAccountId?: string;
+  incomeExpenseAccountCode?: string;
+  incomeExpenseAccountName?: string;
+  incomeExpenseAccountPath?: string;
   refiningCaseId?: string;
   refiningCaseNumber?: string;
   refiningOpKind?: 'delivery' | 'receipt' | 'sample_send' | 'sample_receive' | 'fee';

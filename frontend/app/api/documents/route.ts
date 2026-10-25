@@ -819,6 +819,28 @@ export async function POST(request: Request) {
         details.totalAmount = String(Math.round(effectiveAbsRial));
       }
 
+      const isIncomeExpenseLine = line.documentTab === 'income-expense' || line.sourceTab === 'income-expense';
+      if (isIncomeExpenseLine) {
+        const lineCurrency = normalizeCurrencyCode(String(details.currencyUnit || details.baseCurrency || body?.baseCurrency || ''));
+        const isToman = lineCurrency === 'IRT' || details.baseCurrency === 'IRT' || body?.baseCurrency === 'IRT';
+        const rawLineRial = Math.abs(readAmount(line.rialAmount) || 0);
+        const detailTotal = Math.abs(readAmount(details.totalAmount) || 0);
+        const alreadyInIrr = details.rialAmountInIrr === true;
+
+        const effectiveAbsRial = isToman
+          ? (alreadyInIrr && rawLineRial > 0 && rawLineRial !== detailTotal
+              ? rawLineRial
+              : convertTomanToRial(detailTotal || rawLineRial))
+          : (rawLineRial || detailTotal);
+
+        lineAmounts.rialAmount = Math.round(effectiveAbsRial) * (lineNature === 'received' ? 1 : -1);
+        details.currencyUnit = isToman ? 'IRT' : 'IRR';
+        details.baseCurrency = isToman ? 'IRT' : 'IRR';
+        details.amountInIrr = Math.round(effectiveAbsRial);
+        details.rialAmountInIrr = true;
+        details.totalAmount = String(Math.round(effectiveAbsRial));
+      }
+
       const isGoldSaleLine = line.documentTab === 'gold-sale' || line.sourceTab === 'gold-sale';
       if (isGoldSaleLine) {
         const saleCurrency = normalizeCurrencyCode(String(details.currencyUnit || details.baseCurrency || body?.baseCurrency || ''));
