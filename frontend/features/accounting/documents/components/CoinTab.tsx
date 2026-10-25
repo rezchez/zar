@@ -742,12 +742,23 @@ export default function CoinTab({
   // Sync with parent draftLine if provided
   useEffect(() => {
     if (setDraftLine) {
+      const isBullion =
+        selectedPreset.category === 'bar_zioto' ||
+        selectedPreset.category === 'bar_parsis' ||
+        selectedPreset.category === 'bar_other' ||
+        selectedPreset.category.startsWith('bar_') ||
+        selectedPreset.name.includes('شمش');
+
+      const computedDocumentTypeLabel = nature === 'received'
+        ? (isBullion ? 'خرید شمش' : 'خرید سکه')
+        : (isBullion ? 'فروش شمش' : 'فروش سکه');
+
       setDraftLine((curr) => ({
         ...curr,
         documentTab: 'coin',
         sourceTab: 'coin',
         documentSubType: selectedOperation,
-        documentTypeLabel: currentOp.label,
+        documentTypeLabel: computedDocumentTypeLabel,
         converted750: convertedToX,
         description: description,
         details: sanitizeLineDetailsForTab('coin', {
@@ -767,13 +778,17 @@ export default function CoinTab({
           coinYear: mintYear,
           mintYear: mintYear,
           unsettledTrade: selectedOperation.includes('unsettled'),
+          documentTypeLabel: computedDocumentTypeLabel,
         }, effectiveCurrency, 900),
       }));
     }
   }, [
+    nature,
     selectedOperation,
     currentOp.label,
     selectedPreset.id,
+    selectedPreset.category,
+    selectedPreset.name,
     effectiveCoinDisplayName,
     mintYear,
     unitPrice,

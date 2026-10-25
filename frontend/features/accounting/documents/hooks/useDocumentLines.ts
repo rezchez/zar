@@ -904,10 +904,12 @@ export function useDocumentLines({
             lineSourceTab === 'bank' ||
             lineSourceTab === 'stone' ||
             lineSourceTab === 'workmanship' ||
+            lineSourceTab === 'coin' ||
             activeDraft.documentTab === 'cash' ||
             activeDraft.documentTab === 'bank' ||
             activeDraft.documentTab === 'stone' ||
-            activeDraft.documentTab === 'workmanship') &&
+            activeDraft.documentTab === 'workmanship' ||
+            activeDraft.documentTab === 'coin') &&
           activeDraft.documentTypeLabel
           ? activeDraft.documentTypeLabel
           : getLineDocumentTypeLabel(

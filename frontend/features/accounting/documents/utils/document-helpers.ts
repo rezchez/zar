@@ -87,7 +87,14 @@ export function getLineDocumentTypeLabel(
   }
 
   if (tab === 'coin') {
-    return nature === 'received' ? 'دریافت سکه' : 'پرداخت سکه';
+    const subTypeOrKind = String(workmanshipSubType || rawKind || metalType || '').toLowerCase();
+    const isBullion =
+      subTypeOrKind.includes('شمش') ||
+      subTypeOrKind.includes('bar_') ||
+      subTypeOrKind.includes('bullion');
+    return nature === 'received'
+      ? (isBullion ? 'خرید شمش' : 'خرید سکه')
+      : (isBullion ? 'فروش شمش' : 'فروش سکه');
   }
 
   if (tab === 'goods') {
