@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { sanitizeDocumentLine, sanitizeLineDetailsForTab, getLineFinancialValues } from '@/features/accounting/documents/utils/document-helpers';
+import { sanitizeDocumentLine, sanitizeLineDetailsForTab, getLineFinancialValues, faNumber } from '@/features/accounting/documents/utils/document-helpers';
 import type { DocumentLine } from '@/src/components/documents/RawGoldTab';
 
 describe('Income & Expense Tab Unit Tests', () => {
@@ -22,6 +22,16 @@ describe('Income & Expense Tab Unit Tests', () => {
     expect(sanitized.totalAmount).toBe('50000000');
     expect(sanitized.rawWeight).toBe('');
     expect(sanitized.purity).toBe('');
+  });
+
+  test('faNumber with 0 fraction digits formats whole monetary amounts without decimals', () => {
+    const amount = 100000000;
+    const formattedWithDecimals = faNumber(amount);
+    const formattedWhole = faNumber(amount, 0);
+
+    expect(formattedWithDecimals).toContain('.');
+    expect(formattedWhole).not.toContain('.');
+    expect(formattedWhole).toBe('۱۰۰,۰۰۰,۰۰۰');
   });
 
   test('getLineFinancialValues calculates credit for income and debit for expense', () => {
