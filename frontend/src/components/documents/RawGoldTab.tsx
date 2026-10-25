@@ -86,6 +86,10 @@ export type DetailState = {
   profitAmount?: string;
   discountAmount?: string;
   discountPercentage?: string;
+  incomeExpenseAccountId?: string;
+  incomeExpenseAccountCode?: string;
+  incomeExpenseAccountName?: string;
+  incomeExpenseAccountPath?: string;
   discountBaseAmount?: string;
   discountType?: 'percent' | 'amount';
   discountDirection?: 'given' | 'received';

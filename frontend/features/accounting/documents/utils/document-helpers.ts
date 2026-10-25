@@ -679,6 +679,21 @@ export function sanitizeLineDetailsForTab(
       };
     }
 
+    case 'income-expense': {
+      return {
+        ...baseDefaults,
+        totalAmount: String(details.totalAmount || ''),
+        incomeExpenseAccountId: details.incomeExpenseAccountId || '',
+        incomeExpenseAccountCode: details.incomeExpenseAccountCode || '',
+        incomeExpenseAccountName: details.incomeExpenseAccountName || '',
+        incomeExpenseAccountPath: details.incomeExpenseAccountPath || '',
+        currencyUnit: details.currencyUnit || baseCurrency,
+        baseCurrency: details.baseCurrency || baseCurrency,
+        rawWeight: '',
+        purity: '',
+      };
+    }
+
     case 'cash': {
       return {
         ...baseDefaults,

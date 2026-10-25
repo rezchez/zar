@@ -31,6 +31,7 @@ import BankTab, { fetchBankAccounts, invalidateBankAccountsCache } from './BankT
 import ClaimTab from '@/src/components/documents/ClaimTab';
 import WorkmanshipTab from './WorkmanshipTab';
 import DiscountTab from './DiscountTab';
+import IncomeExpenseTab from './IncomeExpenseTab';
 
 // Subcomponents
 import CustomerSection from './CustomerSection';
@@ -2086,6 +2087,23 @@ export default function DocumentForm({
               handleKeyDownEnter={handleKeyDownEnter}
               draftReady={draftReady}
               baseCurrency={baseCurrency}
+            />
+          )}
+          incomeExpenseTabContent={(
+            <IncomeExpenseTab
+              nature={documentNature}
+              draftLine={draftLine}
+              setDraftLine={setDraftLine}
+              committedLines={committedLines}
+              editingLineId={editingLineId}
+              isLinesPinned={isLinesPinned}
+              commitDraftLine={handleCommitDraft}
+              updateDraftDetail={updateDraftDetail}
+              handleKeyDownEnter={handleKeyDownEnter}
+              draftReady={draftReady}
+              baseCurrency={baseCurrency}
+              selectedCustomer={selectedCustomer}
+              onNatureChange={changeNature}
             />
           )}
           workmanshipTabContent={(
