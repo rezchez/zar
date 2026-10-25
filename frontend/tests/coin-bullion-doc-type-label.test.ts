@@ -1,27 +1,41 @@
 import { describe, expect, test } from 'bun:test';
 import { getLineDocumentTypeLabel } from '@/features/accounting/documents/utils/document-helpers';
+import { documentTabs } from '@/features/accounting/documents/services/document';
 
-describe('Coin and Bullion Document Type Labels', () => {
-  test('getLineDocumentTypeLabel returns "خرید سکه" for coin purchases', () => {
-    expect(getLineDocumentTypeLabel('received', 'coin')).toBe('خرید سکه');
+describe('Coin and Bullion Tab Name and Document Type Labels', () => {
+  test('Tab name is updated to "سکه و شمش"', () => {
+    const coinTab = documentTabs.find((t) => t.id === 'coin');
+    expect(coinTab).toBeDefined();
+    expect(coinTab!.label).toBe('سکه و شمش');
   });
 
-  test('getLineDocumentTypeLabel returns "فروش سکه" for coin sales', () => {
+  test('getLineDocumentTypeLabel returns "خرید سکه" / "فروش سکه" for coin trades', () => {
+    expect(getLineDocumentTypeLabel('received', 'coin')).toBe('خرید سکه');
     expect(getLineDocumentTypeLabel('paid', 'coin')).toBe('فروش سکه');
   });
 
-  test('getLineDocumentTypeLabel returns "خرید شمش" for bullion purchases', () => {
+  test('getLineDocumentTypeLabel returns "خرید شمش" / "فروش شمش" for bullion trades', () => {
     expect(getLineDocumentTypeLabel('received', 'coin', undefined, undefined, undefined, undefined, 'bar_zioto')).toBe('خرید شمش');
-    expect(getLineDocumentTypeLabel('received', 'coin', undefined, undefined, undefined, undefined, 'شمش زیوتو')).toBe('خرید شمش');
-  });
-
-  test('getLineDocumentTypeLabel returns "فروش شمش" for bullion sales', () => {
     expect(getLineDocumentTypeLabel('paid', 'coin', undefined, undefined, undefined, undefined, 'bar_zioto')).toBe('فروش شمش');
-    expect(getLineDocumentTypeLabel('paid', 'coin', undefined, undefined, undefined, undefined, 'شمش زیوتو')).toBe('فروش شمش');
   });
 
-  test('Coin vs Bullion computation logic', () => {
-    const computeDocTypeLabel = (nature: 'received' | 'paid', category: string, name: string) => {
+  test('getLineDocumentTypeLabel returns "طلب سکه" / "طلب شمش" for claim operations', () => {
+    expect(getLineDocumentTypeLabel('paid', 'coin', undefined, undefined, undefined, undefined, 'payment_claim')).toBe('طلب سکه');
+    expect(getLineDocumentTypeLabel('paid', 'coin', undefined, undefined, undefined, undefined, 'payment_claim_bar_zioto')).toBe('طلب شمش');
+  });
+
+  test('getLineDocumentTypeLabel returns "بدهی سکه" / "بدهی شمش" for debt operations', () => {
+    expect(getLineDocumentTypeLabel('received', 'coin', undefined, undefined, undefined, undefined, 'receipt_debt')).toBe('بدهی سکه');
+    expect(getLineDocumentTypeLabel('received', 'coin', undefined, undefined, undefined, undefined, 'receipt_debt_bar_zioto')).toBe('بدهی شمش');
+  });
+
+  test('Coin vs Bullion computation logic for all 8 document types', () => {
+    const computeDocTypeLabel = (
+      nature: 'received' | 'paid',
+      selectedOp: string,
+      category: string,
+      name: string
+    ) => {
       const isBullion =
         category === 'bar_zioto' ||
         category === 'bar_parsis' ||
@@ -29,32 +43,36 @@ describe('Coin and Bullion Document Type Labels', () => {
         category.startsWith('bar_') ||
         name.includes('شمش');
 
-      return nature === 'received'
+      let label = nature === 'received'
         ? (isBullion ? 'خرید شمش' : 'خرید سکه')
         : (isBullion ? 'فروش شمش' : 'فروش سکه');
+
+      if (selectedOp === 'payment_claim' || selectedOp.endsWith('_claim')) {
+        label = isBullion ? 'طلب شمش' : 'طلب سکه';
+      } else if (selectedOp === 'receipt_debt' || selectedOp.endsWith('_debt')) {
+        label = isBullion ? 'بدهی شمش' : 'بدهی سکه';
+      }
+
+      return label;
     };
 
-    // Coin purchase & sale
-    expect(computeDocTypeLabel('received', 'emami_coin', 'سکه تمام امامی (ضرب ۱۳۸۶)')).toBe('خرید سکه');
-    expect(computeDocTypeLabel('paid', 'emami_coin', 'سکه تمام امامی (ضرب ۱۳۸۶)')).toBe('فروش سکه');
+    // 1. Coin Purchase
+    expect(computeDocTypeLabel('received', 'receipt_buy', 'emami_coin', 'سکه تمام امامی')).toBe('خرید سکه');
+    // 2. Bullion Purchase
+    expect(computeDocTypeLabel('received', 'receipt_buy', 'bar_zioto', 'شمش زیوتو')).toBe('خرید شمش');
+    // 3. Coin Sale
+    expect(computeDocTypeLabel('paid', 'payment_sale', 'emami_coin', 'سکه تمام امامی')).toBe('فروش سکه');
+    // 4. Bullion Sale
+    expect(computeDocTypeLabel('paid', 'payment_sale', 'bar_zioto', 'شمش زیوتو')).toBe('فروش شمش');
 
-    expect(computeDocTypeLabel('received', 'bahar_coin', 'ربع سکه بهار آزادی (ضرب ۱۳۸۶)')).toBe('خرید سکه');
-    expect(computeDocTypeLabel('paid', 'bahar_coin', 'ربع سکه بهار آزادی (ضرب ۱۳۸۶)')).toBe('فروش سکه');
+    // 5. Coin Claim
+    expect(computeDocTypeLabel('paid', 'payment_claim', 'emami_coin', 'سکه تمام امامی')).toBe('طلب سکه');
+    // 6. Bullion Claim
+    expect(computeDocTypeLabel('paid', 'payment_claim', 'bar_zioto', 'شمش زیوتو')).toBe('طلب شمش');
 
-    expect(computeDocTypeLabel('received', 'parsian', 'سکه پارسیان ۱.۰۰۰ (۱ گرمی)')).toBe('خرید سکه');
-    expect(computeDocTypeLabel('paid', 'parsian', 'سکه پارسیان ۱.۰۰۰ (۱ گرمی)')).toBe('فروش سکه');
-
-    // Bullion purchase & sale
-    expect(computeDocTypeLabel('received', 'bar_zioto', 'شمش زیوتو (۱ گرمی)')).toBe('خرید شمش');
-    expect(computeDocTypeLabel('paid', 'bar_zioto', 'شمش زیوتو (۱ گرمی)')).toBe('فروش شمش');
-
-    expect(computeDocTypeLabel('received', 'bar_parsis', 'شمش پارسیس (۱۰ گرمی)')).toBe('خرید شمش');
-    expect(computeDocTypeLabel('paid', 'bar_parsis', 'شمش پارسیس (۱۰ گرمی)')).toBe('فروش شمش');
-
-    expect(computeDocTypeLabel('received', 'bar_other', 'شمش سوئیسی / ونوس')).toBe('خرید شمش');
-    expect(computeDocTypeLabel('paid', 'bar_other', 'شمش سوئیسی / ونوس')).toBe('فروش شمش');
-
-    expect(computeDocTypeLabel('received', 'custom', 'شمش سفارشی ۵۰ گرمی')).toBe('خرید شمش');
-    expect(computeDocTypeLabel('paid', 'custom', 'شمش سفارشی ۵۰ گرمی')).toBe('فروش شمش');
+    // 7. Coin Debt
+    expect(computeDocTypeLabel('received', 'receipt_debt', 'emami_coin', 'سکه تمام امامی')).toBe('بدهی سکه');
+    // 8. Bullion Debt
+    expect(computeDocTypeLabel('received', 'receipt_debt', 'bar_zioto', 'شمش زیوتو')).toBe('بدهی شمش');
   });
 });

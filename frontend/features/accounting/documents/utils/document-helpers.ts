@@ -92,6 +92,14 @@ export function getLineDocumentTypeLabel(
       subTypeOrKind.includes('شمش') ||
       subTypeOrKind.includes('bar_') ||
       subTypeOrKind.includes('bullion');
+
+    if (workmanshipSubType === 'payment_claim' || workmanshipSubType?.includes('claim')) {
+      return isBullion ? 'طلب شمش' : 'طلب سکه';
+    }
+    if (workmanshipSubType === 'receipt_debt' || workmanshipSubType?.includes('debt')) {
+      return isBullion ? 'بدهی شمش' : 'بدهی سکه';
+    }
+
     return nature === 'received'
       ? (isBullion ? 'خرید شمش' : 'خرید سکه')
       : (isBullion ? 'فروش شمش' : 'فروش سکه');

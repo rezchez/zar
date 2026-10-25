@@ -433,7 +433,7 @@ export default function CoinTab({
           description: 'ثبت طلب سکه و شمش از طرف حساب',
           icon: FileText,
           color: 'text-indigo-600 dark:text-indigo-400',
-          hasFinancials: true,
+          hasFinancials: false,
         },
       ];
     } else {
@@ -468,7 +468,7 @@ export default function CoinTab({
           description: 'ثبت تعهد و بدهی سکه و شمش به طرف حساب',
           icon: FileText,
           color: 'text-blue-600 dark:text-blue-400',
-          hasFinancials: true,
+          hasFinancials: false,
         },
       ];
     }
@@ -749,9 +749,15 @@ export default function CoinTab({
         selectedPreset.category.startsWith('bar_') ||
         selectedPreset.name.includes('شمش');
 
-      const computedDocumentTypeLabel = nature === 'received'
+      let computedDocumentTypeLabel = nature === 'received'
         ? (isBullion ? 'خرید شمش' : 'خرید سکه')
         : (isBullion ? 'فروش شمش' : 'فروش سکه');
+
+      if (selectedOperation === 'payment_claim' || selectedOperation.endsWith('_claim')) {
+        computedDocumentTypeLabel = isBullion ? 'طلب شمش' : 'طلب سکه';
+      } else if (selectedOperation === 'receipt_debt' || selectedOperation.endsWith('_debt')) {
+        computedDocumentTypeLabel = isBullion ? 'بدهی شمش' : 'بدهی سکه';
+      }
 
       setDraftLine((curr) => ({
         ...curr,

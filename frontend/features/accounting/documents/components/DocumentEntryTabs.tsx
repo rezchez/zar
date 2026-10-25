@@ -96,7 +96,7 @@ export default function DocumentEntryTabs({
     { id: 'gold-sale', label: goldSaleTabLabel ?? (nature === 'received' ? 'خرید طلا' : 'فروش طلا'), icon: Gem, content: goldSaleTabContent ?? <PlaceholderTab label="خرید و فروش فلزات" /> },
     {
       id: 'coin',
-      label: 'سکه',
+      label: 'سکه و شمش',
       icon: Coins,
       content: coinTabContent ?? <CoinEntryComponent nature={nature} />,
     },

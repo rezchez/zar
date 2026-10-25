@@ -32,7 +32,7 @@ export const documentTabs: Array<{ id: DocumentTab; label: string }> = [
   { id: 'base', label: 'پایه' },
   { id: 'stone', label: 'سنگ' },
   { id: 'expense', label: 'هزینه' },
-  { id: 'coin', label: 'سکه' },
+  { id: 'coin', label: 'سکه و شمش' },
   { id: 'our-claim', label: 'طلب ما' },
   { id: 'bank', label: 'عملیات بانکی' },
   { id: 'cash-conversion', label: 'پولی کردن' },
