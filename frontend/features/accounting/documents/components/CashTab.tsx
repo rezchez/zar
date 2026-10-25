@@ -213,7 +213,7 @@ export default function CashTab({
         documentTab: 'cash',
         sourceTab: 'cash',
         documentNature: nature,
-        documentTypeLabel: nature === 'received' ? `دریافت نقد (${activeFund.name})` : `پرداخت نقد (${activeFund.name})`,
+        documentTypeLabel: nature === 'received' ? `دریافت وجه نقد به ${activeFund.name}` : `پرداخت نقد از ${activeFund.name}`,
         converted750: 0,
         details: sanitizeLineDetailsForTab('cash', {
           ...current.details,
