@@ -30,6 +30,8 @@ import {
   actualWeightFromMoney,
   faNumber,
   getLineDocumentTypeLabel,
+  getLineCurrencyValues,
+  getLineFinancialValues,
   numberValue,
   toPersianDigits,
   isMetalBearingLine,
@@ -570,34 +572,12 @@ export default function CommittedLinesTable({
   };
 
   const hasCurrencyLines = useMemo(() => {
-    return (
-      activeTab === 'currency' ||
-      committedLines.some((l) => {
-        if (l.documentTab === 'currency' || l.sourceTab === 'currency') return true;
-        if (l.documentTab === 'stone') {
-          const sc = String(l.details?.settlementCurrencyUnit || 'USD').trim().toUpperCase();
-          return sc !== 'IRR' && sc !== 'IRT';
-        }
-        if (l.documentTab === 'workmanship' || l.sourceTab === 'workmanship') {
-          const wc = String(l.details?.wageCurrency || l.details?.currencyUnit || '').trim().toUpperCase();
-          return Boolean(wc && wc !== 'IRR' && wc !== 'IRT');
-        }
-        return false;
-      })
-    );
-  }, [committedLines, activeTab]);
+    return committedLines.some((l) => getLineCurrencyValues(l).hasValue);
+  }, [committedLines]);
 
   const hasMetalLines = useMemo(() => {
-    return (
-      !activeTab ||
-      activeTab === 'metals' ||
-      activeTab === 'gold-sale' ||
-      activeTab === 'workmanship' ||
-      activeTab === 'refining' ||
-      activeTab === 'coin' ||
-      committedLines.some((l) => isMetalBearingLine(l))
-    );
-  }, [committedLines, activeTab]);
+    return committedLines.some((l) => isMetalBearingLine(l));
+  }, [committedLines]);
 
   const hasCheckLines = useMemo(() => {
     if (typeof hasCheckLinesProp === 'boolean') return hasCheckLinesProp;
@@ -611,16 +591,18 @@ export default function CommittedLinesTable({
   }, [committedLines, hasCheckLinesProp]);
 
   const hasWorkmanshipLines = useMemo(() => {
-    return (
-      activeTab === 'workmanship' ||
-      committedLines.some(
-        (l) =>
-          l.documentTab === 'workmanship' ||
-          l.sourceTab === 'workmanship' ||
-          Boolean(l.details?.workmanshipName?.trim()),
-      )
+    return committedLines.some((l) => Boolean(l.details?.workmanshipName?.trim()));
+  }, [committedLines]);
+
+  const hasFinancialLines = useMemo(() => {
+    return committedLines.some((l) => getLineFinancialValues(l).hasValue);
+  }, [committedLines]);
+
+  const hasAssayOrStampLines = useMemo(() => {
+    return committedLines.some(
+      (l) => Boolean(l.details?.labName?.trim()) || Boolean(l.details?.stampNumber?.trim()),
     );
-  }, [committedLines, activeTab]);
+  }, [committedLines]);
 
   const activeColumns = useMemo(() => {
     const cols: ColumnKey[] = ['index', 'docType'];
@@ -636,23 +618,22 @@ export default function CommittedLinesTable({
     if (hasCheckLines) {
       cols.push('bankAccount', 'checkNumber', 'sayadId', 'dueDate');
     }
-    if (
-      hasFinancialAmounts ||
-      hasCheckLines ||
-      activeTab === 'cash' ||
-      activeTab === 'bank' ||
-      activeTab === 'currency' ||
-      activeTab === 'gold-sale' ||
-      activeTab === 'stone'
-    ) {
+    if (hasFinancialLines || hasCheckLines) {
       cols.push('bedehkarMali', 'bostankarMali');
     }
-    if (hasAssayOrStamp || activeTab === 'refining') {
+    if (hasAssayOrStampLines) {
       cols.push('labName', 'stampNumber');
     }
     cols.push('description', 'actions');
     return cols;
-  }, [hasWorkmanshipLines, hasMetalLines, hasCurrencyLines, hasCheckLines, hasFinancialAmounts, hasAssayOrStamp, activeTab]);
+  }, [
+    hasWorkmanshipLines,
+    hasMetalLines,
+    hasCurrencyLines,
+    hasCheckLines,
+    hasFinancialLines,
+    hasAssayOrStampLines,
+  ]);
 
   const totalTableWidth = useMemo(() => {
     return activeColumns.reduce(
@@ -1216,7 +1197,7 @@ export default function CommittedLinesTable({
               ) : null}
 
               {/* 8. Financial Debit */}
-              {hasFinancialAmounts || hasCheckLines ? (
+              {hasFinancialLines || hasCheckLines ? (
                 <TableHead
                   style={{ width: `${columnWidths.bedehkarMali}px` }}
                   className="relative px-1.5 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
@@ -1239,7 +1220,7 @@ export default function CommittedLinesTable({
               ) : null}
 
               {/* 9. Financial Credit */}
-              {hasFinancialAmounts || hasCheckLines ? (
+              {hasFinancialLines || hasCheckLines ? (
                 <TableHead
                   style={{ width: `${columnWidths.bostankarMali}px` }}
                   className="relative px-1.5 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
@@ -1262,7 +1243,7 @@ export default function CommittedLinesTable({
               ) : null}
 
               {/* 10. Assay Laboratory */}
-              {hasAssayOrStamp ? (
+              {hasAssayOrStampLines ? (
                 <TableHead
                   style={{ width: `${columnWidths.labName}px` }}
                   className="relative px-1.5 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
@@ -1280,7 +1261,7 @@ export default function CommittedLinesTable({
               ) : null}
 
               {/* 11. Packet / Stamp Number */}
-              {hasAssayOrStamp ? (
+              {hasAssayOrStampLines ? (
                 <TableHead
                   style={{ width: `${columnWidths.stampNumber}px` }}
                   className="relative px-1.5 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
@@ -1333,8 +1314,8 @@ export default function CommittedLinesTable({
                 onRemove={() => onRemoveLine(line)}
                 onHawala={() => onHawalaLine(line)}
                 weightPrecision={weightPrecision}
-                hasAssayOrStamp={hasAssayOrStamp}
-                hasFinancialAmounts={hasFinancialAmounts || hasCheckLines}
+                hasAssayOrStamp={hasAssayOrStampLines}
+                hasFinancialAmounts={hasFinancialLines || hasCheckLines}
                 hasValidCustomer={Boolean(selectedCustomer)}
                 hasMetalLines={hasMetalLines}
                 hasCurrencyLines={hasCurrencyLines}
@@ -1385,20 +1366,20 @@ export default function CommittedLinesTable({
                     <TableCell className="px-1.5 py-1.5 border-s border-slate-200/60 dark:border-slate-700/60" />
                   </>
                 ) : null}
-                {hasFinancialAmounts || hasCheckLines ? (
+                {hasFinancialLines || hasCheckLines ? (
                   <TableCell className="px-1.5 py-1.5 text-center tabular-nums text-rose-600 dark:text-rose-400 font-extrabold text-xs border-s border-slate-200/60 dark:border-slate-700/60">
                     {totalBedehkarMali > 0 ? faNumber(totalBedehkarMali, 0) : '-'}
                   </TableCell>
                 ) : null}
-                {hasFinancialAmounts || hasCheckLines ? (
+                {hasFinancialLines || hasCheckLines ? (
                   <TableCell className="px-1.5 py-1.5 text-center tabular-nums text-emerald-600 dark:text-emerald-400 font-extrabold text-xs border-s border-slate-200/60 dark:border-slate-700/60">
                     {totalBostankarMali > 0 ? faNumber(totalBostankarMali, 0) : '-'}
                   </TableCell>
                 ) : null}
-                {hasAssayOrStamp ? (
+                {hasAssayOrStampLines ? (
                   <TableCell className="px-1.5 py-1.5 border-s border-slate-200/60 dark:border-slate-700/60" />
                 ) : null}
-                {hasAssayOrStamp ? (
+                {hasAssayOrStampLines ? (
                   <TableCell className="px-1.5 py-1.5 border-s border-slate-200/60 dark:border-slate-700/60" />
                 ) : null}
                 <TableCell className="px-2 py-1.5 border-s border-slate-200/60 dark:border-slate-700/60" />

@@ -27,7 +27,7 @@ function getLineDocumentTypeLabel(
   // metals / raw-gold tab (ورود/خروج فلزات)
   if (rawKind === 'molten') return nature === 'received' ? 'ورود آبشده' : 'خروج آبشده';
   if (rawKind === 'misc') return nature === 'received' ? 'ورود متفرقه' : 'خروج متفرقه';
-  if (rawKind === 'conditional') return nature === 'received' ? 'ورود شرطی' : 'خروج شرطی';
+  if (rawKind === 'conditional') return nature === 'received' ? 'ورود آب شده شرطی' : 'خروج آب شده شرطی';
   if (rawKind === 'question') return nature === 'received' ? 'ورود سواله' : 'خروج سواله';
 
   return nature === 'received' ? 'ورود آبشده' : 'خروج آبشده';
@@ -42,14 +42,14 @@ describe('Document Line Snapshot & Document Type Tests', () => {
   it('generates exact document type label for Raw Gold Entry (ورود)', () => {
     expect(getLineDocumentTypeLabel('received', 'metals', 'molten')).toBe('ورود آبشده');
     expect(getLineDocumentTypeLabel('received', 'metals', 'misc')).toBe('ورود متفرقه');
-    expect(getLineDocumentTypeLabel('received', 'metals', 'conditional')).toBe('ورود شرطی');
+    expect(getLineDocumentTypeLabel('received', 'metals', 'conditional')).toBe('ورود آب شده شرطی');
     expect(getLineDocumentTypeLabel('received', 'metals', 'question')).toBe('ورود سواله');
   });
 
   it('generates exact document type label for Raw Gold Exit (خروج)', () => {
     expect(getLineDocumentTypeLabel('paid', 'metals', 'molten')).toBe('خروج آبشده');
     expect(getLineDocumentTypeLabel('paid', 'metals', 'misc')).toBe('خروج متفرقه');
-    expect(getLineDocumentTypeLabel('paid', 'metals', 'conditional')).toBe('خروج شرطی');
+    expect(getLineDocumentTypeLabel('paid', 'metals', 'conditional')).toBe('خروج آب شده شرطی');
     expect(getLineDocumentTypeLabel('paid', 'metals', 'question')).toBe('خروج سواله');
   });
 

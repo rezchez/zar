@@ -160,7 +160,7 @@ export function RawMetalOperationTypeSelector({
   const options: Array<{ id: RawOperationKind; title: string; icon: typeof FlaskConical }> = [
     { id: 'molten', title: nature === 'received' ? 'ورود آبشده' : 'خروج آبشده', icon: FlaskConical },
     { id: 'misc', title: nature === 'received' ? 'ورود متفرقه' : 'خروج متفرقه', icon: Gem },
-    { id: 'conditional', title: nature === 'received' ? 'ورود شرطی' : 'خروج شرطی', icon: HandCoins },
+    { id: 'conditional', title: nature === 'received' ? 'ورود آب شده شرطی' : 'خروج آب شده شرطی', icon: HandCoins },
     { id: 'question', title: nature === 'received' ? 'ورود سواله' : 'خروج سواله', icon: FlaskConical },
   ];
   return (

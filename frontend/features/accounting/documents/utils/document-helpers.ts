@@ -141,14 +141,14 @@ export function getLineDocumentTypeLabel(
   // metals / raw-gold tab (ورود/خروج فلزات)
   if (rawKind === 'molten') return nature === 'received' ? 'ورود آبشده' : 'خروج آبشده';
   if (rawKind === 'misc') return nature === 'received' ? 'ورود متفرقه' : 'خروج متفرقه';
-  if (rawKind === 'conditional') return nature === 'received' ? 'ورود شرطی' : 'خروج شرطی';
+  if (rawKind === 'conditional') return nature === 'received' ? 'ورود آب شده شرطی' : 'خروج آب شده شرطی';
   if (rawKind === 'question') return nature === 'received' ? 'ورود سواله' : 'خروج سواله';
 
   return nature === 'received' ? 'ورود آبشده' : 'خروج آبشده';
 }
 
 export function rawOperationLabel(nature: DocumentNature, kind: RawOperationKind): string {
-  if (kind === 'conditional') return nature === 'received' ? 'ورود شرطی' : 'خروج شرطی';
+  if (kind === 'conditional') return nature === 'received' ? 'ورود آب شده شرطی' : 'خروج آب شده شرطی';
   if (kind === 'question') return nature === 'received' ? 'ورود سواله' : 'خروج سواله';
   const prefix = nature === 'received' ? 'خرید' : 'فروش';
   if (kind === 'misc') return `${prefix} متفرقه`;
@@ -483,6 +483,117 @@ export function isMetalBearingLine(
     return numberValue(line.details?.claimWeight) > 0;
   }
   return isMetalBearingTab(tab);
+}
+
+export function getLineCurrencyValues(line: {
+  documentTab?: string;
+  sourceTab?: string;
+  documentNature?: 'received' | 'paid';
+  documentSubType?: string;
+  settlementMethod?: string;
+  details?: Partial<DetailState> | null;
+}) {
+  const tab = line.documentTab || line.sourceTab;
+  const isCurrency = tab === 'currency';
+  const isStone = tab === 'stone';
+  const details = line.details || {};
+  const stoneCurrency = isStone
+    ? String(details.settlementCurrencyUnit || 'USD').trim().toUpperCase()
+    : '';
+  const isForeignStone = isStone && stoneCurrency !== 'IRR' && stoneCurrency !== 'IRT';
+  const stoneAmount = isStone
+    ? numberValue(details.stoneTotalAmount || details.totalAmount)
+    : 0;
+
+  const isWorkmanship = tab === 'workmanship';
+  const workmanshipWageCurrency = String(details.wageCurrency || details.currencyUnit || '').trim().toUpperCase();
+  const isForeignWorkmanship = Boolean(
+    isWorkmanship &&
+    line.documentSubType !== 'workmanship-golden-percentage' &&
+    workmanshipWageCurrency &&
+    workmanshipWageCurrency !== 'IRR' &&
+    workmanshipWageCurrency !== 'IRT'
+  );
+  const workmanshipWageAmount = isForeignWorkmanship
+    ? numberValue(details.totalAmount || details.wage)
+    : 0;
+
+  const currencyQty = isCurrency ? numberValue(details.currencyQuantity) : 0;
+  const isClaimLine = line.documentSubType === 'currency-claim';
+  const isDebtLine = line.documentSubType === 'currency-debt';
+  const isUnsettled = details.unsettledTrade === true || line.settlementMethod === 'unsettled';
+  const isPaid = line.documentNature === 'paid';
+  const isReceived = line.documentNature === 'received';
+
+  let debit = 0;
+  let credit = 0;
+
+  if (isCurrency && currencyQty > 0) {
+    if (isClaimLine || (!details.linkedLineId && isUnsettled && isReceived)) {
+      debit = currencyQty;
+    } else if (isDebtLine || (!details.linkedLineId && isUnsettled && isPaid)) {
+      credit = currencyQty;
+    }
+  } else if (isForeignStone && stoneAmount > 0) {
+    if (isPaid) debit = stoneAmount;
+    else if (isReceived) credit = stoneAmount;
+  } else if (isForeignWorkmanship && workmanshipWageAmount > 0) {
+    if (isPaid) debit = workmanshipWageAmount;
+    else if (isReceived) credit = workmanshipWageAmount;
+  }
+
+  return { debit, credit, hasValue: debit > 0 || credit > 0 };
+}
+
+export function getLineFinancialValues(line: {
+  documentTab?: string;
+  sourceTab?: string;
+  documentNature?: 'received' | 'paid';
+  documentSubType?: string;
+  details?: Partial<DetailState> | null;
+}) {
+  const tab = line.documentTab || line.sourceTab;
+  const isCurrency = tab === 'currency';
+  const isStone = tab === 'stone';
+  const details = line.details || {};
+  const stoneCurrency = isStone
+    ? String(details.settlementCurrencyUnit || 'USD').trim().toUpperCase()
+    : '';
+  const isForeignStone = isStone && stoneCurrency !== 'IRR' && stoneCurrency !== 'IRT';
+  const stoneAmount = isStone
+    ? numberValue(details.stoneTotalAmount || details.totalAmount)
+    : 0;
+
+  const isWorkmanship = tab === 'workmanship';
+  const workmanshipWageCurrency = String(details.wageCurrency || details.currencyUnit || '').trim().toUpperCase();
+  const isForeignWorkmanship = Boolean(
+    isWorkmanship &&
+    line.documentSubType !== 'workmanship-golden-percentage' &&
+    workmanshipWageCurrency &&
+    workmanshipWageCurrency !== 'IRR' &&
+    workmanshipWageCurrency !== 'IRT'
+  );
+
+  const isClaimLine = line.documentSubType === 'currency-claim';
+  const isDebtLine = line.documentSubType === 'currency-debt';
+
+  const financialAmount = isCurrency
+    ? (isClaimLine || isDebtLine ? 0 : numberValue(details.currencyTotalAmount))
+    : isStone
+    ? (isForeignStone ? 0 : stoneAmount)
+    : isForeignWorkmanship
+    ? 0
+    : line.documentSubType === 'workmanship-golden-percentage'
+    ? 0
+    : numberValue(details.claimFinancial || details.totalAmount);
+
+  const isPaid = line.documentNature === 'paid';
+  const isReceived = line.documentNature === 'received';
+
+  const debit = isPaid && financialAmount > 0 ? financialAmount : 0;
+  const credit = isReceived && financialAmount > 0 ? financialAmount : 0;
+
+  return { debit, credit, hasValue: financialAmount > 0 };
 }
 
 /**
