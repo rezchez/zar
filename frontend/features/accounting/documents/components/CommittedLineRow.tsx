@@ -12,6 +12,8 @@ import {
   numberValue,
   toPersianDigits,
   isMetalBearingLine,
+  getLineCurrencyValues,
+  getLineFinancialValues,
 } from '../utils/document-helpers';
 
 interface CommittedLineRowProps {
@@ -49,21 +51,6 @@ export default function CommittedLineRow({
 }: CommittedLineRowProps) {
   const isPaid = line.documentNature === 'paid';
   const isReceived = line.documentNature === 'received';
-  const isCurrency = line.documentTab === 'currency';
-  const isStone = line.documentTab === 'stone';
-  const isClaim = line.documentTab === 'claim' || line.sourceTab === 'claim';
-  const hasClaimWeight = isClaim && numberValue(line.details.claimWeight || line.details.rawWeight) > 0;
-  const isClaimLine = line.documentSubType === 'currency-claim';
-  const isDebtLine = line.documentSubType === 'currency-debt';
-  const isUnsettled = line.details.unsettledTrade === true || line.settlementMethod === 'unsettled';
-  const stoneCurrency = isStone
-    ? String(line.details.settlementCurrencyUnit || 'USD').trim().toUpperCase()
-    : '';
-  const isForeignStone = isStone && stoneCurrency !== 'IRR' && stoneCurrency !== 'IRT';
-  const stoneAmount = isStone
-    ? numberValue(line.details.stoneTotalAmount || line.details.totalAmount)
-    : 0;
-
   const docType =
     line.documentTypeLabel ||
     (line.details as any)?.documentTypeLabel ||
@@ -130,68 +117,13 @@ export default function CommittedLineRow({
     }
   }
 
-  // Workmanship foreign currency check
-  const isWorkmanship = line.documentTab === 'workmanship' || line.sourceTab === 'workmanship';
-  const workmanshipWageCurrency = String(line.details?.wageCurrency || line.details?.currencyUnit || '').trim().toUpperCase();
-  const isForeignWorkmanship = Boolean(
-    isWorkmanship &&
-    line.documentSubType !== 'workmanship-golden-percentage' &&
-    workmanshipWageCurrency &&
-    workmanshipWageCurrency !== 'IRR' &&
-    workmanshipWageCurrency !== 'IRT'
-  );
-  const workmanshipWageAmount = isForeignWorkmanship
-    ? numberValue(line.details?.totalAmount || line.details?.wage)
-    : 0;
-
-  // Currency column values
-  const currencyQty = isCurrency ? numberValue(line.details.currencyQuantity) : 0;
-  const currencyUnit = isCurrency
-    ? (line.details.currencyUnit || 'USD')
-    : isForeignStone
-    ? stoneCurrency
-    : isForeignWorkmanship
-    ? workmanshipWageCurrency
-    : '-';
-
-  let bedehkarArzi: string | null = null;
-  let bostankarArzi: string | null = null;
-
-  if (isCurrency && currencyQty > 0) {
-    if (isClaimLine || (!line.details.linkedLineId && isUnsettled && isReceived)) {
-      bedehkarArzi = faNumber(currencyQty, 0);
-    } else if (isDebtLine || (!line.details.linkedLineId && isUnsettled && isPaid)) {
-      bostankarArzi = faNumber(currencyQty, 0);
-    }
-  } else if (isForeignStone && stoneAmount > 0) {
-    const decimals = Number.isInteger(stoneAmount) ? 0 : 2;
-    if (isPaid) {
-      bedehkarArzi = faNumber(stoneAmount, decimals);
-    } else if (isReceived) {
-      bostankarArzi = faNumber(stoneAmount, decimals);
-    }
-  } else if (isForeignWorkmanship && workmanshipWageAmount > 0) {
-    const decimals = Number.isInteger(workmanshipWageAmount) ? 0 : 2;
-    if (isPaid) {
-      bedehkarArzi = faNumber(workmanshipWageAmount, decimals);
-    } else if (isReceived) {
-      bostankarArzi = faNumber(workmanshipWageAmount, decimals);
-    }
-  }
-
-  // Financial amounts
-  const financialAmount = isCurrency
-    ? (isClaimLine || isDebtLine ? 0 : numberValue(line.details.currencyTotalAmount))
-    : isStone
-    ? (isForeignStone ? 0 : stoneAmount)
-    : isForeignWorkmanship
-    ? 0
-    : line.documentSubType === 'workmanship-golden-percentage'
-    ? 0
-    : numberValue(line.details.claimFinancial || line.details.totalAmount);
-
-  const bedehkarMali = isPaid && financialAmount > 0 ? faNumber(financialAmount, 0) : null;
-  const bostankarMali = isReceived && financialAmount > 0 ? faNumber(financialAmount, 0) : null;
+  const currencyValues = getLineCurrencyValues(line);
+  const currencyUnit = currencyValues.currency || '-';
+  const bedehkarArzi = currencyValues.debit > 0 ? faNumber(currencyValues.debit, 2) : null;
+  const bostankarArzi = currencyValues.credit > 0 ? faNumber(currencyValues.credit, 2) : null;
+  const financialValues = getLineFinancialValues(line);
+  const bedehkarMali = financialValues.debit > 0 ? faNumber(financialValues.debit, 0) : null;
+  const bostankarMali = financialValues.credit > 0 ? faNumber(financialValues.credit, 0) : null;
 
   // Check and bank details
   const isBankTabLine =

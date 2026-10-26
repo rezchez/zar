@@ -1,5 +1,6 @@
 'use client';
 
+import { createSettledCurrencyLines } from '../utils/currency-lines';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import type { DocumentNature } from '@/lib/document';
 import type {
@@ -634,7 +635,7 @@ export function useDocumentLines({
         sourceTab === 'currency'
           ? createCurrencyLine(
               nature,
-              selectedCurrency?.toUpperCase() === 'USD' ? 'EUR' : 'USD',
+              'USD',
               selectedCurrency || 'IRR',
             )
           : createLine(nature, sourceTab);
@@ -938,7 +939,7 @@ export function useDocumentLines({
 
     const effectiveCurrencyUnit =
       activeDraft.details.currencyUnit ||
-      (selectedCurrency?.trim().toUpperCase() === 'USD' ? 'EUR' : 'USD');
+      'USD';
     const effectiveSettlementUnit =
       activeDraft.details.settlementCurrencyUnit ||
       selectedCurrency ||
@@ -1284,6 +1285,12 @@ export function useDocumentLines({
         toast.success('ردیف با موفقیت ویرایش شد.');
       } else if (isCurrencyTrade) {
         setCommittedLines((current) => {
+          const originalTrade = current.find((line) => line.id === editingLineId);
+          if (isUnsettledCurrency) {
+            current = current.filter((line) => !(line.documentTab === 'cash' && line.details.isChildLine && (
+              line.id === originalTrade?.details.linkedLineId || line.details.linkedLineId === editingLineId
+            )));
+          }
           const tradeIdx = current.findIndex((l) => l.id === editingLineId);
           const currentTradeLine = tradeIdx !== -1 ? current[tradeIdx] : null;
 
@@ -1299,6 +1306,7 @@ export function useDocumentLines({
               currencyUnit: effectiveCurrencyUnit,
               settlementCurrencyUnit: effectiveCurrencyUnit,
               unsettledTrade: isUnsettledCurrency,
+              hasChildLines: false,
             },
           };
 
@@ -1420,10 +1428,13 @@ export function useDocumentLines({
             }
           } else {
             const linkedId = tradeLine.details.linkedLineId;
-            delete tradeLine.details.linkedLineId;
-            return current
-              .map((l) => (l.id === editingLineId ? tradeLine : l))
-              .filter((l) => !linkedId || l.id !== linkedId);
+            const existingCash = current.find((line) => line.documentTab === 'cash' && line.details.isChildLine && (
+              line.id === linkedId || line.details.linkedLineId === editingLineId
+            ));
+            const settledLines = createSettledCurrencyLines(tradeLine, existingCash?.id);
+            return current.flatMap((line) => line.id === editingLineId
+              ? settledLines
+              : line.id === linkedId || line.details.linkedLineId === editingLineId ? [] : [line]);
           }
         });
         setEditingLineId(null);
@@ -1579,10 +1590,7 @@ export function useDocumentLines({
               : 'ردیف فروش ارز و ردیف بدهی ارزی به سند اضافه شدند.',
           );
         } else {
-          const cashLineId = lineNature === 'received' && activeDraft.details.cashFundId
-            ? generateUUID()
-            : null;
-          const tradeLineToCommit: DocumentLine = {
+          const settledLines = createSettledCurrencyLines({
             ...lineToCommit,
             id: tradeLineId,
             documentNature: lineNature,
@@ -1590,36 +1598,8 @@ export function useDocumentLines({
             sourceTab: 'currency',
             documentTypeLabel: currencyTradeDocTypeLabel,
             documentSubType: currencyTradeSubType,
-            settlementMethod: 'cash',
-            details: {
-              ...activeDraft.details,
-              currencyUnit: effectiveCurrencyUnit,
-              settlementCurrencyUnit: effectiveCurrencyUnit,
-              unsettledTrade: false,
-              ...(cashLineId ? { linkedLineId: cashLineId, hasChildLines: true } : {}),
-            },
-          };
-          const cashLineToCommit: DocumentLine | null = cashLineId ? {
-            id: cashLineId,
-            documentNature: 'received',
-            documentTab: 'cash',
-            sourceTab: 'cash',
-            documentTypeLabel: 'ورود وجه نقد',
-            documentSubType: 'cash-in',
-            settlementMethod: 'cash',
-            balanceSource: 'current',
-            description: `ورود ${numberValue(lineToCommit.details.currencyQuantity).toLocaleString('fa-IR')} ${lineToCommit.details.currencyUnit || effectiveCurrencyUnit} به صندوق ${lineToCommit.details.cashFundName || ''} بابت خرید ارز`,
-            details: {
-              ...activeDraft.details,
-              totalAmount: String(lineToCommit.details.currencyQuantity || ''),
-              currencyUnit: lineToCommit.details.cashFundCurrencyCode || effectiveCurrencyUnit,
-              isForeignCash: true,
-              isChildLine: true,
-              linkedLineId: tradeLineId,
-              unsettledTrade: false,
-            },
-          } : null;
-          setCommittedLines((current) => [...current, tradeLineToCommit, ...(cashLineToCommit ? [cashLineToCommit] : [])]);
+          });
+          setCommittedLines((current) => [...current, ...settledLines]);
           toast.success(
             lineNature === 'received'
               ? 'ردیف خرید ارز با تسویه آنی ثبت شد.'
@@ -1702,6 +1682,7 @@ export function useDocumentLines({
 
   const editLine = (line: DocumentLine) => {
     if (
+      (line.documentTab === 'cash' && line.details.isForeignCash && line.details.isChildLine) ||
       line.documentSubType === 'currency-claim' ||
       line.documentSubType === 'currency-debt' ||
       line.documentSubType === 'workmanship-golden-percentage' ||

@@ -1,5 +1,7 @@
 'use client';
 
+import { getCurrencyTradeForeignEffect } from '../utils/currency-effects';
+
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { PencilLine } from 'lucide-react';
@@ -400,11 +402,10 @@ export default function DocumentForm({
             nextDraft = sanitizeDocumentLine(nextDraft, validTab, baseCurrency, goldBaseKarat);
           }
           if (validTab === 'currency') {
-            const normDoc = (selectedCurrency || '').trim().toUpperCase();
             const validForeignCurrencies = activeCurrencies
               .map((c) => c.code.trim().toUpperCase())
-              .filter((code) => code !== 'IRR' && code !== 'IRT' && code !== normDoc);
-            const fallbackAlt = validForeignCurrencies[0] || (normDoc === 'USD' ? 'EUR' : 'USD');
+              .filter((code) => code !== 'IRR' && code !== 'IRT');
+            const fallbackAlt = validForeignCurrencies[0] || 'USD';
             const curUnit = nextDraft.details?.currencyUnit || fallbackAlt;
             nextDraft.details.currencyUnit = curUnit;
             nextDraft.details.settlementCurrencyUnit = selectedCurrency || baseCurrency;
@@ -712,6 +713,8 @@ export default function DocumentForm({
               documentNature: line.documentNature,
               documentTab: line.documentTab,
               sourceTab: line.sourceTab,
+              documentSubType: line.documentSubType,
+              settlementMethod: line.settlementMethod,
               converted750: line.converted750,
               goldAmount: rawLine.goldAmount as number | undefined,
               silverAmount: rawLine.silverAmount as number | undefined,
@@ -750,7 +753,7 @@ export default function DocumentForm({
                   stoneCaratBalance: typeof prev.stone === 'number' ? prev.stone : base.stoneCaratBalance,
                   stoneCreditCarats: typeof prev.stoneCredit === 'number' ? prev.stoneCredit : base.stoneCreditCarats,
                   stoneDebitCarats: typeof prev.stoneDebit === 'number' ? prev.stoneDebit : base.stoneDebitCarats,
-                  foreignBalance: typeof prev.foreign === 'number' ? prev.foreign : base.foreignBalance,
+                  foreignBalance: prev.currencyBalances?.[base.secondaryCurrency] ?? base.foreignBalance,
                   tertiaryBalance: typeof prev.tertiary === 'number' ? prev.tertiary : base.tertiaryBalance,
                   currencyBalances: prev.currencyBalances || base.currencyBalances || {},
                 };
@@ -801,7 +804,8 @@ export default function DocumentForm({
                   stoneCaratBalance: prev.stone ?? freshCustomer.stoneCaratBalance,
                   stoneCreditCarats: prev.stoneCredit ?? freshCustomer.stoneCreditCarats,
                   stoneDebitCarats: prev.stoneDebit ?? freshCustomer.stoneDebitCarats,
-                  foreignBalance: prev.foreign,
+                  currencyBalances: prev.currencyBalances,
+                  foreignBalance: prev.currencyBalances?.[freshCustomer.secondaryCurrency] ?? freshCustomer.foreignBalance,
                   tertiaryBalance: prev.tertiary,
                 };
               }
@@ -864,11 +868,10 @@ export default function DocumentForm({
 
       // Specific tab autofills (e.g. currency rate)
       if (validTab === 'currency') {
-        const normDoc = (selectedCurrency || '').trim().toUpperCase();
         const validForeignCurrencies = activeCurrencies
           .map((c) => c.code.trim().toUpperCase())
-          .filter((code) => code !== 'IRR' && code !== 'IRT' && code !== normDoc);
-        const fallbackAlt = validForeignCurrencies[0] || (normDoc === 'USD' ? 'EUR' : 'USD');
+          .filter((code) => code !== 'IRR' && code !== 'IRT');
+        const fallbackAlt = validForeignCurrencies[0] || 'USD';
         const curUnit = nextDraft.details?.currencyUnit || fallbackAlt;
         nextDraft.details.currencyUnit = curUnit;
         nextDraft.details.settlementCurrencyUnit = selectedCurrency || baseCurrency;
@@ -1046,14 +1049,13 @@ export default function DocumentForm({
         draftLine.sourceTab === 'currency' ||
         activeEntryTab === 'currency';
       if (isCurrency) {
-        const normCurr = curr.trim().toUpperCase();
         const foreignCurrencies = activeCurrencies
           .map((c) => c.code.trim().toUpperCase())
-          .filter((code) => code !== 'IRR' && code !== 'IRT' && code !== normCurr);
+          .filter((code) => code !== 'IRR' && code !== 'IRT');
         const currentUnit = (draftLine.details?.currencyUnit || '').trim().toUpperCase();
         const isValid = foreignCurrencies.includes(currentUnit);
         if (!isValid) {
-          const fallbackAlt = foreignCurrencies[0] || (normCurr === 'USD' ? 'EUR' : 'USD');
+          const fallbackAlt = foreignCurrencies[0] || 'USD';
           updateDraftDetail('currencyUnit', fallbackAlt);
           const quoteRate = getQuoteRateInRials(quotes, fallbackAlt);
           if (quoteRate > 0) {
@@ -1378,6 +1380,8 @@ export default function DocumentForm({
             const rawGoldSaleAmount = isGoldSaleRow ? numberValue(line.details?.totalAmount || '') : 0;
             const goldSaleRialAmount = isGoldSaleToman ? convertTomanToRial(rawGoldSaleAmount) : Math.round(rawGoldSaleAmount);
 
+            const currencyForeignEffect = getCurrencyTradeForeignEffect(line);
+            const isForeignCashRow = (line.documentTab === 'cash' || line.sourceTab === 'cash') && line.details?.isForeignCash === true;
             const isCashRow = (line.documentTab === 'cash' || line.sourceTab === 'cash') && !line.details?.isForeignCash;
             const isCashToman = isCashRow && (line.details?.currencyUnit === 'IRT' || line.details?.baseCurrency === 'IRT' || baseCurrency === 'IRT');
             const rawCashAmount = isCashRow ? numberValue(line.details?.totalAmount || '') : 0;
@@ -1490,7 +1494,7 @@ export default function DocumentForm({
               settlementMethod: line.settlementMethod,
               balanceSource: line.balanceSource,
               description: line.description,
-              foreignCurrency: isForeignWorkmanship ? wageCurrency : undefined,
+              foreignCurrency: isCurrencyRow || isForeignCashRow ? line.details.currencyUnit : isForeignWorkmanship ? wageCurrency : undefined,
               documentDetails: {
                 ...baseLineDetails,
                 clientLineId: line.id,
@@ -1501,7 +1505,7 @@ export default function DocumentForm({
               silverAmount: isMetalRow && metalType === 'silver' ? weightValue : (isClaimRow && metalType === 'silver' ? rawClaimWeight : 0),
               platinumAmount: isMetalRow && metalType === 'platinum' ? weightValue : (isClaimRow && metalType === 'platinum' ? rawClaimWeight : 0),
               rialAmount:
-                isStoneRow
+                isForeignCashRow ? 0 : isStoneRow
                   ? stoneRialAmount
                   : isBankRow
                     ? bankRialAmount
@@ -1527,15 +1531,9 @@ export default function DocumentForm({
               foreignAmount:
                 isStoneRow
                   ? stoneForeignAmount
-                  : line.documentTab === 'currency'
-                    ? (line.details.unsettledTrade || line.settlementMethod === 'unsettled'
-                        ? (line.documentSubType === 'currency-claim' || line.documentSubType === 'currency-debt' || !line.details.linkedLineId
-                            ? numberValue(line.details.currencyQuantity)
-                            : 0)
-                        : 0)
-                    : line.documentTab === 'cash' && line.details.isForeignCash
-                      ? numberValue(line.details.totalAmount)
-                      : isForeignWorkmanship && line.documentSubType === 'workmanship-wage'
+                  : currencyForeignEffect !== null
+                    ? Math.abs(currencyForeignEffect)
+                    : isForeignWorkmanship && line.documentSubType === 'workmanship-wage'
                         ? rawWorkmanshipAmount
                         : 0,
               tertiaryAmount: 0,

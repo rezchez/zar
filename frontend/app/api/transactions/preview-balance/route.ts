@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { getCurrencyTradeForeignEffect, getDocumentLineForeignCurrency } from '@/features/accounting/documents/utils/currency-effects';
 
 import { getServerAuthContext } from '@/lib/auth';
 import { hasPermission } from '@/lib/authorization';
@@ -164,7 +165,8 @@ export async function POST(request: Request) {
       stone: stoneBalances.carats || 0,
       stoneCredit: stoneBalances.creditCarats || 0,
       stoneDebit: stoneBalances.debitCarats || 0,
-      foreign: currencyBalances[activeCurrency] ?? (activeCurrency === normalizeCurrencyCode(customer.secondaryCurrency) ? totals.foreignAmount : 0),
+      foreign: currencyBalances[activeCurrency] ?? 0,
+      currencyBalances: { ...currencyBalances },
       tertiary: totals.tertiaryAmount,
       secondaryCurrency: resolvedSecondary,
       secondaryCurrencySymbol: resolvedSecondarySymbol,
@@ -182,6 +184,7 @@ export async function POST(request: Request) {
       stoneCredit: 0,
       stoneDebit: 0,
       foreign: 0,
+      currencyBalances: {} as Record<string, number>,
       tertiary: 0,
     };
 
@@ -335,7 +338,7 @@ export async function POST(request: Request) {
           const isToman = stoneCur === 'IRT' || body?.baseCurrency === 'IRT';
           rialAmount = isToman ? convertTomanToRial(rawVal) : rawVal;
         }
-      } else if (docTab === 'discount') {
+      } else if (docTab === 'discount' || docTab === 'income-expense') {
         const rawAmt = numberValue(details.discountAmount || details.totalAmount);
         const isToman =
           details.currencyUnit === 'IRT' ||
@@ -347,30 +350,24 @@ export async function POST(request: Request) {
         transactionEffect.rial += direction * rialAmount;
       }
 
-      // Foreign currency calculation
+      // Keep each currency in its own unit throughout the calculation.
+      const currencyLine = {
+        documentTab: docTab,
+        documentNature: lineNature,
+        documentSubType: String(line.documentSubType || ''),
+        settlementMethod: String(line.settlementMethod || ''),
+        details,
+      };
+      const currencyCode = getDocumentLineForeignCurrency(currencyLine);
+      const addForeignEffect = (amount: number) => {
+        if (!currencyCode) return;
+        transactionEffect.currencyBalances[currencyCode] =
+          (transactionEffect.currencyBalances[currencyCode] || 0) + amount;
+      };
       let foreignAmount = 0;
-      if (docTab === 'currency') {
-        if (!previousBalance.secondaryCurrency && details.currencyUnit) {
-          previousBalance.secondaryCurrency = String(details.currencyUnit);
-        }
-        const isUnsettled = details.unsettledTrade === true || line.settlementMethod === 'unsettled';
-        if (isUnsettled) {
-          const isTradeWithSeparateClaim =
-            Boolean(details.linkedLineId) && numberValue(details.currencyTotalAmount) > 0;
-          if (!isTradeWithSeparateClaim) {
-            foreignAmount = numberValue(details.currencyQuantity);
-            // In unsettled currency trade:
-            // If claim (طلب ارزی): customer owes currency delivery -> -foreignAmount
-            // If debt (بدهی ارزی): customer is owed currency delivery -> +foreignAmount
-            const isClaim =
-              line.documentSubType === 'currency-claim' ||
-              details.documentSubType === 'currency-claim' ||
-              (!details.linkedLineId && lineNature === 'received');
-            const currencyDirection = isClaim ? -1 : 1;
-            transactionEffect.foreign += currencyDirection * foreignAmount;
-          }
-        }
-        // If settled: foreign currency was paid/received immediately from/to cash fund, so customer foreign balance effect is 0!
+      const currencyEffect = getCurrencyTradeForeignEffect(currencyLine);
+      if (currencyEffect !== null) {
+        addForeignEffect(currencyEffect);
       } else if (docTab === 'stone') {
         const opKind = String(details.stoneOperationKind || '');
         const subType = String(line.documentSubType || '');
@@ -418,13 +415,8 @@ export async function POST(request: Request) {
           }
           foreignAmount = numberValue(details.totalAmount || details.stoneTotalAmount);
           if (foreignAmount > 0) {
-            transactionEffect.foreign += direction * foreignAmount;
+            addForeignEffect(direction * foreignAmount);
           }
-        }
-      } else if (docTab === 'cash' && details.isForeignCash) {
-        foreignAmount = numberValue(details.totalAmount);
-        if (foreignAmount > 0) {
-          transactionEffect.foreign += direction * foreignAmount;
         }
       } else if (docTab === 'workmanship') {
         if (line.documentSubType !== 'workmanship-golden-percentage') {
@@ -433,7 +425,7 @@ export async function POST(request: Request) {
           if (isForeignWage) {
             foreignAmount = numberValue(details.totalAmount || details.wage);
             if (foreignAmount > 0) {
-              transactionEffect.foreign += direction * foreignAmount;
+              addForeignEffect(direction * foreignAmount);
               if (!previousBalance.secondaryCurrency) {
                 previousBalance.secondaryCurrency = wageCur;
               }
@@ -443,6 +435,11 @@ export async function POST(request: Request) {
       }
     }
 
+    transactionEffect.foreign = transactionEffect.currencyBalances[activeCurrency] || 0;
+    const projectedCurrencies = { ...previousBalance.currencyBalances };
+    for (const [code, amount] of Object.entries(transactionEffect.currencyBalances)) {
+      projectedCurrencies[code] = (projectedCurrencies[code] || 0) + amount;
+    }
     const projectedBalance = {
       rial: previousBalance.rial + transactionEffect.rial,
       gold: previousBalance.gold + transactionEffect.gold,
@@ -452,6 +449,7 @@ export async function POST(request: Request) {
       stoneCredit: previousBalance.stoneCredit + transactionEffect.stoneCredit,
       stoneDebit: previousBalance.stoneDebit + transactionEffect.stoneDebit,
       foreign: previousBalance.foreign + transactionEffect.foreign,
+      currencyBalances: projectedCurrencies,
       tertiary: previousBalance.tertiary + transactionEffect.tertiary,
     };
 

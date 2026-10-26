@@ -1,5 +1,6 @@
 import type { DocumentNature } from '@/lib/document';
 import type { RawOperationKind, DocumentLine, DetailState } from '@/src/components/documents/RawGoldTab';
+import { getCurrencyTradeForeignEffect, getDocumentLineForeignCurrency } from './currency-effects';
 import { isRefinerGroup } from '@/lib/customer-groups';
 import { normalizeDigits, toPersianDigits, parseJalaliDate, formatJalaliDate } from '@/lib/jalali';
 
@@ -509,7 +510,6 @@ export function getLineCurrencyValues(line: {
   details?: Partial<DetailState> | null;
 }) {
   const tab = line.documentTab || line.sourceTab;
-  const isCurrency = tab === 'currency';
   const isStone = tab === 'stone';
   const details = line.details || {};
   const stoneCurrency = isStone
@@ -533,22 +533,15 @@ export function getLineCurrencyValues(line: {
     ? numberValue(details.totalAmount || details.wage)
     : 0;
 
-  const currencyQty = isCurrency ? numberValue(details.currencyQuantity) : 0;
-  const isClaimLine = line.documentSubType === 'currency-claim';
-  const isDebtLine = line.documentSubType === 'currency-debt';
-  const isUnsettled = details.unsettledTrade === true || line.settlementMethod === 'unsettled';
+  const currencyEffect = getCurrencyTradeForeignEffect(line);
   const isPaid = line.documentNature === 'paid';
   const isReceived = line.documentNature === 'received';
-
   let debit = 0;
   let credit = 0;
 
-  if (isCurrency && currencyQty > 0) {
-    if (isClaimLine || (!details.linkedLineId && isUnsettled && isReceived)) {
-      debit = currencyQty;
-    } else if (isDebtLine || (!details.linkedLineId && isUnsettled && isPaid)) {
-      credit = currencyQty;
-    }
+  if (currencyEffect !== null) {
+    debit = Math.max(0, -currencyEffect);
+    credit = Math.max(0, currencyEffect);
   } else if (isForeignStone && stoneAmount > 0) {
     if (isPaid) debit = stoneAmount;
     else if (isReceived) credit = stoneAmount;
@@ -557,7 +550,7 @@ export function getLineCurrencyValues(line: {
     else if (isReceived) credit = workmanshipWageAmount;
   }
 
-  return { debit, credit, hasValue: debit > 0 || credit > 0 };
+  return { debit, credit, currency: getDocumentLineForeignCurrency(line), hasValue: debit > 0 || credit > 0 };
 }
 
 export function getLineFinancialValues(line: {
@@ -592,7 +585,8 @@ export function getLineFinancialValues(line: {
   const isClaimLine = line.documentSubType === 'currency-claim';
   const isDebtLine = line.documentSubType === 'currency-debt';
 
-  const financialAmount = isCurrency
+  const isForeignCash = tab === 'cash' && details.isForeignCash === true;
+  const financialAmount = isForeignCash ? 0 : isCurrency
     ? (isClaimLine || isDebtLine ? 0 : numberValue(details.currencyTotalAmount))
     : isStone
     ? (isForeignStone ? 0 : stoneAmount)
@@ -702,6 +696,10 @@ export function sanitizeLineDetailsForTab(
         cashFundName: details.cashFundName || undefined,
         cashFundCurrency: details.cashFundCurrency || undefined,
         cashFundCurrencyId: details.cashFundCurrencyId || undefined,
+        cashFundCurrencyCode: details.cashFundCurrencyCode,
+        isChildLine: details.isChildLine,
+        linkedLineId: details.linkedLineId,
+        clientLineId: details.clientLineId,
         cashFundBalance: details.cashFundBalance !== undefined ? details.cashFundBalance : undefined,
         currencyUnit: details.currencyUnit || baseCurrency,
         baseCurrency: details.baseCurrency || baseCurrency,
@@ -730,6 +728,13 @@ export function sanitizeLineDetailsForTab(
         settlementQuantity: details.settlementQuantity || '',
         settlesTradeId: details.settlesTradeId || '',
         baseCurrency: details.baseCurrency || baseCurrency,
+        cashFundId: details.cashFundId,
+        cashFundName: details.cashFundName,
+        cashFundCurrency: details.cashFundCurrency,
+        cashFundCurrencyCode: details.cashFundCurrencyCode,
+        cashFundCurrencyId: details.cashFundCurrencyId,
+        cashFundBalance: details.cashFundBalance,
+        hasChildLines: details.hasChildLines,
         linkedLineId: details.linkedLineId,
         documentTypeLabel: details.documentTypeLabel,
         documentSubType: details.documentSubType,

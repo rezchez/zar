@@ -47,6 +47,8 @@ import { getCustomerWithBalances } from '@/lib/customer-service';
 import { getCurrencyMeta, normalizeCurrencyCode } from '@/lib/customer';
 import { convertTomanToRial } from '@/lib/money';
 
+import { getCurrencyTradeForeignEffect, getDocumentLineForeignCurrency } from '@/features/accounting/documents/utils/currency-effects';
+
 const amountFields = [
   'goldAmount',
   'silverAmount',
@@ -689,17 +691,17 @@ export async function POST(request: Request) {
         lineAmounts[field] = Math.abs(amount) * direction;
       }
 
-      const isUnsettledCurrency =
-        details.unsettledTrade === true || line.settlementMethod === 'unsettled';
-      if (line.documentTab === 'currency' && !isUnsettledCurrency) {
-        lineAmounts.foreignAmount = 0;
-      }
-      if (
-        (line.documentTab === 'cash' || line.sourceTab === 'cash') &&
-        details.isForeignCash === true &&
-        details.isChildLine === true
-      ) {
-        lineAmounts.foreignAmount = 0;
+      const currencyLine = {
+        documentTab: String(line.documentTab || line.sourceTab || ''),
+        documentNature: lineNature,
+        documentSubType: String(line.documentSubType || ''),
+        settlementMethod: String(line.settlementMethod || ''),
+        details,
+      };
+      const currencyEffect = getCurrencyTradeForeignEffect(currencyLine);
+      if (currencyEffect !== null) {
+        lineAmounts.foreignAmount = currencyEffect;
+        if (currencyLine.documentTab === 'cash') lineAmounts.rialAmount = 0;
       }
 
       const isStoneLine = line.documentTab === 'stone' || line.sourceTab === 'stone';
@@ -1073,7 +1075,7 @@ export async function POST(request: Request) {
             { status: 409 },
           );
         }
-          if (fund && (prepared.line.documentTab === 'cash' || prepared.line.sourceTab === 'cash') && !prepared.documentDetails.isChildLine) {
+        if (fund && (prepared.line.documentTab === 'cash' || prepared.line.sourceTab === 'cash') && !prepared.documentDetails.isChildLine) {
           if (!simulatedVaultBalances.has(fund.id)) {
             simulatedVaultBalances.set(fund.id, Number(fund.balance ?? 0));
           }
@@ -1241,26 +1243,15 @@ export async function POST(request: Request) {
           ? normalizeCurrencyCode(String(prepared.documentDetails.settlementCurrencyUnit || ''))
           : '';
         const isForeignStone = Boolean(stoneCur && stoneCur !== 'IRR' && stoneCur !== 'IRT');
-        const isCurrencyFundChild =
-          (prepared.line.documentTab === 'cash' || prepared.line.sourceTab === 'cash') &&
-          prepared.documentDetails.isForeignCash === true &&
-          prepared.documentDetails.isChildLine === true;
-        const resolvedForeignCur =
-          prepared.line.documentTab === 'currency'
-            ? String(prepared.documentDetails.currencyUnit || customer.secondaryCurrency || '')
-            : isCurrencyFundChild
-              ? String(prepared.documentDetails.cashFundCurrencyCode || prepared.documentDetails.currencyUnit || customer.secondaryCurrency || '')
-            : isForeignStone
-              ? stoneCur
-              : String(customer.secondaryCurrency ?? '');
-        const resolvedForeignSym =
-          prepared.line.documentTab === 'currency'
-            ? String(prepared.documentDetails.currencyUnit || customer.secondaryCurrencySymbol || '')
-            : isCurrencyFundChild
-              ? String(getCurrencyMeta(String(prepared.documentDetails.cashFundCurrencyCode || prepared.documentDetails.currencyUnit || '')).symbol || prepared.documentDetails.cashFundCurrencyCode || prepared.documentDetails.currencyUnit || '')
-            : isForeignStone
-              ? String(getCurrencyMeta(stoneCur).symbol || stoneCur)
-              : String(customer.secondaryCurrencySymbol ?? '');
+        const lineForeignCurrency = getDocumentLineForeignCurrency({
+          documentTab: String(prepared.line.documentTab || prepared.line.sourceTab || ''),
+          documentSubType: String(prepared.line.documentSubType || ''),
+          details: prepared.documentDetails,
+        });
+        const resolvedForeignCur = lineForeignCurrency || (isForeignStone ? stoneCur : String(customer.secondaryCurrency ?? ''));
+        const resolvedForeignSym = resolvedForeignCur
+          ? getCurrencyMeta(resolvedForeignCur).symbol
+          : String(customer.secondaryCurrencySymbol ?? '');
 
         return {
           customer: customer.id,

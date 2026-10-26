@@ -217,98 +217,16 @@ function getLineSortValue(
           : line.documentNature === 'received';
       return isBostankar ? c750 : 0;
     }
-    case 'currency': {
-      if (line.documentTab === 'currency') return line.details.currencyUnit || 'USD';
-      if (line.documentTab === 'stone') {
-        const sc = String(line.details.settlementCurrencyUnit || 'USD').trim().toUpperCase();
-        return sc !== 'IRR' && sc !== 'IRT' ? sc : '';
-      }
-      return '';
-    }
-    case 'bedehkarArzi': {
-      if (line.documentTab === 'stone') {
-        const sc = String(line.details.settlementCurrencyUnit || 'USD').trim().toUpperCase();
-        if (sc !== 'IRR' && sc !== 'IRT' && line.documentNature === 'paid') {
-          return numberValue(line.details.stoneTotalAmount || line.details.totalAmount);
-        }
-        return 0;
-      }
-      if (line.documentTab === 'workmanship' || line.sourceTab === 'workmanship') {
-        const wc = String(line.details.wageCurrency || line.details.currencyUnit || '').trim().toUpperCase();
-        if (wc && wc !== 'IRR' && wc !== 'IRT' && line.documentNature === 'paid') {
-          return numberValue(line.details.totalAmount || line.details.wage);
-        }
-        return 0;
-      }
-      if (line.documentTab !== 'currency') return 0;
-      if (
-        line.documentSubType === 'currency-claim' ||
-        (line.details.unsettledTrade && line.documentNature === 'received' && !line.details.linkedLineId)
-      ) {
-        return numberValue(line.details.currencyQuantity);
-      }
-      return 0;
-    }
-    case 'bostankarArzi': {
-      if (line.documentTab === 'stone') {
-        const sc = String(line.details.settlementCurrencyUnit || 'USD').trim().toUpperCase();
-        if (sc !== 'IRR' && sc !== 'IRT' && line.documentNature === 'received') {
-          return numberValue(line.details.stoneTotalAmount || line.details.totalAmount);
-        }
-        return 0;
-      }
-      if (line.documentTab === 'workmanship' || line.sourceTab === 'workmanship') {
-        const wc = String(line.details.wageCurrency || line.details.currencyUnit || '').trim().toUpperCase();
-        if (wc && wc !== 'IRR' && wc !== 'IRT' && line.documentNature === 'received') {
-          return numberValue(line.details.totalAmount || line.details.wage);
-        }
-        return 0;
-      }
-      if (line.documentTab !== 'currency') return 0;
-      if (
-        line.documentSubType === 'currency-debt' ||
-        (line.details.unsettledTrade && line.documentNature === 'paid' && !line.details.linkedLineId)
-      ) {
-        return numberValue(line.details.currencyQuantity);
-      }
-      return 0;
-    }
-    case 'bedehkarMali': {
-      if (line.documentNature !== 'paid') return 0;
-      if (line.documentTab === 'stone') {
-        const sc = String(line.details.settlementCurrencyUnit || 'USD').trim().toUpperCase();
-        return sc === 'IRR' || sc === 'IRT'
-          ? numberValue(line.details.stoneTotalAmount || line.details.totalAmount)
-          : 0;
-      }
-      if (line.documentTab === 'workmanship' || line.sourceTab === 'workmanship') {
-        const wc = String(line.details.wageCurrency || line.details.currencyUnit || '').trim().toUpperCase();
-        return (wc === 'IRR' || wc === 'IRT' || !wc)
-          ? numberValue(line.details.totalAmount)
-          : 0;
-      }
-      return line.documentTab === 'currency'
-        ? numberValue(line.details.currencyTotalAmount)
-        : numberValue(line.details.claimFinancial || line.details.totalAmount);
-    }
-    case 'bostankarMali': {
-      if (line.documentNature !== 'received') return 0;
-      if (line.documentTab === 'stone') {
-        const sc = String(line.details.settlementCurrencyUnit || 'USD').trim().toUpperCase();
-        return sc === 'IRR' || sc === 'IRT'
-          ? numberValue(line.details.stoneTotalAmount || line.details.totalAmount)
-          : 0;
-      }
-      if (line.documentTab === 'workmanship' || line.sourceTab === 'workmanship') {
-        const wc = String(line.details.wageCurrency || line.details.currencyUnit || '').trim().toUpperCase();
-        return (wc === 'IRR' || wc === 'IRT' || !wc)
-          ? numberValue(line.details.totalAmount)
-          : 0;
-      }
-      return line.documentTab === 'currency'
-        ? numberValue(line.details.currencyTotalAmount)
-        : numberValue(line.details.claimFinancial || line.details.totalAmount);
-    }
+    case 'currency':
+      return getLineCurrencyValues(line).currency;
+    case 'bedehkarArzi':
+      return getLineCurrencyValues(line).debit;
+    case 'bostankarArzi':
+      return getLineCurrencyValues(line).credit;
+    case 'bedehkarMali':
+      return getLineFinancialValues(line).debit;
+    case 'bostankarMali':
+      return getLineFinancialValues(line).credit;
     case 'bankAccount': {
       const bName = line.details?.bankName?.trim() || '';
       const bBranch = line.details?.bankBranch?.trim() || '';
@@ -572,7 +490,7 @@ export default function CommittedLinesTable({
   };
 
   const hasCurrencyLines = useMemo(() => {
-    return committedLines.some((l) => getLineCurrencyValues(l).hasValue);
+    return committedLines.some((l) => Boolean(getLineCurrencyValues(l).currency));
   }, [committedLines]);
 
   const hasMetalLines = useMemo(() => {
@@ -714,107 +632,24 @@ export default function CommittedLinesTable({
       }, 0);
   }, [committedLines]);
 
-  const totalBedehkarArzi = useMemo(() => {
-    return committedLines.reduce((sum, l) => {
-      if (l.documentTab === 'stone') {
-        const sc = String(l.details.settlementCurrencyUnit || 'USD').trim().toUpperCase();
-        if (sc !== 'IRR' && sc !== 'IRT' && l.documentNature === 'paid') {
-          return sum + numberValue(l.details.stoneTotalAmount || l.details.totalAmount);
-        }
-        return sum;
-      }
-      if (l.documentTab === 'workmanship' || l.sourceTab === 'workmanship') {
-        const wc = String(l.details.wageCurrency || l.details.currencyUnit || '').trim().toUpperCase();
-        if (wc && wc !== 'IRR' && wc !== 'IRT' && l.documentNature === 'paid' && l.documentSubType !== 'workmanship-golden-percentage') {
-          return sum + numberValue(l.details.totalAmount || l.details.wage);
-        }
-        return sum;
-      }
-      if (
-        l.documentTab === 'currency' &&
-        (l.documentSubType === 'currency-claim' ||
-          ((l.details?.unsettledTrade || l.settlementMethod === 'unsettled') && l.documentNature === 'received' && !l.details?.linkedLineId))
-      ) {
-        return sum + numberValue(l.details?.currencyQuantity);
-      }
-      return sum;
-    }, 0);
+  const currencyTotals = useMemo(() => {
+    const totals: Record<string, { debit: number; credit: number }> = {};
+    for (const line of committedLines) {
+      const values = getLineCurrencyValues(line);
+      if (!values.currency) continue;
+      const current = totals[values.currency] ||= { debit: 0, credit: 0 };
+      current.debit += values.debit;
+      current.credit += values.credit;
+    }
+    return Object.entries(totals).sort(([a], [b]) => a.localeCompare(b));
   }, [committedLines]);
 
-  const totalBostankarArzi = useMemo(() => {
-    return committedLines.reduce((sum, l) => {
-      if (l.documentTab === 'stone') {
-        const sc = String(l.details.settlementCurrencyUnit || 'USD').trim().toUpperCase();
-        if (sc !== 'IRR' && sc !== 'IRT' && l.documentNature === 'received') {
-          return sum + numberValue(l.details.stoneTotalAmount || l.details.totalAmount);
-        }
-        return sum;
-      }
-      if (l.documentTab === 'workmanship' || l.sourceTab === 'workmanship') {
-        const wc = String(l.details.wageCurrency || l.details.currencyUnit || '').trim().toUpperCase();
-        if (wc && wc !== 'IRR' && wc !== 'IRT' && l.documentNature === 'received' && l.documentSubType !== 'workmanship-golden-percentage') {
-          return sum + numberValue(l.details.totalAmount || l.details.wage);
-        }
-        return sum;
-      }
-      if (
-        l.documentTab === 'currency' &&
-        (l.documentSubType === 'currency-debt' ||
-          ((l.details?.unsettledTrade || l.settlementMethod === 'unsettled') && l.documentNature === 'paid' && !l.details?.linkedLineId))
-      ) {
-        return sum + numberValue(l.details?.currencyQuantity);
-      }
-      return sum;
-    }, 0);
-  }, [committedLines]);
-
-  const totalBedehkarMali = useMemo(() => {
-    return committedLines
-      .filter((l) => l.documentNature === 'paid' && l.documentSubType !== 'currency-claim' && l.documentSubType !== 'currency-debt' && l.documentSubType !== 'workmanship-golden-percentage')
-      .reduce((sum, l) => {
-        if (l.documentTab === 'stone') {
-          const sc = String(l.details.settlementCurrencyUnit || 'USD').trim().toUpperCase();
-          return sc === 'IRR' || sc === 'IRT'
-            ? sum + numberValue(l.details.stoneTotalAmount || l.details.totalAmount)
-            : sum;
-        }
-        if (l.documentTab === 'workmanship' || l.sourceTab === 'workmanship') {
-          const wc = String(l.details.wageCurrency || l.details.currencyUnit || '').trim().toUpperCase();
-          return (wc === 'IRR' || wc === 'IRT' || !wc)
-            ? sum + numberValue(l.details.totalAmount)
-            : sum;
-        }
-        const amount =
-          l.documentTab === 'currency'
-            ? numberValue(l.details.currencyTotalAmount)
-            : numberValue(l.details.claimFinancial || l.details.totalAmount);
-        return sum + amount;
-      }, 0);
-  }, [committedLines]);
-
-  const totalBostankarMali = useMemo(() => {
-    return committedLines
-      .filter((l) => l.documentNature === 'received' && l.documentSubType !== 'currency-claim' && l.documentSubType !== 'currency-debt' && l.documentSubType !== 'workmanship-golden-percentage')
-      .reduce((sum, l) => {
-        if (l.documentTab === 'stone') {
-          const sc = String(l.details.settlementCurrencyUnit || 'USD').trim().toUpperCase();
-          return sc === 'IRR' || sc === 'IRT'
-            ? sum + numberValue(l.details.stoneTotalAmount || l.details.totalAmount)
-            : sum;
-        }
-        if (l.documentTab === 'workmanship' || l.sourceTab === 'workmanship') {
-          const wc = String(l.details.wageCurrency || l.details.currencyUnit || '').trim().toUpperCase();
-          return (wc === 'IRR' || wc === 'IRT' || !wc)
-            ? sum + numberValue(l.details.totalAmount)
-            : sum;
-        }
-        const amount =
-          l.documentTab === 'currency'
-            ? numberValue(l.details.currencyTotalAmount)
-            : numberValue(l.details.claimFinancial || l.details.totalAmount);
-        return sum + amount;
-      }, 0);
-  }, [committedLines]);
+  const totalBedehkarMali = useMemo(() => committedLines.reduce(
+    (sum, line) => sum + getLineFinancialValues(line).debit, 0,
+  ), [committedLines]);
+  const totalBostankarMali = useMemo(() => committedLines.reduce(
+    (sum, line) => sum + getLineFinancialValues(line).credit, 0,
+  ), [committedLines]);
 
   return (
     <>
@@ -1079,7 +914,7 @@ export default function CommittedLinesTable({
                     className="relative px-1 py-1.5 text-center font-bold border-s border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
                   >
                     <SortableHeader column="currency" currentSort={sortState} onSort={handleSort}>
-                      ارز
+                      نوع ارز
                     </SortableHeader>
                     <ColumnResizer
                       colKey="currency"
@@ -1351,10 +1186,14 @@ export default function CommittedLinesTable({
                       جمع
                     </TableCell>
                     <TableCell className="px-1.5 py-1.5 text-center tabular-nums text-rose-600 dark:text-rose-400 font-extrabold text-xs border-s border-slate-200/60 dark:border-slate-700/60">
-                      {totalBedehkarArzi > 0 ? faNumber(totalBedehkarArzi, 0) : '-'}
+                      {currencyTotals.map(([code, total]) => (
+                        <div key={code}>{faNumber(total.debit, 2)} {code}</div>
+                      ))}
                     </TableCell>
                     <TableCell className="px-1.5 py-1.5 text-center tabular-nums text-emerald-600 dark:text-emerald-400 font-extrabold text-xs border-s border-slate-200/60 dark:border-slate-700/60">
-                      {totalBostankarArzi > 0 ? faNumber(totalBostankarArzi, 0) : '-'}
+                      {currencyTotals.map(([code, total]) => (
+                        <div key={code}>{faNumber(total.credit, 2)} {code}</div>
+                      ))}
                     </TableCell>
                   </>
                 ) : null}

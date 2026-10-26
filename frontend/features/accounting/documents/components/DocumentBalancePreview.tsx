@@ -17,6 +17,7 @@ export interface DocumentBalancePreviewData {
     stoneCredit?: number;
     stoneDebit?: number;
     foreign: number;
+    currencyBalances?: Record<string, number>;
     tertiary: number;
     secondaryCurrency?: string;
     secondaryCurrencySymbol?: string;
@@ -32,6 +33,7 @@ export interface DocumentBalancePreviewData {
     stoneCredit?: number;
     stoneDebit?: number;
     foreign: number;
+    currencyBalances?: Record<string, number>;
     tertiary: number;
   };
   projectedBalance: {
@@ -43,6 +45,7 @@ export interface DocumentBalancePreviewData {
     stoneCredit?: number;
     stoneDebit?: number;
     foreign: number;
+    currencyBalances?: Record<string, number>;
     tertiary: number;
   };
 }
@@ -69,48 +72,46 @@ export default function DocumentBalancePreview({
 
   const isZeroOrNoLines = !hasCommittedLines;
 
-  const effectivePreviewData: DocumentBalancePreviewData = (isZeroOrNoLines || !previewData)
-    ? {
-        previousBalance: {
-          rial: 0,
-          gold: 0,
-          silver: 0,
-          platinum: 0,
-          foreign: 0,
-          tertiary: 0,
-          stoneCredit: 0,
-          stoneDebit: 0,
-        },
-        transactionEffect: {
-          rial: 0,
-          gold: 0,
-          silver: 0,
-          platinum: 0,
-          foreign: 0,
-          tertiary: 0,
-          stoneCredit: 0,
-          stoneDebit: 0,
-        },
-        projectedBalance: {
-          rial: 0,
-          gold: 0,
-          silver: 0,
-          platinum: 0,
-          foreign: 0,
-          tertiary: 0,
-          stoneCredit: 0,
-          stoneDebit: 0,
-        },
-      }
+  const emptyEffect = {
+    rial: 0, gold: 0, silver: 0, platinum: 0, foreign: 0, tertiary: 0,
+    stoneCredit: 0, stoneDebit: 0, currencyBalances: {},
+  };
+  const previousBalance = previewData?.previousBalance || {
+    rial: selectedCustomer.rialBalance || 0,
+    gold: selectedCustomer.goldBalance || 0,
+    silver: selectedCustomer.silverBalance || 0,
+    platinum: selectedCustomer.platinumBalance || 0,
+    foreign: selectedCustomer.foreignBalance || 0,
+    tertiary: selectedCustomer.tertiaryBalance || 0,
+    currencyBalances: selectedCustomer.currencyBalances,
+    secondaryCurrency: selectedCustomer.secondaryCurrency,
+    secondaryCurrencySymbol: selectedCustomer.secondaryCurrencySymbol,
+  };
+  const effectivePreviewData: DocumentBalancePreviewData = isZeroOrNoLines || !previewData
+    ? { previousBalance, transactionEffect: emptyEffect, projectedBalance: previousBalance }
     : previewData;
+
+  const previousCurrencies = effectivePreviewData.previousBalance.currencyBalances || {
+    [effectivePreviewData.previousBalance.secondaryCurrency || 'USD']: effectivePreviewData.previousBalance.foreign,
+  };
+  const effectCurrencies = effectivePreviewData.transactionEffect.currencyBalances || {
+    [effectivePreviewData.previousBalance.secondaryCurrency || 'USD']: effectivePreviewData.transactionEffect.foreign,
+  };
+  const projectedCurrencies = effectivePreviewData.projectedBalance.currencyBalances || {
+    [effectivePreviewData.previousBalance.secondaryCurrency || 'USD']: effectivePreviewData.projectedBalance.foreign,
+  };
+  const foreignRows = Array.from(new Set([
+    ...Object.keys(previousCurrencies), ...Object.keys(effectCurrencies), ...Object.keys(projectedCurrencies),
+  ])).sort().map((code) => ({
+    code,
+    meta: getCurrencyMeta(code),
+    previous: previousCurrencies[code] || 0,
+    effect: effectCurrencies[code] || 0,
+    projected: projectedCurrencies[code] || 0,
+  })).filter((row) => row.previous !== 0 || row.effect !== 0 || row.projected !== 0 || row.code in effectCurrencies);
 
   const isToman = baseCurrency === 'IRT';
   const currencyUnitLabel = isToman ? 'تومان' : 'ریال';
-
-  const foreignMeta = getCurrencyMeta(
-    effectivePreviewData.previousBalance.secondaryCurrency,
-    effectivePreviewData.previousBalance.secondaryCurrencySymbol,
-  );
 
   const displayPreviousRial = isToman
     ? (effectivePreviewData.previousBalance.rial < 0
@@ -198,16 +199,14 @@ export default function DocumentBalancePreview({
               </small>
             </div>
           ) : null}
-          {effectivePreviewData.previousBalance.foreign !== 0 || effectivePreviewData.transactionEffect.foreign !== 0 ? (
-            <div className="text-teal-600 dark:text-teal-400 whitespace-nowrap">
-              {foreignMeta.name}: {faNumber(Math.abs(effectivePreviewData.previousBalance.foreign), 2)} {foreignMeta.symbol}
-              {effectivePreviewData.previousBalance.foreign !== 0 ? (
-                <small className="text-[10px] text-slate-500 font-bold mr-1">
-                  ({effectivePreviewData.previousBalance.foreign > 0 ? 'بستانکار' : 'بدهکار'})
-                </small>
-              ) : null}
+          {foreignRows.map((row) => (
+            <div key={row.code} className="text-teal-600 dark:text-teal-400 whitespace-nowrap">
+              {row.meta.name} ({row.code}): {faNumber(Math.abs(row.previous), 2)} {row.meta.symbol}
+              <small className="text-[10px] text-slate-500 font-bold mr-1">
+                ({row.previous > 0 ? 'بستانکار' : row.previous < 0 ? 'بدهکار' : 'تسویه'})
+              </small>
             </div>
-          ) : null}
+          ))}
         </div>
       </div>
 
@@ -221,7 +220,7 @@ export default function DocumentBalancePreview({
           effectivePreviewData.transactionEffect.gold === 0 &&
           effectivePreviewData.transactionEffect.silver === 0 &&
           effectivePreviewData.transactionEffect.platinum === 0 &&
-          effectivePreviewData.transactionEffect.foreign === 0 &&
+          !foreignRows.some((row) => row.effect !== 0) &&
           (!effectivePreviewData.transactionEffect.stone || effectivePreviewData.transactionEffect.stone === 0) &&
           (!effectivePreviewData.transactionEffect.stoneCredit || effectivePreviewData.transactionEffect.stoneCredit === 0) &&
           (!effectivePreviewData.transactionEffect.stoneDebit || effectivePreviewData.transactionEffect.stoneDebit === 0) ? (
@@ -308,19 +307,11 @@ export default function DocumentBalancePreview({
                   {faNumber(effectivePreviewData.transactionEffect.stone, 2)} قیراط
                 </div>
               ) : null}
-              {effectivePreviewData.transactionEffect.foreign !== 0 ? (
-                <div
-                  className={`whitespace-nowrap ${
-                    effectivePreviewData.transactionEffect.foreign >= 0
-                      ? 'text-emerald-600 dark:text-emerald-400'
-                      : 'text-rose-600 dark:text-rose-400'
-                  }`}
-                >
-                  {foreignMeta.name}: {effectivePreviewData.transactionEffect.foreign >= 0 ? '+' : ''}
-                  {faNumber(effectivePreviewData.transactionEffect.foreign, 2)}{' '}
-                  {foreignMeta.symbol}
+              {foreignRows.filter((row) => row.effect !== 0).map((row) => (
+                <div key={row.code} className={`whitespace-nowrap ${row.effect > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                  {row.meta.name} ({row.code}): {row.effect >= 0 ? '+' : ''}{faNumber(row.effect, 2)} {row.meta.symbol}
                 </div>
-              ) : null}
+              ))}
             </>
           )}
         </div>
@@ -386,17 +377,14 @@ export default function DocumentBalancePreview({
               </small>
             </div>
           ) : null}
-          {effectivePreviewData.projectedBalance.foreign !== 0 || effectivePreviewData.transactionEffect.foreign !== 0 ? (
-            <div className="text-teal-600 dark:text-teal-400 whitespace-nowrap">
-              {foreignMeta.name}: {faNumber(Math.abs(effectivePreviewData.projectedBalance.foreign), 2)}{' '}
-              {foreignMeta.symbol}
-              {effectivePreviewData.projectedBalance.foreign !== 0 ? (
-                <small className="text-[10px] text-slate-500 font-bold mr-1">
-                  ({effectivePreviewData.projectedBalance.foreign > 0 ? 'بستانکار' : 'بدهکار'})
-                </small>
-              ) : null}
+          {foreignRows.map((row) => (
+            <div key={row.code} className="text-teal-600 dark:text-teal-400 whitespace-nowrap">
+              {row.meta.name} ({row.code}): {faNumber(Math.abs(row.projected), 2)} {row.meta.symbol}
+              <small className="text-[10px] text-slate-500 font-bold mr-1">
+                ({row.projected > 0 ? 'بستانکار' : row.projected < 0 ? 'بدهکار' : 'تسویه'})
+              </small>
             </div>
-          ) : null}
+          ))}
         </div>
       </div>
     </div>

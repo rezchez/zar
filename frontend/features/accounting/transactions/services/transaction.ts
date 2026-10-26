@@ -1,4 +1,6 @@
 import type { RecordModel } from 'pocketbase';
+import { getCurrencyTradeForeignEffect, getDocumentLineForeignCurrency } from '@/features/accounting/documents/utils/currency-effects';
+import { getCurrencyMeta } from '@/lib/customer';
 import {
   emptyCustomerBalances,
   normalizeCurrencyCode,
@@ -84,21 +86,35 @@ export function mapTransaction(record: RecordModel | Record<string, unknown>): C
   let foreignCurrency = readText(record, 'foreignCurrency');
   let foreignCurrencySymbol = readText(record, 'foreignCurrencySymbol');
 
-  if (documentTab === 'stone') {
-    let parsedDetails: Record<string, unknown> = {};
-    if (rawDetailsField && typeof rawDetailsField === 'object' && !Array.isArray(rawDetailsField)) {
-      parsedDetails = rawDetailsField as Record<string, unknown>;
-    } else if (documentDetails) {
-      try {
-        const parsed = JSON.parse(documentDetails);
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-          parsedDetails = parsed as Record<string, unknown>;
-        }
-      } catch {
-        // ignore invalid JSON
+  let parsedDetails: Record<string, unknown> = {};
+  if (rawDetailsField && typeof rawDetailsField === 'object' && !Array.isArray(rawDetailsField)) {
+    parsedDetails = rawDetailsField as Record<string, unknown>;
+  } else if (documentDetails) {
+    try {
+      const parsed = JSON.parse(documentDetails);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        parsedDetails = parsed as Record<string, unknown>;
       }
+    } catch {
+      // ignore invalid JSON
     }
+  }
 
+  if (readText(record, 'transactionType') !== 'reversal') {
+    const currencyLine = { documentTab, documentSubType, documentNature, settlementMethod, details: parsedDetails };
+    const currencyEffect = getCurrencyTradeForeignEffect(currencyLine);
+    if (currencyEffect !== null && (parsedDetails.currencyQuantity !== undefined || documentTab === 'cash')) {
+      foreignAmount = currencyEffect;
+    }
+    const currencyCode = getDocumentLineForeignCurrency(currencyLine);
+    if (currencyCode) {
+      foreignCurrency = currencyCode;
+      foreignCurrencySymbol = getCurrencyMeta(currencyCode).symbol;
+    }
+    if (documentTab === 'cash' && parsedDetails.isForeignCash === true) rialAmount = 0;
+  }
+
+  if (documentTab === 'stone') {
     const opKind = String(parsedDetails.stoneOperationKind || '');
     const isUnsettledStone =
       opKind === 'unsettled_purchase' ||

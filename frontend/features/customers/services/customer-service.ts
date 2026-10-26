@@ -90,15 +90,11 @@ export function mapCustomerWithTransactions(
 
   if (customer.secondaryCurrency) {
     const secNorm = normalizeCurrencyCode(customer.secondaryCurrency);
-    if (secNorm in currencyBalances) {
-      customer.foreignBalance = currencyBalances[secNorm];
-    }
+    customer.foreignBalance = currencyBalances[secNorm] ?? 0;
   }
   if (customer.tertiaryCurrency) {
     const terNorm = normalizeCurrencyCode(customer.tertiaryCurrency);
-    if (terNorm in currencyBalances) {
-      customer.tertiaryBalance = currencyBalances[terNorm];
-    }
+    customer.tertiaryBalance = currencyBalances[terNorm] ?? 0;
   }
 
   return customer;
