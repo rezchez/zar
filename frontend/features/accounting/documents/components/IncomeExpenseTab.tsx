@@ -277,7 +277,7 @@ export default function IncomeExpenseTab({
 
   const amountNum = Math.floor(numberValue(totalAmountStr));
 
-  const isFormValid = Boolean(selectedAccountId && amountNum > 0);
+  const isFormValid = Boolean(selectedAccountId && amountNum > 0 && description.trim());
 
   return (
     <div className="space-y-4">
@@ -377,6 +377,8 @@ export default function IncomeExpenseTab({
           value={selectedAccountId}
           onChange={handleAccountSelect}
           filterType={filterType}
+          postableOnly
+          maxSelectableLevel={3}
           label=""
           placeholder={
             isIncome
@@ -411,9 +413,10 @@ export default function IncomeExpenseTab({
           />
 
           {/* Field: Description */}
-          <Field label="شرح ردیف / بابت">
+          <Field label="شرح ردیف / بابت" required>
             <input
               type="text"
+              maxLength={500}
               value={description}
               onChange={(e) =>
                 setDraftLine((current) => ({ ...current, description: e.target.value }))
@@ -457,14 +460,14 @@ export default function IncomeExpenseTab({
       ) : null}
 
       {/* Dedicated Row Submission Button */}
-      {draftReady && !isLinesPinned ? (
+      {!isLinesPinned ? (
         <div className="sticky bottom-3 z-30 flex justify-center pt-2 transition-all duration-300">
           <button
             type="button"
-            disabled={!isFormValid}
+            disabled={!isFormValid || !draftReady}
             onClick={commitDraftLine}
             className={`document-commit-line-button shadow-lg max-w-sm ${
-              !isFormValid ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'
+              !isFormValid || !draftReady ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'
             } ${
               isIncome
                 ? '!bg-gradient-to-r !from-emerald-600 !to-teal-600 hover:!from-emerald-500 hover:!to-teal-500'

@@ -63,6 +63,7 @@ export type DetailState = {
   cashFundId?: string;
   cashFundName?: string;
   cashFundCurrency?: string;
+  cashFundCurrencyCode?: string;
   cashFundCurrencyId?: string;
   cashFundBalance?: number;
   workmanshipName?: string;
@@ -174,7 +175,7 @@ export type DetailState = {
 export type DocumentLine = {
   id: string;
   documentNature: 'received' | 'paid';
-  documentTab: 'raw-gold' | 'gold-sale' | 'currency' | 'cash' | 'workmanship' | 'coin' | 'bank' | 'claim' | 'refining' | 'stone' | 'goods' | 'discount';
+  documentTab: 'raw-gold' | 'gold-sale' | 'currency' | 'cash' | 'workmanship' | 'coin' | 'bank' | 'claim' | 'refining' | 'stone' | 'goods' | 'discount' | 'income-expense';
   sourceTab?: string;
   documentSubType: string;
   documentTypeLabel?: string;

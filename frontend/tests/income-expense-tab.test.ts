@@ -69,6 +69,8 @@ describe('Income & Expense Tab Unit Tests', () => {
       documentTab: 'income-expense',
       sourceTab: 'income-expense',
       documentTypeLabel: 'درآمد',
+      documentSubType: 'income',
+      description: 'درآمد بابت خدمات',
       converted750: 0,
       settlementMethod: 'cash',
       balanceSource: 'current',

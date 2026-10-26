@@ -540,6 +540,94 @@ export async function postJournalEntry(
   };
 }
 
+export async function postIncomeExpenseJournalEntry(
+  params: {
+    documentId: string;
+    lineNumber: number;
+    documentNumber: string;
+    entryDateJalali: string;
+    amountRials: number;
+    nature: 'received' | 'paid';
+    accountId: string;
+    description: string;
+    customer: { id: string; name: string };
+    userId: string;
+  },
+  pb: PocketBase,
+): Promise<JournalEntryResult> {
+  const amount = Math.round(Math.abs(params.amountRials));
+  if (amount <= 0) throw new Error('مبلغ هزینه یا درآمد باید بیشتر از صفر باشد.');
+  const description = params.description.trim();
+  if (!description) throw new Error('شرح دقیق ردیف هزینه یا درآمد الزامی است.');
+
+  const account = await resolveAccount(pb, params.accountId, true);
+  const accountRecord = await pb.collection('chart_of_accounts').getOne(account.id).catch(() => null);
+  const accountMetadata = accountRecord || DEFAULT_CHART_OF_ACCOUNTS.find(
+    (candidate) => candidate.id === account.id || candidate.code === account.code,
+  );
+  const expectedAccountType = params.nature === 'received' ? 'revenue' : 'expense';
+  if (!accountMetadata || accountMetadata.accountType !== expectedAccountType || !accountMetadata.isPostable) {
+    throw new Error(`سرفصل انتخاب‌شده باید حساب قابل ثبت از نوع ${params.nature === 'received' ? 'درآمد' : 'هزینه'} باشد.`);
+  }
+  if (accountMetadata.level > 3) {
+    throw new Error('برای ثبت هزینه یا درآمد، انتخاب سرفصل معین یا سطح کل مجاز لازم است.');
+  }
+  if (accountMetadata.level === 2) {
+    const children = await pb.collection('chart_of_accounts').getFullList({
+      filter: pb.filter('parentId = {:parentId}', { parentId: account.id }),
+    });
+    if (children.some((child: any) => child.level === 3 && child.isPostable === true)) {
+      throw new Error('برای این شاخه، معین قابل ثبت وجود دارد؛ همان معین را انتخاب کنید.');
+    }
+  }
+
+  const isIncome = params.nature === 'received';
+  const journalDescription = `${isIncome ? 'ثبت درآمد' : 'ثبت هزینه'}: ${description} (سند ${params.documentNumber})`;
+  const lines: JournalLineInput[] = isIncome
+    ? [
+        {
+          accountId: SYSTEM_ACCOUNT_CODES.NOTES_RECEIVABLE,
+          debit: amount,
+          credit: 0,
+          description: `بدهکار شدن طرف‌حساب ${params.customer.name} بابت درآمد: ${description}`,
+          partyId: params.customer.id,
+        },
+        {
+          accountId: account.id,
+          debit: 0,
+          credit: amount,
+          description: `شناسایی درآمد ${account.name} بابت: ${description}`,
+          partyId: params.customer.id,
+        },
+      ]
+    : [
+        {
+          accountId: account.id,
+          debit: amount,
+          credit: 0,
+          description: `ثبت هزینه ${account.name} بابت: ${description}`,
+          partyId: params.customer.id,
+        },
+        {
+          accountId: SYSTEM_ACCOUNT_CODES.COUNTERPARTY_LIABILITY,
+          debit: 0,
+          credit: amount,
+          description: `بستانکار شدن طرف‌حساب ${params.customer.name} بابت هزینه: ${description}`,
+          partyId: params.customer.id,
+        },
+      ];
+
+  return postJournalEntry({
+    description: journalDescription,
+    sourceType: 'document',
+    sourceId: `${params.documentId}:${params.lineNumber}`,
+    sourceKey: `document:${params.documentId}:${params.lineNumber}:income-expense`,
+    entryDateJalali: params.entryDateJalali,
+    userId: params.userId,
+    lines,
+  }, pb, { strictAccountResolution: true });
+}
+
 // -------------------------------------------------------------
 // CHEQUE POSTING WORKFLOWS
 // -------------------------------------------------------------
@@ -2869,6 +2957,3 @@ export async function postDiscountJournalEntry(
     writer,
   );
 }
-
-
-

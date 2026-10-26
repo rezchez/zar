@@ -27,7 +27,7 @@ type CurrencyTabProps = {
   isSyncingQuotes?: boolean;
   editingLineId: string | null;
   isLinesPinned: boolean;
-  commitDraftLine: () => void;
+  commitDraftLine: (customDraftLine?: DocumentLine) => void;
   updateDraftDetail: <K extends keyof DetailState>(field: K, value: DetailState[K]) => void;
   updateCurrencyValue: (
     field: 'currencyQuantity' | 'currencyUnitPrice' | 'currencyTotalAmount',
@@ -233,13 +233,11 @@ export default function CurrencyTab({
     setDraftLine,
   ]);
 
-  // Ensure the traded currency cannot be identical to the top document currency and excludes IRR, IRT and coin names
+  // Keep the traded currency independent from the document's settlement currency.
   const selectableUnits = useMemo(() => {
-    const normDoc = (selectedCurrency || '').trim().toUpperCase();
     const filtered = currencyUnits.filter((u) => {
       const norm = u.trim().toUpperCase();
       return (
-        norm !== normDoc &&
         norm !== 'IRR' &&
         norm !== 'IRT' &&
         !norm.includes('سکه') &&
@@ -251,8 +249,8 @@ export default function CurrencyTab({
       );
     });
     if (filtered.length > 0) return filtered;
-    return ['USD', 'EUR', 'AED', 'GBP'].filter((u) => u !== normDoc);
-  }, [currencyUnits, selectedCurrency]);
+    return ['USD', 'EUR', 'AED', 'GBP'];
+  }, [currencyUnits]);
 
   const isCurrentUnitValid = useMemo(() => {
     const raw = (draftLine.details?.currencyUnit || '').trim().toUpperCase();
@@ -262,12 +260,6 @@ export default function CurrencyTab({
   const currentUnit = isCurrentUnitValid
     ? (draftLine.details.currencyUnit || '').trim().toUpperCase()
     : (selectableUnits[0] || 'USD');
-
-  const isDuplicateCurrency = Boolean(
-    selectedCurrency &&
-    currentUnit &&
-    currentUnit === selectedCurrency.trim().toUpperCase(),
-  );
 
   const isDomesticCurrency = Boolean(
     currentUnit &&
@@ -377,7 +369,22 @@ export default function CurrencyTab({
       toast.error(`صندوق ارزی «${matchingVault?.name || currentUnit}» مسدود است و امکان تسویه نقدی وجود ندارد.`);
       return;
     }
-    commitDraftLine();
+    const draftWithVault = matchingVault
+      ? {
+          ...draftLine,
+          details: {
+            ...draftLine.details,
+            currencyUnit: currentUnit,
+            cashFundId: matchingVault.id,
+            cashFundName: matchingVault.name,
+            cashFundCurrency: matchingVault.currencyName || currentUnit,
+            cashFundCurrencyCode: matchingVault.currencyCode || currentUnit,
+            cashFundCurrencyId: matchingVault.currencyId || '',
+            cashFundBalance: matchingVault.balance,
+          },
+        }
+      : undefined;
+    commitDraftLine(draftWithVault);
     updateCurrencyValue('currencyQuantity', '');
     updateCurrencyValue('currencyTotalAmount', '');
   };
@@ -414,15 +421,6 @@ export default function CurrencyTab({
           {nature === 'received' ? 'خرید ارز' : 'فروش ارز'}
         </span>
       </div>
-
-      {isDuplicateCurrency && (
-        <div className="flex items-center gap-2 p-3 text-xs rounded-xl bg-rose-50 text-rose-800 border border-rose-200 dark:bg-rose-950/40 dark:text-rose-200 dark:border-rose-800">
-          <AlertCircle size={16} className="shrink-0 text-rose-600 dark:text-rose-400" />
-          <span>
-            واحد ارز معامله نمی‌تواند با نوع ارز سند (<strong>{selectedCurrency}</strong>) یکسان باشد. لطفاً ارز متفاوتی برای معامله انتخاب کنید.
-          </span>
-        </div>
-      )}
 
       {isDomesticCurrency && (
         <div className="flex items-center gap-2 p-3 text-xs rounded-xl bg-amber-50 text-amber-800 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800">
@@ -895,7 +893,7 @@ export default function CurrencyTab({
         </Field>
       </div>
 
-      {draftReady && !isDuplicateCurrency && !isDomesticCurrency && !isLinesPinned ? (
+      {draftReady && !isDomesticCurrency && !isLinesPinned ? (
         <div className="sticky bottom-3 z-30 flex justify-center pt-2 transition-all duration-300">
           <button
             type="button"

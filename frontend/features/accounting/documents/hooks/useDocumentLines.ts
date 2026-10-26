@@ -159,10 +159,7 @@ export function createCurrencyLine(
   settlementCurrency = 'IRR',
 ): DocumentLine {
   const line = createLine(nature, 'currency');
-  const unit =
-    defaultCurrencyUnit.toUpperCase() === settlementCurrency.toUpperCase()
-      ? (settlementCurrency.toUpperCase() === 'USD' ? 'EUR' : 'USD')
-      : defaultCurrencyUnit;
+  const unit = defaultCurrencyUnit.trim().toUpperCase() || 'USD';
   return {
     ...line,
     documentTab: 'currency',
@@ -195,6 +192,11 @@ export function isLineReady(
   editingLineId: string | null = null,
 ) {
   if (!line || !line.details) return false;
+  if (line.documentTab === 'income-expense' || line.sourceTab === 'income-expense') {
+    return Boolean(line.details.incomeExpenseAccountId?.trim())
+      && numberValue(line.details.totalAmount) > 0
+      && Boolean(line.description?.trim());
+  }
   if (line.documentTab === 'stone' || line.sourceTab === 'stone') {
     const carats = numberValue(line.details.stoneCarats);
     const grams = numberValue(line.details.stoneGrams);
@@ -357,6 +359,12 @@ export function validateLine(
   if (!line || !line.details) {
     return 'اطلاعات ردیف سند ناقص است.';
   }
+  if (line.documentTab === 'income-expense' || line.sourceTab === 'income-expense') {
+    if (!line.details.incomeExpenseAccountId?.trim()) return 'انتخاب سرفصل هزینه یا درآمد الزامی است.';
+    if (numberValue(line.details.totalAmount) <= 0) return 'مبلغ هزینه یا درآمد باید بیشتر از صفر باشد.';
+    if (!line.description?.trim()) return 'شرح دقیق ردیف هزینه یا درآمد را وارد کنید.';
+    return '';
+  }
   if (line.documentTab === 'stone' || line.sourceTab === 'stone') {
     const carats = numberValue(line.details.stoneCarats);
     const grams = numberValue(line.details.stoneGrams);
@@ -392,12 +400,6 @@ export function validateLine(
       unitUpper.includes('شمش')
     ) {
       return 'تب ارز فقط مخصوص ارزهای خارجی است و امکان ثبت سکه یا مسکوکات در این بخش وجود ندارد.';
-    }
-    if (
-      selectedCurrency &&
-      unitUpper === selectedCurrency.trim().toUpperCase()
-    ) {
-      return 'واحد ارز معامله و نوع ارز سند نمی‌توانند یکسان باشند.';
     }
     if (numberValue(line.details.currencyQuantity) <= 0) return 'تعداد ارز باید بیشتر از صفر باشد.';
     if (numberValue(line.details.currencyUnitPrice) <= 0) return 'قیمت هر واحد باید بیشتر از صفر باشد.';
@@ -841,10 +843,9 @@ export function useDocumentLines({
 
     if (
       (activeDraft.documentTab === 'currency' || activeDraft.sourceTab === 'currency' || activeEntryTab === 'currency') &&
-      (!activeDraft.details.currencyUnit || (selectedCurrency && activeDraft.details.currencyUnit.trim().toUpperCase() === selectedCurrency.trim().toUpperCase()))
+      !activeDraft.details.currencyUnit
     ) {
-      const fallbackUnit = selectedCurrency?.trim().toUpperCase() === 'USD' ? 'EUR' : 'USD';
-      activeDraft.details.currencyUnit = fallbackUnit;
+      activeDraft.details.currencyUnit = 'USD';
       activeDraft.details.settlementCurrencyUnit = selectedCurrency || 'IRR';
     }
 
@@ -1578,6 +1579,9 @@ export function useDocumentLines({
               : 'ردیف فروش ارز و ردیف بدهی ارزی به سند اضافه شدند.',
           );
         } else {
+          const cashLineId = lineNature === 'received' && activeDraft.details.cashFundId
+            ? generateUUID()
+            : null;
           const tradeLineToCommit: DocumentLine = {
             ...lineToCommit,
             id: tradeLineId,
@@ -1588,13 +1592,34 @@ export function useDocumentLines({
             documentSubType: currencyTradeSubType,
             settlementMethod: 'cash',
             details: {
-              ...lineToCommit.details,
+              ...activeDraft.details,
               currencyUnit: effectiveCurrencyUnit,
               settlementCurrencyUnit: effectiveCurrencyUnit,
               unsettledTrade: false,
+              ...(cashLineId ? { linkedLineId: cashLineId, hasChildLines: true } : {}),
             },
           };
-          setCommittedLines((current) => [...current, tradeLineToCommit]);
+          const cashLineToCommit: DocumentLine | null = cashLineId ? {
+            id: cashLineId,
+            documentNature: 'received',
+            documentTab: 'cash',
+            sourceTab: 'cash',
+            documentTypeLabel: 'ورود وجه نقد',
+            documentSubType: 'cash-in',
+            settlementMethod: 'cash',
+            balanceSource: 'current',
+            description: `ورود ${numberValue(lineToCommit.details.currencyQuantity).toLocaleString('fa-IR')} ${lineToCommit.details.currencyUnit || effectiveCurrencyUnit} به صندوق ${lineToCommit.details.cashFundName || ''} بابت خرید ارز`,
+            details: {
+              ...activeDraft.details,
+              totalAmount: String(lineToCommit.details.currencyQuantity || ''),
+              currencyUnit: lineToCommit.details.cashFundCurrencyCode || effectiveCurrencyUnit,
+              isForeignCash: true,
+              isChildLine: true,
+              linkedLineId: tradeLineId,
+              unsettledTrade: false,
+            },
+          } : null;
+          setCommittedLines((current) => [...current, tradeLineToCommit, ...(cashLineToCommit ? [cashLineToCommit] : [])]);
           toast.success(
             lineNature === 'received'
               ? 'ردیف خرید ارز با تسویه آنی ثبت شد.'

@@ -39,6 +39,7 @@ import {
   postWorkmanshipSale,
   postWorkmanshipPurchase,
   postDiscountJournalEntry,
+  postIncomeExpenseJournalEntry,
 } from '@/features/accounting/posting/posting-engine';
 import { ensureChecksCollection } from '@/lib/check-collection';
 import { mapBankAccount } from '@/lib/bank';
@@ -688,6 +689,19 @@ export async function POST(request: Request) {
         lineAmounts[field] = Math.abs(amount) * direction;
       }
 
+      const isUnsettledCurrency =
+        details.unsettledTrade === true || line.settlementMethod === 'unsettled';
+      if (line.documentTab === 'currency' && !isUnsettledCurrency) {
+        lineAmounts.foreignAmount = 0;
+      }
+      if (
+        (line.documentTab === 'cash' || line.sourceTab === 'cash') &&
+        details.isForeignCash === true &&
+        details.isChildLine === true
+      ) {
+        lineAmounts.foreignAmount = 0;
+      }
+
       const isStoneLine = line.documentTab === 'stone' || line.sourceTab === 'stone';
       if (isStoneLine) {
         const opKind = String(details.stoneOperationKind || '');
@@ -839,6 +853,15 @@ export async function POST(request: Request) {
         details.amountInIrr = Math.round(effectiveAbsRial);
         details.rialAmountInIrr = true;
         details.totalAmount = String(Math.round(effectiveAbsRial));
+        if (!String(details.incomeExpenseAccountId || '').trim()) {
+          throw new Error(`انتخاب سرفصل هزینه یا درآمد در ردیف ${index + 1} الزامی است.`);
+        }
+        if (effectiveAbsRial <= 0) {
+          throw new Error(`مبلغ هزینه یا درآمد در ردیف ${index + 1} باید بیشتر از صفر باشد.`);
+        }
+        if (!readString(line.description, 500).trim()) {
+          throw new Error(`شرح دقیق ردیف هزینه یا درآمد ${index + 1} را وارد کنید.`);
+        }
       }
 
       const isGoldSaleLine = line.documentTab === 'gold-sale' || line.sourceTab === 'gold-sale';
@@ -1050,7 +1073,7 @@ export async function POST(request: Request) {
             { status: 409 },
           );
         }
-        if (fund && (prepared.line.documentTab === 'cash' || prepared.line.sourceTab === 'cash')) {
+          if (fund && (prepared.line.documentTab === 'cash' || prepared.line.sourceTab === 'cash') && !prepared.documentDetails.isChildLine) {
           if (!simulatedVaultBalances.has(fund.id)) {
             simulatedVaultBalances.set(fund.id, Number(fund.balance ?? 0));
           }
@@ -1218,15 +1241,23 @@ export async function POST(request: Request) {
           ? normalizeCurrencyCode(String(prepared.documentDetails.settlementCurrencyUnit || ''))
           : '';
         const isForeignStone = Boolean(stoneCur && stoneCur !== 'IRR' && stoneCur !== 'IRT');
+        const isCurrencyFundChild =
+          (prepared.line.documentTab === 'cash' || prepared.line.sourceTab === 'cash') &&
+          prepared.documentDetails.isForeignCash === true &&
+          prepared.documentDetails.isChildLine === true;
         const resolvedForeignCur =
           prepared.line.documentTab === 'currency'
             ? String(prepared.documentDetails.currencyUnit || customer.secondaryCurrency || '')
+            : isCurrencyFundChild
+              ? String(prepared.documentDetails.cashFundCurrencyCode || prepared.documentDetails.currencyUnit || customer.secondaryCurrency || '')
             : isForeignStone
               ? stoneCur
               : String(customer.secondaryCurrency ?? '');
         const resolvedForeignSym =
           prepared.line.documentTab === 'currency'
             ? String(prepared.documentDetails.currencyUnit || customer.secondaryCurrencySymbol || '')
+            : isCurrencyFundChild
+              ? String(getCurrencyMeta(String(prepared.documentDetails.cashFundCurrencyCode || prepared.documentDetails.currencyUnit || '')).symbol || prepared.documentDetails.cashFundCurrencyCode || prepared.documentDetails.currencyUnit || '')
             : isForeignStone
               ? String(getCurrencyMeta(stoneCur).symbol || stoneCur)
               : String(customer.secondaryCurrencySymbol ?? '');
@@ -1384,6 +1415,25 @@ export async function POST(request: Request) {
 
               await syncCaseTotals(writer, targetCaseRecord.id);
             }
+          }
+        }
+
+        if (requestedStatus === 'posted') {
+          for (const prepared of preparedLines) {
+            const isIncomeExpense = prepared.line.documentTab === 'income-expense' || prepared.line.sourceTab === 'income-expense';
+            if (!isIncomeExpense) continue;
+            await postIncomeExpenseJournalEntry({
+              documentId,
+              lineNumber: prepared.lineNumber,
+              documentNumber: finalDocumentNumber,
+              entryDateJalali: documentDateJalali,
+              amountRials: Math.abs(prepared.lineAmounts.rialAmount ?? 0),
+              nature: prepared.lineNature,
+              accountId: String(prepared.documentDetails.incomeExpenseAccountId || ''),
+              description: readString(prepared.line.description, 500),
+              customer: { id: customer.id, name: customer.name },
+              userId: context.user.id,
+            }, writer);
           }
         }
 
@@ -1819,7 +1869,7 @@ export async function POST(request: Request) {
           const prepared = preparedLines[index];
           if (prepared.line.documentTab !== 'cash' && prepared.line.sourceTab !== 'cash') continue;
           const fundId = typeof prepared.documentDetails.cashFundId === 'string' ? prepared.documentDetails.cashFundId : null;
-          if (!fundId) continue;
+          if (!fundId || prepared.documentDetails.isChildLine === true) continue;
           const vault = await writer.collection('cash_funds').getOne(fundId).catch(() => null);
           if (!vault) continue;
 

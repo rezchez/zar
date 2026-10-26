@@ -138,35 +138,28 @@ describe('Document Currency Tab & Distinct Currencies', () => {
     expect(getQuoteRateInRials(sampleQuotes, 'IRT')).toBe(10);
   });
 
-  it('createCurrencyLine avoids identical traded and settlement currencies', () => {
+  it('createCurrencyLine preserves the selected traded currency independently of settlement currency', () => {
     // When settlement is IRR, USD is fine
     const line1 = createCurrencyLine('received', 'USD', 'IRR');
     expect(line1.details.currencyUnit).toBe('USD');
     expect(line1.details.settlementCurrencyUnit).toBe('IRR');
 
-    // When settlement is USD and default is USD, it automatically switches to EUR
+    // A USD trade remains USD even when the settlement currency is USD.
     const line2 = createCurrencyLine('received', 'USD', 'USD');
-    expect(line2.details.currencyUnit).toBe('EUR');
+    expect(line2.details.currencyUnit).toBe('USD');
     expect(line2.details.settlementCurrencyUnit).toBe('USD');
   });
 
-  it('validateLine enforces that traded currency and document currency cannot be identical', () => {
+  it('validateLine allows traded currency to match the document currency', () => {
     const invalidLine = createCurrencyLine('received', 'USD', 'USD');
     invalidLine.details.currencyUnit = 'USD';
     invalidLine.details.currencyQuantity = '100';
     invalidLine.details.currencyUnitPrice = '2346150';
     invalidLine.details.currencyTotalAmount = '234615000';
 
-    // With selectedCurrency = USD, it must reject
-    const errorSame = validateLine(invalidLine, [], [], null, 'USD');
-    expect(errorSame).toBe('واحد ارز معامله و نوع ارز سند نمی‌توانند یکسان باشند.');
-
-    // With selectedCurrency = IRR or EUR, it must pass
-    const validWithIrr = validateLine(invalidLine, [], [], null, 'IRR');
-    expect(validWithIrr).toBe('');
-
-    const validWithEur = validateLine(invalidLine, [], [], null, 'EUR');
-    expect(validWithEur).toBe('');
+    expect(validateLine(invalidLine, [], [], null, 'USD')).toBe('');
+    expect(validateLine(invalidLine, [], [], null, 'IRR')).toBe('');
+    expect(validateLine(invalidLine, [], [], null, 'EUR')).toBe('');
   });
 
   it('validateLine validates required fields in currency tab', () => {
@@ -480,6 +473,5 @@ describe('Document Currency Tab & Distinct Currencies', () => {
     expect(selectableUnits).not.toContain('شمش سوئیسی');
   });
 });
-
 
 

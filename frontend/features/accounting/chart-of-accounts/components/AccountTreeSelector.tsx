@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Building2,
   Check,
@@ -29,6 +29,7 @@ export interface AccountTreeSelectorProps {
   placeholder?: string;
   filterType?: string; // 'asset' | 'all' | ...
   postableOnly?: boolean;
+  maxSelectableLevel?: number;
   required?: boolean;
   disabled?: boolean;
   error?: string;
@@ -42,6 +43,7 @@ export default function AccountTreeSelector({
   placeholder = 'انتخاب سرفصل از درختواره حساب‌ها...',
   filterType = 'asset',
   postableOnly = false,
+  maxSelectableLevel,
   required = false,
   disabled = false,
   error,
@@ -109,8 +111,8 @@ export default function AccountTreeSelector({
     return accounts.find((a) => a.id === value) || null;
   }, [value, accounts]);
 
-  const toggleNode = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const toggleNode = (id: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
     setExpandedNodes((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -139,6 +141,17 @@ export default function AccountTreeSelector({
     return { accountMap: map, rootAccounts: roots, childrenMap: children };
   }, [accounts]);
 
+  const isAllowedAccount = useCallback((account: ChartOfAccountRecord) => {
+    if (postableOnly && !account.isPostable) return false;
+    if (maxSelectableLevel !== undefined && account.level > maxSelectableLevel) return false;
+    if (
+      maxSelectableLevel === 3 &&
+      account.level === 2 &&
+      childrenMap.get(account.id)?.some((child) => child.level === 3 && child.isPostable)
+    ) return false;
+    return true;
+  }, [postableOnly, maxSelectableLevel, childrenMap]);
+
   // Filtered accounts for flat search list
   const searchResults = useMemo(() => {
     if (!search.trim()) return null;
@@ -146,13 +159,12 @@ export default function AccountTreeSelector({
     return accounts.filter((a) => {
       const matchText = `${a.code} ${a.name} ${a.description || ''} ${a.path || ''}`.toLowerCase();
       if (!matchText.includes(q)) return false;
-      if (postableOnly && !a.isPostable) return false;
-      return true;
+      return isAllowedAccount(a);
     });
-  }, [search, accounts, postableOnly]);
+  }, [search, accounts, isAllowedAccount]);
 
   const handleSelect = (account: ChartOfAccountRecord) => {
-    if (postableOnly && !account.isPostable) {
+    if (!isAllowedAccount(account)) {
       return;
     }
     onChange(account.id, account);
@@ -170,14 +182,14 @@ export default function AccountTreeSelector({
     const hasChildren = children.length > 0;
     const isExpanded = expandedNodes.has(account.id);
     const isSelected = value === account.id;
-    const isSelectable = !postableOnly || account.isPostable;
+    const isSelectable = isAllowedAccount(account);
 
     return (
       <div key={account.id} className="w-full select-none">
         <div
           onClick={() => {
             if (isSelectable) handleSelect(account);
-            else if (hasChildren) toggleNode(account.id, {} as any);
+            else if (hasChildren) toggleNode(account.id);
           }}
           className={cn(
             'group flex items-center justify-between rounded-xl px-2.5 py-1.5 text-xs transition-all cursor-pointer border border-transparent',
