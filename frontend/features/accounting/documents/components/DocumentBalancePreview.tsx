@@ -18,6 +18,7 @@ export interface DocumentBalancePreviewData {
     stoneDebit?: number;
     foreign: number;
     currencyBalances?: Record<string, number>;
+    coinBalances?: Record<string, number>;
     tertiary: number;
     secondaryCurrency?: string;
     secondaryCurrencySymbol?: string;
@@ -34,6 +35,7 @@ export interface DocumentBalancePreviewData {
     stoneDebit?: number;
     foreign: number;
     currencyBalances?: Record<string, number>;
+    coinBalances?: Record<string, number>;
     tertiary: number;
   };
   projectedBalance: {
@@ -46,6 +48,7 @@ export interface DocumentBalancePreviewData {
     stoneDebit?: number;
     foreign: number;
     currencyBalances?: Record<string, number>;
+    coinBalances?: Record<string, number>;
     tertiary: number;
   };
 }
@@ -67,14 +70,14 @@ export default function DocumentBalancePreview({
   weightPrecision = 3,
   hasCommittedLines = true,
 }: DocumentBalancePreviewProps) {
-  if (!selectedCustomer) return null;
+  if (!selectedCustomer || !hasCommittedLines) return null;
   if (!previewData && hasCommittedLines) return null;
 
   const isZeroOrNoLines = !hasCommittedLines;
 
   const emptyEffect = {
     rial: 0, gold: 0, silver: 0, platinum: 0, foreign: 0, tertiary: 0,
-    stoneCredit: 0, stoneDebit: 0, currencyBalances: {},
+    stoneCredit: 0, stoneDebit: 0, currencyBalances: {}, coinBalances: {},
   };
   const previousBalance = previewData?.previousBalance || {
     rial: selectedCustomer.rialBalance || 0,
@@ -84,6 +87,7 @@ export default function DocumentBalancePreview({
     foreign: selectedCustomer.foreignBalance || 0,
     tertiary: selectedCustomer.tertiaryBalance || 0,
     currencyBalances: selectedCustomer.currencyBalances,
+    coinBalances: selectedCustomer.coinBalances,
     secondaryCurrency: selectedCustomer.secondaryCurrency,
     secondaryCurrencySymbol: selectedCustomer.secondaryCurrencySymbol,
   };
@@ -100,6 +104,12 @@ export default function DocumentBalancePreview({
   const projectedCurrencies = effectivePreviewData.projectedBalance.currencyBalances || {
     [effectivePreviewData.previousBalance.secondaryCurrency || 'USD']: effectivePreviewData.projectedBalance.foreign,
   };
+  const previousCoins = effectivePreviewData.previousBalance.coinBalances || {};
+  const effectCoins = effectivePreviewData.transactionEffect.coinBalances || {};
+  const projectedCoins = effectivePreviewData.projectedBalance.coinBalances || {};
+  const coinRows = Array.from(new Set([
+    ...Object.keys(previousCoins), ...Object.keys(effectCoins), ...Object.keys(projectedCoins),
+  ])).sort();
   const foreignRows = Array.from(new Set([
     ...Object.keys(previousCurrencies), ...Object.keys(effectCurrencies), ...Object.keys(projectedCurrencies),
   ])).sort().map((code) => ({
@@ -207,6 +217,14 @@ export default function DocumentBalancePreview({
               </small>
             </div>
           ))}
+          {coinRows.map((name) => (
+            <div key={`coin-prev-${name}`} className="text-indigo-700 dark:text-indigo-300 whitespace-nowrap">
+              {name}: {faNumber(Math.abs(previousCoins[name] || 0), 2)} عدد
+              <small className="text-[10px] text-slate-500 font-bold mr-1">
+                ({(previousCoins[name] || 0) > 0 ? 'بدهی سکه ما' : (previousCoins[name] || 0) < 0 ? 'طلب سکه ما' : 'تسویه'})
+              </small>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -221,6 +239,7 @@ export default function DocumentBalancePreview({
           effectivePreviewData.transactionEffect.silver === 0 &&
           effectivePreviewData.transactionEffect.platinum === 0 &&
           !foreignRows.some((row) => row.effect !== 0) &&
+          !coinRows.some((name) => (effectCoins[name] || 0) !== 0) &&
           (!effectivePreviewData.transactionEffect.stone || effectivePreviewData.transactionEffect.stone === 0) &&
           (!effectivePreviewData.transactionEffect.stoneCredit || effectivePreviewData.transactionEffect.stoneCredit === 0) &&
           (!effectivePreviewData.transactionEffect.stoneDebit || effectivePreviewData.transactionEffect.stoneDebit === 0) ? (
@@ -239,6 +258,14 @@ export default function DocumentBalancePreview({
                   {faNumber(displayEffectRial, 0)} {currencyUnitLabel}
                 </div>
               ) : null}
+              {coinRows.map((name) => (effectCoins[name] || 0) !== 0 ? (
+                <div key={`coin-effect-${name}`} className="text-indigo-700 dark:text-indigo-300 whitespace-nowrap">
+                  {name}: {faNumber(Math.abs(effectCoins[name]), 2)} عدد
+                  <small className="text-[10px] text-slate-500 font-bold mr-1">
+                    ({effectCoins[name] > 0 ? 'افزایش بدهی سکه ما' : 'افزایش طلب سکه ما'})
+                  </small>
+                </div>
+              ) : null)}
               {effectivePreviewData.transactionEffect.gold !== 0 ? (
                 <div
                   className={`whitespace-nowrap ${
@@ -382,6 +409,14 @@ export default function DocumentBalancePreview({
               {row.meta.name} ({row.code}): {faNumber(Math.abs(row.projected), 2)} {row.meta.symbol}
               <small className="text-[10px] text-slate-500 font-bold mr-1">
                 ({row.projected > 0 ? 'بستانکار' : row.projected < 0 ? 'بدهکار' : 'تسویه'})
+              </small>
+            </div>
+          ))}
+          {coinRows.map((name) => (
+            <div key={`coin-projected-${name}`} className="text-indigo-700 dark:text-indigo-300 whitespace-nowrap">
+              {name}: {faNumber(Math.abs(projectedCoins[name] || 0), 2)} عدد
+              <small className="text-[10px] text-slate-500 font-bold mr-1">
+                ({(projectedCoins[name] || 0) > 0 ? 'بدهی سکه ما' : (projectedCoins[name] || 0) < 0 ? 'طلب سکه ما' : 'تسویه'})
               </small>
             </div>
           ))}

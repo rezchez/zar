@@ -88,11 +88,14 @@ export function getLineDocumentTypeLabel(
   }
 
   if (tab === 'coin') {
-    const subTypeOrKind = String(workmanshipSubType || rawKind || metalType || '').toLowerCase();
+    const subTypeOrKind = [workmanshipSubType, rawKind, metalType]
+      .map((value) => String(value || '').toLowerCase())
+      .join(' ');
     const isBullion =
       subTypeOrKind.includes('شمش') ||
       subTypeOrKind.includes('bar_') ||
-      subTypeOrKind.includes('bullion');
+      subTypeOrKind.includes('bullion') ||
+      subTypeOrKind.includes('parsis');
 
     if (workmanshipSubType === 'payment_claim' || workmanshipSubType?.includes('claim')) {
       return isBullion ? 'طلب شمش' : 'طلب سکه';
@@ -101,9 +104,23 @@ export function getLineDocumentTypeLabel(
       return isBullion ? 'بدهی شمش' : 'بدهی سکه';
     }
 
-    return nature === 'received'
-      ? (isBullion ? 'خرید شمش' : 'خرید سکه')
-      : (isBullion ? 'فروش شمش' : 'فروش سکه');
+    const item = isBullion ? 'شمش' : 'سکه';
+    switch (workmanshipSubType) {
+      case 'receipt_entry':
+        return `ورود ${item}`;
+      case 'receipt_buy':
+        return `خرید ${item}`;
+      case 'receipt_unsettled_buy':
+        return `خرید ${item} (بدون تسویه)`;
+      case 'payment_exit':
+        return `خروج ${item}`;
+      case 'payment_sale':
+        return `فروش ${item}`;
+      case 'payment_unsettled_sale':
+        return `فروش ${item} (بدون تسویه)`;
+      default:
+        return nature === 'received' ? `ورود ${item}` : `خروج ${item}`;
+    }
   }
 
   if (tab === 'goods') {
@@ -832,6 +849,7 @@ export function sanitizeLineDetailsForTab(
         quantity: String(details.quantity || ''),
         coinType: details.coinType,
         coinName: details.coinName,
+        coinBalanceName: details.coinBalanceName,
         coinYear: details.coinYear,
         mintYear: details.mintYear || details.coinYear,
         unitWeight: details.unitWeight,
@@ -1023,5 +1041,3 @@ export function sanitizeDocumentLine(
     details: cleanDetails,
   };
 }
-
-

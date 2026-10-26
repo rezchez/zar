@@ -6,6 +6,7 @@ import { hasPermission } from '@/lib/authorization';
 import { dateToJalaliString } from '@/lib/jalali';
 import { defaultSettings, normalizeSettings } from '@/lib/settings';
 import { roundWeight, validateWeightPrecision, type WeightDecimalPlaces } from '@/lib/weight';
+import { getCoinIdentity, getCoinInventoryEffect } from '@/features/accounting/documents/utils/coin-effects';
 
 function extractPbErrorMessage(error: unknown, fallback: string): string {
   if (!error) return fallback;
@@ -33,14 +34,14 @@ function extractPbErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const context = await getServerAuthContext();
   if (!context) {
     return NextResponse.json({ message: 'ابتدا وارد حساب شوید.' }, { status: 401 });
   }
 
   try {
-    const records = await context.pb.collection('coin_inventory').getFullList({
+    const rawRecords = await context.pb.collection('coin_inventory').getFullList({
       filter: 'transaction_type = "opening_balance"',
       sort: '-created',
       expand: 'item_type',
@@ -51,6 +52,9 @@ export async function GET() {
         expand: 'item_type',
       }).catch(() => []);
     });
+    const records = rawRecords.filter((record: Record<string, unknown>) =>
+      !record.transaction_type || record.transaction_type === 'opening_balance',
+    );
 
     const result = records.map((r: Record<string, unknown>) => ({
       id: String(r.id || ''),
@@ -73,7 +77,37 @@ export async function GET() {
       updated: r.updated,
     }));
 
-    return NextResponse.json({ coinInventory: result });
+    const includeBalances = new URL(request.url).searchParams.get('balances') === 'true';
+    if (!includeBalances) return NextResponse.json({ coinInventory: result });
+
+    const balances: Record<string, number> = {};
+    for (const item of result) {
+      const name = item.itemName;
+      const sign = item.direction === 'out' ? -1 : 1;
+      balances[name] = (balances[name] || 0) + sign * item.quantity;
+    }
+    const transactions = await context.pb.collection('transactions').getFullList({
+      filter: 'is_deleted = false && (status = "posted" || status = "final") && (documentTab = "coin" || sourceTab = "coin")',
+    }).catch(() => []);
+    for (const record of transactions) {
+      let details: Record<string, unknown> = {};
+      if (typeof record.documentDetails === 'string') {
+        try { details = JSON.parse(record.documentDetails); } catch { /* skip malformed transaction details */ }
+      } else if (record.documentDetails && typeof record.documentDetails === 'object') {
+        details = record.documentDetails as Record<string, unknown>;
+      }
+      const line = {
+        documentTab: String(record.documentTab || record.sourceTab || 'coin'),
+        documentNature: String(record.documentNature || ''),
+        documentSubType: String(record.documentSubType || ''),
+        details,
+      };
+      const effect = getCoinInventoryEffect(line);
+      if (!effect) continue;
+      const name = getCoinIdentity(line).name;
+      balances[name] = (balances[name] || 0) + effect;
+    }
+    return NextResponse.json({ coinInventory: result, balances });
   } catch {
     return NextResponse.json({ coinInventory: [] });
   }

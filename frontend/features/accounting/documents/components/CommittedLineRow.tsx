@@ -51,10 +51,7 @@ export default function CommittedLineRow({
 }: CommittedLineRowProps) {
   const isPaid = line.documentNature === 'paid';
   const isReceived = line.documentNature === 'received';
-  const docType =
-    line.documentTypeLabel ||
-    (line.details as any)?.documentTypeLabel ||
-    getLineDocumentTypeLabel(
+  const derivedDocType = getLineDocumentTypeLabel(
       line.documentNature,
       line.sourceTab || line.documentTab,
       line.details.rawKind,
@@ -62,8 +59,11 @@ export default function CommittedLineRow({
       line.details.refiningOpKind,
       line.details.workmanshipOptionId,
       line.documentSubType || (line.details as any)?.documentSubType,
-      line.details.metalType,
+      line.details.coinName || line.details.coinType || line.details.metalType,
     );
+  const docType = line.documentTab === 'coin' || line.sourceTab === 'coin'
+    ? derivedDocType
+    : line.documentTypeLabel || (line.details as any)?.documentTypeLabel || derivedDocType;
 
   const isMetalLine = isMetalBearingLine(line);
 

@@ -922,7 +922,7 @@ export function useDocumentLines({
               activeDraft.details.refiningOpKind,
               activeDraft.details.workmanshipOptionId,
               activeDraft.documentSubType,
-              activeDraft.details.metalType,
+              activeDraft.details.coinName || activeDraft.details.coinType || activeDraft.details.metalType,
             );
 
     const effectiveTab = lineSourceTab || activeDraft.documentTab || activeEntryTab || 'metals';

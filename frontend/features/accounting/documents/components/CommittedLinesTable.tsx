@@ -157,7 +157,7 @@ function getLineSortValue(
           line.details.refiningOpKind,
           line.details.workmanshipOptionId,
           line.documentSubType || (line.details as any)?.documentSubType,
-          line.details.metalType,
+          line.details.coinName || line.details.coinType || line.details.metalType,
         );
       return docType || '';
     }

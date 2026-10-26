@@ -26,7 +26,7 @@ import Field from '@/src/components/documents/Field';
 import type { DetailState, DocumentLine } from '@/src/components/documents/RawGoldTab';
 import { normalizeDigits, toPersianDigits } from '@/lib/jalali';
 import { parseLocalizedAmount } from '@/lib/money';
-import { sanitizeLineDetailsForTab } from '../utils/document-helpers';
+import { getLineDocumentTypeLabel, sanitizeLineDetailsForTab } from '../utils/document-helpers';
 
 export type CoinOperationType =
   // Payment operations (سند پرداختی)
@@ -233,9 +233,9 @@ export const PREDEFINED_COIN_PRESETS: CoinPreset[] = [
     id: 'parsis_1g',
     name: 'شمش پارسیس (۱ گرمی)',
     category: 'bar_parsis',
-    categoryLabel: 'شمش‌های پارسیس (Parsis)',
+    categoryLabel: 'شمش‌های پارسیس (Parsis) - عیار ۹۹۹.۹',
     weight: 1.0,
-    purity: 995,
+    purity: 999.9,
     isFixedWeight: true,
     isFixedPurity: true,
   },
@@ -243,9 +243,9 @@ export const PREDEFINED_COIN_PRESETS: CoinPreset[] = [
     id: 'parsis_2_5g',
     name: 'شمش پارسیس (۲.۵ گرمی)',
     category: 'bar_parsis',
-    categoryLabel: 'شمش‌های پارسیس (Parsis)',
+    categoryLabel: 'شمش‌های پارسیس (Parsis) - عیار ۹۹۹.۹',
     weight: 2.5,
-    purity: 995,
+    purity: 999.9,
     isFixedWeight: true,
     isFixedPurity: true,
   },
@@ -253,9 +253,9 @@ export const PREDEFINED_COIN_PRESETS: CoinPreset[] = [
     id: 'parsis_5g',
     name: 'شمش پارسیس (۵ گرمی)',
     category: 'bar_parsis',
-    categoryLabel: 'شمش‌های پارسیس (Parsis)',
+    categoryLabel: 'شمش‌های پارسیس (Parsis) - عیار ۹۹۹.۹',
     weight: 5.0,
-    purity: 995,
+    purity: 999.9,
     isFixedWeight: true,
     isFixedPurity: true,
   },
@@ -263,9 +263,9 @@ export const PREDEFINED_COIN_PRESETS: CoinPreset[] = [
     id: 'parsis_10g',
     name: 'شمش پارسیس (۱۰ گرمی)',
     category: 'bar_parsis',
-    categoryLabel: 'شمش‌های پارسیس (Parsis)',
+    categoryLabel: 'شمش‌های پارسیس (Parsis) - عیار ۹۹۹.۹',
     weight: 10.0,
-    purity: 995,
+    purity: 999.9,
     isFixedWeight: true,
     isFixedPurity: true,
   },
@@ -273,9 +273,9 @@ export const PREDEFINED_COIN_PRESETS: CoinPreset[] = [
     id: 'parsis_50g',
     name: 'شمش پارسیس (۵۰ گرمی)',
     category: 'bar_parsis',
-    categoryLabel: 'شمش‌های پارسیس (Parsis)',
+    categoryLabel: 'شمش‌های پارسیس (Parsis) - عیار ۹۹۹.۹',
     weight: 50.0,
-    purity: 995,
+    purity: 999.9,
     isFixedWeight: true,
     isFixedPurity: true,
   },
@@ -283,9 +283,9 @@ export const PREDEFINED_COIN_PRESETS: CoinPreset[] = [
     id: 'parsis_100g',
     name: 'شمش پارسیس (۱۰۰ گرمی)',
     category: 'bar_parsis',
-    categoryLabel: 'شمش‌های پارسیس (Parsis)',
+    categoryLabel: 'شمش‌های پارسیس (Parsis) - عیار ۹۹۹.۹',
     weight: 100.0,
-    purity: 995,
+    purity: 999.9,
     isFixedWeight: true,
     isFixedPurity: true,
   },
@@ -496,6 +496,7 @@ export default function CoinTab({
 
   // Custom coin list & modal
   const [customCoins, setCustomCoins] = useState<CoinPreset[]>([]);
+  const [stockBalances, setStockBalances] = useState<Record<string, number>>({});
   const [isAddCustomModalOpen, setIsAddCustomModalOpen] = useState(false);
   const [submittingCustom, setSubmittingCustom] = useState(false);
   const [newCustomName, setNewCustomName] = useState('');
@@ -506,6 +507,12 @@ export default function CoinTab({
   // Fetch master coin types from backend API /api/coin-types (Single Source of Truth)
   useEffect(() => {
     let isMounted = true;
+    void fetch('/api/accounting/opening/coin?balances=true', { cache: 'no-store' })
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => {
+        if (isMounted && data?.balances && typeof data.balances === 'object') setStockBalances(data.balances);
+      })
+      .catch(() => undefined);
     async function loadCoinTypes() {
       try {
         const res = await fetch('/api/coin-types', { cache: 'no-store' });
@@ -518,7 +525,7 @@ export default function CoinTab({
                 const code = String(item.code || '');
                 return !name.includes('پهلوی') && !code.toUpperCase().includes('PAHLAVI');
               })
-              .map((item: { id: string; name: string; nature?: string; unitWeight?: number; purity?: number }) => {
+              .map((item: { id: string; code?: string; name: string; nature?: string; unitWeight?: number; purity?: number }) => {
                 const nameStr = String(item.name || '');
                 const isEmami = nameStr.includes('امامی');
                 const isBahar =
@@ -530,8 +537,13 @@ export default function CoinTab({
                 let category: CoinPresetCategory = 'bank_coin';
                 let categoryLabel = 'انواع سکه';
                 if (item.nature === 'bullion') {
-                  category = 'bar_other';
-                  categoryLabel = 'شمش‌های معتبر';
+                  if (nameStr.includes('پارسیس') || String(item.code || '').toUpperCase().includes('PARSIS')) {
+                    category = 'bar_parsis';
+                    categoryLabel = 'شمش‌های پارسیس (Parsis) - عیار ۹۹۹.۹';
+                  } else {
+                    category = 'bar_other';
+                    categoryLabel = 'شمش‌های معتبر';
+                  }
                 } else if (nameStr.includes('پارسیان')) {
                   category = 'parsian';
                   categoryLabel = 'سکه‌های پارسیان (۱۸ عیار)';
@@ -742,22 +754,16 @@ export default function CoinTab({
   // Sync with parent draftLine if provided
   useEffect(() => {
     if (setDraftLine) {
-      const isBullion =
-        selectedPreset.category === 'bar_zioto' ||
-        selectedPreset.category === 'bar_parsis' ||
-        selectedPreset.category === 'bar_other' ||
-        selectedPreset.category.startsWith('bar_') ||
-        selectedPreset.name.includes('شمش');
-
-      let computedDocumentTypeLabel = nature === 'received'
-        ? (isBullion ? 'خرید شمش' : 'خرید سکه')
-        : (isBullion ? 'فروش شمش' : 'فروش سکه');
-
-      if (selectedOperation === 'payment_claim' || selectedOperation.endsWith('_claim')) {
-        computedDocumentTypeLabel = isBullion ? 'طلب شمش' : 'طلب سکه';
-      } else if (selectedOperation === 'receipt_debt' || selectedOperation.endsWith('_debt')) {
-        computedDocumentTypeLabel = isBullion ? 'بدهی شمش' : 'بدهی سکه';
-      }
+      const computedDocumentTypeLabel = getLineDocumentTypeLabel(
+        nature,
+        'coin',
+        undefined,
+        selectedOperation.includes('unsettled'),
+        undefined,
+        undefined,
+        selectedOperation,
+        selectedPreset.category || selectedPreset.name,
+      );
 
       setDraftLine((curr) => ({
         ...curr,
@@ -771,6 +777,7 @@ export default function CoinTab({
           ...curr.details,
           metalType: 'gold',
           rawWeight: totalWeight.toFixed(weightPrecision),
+          convertedWeight: String(convertedToX),
           purity: String(numericPurity),
           totalAmount: totalPrice,
           quantity: String(numericQuantity),
@@ -781,6 +788,7 @@ export default function CoinTab({
           baseCurrency: effectiveCurrency,
           coinType: selectedPreset.id,
           coinName: effectiveCoinDisplayName,
+          coinBalanceName: selectedPreset.name,
           coinYear: mintYear,
           mintYear: mintYear,
           unsettledTrade: selectedOperation.includes('unsettled'),
@@ -892,7 +900,7 @@ export default function CoinTab({
       bank_coin: { label: 'سایر مسکوکات بانکی', items: [] },
       parsian: { label: 'سکه‌های پارسیان (۱۸ عیار)', items: [] },
       bar_zioto: { label: 'شمش‌های زیوتو (Zioto)', items: [] },
-      bar_parsis: { label: 'شمش‌های پارسیس (Parsis)', items: [] },
+      bar_parsis: { label: 'شمش‌های پارسیس (Parsis) - عیار ۹۹۹.۹', items: [] },
       bar_other: { label: 'سایر شمش‌های معتبر', items: [] },
       custom: { label: 'سکه‌ها و شمش‌های سفارشی', items: [] },
     };
@@ -1206,6 +1214,10 @@ export default function CoinTab({
                   <Plus size={15} />
                   <span>افزودن دلخواه</span>
                 </button>
+              </div>
+              <div className="mt-1 text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                موجودی صندوق: {Number(stockBalances[selectedPreset.name] || 0).toLocaleString('fa-IR')} عدد
+                {Number(stockBalances[selectedPreset.name] || 0) < 0 ? ' (کسری موجودی)' : ''}
               </div>
             </Field>
           </div>

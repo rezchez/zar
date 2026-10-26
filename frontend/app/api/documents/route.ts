@@ -965,8 +965,10 @@ export async function POST(request: Request) {
         (Number(details.stoneCarats || 0) > 0 ||
           Number(details.stoneGrams || 0) > 0 ||
           Number(details.stonePieces || 0) > 0);
+      const hasCoinQuantity =
+        isCoinLine && (readAmount(details.quantity) || readAmount(details.currencyQuantity) || 0) > 0;
 
-      if (!hasAmount(lineAmounts) && !hasStoneQuantity) {
+      if (!hasAmount(lineAmounts) && !hasStoneQuantity && !hasCoinQuantity) {
         throw new Error(`ردیف ${index + 1} باید حداقل یک مبلغ یا وزن غیرصفر داشته باشد.`);
       }
 

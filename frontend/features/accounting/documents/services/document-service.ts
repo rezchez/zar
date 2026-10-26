@@ -163,7 +163,7 @@ export function transactionRecordToDocumentLine(
     (details as any).refiningOpKind,
     (details as any).workmanshipOptionId,
     subType || (details as any).workmanshipSubType || (details as any).documentSubType,
-    (details as any).metalType,
+    (details as any).coinName || (details as any).coinType || (details as any).metalType,
   );
 
   return {
@@ -262,5 +262,4 @@ export async function getRecentDocuments(
     return [];
   }
 }
-
 

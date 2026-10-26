@@ -15,6 +15,7 @@ import {
   transactionBalancesToCustomerBalances,
   type CustomerTransaction,
 } from '@/lib/transaction';
+import { sumCoinBalancesFromTransactions } from '@/features/accounting/documents/utils/coin-effects';
 
 export async function getCustomerTransactions(
   pb: PocketBase,
@@ -96,6 +97,8 @@ export function mapCustomerWithTransactions(
     const terNorm = normalizeCurrencyCode(customer.tertiaryCurrency);
     customer.tertiaryBalance = currencyBalances[terNorm] ?? 0;
   }
+
+  customer.coinBalances = sumCoinBalancesFromTransactions(transactions);
 
   return customer;
 }

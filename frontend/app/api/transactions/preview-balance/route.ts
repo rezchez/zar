@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getCurrencyTradeForeignEffect, getDocumentLineForeignCurrency } from '@/features/accounting/documents/utils/currency-effects';
+import { getCoinBalanceEffect, getCoinGoldEffect, getCoinIdentity, sumCoinBalancesFromTransactions } from '@/features/accounting/documents/utils/coin-effects';
 
 import { getServerAuthContext } from '@/lib/auth';
 import { hasPermission } from '@/lib/authorization';
@@ -167,6 +168,7 @@ export async function POST(request: Request) {
       stoneDebit: stoneBalances.debitCarats || 0,
       foreign: currencyBalances[activeCurrency] ?? 0,
       currencyBalances: { ...currencyBalances },
+      coinBalances: sumCoinBalancesFromTransactions(transactions),
       tertiary: totals.tertiaryAmount,
       secondaryCurrency: resolvedSecondary,
       secondaryCurrencySymbol: resolvedSecondarySymbol,
@@ -185,6 +187,7 @@ export async function POST(request: Request) {
       stoneDebit: 0,
       foreign: 0,
       currencyBalances: {} as Record<string, number>,
+      coinBalances: {} as Record<string, number>,
       tertiary: 0,
     };
 
@@ -260,6 +263,20 @@ export async function POST(request: Request) {
         } else {
           transactionEffect.gold += direction * weight;
         }
+      }
+
+      if (docTab === 'coin') {
+        const coinLine = { documentTab: docTab, documentNature: lineNature, documentSubType: String(line.documentSubType || ''), details };
+        const coinEffect = getCoinBalanceEffect(coinLine);
+        const coinGoldEffect = getCoinGoldEffect({
+          ...coinLine,
+          converted750: numberValue(line.converted750 ?? details.converted750 ?? details.convertedWeight),
+        });
+        const identity = getCoinIdentity(coinLine);
+        if (coinEffect) {
+          transactionEffect.coinBalances[identity.name] = (transactionEffect.coinBalances[identity.name] || 0) + coinEffect;
+        }
+        transactionEffect.gold += coinGoldEffect;
       }
 
       // Financial (Rial) calculation
@@ -440,6 +457,10 @@ export async function POST(request: Request) {
     for (const [code, amount] of Object.entries(transactionEffect.currencyBalances)) {
       projectedCurrencies[code] = (projectedCurrencies[code] || 0) + amount;
     }
+    const projectedCoins = { ...previousBalance.coinBalances };
+    for (const [name, amount] of Object.entries(transactionEffect.coinBalances)) {
+      projectedCoins[name] = (projectedCoins[name] || 0) + amount;
+    }
     const projectedBalance = {
       rial: previousBalance.rial + transactionEffect.rial,
       gold: previousBalance.gold + transactionEffect.gold,
@@ -450,6 +471,7 @@ export async function POST(request: Request) {
       stoneDebit: previousBalance.stoneDebit + transactionEffect.stoneDebit,
       foreign: previousBalance.foreign + transactionEffect.foreign,
       currencyBalances: projectedCurrencies,
+      coinBalances: projectedCoins,
       tertiary: previousBalance.tertiary + transactionEffect.tertiary,
     };
 

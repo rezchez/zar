@@ -73,6 +73,7 @@ export type DetailState = {
   quantity?: string;
   coinType?: string;
   coinName?: string;
+  coinBalanceName?: string;
   coinYear?: string;
   mintYear?: string;
   unitWeight?: string;

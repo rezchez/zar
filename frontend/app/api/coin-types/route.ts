@@ -223,6 +223,20 @@ export async function GET(request: Request) {
       }
     }
 
+    // Parsis bullion bars are 999.9‰. Correct legacy collection records by
+    // brand without changing purity for other bullion brands.
+    for (const item of records) {
+      const name = String(item.name || '');
+      const code = String(item.code || '').toUpperCase();
+      const isParsisBullion =
+        (String(item.nature || '') === 'bullion' || code.startsWith('BAR-PARSIS-')) &&
+        (name.includes('پارسیس') || code.includes('PARSIS'));
+      if (isParsisBullion && Number(item.purity) !== 999.9) {
+        await context.pb.collection('coin_types').update(String(item.id), { purity: 999.9 }).catch(() => null);
+        item.purity = 999.9;
+      }
+    }
+
     // 3. Seed missing standard coins into database collection
     for (const item of STANDARD_COINS) {
       const exists = records.some((r: Record<string, unknown>) => {

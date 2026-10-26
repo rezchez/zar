@@ -1288,7 +1288,12 @@ export default function DocumentForm({
               typeof line.converted750 === 'number' && Number.isFinite(line.converted750)
                 ? line.converted750
                 : (rawWeight > 0 && purity > 0 ? (rawWeight * purity) / baseKarat : 0);
-            const weightValue = (line.documentTab === 'gold-sale' || line.documentTab === 'raw-gold')
+            const isCoinRow = line.documentTab === 'coin' || line.sourceTab === 'coin';
+            const coinSubType = String(line.documentSubType || '').toLowerCase();
+            const isCoinOpenBalance = isCoinRow && (
+              coinSubType.includes('unsettled') || coinSubType.includes('claim') || coinSubType.includes('debt')
+            );
+            const weightValue = (line.documentTab === 'gold-sale' || line.documentTab === 'raw-gold' || isCoinRow)
               ? convertedWeight
               : (line.details?.calculationMethod === 'money' ? actualWeightForLine(line, baseKarat) : numberValue(line.details?.rawWeight));
             const isMetalRow =
@@ -1387,7 +1392,6 @@ export default function DocumentForm({
             const rawCashAmount = isCashRow ? numberValue(line.details?.totalAmount || '') : 0;
             const cashRialAmount = isCashToman ? convertTomanToRial(rawCashAmount) : Math.round(rawCashAmount);
 
-            const isCoinRow = line.documentTab === 'coin' || line.sourceTab === 'coin';
             const isCoinToman = isCoinRow && (line.details?.currencyUnit === 'IRT' || line.details?.baseCurrency === 'IRT' || baseCurrency === 'IRT');
             const rawCoinAmount = isCoinRow ? numberValue(line.details?.totalAmount || line.details?.currencyTotalAmount || '') : 0;
             const coinRialAmount = isCoinToman ? convertTomanToRial(rawCoinAmount) : Math.round(rawCoinAmount);
@@ -1494,6 +1498,7 @@ export default function DocumentForm({
               settlementMethod: line.settlementMethod,
               balanceSource: line.balanceSource,
               description: line.description,
+              converted750: line.converted750,
               foreignCurrency: isCurrencyRow || isForeignCashRow ? line.details.currencyUnit : isForeignWorkmanship ? wageCurrency : undefined,
               documentDetails: {
                 ...baseLineDetails,
@@ -1501,7 +1506,7 @@ export default function DocumentForm({
                 documentTypeLabel: line.documentTypeLabel,
                 documentSubType: line.documentSubType,
               },
-              goldAmount: isMetalRow && metalType === 'gold' ? weightValue : (isClaimRow && metalType === 'gold' ? rawClaimWeight : 0),
+              goldAmount: isCoinOpenBalance ? weightValue : isMetalRow && metalType === 'gold' ? weightValue : (isClaimRow && metalType === 'gold' ? rawClaimWeight : 0),
               silverAmount: isMetalRow && metalType === 'silver' ? weightValue : (isClaimRow && metalType === 'silver' ? rawClaimWeight : 0),
               platinumAmount: isMetalRow && metalType === 'platinum' ? weightValue : (isClaimRow && metalType === 'platinum' ? rawClaimWeight : 0),
               rialAmount:
@@ -1736,7 +1741,7 @@ export default function DocumentForm({
           currentRefiningOpKind,
           currentLine?.details?.workmanshipOptionId,
           currentLine?.documentSubType,
-          currentLine?.details?.metalType,
+          currentLine?.details?.coinName || currentLine?.details?.coinType || currentLine?.details?.metalType,
         );
 
   const commitRowLabel = editingLineId

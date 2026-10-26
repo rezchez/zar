@@ -99,6 +99,7 @@ export type CustomerBalanceValues = {
   foreignBalance: number;
   tertiaryBalance: number;
   currencyBalances?: Record<string, number>;
+  coinBalances?: Record<string, number>;
   stoneCaratBalance?: number;
   stoneGramBalance?: number;
   stonePiecesBalance?: number;
@@ -171,6 +172,7 @@ export type Customer = {
   foreignBalance: number;
   tertiaryBalance: number;
   currencyBalances?: Record<string, number>;
+  coinBalances?: Record<string, number>;
   stoneCaratBalance?: number;
   stoneGramBalance?: number;
   stonePiecesBalance?: number;

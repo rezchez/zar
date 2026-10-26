@@ -9,6 +9,8 @@ import { convertRialToToman } from '@/lib/money';
 import type { DocumentLine } from '@/src/components/documents/RawGoldTab';
 import { faNumber } from '../utils/document-helpers';
 import { gramsToCarats, formatExactGemWeight } from '@/lib/gemstone-weight';
+import { getCoinBalanceEffect, getCoinIdentity } from '../utils/coin-effects';
+import CoinBalanceModal from './CoinBalanceModal';
 import StoneBalanceModal from './StoneBalanceModal';
 
 interface CustomerBalanceLiquidProps {
@@ -25,6 +27,7 @@ export default function CustomerBalanceLiquid({
   loading = false,
 }: CustomerBalanceLiquidProps) {
   const [isStoneModalOpen, setIsStoneModalOpen] = useState(false);
+  const [isCoinModalOpen, setIsCoinModalOpen] = useState(false);
 
   const isToman = baseCurrency === 'IRT';
   const currencyLabel = isToman ? 'تومان' : 'ریال';
@@ -113,6 +116,22 @@ export default function CustomerBalanceLiquid({
       ? 'بدهکار'
       : 'تسویه';
 
+  const effectiveCoinBalances = { ...(customer.coinBalances || {}) };
+  for (const line of committedLines) {
+    if (line.documentTab !== 'coin' && line.sourceTab !== 'coin') continue;
+    const coinLine = {
+      documentTab: line.documentTab,
+      sourceTab: line.sourceTab,
+      documentNature: line.documentNature,
+      documentSubType: line.documentSubType,
+      details: line.details,
+    };
+    const effect = getCoinBalanceEffect(coinLine);
+    if (!effect) continue;
+    const name = getCoinIdentity(coinLine).name;
+    effectiveCoinBalances[name] = (effectiveCoinBalances[name] || 0) + effect;
+  }
+
   // Base stone reference: id: 'stone', label: 'سنگ', unit: 'قیراط', isStone: true
   // نمایش جفت طلب و بدهی سنگ در یک نشان واحد (عدم تهاتر سنگ‌های تکی و نمایش همزمان هر دو بخش در یک کارت):
   // (پشتیبانی از ارجاعات تفکیکی طلب id: 'stone-credit' / label: 'سنگ (طلب)' و بدهی id: 'stone-debit' / label: 'سنگ (بدهی)')
@@ -137,6 +156,27 @@ export default function CustomerBalanceLiquid({
     },
     { id: 'currency', label: currencyLabel, value: currencyValue, unit: currencyLabel, digits: 0, isStone: false },
   ];
+
+  const coinEntries = Object.entries(effectiveCoinBalances).filter(([, value]) => Math.abs(value) > 0.000001);
+  const coinClaimTotal = coinEntries.reduce((sum, [, value]) => sum + (value < 0 ? Math.abs(value) : 0), 0);
+  const coinDebtTotal = coinEntries.reduce((sum, [, value]) => sum + (value > 0 ? value : 0), 0);
+  const coinBalanceSummary = coinEntries.length > 0 ? [{
+    id: 'coin',
+    label: 'سکه و شمش',
+    value: coinDebtTotal - coinClaimTotal,
+    claimValue: coinClaimTotal,
+    debtValue: coinDebtTotal,
+    unit: 'عدد',
+    digits: 2,
+    isStone: false,
+    isDualCoin: true,
+    statusLabel: coinClaimTotal > 0 && coinDebtTotal > 0
+      ? 'طلب و بدهی'
+      : coinClaimTotal > 0
+        ? 'طلب سکه ما'
+        : 'بدهی سکه ما',
+    tooltip: `طلب سکه ما: ${coinEntries.filter(([, value]) => value < 0).map(([name, value]) => `${name} ${faNumber(Math.abs(value), 2)}`).join('، ') || 'ندارد'} · بدهی سکه ما: ${coinEntries.filter(([, value]) => value > 0).map(([name, value]) => `${name} ${faNumber(value, 2)}`).join('، ') || 'ندارد'} · کلیک برای مشاهده جزئیات`,
+  }] : [];
 
   const currencyEntries = Object.entries(customer.currencyBalances || {});
   let foreignBalances: Array<{ id: string; label: string; value: number; unit: string; digits: number }> = [];
@@ -175,7 +215,7 @@ export default function CustomerBalanceLiquid({
     }
   }
 
-  const balances = [...baseBalances, ...foreignBalances];
+  const balances = [...baseBalances, ...coinBalanceSummary, ...foreignBalances];
   const visibleBalances = balances.filter(
     (balance) =>
       balance.value !== 0 ||
@@ -184,7 +224,8 @@ export default function CustomerBalanceLiquid({
       balance.id === 'rial' ||
       balance.id === 'stone' ||
       balance.id === 'stone-credit' ||
-      balance.id === 'stone-debit',
+      balance.id === 'stone-debit' ||
+      balance.id === 'coin',
   );
 
   return (
@@ -215,6 +256,7 @@ export default function CustomerBalanceLiquid({
         <div className="document-liquid-items gap-2">
           {visibleBalances.map((balance: any, index) => {
             const isStone = balance.id === 'stone' || balance.id === 'stone-credit' || balance.id === 'stone-debit';
+            const isCoin = balance.id === 'coin';
             const isEffectivelyZero =
               balance.digits === 3
                 ? Math.abs(balance.value) < 0.0005
@@ -236,36 +278,41 @@ export default function CustomerBalanceLiquid({
                   isEffectivelyZero ? 'تسویه حساب' : balance.value > 0 ? 'بستانکار از ما' : 'بدهکار به ما'
                 })`);
 
-            const toneClass = balance.isDualStone
+            const toneClass = balance.isDualStone || balance.isDualCoin
               ? (balance.creditValue > 0 && balance.debitValue > 0
                   ? 'border-amber-300/90 dark:border-amber-500/60 bg-gradient-to-r from-emerald-50/50 via-amber-50/30 to-rose-50/50 dark:from-emerald-950/30 dark:via-slate-800 dark:to-rose-950/30'
                   : balance.creditValue > 0
                   ? 'is-credit'
                   : balance.debitValue > 0
                   ? 'is-debit'
-                  : 'is-zero')
+                  : balance.isDualCoin
+                    ? (balance.claimValue > 0 && balance.debtValue > 0
+                        ? 'border-amber-300/90 dark:border-amber-500/60 bg-gradient-to-r from-emerald-50/50 via-amber-50/30 to-rose-50/50 dark:from-emerald-950/30 dark:via-slate-800 dark:to-rose-950/30'
+                        : balance.claimValue > 0 ? 'is-credit' : balance.debtValue > 0 ? 'is-debit' : 'is-zero')
+                    : 'is-zero')
               : (isEffectivelyZero ? 'is-zero' : balance.value > 0 ? 'is-credit' : 'is-debit');
 
             return (
               <div
                 className={`document-liquid-item ${toneClass} transition-all duration-200 ${
-                  isStone
+                  isStone || isCoin
                     ? 'cursor-pointer hover:border-amber-400 dark:hover:border-amber-500 focus:outline-hidden focus:ring-1 focus:ring-amber-500/40 select-none'
                     : ''
                 }`}
                 key={balance.id}
                 title={fullTooltip}
-                role={isStone ? 'button' : undefined}
-                tabIndex={isStone ? 0 : undefined}
-                onClick={isStone ? () => setIsStoneModalOpen(true) : undefined}
+                role={isStone || isCoin ? 'button' : undefined}
+                tabIndex={isStone || isCoin ? 0 : undefined}
+                onClick={isStone ? () => setIsStoneModalOpen(true) : isCoin ? () => setIsCoinModalOpen(true) : undefined}
                 onKeyDown={
-                  isStone
+                  isStone || isCoin
                     ? (e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          setIsStoneModalOpen(true);
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            if (isStone) setIsStoneModalOpen(true);
+                            else setIsCoinModalOpen(true);
+                          }
                         }
-                      }
                     : undefined
                 }
               >
@@ -285,6 +332,18 @@ export default function CustomerBalanceLiquid({
                         <strong className="document-liquid-item-value text-rose-700 dark:text-rose-300">
                           {balance.exactDebitDisplay}
                         </strong>
+                      </span>
+                    </div>
+                  ) : balance.isDualCoin ? (
+                    <div className="inline-flex items-center gap-1.5 font-bold">
+                      <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-300">
+                        <span className="text-[10px] font-extrabold text-emerald-800 dark:text-emerald-200">طلب:</span>
+                        <strong className="document-liquid-item-value text-emerald-700 dark:text-emerald-300">{faNumber(balance.claimValue, 2)}</strong>
+                      </span>
+                      <span className="text-slate-300 dark:text-slate-600 font-light select-none">|</span>
+                      <span className="inline-flex items-center gap-1 text-rose-700 dark:text-rose-300">
+                        <span className="text-[10px] font-extrabold text-rose-800 dark:text-rose-200">بدهی:</span>
+                        <strong className="document-liquid-item-value text-rose-700 dark:text-rose-300">{faNumber(balance.debtValue, 2)}</strong>
                       </span>
                     </div>
                   ) : (
@@ -317,6 +376,12 @@ export default function CustomerBalanceLiquid({
           committedLines={committedLines}
         />
       )}
+      <CoinBalanceModal
+        isOpen={isCoinModalOpen}
+        onClose={() => setIsCoinModalOpen(false)}
+        customerName={customer.name}
+        balances={effectiveCoinBalances}
+      />
     </>
   );
 }
