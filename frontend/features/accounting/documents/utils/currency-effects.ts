@@ -24,9 +24,11 @@ export function getDocumentLineForeignCurrency(line: CurrencyLine): string {
       ? details.currencyUnit || details.cashFundCurrencyCode
       : tab === 'stone'
         ? details.settlementCurrencyUnit
-        : tab === 'workmanship' && line.documentSubType !== 'workmanship-golden-percentage'
-          ? details.wageCurrency || details.currencyUnit
-          : '';
+        : tab === 'claim'
+          ? details.currencyUnit || details.baseCurrency
+          : tab === 'workmanship' && line.documentSubType !== 'workmanship-golden-percentage'
+            ? details.wageCurrency || details.currencyUnit
+            : '';
   const code = normalizeCurrencyCode(String(unit || ''));
   return code && code !== 'IRR' && code !== 'IRT' ? code : '';
 }

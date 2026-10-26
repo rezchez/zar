@@ -18,6 +18,10 @@ type ClaimTabProps = {
   handleKeyDownEnter: (event: React.KeyboardEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => void;
   draftReady: boolean;
   baseCurrency?: 'IRR' | 'IRT';
+  selectedCurrency?: string;
+  currencyLabel?: string;
+  currencySymbol?: string;
+  metalType?: 'gold' | 'silver' | 'platinum';
 };
 
 export default function ClaimTab({
@@ -31,19 +35,36 @@ export default function ClaimTab({
   handleKeyDownEnter,
   draftReady,
   baseCurrency = 'IRR',
+  selectedCurrency,
+  currencyLabel,
+  currencySymbol,
+  metalType = 'gold',
 }: ClaimTabProps) {
   const isPaid = nature === 'paid';
-  const effectiveCurrency: 'IRR' | 'IRT' = baseCurrency === 'IRT' ? 'IRT' : 'IRR';
-  const currencySuffix = effectiveCurrency === 'IRT' ? 'تومان' : 'ریال';
+  const effectiveCurrency = (selectedCurrency || baseCurrency).trim().toUpperCase();
+  const isLocalCurrency = effectiveCurrency === 'IRR' || effectiveCurrency === 'IRT';
+  const currencySuffix = isLocalCurrency
+    ? (effectiveCurrency === 'IRT' ? 'تومان' : 'ریال')
+    : [currencyLabel || effectiveCurrency, currencySymbol].filter(Boolean).join(' ');
+  const metalLabel = metalType === 'silver' ? 'نقره' : metalType === 'platinum' ? 'پلاتین' : 'طلا';
+  const syncedClaimFieldsKey = JSON.stringify([
+    baseCurrency,
+    metalType,
+    draftLine.details?.baseCurrency,
+    draftLine.details?.metalType,
+  ]);
 
   useEffect(() => {
     if (draftLine.details?.currencyUnit !== effectiveCurrency) {
       updateDraftDetail('currencyUnit', effectiveCurrency);
     }
-    if (draftLine.details?.baseCurrency !== effectiveCurrency) {
-      updateDraftDetail('baseCurrency', effectiveCurrency);
+    if (draftLine.details?.baseCurrency !== baseCurrency) {
+      updateDraftDetail('baseCurrency', baseCurrency);
     }
-  }, [effectiveCurrency, draftLine.details?.currencyUnit, draftLine.details?.baseCurrency, updateDraftDetail]);
+    if (draftLine.details?.metalType !== metalType) {
+      updateDraftDetail('metalType', metalType);
+    }
+  }, [effectiveCurrency, draftLine.details?.currencyUnit, syncedClaimFieldsKey, updateDraftDetail]);
 
   return (
     <div className="space-y-4">
@@ -69,16 +90,16 @@ export default function ClaimTab({
               updateDraftDetail('claimFinancial', val);
               updateDraftDetail('totalAmount', val);
               updateDraftDetail('currencyUnit', effectiveCurrency);
-              updateDraftDetail('baseCurrency', effectiveCurrency);
+              updateDraftDetail('baseCurrency', baseCurrency);
             }}
-            baseCurrency={effectiveCurrency}
+            baseCurrency={baseCurrency}
             currencySuffix={currencySuffix}
             onKeyDown={handleKeyDownEnter}
             showWords
           />
 
           {/* Field 2: Weight Claim / Debt */}
-          <Field label={isPaid ? 'طلب وزنی ما (گرم)' : 'بدهی وزنی ما (گرم)'}>
+          <Field label={isPaid ? `طلب وزنی ما (${metalLabel}، گرم)` : `بدهی وزنی ما (${metalLabel}، گرم)`}>
             <input
               type="text"
               inputMode="decimal"

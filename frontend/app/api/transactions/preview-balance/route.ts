@@ -337,11 +337,12 @@ export async function POST(request: Request) {
         }
       } else if (docTab === 'claim' && (details.claimFinancial || details.totalAmount)) {
         const rawAmt = numberValue(details.claimFinancial || details.totalAmount);
-        const isToman =
-          details.currencyUnit === 'IRT' ||
-          details.baseCurrency === 'IRT' ||
-          body?.baseCurrency === 'IRT';
-        rialAmount = isToman ? convertTomanToRial(rawAmt) : rawAmt;
+        const claimCurrency = normalizeCurrencyCode(String(details.currencyUnit || details.baseCurrency || body?.baseCurrency || ''));
+        const isForeignClaim = Boolean(claimCurrency && claimCurrency !== 'IRR' && claimCurrency !== 'IRT');
+        if (!isForeignClaim) {
+          const isToman = claimCurrency === 'IRT';
+          rialAmount = isToman ? convertTomanToRial(rawAmt) : rawAmt;
+        }
       } else if (docTab === 'stone') {
         const isUnsettledStone =
           details.stoneOperationKind === 'unsettled_purchase' ||
@@ -385,6 +386,9 @@ export async function POST(request: Request) {
       const currencyEffect = getCurrencyTradeForeignEffect(currencyLine);
       if (currencyEffect !== null) {
         addForeignEffect(currencyEffect);
+      } else if (docTab === 'claim' && currencyCode) {
+        const claimAmount = numberValue(details.claimFinancial || details.totalAmount);
+        if (claimAmount > 0) addForeignEffect(direction * claimAmount);
       } else if (docTab === 'stone') {
         const opKind = String(details.stoneOperationKind || '');
         const subType = String(line.documentSubType || '');

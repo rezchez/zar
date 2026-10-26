@@ -54,6 +54,13 @@ export type CustomerTransaction = {
   balanceSource: string;
   documentDetails: string;
   documentLineNumber: number;
+  journalLines?: {
+    accountCode: string;
+    accountTitle: string;
+    description: string;
+    debit: number;
+    credit: number;
+  }[];
   created: string;
   updated: string;
 };
@@ -720,4 +727,3 @@ export function calculateCustomerDetailedStonePositions(
     (it) => Math.abs(it.carats) > 0.0000001 || Math.abs(it.grams) > 0.0000001 || Math.abs(it.pieces) > 0,
   );
 }
-

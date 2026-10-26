@@ -780,29 +780,43 @@ export async function POST(request: Request) {
       const isClaimLine = line.documentTab === 'claim' || line.sourceTab === 'claim';
       if (isClaimLine) {
         const claimCurrency = normalizeCurrencyCode(String(details.currencyUnit || details.baseCurrency || ''));
-        const isToman = claimCurrency === 'IRT' || details.baseCurrency === 'IRT' || body?.baseCurrency === 'IRT';
+        const isToman = claimCurrency === 'IRT';
+        const isForeign = Boolean(claimCurrency && claimCurrency !== 'IRR' && claimCurrency !== 'IRT');
         const rawLineRial = Math.abs(readAmount(line.rialAmount) || 0);
         const detailTotal = Math.abs(readAmount(details.claimFinancial) || readAmount(details.totalAmount) || 0);
         const alreadyInIrr = details.rialAmountInIrr === true;
-
-        const effectiveAbsRial = isToman
-          ? (alreadyInIrr && rawLineRial > 0 && rawLineRial !== detailTotal
-              ? rawLineRial
-              : convertTomanToRial(detailTotal || rawLineRial))
-          : (rawLineRial || detailTotal);
-
         const claimDirection = lineNature === 'received' ? 1 : -1;
-        lineAmounts.rialAmount = Math.round(effectiveAbsRial) * claimDirection;
-        details.currencyUnit = isToman ? 'IRT' : 'IRR';
-        details.baseCurrency = isToman ? 'IRT' : 'IRR';
-        details.amountInIrr = Math.round(effectiveAbsRial);
+
+        if (isForeign) {
+          const foreignAmount = Math.abs(readAmount(line.foreignAmount) || detailTotal);
+          lineAmounts.rialAmount = 0;
+          lineAmounts.foreignAmount = foreignAmount * claimDirection;
+          details.currencyUnit = claimCurrency;
+          details.baseCurrency = normalizeCurrencyCode(String(body?.baseCurrency || details.baseCurrency || 'IRR'));
+          details.amountInIrr = 0;
+        } else {
+          const effectiveAbsRial = isToman
+            ? (alreadyInIrr && rawLineRial > 0 && rawLineRial !== detailTotal
+                ? rawLineRial
+                : convertTomanToRial(detailTotal || rawLineRial))
+            : (rawLineRial || detailTotal);
+
+          lineAmounts.rialAmount = Math.round(effectiveAbsRial) * claimDirection;
+          details.currencyUnit = isToman ? 'IRT' : 'IRR';
+          details.baseCurrency = isToman ? 'IRT' : 'IRR';
+          details.amountInIrr = Math.round(effectiveAbsRial);
+        }
         details.rialAmountInIrr = true;
 
         const rawClaimWeight = Math.abs(
-          readAmount(details.claimWeight) || readAmount(details.rawWeight) || readAmount(line.goldAmount) || 0,
+          readAmount(details.claimWeight) || readAmount(details.rawWeight) ||
+          readAmount(line.goldAmount) || readAmount(line.silverAmount) || readAmount(line.platinumAmount) || 0,
         );
         if (rawClaimWeight > 0) {
-          lineAmounts.goldAmount = rawClaimWeight * claimDirection;
+          const claimMetal = String(details.metalType || 'gold');
+          lineAmounts.goldAmount = claimMetal === 'gold' ? rawClaimWeight * claimDirection : 0;
+          lineAmounts.silverAmount = claimMetal === 'silver' ? rawClaimWeight * claimDirection : 0;
+          lineAmounts.platinumAmount = claimMetal === 'platinum' ? rawClaimWeight * claimDirection : 0;
           details.rawWeight = String(rawClaimWeight);
           details.claimWeight = String(rawClaimWeight);
         }

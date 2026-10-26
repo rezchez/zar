@@ -1344,17 +1344,15 @@ export default function DocumentForm({
               : Math.round(rawBankAmount);
 
             const isClaimRow = line.documentTab === 'claim' || line.sourceTab === 'claim';
-            const isClaimToman =
-              isClaimRow &&
-              (line.details.currencyUnit === 'IRT' ||
-                line.details.baseCurrency === 'IRT' ||
-                baseCurrency === 'IRT');
+            const claimCurrency = normalizeCurrencyCode(String(line.details.currencyUnit || selectedCurrency || baseCurrency));
+            const isClaimToman = isClaimRow && claimCurrency === 'IRT';
+            const isClaimForeign = isClaimRow && Boolean(claimCurrency && claimCurrency !== 'IRR' && claimCurrency !== 'IRT');
             const rawClaimFinancial = isClaimRow
               ? numberValue(line.details.claimFinancial || line.details.totalAmount || '')
               : 0;
             const claimRialAmount = isClaimToman
               ? convertTomanToRial(rawClaimFinancial)
-              : Math.round(rawClaimFinancial);
+              : isClaimForeign ? 0 : Math.round(rawClaimFinancial);
             const rawClaimWeight = isClaimRow
               ? numberValue(line.details.claimWeight || line.details.rawWeight || '')
               : 0;
@@ -1428,7 +1426,7 @@ export default function DocumentForm({
                 : isClaimRow
                   ? {
                       ...line.details,
-                      currencyUnit: isClaimToman ? 'IRT' : 'IRR',
+                      currencyUnit: claimCurrency,
                       baseCurrency,
                       amountInIrr: claimRialAmount,
                       rialAmountInIrr: true,
@@ -1499,7 +1497,13 @@ export default function DocumentForm({
               balanceSource: line.balanceSource,
               description: line.description,
               converted750: line.converted750,
-              foreignCurrency: isCurrencyRow || isForeignCashRow ? line.details.currencyUnit : isForeignWorkmanship ? wageCurrency : undefined,
+              foreignCurrency: isCurrencyRow || isForeignCashRow
+                ? line.details.currencyUnit
+                : isClaimForeign
+                  ? claimCurrency
+                  : isForeignWorkmanship
+                    ? wageCurrency
+                    : undefined,
               documentDetails: {
                 ...baseLineDetails,
                 clientLineId: line.id,
@@ -1538,6 +1542,8 @@ export default function DocumentForm({
                   ? stoneForeignAmount
                   : currencyForeignEffect !== null
                     ? Math.abs(currencyForeignEffect)
+                    : isClaimForeign
+                      ? rawClaimFinancial
                     : isForeignWorkmanship && line.documentSubType === 'workmanship-wage'
                         ? rawWorkmanshipAmount
                         : 0,
@@ -2090,6 +2096,10 @@ export default function DocumentForm({
               handleKeyDownEnter={handleKeyDownEnter}
               draftReady={draftReady}
               baseCurrency={baseCurrency}
+              selectedCurrency={selectedCurrency}
+              currencyLabel={activeCurrencies.find((currency) => currency.code.toUpperCase() === selectedCurrency.toUpperCase())?.name}
+              currencySymbol={activeCurrencies.find((currency) => currency.code.toUpperCase() === selectedCurrency.toUpperCase())?.symbol}
+              metalType={draftLine.details.metalType as MetalType}
             />
           )}
           incomeExpenseTabContent={(
