@@ -31,7 +31,7 @@ export function getCoinBalanceEffect(line: CoinBalanceLine): number {
   const subType = String(line.documentSubType || '').toLowerCase();
   if (subType === 'receipt_buy' || subType === 'payment_sale') return 0;
   const natureSign = line.documentNature === 'paid' ? -1 : 1;
-  return natureSign * quantity;
+  return natureSign * Math.round(quantity);
 }
 
 /** Physical movements include entry, exit, purchase, and sale; claim/debt rows are obligations only. */
@@ -41,7 +41,7 @@ export function getCoinInventoryEffect(line: CoinBalanceLine): number {
   const subType = String(line.documentSubType || '').toLowerCase();
   if (subType.includes('claim') || subType.includes('debt')) return 0;
   const quantity = Math.abs(numberValue(line.details?.quantity || line.details?.currencyQuantity));
-  return (line.documentNature === 'paid' ? -1 : 1) * quantity;
+  return (line.documentNature === 'paid' ? -1 : 1) * Math.round(quantity);
 }
 
 export function getCoinGoldEffect(line: CoinBalanceLine): number {

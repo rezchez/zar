@@ -14,6 +14,7 @@ import {
   Star,
   Tag,
   Unlock,
+  UserPlus,
   X,
 } from 'lucide-react';
 import type { Customer } from '@/lib/customer';
@@ -21,6 +22,7 @@ import { isRefinerGroup } from '@/lib/customer-groups';
 import { normalizeDigits, toPersianDigits } from '@/lib/jalali';
 import Field from '@/src/components/documents/Field';
 import type { DocumentLine } from '@/src/components/documents/RawGoldTab';
+import AddCustomerModal from './AddCustomerModal';
 import CustomerBalanceLiquid from './CustomerBalanceLiquid';
 import { getCustomerGroupBadge } from '../utils/document-helpers';
 
@@ -100,6 +102,8 @@ interface CustomerSectionProps {
   selectedCustomer: Customer | null;
   customers: Customer[];
   onSelectCustomer: (customer: Customer | null) => void;
+  onCustomerCreated?: (customer: Customer) => void;
+  refreshCustomers?: () => Promise<void> | void;
   isCustomerLocked: boolean;
   onToggleCustomerLock: (locked: boolean) => void;
   showLockInfo: boolean;
@@ -118,6 +122,8 @@ export default function CustomerSection({
   selectedCustomer,
   customers,
   onSelectCustomer,
+  onCustomerCreated,
+  refreshCustomers,
   isCustomerLocked,
   onToggleCustomerLock,
   showLockInfo,
@@ -136,6 +142,19 @@ export default function CustomerSection({
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
   const [filterFavoritesOnly, setFilterFavoritesOnly] = useState(false);
   const [visibleCustomerCount, setVisibleCustomerCount] = useState(10);
+  const [isAddCustomerModalOpen, setIsAddCustomerModalOpen] = useState(false);
+
+  const handleCustomerCreated = useCallback(
+    async (newCustomer: Customer) => {
+      if (refreshCustomers) {
+        await refreshCustomers();
+      }
+      onCustomerCreated?.(newCustomer);
+      onSelectCustomer(newCustomer);
+      setIsAddCustomerModalOpen(false);
+    },
+    [refreshCustomers, onCustomerCreated, onSelectCustomer],
+  );
 
   const customerInputRef = useRef<HTMLInputElement>(null);
   const customerSearchRef = useRef<HTMLDivElement>(null);
@@ -360,8 +379,19 @@ export default function CustomerSection({
                       ) : null}
                     </div>
 
-                    {/* Customer Action Buttons: Starred Filter & Customer Lock */}
+                    {/* Customer Action Buttons: Add Customer, Starred Filter & Customer Lock */}
                     <div className="flex items-center gap-1.5 shrink-0">
+                      {/* Add New Customer Button */}
+                      <button
+                        type="button"
+                        onClick={() => setIsAddCustomerModalOpen(true)}
+                        className="flex h-[42px] w-[42px] items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-500 hover:border-amber-500 hover:text-amber-600 hover:bg-amber-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400 dark:hover:border-amber-500 dark:hover:text-amber-400 dark:hover:bg-amber-950/40 transition-all cursor-pointer shadow-2xs shrink-0"
+                        title="افزودن طرف‌حساب جدید"
+                        aria-label="افزودن طرف‌حساب جدید"
+                      >
+                        <UserPlus size={18} />
+                      </button>
+
                       {/* Starred Filter Button (Eye with Star) */}
                       <button
                         type="button"
@@ -713,6 +743,17 @@ export default function CustomerSection({
                             <div className="absolute top-full left-2 -mt-1 border-4 border-transparent border-t-slate-900 dark:border-t-slate-800" />
                           </div>
                         </div>
+
+                        {/* Add New Customer Button */}
+                        <button
+                          type="button"
+                          onClick={() => setIsAddCustomerModalOpen(true)}
+                          className="inline-flex items-center justify-center h-8 w-8 rounded-xl border border-slate-300 bg-white text-slate-500 hover:border-amber-500 hover:text-amber-600 hover:bg-amber-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400 dark:hover:border-amber-500 dark:hover:text-amber-400 dark:hover:bg-amber-950/40 transition-all cursor-pointer shadow-2xs shrink-0"
+                          title="افزودن طرف‌حساب جدید"
+                          aria-label="افزودن طرف‌حساب جدید"
+                        >
+                          <UserPlus size={15} />
+                        </button>
                       </div>
 
                       <button
@@ -827,6 +868,15 @@ export default function CustomerSection({
           />
         ) : null}
       </AnimatePresence>
+
+      {/* Add New Customer Modal */}
+      {isAddCustomerModalOpen && (
+        <AddCustomerModal
+          isOpen={isAddCustomerModalOpen}
+          onClose={() => setIsAddCustomerModalOpen(false)}
+          onCustomerCreated={handleCustomerCreated}
+        />
+      )}
     </section>
   );
 }

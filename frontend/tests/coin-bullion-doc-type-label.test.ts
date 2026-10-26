@@ -51,4 +51,34 @@ describe('Coin and Bullion Tab Name and Document Type Labels', () => {
     expect(getLineDocumentTypeLabel('received', 'coin', undefined, undefined, undefined, undefined, 'receipt_debt')).toBe('بدهی سکه');
     expect(getLineDocumentTypeLabel('received', 'coin', undefined, undefined, undefined, undefined, 'receipt_debt', 'bar_zioto')).toBe('بدهی شمش');
   });
+
+  test('coin claim and debt balances are strictly integers without decimal places', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const liquidSrc = fs.readFileSync(
+      path.resolve(__dirname, '../features/accounting/documents/components/CustomerBalanceLiquid.tsx'),
+      'utf8',
+    );
+    const modalSrc = fs.readFileSync(
+      path.resolve(__dirname, '../features/accounting/documents/components/CoinBalanceModal.tsx'),
+      'utf8',
+    );
+    const coinTabSrc = fs.readFileSync(
+      path.resolve(__dirname, '../features/accounting/documents/components/CoinTab.tsx'),
+      'utf8',
+    );
+
+    // CustomerBalanceLiquid uses 0 decimal digits for coins and formats claim/debt with 0 decimals
+    expect(liquidSrc).toContain('id: \'coin\'');
+    expect(liquidSrc).toContain('digits: 0');
+    expect(liquidSrc).toContain('{faNumber(balance.claimValue, 0)}');
+    expect(liquidSrc).toContain('{faNumber(balance.debtValue, 0)}');
+
+    // CoinBalanceModal formats coin balance with 0 decimals
+    expect(modalSrc).toContain('{faNumber(Math.round(quantity), 0)} عدد');
+
+    // CoinTab quantity strips non-digit characters to disallow floating point numbers
+    expect(coinTabSrc).toContain("normalizeDigits(newQtyStr).replace(/[^\\d]/g, '')");
+    expect(coinTabSrc).toContain("inputMode=\"numeric\"");
+  });
 });

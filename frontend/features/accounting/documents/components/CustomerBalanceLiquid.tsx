@@ -163,11 +163,11 @@ export default function CustomerBalanceLiquid({
   const coinBalanceSummary = coinEntries.length > 0 ? [{
     id: 'coin',
     label: 'سکه و شمش',
-    value: coinDebtTotal - coinClaimTotal,
-    claimValue: coinClaimTotal,
-    debtValue: coinDebtTotal,
+    value: Math.round(coinDebtTotal - coinClaimTotal),
+    claimValue: Math.round(coinClaimTotal),
+    debtValue: Math.round(coinDebtTotal),
     unit: 'عدد',
-    digits: 2,
+    digits: 0,
     isStone: false,
     isDualCoin: true,
     statusLabel: coinClaimTotal > 0 && coinDebtTotal > 0
@@ -175,7 +175,7 @@ export default function CustomerBalanceLiquid({
       : coinClaimTotal > 0
         ? 'طلب سکه ما'
         : 'بدهی سکه ما',
-    tooltip: `طلب سکه ما: ${coinEntries.filter(([, value]) => value < 0).map(([name, value]) => `${name} ${faNumber(Math.abs(value), 2)}`).join('، ') || 'ندارد'} · بدهی سکه ما: ${coinEntries.filter(([, value]) => value > 0).map(([name, value]) => `${name} ${faNumber(value, 2)}`).join('، ') || 'ندارد'} · کلیک برای مشاهده جزئیات`,
+    tooltip: `طلب سکه ما: ${coinEntries.filter(([, value]) => value < 0).map(([name, value]) => `${name} ${faNumber(Math.round(Math.abs(value)), 0)}`).join('، ') || 'ندارد'} · بدهی سکه ما: ${coinEntries.filter(([, value]) => value > 0).map(([name, value]) => `${name} ${faNumber(Math.round(value), 0)}`).join('، ') || 'ندارد'} · کلیک برای مشاهده جزئیات`,
   }] : [];
 
   const currencyEntries = Object.entries(customer.currencyBalances || {});
@@ -215,17 +215,17 @@ export default function CustomerBalanceLiquid({
     }
   }
 
+  const hasStoneBalance = effectiveCreditCarats > 0 || effectiveDebitCarats > 0;
   const balances = [...baseBalances, ...coinBalanceSummary, ...foreignBalances];
   const visibleBalances = balances.filter(
     (balance) =>
-      balance.value !== 0 ||
-      balance.id === 'gold' ||
-      balance.id === 'currency' ||
-      balance.id === 'rial' ||
-      balance.id === 'stone' ||
-      balance.id === 'stone-credit' ||
-      balance.id === 'stone-debit' ||
-      balance.id === 'coin',
+      ((balance.id === 'stone' || balance.id === 'stone-credit' || balance.id === 'stone-debit')
+        ? hasStoneBalance
+        : (balance.value !== 0 ||
+          balance.id === 'gold' ||
+          balance.id === 'currency' ||
+          balance.id === 'rial' ||
+          balance.id === 'coin')),
   );
 
   return (
@@ -338,12 +338,12 @@ export default function CustomerBalanceLiquid({
                     <div className="inline-flex items-center gap-1.5 font-bold">
                       <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-300">
                         <span className="text-[10px] font-extrabold text-emerald-800 dark:text-emerald-200">طلب:</span>
-                        <strong className="document-liquid-item-value text-emerald-700 dark:text-emerald-300">{faNumber(balance.claimValue, 2)}</strong>
+                        <strong className="document-liquid-item-value text-emerald-700 dark:text-emerald-300">{faNumber(balance.claimValue, 0)}</strong>
                       </span>
                       <span className="text-slate-300 dark:text-slate-600 font-light select-none">|</span>
                       <span className="inline-flex items-center gap-1 text-rose-700 dark:text-rose-300">
                         <span className="text-[10px] font-extrabold text-rose-800 dark:text-rose-200">بدهی:</span>
-                        <strong className="document-liquid-item-value text-rose-700 dark:text-rose-300">{faNumber(balance.debtValue, 2)}</strong>
+                        <strong className="document-liquid-item-value text-rose-700 dark:text-rose-300">{faNumber(balance.debtValue, 0)}</strong>
                       </span>
                     </div>
                   ) : (

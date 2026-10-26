@@ -741,8 +741,9 @@ export default function CoinTab({
   };
 
   const handleQuantityChange = (newQtyStr: string) => {
-    setQuantity(newQtyStr);
-    const q = parseInt(normalizeDigits(newQtyStr).replace(/[^\d]/g, ''), 10);
+    const cleanQty = normalizeDigits(newQtyStr).replace(/[^\d]/g, '');
+    setQuantity(cleanQty);
+    const q = parseInt(cleanQty, 10);
     const validQ = isNaN(q) || q <= 0 ? 1 : q;
 
     const numUnitPrice = parseLocalizedAmount(unitPrice);
@@ -1226,12 +1227,18 @@ export default function CoinTab({
           <Field label="تعداد (قطعه) *">
             <div className="relative">
               <input
-                type="number"
-                min="1"
-                step="1"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
                 value={quantity}
                 onChange={(e) => handleQuantityChange(e.target.value)}
-                onKeyDown={handleKeyDownEnter}
+                onKeyDown={(e) => {
+                  if (e.key === '.' || e.key === '/' || e.key === ',') {
+                    e.preventDefault();
+                    return;
+                  }
+                  handleKeyDownEnter?.(e);
+                }}
                 placeholder="۱"
                 className="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-xs font-black text-slate-950 transition-all focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
               />

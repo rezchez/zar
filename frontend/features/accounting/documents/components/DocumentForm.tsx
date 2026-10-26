@@ -1815,6 +1815,12 @@ export default function DocumentForm({
             setSelectedCustomerId(c ? c.id : '');
             setActiveCustomerOverride(c || null);
           }}
+          onCustomerCreated={(newCustomer) => {
+            setCustomers((prev) => {
+              const exists = prev.some((c) => c.id === newCustomer.id);
+              return exists ? prev : [newCustomer, ...prev];
+            });
+          }}
           isCustomerLocked={isCustomerLocked}
           onToggleCustomerLock={handleToggleCustomerLock}
           showLockInfo={showLockInfo}

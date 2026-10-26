@@ -138,6 +138,14 @@ export default function CoinEntryComponent({
         };
       }
 
+      if (field === 'quantity') {
+        const cleanQty = normalizeDigits(value).replace(/[^\d]/g, '');
+        return {
+          ...r,
+          quantity: cleanQty,
+        };
+      }
+
       return {
         ...r,
         [field]: value,
@@ -376,12 +384,17 @@ export default function CoinEntryComponent({
                     </label>
                     <div className="relative">
                       <input
-                        type="number"
-                        min="1"
-                        step="1"
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
                         disabled={readOnly}
                         value={row.quantity}
                         onChange={(e) => handleFieldChange(row.id, 'quantity', e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === '.' || e.key === '/' || e.key === ',') {
+                            e.preventDefault();
+                          }
+                        }}
                         placeholder="۱"
                         className="h-10 w-full rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 text-xs font-black text-slate-900 transition-all focus:border-amber-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-slate-800 dark:bg-slate-800/70 dark:text-slate-100"
                       />

@@ -1030,9 +1030,9 @@ describe('Stone Tab Validation & Accounting Operations', () => {
       expect(liquidSrc).toContain('document-liquid-item-status');
 
       // Verify clickability & accessibility attributes
-      expect(liquidSrc).toContain("role={isStone ? 'button' : undefined}");
-      expect(liquidSrc).toContain("tabIndex={isStone ? 0 : undefined}");
-      expect(liquidSrc).toContain("onClick={isStone ? () => setIsStoneModalOpen(true) : undefined}");
+      expect(liquidSrc).toMatch(/role=\{isStone( \|\| isCoin)? \? 'button' : undefined\}/);
+      expect(liquidSrc).toMatch(/tabIndex=\{isStone( \|\| isCoin)? \? 0 : undefined\}/);
+      expect(liquidSrc).toMatch(/onClick=\{isStone \? \(\) => setIsStoneModalOpen\(true\) :/);
       expect(liquidSrc).toContain("cursor-pointer");
 
       // Verify StoneBalanceModal import and mounting
@@ -1298,6 +1298,20 @@ describe('Stone Tab Validation & Accounting Operations', () => {
       expect(previewSrc).toContain('stoneDebit?: number;');
       expect(previewSrc).toContain('طلب');
       expect(previewSrc).toContain('بدهی');
+    });
+
+    it('only displays stone in CustomerBalanceLiquid when customer has at least one stone claim or debt', async () => {
+      const fs = await import('fs');
+      const path = await import('path');
+      const liquidSrc = fs.readFileSync(
+        path.resolve(__dirname, '../features/accounting/documents/components/CustomerBalanceLiquid.tsx'),
+        'utf8',
+      );
+
+      // Verify that stone visibility is conditioned on hasStoneBalance
+      expect(liquidSrc).toContain('hasStoneBalance');
+      expect(liquidSrc).toContain('effectiveCreditCarats > 0 || effectiveDebitCarats > 0');
+      expect(liquidSrc).toMatch(/\(balance\.id === 'stone' \|\| balance\.id === 'stone-credit' \|\| balance\.id === 'stone-debit'\)\s*\?\s*hasStoneBalance/);
     });
 
     it('validates StoneBalanceModal renders segregated credit and debit sections and educational non-fungibility alert', async () => {

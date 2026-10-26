@@ -219,7 +219,7 @@ export default function DocumentBalancePreview({
           ))}
           {coinRows.map((name) => (
             <div key={`coin-prev-${name}`} className="text-indigo-700 dark:text-indigo-300 whitespace-nowrap">
-              {name}: {faNumber(Math.abs(previousCoins[name] || 0), 2)} عدد
+              {name}: {faNumber(Math.round(Math.abs(previousCoins[name] || 0)), 0)} عدد
               <small className="text-[10px] text-slate-500 font-bold mr-1">
                 ({(previousCoins[name] || 0) > 0 ? 'بدهی سکه ما' : (previousCoins[name] || 0) < 0 ? 'طلب سکه ما' : 'تسویه'})
               </small>
@@ -260,7 +260,7 @@ export default function DocumentBalancePreview({
               ) : null}
               {coinRows.map((name) => (effectCoins[name] || 0) !== 0 ? (
                 <div key={`coin-effect-${name}`} className="text-indigo-700 dark:text-indigo-300 whitespace-nowrap">
-                  {name}: {faNumber(Math.abs(effectCoins[name]), 2)} عدد
+                  {name}: {faNumber(Math.round(Math.abs(effectCoins[name])), 0)} عدد
                   <small className="text-[10px] text-slate-500 font-bold mr-1">
                     ({effectCoins[name] > 0 ? 'افزایش بدهی سکه ما' : 'افزایش طلب سکه ما'})
                   </small>
@@ -414,7 +414,7 @@ export default function DocumentBalancePreview({
           ))}
           {coinRows.map((name) => (
             <div key={`coin-projected-${name}`} className="text-indigo-700 dark:text-indigo-300 whitespace-nowrap">
-              {name}: {faNumber(Math.abs(projectedCoins[name] || 0), 2)} عدد
+              {name}: {faNumber(Math.round(Math.abs(projectedCoins[name] || 0)), 0)} عدد
               <small className="text-[10px] text-slate-500 font-bold mr-1">
                 ({(projectedCoins[name] || 0) > 0 ? 'بدهی سکه ما' : (projectedCoins[name] || 0) < 0 ? 'طلب سکه ما' : 'تسویه'})
               </small>
