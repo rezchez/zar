@@ -1252,8 +1252,9 @@ select:-webkit-autofill:active {
 }
 
 .dashboard-nav-item.is-active {
-  background: #edf8f9;
-  color: #087b88;
+  background: rgba(251, 86, 7, 0.12);
+  color: #992e00;
+  border-right: 3px solid #FB5607;
   font-weight: 800;
 }
 

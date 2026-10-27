@@ -129,10 +129,10 @@ describe('Bank Accounts & Bank Opening Balance Tests', () => {
     expect(updatedAccount.balance).toBe(0);
   });
 
-  it('Test 7 — Sidebar version badge dynamically matches APP_VERSION (1.1 BETA)', async () => {
+  it('Test 7 — Sidebar version badge dynamically matches APP_VERSION (1.2 BETA)', async () => {
     const { APP_VERSION } = await import('@/lib/version');
-    expect(APP_VERSION).toBe('1.1 BETA');
+    expect(APP_VERSION).toBe('1.2 BETA');
     const badgeText = `Zarfolio ${APP_VERSION}`;
-    expect(badgeText).toBe('Zarfolio 1.1 BETA');
+    expect(badgeText).toBe('Zarfolio 1.2 BETA');
   });
 });

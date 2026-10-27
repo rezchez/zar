@@ -682,7 +682,7 @@ export default function ProgramSettings({ currentUserRole }: ProgramSettingsProp
                     isActive
                       ? isDanger
                         ? 'bg-rose-500/15 text-rose-950 dark:text-rose-200 border border-rose-500/30 shadow-xs ring-1 ring-rose-500/30'
-                        : 'bg-amber-500/15 text-amber-900 dark:text-amber-300 border border-amber-500/30 shadow-xs'
+                        : 'bg-[#FB5607]/12 text-[#992e00] dark:text-amber-300 border border-[#FB5607]/35 shadow-xs ring-1 ring-[#FB5607]/25'
                       : isDanger
                       ? 'text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-transparent'
                       : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/70 border border-transparent'
@@ -693,10 +693,10 @@ export default function ProgramSettings({ currentUserRole }: ProgramSettingsProp
                       isActive
                         ? isDanger
                           ? 'bg-rose-600 text-white shadow-xs'
-                          : 'bg-amber-500 text-slate-950 shadow-sm'
+                          : 'bg-[#FB5607] text-white shadow-sm'
                         : isDanger
                         ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 group-hover:bg-rose-200/70 dark:group-hover:bg-rose-900/60'
-                        : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 group-hover:text-amber-500 dark:group-hover:text-amber-400'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 group-hover:text-[#FB5607] dark:group-hover:text-amber-400'
                     }`}
                   >
                     <Icon size={18} />
@@ -707,7 +707,7 @@ export default function ProgramSettings({ currentUserRole }: ProgramSettingsProp
                         isActive
                           ? isDanger
                             ? 'text-rose-950 dark:text-rose-100'
-                            : 'text-amber-900 dark:text-amber-200'
+                            : 'text-[#992e00] dark:text-amber-200'
                           : isDanger
                           ? 'text-rose-800 dark:text-rose-300'
                           : 'text-slate-800 dark:text-slate-200'
@@ -719,7 +719,7 @@ export default function ProgramSettings({ currentUserRole }: ProgramSettingsProp
                       isActive
                         ? isDanger
                           ? 'text-rose-800/90 dark:text-rose-300/80 font-medium'
-                          : 'text-amber-700/80 dark:text-amber-400/80 font-medium'
+                          : 'text-[#b83800]/90 dark:text-amber-400/80 font-medium'
                         : isDanger
                         ? 'text-rose-600/80 dark:text-rose-400/80'
                         : 'text-slate-500 dark:text-slate-400'

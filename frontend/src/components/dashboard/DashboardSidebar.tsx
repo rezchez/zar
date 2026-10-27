@@ -62,7 +62,7 @@ function NavSubItem({
       aria-current={isActive ? 'page' : undefined}
       className={`group flex w-full items-center justify-between gap-2.5 rounded-lg px-2.5 py-2 text-right text-xs font-bold transition-all duration-150 ${
         isActive
-          ? 'bg-amber-500/15 text-amber-800 dark:bg-amber-500/25 dark:text-amber-200 font-extrabold shadow-xs'
+          ? 'bg-[#FB5607]/12 text-[#992e00] dark:bg-amber-500/25 dark:text-amber-200 font-extrabold shadow-xs'
           : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-400 dark:hover:bg-slate-800/80 dark:hover:text-slate-100'
       }`}
     >
@@ -72,7 +72,7 @@ function NavSubItem({
           strokeWidth={isActive ? 2.2 : 1.8}
           className={`shrink-0 transition-colors ${
             isActive
-              ? 'text-amber-600 dark:text-amber-400'
+              ? 'text-[#FB5607] dark:text-amber-400'
               : 'text-slate-400 group-hover:text-slate-600 dark:text-slate-500 dark:group-hover:text-slate-300'
           }`}
         />
@@ -80,7 +80,7 @@ function NavSubItem({
       </span>
 
       {item.badge ? (
-        <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-100 px-1.5 text-[10px] font-extrabold text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+        <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-[#FB5607]/15 px-1.5 text-[10px] font-extrabold text-[#992e00] dark:bg-amber-950 dark:text-amber-200">
           {item.badge}
         </span>
       ) : null}
@@ -146,7 +146,7 @@ function NavMenuItem({
           isCollapsed ? 'justify-center px-2' : ''
         } ${
           isActive || routeActive
-            ? 'bg-amber-500/10 text-amber-900 border-r-[3px] border-amber-500 dark:bg-amber-500/20 dark:text-amber-200 dark:border-amber-400 font-extrabold shadow-xs'
+            ? 'bg-[#FB5607]/12 text-[#992e00] border-r-[3px] border-[#FB5607] dark:bg-amber-500/20 dark:text-amber-200 dark:border-amber-400 font-extrabold shadow-xs'
             : 'text-slate-700 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-800/80 dark:hover:text-white'
         }`}
       >
@@ -156,7 +156,7 @@ function NavMenuItem({
             strokeWidth={isActive || routeActive ? 2.2 : 1.9}
             className={`shrink-0 transition-colors ${
               isActive || routeActive
-                ? 'text-amber-600 dark:text-amber-400'
+                ? 'text-[#FB5607] dark:text-amber-400'
                 : 'text-slate-500 group-hover:text-slate-900 dark:text-slate-400 dark:group-hover:text-white'
             }`}
           />
@@ -172,7 +172,7 @@ function NavMenuItem({
             ) : null}
 
             {item.badge ? (
-              <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500/15 px-1.5 text-[10px] font-extrabold text-amber-700 dark:bg-amber-500/25 dark:text-amber-300">
+              <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[#FB5607]/15 px-1.5 text-[10px] font-extrabold text-[#992e00] dark:bg-amber-500/25 dark:text-amber-300">
                 {item.badge}
               </span>
             ) : null}
@@ -187,7 +187,7 @@ function NavMenuItem({
                   strokeWidth={2}
                   className={`transition-colors ${
                     effectiveOpen
-                      ? 'text-amber-600 dark:text-amber-400'
+                      ? 'text-[#FB5607] dark:text-amber-400'
                       : 'text-slate-400 dark:text-slate-500'
                   }`}
                 />

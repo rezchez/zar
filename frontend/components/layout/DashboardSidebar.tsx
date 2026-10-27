@@ -62,7 +62,7 @@ function NavSubItem({
       aria-current={isActive ? 'page' : undefined}
       className={`group flex w-full items-center justify-between gap-2.5 rounded-lg px-2.5 py-2 text-right text-xs font-bold transition-all duration-150 ${
         isActive
-          ? 'bg-amber-500/15 text-amber-800 dark:bg-gradient-to-l dark:from-blue-600/30 dark:via-blue-700/20 dark:to-[#191970]/40 dark:text-blue-100 dark:shadow-[0_0_12px_rgba(59,130,246,0.25)] font-extrabold shadow-xs'
+          ? 'bg-[#FB5607]/12 text-[#992e00] dark:bg-gradient-to-l dark:from-blue-600/30 dark:via-blue-700/20 dark:to-[#191970]/40 dark:text-blue-100 dark:shadow-[0_0_12px_rgba(59,130,246,0.25)] font-extrabold shadow-xs'
           : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-blue-200/70 dark:hover:bg-blue-600/15 dark:hover:text-blue-100'
       }`}
     >
@@ -72,7 +72,7 @@ function NavSubItem({
           strokeWidth={isActive ? 2.2 : 1.8}
           className={`shrink-0 transition-colors ${
             isActive
-              ? 'text-amber-600 dark:text-blue-300 dark:drop-shadow-[0_0_6px_rgba(96,165,250,0.6)]'
+              ? 'text-[#FB5607] dark:text-blue-300 dark:drop-shadow-[0_0_6px_rgba(96,165,250,0.6)]'
               : 'text-slate-400 group-hover:text-slate-600 dark:text-blue-400/60 dark:group-hover:text-blue-300'
           }`}
         />
@@ -80,7 +80,7 @@ function NavSubItem({
       </span>
 
       {item.badge ? (
-        <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-100 px-1.5 text-[10px] font-extrabold text-amber-800 dark:bg-blue-900/60 dark:text-blue-200 dark:border dark:border-blue-500/40">
+        <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-[#FB5607]/15 px-1.5 text-[10px] font-extrabold text-[#992e00] dark:bg-blue-900/60 dark:text-blue-200 dark:border dark:border-blue-500/40">
           {item.badge}
         </span>
       ) : null}
@@ -146,7 +146,7 @@ function NavMenuItem({
           isCollapsed ? 'justify-center px-2' : ''
         } ${
           isActive || routeActive
-            ? 'bg-amber-500/10 text-amber-900 border-r-[3px] border-amber-500 dark:bg-gradient-to-l dark:from-blue-600/30 dark:via-blue-700/20 dark:to-[#191970]/40 dark:text-blue-50 dark:border-blue-400 dark:shadow-[0_0_16px_rgba(59,130,246,0.3),inset_0_1px_0_rgba(147,197,253,0.18)] font-extrabold shadow-xs'
+            ? 'bg-[#FB5607]/12 text-[#992e00] border-r-[3px] border-[#FB5607] dark:bg-gradient-to-l dark:from-blue-600/30 dark:via-blue-700/20 dark:to-[#191970]/40 dark:text-blue-50 dark:border-blue-400 dark:shadow-[0_0_16px_rgba(59,130,246,0.3),inset_0_1px_0_rgba(147,197,253,0.18)] font-extrabold shadow-xs'
             : 'text-slate-700 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-blue-600/15 dark:hover:text-white dark:hover:shadow-[inset_0_1px_0_rgba(147,197,253,0.08)]'
         }`}
       >
@@ -156,7 +156,7 @@ function NavMenuItem({
             strokeWidth={isActive || routeActive ? 2.2 : 1.9}
             className={`shrink-0 transition-colors ${
               isActive || routeActive
-                ? 'text-amber-600 dark:text-blue-300 dark:drop-shadow-[0_0_8px_rgba(96,165,250,0.6)]'
+                ? 'text-[#FB5607] dark:text-blue-300 dark:drop-shadow-[0_0_8px_rgba(96,165,250,0.6)]'
                 : 'text-slate-500 group-hover:text-slate-900 dark:text-blue-300/70 dark:group-hover:text-blue-100'
             }`}
           />
@@ -172,7 +172,7 @@ function NavMenuItem({
             ) : null}
 
             {item.badge ? (
-              <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500/15 px-1.5 text-[10px] font-extrabold text-amber-700 dark:bg-blue-600/25 dark:text-blue-200 dark:border dark:border-blue-400/40 dark:shadow-[0_0_8px_rgba(37,99,235,0.3)]">
+              <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[#FB5607]/15 px-1.5 text-[10px] font-extrabold text-[#992e00] dark:bg-blue-600/25 dark:text-blue-200 dark:border dark:border-blue-400/40 dark:shadow-[0_0_8px_rgba(37,99,235,0.3)]">
                 {item.badge}
               </span>
             ) : null}
@@ -187,7 +187,7 @@ function NavMenuItem({
                   strokeWidth={2}
                   className={`transition-colors ${
                     effectiveOpen
-                      ? 'text-amber-600 dark:text-blue-300 dark:drop-shadow-[0_0_4px_rgba(96,165,250,0.5)]'
+                      ? 'text-[#FB5607] dark:text-blue-300 dark:drop-shadow-[0_0_4px_rgba(96,165,250,0.5)]'
                       : 'text-slate-400 dark:text-blue-400/60'
                   }`}
                 />
