@@ -95,7 +95,7 @@ next-env.d.ts
 coverage/
 
 # =========================
-# Generated artifacts
+# Generated artifacts & runtime cleanups
 # =========================
 *.csv
 *.xlsx
@@ -104,6 +104,8 @@ coverage/
 *.sqlite3
 *.db
 *.db-journal
+app_cleanups/
+*.json.gz
 
 # =========================
 # Vercel

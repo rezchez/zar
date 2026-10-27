@@ -49,6 +49,7 @@ import CustomFontManager from '@/src/components/CustomFontManager';
 import ChartOfAccounts from '@/src/components/accounting/ChartOfAccounts';
 import DatabaseBackupSection from '@/src/components/settings/DatabaseBackupSection';
 import TahesabMigrationSection from '@/src/components/settings/TahesabMigrationSection';
+import DataCleanupSettings from '@/src/components/settings/DataCleanupSettings';
 
 const ALL_CUSTOMER_COLUMNS = [
   { id: 'customerCode', label: 'کد حساب' },
@@ -165,6 +166,12 @@ const SETTINGS_TABS = [
     description: 'فعال/غیرفعال‌سازی، نام و تم وب‌اپلیکیشن',
     icon: AppWindow,
   },
+  {
+    id: 'data_cleanup',
+    label: 'پاکسازی اطلاعات',
+    description: 'حذف تمامی اطلاعات تراکنش‌ها و کلیه حساب‌ها با نگهداری ۳۰ روزه',
+    icon: Trash2,
+  },
 ] as const;
 
 const VALID_TABS = [
@@ -178,6 +185,7 @@ const VALID_TABS = [
   'price_api',
   'appearance',
   'pwa_settings',
+  'data_cleanup',
 ] as const;
 
 type SettingsTab = (typeof VALID_TABS)[number];
@@ -185,7 +193,11 @@ type SettingsTab = (typeof VALID_TABS)[number];
 const VALID_PRINT_SUB_TABS = ['reports', 'invoices', 'logo', 'store_info'] as const;
 type PrintSubTab = (typeof VALID_PRINT_SUB_TABS)[number];
 
-export default function ProgramSettings() {
+interface ProgramSettingsProps {
+  currentUserRole?: string;
+}
+
+export default function ProgramSettings({ currentUserRole }: ProgramSettingsProps = {}) {
   const {
     settings,
     customFonts,
@@ -193,6 +205,24 @@ export default function ProgramSettings() {
     updateSettings,
   } = useAppSettings();
   const toast = useToastManager();
+
+  const [isAdminUser, setIsAdminUser] = useState<boolean>(currentUserRole === 'admin');
+
+  useEffect(() => {
+    if (currentUserRole !== undefined) {
+      setIsAdminUser(currentUserRole === 'admin');
+      return;
+    }
+    // Fallback: Check role from /api/admin/data-cleanup
+    fetch('/api/admin/data-cleanup')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && typeof data.isAdmin === 'boolean') {
+          setIsAdminUser(data.isAdmin);
+        }
+      })
+      .catch(() => {});
+  }, [currentUserRole]);
 
   const router = useRouter();
   const pathname = usePathname();
@@ -636,23 +666,36 @@ export default function ProgramSettings() {
         <aside className="lg:col-span-4 xl:col-span-3">
           <nav className="flex flex-col gap-2 p-2.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm" aria-label="تب‌های تنظیمات کلی">
             {SETTINGS_TABS.map((tab) => {
+              // Deletion only allowed by system administrator: hide tab for non-admins
+              if (tab.id === 'data_cleanup' && !isAdminUser) {
+                return null;
+              }
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
+              const isDanger = tab.id === 'data_cleanup';
               return (
                 <button
                   key={tab.id}
                   type="button"
                   onClick={() => setActiveTab(tab.id as typeof activeTab)}
-                  className={`w-full flex items-start gap-3 p-3 rounded-xl text-right transition-all group ${
+                  className={`w-full flex items-start gap-3 p-3 rounded-xl text-right transition-all group cursor-pointer ${
                     isActive
-                      ? 'bg-amber-500/15 text-amber-900 dark:text-amber-300 border border-amber-500/30 shadow-xs'
+                      ? isDanger
+                        ? 'bg-red-700 text-white border border-red-800 shadow-md ring-2 ring-red-400/50'
+                        : 'bg-amber-500/15 text-amber-900 dark:text-amber-300 border border-amber-500/30 shadow-xs'
+                      : isDanger
+                      ? 'bg-red-600 hover:bg-red-700 text-white border border-red-700 shadow-sm'
                       : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/70 border border-transparent'
                   }`}
                 >
                   <div
                     className={`p-2 rounded-lg shrink-0 transition-colors ${
                       isActive
-                        ? 'bg-amber-500 text-slate-950 shadow-sm'
+                        ? isDanger
+                          ? 'bg-white/25 text-white shadow-sm'
+                          : 'bg-amber-500 text-slate-950 shadow-sm'
+                        : isDanger
+                        ? 'bg-white/20 text-white group-hover:bg-white/30'
                         : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 group-hover:text-amber-500 dark:group-hover:text-amber-400'
                     }`}
                   >
@@ -660,11 +703,11 @@ export default function ProgramSettings() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
-                      <span className={`text-xs font-black truncate ${isActive ? 'text-amber-900 dark:text-amber-200' : 'text-slate-800 dark:text-slate-200'}`}>
+                      <span className={`text-xs font-black truncate ${isDanger ? 'text-white' : isActive ? 'text-amber-900 dark:text-amber-200' : 'text-slate-800 dark:text-slate-200'}`}>
                         {tab.label}
                       </span>
                     </div>
-                    <p className={`text-[11px] mt-0.5 line-clamp-2 leading-relaxed ${isActive ? 'text-amber-700/80 dark:text-amber-400/80 font-medium' : 'text-slate-500 dark:text-slate-400'}`}>
+                    <p className={`text-[11px] mt-0.5 line-clamp-2 leading-relaxed ${isDanger ? 'text-red-100' : isActive ? 'text-amber-700/80 dark:text-amber-400/80 font-medium' : 'text-slate-500 dark:text-slate-400'}`}>
                       {tab.description}
                     </p>
                   </div>
@@ -2216,7 +2259,37 @@ export default function ProgramSettings() {
               </div>
             </div>
           )}
+
+          {/* Data Cleanup Shortcut under PWA Settings (Only visible to System Administrator) */}
+          {isAdminUser && (
+            <div className="pt-6 border-t border-slate-200 dark:border-slate-800">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl border border-rose-300 dark:border-rose-900/50 bg-rose-50/50 dark:bg-rose-950/20">
+                <div className="space-y-0.5">
+                  <div className="text-xs font-black text-rose-950 dark:text-rose-200 flex items-center gap-1.5">
+                    <Trash2 size={15} className="text-rose-600 dark:text-rose-400" />
+                    پاکسازی اطلاعات سامانه
+                  </div>
+                  <p className="text-[11px] text-rose-800/80 dark:text-rose-300/80">
+                    حذف تمامی اطلاعات تراکنش‌ها و کلیه حساب‌ها با قابلیت نگهداری و بازگشت ۳۰ روزه
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('data_cleanup')}
+                  className="px-4 py-2 text-xs font-bold rounded-xl bg-rose-600 hover:bg-rose-700 text-white shadow-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                >
+                  <Trash2 size={14} />
+                  <span>پاکسازی اطلاعات</span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
+      )}
+
+      {/* TAB: Data Cleanup */}
+      {activeTab === 'data_cleanup' && (
+        <DataCleanupSettings currentUserRole={currentUserRole} />
       )}
 
           {/* Save Button for Settings */}

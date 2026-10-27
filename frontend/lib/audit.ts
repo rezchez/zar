@@ -52,7 +52,10 @@ export type AuditEvent =
   | 'refining_sample_received'
   | 'refining_fee_recorded'
   | 'refining_status_changed'
-  | 'conditional_purity_settled';
+  | 'conditional_purity_settled'
+  | 'data_cleanup_executed'
+  | 'data_cleanup_restored'
+  | 'data_cleanup_failed';
 
 export function getRequestMetadata(request?: Request) {
   if (!request || !request.headers) {

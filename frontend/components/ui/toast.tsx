@@ -93,6 +93,7 @@ export interface ToastManager<T = ToastData> {
 }
 
 const ToastContext = React.createContext<ToastManager | null>(null);
+const ToastStateContext = React.createContext<ToastObject[]>([]);
 
 export interface ToastProviderProps {
   children: React.ReactNode;
@@ -106,19 +107,25 @@ export function ToastProvider({
   limit = 5,
 }: ToastProviderProps) {
   const [toasts, setToasts] = React.useState<ToastObject[]>([]);
+  const toastsRef = React.useRef(toasts);
+  toastsRef.current = toasts;
 
   const close = React.useCallback((id: string) => {
+    let callbackToCall: (() => void) | undefined;
     setToasts((prev) => {
       const target = prev.find((t) => t.id === id);
       if (target?.onClose) {
-        try {
-          target.onClose();
-        } catch {
-          // ignore
-        }
+        callbackToCall = target.onClose;
       }
       return prev.filter((t) => t.id !== id);
     });
+    if (callbackToCall) {
+      try {
+        callbackToCall();
+      } catch {
+        // ignore
+      }
+    }
   }, []);
 
   const dismissAll = React.useCallback(() => {
@@ -305,7 +312,9 @@ export function ToastProvider({
 
   const manager = React.useMemo<ToastManager>(
     () => ({
-      toasts,
+      get toasts() {
+        return toastsRef.current;
+      },
       add,
       update,
       close,
@@ -316,11 +325,15 @@ export function ToastProvider({
       warning,
       info,
     }),
-    [toasts, add, update, close, dismissAll, promise, success, error, warning, info]
+    [add, update, close, dismissAll, promise, success, error, warning, info]
   );
 
   return (
-    <ToastContext.Provider value={manager}>{children}</ToastContext.Provider>
+    <ToastContext.Provider value={manager}>
+      <ToastStateContext.Provider value={toasts}>
+        {children}
+      </ToastStateContext.Provider>
+    </ToastContext.Provider>
   );
 }
 
@@ -381,7 +394,8 @@ export function Toaster({
   timeout = 5000,
   className = '',
 }: ToasterProps) {
-  const { toasts, close } = useToastManager();
+  const { close } = useToastManager();
+  const toasts = React.useContext(ToastStateContext);
 
   const positionClasses: Record<ToastPosition, string> = {
     'top-left': 'top-4 left-4 items-start',
@@ -434,13 +448,18 @@ function ToastItem({
   const effectiveTimeout =
     typeof toast.timeout === 'number' ? toast.timeout : defaultTimeout;
 
+  const onCloseRef = React.useRef(onClose);
+  React.useEffect(() => {
+    onCloseRef.current = onClose;
+  });
+
   React.useEffect(() => {
     if (effectiveTimeout <= 0) return;
     const timer = setTimeout(() => {
-      onClose();
+      onCloseRef.current();
     }, effectiveTimeout);
     return () => clearTimeout(timer);
-  }, [effectiveTimeout, onClose]);
+  }, [effectiveTimeout]);
 
   const rawIcon = toast.data?.icon;
   const renderIcon = () => {

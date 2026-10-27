@@ -1,0 +1,30 @@
+{
+  "cleanupId": "cleanup_1793106323804",
+  "filename": "cleanup_1793106323804.json.gz",
+  "purgedAt": "2026-10-27T13:05:23.804Z",
+  "purgedAtJalali": "1405/08/06 16:35",
+  "expiresAt": "2026-11-26T13:05:23.804Z",
+  "expiresAtJalali": "1405/09/06 16:35",
+  "retentionDays": 30,
+  "status": "retained",
+  "purgedBy": {
+    "id": "admin",
+    "name": "مدیر سیستم"
+  },
+  "counts": {
+    "gemstone_inventory_transactions": 0,
+    "journal_lines": 19173,
+    "journal_entries": 9585,
+    "cash_transactions": 9,
+    "bank_transactions": 288,
+    "checks": 5,
+    "transactions": 7,
+    "favorite_customers": 5,
+    "customers": 633,
+    "bank_accounts": 8,
+    "cash_funds": 3,
+    "chart_of_accounts": 10
+  },
+  "totalTransactionsCount": 29067,
+  "totalAccountsCount": 654
+}

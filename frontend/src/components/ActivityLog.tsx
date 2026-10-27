@@ -63,6 +63,9 @@ const eventOptions = [
   ['print_template_updated', 'ویرایش قالب چاپ'],
   ['print_template_deleted', 'حذف قالب چاپ'],
   ['activity_log_cleaned', 'پاک‌سازی لاگ‌های قدیمی'],
+  ['data_cleanup_executed', 'پاکسازی اطلاعات سامانه'],
+  ['data_cleanup_restored', 'بازگردانی اطلاعات پاکسازی‌شده'],
+  ['data_cleanup_failed', 'خطا در پاکسازی اطلاعات'],
 ];
 
 const PER_PAGE_OPTIONS = [25, 50, 75, 100, 500];

@@ -17,7 +17,7 @@ export default async function SettingsPage() {
   return (
     <DashboardShell user={context.user}>
       <Suspense fallback={<div className="p-8 text-center text-sm text-slate-500">در حال بارگذاری تنظیمات...</div>}>
-        <ProgramSettings />
+        <ProgramSettings currentUserRole={context.user.role} />
       </Suspense>
     </DashboardShell>
   );

@@ -42,7 +42,10 @@ export type AuditEvent =
   | 'backup_validated'
   | 'backup_restored'
   | 'backup_deleted'
-  | 'backup_failed';
+  | 'backup_failed'
+  | 'data_cleanup_executed'
+  | 'data_cleanup_restored'
+  | 'data_cleanup_failed';
 
 export function getRequestMetadata(request?: Request) {
   if (!request || !request.headers) {
