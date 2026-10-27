@@ -681,10 +681,10 @@ export default function ProgramSettings({ currentUserRole }: ProgramSettingsProp
                   className={`w-full flex items-start gap-3 p-3 rounded-xl text-right transition-all group cursor-pointer ${
                     isActive
                       ? isDanger
-                        ? 'bg-red-700 text-white border border-red-800 shadow-md ring-2 ring-red-400/50'
+                        ? 'bg-rose-500/15 text-rose-950 dark:text-rose-200 border border-rose-500/30 shadow-xs ring-1 ring-rose-500/30'
                         : 'bg-amber-500/15 text-amber-900 dark:text-amber-300 border border-amber-500/30 shadow-xs'
                       : isDanger
-                      ? 'bg-red-600 hover:bg-red-700 text-white border border-red-700 shadow-sm'
+                      ? 'text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-transparent'
                       : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/70 border border-transparent'
                   }`}
                 >
@@ -692,10 +692,10 @@ export default function ProgramSettings({ currentUserRole }: ProgramSettingsProp
                     className={`p-2 rounded-lg shrink-0 transition-colors ${
                       isActive
                         ? isDanger
-                          ? 'bg-white/25 text-white shadow-sm'
+                          ? 'bg-rose-600 text-white shadow-xs'
                           : 'bg-amber-500 text-slate-950 shadow-sm'
                         : isDanger
-                        ? 'bg-white/20 text-white group-hover:bg-white/30'
+                        ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 group-hover:bg-rose-200/70 dark:group-hover:bg-rose-900/60'
                         : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 group-hover:text-amber-500 dark:group-hover:text-amber-400'
                     }`}
                   >
@@ -703,11 +703,27 @@ export default function ProgramSettings({ currentUserRole }: ProgramSettingsProp
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
-                      <span className={`text-xs font-black truncate ${isDanger ? 'text-white' : isActive ? 'text-amber-900 dark:text-amber-200' : 'text-slate-800 dark:text-slate-200'}`}>
+                      <span className={`text-xs font-black truncate ${
+                        isActive
+                          ? isDanger
+                            ? 'text-rose-950 dark:text-rose-100'
+                            : 'text-amber-900 dark:text-amber-200'
+                          : isDanger
+                          ? 'text-rose-800 dark:text-rose-300'
+                          : 'text-slate-800 dark:text-slate-200'
+                      }`}>
                         {tab.label}
                       </span>
                     </div>
-                    <p className={`text-[11px] mt-0.5 line-clamp-2 leading-relaxed ${isDanger ? 'text-red-100' : isActive ? 'text-amber-700/80 dark:text-amber-400/80 font-medium' : 'text-slate-500 dark:text-slate-400'}`}>
+                    <p className={`text-[11px] mt-0.5 line-clamp-2 leading-relaxed ${
+                      isActive
+                        ? isDanger
+                          ? 'text-rose-800/90 dark:text-rose-300/80 font-medium'
+                          : 'text-amber-700/80 dark:text-amber-400/80 font-medium'
+                        : isDanger
+                        ? 'text-rose-600/80 dark:text-rose-400/80'
+                        : 'text-slate-500 dark:text-slate-400'
+                    }`}>
                       {tab.description}
                     </p>
                   </div>
@@ -2262,21 +2278,21 @@ export default function ProgramSettings({ currentUserRole }: ProgramSettingsProp
 
           {/* Data Cleanup Shortcut under PWA Settings (Only visible to System Administrator) */}
           {isAdminUser && (
-            <div className="pt-6 border-t border-slate-200 dark:border-slate-800">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl border border-rose-300 dark:border-rose-900/50 bg-rose-50/50 dark:bg-rose-950/20">
-                <div className="space-y-0.5">
+            <div className="pt-6 border-t-2 border-slate-200 dark:border-slate-800">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl border-2 border-rose-300 dark:border-rose-900/50 bg-rose-100/70 dark:bg-rose-950/20 shadow-xs">
+                <div className="space-y-1">
                   <div className="text-xs font-black text-rose-950 dark:text-rose-200 flex items-center gap-1.5">
-                    <Trash2 size={15} className="text-rose-600 dark:text-rose-400" />
+                    <Trash2 size={16} className="text-rose-700 dark:text-rose-400" />
                     پاکسازی اطلاعات سامانه
                   </div>
-                  <p className="text-[11px] text-rose-800/80 dark:text-rose-300/80">
+                  <p className="text-xs font-bold text-rose-950 dark:text-rose-300">
                     حذف تمامی اطلاعات تراکنش‌ها و کلیه حساب‌ها با قابلیت نگهداری و بازگشت ۳۰ روزه
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setActiveTab('data_cleanup')}
-                  className="px-4 py-2 text-xs font-bold rounded-xl bg-rose-600 hover:bg-rose-700 text-white shadow-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                  className="px-4 py-2 text-xs font-black rounded-xl bg-rose-700 hover:bg-rose-800 text-white shadow-sm flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0"
                 >
                   <Trash2 size={14} />
                   <span>پاکسازی اطلاعات</span>

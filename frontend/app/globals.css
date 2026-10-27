@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *, .dark, .dark *));
+
 @font-face {
   font-family: "Vazirmatn";
   src: url("/fonts/vazirmatn/Vazirmatn-Regular.ttf") format("truetype");
@@ -97,6 +99,11 @@
 html,
 body {
   min-height: 100%;
+}
+
+html {
+  background-color: var(--background);
+  color: var(--foreground);
 }
 
 body {

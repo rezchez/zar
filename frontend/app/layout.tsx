@@ -38,6 +38,11 @@ export default async function RootLayout({
   return (
     <html lang="fa" dir="rtl" suppressHydrationWarning>
       <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var m=localStorage.getItem('zarfolio-theme')||'system';var d=m==='dark'||(m==='system'&&window.matchMedia('(prefers-color-scheme:dark)').matches);var r=document.documentElement;if(d){r.classList.add('dark');r.setAttribute('data-theme','dark');r.style.colorScheme='dark';}else{r.classList.remove('dark');r.setAttribute('data-theme','light');r.style.colorScheme='light';}}catch(e){}})();`,
+          }}
+        />
         <meta name="color-scheme" content="dark light" />
         <meta name="theme-color" content={settings.pwaThemeColor || '#1e293b'} />
         {isPwaEnabled && <link rel="apple-touch-icon" href="/favicon.ico" />}
