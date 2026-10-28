@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import {
   RefreshCw,
@@ -18,6 +18,10 @@ import {
   CreditCard,
   Percent,
   Layers,
+  RotateCcw,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
 } from 'lucide-react';
 import { currencyDisplay } from '@/lib/customer';
 import {
@@ -58,6 +62,152 @@ const CATEGORY_TABS = [
   { id: 'discount', label: 'تخفیف', icon: Percent },
 ];
 
+export type CustomerLedgerColumnKey =
+  | 'rowNumber'
+  | 'date'
+  | 'docNumber'
+  | 'type'
+  | 'description'
+  | 'goldDebtor'
+  | 'goldCreditor'
+  | 'goldBalance'
+  | 'rialDebtor'
+  | 'rialCreditor'
+  | 'rialBalance'
+  | 'details';
+
+export const DEFAULT_CUSTOMER_LEDGER_WIDTHS: Record<CustomerLedgerColumnKey, number> = {
+  rowNumber: 45,
+  date: 120,
+  docNumber: 110,
+  type: 140,
+  description: 230,
+  goldDebtor: 120,
+  goldCreditor: 120,
+  goldBalance: 135,
+  rialDebtor: 135,
+  rialCreditor: 135,
+  rialBalance: 145,
+  details: 65,
+};
+
+export const MIN_CUSTOMER_LEDGER_WIDTHS: Record<CustomerLedgerColumnKey, number> = {
+  rowNumber: 35,
+  date: 85,
+  docNumber: 75,
+  type: 90,
+  description: 130,
+  goldDebtor: 80,
+  goldCreditor: 80,
+  goldBalance: 90,
+  rialDebtor: 85,
+  rialCreditor: 85,
+  rialBalance: 95,
+  details: 50,
+};
+
+export const STORAGE_KEY_CUSTOMER_LEDGER = 'zarfolio_customer_tx_col_widths';
+
+export const CUSTOMER_LEDGER_COLUMNS: CustomerLedgerColumnKey[] = [
+  'rowNumber',
+  'date',
+  'docNumber',
+  'type',
+  'description',
+  'goldDebtor',
+  'goldCreditor',
+  'goldBalance',
+  'rialDebtor',
+  'rialCreditor',
+  'rialBalance',
+  'details',
+];
+
+interface SortableHeaderProps {
+  column: CustomerLedgerColumnKey;
+  currentSort: { column: CustomerLedgerColumnKey; direction: 'asc' | 'desc' } | null;
+  onSort: (column: CustomerLedgerColumnKey) => void;
+  children: React.ReactNode;
+  align?: 'center' | 'right' | 'left';
+  className?: string;
+  title?: string;
+}
+
+function SortableHeader({
+  column,
+  currentSort,
+  onSort,
+  children,
+  align = 'center',
+  className = '',
+  title,
+}: SortableHeaderProps) {
+  const isActive = currentSort?.column === column;
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(column)}
+      className={`group/sort flex items-center gap-1 w-full text-xs font-bold transition-colors select-none cursor-pointer ${
+        align === 'center'
+          ? 'justify-center'
+          : align === 'left'
+          ? 'justify-end flex-row-reverse'
+          : 'justify-start'
+      } ${
+        isActive
+          ? 'text-amber-600 dark:text-amber-400 font-extrabold'
+          : 'text-slate-700 dark:text-slate-300 hover:text-amber-600 dark:hover:text-amber-400'
+      } ${className}`}
+      title={title || 'برای مرتب‌سازی کلیک کنید'}
+    >
+      <span className="truncate">{children}</span>
+      <span className="shrink-0 text-slate-400 group-hover/sort:text-amber-500">
+        {isActive ? (
+          currentSort.direction === 'asc' ? (
+            <ArrowUp size={12} className="text-amber-600 dark:text-amber-400 stroke-[2.5]" />
+          ) : (
+            <ArrowDown size={12} className="text-amber-600 dark:text-amber-400 stroke-[2.5]" />
+          )
+        ) : (
+          <ArrowUpDown size={11} className="opacity-0 group-hover/sort:opacity-70 transition-opacity" />
+        )}
+      </span>
+    </button>
+  );
+}
+
+interface ColumnResizerProps {
+  colKey: CustomerLedgerColumnKey;
+  onResizeStart: (
+    colKey: CustomerLedgerColumnKey,
+    e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>,
+  ) => void;
+  onReset: (colKey: CustomerLedgerColumnKey, e: React.MouseEvent) => void;
+  isResizing: boolean;
+}
+
+function ColumnResizer({ colKey, onResizeStart, onReset, isResizing }: ColumnResizerProps) {
+  return (
+    <div
+      onMouseDown={(e) => onResizeStart(colKey, e)}
+      onTouchStart={(e) => onResizeStart(colKey, e)}
+      onDoubleClick={(e) => onReset(colKey, e)}
+      className={`absolute top-0 bottom-0 left-0 w-3 -translate-x-1/2 cursor-col-resize select-none touch-none z-30 flex items-center justify-center group/resizer ${
+        isResizing ? 'bg-amber-400/20' : ''
+      }`}
+      title="برای تغییر عرض ستون بکشید (دوبار کلیک برای بازنشانی)"
+    >
+      <div
+        className={`w-[2.5px] h-3/5 rounded-full transition-colors ${
+          isResizing
+            ? 'bg-amber-500 ring-2 ring-amber-400/40'
+            : 'bg-transparent group-hover/resizer:bg-amber-500/80'
+        }`}
+      />
+    </div>
+  );
+}
+
 export default function CustomerTransactionLedger({
   customerId,
   initialTransactions,
@@ -74,6 +224,136 @@ export default function CustomerTransactionLedger({
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 50;
+
+  const [sortState, setSortState] = useState<{
+    column: CustomerLedgerColumnKey;
+    direction: 'asc' | 'desc';
+  } | null>(null);
+
+  const [columnWidths, setColumnWidths] = useState<Record<CustomerLedgerColumnKey, number>>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem(STORAGE_KEY_CUSTOMER_LEDGER);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed && typeof parsed === 'object') {
+            return { ...DEFAULT_CUSTOMER_LEDGER_WIDTHS, ...parsed };
+          }
+        }
+      } catch {}
+    }
+    return DEFAULT_CUSTOMER_LEDGER_WIDTHS;
+  });
+
+  const latestWidthsRef = useRef(columnWidths);
+  latestWidthsRef.current = columnWidths;
+  const [resizingCol, setResizingCol] = useState<CustomerLedgerColumnKey | null>(null);
+
+  const hasCustomWidths = useMemo(() => {
+    return (Object.keys(DEFAULT_CUSTOMER_LEDGER_WIDTHS) as CustomerLedgerColumnKey[]).some(
+      (k) => columnWidths[k] !== DEFAULT_CUSTOMER_LEDGER_WIDTHS[k],
+    );
+  }, [columnWidths]);
+
+  const totalTableWidth = useMemo(() => {
+    return CUSTOMER_LEDGER_COLUMNS.reduce(
+      (sum, col) => sum + (columnWidths[col] ?? DEFAULT_CUSTOMER_LEDGER_WIDTHS[col]),
+      0,
+    );
+  }, [columnWidths]);
+
+  const handleResizeStart = (
+    colKey: CustomerLedgerColumnKey,
+    e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>,
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const startX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const startWidth = latestWidthsRef.current[colKey] ?? DEFAULT_CUSTOMER_LEDGER_WIDTHS[colKey];
+    const isRtl =
+      typeof document !== 'undefined'
+        ? document.documentElement.dir === 'rtl' ||
+          document.body.dir === 'rtl' ||
+          window.getComputedStyle(document.body).direction === 'rtl'
+        : true;
+
+    setResizingCol(colKey);
+
+    const handlePointerMove = (moveEvt: MouseEvent | TouchEvent) => {
+      const currentX =
+        'touches' in moveEvt
+          ? moveEvt.touches[0].clientX
+          : (moveEvt as MouseEvent).clientX;
+      const delta = isRtl ? startX - currentX : currentX - startX;
+      const minW = MIN_CUSTOMER_LEDGER_WIDTHS[colKey] ?? 40;
+      const newWidth = Math.max(minW, Math.round(startWidth + delta));
+
+      const updated = {
+        ...latestWidthsRef.current,
+        [colKey]: newWidth,
+      };
+      latestWidthsRef.current = updated;
+      setColumnWidths(updated);
+    };
+
+    const handlePointerUp = () => {
+      setResizingCol(null);
+      document.removeEventListener('mousemove', handlePointerMove);
+      document.removeEventListener('mouseup', handlePointerUp);
+      document.removeEventListener('touchmove', handlePointerMove);
+      document.removeEventListener('touchend', handlePointerUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+
+      try {
+        localStorage.setItem(STORAGE_KEY_CUSTOMER_LEDGER, JSON.stringify(latestWidthsRef.current));
+      } catch {}
+    };
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', handlePointerMove);
+    document.addEventListener('mouseup', handlePointerUp);
+    document.addEventListener('touchmove', handlePointerMove);
+    document.addEventListener('touchend', handlePointerUp);
+  };
+
+  const handleResetColumnWidth = (colKey: CustomerLedgerColumnKey, e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    const updated = {
+      ...latestWidthsRef.current,
+      [colKey]: DEFAULT_CUSTOMER_LEDGER_WIDTHS[colKey],
+    };
+    latestWidthsRef.current = updated;
+    setColumnWidths(updated);
+    try {
+      localStorage.setItem(STORAGE_KEY_CUSTOMER_LEDGER, JSON.stringify(updated));
+    } catch {}
+  };
+
+  const handleResetAllWidths = () => {
+    latestWidthsRef.current = DEFAULT_CUSTOMER_LEDGER_WIDTHS;
+    setColumnWidths(DEFAULT_CUSTOMER_LEDGER_WIDTHS);
+    try {
+      localStorage.removeItem(STORAGE_KEY_CUSTOMER_LEDGER);
+    } catch {}
+  };
+
+  const handleSort = (column: CustomerLedgerColumnKey) => {
+    setSortState((prev) => {
+      if (prev?.column === column) {
+        if (prev.direction === 'asc') {
+          return { column, direction: 'desc' };
+        }
+        return null;
+      }
+      return { column, direction: 'asc' };
+    });
+  };
 
   const baseCurrencySymbol = settings.baseCurrency === 'IRT' ? 'تومان' : 'ریال';
 
@@ -151,13 +431,12 @@ export default function CustomerTransactionLedger({
       };
     });
 
-    // Default to show latest on top in the customer view, but preserve the calculated running balance
-    return mapped.reverse();
+    return mapped;
   }, [transactions]);
 
-  // Filtered rows
+  // Filtered and Sorted rows
   const filteredRows = useMemo(() => {
-    return enrichedRows.filter((row) => {
+    let rows = enrichedRows.filter((row) => {
       // Category filter
       if (activeCategory !== 'all') {
         const tab = row.documentTab || '';
@@ -186,7 +465,71 @@ export default function CustomerTransactionLedger({
 
       return true;
     });
-  }, [enrichedRows, activeCategory, searchQuery]);
+
+    if (sortState) {
+      rows = [...rows].sort((a, b) => {
+        let valA: any;
+        let valB: any;
+        switch (sortState.column) {
+          case 'rowNumber':
+          case 'date':
+            valA = a.documentDateJalali || a.transactionDate || '';
+            valB = b.documentDateJalali || b.transactionDate || '';
+            break;
+          case 'docNumber':
+            valA = Number(a.documentNumber) || 0;
+            valB = Number(b.documentNumber) || 0;
+            break;
+          case 'type':
+            valA = a.documentSubType || a.transactionType || '';
+            valB = b.documentSubType || b.transactionType || '';
+            break;
+          case 'description':
+            valA = a.description || '';
+            valB = b.description || '';
+            break;
+          case 'goldDebtor':
+            valA = a.goldDebtor;
+            valB = b.goldDebtor;
+            break;
+          case 'goldCreditor':
+            valA = a.goldCreditor;
+            valB = b.goldCreditor;
+            break;
+          case 'goldBalance':
+            valA = a.runningGold;
+            valB = b.runningGold;
+            break;
+          case 'rialDebtor':
+            valA = a.rialDebtor;
+            valB = b.rialDebtor;
+            break;
+          case 'rialCreditor':
+            valA = a.rialCreditor;
+            valB = b.rialCreditor;
+            break;
+          case 'rialBalance':
+            valA = a.runningRial;
+            valB = b.runningRial;
+            break;
+          default:
+            valA = (a as any)[sortState.column] ?? '';
+            valB = (b as any)[sortState.column] ?? '';
+        }
+        let comp = 0;
+        if (typeof valA === 'number' && typeof valB === 'number') {
+          comp = valA - valB;
+        } else {
+          comp = String(valA ?? '').localeCompare(String(valB ?? ''), 'fa-IR', { numeric: true });
+        }
+        return sortState.direction === 'asc' ? comp : -comp;
+      });
+    } else {
+      rows = [...rows].reverse();
+    }
+
+    return rows;
+  }, [enrichedRows, activeCategory, searchQuery, sortState]);
 
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
   const safeCurrentPage = Math.min(currentPage, totalPages);
@@ -299,6 +642,18 @@ export default function CustomerTransactionLedger({
             </>
           )}
 
+          {hasCustomWidths && (
+            <button
+              type="button"
+              onClick={handleResetAllWidths}
+              className="dashboard-secondary-button flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 transition-all text-slate-700 dark:text-slate-200"
+              title="بازنشانی عرض ستون‌ها به حالت پیش‌فرض"
+            >
+              <RotateCcw size={14} className="text-amber-500" />
+              <span>بازنشانی عرض‌ها</span>
+            </button>
+          )}
+
           <button
             type="button"
             className="dashboard-secondary-button flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg"
@@ -392,21 +747,182 @@ export default function CustomerTransactionLedger({
       {/* Transactions & Breakdown Table */}
       <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-xs bg-white dark:bg-slate-900">
         <div className="overflow-x-auto">
-          <table className="w-full text-xs text-right whitespace-nowrap">
-            <thead className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700 font-bold">
+          <table
+            className="w-full text-xs text-right whitespace-nowrap border-collapse table-fixed"
+            style={{ width: `${totalTableWidth}px`, minWidth: '100%' }}
+          >
+            <colgroup>
+              {CUSTOMER_LEDGER_COLUMNS.map((colKey) => (
+                <col
+                  key={colKey}
+                  style={{
+                    width: `${columnWidths[colKey] ?? DEFAULT_CUSTOMER_LEDGER_WIDTHS[colKey]}px`,
+                  }}
+                />
+              ))}
+            </colgroup>
+            <thead className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700 font-bold sticky top-0 z-20 shadow-2xs">
               <tr>
-                <th className="p-2.5 w-8 text-center">#</th>
-                <th className="p-2.5">تاریخ</th>
-                <th className="p-2.5">شماره سند</th>
-                <th className="p-2.5">نوع و قلم</th>
-                <th className="p-2.5 min-w-[160px]">شرح و جزئیات</th>
-                <th className="p-2.5 text-left">بدهکار طلا (g)</th>
-                <th className="p-2.5 text-left">بستانکار طلا (g)</th>
-                <th className="p-2.5 text-left bg-amber-500/5">مانده طلا (g)</th>
-                <th className="p-2.5 text-left">بدهکار مالی</th>
-                <th className="p-2.5 text-left">بستانکار مالی</th>
-                <th className="p-2.5 text-left bg-emerald-500/5">مانده مالی ({baseCurrencySymbol})</th>
-                <th className="p-2.5 text-center">جزئیات</th>
+                <th
+                  style={{ width: `${columnWidths.rowNumber}px` }}
+                  className="relative p-2.5 text-center select-none overflow-visible"
+                >
+                  <SortableHeader column="rowNumber" currentSort={sortState} onSort={handleSort} align="center">
+                    #
+                  </SortableHeader>
+                  <ColumnResizer
+                    colKey="rowNumber"
+                    onResizeStart={handleResizeStart}
+                    onReset={handleResetColumnWidth}
+                    isResizing={resizingCol === 'rowNumber'}
+                  />
+                </th>
+                <th
+                  style={{ width: `${columnWidths.date}px` }}
+                  className="relative p-2.5 border-r border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
+                >
+                  <SortableHeader column="date" currentSort={sortState} onSort={handleSort} align="right">
+                    تاریخ
+                  </SortableHeader>
+                  <ColumnResizer
+                    colKey="date"
+                    onResizeStart={handleResizeStart}
+                    onReset={handleResetColumnWidth}
+                    isResizing={resizingCol === 'date'}
+                  />
+                </th>
+                <th
+                  style={{ width: `${columnWidths.docNumber}px` }}
+                  className="relative p-2.5 border-r border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
+                >
+                  <SortableHeader column="docNumber" currentSort={sortState} onSort={handleSort} align="right">
+                    شماره سند
+                  </SortableHeader>
+                  <ColumnResizer
+                    colKey="docNumber"
+                    onResizeStart={handleResizeStart}
+                    onReset={handleResetColumnWidth}
+                    isResizing={resizingCol === 'docNumber'}
+                  />
+                </th>
+                <th
+                  style={{ width: `${columnWidths.type}px` }}
+                  className="relative p-2.5 border-r border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
+                >
+                  <SortableHeader column="type" currentSort={sortState} onSort={handleSort} align="right">
+                    نوع و قلم
+                  </SortableHeader>
+                  <ColumnResizer
+                    colKey="type"
+                    onResizeStart={handleResizeStart}
+                    onReset={handleResetColumnWidth}
+                    isResizing={resizingCol === 'type'}
+                  />
+                </th>
+                <th
+                  style={{ width: `${columnWidths.description}px` }}
+                  className="relative p-2.5 border-r border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
+                >
+                  <SortableHeader column="description" currentSort={sortState} onSort={handleSort} align="right">
+                    شرح و جزئیات
+                  </SortableHeader>
+                  <ColumnResizer
+                    colKey="description"
+                    onResizeStart={handleResizeStart}
+                    onReset={handleResetColumnWidth}
+                    isResizing={resizingCol === 'description'}
+                  />
+                </th>
+                <th
+                  style={{ width: `${columnWidths.goldDebtor}px` }}
+                  className="relative p-2.5 text-left border-r border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
+                >
+                  <SortableHeader column="goldDebtor" currentSort={sortState} onSort={handleSort} align="left">
+                    بدهکار طلا (g)
+                  </SortableHeader>
+                  <ColumnResizer
+                    colKey="goldDebtor"
+                    onResizeStart={handleResizeStart}
+                    onReset={handleResetColumnWidth}
+                    isResizing={resizingCol === 'goldDebtor'}
+                  />
+                </th>
+                <th
+                  style={{ width: `${columnWidths.goldCreditor}px` }}
+                  className="relative p-2.5 text-left border-r border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
+                >
+                  <SortableHeader column="goldCreditor" currentSort={sortState} onSort={handleSort} align="left">
+                    بستانکار طلا (g)
+                  </SortableHeader>
+                  <ColumnResizer
+                    colKey="goldCreditor"
+                    onResizeStart={handleResizeStart}
+                    onReset={handleResetColumnWidth}
+                    isResizing={resizingCol === 'goldCreditor'}
+                  />
+                </th>
+                <th
+                  style={{ width: `${columnWidths.goldBalance}px` }}
+                  className="relative p-2.5 text-left bg-amber-500/10 dark:bg-amber-950/30 font-black border-r border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
+                >
+                  <SortableHeader column="goldBalance" currentSort={sortState} onSort={handleSort} align="left">
+                    مانده طلا (g)
+                  </SortableHeader>
+                  <ColumnResizer
+                    colKey="goldBalance"
+                    onResizeStart={handleResizeStart}
+                    onReset={handleResetColumnWidth}
+                    isResizing={resizingCol === 'goldBalance'}
+                  />
+                </th>
+                <th
+                  style={{ width: `${columnWidths.rialDebtor}px` }}
+                  className="relative p-2.5 text-left border-r border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
+                >
+                  <SortableHeader column="rialDebtor" currentSort={sortState} onSort={handleSort} align="left">
+                    بدهکار مالی
+                  </SortableHeader>
+                  <ColumnResizer
+                    colKey="rialDebtor"
+                    onResizeStart={handleResizeStart}
+                    onReset={handleResetColumnWidth}
+                    isResizing={resizingCol === 'rialDebtor'}
+                  />
+                </th>
+                <th
+                  style={{ width: `${columnWidths.rialCreditor}px` }}
+                  className="relative p-2.5 text-left border-r border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
+                >
+                  <SortableHeader column="rialCreditor" currentSort={sortState} onSort={handleSort} align="left">
+                    بستانکار مالی
+                  </SortableHeader>
+                  <ColumnResizer
+                    colKey="rialCreditor"
+                    onResizeStart={handleResizeStart}
+                    onReset={handleResetColumnWidth}
+                    isResizing={resizingCol === 'rialCreditor'}
+                  />
+                </th>
+                <th
+                  style={{ width: `${columnWidths.rialBalance}px` }}
+                  className="relative p-2.5 text-left bg-emerald-500/10 dark:bg-emerald-950/30 font-black border-r border-slate-200/60 dark:border-slate-700/60 select-none overflow-visible"
+                >
+                  <SortableHeader column="rialBalance" currentSort={sortState} onSort={handleSort} align="left">
+                    مانده مالی ({baseCurrencySymbol})
+                  </SortableHeader>
+                  <ColumnResizer
+                    colKey="rialBalance"
+                    onResizeStart={handleResizeStart}
+                    onReset={handleResetColumnWidth}
+                    isResizing={resizingCol === 'rialBalance'}
+                  />
+                </th>
+                <th
+                  style={{ width: `${columnWidths.details}px` }}
+                  className="p-2.5 text-center border-r border-slate-200/60 dark:border-slate-700/60"
+                >
+                  جزئیات
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">

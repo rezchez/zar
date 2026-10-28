@@ -38,6 +38,10 @@ import {
   SlidersHorizontal,
   ChevronsUpDown,
   Columns3,
+  RotateCcw,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
 } from 'lucide-react';
 import type { Customer } from '@/lib/customer';
 import type { CustomerTransaction } from '@/lib/transaction';
@@ -133,6 +137,8 @@ export type ColumnVisibility = {
   rialBalance: boolean;
   actions: boolean;
 };
+
+export type ColumnKey = keyof ColumnVisibility;
 
 const DEFAULT_COLUMNS: ColumnVisibility = {
   rowNumber: true,
@@ -277,6 +283,197 @@ const badgeStyles: Record<string, string> = {
   slate: 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border-slate-300 dark:border-slate-700',
 };
 
+export const DEFAULT_COLUMN_WIDTHS: Record<keyof ColumnVisibility, number> = {
+  rowNumber: 45,
+  date: 125,
+  docNumber: 110,
+  customer: 155,
+  journalLine: 155,
+  description: 240,
+  stampNumber: 95,
+  assayLab: 130,
+  rawWeight: 115,
+  purity: 75,
+  checkDetails: 150,
+  bankDetails: 150,
+  foreignCurrency: 110,
+  goldDebtor: 120,
+  goldCreditor: 120,
+  goldBalance: 135,
+  rialDebtor: 135,
+  rialCreditor: 135,
+  rialBalance: 145,
+  actions: 65,
+};
+
+export const MIN_COLUMN_WIDTHS: Record<keyof ColumnVisibility, number> = {
+  rowNumber: 35,
+  date: 85,
+  docNumber: 75,
+  customer: 90,
+  journalLine: 95,
+  description: 120,
+  stampNumber: 65,
+  assayLab: 75,
+  rawWeight: 75,
+  purity: 50,
+  checkDetails: 90,
+  bankDetails: 90,
+  foreignCurrency: 75,
+  goldDebtor: 80,
+  goldCreditor: 80,
+  goldBalance: 90,
+  rialDebtor: 85,
+  rialCreditor: 85,
+  rialBalance: 95,
+  actions: 50,
+};
+
+export const STORAGE_KEY_WIDTHS = 'zarfolio_ledger_col_widths';
+
+export function getLedgerSortValue(row: any, column: string): string | number {
+  switch (column) {
+    case 'rowNumber':
+    case 'date':
+      return row.documentDateJalali || row.transactionDate || '';
+    case 'docNumber':
+      return Number(row.documentNumber) || 0;
+    case 'customer':
+      return row.customerName || row.customer || '';
+    case 'journalLine': {
+      const jBadge = row.journalLine || getJournalLineBadge(row);
+      return jBadge?.title || row.transactionType || '';
+    }
+    case 'description':
+      return row.description || '';
+    case 'stampNumber': {
+      const extra = row.extra || getRowExtraDetails(row);
+      return extra?.stampNumber || '';
+    }
+    case 'assayLab': {
+      const extra = row.extra || getRowExtraDetails(row);
+      return extra?.assayLab || '';
+    }
+    case 'rawWeight': {
+      const extra = row.extra || getRowExtraDetails(row);
+      return Number(extra?.rawWeight || 0);
+    }
+    case 'purity': {
+      const extra = row.extra || getRowExtraDetails(row);
+      return Number(extra?.purity || 0);
+    }
+    case 'checkDetails': {
+      const extra = row.extra || getRowExtraDetails(row);
+      return extra?.checkDetails || '';
+    }
+    case 'bankDetails': {
+      const extra = row.extra || getRowExtraDetails(row);
+      return extra?.bankDetails || '';
+    }
+    case 'foreignCurrency':
+      return Math.abs(Number(row.currencyAmount || 0));
+    case 'goldDebtor':
+      return Number(row.goldDebtor || 0);
+    case 'goldCreditor':
+      return Number(row.goldCreditor || 0);
+    case 'goldBalance':
+      return Number(row.runningGold || 0);
+    case 'rialDebtor':
+      return Number(row.rialDebtor || 0);
+    case 'rialCreditor':
+      return Number(row.rialCreditor || 0);
+    case 'rialBalance':
+      return Number(row.runningRial || 0);
+    default:
+      return row[column] ?? '';
+  }
+}
+
+interface SortableHeaderProps {
+  column: string;
+  currentSort: { column: string; direction: 'asc' | 'desc' } | null;
+  onSort: (column: string) => void;
+  children: React.ReactNode;
+  align?: 'center' | 'right' | 'left';
+  className?: string;
+  title?: string;
+}
+
+function SortableHeader({
+  column,
+  currentSort,
+  onSort,
+  children,
+  align = 'center',
+  className = '',
+  title,
+}: SortableHeaderProps) {
+  const isActive = currentSort?.column === column;
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(column)}
+      className={`group/sort flex items-center gap-1 w-full text-xs font-bold transition-colors select-none cursor-pointer ${
+        align === 'center'
+          ? 'justify-center'
+          : align === 'left'
+          ? 'justify-end flex-row-reverse'
+          : 'justify-start'
+      } ${
+        isActive
+          ? 'text-amber-600 dark:text-amber-400 font-extrabold'
+          : 'text-slate-700 dark:text-slate-200 hover:text-amber-600 dark:hover:text-amber-400'
+      } ${className}`}
+      title={title || 'برای مرتب‌سازی کلیک کنید'}
+    >
+      <span className="truncate">{children}</span>
+      <span className="shrink-0 text-slate-400 group-hover/sort:text-amber-500">
+        {isActive ? (
+          currentSort.direction === 'asc' ? (
+            <ArrowUp size={12} className="text-amber-600 dark:text-amber-400 stroke-[2.5]" />
+          ) : (
+            <ArrowDown size={12} className="text-amber-600 dark:text-amber-400 stroke-[2.5]" />
+          )
+        ) : (
+          <ArrowUpDown size={11} className="opacity-0 group-hover/sort:opacity-70 transition-opacity" />
+        )}
+      </span>
+    </button>
+  );
+}
+
+interface ColumnResizerProps {
+  colKey: keyof ColumnVisibility;
+  onResizeStart: (
+    colKey: keyof ColumnVisibility,
+    e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>,
+  ) => void;
+  onReset: (colKey: keyof ColumnVisibility, e: React.MouseEvent) => void;
+  isResizing: boolean;
+}
+
+function ColumnResizer({ colKey, onResizeStart, onReset, isResizing }: ColumnResizerProps) {
+  return (
+    <div
+      onMouseDown={(e) => onResizeStart(colKey, e)}
+      onTouchStart={(e) => onResizeStart(colKey, e)}
+      onDoubleClick={(e) => onReset(colKey, e)}
+      className={`absolute top-0 bottom-0 left-0 w-3 -translate-x-1/2 cursor-col-resize select-none touch-none z-30 flex items-center justify-center group/resizer ${
+        isResizing ? 'bg-amber-400/20' : ''
+      }`}
+      title="برای تغییر عرض ستون بکشید (دوبار کلیک برای بازنشانی)"
+    >
+      <div
+        className={`w-[2.5px] h-3/5 rounded-full transition-colors ${
+          isResizing
+            ? 'bg-amber-500 ring-2 ring-amber-400/40'
+            : 'bg-transparent group-hover/resizer:bg-amber-500/80'
+        }`}
+      />
+    </div>
+  );
+}
+
 export default function CustomerLedgerReport({
   availableCustomers,
 }: {
@@ -332,6 +529,132 @@ export default function CustomerLedgerReport({
       localStorage.removeItem('zarfolio_ledger_columns');
     } catch {}
   }
+
+  // Sort state for interactive header clicking
+  const [sortState, setSortState] = useState<{ column: string; direction: 'asc' | 'desc' } | null>({
+    column: 'date',
+    direction: 'asc',
+  });
+
+  // Column width resizing state with localStorage persistence
+  const [columnWidths, setColumnWidths] = useState<Record<keyof ColumnVisibility, number>>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem(STORAGE_KEY_WIDTHS);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed && typeof parsed === 'object') {
+            return { ...DEFAULT_COLUMN_WIDTHS, ...parsed };
+          }
+        }
+      } catch {}
+    }
+    return DEFAULT_COLUMN_WIDTHS;
+  });
+
+  const latestWidthsRef = useRef(columnWidths);
+  latestWidthsRef.current = columnWidths;
+  const [resizingCol, setResizingCol] = useState<string | null>(null);
+
+  const hasCustomWidths = useMemo(() => {
+    return (Object.keys(DEFAULT_COLUMN_WIDTHS) as (keyof ColumnVisibility)[]).some(
+      (k) => columnWidths[k] !== DEFAULT_COLUMN_WIDTHS[k],
+    );
+  }, [columnWidths]);
+
+  const handleResizeStart = (
+    colKey: keyof ColumnVisibility,
+    e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>,
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const startX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const startWidth = latestWidthsRef.current[colKey] ?? DEFAULT_COLUMN_WIDTHS[colKey];
+    const isRtl =
+      typeof document !== 'undefined'
+        ? document.documentElement.dir === 'rtl' ||
+          document.body.dir === 'rtl' ||
+          window.getComputedStyle(document.body).direction === 'rtl'
+        : true;
+
+    setResizingCol(colKey);
+
+    const handlePointerMove = (moveEvt: MouseEvent | TouchEvent) => {
+      const currentX =
+        'touches' in moveEvt
+          ? moveEvt.touches[0].clientX
+          : (moveEvt as MouseEvent).clientX;
+      const delta = isRtl ? startX - currentX : currentX - startX;
+      const minW = MIN_COLUMN_WIDTHS[colKey] ?? 40;
+      const newWidth = Math.max(minW, Math.round(startWidth + delta));
+
+      const updated = {
+        ...latestWidthsRef.current,
+        [colKey]: newWidth,
+      };
+      latestWidthsRef.current = updated;
+      setColumnWidths(updated);
+    };
+
+    const handlePointerUp = () => {
+      setResizingCol(null);
+      document.removeEventListener('mousemove', handlePointerMove);
+      document.removeEventListener('mouseup', handlePointerUp);
+      document.removeEventListener('touchmove', handlePointerMove);
+      document.removeEventListener('touchend', handlePointerUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+
+      try {
+        localStorage.setItem(STORAGE_KEY_WIDTHS, JSON.stringify(latestWidthsRef.current));
+      } catch {}
+    };
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', handlePointerMove);
+    document.addEventListener('mouseup', handlePointerUp);
+    document.addEventListener('touchmove', handlePointerMove);
+    document.addEventListener('touchend', handlePointerUp);
+  };
+
+  const handleResetColumnWidth = (colKey: keyof ColumnVisibility, e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    const updated = {
+      ...latestWidthsRef.current,
+      [colKey]: DEFAULT_COLUMN_WIDTHS[colKey],
+    };
+    latestWidthsRef.current = updated;
+    setColumnWidths(updated);
+    try {
+      localStorage.setItem(STORAGE_KEY_WIDTHS, JSON.stringify(updated));
+    } catch {}
+  };
+
+  const handleResetAllWidths = () => {
+    latestWidthsRef.current = DEFAULT_COLUMN_WIDTHS;
+    setColumnWidths(DEFAULT_COLUMN_WIDTHS);
+    try {
+      localStorage.removeItem(STORAGE_KEY_WIDTHS);
+    } catch {}
+  };
+
+  const handleHeaderSort = (columnKey: string) => {
+    setSortState((prev) => {
+      if (prev?.column === columnKey) {
+        const nextDir = prev.direction === 'asc' ? 'desc' : 'asc';
+        if (columnKey === 'date') setSortParam(nextDir === 'asc' ? 'date_asc' : 'date_desc');
+        return { column: columnKey, direction: nextDir };
+      }
+      if (columnKey === 'date') setSortParam('date_asc');
+      if (columnKey === 'docNumber') setSortParam('doc_num');
+      return { column: columnKey, direction: 'asc' };
+    });
+  };
 
   // Pagination state (critical for DOM performance)
   const [currentPage, setCurrentPage] = useState(1);
@@ -503,24 +826,7 @@ export default function CustomerLedgerReport({
       });
     }
 
-    const sorted = [...transactions];
-    if (sortParam === 'date_asc') {
-      sorted.sort((a, b) => {
-        const dateA = a.documentDateJalali || a.transactionDate || '';
-        const dateB = b.documentDateJalali || b.transactionDate || '';
-        return dateA.localeCompare(dateB);
-      });
-    } else if (sortParam === 'date_desc') {
-      sorted.sort((a, b) => {
-        const dateA = a.documentDateJalali || a.transactionDate || '';
-        const dateB = b.documentDateJalali || b.transactionDate || '';
-        return dateB.localeCompare(dateA);
-      });
-    } else if (sortParam === 'doc_num') {
-      sorted.sort((a, b) => (Number(b.documentNumber) || 0) - (Number(a.documentNumber) || 0));
-    }
-
-    return sorted.map((t) => {
+    const mapped = transactions.map((t) => {
       const calc = calculatedMap.get(t.id) || {
         runningGold: 0,
         runningRial: 0,
@@ -535,7 +841,37 @@ export default function CustomerLedgerReport({
         ...calc,
       };
     });
-  }, [transactions, openingBalances, sortParam]);
+
+    if (sortState) {
+      mapped.sort((a, b) => {
+        const valA = getLedgerSortValue(a, sortState.column);
+        const valB = getLedgerSortValue(b, sortState.column);
+        let comp = 0;
+        if (typeof valA === 'number' && typeof valB === 'number') {
+          comp = valA - valB;
+        } else {
+          comp = String(valA ?? '').localeCompare(String(valB ?? ''), 'fa-IR', { numeric: true });
+        }
+        return sortState.direction === 'asc' ? comp : -comp;
+      });
+    } else if (sortParam === 'date_asc') {
+      mapped.sort((a, b) => {
+        const dateA = a.documentDateJalali || a.transactionDate || '';
+        const dateB = b.documentDateJalali || b.transactionDate || '';
+        return dateA.localeCompare(dateB);
+      });
+    } else if (sortParam === 'date_desc') {
+      mapped.sort((a, b) => {
+        const dateA = a.documentDateJalali || a.transactionDate || '';
+        const dateB = b.documentDateJalali || b.transactionDate || '';
+        return dateB.localeCompare(dateA);
+      });
+    } else if (sortParam === 'doc_num') {
+      mapped.sort((a, b) => (Number(b.documentNumber) || 0) - (Number(a.documentNumber) || 0));
+    }
+
+    return mapped;
+  }, [transactions, openingBalances, sortState, sortParam]);
 
   // Dynamic counts for each category filter button
   const categoryCounts = useMemo(() => {
@@ -650,6 +986,38 @@ export default function CustomerLedgerReport({
     goldVisibleCount +
     rialVisibleCount +
     (visibleColumns.actions ? 1 : 0);
+
+  const leafColumns = useMemo(() => {
+    const cols: (keyof ColumnVisibility)[] = [];
+    if (visibleColumns.rowNumber) cols.push('rowNumber');
+    if (visibleColumns.date) cols.push('date');
+    if (visibleColumns.docNumber) cols.push('docNumber');
+    if (!customerId && visibleColumns.customer) cols.push('customer');
+    if (visibleColumns.journalLine) cols.push('journalLine');
+    if (visibleColumns.description) cols.push('description');
+    if (visibleColumns.stampNumber) cols.push('stampNumber');
+    if (visibleColumns.assayLab) cols.push('assayLab');
+    if (visibleColumns.rawWeight) cols.push('rawWeight');
+    if (visibleColumns.purity) cols.push('purity');
+    if (visibleColumns.checkDetails) cols.push('checkDetails');
+    if (visibleColumns.bankDetails) cols.push('bankDetails');
+    if (visibleColumns.foreignCurrency) cols.push('foreignCurrency');
+    if (visibleColumns.goldDebtor) cols.push('goldDebtor');
+    if (visibleColumns.goldCreditor) cols.push('goldCreditor');
+    if (visibleColumns.goldBalance) cols.push('goldBalance');
+    if (visibleColumns.rialDebtor) cols.push('rialDebtor');
+    if (visibleColumns.rialCreditor) cols.push('rialCreditor');
+    if (visibleColumns.rialBalance) cols.push('rialBalance');
+    if (visibleColumns.actions) cols.push('actions');
+    return cols;
+  }, [visibleColumns, customerId]);
+
+  const totalTableWidth = useMemo(() => {
+    return leafColumns.reduce(
+      (sum, col) => sum + (columnWidths[col] ?? DEFAULT_COLUMN_WIDTHS[col] ?? 100),
+      0,
+    );
+  }, [leafColumns, columnWidths]);
 
   function toggleRow(id: string) {
     setExpandedRows((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -1205,7 +1573,13 @@ export default function CustomerLedgerReport({
 
             <select
               value={sortParam}
-              onChange={(e) => setSortParam(e.target.value as any)}
+              onChange={(e) => {
+                const val = e.target.value as any;
+                setSortParam(val);
+                if (val === 'date_asc') setSortState({ column: 'date', direction: 'asc' });
+                else if (val === 'date_desc') setSortState({ column: 'date', direction: 'desc' });
+                else if (val === 'doc_num') setSortState({ column: 'docNumber', direction: 'desc' });
+              }}
               className="p-2 text-xs border rounded-xl bg-slate-50/70 dark:bg-slate-800/80 text-slate-900 dark:text-slate-100 border-slate-300 dark:border-slate-700 focus:ring-2 focus:ring-amber-500/30 font-medium"
             >
               <option value="date_asc">تاریخ (صعودی)</option>
@@ -1452,6 +1826,19 @@ export default function CustomerLedgerReport({
                 <span>تراکم فشرده</span>
               </button>
 
+              {/* Reset column widths button if custom widths are set */}
+              {hasCustomWidths && (
+                <button
+                  type="button"
+                  onClick={handleResetAllWidths}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-slate-50 transition-all font-medium text-[11px]"
+                  title="بازنشانی عرض ستون‌ها به حالت استاندارد"
+                >
+                  <RotateCcw size={12} />
+                  <span>بازنشانی عرض‌ها</span>
+                </button>
+              )}
+
               {/* Column Customizer Dropdown Popover */}
               <div className="relative" ref={columnPickerRef}>
                 <button
@@ -1475,13 +1862,24 @@ export default function CustomerLedgerReport({
                         <Columns3 size={14} className="text-amber-500" />
                         تنظیم ستون‌های جدول
                       </span>
-                      <button
-                        type="button"
-                        onClick={resetColumns}
-                        className="text-[11px] text-amber-600 hover:text-amber-700 dark:text-amber-400 font-bold hover:underline"
-                      >
-                        بازنشانی پیش‌فرض
-                      </button>
+                      <div className="flex items-center gap-2">
+                        {hasCustomWidths && (
+                          <button
+                            type="button"
+                            onClick={handleResetAllWidths}
+                            className="text-[11px] text-slate-500 hover:text-amber-600 dark:text-slate-400 font-bold hover:underline"
+                          >
+                            بازنشانی عرض‌ها
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={resetColumns}
+                          className="text-[11px] text-amber-600 hover:text-amber-700 dark:text-amber-400 font-bold hover:underline"
+                        >
+                          بازنشانی ستون‌ها
+                        </button>
+                      </div>
                     </div>
 
                     <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
@@ -1537,9 +1935,23 @@ export default function CustomerLedgerReport({
           <div className="border border-slate-300 dark:border-slate-700 rounded-2xl overflow-hidden shadow-sm bg-white dark:bg-slate-900">
             <div className="overflow-x-auto">
               <table
-                className="w-full text-xs text-right whitespace-nowrap border-collapse border border-slate-200 dark:border-slate-700/80 font-sans"
-                style={{ fontFamily: 'var(--app-font-body, "Vazirmatn", Tahoma, sans-serif)' }}
+                className="w-full text-xs text-right whitespace-nowrap border-collapse border border-slate-200 dark:border-slate-700/80 font-sans table-fixed"
+                style={{
+                  width: `${totalTableWidth}px`,
+                  minWidth: '100%',
+                  fontFamily: 'var(--app-font-body, "Vazirmatn", Tahoma, sans-serif)',
+                }}
               >
+                <colgroup>
+                  {leafColumns.map((colKey) => (
+                    <col
+                      key={colKey}
+                      style={{
+                        width: `${columnWidths[colKey] ?? DEFAULT_COLUMN_WIDTHS[colKey]}px`,
+                      }}
+                    />
+                  ))}
+                </colgroup>
                 
                 {/* 2-Tier Structured Header */}
                 <thead className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-bold sticky top-0 z-20 shadow-2xs">
@@ -1548,50 +1960,104 @@ export default function CustomerLedgerReport({
                     {visibleColumns.rowNumber && (
                       <th
                         rowSpan={goldVisibleCount > 0 || rialVisibleCount > 0 ? 2 : 1}
-                        className="p-2.5 w-10 text-center border-l border-slate-300 dark:border-slate-700 bg-slate-200/50 dark:bg-slate-800"
+                        style={{ width: `${columnWidths.rowNumber}px` }}
+                        className="relative p-2 text-center border-l border-slate-300 dark:border-slate-700 bg-slate-200/50 dark:bg-slate-800 select-none overflow-visible"
                       >
-                        #
+                        <SortableHeader column="rowNumber" currentSort={sortState} onSort={handleHeaderSort} align="center">
+                          #
+                        </SortableHeader>
+                        <ColumnResizer
+                          colKey="rowNumber"
+                          onResizeStart={handleResizeStart}
+                          onReset={handleResetColumnWidth}
+                          isResizing={resizingCol === 'rowNumber'}
+                        />
                       </th>
                     )}
                     {visibleColumns.date && (
                       <th
                         rowSpan={goldVisibleCount > 0 || rialVisibleCount > 0 ? 2 : 1}
-                        className="p-2.5 border-l border-slate-300 dark:border-slate-700"
+                        style={{ width: `${columnWidths.date}px` }}
+                        className="relative p-2 border-l border-slate-300 dark:border-slate-700 select-none overflow-visible"
                       >
-                        تاریخ و ساعت
+                        <SortableHeader column="date" currentSort={sortState} onSort={handleHeaderSort} align="right">
+                          تاریخ و ساعت
+                        </SortableHeader>
+                        <ColumnResizer
+                          colKey="date"
+                          onResizeStart={handleResizeStart}
+                          onReset={handleResetColumnWidth}
+                          isResizing={resizingCol === 'date'}
+                        />
                       </th>
                     )}
                     {visibleColumns.docNumber && (
                       <th
                         rowSpan={goldVisibleCount > 0 || rialVisibleCount > 0 ? 2 : 1}
-                        className="p-2.5 border-l border-slate-300 dark:border-slate-700"
+                        style={{ width: `${columnWidths.docNumber}px` }}
+                        className="relative p-2 border-l border-slate-300 dark:border-slate-700 select-none overflow-visible"
                       >
-                        شماره سند
+                        <SortableHeader column="docNumber" currentSort={sortState} onSort={handleHeaderSort} align="right">
+                          شماره سند
+                        </SortableHeader>
+                        <ColumnResizer
+                          colKey="docNumber"
+                          onResizeStart={handleResizeStart}
+                          onReset={handleResetColumnWidth}
+                          isResizing={resizingCol === 'docNumber'}
+                        />
                       </th>
                     )}
                     {!customerId && visibleColumns.customer && (
                       <th
                         rowSpan={goldVisibleCount > 0 || rialVisibleCount > 0 ? 2 : 1}
-                        className="p-2.5 border-l border-slate-300 dark:border-slate-700"
+                        style={{ width: `${columnWidths.customer}px` }}
+                        className="relative p-2 border-l border-slate-300 dark:border-slate-700 select-none overflow-visible"
                       >
-                        طرف‌حساب
+                        <SortableHeader column="customer" currentSort={sortState} onSort={handleHeaderSort} align="right">
+                          طرف‌حساب
+                        </SortableHeader>
+                        <ColumnResizer
+                          colKey="customer"
+                          onResizeStart={handleResizeStart}
+                          onReset={handleResetColumnWidth}
+                          isResizing={resizingCol === 'customer'}
+                        />
                       </th>
                     )}
                     {visibleColumns.journalLine && (
                       <th
                         rowSpan={goldVisibleCount > 0 || rialVisibleCount > 0 ? 2 : 1}
-                        className="p-2.5 border-l border-slate-300 dark:border-slate-700 whitespace-nowrap"
+                        style={{ width: `${columnWidths.journalLine}px` }}
+                        className="relative p-2 border-l border-slate-300 dark:border-slate-700 whitespace-nowrap select-none overflow-visible"
                         title="آرتیکل سند بر اساس سرفصل‌های استاندارد دفتر کل و معین حسابداری"
                       >
-                        آرتیکل سند
+                        <SortableHeader column="journalLine" currentSort={sortState} onSort={handleHeaderSort} align="right">
+                          آرتیکل سند
+                        </SortableHeader>
+                        <ColumnResizer
+                          colKey="journalLine"
+                          onResizeStart={handleResizeStart}
+                          onReset={handleResetColumnWidth}
+                          isResizing={resizingCol === 'journalLine'}
+                        />
                       </th>
                     )}
                     {visibleColumns.description && (
                       <th
                         rowSpan={goldVisibleCount > 0 || rialVisibleCount > 0 ? 2 : 1}
-                        className="p-2.5 min-w-[220px] border-l border-slate-300 dark:border-slate-700"
+                        style={{ width: `${columnWidths.description}px` }}
+                        className="relative p-2 border-l border-slate-300 dark:border-slate-700 select-none overflow-visible"
                       >
-                        شرح ردیف سند
+                        <SortableHeader column="description" currentSort={sortState} onSort={handleHeaderSort} align="right">
+                          شرح ردیف سند
+                        </SortableHeader>
+                        <ColumnResizer
+                          colKey="description"
+                          onResizeStart={handleResizeStart}
+                          onReset={handleResetColumnWidth}
+                          isResizing={resizingCol === 'description'}
+                        />
                       </th>
                     )}
 
@@ -1599,57 +2065,120 @@ export default function CustomerLedgerReport({
                     {visibleColumns.stampNumber && (
                       <th
                         rowSpan={goldVisibleCount > 0 || rialVisibleCount > 0 ? 2 : 1}
-                        className="p-2.5 border-l border-slate-300 dark:border-slate-700 tabular-nums"
+                        style={{ width: `${columnWidths.stampNumber}px` }}
+                        className="relative p-2 border-l border-slate-300 dark:border-slate-700 tabular-nums select-none overflow-visible"
                       >
-                        شماره انگ
+                        <SortableHeader column="stampNumber" currentSort={sortState} onSort={handleHeaderSort} align="right">
+                          شماره انگ
+                        </SortableHeader>
+                        <ColumnResizer
+                          colKey="stampNumber"
+                          onResizeStart={handleResizeStart}
+                          onReset={handleResetColumnWidth}
+                          isResizing={resizingCol === 'stampNumber'}
+                        />
                       </th>
                     )}
                     {visibleColumns.assayLab && (
                       <th
                         rowSpan={goldVisibleCount > 0 || rialVisibleCount > 0 ? 2 : 1}
-                        className="p-2.5 border-l border-slate-300 dark:border-slate-700"
+                        style={{ width: `${columnWidths.assayLab}px` }}
+                        className="relative p-2 border-l border-slate-300 dark:border-slate-700 select-none overflow-visible"
                       >
-                        آزمایشگاه ری‌گیری
+                        <SortableHeader column="assayLab" currentSort={sortState} onSort={handleHeaderSort} align="right">
+                          آزمایشگاه ری‌گیری
+                        </SortableHeader>
+                        <ColumnResizer
+                          colKey="assayLab"
+                          onResizeStart={handleResizeStart}
+                          onReset={handleResetColumnWidth}
+                          isResizing={resizingCol === 'assayLab'}
+                        />
                       </th>
                     )}
                     {visibleColumns.rawWeight && (
                       <th
                         rowSpan={goldVisibleCount > 0 || rialVisibleCount > 0 ? 2 : 1}
-                        className="p-2.5 border-l border-slate-300 dark:border-slate-700"
+                        style={{ width: `${columnWidths.rawWeight}px` }}
+                        className="relative p-2 border-l border-slate-300 dark:border-slate-700 select-none overflow-visible"
                       >
-                        وزن ناخالص / کار
+                        <SortableHeader column="rawWeight" currentSort={sortState} onSort={handleHeaderSort} align="left">
+                          وزن ناخالص / کار
+                        </SortableHeader>
+                        <ColumnResizer
+                          colKey="rawWeight"
+                          onResizeStart={handleResizeStart}
+                          onReset={handleResetColumnWidth}
+                          isResizing={resizingCol === 'rawWeight'}
+                        />
                       </th>
                     )}
                     {visibleColumns.purity && (
                       <th
                         rowSpan={goldVisibleCount > 0 || rialVisibleCount > 0 ? 2 : 1}
-                        className="p-2.5 border-l border-slate-300 dark:border-slate-700"
+                        style={{ width: `${columnWidths.purity}px` }}
+                        className="relative p-2 border-l border-slate-300 dark:border-slate-700 select-none overflow-visible"
                       >
-                        عیار
+                        <SortableHeader column="purity" currentSort={sortState} onSort={handleHeaderSort} align="center">
+                          عیار
+                        </SortableHeader>
+                        <ColumnResizer
+                          colKey="purity"
+                          onResizeStart={handleResizeStart}
+                          onReset={handleResetColumnWidth}
+                          isResizing={resizingCol === 'purity'}
+                        />
                       </th>
                     )}
                     {visibleColumns.checkDetails && (
                       <th
                         rowSpan={goldVisibleCount > 0 || rialVisibleCount > 0 ? 2 : 1}
-                        className="p-2.5 border-l border-slate-300 dark:border-slate-700"
+                        style={{ width: `${columnWidths.checkDetails}px` }}
+                        className="relative p-2 border-l border-slate-300 dark:border-slate-700 select-none overflow-visible"
                       >
-                        مشخصات چک صیادی
+                        <SortableHeader column="checkDetails" currentSort={sortState} onSort={handleHeaderSort} align="right">
+                          مشخصات چک صیادی
+                        </SortableHeader>
+                        <ColumnResizer
+                          colKey="checkDetails"
+                          onResizeStart={handleResizeStart}
+                          onReset={handleResetColumnWidth}
+                          isResizing={resizingCol === 'checkDetails'}
+                        />
                       </th>
                     )}
                     {visibleColumns.bankDetails && (
                       <th
                         rowSpan={goldVisibleCount > 0 || rialVisibleCount > 0 ? 2 : 1}
-                        className="p-2.5 border-l border-slate-300 dark:border-slate-700"
+                        style={{ width: `${columnWidths.bankDetails}px` }}
+                        className="relative p-2 border-l border-slate-300 dark:border-slate-700 select-none overflow-visible"
                       >
-                        بانک و کد پیگیری
+                        <SortableHeader column="bankDetails" currentSort={sortState} onSort={handleHeaderSort} align="right">
+                          بانک و کد پیگیری
+                        </SortableHeader>
+                        <ColumnResizer
+                          colKey="bankDetails"
+                          onResizeStart={handleResizeStart}
+                          onReset={handleResetColumnWidth}
+                          isResizing={resizingCol === 'bankDetails'}
+                        />
                       </th>
                     )}
                     {visibleColumns.foreignCurrency && (
                       <th
                         rowSpan={goldVisibleCount > 0 || rialVisibleCount > 0 ? 2 : 1}
-                        className="p-2.5 border-l border-slate-300 dark:border-slate-700"
+                        style={{ width: `${columnWidths.foreignCurrency}px` }}
+                        className="relative p-2 border-l border-slate-300 dark:border-slate-700 select-none overflow-visible"
                       >
-                        ارز
+                        <SortableHeader column="foreignCurrency" currentSort={sortState} onSort={handleHeaderSort} align="left">
+                          ارز
+                        </SortableHeader>
+                        <ColumnResizer
+                          colKey="foreignCurrency"
+                          onResizeStart={handleResizeStart}
+                          onReset={handleResetColumnWidth}
+                          isResizing={resizingCol === 'foreignCurrency'}
+                        />
                       </th>
                     )}
                     
@@ -1682,7 +2211,8 @@ export default function CustomerLedgerReport({
                     {visibleColumns.actions && (
                       <th
                         rowSpan={goldVisibleCount > 0 || rialVisibleCount > 0 ? 2 : 1}
-                        className="p-2.5 text-center w-14 non-printable bg-slate-200/50 dark:bg-slate-800"
+                        style={{ width: `${columnWidths.actions}px` }}
+                        className="p-2 text-center non-printable bg-slate-200/50 dark:bg-slate-800"
                       >
                         عملیات
                       </th>
@@ -1694,35 +2224,101 @@ export default function CustomerLedgerReport({
                     <tr className="border-b-2 border-slate-300 dark:border-slate-700 text-[11px] bg-slate-50 dark:bg-slate-850">
                       {/* Gold sub-columns */}
                       {visibleColumns.goldDebtor && (
-                        <th className="p-2 text-left border-l border-slate-300 dark:border-slate-700 text-rose-700 dark:text-rose-400 bg-amber-50/40 dark:bg-amber-950/20">
-                          بدهکار (g)
+                        <th
+                          style={{ width: `${columnWidths.goldDebtor}px` }}
+                          className="relative p-2 text-left border-l border-slate-300 dark:border-slate-700 text-rose-700 dark:text-rose-400 bg-amber-50/40 dark:bg-amber-950/20 select-none overflow-visible"
+                        >
+                          <SortableHeader column="goldDebtor" currentSort={sortState} onSort={handleHeaderSort} align="left">
+                            بدهکار (g)
+                          </SortableHeader>
+                          <ColumnResizer
+                            colKey="goldDebtor"
+                            onResizeStart={handleResizeStart}
+                            onReset={handleResetColumnWidth}
+                            isResizing={resizingCol === 'goldDebtor'}
+                          />
                         </th>
                       )}
                       {visibleColumns.goldCreditor && (
-                        <th className="p-2 text-left border-l border-slate-300 dark:border-slate-700 text-emerald-700 dark:text-emerald-400 bg-amber-50/40 dark:bg-amber-950/20">
-                          بستانکار (g)
+                        <th
+                          style={{ width: `${columnWidths.goldCreditor}px` }}
+                          className="relative p-2 text-left border-l border-slate-300 dark:border-slate-700 text-emerald-700 dark:text-emerald-400 bg-amber-50/40 dark:bg-amber-950/20 select-none overflow-visible"
+                        >
+                          <SortableHeader column="goldCreditor" currentSort={sortState} onSort={handleHeaderSort} align="left">
+                            بستانکار (g)
+                          </SortableHeader>
+                          <ColumnResizer
+                            colKey="goldCreditor"
+                            onResizeStart={handleResizeStart}
+                            onReset={handleResetColumnWidth}
+                            isResizing={resizingCol === 'goldCreditor'}
+                          />
                         </th>
                       )}
                       {visibleColumns.goldBalance && (
-                        <th className="p-2 text-left border-l border-slate-300 dark:border-slate-700 bg-amber-200/60 dark:bg-amber-900/50 font-black text-amber-950 dark:text-amber-100">
-                          مانده طلا (g)
+                        <th
+                          style={{ width: `${columnWidths.goldBalance}px` }}
+                          className="relative p-2 text-left border-l border-slate-300 dark:border-slate-700 bg-amber-200/60 dark:bg-amber-900/50 font-black text-amber-950 dark:text-amber-100 select-none overflow-visible"
+                        >
+                          <SortableHeader column="goldBalance" currentSort={sortState} onSort={handleHeaderSort} align="left">
+                            مانده طلا (g)
+                          </SortableHeader>
+                          <ColumnResizer
+                            colKey="goldBalance"
+                            onResizeStart={handleResizeStart}
+                            onReset={handleResetColumnWidth}
+                            isResizing={resizingCol === 'goldBalance'}
+                          />
                         </th>
                       )}
 
                       {/* Financial sub-columns */}
                       {visibleColumns.rialDebtor && (
-                        <th className="p-2 text-left border-l border-slate-300 dark:border-slate-700 text-rose-700 dark:text-rose-400 bg-emerald-50/40 dark:bg-emerald-950/20">
-                          بدهکار ({baseCurrencySymbol})
+                        <th
+                          style={{ width: `${columnWidths.rialDebtor}px` }}
+                          className="relative p-2 text-left border-l border-slate-300 dark:border-slate-700 text-rose-700 dark:text-rose-400 bg-emerald-50/40 dark:bg-emerald-950/20 select-none overflow-visible"
+                        >
+                          <SortableHeader column="rialDebtor" currentSort={sortState} onSort={handleHeaderSort} align="left">
+                            بدهکار ({baseCurrencySymbol})
+                          </SortableHeader>
+                          <ColumnResizer
+                            colKey="rialDebtor"
+                            onResizeStart={handleResizeStart}
+                            onReset={handleResetColumnWidth}
+                            isResizing={resizingCol === 'rialDebtor'}
+                          />
                         </th>
                       )}
                       {visibleColumns.rialCreditor && (
-                        <th className="p-2 text-left border-l border-slate-300 dark:border-slate-700 text-emerald-700 dark:text-emerald-400 bg-emerald-50/40 dark:bg-emerald-950/20">
-                          بستانکار ({baseCurrencySymbol})
+                        <th
+                          style={{ width: `${columnWidths.rialCreditor}px` }}
+                          className="relative p-2 text-left border-l border-slate-300 dark:border-slate-700 text-emerald-700 dark:text-emerald-400 bg-emerald-50/40 dark:bg-emerald-950/20 select-none overflow-visible"
+                        >
+                          <SortableHeader column="rialCreditor" currentSort={sortState} onSort={handleHeaderSort} align="left">
+                            بستانکار ({baseCurrencySymbol})
+                          </SortableHeader>
+                          <ColumnResizer
+                            colKey="rialCreditor"
+                            onResizeStart={handleResizeStart}
+                            onReset={handleResetColumnWidth}
+                            isResizing={resizingCol === 'rialCreditor'}
+                          />
                         </th>
                       )}
                       {visibleColumns.rialBalance && (
-                        <th className="p-2 text-left border-l border-slate-300 dark:border-slate-700 bg-emerald-200/60 dark:bg-emerald-900/50 font-black text-emerald-950 dark:text-emerald-100">
-                          مانده مالی
+                        <th
+                          style={{ width: `${columnWidths.rialBalance}px` }}
+                          className="relative p-2 text-left border-l border-slate-300 dark:border-slate-700 bg-emerald-200/60 dark:bg-emerald-900/50 font-black text-emerald-950 dark:text-emerald-100 select-none overflow-visible"
+                        >
+                          <SortableHeader column="rialBalance" currentSort={sortState} onSort={handleHeaderSort} align="left">
+                            مانده مالی
+                          </SortableHeader>
+                          <ColumnResizer
+                            colKey="rialBalance"
+                            onResizeStart={handleResizeStart}
+                            onReset={handleResetColumnWidth}
+                            isResizing={resizingCol === 'rialBalance'}
+                          />
                         </th>
                       )}
                     </tr>
