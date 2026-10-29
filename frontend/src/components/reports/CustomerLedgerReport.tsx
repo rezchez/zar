@@ -42,6 +42,9 @@ import {
   ArrowUp,
   ArrowDown,
   ArrowUpDown,
+  CheckSquare,
+  CheckCircle2,
+  AlertCircle,
 } from 'lucide-react';
 import type { Customer } from '@/lib/customer';
 import type { CustomerTransaction } from '@/lib/transaction';
@@ -116,6 +119,7 @@ const CATEGORY_FILTER_BUTTONS = [
 ] as const;
 
 export type ColumnVisibility = {
+  tick: boolean;
   rowNumber: boolean;
   date: boolean;
   docNumber: boolean;
@@ -141,6 +145,7 @@ export type ColumnVisibility = {
 export type ColumnKey = keyof ColumnVisibility;
 
 const DEFAULT_COLUMNS: ColumnVisibility = {
+  tick: true,
   rowNumber: true,
   date: true,
   docNumber: true,
@@ -172,6 +177,7 @@ const COLUMN_GROUPS: {
     id: 'base',
     title: 'ستون‌های اصلی سند',
     columns: [
+      { key: 'tick', label: 'تیک بررسی و مغایرت‌گیری (Space)', desc: 'انتخاب ردیف برای جمع اقلام و مغایرت‌گیری' },
       { key: 'rowNumber', label: '# (ردیف)' },
       { key: 'date', label: 'تاریخ و ساعت سند' },
       { key: 'docNumber', label: 'شماره سند' },
@@ -284,6 +290,7 @@ const badgeStyles: Record<string, string> = {
 };
 
 export const DEFAULT_COLUMN_WIDTHS: Record<keyof ColumnVisibility, number> = {
+  tick: 48,
   rowNumber: 45,
   date: 125,
   docNumber: 110,
@@ -307,6 +314,7 @@ export const DEFAULT_COLUMN_WIDTHS: Record<keyof ColumnVisibility, number> = {
 };
 
 export const MIN_COLUMN_WIDTHS: Record<keyof ColumnVisibility, number> = {
+  tick: 38,
   rowNumber: 35,
   date: 85,
   docNumber: 75,
@@ -333,6 +341,8 @@ export const STORAGE_KEY_WIDTHS = 'zarfolio_ledger_col_widths';
 
 export function getLedgerSortValue(row: any, column: string): string | number {
   switch (column) {
+    case 'tick':
+      return row.isTicked ? 1 : 0;
     case 'rowNumber':
     case 'date':
       return row.documentDateJalali || row.transactionDate || '';
@@ -873,6 +883,19 @@ export default function CustomerLedgerReport({
     return mapped;
   }, [transactions, openingBalances, sortState, sortParam]);
 
+  // Check if there is a non-zero balance carried forward strictly prior to fromDate
+  const hasPreviousBalance = useMemo(() => {
+    if (!fromDate) return false;
+    const gold = Math.abs(openingBalances.goldAmount || 0);
+    const rial = Math.abs(openingBalances.rialAmount || 0);
+    const silver = Math.abs(openingBalances.silverAmount || 0);
+    const platinum = Math.abs(openingBalances.platinumAmount || 0);
+    const foreign = Object.values(openingBalances.foreignBalances || {}).some(
+      (v) => Math.abs(v) > 0.0001,
+    );
+    return gold > 0.0005 || rial > 50 || silver > 0.0005 || platinum > 0.0005 || foreign;
+  }, [fromDate, openingBalances]);
+
   // Dynamic counts for each category filter button
   const categoryCounts = useMemo(() => {
     const counts: Record<string, number> = {
@@ -967,6 +990,7 @@ export default function CustomerLedgerReport({
     (visibleColumns.rialBalance ? 1 : 0);
 
   const leadingVisibleCount =
+    (visibleColumns.tick ? 1 : 0) +
     (visibleColumns.rowNumber ? 1 : 0) +
     (visibleColumns.date ? 1 : 0) +
     (visibleColumns.docNumber ? 1 : 0) +
@@ -989,6 +1013,7 @@ export default function CustomerLedgerReport({
 
   const leafColumns = useMemo(() => {
     const cols: (keyof ColumnVisibility)[] = [];
+    if (visibleColumns.tick) cols.push('tick');
     if (visibleColumns.rowNumber) cols.push('rowNumber');
     if (visibleColumns.date) cols.push('date');
     if (visibleColumns.docNumber) cols.push('docNumber');
@@ -1018,6 +1043,158 @@ export default function CustomerLedgerReport({
       0,
     );
   }, [leafColumns, columnWidths]);
+
+  // Ticked rows for audit & reconciliation (با زدن کلید Space یا کلیک روی چک‌باکس)
+  const [selectedRowIds, setSelectedRowIds] = useState<Record<string, boolean>>({});
+  const [activeRowId, setActiveRowId] = useState<string | null>(null);
+
+  const toggleRowTick = (id: string) => {
+    setSelectedRowIds((prev) => {
+      const next = { ...prev };
+      if (next[id]) {
+        delete next[id];
+      } else {
+        next[id] = true;
+      }
+      return next;
+    });
+  };
+
+  const selectAllVisible = () => {
+    setSelectedRowIds((prev) => {
+      const next = { ...prev };
+      paginatedRows.forEach((r) => {
+        next[r.id] = true;
+      });
+      if (hasPreviousBalance) {
+        next['carried-forward'] = true;
+      }
+      return next;
+    });
+  };
+
+  const clearAllTicks = () => {
+    setSelectedRowIds({});
+  };
+
+  const invertTicks = () => {
+    setSelectedRowIds((prev) => {
+      const next = { ...prev };
+      paginatedRows.forEach((r) => {
+        if (next[r.id]) {
+          delete next[r.id];
+        } else {
+          next[r.id] = true;
+        }
+      });
+      if (hasPreviousBalance) {
+        if (next['carried-forward']) {
+          delete next['carried-forward'];
+        } else {
+          next['carried-forward'] = true;
+        }
+      }
+      return next;
+    });
+  };
+
+  // Reconcile and discrepancy metrics for ticked rows
+  const tickedStats = useMemo(() => {
+    let count = 0;
+    let goldDebtor = 0;
+    let goldCreditor = 0;
+    let rialDebtor = 0;
+    let rialCreditor = 0;
+
+    if (selectedRowIds['carried-forward'] && hasPreviousBalance) {
+      count += 1;
+      if (openingBalances.goldAmount < 0) {
+        goldDebtor += Math.abs(openingBalances.goldAmount);
+      } else if (openingBalances.goldAmount > 0) {
+        goldCreditor += openingBalances.goldAmount;
+      }
+      if (openingBalances.rialAmount < 0) {
+        rialDebtor += Math.abs(openingBalances.rialAmount);
+      } else if (openingBalances.rialAmount > 0) {
+        rialCreditor += openingBalances.rialAmount;
+      }
+    }
+
+    for (const r of ledgerRows) {
+      if (selectedRowIds[r.id]) {
+        count += 1;
+        goldDebtor += r.goldDebtor || 0;
+        goldCreditor += r.goldCreditor || 0;
+        rialDebtor += r.rialDebtor || 0;
+        rialCreditor += r.rialCreditor || 0;
+      }
+    }
+
+    const goldDiff = goldCreditor - goldDebtor;
+    const goldDiscrepancy = Math.abs(goldDebtor - goldCreditor);
+    const isGoldBalanced = count > 0 && goldDiscrepancy < 0.0005;
+
+    const rialDiff = rialCreditor - rialDebtor;
+    const rialDiscrepancy = Math.abs(rialDebtor - rialCreditor);
+    const isRialBalanced = count > 0 && rialDiscrepancy < 1;
+
+    return {
+      count,
+      goldDebtor,
+      goldCreditor,
+      goldDiff,
+      goldDiscrepancy,
+      isGoldBalanced,
+      rialDebtor,
+      rialCreditor,
+      rialDiff,
+      rialDiscrepancy,
+      isRialBalanced,
+    };
+  }, [selectedRowIds, ledgerRows, hasPreviousBalance, openingBalances]);
+
+  // Space key and Arrow keys listener for rapid keyboard audit & ticking
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+
+      if (e.key === ' ' || e.code === 'Space') {
+        if (!paginatedRows.length) return;
+        e.preventDefault();
+        const targetId = activeRowId || paginatedRows[0]?.id;
+        if (targetId) {
+          toggleRowTick(targetId);
+          if (!activeRowId) setActiveRowId(targetId);
+        }
+      } else if (e.key === 'ArrowDown') {
+        if (!paginatedRows.length) return;
+        e.preventDefault();
+        if (!activeRowId) {
+          setActiveRowId(paginatedRows[0].id);
+        } else {
+          const currentIndex = paginatedRows.findIndex((r) => r.id === activeRowId);
+          if (currentIndex < paginatedRows.length - 1) {
+            setActiveRowId(paginatedRows[currentIndex + 1].id);
+          }
+        }
+      } else if (e.key === 'ArrowUp') {
+        if (!paginatedRows.length) return;
+        e.preventDefault();
+        if (!activeRowId) {
+          setActiveRowId(paginatedRows[0].id);
+        } else {
+          const currentIndex = paginatedRows.findIndex((r) => r.id === activeRowId);
+          if (currentIndex > 0) {
+            setActiveRowId(paginatedRows[currentIndex - 1].id);
+          }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeRowId, paginatedRows]);
 
   function toggleRow(id: string) {
     setExpandedRows((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -1072,13 +1249,16 @@ export default function CustomerLedgerReport({
         `مانده مالی (${baseCurrencySymbol})`,
         'وضعیت مالی',
       ],
-      [
+    ];
+
+    if (hasPreviousBalance) {
+      wsData.push([
         '—',
-        'ابتدای دوره',
+        'نقل از قبل',
         '—',
-        '—',
-        'سرمایه اول دوره (۳۱۰۰)',
-        'سند مانده آغازین دوره (پیش از بازه گزارش)',
+        selectedCustomer?.name || 'کلیه طرف‌حساب‌ها',
+        'مانده منقول',
+        `مانده منقول از دوره قبل (پیش از ${fromDate})`,
         'انتقال مانده پیشین',
         openingBalances.goldAmount < 0 ? Math.abs(openingBalances.goldAmount) : 0,
         openingBalances.goldAmount > 0 ? openingBalances.goldAmount : 0,
@@ -1096,8 +1276,8 @@ export default function CustomerLedgerReport({
           : openingBalances.rialAmount < 0
           ? 'بدهکار (به ما)'
           : 'تسویه',
-      ],
-    ];
+      ]);
+    }
 
     ledgerRows.forEach((row, idx) => {
       const breakdown = parseTransactionBreakdown(row);
@@ -1711,7 +1891,7 @@ export default function CustomerLedgerReport({
           <div className="p-4 rounded-2xl bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 flex flex-col justify-between">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                مانده اول دوره (از قبل)
+                {fromDate ? `مانده منقول از قبل (پیش از ${fromDate})` : 'مانده منقول (از قبل)'}
               </span>
               <span className="p-1.5 rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
                 <ArrowUpRight size={16} />
@@ -1738,7 +1918,9 @@ export default function CustomerLedgerReport({
               </div>
             </div>
             <p className="text-[10px] text-slate-400 mt-1">
-              مجموع تراکنش‌های ثبت شده پیش از تاریخ مبدا
+              {fromDate
+                ? `مجموع گردش حساب طرف‌حساب تا پیش از تاریخ ${fromDate}`
+                : 'گزارش شامل تمامی اسناد از ابتدای دوره می‌باشد'}
             </p>
           </div>
 
@@ -1931,9 +2113,128 @@ export default function CustomerLedgerReport({
             </div>
           </div>
 
-          {/* Data Grid with Official Accounting Multi-tier Header */}
+          {/* Dynamic Reconciliation & Audit Toolbar (نوار مغایرت‌گیری و جمع ردیف‌های تیک‌زده) */}
+          {tickedStats.count > 0 && (
+            <div className="p-3.5 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-emerald-500/10 dark:from-amber-950/40 dark:via-slate-900/60 dark:to-emerald-950/40 border-2 border-amber-500/40 dark:border-amber-600/50 rounded-2xl shadow-md text-xs non-printable transition-all animate-in fade-in slide-in-from-top-2">
+              <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+                {/* Summary Title & Row Count Badge */}
+                <div className="flex items-center gap-2.5">
+                  <span className="p-2 rounded-xl bg-amber-500 text-slate-950 font-black shadow-xs flex items-center justify-center">
+                    <CheckSquare size={18} />
+                  </span>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-black text-sm text-slate-900 dark:text-slate-100">
+                        جمع و مغایرت‌گیری ردیف‌های تیک‌زده
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full text-[11px] font-black bg-amber-200 dark:bg-amber-900/80 text-amber-900 dark:text-amber-200">
+                        {tickedStats.count.toLocaleString('fa-IR')} ردیف انتخاب شده
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                      کلید <kbd className="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 font-mono text-[10px] text-slate-800 dark:text-slate-200">Space</kbd> برای تیک زدن سطر | کلیدهای <kbd className="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 font-mono text-[10px]">↑</kbd> و <kbd className="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 font-mono text-[10px]">↓</kbd> برای پیمایش سطرها
+                    </p>
+                  </div>
+                </div>
+
+                {/* Gold & Rial Metrics Cards */}
+                <div className="flex flex-wrap items-center gap-2.5">
+                  {/* Gold Box */}
+                  <div className="flex items-center gap-2 p-2 rounded-xl bg-white dark:bg-slate-900 border border-amber-300/70 dark:border-amber-800/60 shadow-2xs">
+                    <div className="flex items-center gap-1 font-bold text-amber-800 dark:text-amber-300">
+                      <Scale size={14} className="text-amber-600" />
+                      <span>طلای تیک‌زده:</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[11px] font-mono tabular-nums">
+                      <span className="text-rose-600 dark:text-rose-400" title="بدهکار طلا">
+                        بد: {formatWeight(tickedStats.goldDebtor)}
+                      </span>
+                      <span className="text-slate-300">|</span>
+                      <span className="text-emerald-600 dark:text-emerald-400" title="بستانکار طلا">
+                        بس: {formatWeight(tickedStats.goldCreditor)}
+                      </span>
+                    </div>
+                    <div className="mr-1">
+                      {tickedStats.isGoldBalanced ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300 font-bold text-[10px]">
+                          <CheckCircle2 size={12} />
+                          <span>تراز طلا (۰ مغایرت)</span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-rose-100 dark:bg-rose-950/70 text-rose-800 dark:text-rose-300 font-bold text-[10px]" title="اختلاف و مغایرت طلا">
+                          <AlertCircle size={12} />
+                          <span>مغایرت: {formatWeight(tickedStats.goldDiscrepancy)}g {tickedStats.goldDiff > 0 ? '(بس)' : '(بد)'}</span>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Rial Box */}
+                  <div className="flex items-center gap-2 p-2 rounded-xl bg-white dark:bg-slate-900 border border-emerald-300/70 dark:border-emerald-800/60 shadow-2xs">
+                    <div className="flex items-center gap-1 font-bold text-emerald-800 dark:text-emerald-300">
+                      <Banknote size={14} className="text-emerald-600" />
+                      <span>مالی ({baseCurrencySymbol}):</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[11px] font-mono tabular-nums">
+                      <span className="text-rose-600 dark:text-rose-400" title="بدهکار مالی">
+                        بد: {formatMoney(tickedStats.rialDebtor)}
+                      </span>
+                      <span className="text-slate-300">|</span>
+                      <span className="text-emerald-600 dark:text-emerald-400" title="بستانکار مالی">
+                        بس: {formatMoney(tickedStats.rialCreditor)}
+                      </span>
+                    </div>
+                    <div className="mr-1">
+                      {tickedStats.isRialBalanced ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300 font-bold text-[10px]">
+                          <CheckCircle2 size={12} />
+                          <span>تراز مالی (۰ مغایرت)</span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-rose-100 dark:bg-rose-950/70 text-rose-800 dark:text-rose-300 font-bold text-[10px]" title="اختلاف و مغایرت مالی">
+                          <AlertCircle size={12} />
+                          <span>مغایرت: {formatMoney(tickedStats.rialDiscrepancy)} {tickedStats.rialDiff > 0 ? '(بس)' : '(بد)'}</span>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex items-center gap-1.5 mr-auto">
+                    <button
+                      type="button"
+                      onClick={invertTicks}
+                      className="px-2.5 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 text-[11px] font-bold transition-all"
+                      title="معکوس کردن وضعیت تیک‌های صفحه"
+                    >
+                      معکوس
+                    </button>
+                    <button
+                      type="button"
+                      onClick={selectAllVisible}
+                      className="px-2.5 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 text-[11px] font-bold transition-all"
+                      title="انتخاب همه سطرهای این صفحه"
+                    >
+                      انتخاب همه
+                    </button>
+                    <button
+                      type="button"
+                      onClick={clearAllTicks}
+                      className="px-2.5 py-1.5 rounded-xl border border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 hover:bg-rose-100 text-[11px] font-bold transition-all flex items-center gap-1"
+                      title="حذف کلیه تیک‌های انتخاب شده"
+                    >
+                      <X size={13} />
+                      <span>پاک کردن</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Data Grid with Official Accounting Multi-tier Header & Freeze Pane Header */}
           <div className="border border-slate-300 dark:border-slate-700 rounded-2xl overflow-hidden shadow-sm bg-white dark:bg-slate-900">
-            <div className="overflow-x-auto">
+            <div className="overflow-auto max-h-[calc(100vh-220px)] min-h-[400px] relative scrollbar-thin">
               <table
                 className="w-full text-xs text-right whitespace-nowrap border-collapse border border-slate-200 dark:border-slate-700/80 font-sans table-fixed"
                 style={{
@@ -1953,15 +2254,57 @@ export default function CustomerLedgerReport({
                   ))}
                 </colgroup>
                 
-                {/* 2-Tier Structured Header */}
-                <thead className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-bold sticky top-0 z-20 shadow-2xs">
+                {/* 2-Tier Structured Freeze Header */}
+                <thead className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-bold sticky top-0 z-30 shadow-xs border-b border-slate-300 dark:border-slate-700">
                   {/* Super Header Row */}
                   <tr className="border-b border-slate-300 dark:border-slate-700 text-[11px]">
+                    {visibleColumns.tick && (
+                      <th
+                        rowSpan={goldVisibleCount > 0 || rialVisibleCount > 0 ? 2 : 1}
+                        style={{ width: `${columnWidths.tick}px` }}
+                        className="relative p-2 text-center border-l border-slate-300 dark:border-slate-700 bg-slate-200 dark:bg-slate-800 select-none overflow-visible"
+                        title="تیک مغایرت‌گیری و بررسی (Space)"
+                      >
+                        <div className="flex items-center justify-center">
+                          <input
+                            type="checkbox"
+                            checked={
+                              paginatedRows.length > 0 &&
+                              paginatedRows.every((r) => selectedRowIds[r.id])
+                            }
+                            ref={(el) => {
+                              if (el) {
+                                const someSelected = paginatedRows.some((r) => selectedRowIds[r.id]);
+                                const allSelected =
+                                  paginatedRows.length > 0 &&
+                                  paginatedRows.every((r) => selectedRowIds[r.id]);
+                                el.indeterminate = someSelected && !allSelected;
+                              }
+                            }}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                selectAllVisible();
+                              } else {
+                                clearAllTicks();
+                              }
+                            }}
+                            className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 border-slate-400 dark:border-slate-600 cursor-pointer transition-all"
+                            title="انتخاب یا لغو انتخاب تمام ردیف‌های صفحه"
+                          />
+                        </div>
+                        <ColumnResizer
+                          colKey="tick"
+                          onResizeStart={handleResizeStart}
+                          onReset={handleResetColumnWidth}
+                          isResizing={resizingCol === 'tick'}
+                        />
+                      </th>
+                    )}
                     {visibleColumns.rowNumber && (
                       <th
                         rowSpan={goldVisibleCount > 0 || rialVisibleCount > 0 ? 2 : 1}
                         style={{ width: `${columnWidths.rowNumber}px` }}
-                        className="relative p-2 text-center border-l border-slate-300 dark:border-slate-700 bg-slate-200/50 dark:bg-slate-800 select-none overflow-visible"
+                        className="relative p-2 text-center border-l border-slate-300 dark:border-slate-700 bg-slate-200 dark:bg-slate-800 select-none overflow-visible"
                       >
                         <SortableHeader column="rowNumber" currentSort={sortState} onSort={handleHeaderSort} align="center">
                           #
@@ -1978,7 +2321,7 @@ export default function CustomerLedgerReport({
                       <th
                         rowSpan={goldVisibleCount > 0 || rialVisibleCount > 0 ? 2 : 1}
                         style={{ width: `${columnWidths.date}px` }}
-                        className="relative p-2 border-l border-slate-300 dark:border-slate-700 select-none overflow-visible"
+                        className="relative p-2 border-l border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 select-none overflow-visible"
                       >
                         <SortableHeader column="date" currentSort={sortState} onSort={handleHeaderSort} align="right">
                           تاریخ و ساعت
@@ -1995,7 +2338,7 @@ export default function CustomerLedgerReport({
                       <th
                         rowSpan={goldVisibleCount > 0 || rialVisibleCount > 0 ? 2 : 1}
                         style={{ width: `${columnWidths.docNumber}px` }}
-                        className="relative p-2 border-l border-slate-300 dark:border-slate-700 select-none overflow-visible"
+                        className="relative p-2 border-l border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 select-none overflow-visible"
                       >
                         <SortableHeader column="docNumber" currentSort={sortState} onSort={handleHeaderSort} align="right">
                           شماره سند
@@ -2012,7 +2355,7 @@ export default function CustomerLedgerReport({
                       <th
                         rowSpan={goldVisibleCount > 0 || rialVisibleCount > 0 ? 2 : 1}
                         style={{ width: `${columnWidths.customer}px` }}
-                        className="relative p-2 border-l border-slate-300 dark:border-slate-700 select-none overflow-visible"
+                        className="relative p-2 border-l border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 select-none overflow-visible"
                       >
                         <SortableHeader column="customer" currentSort={sortState} onSort={handleHeaderSort} align="right">
                           طرف‌حساب
@@ -2029,7 +2372,7 @@ export default function CustomerLedgerReport({
                       <th
                         rowSpan={goldVisibleCount > 0 || rialVisibleCount > 0 ? 2 : 1}
                         style={{ width: `${columnWidths.journalLine}px` }}
-                        className="relative p-2 border-l border-slate-300 dark:border-slate-700 whitespace-nowrap select-none overflow-visible"
+                        className="relative p-2 border-l border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 whitespace-nowrap select-none overflow-visible"
                         title="آرتیکل سند بر اساس سرفصل‌های استاندارد دفتر کل و معین حسابداری"
                       >
                         <SortableHeader column="journalLine" currentSort={sortState} onSort={handleHeaderSort} align="right">
@@ -2047,7 +2390,7 @@ export default function CustomerLedgerReport({
                       <th
                         rowSpan={goldVisibleCount > 0 || rialVisibleCount > 0 ? 2 : 1}
                         style={{ width: `${columnWidths.description}px` }}
-                        className="relative p-2 border-l border-slate-300 dark:border-slate-700 select-none overflow-visible"
+                        className="relative p-2 border-l border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 select-none overflow-visible"
                       >
                         <SortableHeader column="description" currentSort={sortState} onSort={handleHeaderSort} align="right">
                           شرح ردیف سند
@@ -2066,7 +2409,7 @@ export default function CustomerLedgerReport({
                       <th
                         rowSpan={goldVisibleCount > 0 || rialVisibleCount > 0 ? 2 : 1}
                         style={{ width: `${columnWidths.stampNumber}px` }}
-                        className="relative p-2 border-l border-slate-300 dark:border-slate-700 tabular-nums select-none overflow-visible"
+                        className="relative p-2 border-l border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 tabular-nums select-none overflow-visible"
                       >
                         <SortableHeader column="stampNumber" currentSort={sortState} onSort={handleHeaderSort} align="right">
                           شماره انگ
@@ -2083,7 +2426,7 @@ export default function CustomerLedgerReport({
                       <th
                         rowSpan={goldVisibleCount > 0 || rialVisibleCount > 0 ? 2 : 1}
                         style={{ width: `${columnWidths.assayLab}px` }}
-                        className="relative p-2 border-l border-slate-300 dark:border-slate-700 select-none overflow-visible"
+                        className="relative p-2 border-l border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 select-none overflow-visible"
                       >
                         <SortableHeader column="assayLab" currentSort={sortState} onSort={handleHeaderSort} align="right">
                           آزمایشگاه ری‌گیری
@@ -2100,7 +2443,7 @@ export default function CustomerLedgerReport({
                       <th
                         rowSpan={goldVisibleCount > 0 || rialVisibleCount > 0 ? 2 : 1}
                         style={{ width: `${columnWidths.rawWeight}px` }}
-                        className="relative p-2 border-l border-slate-300 dark:border-slate-700 select-none overflow-visible"
+                        className="relative p-2 border-l border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 select-none overflow-visible"
                       >
                         <SortableHeader column="rawWeight" currentSort={sortState} onSort={handleHeaderSort} align="left">
                           وزن ناخالص / کار
@@ -2117,7 +2460,7 @@ export default function CustomerLedgerReport({
                       <th
                         rowSpan={goldVisibleCount > 0 || rialVisibleCount > 0 ? 2 : 1}
                         style={{ width: `${columnWidths.purity}px` }}
-                        className="relative p-2 border-l border-slate-300 dark:border-slate-700 select-none overflow-visible"
+                        className="relative p-2 border-l border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 select-none overflow-visible"
                       >
                         <SortableHeader column="purity" currentSort={sortState} onSort={handleHeaderSort} align="center">
                           عیار
@@ -2134,7 +2477,7 @@ export default function CustomerLedgerReport({
                       <th
                         rowSpan={goldVisibleCount > 0 || rialVisibleCount > 0 ? 2 : 1}
                         style={{ width: `${columnWidths.checkDetails}px` }}
-                        className="relative p-2 border-l border-slate-300 dark:border-slate-700 select-none overflow-visible"
+                        className="relative p-2 border-l border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 select-none overflow-visible"
                       >
                         <SortableHeader column="checkDetails" currentSort={sortState} onSort={handleHeaderSort} align="right">
                           مشخصات چک صیادی
@@ -2151,7 +2494,7 @@ export default function CustomerLedgerReport({
                       <th
                         rowSpan={goldVisibleCount > 0 || rialVisibleCount > 0 ? 2 : 1}
                         style={{ width: `${columnWidths.bankDetails}px` }}
-                        className="relative p-2 border-l border-slate-300 dark:border-slate-700 select-none overflow-visible"
+                        className="relative p-2 border-l border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 select-none overflow-visible"
                       >
                         <SortableHeader column="bankDetails" currentSort={sortState} onSort={handleHeaderSort} align="right">
                           بانک و کد پیگیری
@@ -2168,7 +2511,7 @@ export default function CustomerLedgerReport({
                       <th
                         rowSpan={goldVisibleCount > 0 || rialVisibleCount > 0 ? 2 : 1}
                         style={{ width: `${columnWidths.foreignCurrency}px` }}
-                        className="relative p-2 border-l border-slate-300 dark:border-slate-700 select-none overflow-visible"
+                        className="relative p-2 border-l border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 select-none overflow-visible"
                       >
                         <SortableHeader column="foreignCurrency" currentSort={sortState} onSort={handleHeaderSort} align="left">
                           ارز
@@ -2186,7 +2529,7 @@ export default function CustomerLedgerReport({
                     {goldVisibleCount > 0 && (
                       <th
                         colSpan={goldVisibleCount}
-                        className="p-2 text-center border-l border-slate-300 dark:border-slate-700 bg-amber-100/70 dark:bg-amber-950/40 text-amber-950 dark:text-amber-200 font-black"
+                        className="p-2 text-center border-l border-slate-300 dark:border-slate-700 bg-amber-100 dark:bg-amber-950 text-amber-950 dark:text-amber-200 font-black"
                       >
                         <div className="flex items-center justify-center gap-1">
                           <Scale size={13} className="text-amber-600 dark:text-amber-400" />
@@ -2199,7 +2542,7 @@ export default function CustomerLedgerReport({
                     {rialVisibleCount > 0 && (
                       <th
                         colSpan={rialVisibleCount}
-                        className="p-2 text-center border-l border-slate-300 dark:border-slate-700 bg-emerald-100/70 dark:bg-emerald-950/40 text-emerald-950 dark:text-emerald-200 font-black"
+                        className="p-2 text-center border-l border-slate-300 dark:border-slate-700 bg-emerald-100 dark:bg-emerald-950 text-emerald-950 dark:text-emerald-200 font-black"
                       >
                         <div className="flex items-center justify-center gap-1">
                           <Banknote size={13} className="text-emerald-600 dark:text-emerald-400" />
@@ -2212,7 +2555,7 @@ export default function CustomerLedgerReport({
                       <th
                         rowSpan={goldVisibleCount > 0 || rialVisibleCount > 0 ? 2 : 1}
                         style={{ width: `${columnWidths.actions}px` }}
-                        className="p-2 text-center non-printable bg-slate-200/50 dark:bg-slate-800"
+                        className="p-2 text-center non-printable bg-slate-200 dark:bg-slate-800"
                       >
                         عملیات
                       </th>
@@ -2221,12 +2564,12 @@ export default function CustomerLedgerReport({
 
                   {/* Sub Header Row */}
                   {(goldVisibleCount > 0 || rialVisibleCount > 0) && (
-                    <tr className="border-b-2 border-slate-300 dark:border-slate-700 text-[11px] bg-slate-50 dark:bg-slate-850">
+                    <tr className="border-b-2 border-slate-300 dark:border-slate-700 text-[11px] bg-slate-100 dark:bg-slate-850">
                       {/* Gold sub-columns */}
                       {visibleColumns.goldDebtor && (
                         <th
                           style={{ width: `${columnWidths.goldDebtor}px` }}
-                          className="relative p-2 text-left border-l border-slate-300 dark:border-slate-700 text-rose-700 dark:text-rose-400 bg-amber-50/40 dark:bg-amber-950/20 select-none overflow-visible"
+                          className="relative p-2 text-left border-l border-slate-300 dark:border-slate-700 text-rose-700 dark:text-rose-400 bg-amber-100/90 dark:bg-amber-950 select-none overflow-visible"
                         >
                           <SortableHeader column="goldDebtor" currentSort={sortState} onSort={handleHeaderSort} align="left">
                             بدهکار (g)
@@ -2242,7 +2585,7 @@ export default function CustomerLedgerReport({
                       {visibleColumns.goldCreditor && (
                         <th
                           style={{ width: `${columnWidths.goldCreditor}px` }}
-                          className="relative p-2 text-left border-l border-slate-300 dark:border-slate-700 text-emerald-700 dark:text-emerald-400 bg-amber-50/40 dark:bg-amber-950/20 select-none overflow-visible"
+                          className="relative p-2 text-left border-l border-slate-300 dark:border-slate-700 text-emerald-700 dark:text-emerald-400 bg-amber-100/90 dark:bg-amber-950 select-none overflow-visible"
                         >
                           <SortableHeader column="goldCreditor" currentSort={sortState} onSort={handleHeaderSort} align="left">
                             بستانکار (g)
@@ -2258,7 +2601,7 @@ export default function CustomerLedgerReport({
                       {visibleColumns.goldBalance && (
                         <th
                           style={{ width: `${columnWidths.goldBalance}px` }}
-                          className="relative p-2 text-left border-l border-slate-300 dark:border-slate-700 bg-amber-200/60 dark:bg-amber-900/50 font-black text-amber-950 dark:text-amber-100 select-none overflow-visible"
+                          className="relative p-2 text-left border-l border-slate-300 dark:border-slate-700 bg-amber-200 dark:bg-amber-900 font-black text-amber-950 dark:text-amber-100 select-none overflow-visible"
                         >
                           <SortableHeader column="goldBalance" currentSort={sortState} onSort={handleHeaderSort} align="left">
                             مانده طلا (g)
@@ -2276,7 +2619,7 @@ export default function CustomerLedgerReport({
                       {visibleColumns.rialDebtor && (
                         <th
                           style={{ width: `${columnWidths.rialDebtor}px` }}
-                          className="relative p-2 text-left border-l border-slate-300 dark:border-slate-700 text-rose-700 dark:text-rose-400 bg-emerald-50/40 dark:bg-emerald-950/20 select-none overflow-visible"
+                          className="relative p-2 text-left border-l border-slate-300 dark:border-slate-700 text-rose-700 dark:text-rose-400 bg-emerald-100/90 dark:bg-emerald-950 select-none overflow-visible"
                         >
                           <SortableHeader column="rialDebtor" currentSort={sortState} onSort={handleHeaderSort} align="left">
                             بدهکار ({baseCurrencySymbol})
@@ -2292,7 +2635,7 @@ export default function CustomerLedgerReport({
                       {visibleColumns.rialCreditor && (
                         <th
                           style={{ width: `${columnWidths.rialCreditor}px` }}
-                          className="relative p-2 text-left border-l border-slate-300 dark:border-slate-700 text-emerald-700 dark:text-emerald-400 bg-emerald-50/40 dark:bg-emerald-950/20 select-none overflow-visible"
+                          className="relative p-2 text-left border-l border-slate-300 dark:border-slate-700 text-emerald-700 dark:text-emerald-400 bg-emerald-100/90 dark:bg-emerald-950 select-none overflow-visible"
                         >
                           <SortableHeader column="rialCreditor" currentSort={sortState} onSort={handleHeaderSort} align="left">
                             بستانکار ({baseCurrencySymbol})
@@ -2308,7 +2651,7 @@ export default function CustomerLedgerReport({
                       {visibleColumns.rialBalance && (
                         <th
                           style={{ width: `${columnWidths.rialBalance}px` }}
-                          className="relative p-2 text-left border-l border-slate-300 dark:border-slate-700 bg-emerald-200/60 dark:bg-emerald-900/50 font-black text-emerald-950 dark:text-emerald-100 select-none overflow-visible"
+                          className="relative p-2 text-left border-l border-slate-300 dark:border-slate-700 bg-emerald-200 dark:bg-emerald-900 font-black text-emerald-950 dark:text-emerald-100 select-none overflow-visible"
                         >
                           <SortableHeader column="rialBalance" currentSort={sortState} onSort={handleHeaderSort} align="left">
                             مانده مالی
@@ -2327,15 +2670,42 @@ export default function CustomerLedgerReport({
 
                 {/* Grid Body */}
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-medium">
-                  {/* Opening Balance Row (on Page 1 only) */}
-                  {safeCurrentPage === 1 && (
-                    <tr className="bg-amber-50/90 dark:bg-amber-950/40 font-bold border-b border-amber-300 dark:border-amber-900/60">
+                  {/* Carried-forward Balance Row (on Page 1 only, and ONLY if hasPreviousBalance) */}
+                  {safeCurrentPage === 1 && hasPreviousBalance && (
+                    <tr
+                      onClick={() => setActiveRowId('carried-forward')}
+                      className={`bg-amber-50/90 dark:bg-amber-950/40 font-bold border-b border-amber-300 dark:border-amber-900/60 ${
+                        selectedRowIds['carried-forward']
+                          ? 'ring-1 ring-inset ring-amber-400 dark:ring-amber-500 bg-amber-100/70 dark:bg-amber-950/70'
+                          : ''
+                      }`}
+                    >
+                      {visibleColumns.tick && (
+                        <td className="p-2.5 text-center border-l border-slate-200 dark:border-slate-800">
+                          <input
+                            type="checkbox"
+                            checked={!!selectedRowIds['carried-forward']}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              setActiveRowId('carried-forward');
+                              toggleRowTick('carried-forward');
+                            }}
+                            className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 border-slate-400 dark:border-slate-600 cursor-pointer"
+                            title="تیک ردیف مانده منقول برای مغایرت‌گیری"
+                          />
+                        </td>
+                      )}
                       {visibleColumns.rowNumber && (
                         <td className="p-2.5 text-center text-slate-400 border-l border-slate-200 dark:border-slate-800">—</td>
                       )}
                       {visibleColumns.date && (
-                        <td className="p-2.5 text-slate-700 dark:text-slate-300 tabular-nums border-l border-slate-200 dark:border-slate-800">
-                          {fromDate || 'ابتدای دوره'}
+                        <td
+                          className="p-2.5 text-slate-700 dark:text-slate-300 tabular-nums border-l border-slate-200 dark:border-slate-800"
+                          title={`گردش حساب تا پیش از ${fromDate}`}
+                        >
+                          <span className="inline-flex items-center gap-1 font-bold text-amber-700 dark:text-amber-400">
+                            نقل از قبل
+                          </span>
                         </td>
                       )}
                       {visibleColumns.docNumber && (
@@ -2343,28 +2713,27 @@ export default function CustomerLedgerReport({
                       )}
                       {!customerId && visibleColumns.customer && (
                         <td className="p-2.5 text-slate-700 dark:text-slate-300 border-l border-slate-200 dark:border-slate-800">
-                          کلیه طرف‌حساب‌ها
+                          {selectedCustomer?.name || 'کلیه طرف‌حساب‌ها'}
                         </td>
                       )}
                       {visibleColumns.journalLine && (
                         <td className="p-2.5 border-l border-slate-200 dark:border-slate-800">
                           <div className="flex flex-col items-start gap-0.5">
                             <span
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-600"
-                              title="حقوق مالکانه > سرمایه > سرمایه اول دوره (۳۱۰۰)"
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-200/80 dark:bg-amber-900/50 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-800"
+                              title="مانده منقول از دوره قبل (پیش از بازه گزارش)"
                             >
-                              <span>سرمایه اول دوره</span>
-                              <span className="opacity-70 text-[9px] tabular-nums">(۳۱۰۰)</span>
+                              <span>مانده منقول</span>
                             </span>
                             <span className="text-[9px] text-slate-500 dark:text-slate-400 font-medium">
-                              حقوق مالکانه • سرمایه
+                              انتقال تراز پیشین
                             </span>
                           </div>
                         </td>
                       )}
                       {visibleColumns.description && (
                         <td className="p-2.5 text-slate-700 dark:text-slate-300 font-bold border-l border-slate-200 dark:border-slate-800">
-                          <span>سند مانده آغازین دوره (پیش از بازه گزارش)</span>
+                          <span>{`مانده منقول از دوره قبل (پیش از ${fromDate})`}</span>
                         </td>
                       )}
                       {visibleColumns.stampNumber && <td className="p-2.5 text-center text-slate-400 border-l border-slate-200 dark:border-slate-800">—</td>}
@@ -2489,11 +2858,41 @@ export default function CustomerLedgerReport({
                       return (
                         <React.Fragment key={row.id}>
                           <tr
-                            onClick={() => toggleRow(row.id)}
+                            onClick={() => {
+                              setActiveRowId(row.id);
+                              toggleRow(row.id);
+                            }}
                             className={`odd:bg-white even:bg-slate-50/70 dark:odd:bg-slate-900 dark:even:bg-slate-800/30 hover:bg-amber-500/10 dark:hover:bg-amber-500/15 transition-colors cursor-pointer border-b border-slate-200 dark:border-slate-800/80 ${
                               isExpanded ? 'bg-amber-500/15 dark:bg-amber-500/20' : ''
-                            }`}
+                            } ${
+                              selectedRowIds[row.id]
+                                ? 'bg-amber-100/60 dark:bg-amber-950/60 font-semibold ring-1 ring-inset ring-amber-400 dark:ring-amber-500'
+                                : ''
+                            } ${activeRowId === row.id ? 'outline-2 -outline-offset-1 outline-amber-500/70' : ''}`}
                           >
+                            {visibleColumns.tick && (
+                              <td
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveRowId(row.id);
+                                  toggleRowTick(row.id);
+                                }}
+                                className={`${pyClass} px-2 text-center border-l border-slate-200 dark:border-slate-800 cursor-pointer`}
+                                title="تیک زدن یا حذف تیک (Space)"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={!!selectedRowIds[row.id]}
+                                  onChange={(e) => {
+                                    e.stopPropagation();
+                                    setActiveRowId(row.id);
+                                    toggleRowTick(row.id);
+                                  }}
+                                  className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 border-slate-400 dark:border-slate-600 cursor-pointer transition-all"
+                                />
+                              </td>
+                            )}
+
                             {visibleColumns.rowNumber && (
                               <td
                                 className={`${pyClass} px-2.5 text-center text-slate-400 tabular-nums text-[11px] border-l border-slate-200 dark:border-slate-800`}

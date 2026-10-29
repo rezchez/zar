@@ -18,6 +18,7 @@ import {
   getCustomerWithBalances,
 } from '@/lib/customer-service';
 import { syncOpeningBalanceTransaction } from '@/lib/transaction-service';
+import { jalaliDateToIso } from '@/lib/jalali';
 
 function readFormValue(formData: FormData, field: string) {
   return String(formData.get(field) ?? '').trim();
@@ -45,7 +46,13 @@ function buildPayload(formData: FormData, ownerId: string, customerCode: number)
     payload.append(field, Number.isFinite(value) ? String(value) : '0');
   }
   for (const field of customerDateFields) {
-    const value = readFormValue(formData, field);
+    let value = readFormValue(formData, field);
+    if (value && field === 'accountOpenedAt') {
+      if (value.includes('/') && !value.includes('T')) {
+        const iso = jalaliDateToIso(value);
+        if (iso) value = iso;
+      }
+    }
     if (value) payload.append(field, value);
   }
   payload.append('showBalanceByUnit', readFormValue(formData, 'showBalanceByUnit') === 'true' ? 'true' : 'false');

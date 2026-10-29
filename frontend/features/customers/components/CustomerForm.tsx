@@ -18,6 +18,7 @@ import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 
 import DatePicker from '@/components/ui/date-picker';
+import { dateToJalaliString } from '@/lib/jalali';
 import { isRefinerGroup } from '@/lib/customer-groups';
 
 import {
@@ -797,6 +798,29 @@ export default function CustomerForm({
                 onDirectionChange={(direction) => setBalanceDirection(field, direction)}
               />
             ))}
+          </div>
+          <div className="mt-4 pt-3 border-t border-slate-200/80 dark:border-slate-800/80">
+            <Field label="تاریخ مانده اول دوره (افتتاح حساب)">
+              <DatePicker
+                value={
+                  state.accountOpenedAt && typeof state.accountOpenedAt === 'string' && state.accountOpenedAt !== 'undefined'
+                    ? (state.accountOpenedAt.includes('/')
+                        ? String(state.accountOpenedAt)
+                        : dateToJalaliString(new Date(state.accountOpenedAt)))
+                    : ''
+                }
+                onValueChange={(_iso, jalali) => {
+                  setValue('accountOpenedAt', jalali || '');
+                }}
+                calendarType="shamsi"
+                format="yyyy/MM/dd"
+                placeholder="انتخاب تاریخ مانده اول دوره (مثلاً ۱۴۰۲/۰۱/۰۱)"
+                className="w-full"
+              />
+            </Field>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+              در صورت تعیین، سند مانده اول دوره در این تاریخ دقیق ثبت و در صورت‌حساب نمایش داده خواهد شد.
+            </p>
           </div>
           <label className="customer-check-field">
             <input type="checkbox" checked={state.showBalanceByUnit === true} onChange={(e) => setValue('showBalanceByUnit', e.target.checked)} />

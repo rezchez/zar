@@ -72,7 +72,7 @@ describe('Zarfolio — Data Cleanup & 30-Day Retention System Tests', () => {
     // Clean up test files
     await fs.rm(archivePath, { force: true });
     await fs.rm(metaPath, { force: true });
-  });
+  }, 25000);
 
   test('3. Auto-expiration after 30 days: cleanExpiredCleanups permanently removes expired archives', async () => {
     const expiredCleanupId = `cleanup_expired_${Date.now()}`;

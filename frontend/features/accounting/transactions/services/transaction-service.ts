@@ -18,6 +18,19 @@ async function getTransactionWriter(fallback: PocketBase) {
 }
 
 import { isValidZfDocumentNumber, generateUniqueZfDocumentNumber } from '@/lib/document-number';
+import { dateToJalaliString, jalaliDateToIso } from '@/lib/jalali';
+
+function validTransactionDate(value?: string | null) {
+  if (!value) return new Date().toISOString();
+  if (value.includes('/') && !value.includes('T')) {
+    const iso = jalaliDateToIso(value);
+    if (iso) return iso;
+  }
+  const parsed = new Date(value);
+  return !Number.isNaN(parsed.getTime())
+    ? parsed.toISOString()
+    : new Date().toISOString();
+}
 
 function openingBalancePayload(
   customer: Customer,
@@ -26,6 +39,11 @@ function openingBalancePayload(
   createdBy: string,
   documentNumber: string,
 ) {
+  const effectiveIsoDate = validTransactionDate(
+    customer.accountOpenedAt || customer.created,
+  );
+  const jalaliDate = dateToJalaliString(new Date(effectiveIsoDate));
+
   return {
     customer: customer.id,
     customerCode: customer.customerCode,
@@ -35,9 +53,8 @@ function openingBalancePayload(
     status: 'posted',
     isOpeningBalance: true,
     sourceKey: openingBalanceSourceKey(customer.id),
-    transactionDate: validTransactionDate(
-      customer.created,
-    ),
+    transactionDate: effectiveIsoDate,
+    documentDateJalali: jalaliDate,
     documentNumber,
     description: 'مانده اول دوره',
     goldAmount: balances.goldBalance,
@@ -51,13 +68,6 @@ function openingBalancePayload(
     tertiaryCurrency: customer.tertiaryCurrency,
     tertiaryCurrencySymbol: customer.tertiaryCurrencySymbol,
   };
-}
-
-function validTransactionDate(value: string) {
-  const parsed = value ? new Date(value) : null;
-  return parsed && !Number.isNaN(parsed.getTime())
-    ? parsed.toISOString()
-    : new Date().toISOString();
 }
 
 export async function syncOpeningBalanceTransaction(

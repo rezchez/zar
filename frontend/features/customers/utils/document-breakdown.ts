@@ -332,9 +332,15 @@ export function parseTransactionBreakdown(transaction: CustomerTransaction): Lin
     }
   }
 
+  const isOpening =
+    Boolean(transaction.isOpeningBalance) ||
+    transaction.transactionType === 'opening_balance' ||
+    transaction.description === 'مانده اول دوره' ||
+    transaction.description === 'مانده حساب از قبل';
+
   return {
     category: 'general',
-    categoryLabel: transaction.isOpeningBalance
+    categoryLabel: isOpening
       ? 'سند مانده اول دوره'
       : transaction.description || 'سند حسابداری',
     badgeColor: 'slate',
@@ -451,7 +457,13 @@ export type JournalLineBadge = {
 };
 
 export function getJournalLineBadge(transaction: CustomerTransaction): JournalLineBadge {
-  if (transaction.isOpeningBalance) {
+  const isOpening =
+    Boolean(transaction.isOpeningBalance) ||
+    transaction.transactionType === 'opening_balance' ||
+    transaction.description === 'مانده اول دوره' ||
+    transaction.description === 'مانده حساب از قبل';
+
+  if (isOpening) {
     return {
       accountCode: '۳۱۰۰',
       accountTitle: 'سرمایه اول دوره',

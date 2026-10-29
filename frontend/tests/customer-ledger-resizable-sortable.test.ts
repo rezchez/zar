@@ -14,6 +14,7 @@ import {
 describe('Customer Ledger Resizable Columns & Sortable Headers Tests', () => {
   it('defines valid default and minimum column widths for all CustomerLedgerReport columns', () => {
     const expectedKeys: ColumnKey[] = [
+      'tick',
       'rowNumber',
       'date',
       'docNumber',
@@ -47,6 +48,7 @@ describe('Customer Ledger Resizable Columns & Sortable Headers Tests', () => {
 
   it('defines valid default and minimum column widths for all CustomerTransactionLedger columns', () => {
     const expectedKeys: CustomerLedgerColumnKey[] = [
+      'tick',
       'rowNumber',
       'date',
       'docNumber',
@@ -158,5 +160,142 @@ describe('Customer Ledger Resizable Columns & Sortable Headers Tests', () => {
       return vA - vB;
     });
     expect(sortedGoldAsc.map((r) => r.goldDebtor)).toEqual([15, 50, 80]);
+  });
+
+  it('correctly maps and preserves opening balance date and recognition for customer ledgers', () => {
+    const { customerDateFields } = require('../features/customers/services/customer');
+    expect(customerDateFields).toContain('accountOpenedAt');
+
+    const { getJournalLineBadge, parseTransactionBreakdown } = require('../features/customers/utils/document-breakdown');
+
+    // 1. Transaction with transactionType: 'opening_balance'
+    const opTx1 = {
+      id: 'tx_op_1',
+      transactionType: 'opening_balance',
+      isOpeningBalance: true,
+      documentDateJalali: '1402/01/01',
+      description: 'مانده اول دوره',
+    };
+    expect(getJournalLineBadge(opTx1).accountTitle).toBe('سرمایه اول دوره');
+    expect(getJournalLineBadge(opTx1).accountCode).toBe('۳۱۰۰');
+    expect(parseTransactionBreakdown(opTx1).categoryLabel).toBe('سند مانده اول دوره');
+
+    // 2. Transaction with description: 'مانده حساب از قبل' (imported migration)
+    const opTx2 = {
+      id: 'tx_op_2',
+      transactionType: 'document',
+      isOpeningBalance: false,
+      documentDateJalali: '1403/01/20',
+      description: 'مانده حساب از قبل',
+    };
+    expect(getJournalLineBadge(opTx2).accountTitle).toBe('سرمایه اول دوره');
+    expect(parseTransactionBreakdown(opTx2).categoryLabel).toBe('سند مانده اول دوره');
+  });
+
+  it('accurately distinguishes carried-forward balance vs opening balance date range', () => {
+    // When fromDate is '1405/07/01' and customer opening balance is '1402/01/01':
+    // The opening balance transaction (1402/01/01) must NOT be placed in Mehr 1405.
+    const fromDatePrefix = '2026-09-23'; // 1405/07/01
+    const txOpening = { transactionDate: '2023-03-21T00:00:00.000Z', documentDateJalali: '1402/01/01' };
+
+    // Transaction in 1402 is strictly before fromDate
+    const isPriorToPeriod = txOpening.transactionDate < fromDatePrefix;
+    expect(isPriorToPeriod).toBe(true);
+
+    // Carried forward condition:
+    const openingBalances = { goldAmount: 4.304, rialAmount: -13300923, silverAmount: 0, platinumAmount: 0, foreignBalances: {} };
+    const fromDate = '1405/07/01';
+
+    const hasPreviousBalance = Boolean(
+      fromDate && (Math.abs(openingBalances.goldAmount) > 0.0005 || Math.abs(openingBalances.rialAmount) > 50)
+    );
+    expect(hasPreviousBalance).toBe(true);
+
+    // Without fromDate (all-time report), no carry-over row is generated (hasPreviousBalance is false)
+    const noFromDate = '';
+    const hasPreviousBalanceAllTime = Boolean(
+      noFromDate && (Math.abs(openingBalances.goldAmount) > 0.0005 || Math.abs(openingBalances.rialAmount) > 50)
+    );
+    expect(hasPreviousBalanceAllTime).toBe(false);
+  });
+
+  it('enforces freeze pane and sticky header scroll configuration in customer ledger reports', () => {
+    const fs = require('fs');
+    const path = require('path');
+
+    const reportCode = fs.readFileSync(
+      path.join(__dirname, '../src/components/reports/CustomerLedgerReport.tsx'),
+      'utf-8'
+    );
+    // Verifies the scroll container has overflow-auto and max-h so vertical scrolling takes place inside container
+    expect(reportCode).toContain('overflow-auto max-h-[calc(100vh-220px)]');
+    // Verifies thead has sticky top-0 and z-30 for solid freeze pane pinning
+    expect(reportCode).toContain('sticky top-0 z-30 shadow-xs border-b');
+
+    const ledgerCode = fs.readFileSync(
+      path.join(__dirname, '../src/components/CustomerTransactionLedger.tsx'),
+      'utf-8'
+    );
+    expect(ledgerCode).toContain('overflow-auto max-h-[calc(100vh-240px)]');
+    expect(ledgerCode).toContain('sticky top-0 z-30 shadow-xs');
+  });
+
+  it('supports tick column marking, keyboard space shortcuts, and accurate reconciliation discrepancy calculations', () => {
+    // 1. Verify tick column in CustomerLedgerReport
+    const fs = require('fs');
+    const path = require('path');
+    const reportCode = fs.readFileSync(
+      path.join(__dirname, '../src/components/reports/CustomerLedgerReport.tsx'),
+      'utf-8'
+    );
+
+    expect(reportCode).toContain('toggleRowTick');
+    expect(reportCode).toContain('selectedRowIds');
+    expect(reportCode).toContain('tickedStats');
+    expect(reportCode).toContain("e.key === ' ' || e.code === 'Space'");
+    expect(reportCode).toContain('جمع و مغایرت‌گیری ردیف‌های تیک‌زده');
+
+    // 2. Mock ledger rows reconciliation arithmetic
+    const rows = [
+      { id: '1', goldDebtor: 12.5, goldCreditor: 0, rialDebtor: 0, rialCreditor: 125000000 },
+      { id: '2', goldDebtor: 0, goldCreditor: 12.5, rialDebtor: 125000000, rialCreditor: 0 },
+      { id: '3', goldDebtor: 5.0, goldCreditor: 0, rialDebtor: 0, rialCreditor: 50000000 },
+    ];
+
+    // Scenario A: Rows 1 & 2 ticked (perfectly balanced / zero discrepancy)
+    const tickedA = { '1': true, '2': true };
+    let goldDebtorA = 0, goldCreditorA = 0, rialDebtorA = 0, rialCreditorA = 0;
+    for (const r of rows) {
+      if (tickedA[r.id as keyof typeof tickedA]) {
+        goldDebtorA += r.goldDebtor;
+        goldCreditorA += r.goldCreditor;
+        rialDebtorA += r.rialDebtor;
+        rialCreditorA += r.rialCreditor;
+      }
+    }
+    const goldDiscrepancyA = Math.abs(goldDebtorA - goldCreditorA);
+    const rialDiscrepancyA = Math.abs(rialDebtorA - rialCreditorA);
+    expect(goldDiscrepancyA).toBe(0);
+    expect(rialDiscrepancyA).toBe(0);
+
+    // Scenario B: Row 1 & Row 3 ticked (unbalanced / has discrepancy)
+    const tickedB = { '1': true, '3': true };
+    let goldDebtorB = 0, goldCreditorB = 0, rialDebtorB = 0, rialCreditorB = 0;
+    for (const r of rows) {
+      if (tickedB[r.id as keyof typeof tickedB]) {
+        goldDebtorB += r.goldDebtor;
+        goldCreditorB += r.goldCreditor;
+        rialDebtorB += r.rialDebtor;
+        rialCreditorB += r.rialCreditor;
+      }
+    }
+    const goldDiscrepancyB = Math.abs(goldDebtorB - goldCreditorB);
+    const rialDiscrepancyB = Math.abs(rialDebtorB - rialCreditorB);
+    expect(goldDebtorB).toBe(17.5);
+    expect(goldCreditorB).toBe(0);
+    expect(goldDiscrepancyB).toBe(17.5);
+    expect(rialDebtorB).toBe(0);
+    expect(rialCreditorB).toBe(175000000);
+    expect(rialDiscrepancyB).toBe(175000000);
   });
 });

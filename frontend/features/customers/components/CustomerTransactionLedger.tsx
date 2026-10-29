@@ -22,6 +22,10 @@ import {
   ArrowUp,
   ArrowDown,
   ArrowUpDown,
+  CheckSquare,
+  CheckCircle2,
+  AlertCircle,
+  X,
 } from 'lucide-react';
 import { currencyDisplay } from '@/lib/customer';
 import {
@@ -63,6 +67,7 @@ const CATEGORY_TABS = [
 ];
 
 export type CustomerLedgerColumnKey =
+  | 'tick'
   | 'rowNumber'
   | 'date'
   | 'docNumber'
@@ -77,6 +82,7 @@ export type CustomerLedgerColumnKey =
   | 'details';
 
 export const DEFAULT_CUSTOMER_LEDGER_WIDTHS: Record<CustomerLedgerColumnKey, number> = {
+  tick: 48,
   rowNumber: 45,
   date: 120,
   docNumber: 110,
@@ -92,6 +98,7 @@ export const DEFAULT_CUSTOMER_LEDGER_WIDTHS: Record<CustomerLedgerColumnKey, num
 };
 
 export const MIN_CUSTOMER_LEDGER_WIDTHS: Record<CustomerLedgerColumnKey, number> = {
+  tick: 38,
   rowNumber: 35,
   date: 85,
   docNumber: 75,
@@ -109,6 +116,7 @@ export const MIN_CUSTOMER_LEDGER_WIDTHS: Record<CustomerLedgerColumnKey, number>
 export const STORAGE_KEY_CUSTOMER_LEDGER = 'zarfolio_customer_tx_col_widths';
 
 export const CUSTOMER_LEDGER_COLUMNS: CustomerLedgerColumnKey[] = [
+  'tick',
   'rowNumber',
   'date',
   'docNumber',
@@ -546,6 +554,134 @@ export default function CustomerTransactionLedger({
     }));
   }, [filteredRows, safeCurrentPage, pageSize]);
 
+  // Ticked rows for audit & reconciliation (با کلید Space یا کلیک روی تیک)
+  const [selectedRowIds, setSelectedRowIds] = useState<Record<string, boolean>>({});
+  const [activeRowId, setActiveRowId] = useState<string | null>(null);
+
+  const toggleRowTick = (id: string) => {
+    setSelectedRowIds((prev) => {
+      const next = { ...prev };
+      if (next[id]) {
+        delete next[id];
+      } else {
+        next[id] = true;
+      }
+      return next;
+    });
+  };
+
+  const selectAllVisible = () => {
+    setSelectedRowIds((prev) => {
+      const next = { ...prev };
+      paginatedRows.forEach((r) => {
+        next[r.id] = true;
+      });
+      return next;
+    });
+  };
+
+  const clearAllTicks = () => {
+    setSelectedRowIds({});
+  };
+
+  const invertTicks = () => {
+    setSelectedRowIds((prev) => {
+      const next = { ...prev };
+      paginatedRows.forEach((r) => {
+        if (next[r.id]) {
+          delete next[r.id];
+        } else {
+          next[r.id] = true;
+        }
+      });
+      return next;
+    });
+  };
+
+  // Reconcile and discrepancy metrics for ticked rows
+  const tickedStats = useMemo(() => {
+    let count = 0;
+    let goldDebtor = 0;
+    let goldCreditor = 0;
+    let rialDebtor = 0;
+    let rialCreditor = 0;
+
+    for (const r of filteredRows) {
+      if (selectedRowIds[r.id]) {
+        count += 1;
+        goldDebtor += r.goldDebtor || 0;
+        goldCreditor += r.goldCreditor || 0;
+        rialDebtor += r.rialDebtor || 0;
+        rialCreditor += r.rialCreditor || 0;
+      }
+    }
+
+    const goldDiff = goldCreditor - goldDebtor;
+    const goldDiscrepancy = Math.abs(goldDebtor - goldCreditor);
+    const isGoldBalanced = count > 0 && goldDiscrepancy < 0.0005;
+
+    const rialDiff = rialCreditor - rialDebtor;
+    const rialDiscrepancy = Math.abs(rialDebtor - rialCreditor);
+    const isRialBalanced = count > 0 && rialDiscrepancy < 1;
+
+    return {
+      count,
+      goldDebtor,
+      goldCreditor,
+      goldDiff,
+      goldDiscrepancy,
+      isGoldBalanced,
+      rialDebtor,
+      rialCreditor,
+      rialDiff,
+      rialDiscrepancy,
+      isRialBalanced,
+    };
+  }, [selectedRowIds, filteredRows]);
+
+  // Space key and Arrow keys listener for rapid keyboard audit & ticking
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+
+      if (e.key === ' ' || e.code === 'Space') {
+        if (!paginatedRows.length) return;
+        e.preventDefault();
+        const targetId = activeRowId || paginatedRows[0]?.id;
+        if (targetId) {
+          toggleRowTick(targetId);
+          if (!activeRowId) setActiveRowId(targetId);
+        }
+      } else if (e.key === 'ArrowDown') {
+        if (!paginatedRows.length) return;
+        e.preventDefault();
+        if (!activeRowId) {
+          setActiveRowId(paginatedRows[0].id);
+        } else {
+          const currentIndex = paginatedRows.findIndex((r) => r.id === activeRowId);
+          if (currentIndex < paginatedRows.length - 1) {
+            setActiveRowId(paginatedRows[currentIndex + 1].id);
+          }
+        }
+      } else if (e.key === 'ArrowUp') {
+        if (!paginatedRows.length) return;
+        e.preventDefault();
+        if (!activeRowId) {
+          setActiveRowId(paginatedRows[0].id);
+        } else {
+          const currentIndex = paginatedRows.findIndex((r) => r.id === activeRowId);
+          if (currentIndex > 0) {
+            setActiveRowId(paginatedRows[currentIndex - 1].id);
+          }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeRowId, paginatedRows]);
+
   function toggleRow(id: string) {
     setExpandedRows((prev) => ({ ...prev, [id]: !prev[id] }));
   }
@@ -744,9 +880,103 @@ export default function CustomerTransactionLedger({
         </div>
       </div>
 
-      {/* Transactions & Breakdown Table */}
+      {/* Dynamic Reconciliation & Audit Toolbar (نوار مغایرت‌گیری و جمع ردیف‌های تیک‌زده) */}
+      {tickedStats.count > 0 && (
+        <div className="p-3 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-emerald-500/10 dark:from-amber-950/40 dark:via-slate-900/60 dark:to-emerald-950/40 border-2 border-amber-500/40 dark:border-amber-600/50 rounded-2xl shadow-md text-xs non-printable transition-all animate-in fade-in slide-in-from-top-2">
+          <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className="p-1.5 rounded-lg bg-amber-500 text-slate-950 font-black">
+                <CheckSquare size={16} />
+              </span>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-slate-900 dark:text-slate-100">
+                    جمع و مغایرت‌گیری تیک‌زده‌ها
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-200 dark:bg-amber-900/80 text-amber-900 dark:text-amber-200">
+                    {tickedStats.count.toLocaleString('fa-IR')} ردیف انتخاب شده
+                  </span>
+                </div>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  کلید Space برای تیک زدن سطر | کلیدهای ↑ و ↓ برای حرکت بین سطرها
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Gold Box */}
+              <div className="flex items-center gap-1.5 p-1.5 px-2.5 rounded-xl bg-white dark:bg-slate-900 border border-amber-300/70 dark:border-amber-800/60 text-[11px]">
+                <Scale size={13} className="text-amber-600" />
+                <span className="font-bold text-amber-900 dark:text-amber-200">طلا:</span>
+                <span className="text-rose-600 font-mono">بد: {formatWeight(tickedStats.goldDebtor)}</span>
+                <span className="text-slate-300">|</span>
+                <span className="text-emerald-600 font-mono">بس: {formatWeight(tickedStats.goldCreditor)}</span>
+                <span className="mr-1">
+                  {tickedStats.isGoldBalanced ? (
+                    <span className="px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 font-bold text-[10px]">
+                      تراز (۰ مغایرت)
+                    </span>
+                  ) : (
+                    <span className="px-1.5 py-0.5 rounded bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300 font-bold text-[10px]">
+                      مغایرت: {formatWeight(tickedStats.goldDiscrepancy)}g {tickedStats.goldDiff > 0 ? '(بس)' : '(بد)'}
+                    </span>
+                  )}
+                </span>
+              </div>
+
+              {/* Rial Box */}
+              <div className="flex items-center gap-1.5 p-1.5 px-2.5 rounded-xl bg-white dark:bg-slate-900 border border-emerald-300/70 dark:border-emerald-800/60 text-[11px]">
+                <Banknote size={13} className="text-emerald-600" />
+                <span className="font-bold text-emerald-900 dark:text-emerald-200">مالی:</span>
+                <span className="text-rose-600 font-mono">بد: {formatMoney(tickedStats.rialDebtor)}</span>
+                <span className="text-slate-300">|</span>
+                <span className="text-emerald-600 font-mono">بس: {formatMoney(tickedStats.rialCreditor)}</span>
+                <span className="mr-1">
+                  {tickedStats.isRialBalanced ? (
+                    <span className="px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 font-bold text-[10px]">
+                      تراز (۰ مغایرت)
+                    </span>
+                  ) : (
+                    <span className="px-1.5 py-0.5 rounded bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300 font-bold text-[10px]">
+                      مغایرت: {formatMoney(tickedStats.rialDiscrepancy)} {tickedStats.rialDiff > 0 ? '(بس)' : '(بد)'}
+                    </span>
+                  )}
+                </span>
+              </div>
+
+              {/* Buttons */}
+              <div className="flex items-center gap-1 mr-auto">
+                <button
+                  type="button"
+                  onClick={invertTicks}
+                  className="px-2 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 text-[10px] font-bold"
+                >
+                  معکوس
+                </button>
+                <button
+                  type="button"
+                  onClick={selectAllVisible}
+                  className="px-2 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 text-[10px] font-bold"
+                >
+                  انتخاب همه
+                </button>
+                <button
+                  type="button"
+                  onClick={clearAllTicks}
+                  className="px-2 py-1 rounded-lg border border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 hover:bg-rose-100 text-[10px] font-bold flex items-center gap-1"
+                >
+                  <X size={12} />
+                  <span>پاک کردن</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Transactions & Breakdown Table with Freeze Pane Header */}
       <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-xs bg-white dark:bg-slate-900">
-        <div className="overflow-x-auto">
+        <div className="overflow-auto max-h-[calc(100vh-240px)] min-h-[380px] relative scrollbar-thin">
           <table
             className="w-full text-xs text-right whitespace-nowrap border-collapse table-fixed"
             style={{ width: `${totalTableWidth}px`, minWidth: '100%' }}
@@ -761,8 +991,46 @@ export default function CustomerTransactionLedger({
                 />
               ))}
             </colgroup>
-            <thead className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700 font-bold sticky top-0 z-20 shadow-2xs">
+            <thead className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700 font-bold sticky top-0 z-30 shadow-xs">
               <tr>
+                <th
+                  style={{ width: `${columnWidths.tick}px` }}
+                  className="relative p-2.5 text-center select-none overflow-visible"
+                  title="تیک مغایرت‌گیری و بررسی (Space)"
+                >
+                  <div className="flex items-center justify-center">
+                    <input
+                      type="checkbox"
+                      checked={
+                        paginatedRows.length > 0 &&
+                        paginatedRows.every((r) => selectedRowIds[r.id])
+                      }
+                      ref={(el) => {
+                        if (el) {
+                          const someSelected = paginatedRows.some((r) => selectedRowIds[r.id]);
+                          const allSelected =
+                            paginatedRows.length > 0 &&
+                            paginatedRows.every((r) => selectedRowIds[r.id]);
+                          el.indeterminate = someSelected && !allSelected;
+                        }
+                      }}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          selectAllVisible();
+                        } else {
+                          clearAllTicks();
+                        }
+                      }}
+                      className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 border-slate-400 dark:border-slate-600 cursor-pointer"
+                    />
+                  </div>
+                  <ColumnResizer
+                    colKey="tick"
+                    onResizeStart={handleResizeStart}
+                    onReset={handleResetColumnWidth}
+                    isResizing={resizingCol === 'tick'}
+                  />
+                </th>
                 <th
                   style={{ width: `${columnWidths.rowNumber}px` }}
                   className="relative p-2.5 text-center select-none overflow-visible"
@@ -933,11 +1201,38 @@ export default function CustomerTransactionLedger({
                   return (
                     <React.Fragment key={row.id}>
                       <tr
-                        onClick={() => toggleRow(row.id)}
-                        className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors cursor-pointer ${
-                          isExpanded ? 'bg-amber-500/5 dark:bg-amber-500/10' : ''
-                        }`}
+                        onClick={() => {
+                          setActiveRowId(row.id);
+                          toggleRow(row.id);
+                        }}
+                        className={`hover:bg-amber-500/10 dark:hover:bg-amber-500/15 transition-colors cursor-pointer ${
+                          isExpanded ? 'bg-amber-500/15 dark:bg-amber-500/20' : ''
+                        } ${
+                          selectedRowIds[row.id]
+                            ? 'bg-amber-100/60 dark:bg-amber-950/60 font-semibold ring-1 ring-inset ring-amber-400 dark:ring-amber-500'
+                            : ''
+                        } ${activeRowId === row.id ? 'outline-2 -outline-offset-1 outline-amber-500/70' : ''}`}
                       >
+                        <td
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveRowId(row.id);
+                            toggleRowTick(row.id);
+                          }}
+                          className="p-2.5 text-center cursor-pointer"
+                          title="تیک زدن یا حذف تیک (Space)"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={!!selectedRowIds[row.id]}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              setActiveRowId(row.id);
+                              toggleRowTick(row.id);
+                            }}
+                            className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 border-slate-400 dark:border-slate-600 cursor-pointer"
+                          />
+                        </td>
                         <td className="p-2.5 text-center text-slate-400 font-mono text-[11px]">
                           {row.rowNumber}
                         </td>

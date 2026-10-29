@@ -138,7 +138,7 @@ export function emptyCustomerBalances(): CustomerBalanceValues {
 }
 
 
-export const customerDateFields = ['birthDate'] as const;
+export const customerDateFields = ['birthDate', 'accountOpenedAt'] as const;
 
 export type Customer = {
   id: string;
@@ -193,6 +193,7 @@ export type Customer = {
   introductionMethod: string;
   privateDescription: string;
   birthDate: string;
+  accountOpenedAt?: string;
   hasPrivateDescription?: boolean;
   avatarUrl?: string;
   openingBalances: CustomerBalanceValues;
