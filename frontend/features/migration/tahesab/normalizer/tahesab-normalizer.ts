@@ -254,9 +254,51 @@ export function normalizeTahesabData(
         ? Math.round(((vazn * ayar) / baseKaratForConv) * 1000) / 1000
         : 0;
 
-      const isUsd = parseText(dRow.Arz) === 'USD' || parseText(hRow.Arz) === 'USD';
-      const foreignAmt = isUsd ? parseNum(dRow.rial_V || dRow.rial_kh, 0) : undefined;
-      const amountIrr = !isUsd ? (rv > 0 ? rv : rkh > 0 ? rkh : 0) : 0;
+      const rawArz = parseText(dRow.Arz) || parseText(hRow.Arz);
+      const isUsd = rawArz === 'USD' || dNoKar === 'USD' || dSharh.includes('دلار') || rowNo.includes('دلار');
+      const isEur = rawArz === 'EUR' || dNoKar === 'EUR' || dSharh.includes('یورو');
+      const isAed = rawArz === 'AED' || dNoKar === 'AED' || dSharh.includes('درهم');
+      const isOtherForeign = Boolean(rawArz && rawArz !== 'IRR');
+      const detectedForeignCurrency = isUsd
+        ? 'USD'
+        : isEur
+        ? 'EUR'
+        : isAed
+        ? 'AED'
+        : isOtherForeign
+        ? rawArz
+        : rowNo.includes('ارز') || dSharh.includes('ارز')
+        ? 'USD'
+        : undefined;
+
+      const hasGoldWeight =
+        (tabdil > 0 || vazn > 0) && !rowNo.includes('وجه') && !rowNo.includes('بانک') && !rowNo.includes('ارز');
+      const isCurrency = Boolean(detectedForeignCurrency) && !hasGoldWeight;
+
+      if (isCurrency) {
+        metalType = 'none';
+      }
+
+      const foreignAmt = isCurrency
+        ? (rv > 0 ? rv : rkh > 0 ? rkh : undefined)
+        : (isUsd ? parseNum(dRow.rial_V || dRow.rial_kh, 0) : undefined);
+      const amountIrr = !isCurrency && !isUsd ? (rv > 0 ? rv : rkh > 0 ? rkh : 0) : 0;
+
+      // Check Command for transfer tokens
+      const cmd = parseText(dRow.Command);
+      let transferToken: string | undefined;
+      let transferSide: 'source' | 'destination' | undefined;
+
+      const isHavalehAz = dSharh.includes('حواله از') || cmd.startsWith('#HAVALEH#');
+      const isHavalehBe = dSharh.includes('حواله به') || cmd.startsWith('#hshbe#');
+
+      if (cmd.startsWith('#HAVALEH#') || isHavalehAz) {
+        transferSide = 'destination';
+        transferToken = cmd.startsWith('#HAVALEH#') ? cmd.replace('#HAVALEH#', '') : undefined;
+      } else if (cmd.startsWith('#hshbe#') || isHavalehBe) {
+        transferSide = 'source';
+        transferToken = cmd.startsWith('#hshbe#') ? cmd.replace('#hshbe#', '') : undefined;
+      }
 
       // Determine Gold Direction (ورود / خروج)
       let goldNature: 'received' | 'paid' | 'none' = 'none';
@@ -267,7 +309,11 @@ export function normalizeTahesabData(
       } else if (tkh > 0) {
         goldNature = 'paid';
       } else if (converted750 > 0) {
-        if (rowNo.includes('ورود') || rowNo.includes('خرید') || rowNo.includes('بدهی')) {
+        if (isHavalehAz) {
+          goldNature = 'received';
+        } else if (isHavalehBe) {
+          goldNature = 'paid';
+        } else if (rowNo.includes('ورود') || rowNo.includes('خرید') || rowNo.includes('بدهی')) {
           goldNature = 'received';
         } else if (rowNo.includes('خروج') || rowNo.includes('فروش') || rowNo.includes('طلب') || rowNo.includes('درصد')) {
           goldNature = 'paid';
@@ -282,7 +328,21 @@ export function normalizeTahesabData(
 
       // Determine Money Direction (ورود / خروج)
       let moneyNature: 'received' | 'paid' | 'none' = 'none';
-      if (rv > 0) {
+      if (isHavalehAz) {
+        // Remittance FROM someone -> received into this customer's account (خرید ارز بدون تسویه / ورود وجه)
+        moneyNature = 'received';
+      } else if (isHavalehBe) {
+        // Remittance TO someone -> paid out of this customer's account (فروش ارز بدون تسویه / خروج وجه)
+        moneyNature = 'paid';
+      } else if (rowNo.includes('خرید ارز')) {
+        moneyNature = 'received';
+      } else if (rowNo.includes('فروش ارز')) {
+        moneyNature = 'paid';
+      } else if (isCurrency && (rowNo === 'طلب' || rowNo.includes('ورود'))) {
+        moneyNature = 'received';
+      } else if (isCurrency && (rowNo === 'بدهی' || rowNo.includes('خروج'))) {
+        moneyNature = 'paid';
+      } else if (rv > 0) {
         moneyNature = 'received';
       } else if (rkh > 0) {
         moneyNature = 'paid';
@@ -308,23 +368,10 @@ export function normalizeTahesabData(
         goldNature === 'received' || moneyNature === 'received' ? 'received' : 'paid';
 
       // Party side in double-entry:
-      // If customer brings gold or pays cash -> customer is Creditor (بستانکار)
+      // If customer brings gold or pays cash / transfers in -> customer is Creditor (بستانکار)
       // If customer receives gold or gets cash, or is charged for goods/services -> customer is Debtor (بدهکار)
       const partySide: 'debtor' | 'creditor' =
         (moneyNature === 'received' || (moneyNature === 'none' && goldNature === 'received')) ? 'creditor' : 'debtor';
-
-      // Check Command for transfer tokens
-      const cmd = parseText(dRow.Command);
-      let transferToken: string | undefined;
-      let transferSide: 'source' | 'destination' | undefined;
-
-      if (cmd.startsWith('#HAVALEH#')) {
-        transferSide = 'source';
-        transferToken = cmd.replace('#HAVALEH#', '');
-      } else if (cmd.startsWith('#hshbe#')) {
-        transferSide = 'destination';
-        transferToken = cmd.replace('#hshbe#', '');
-      }
 
       // Check conditional gold and assay receipt
       const shSharti = parseText(dRow.sh_sharti);
@@ -332,14 +379,14 @@ export function normalizeTahesabData(
       const isConditional = shSharti !== '' && shSharti !== '0';
 
       let kind: NormalizedDocumentLine['kind'] = 'general_metal';
-      if (transferToken) {
+      if (isCurrency) {
+        kind = 'currency';
+      } else if (transferToken) {
         kind = 'claim';
       } else if (isConditional) {
         kind = 'conditional';
       } else if (isAbshode) {
         kind = 'melted';
-      } else if (isUsd || rowNo.includes('ارز')) {
-        kind = 'currency';
       } else if (amountIrr > 0 && vazn === 0) {
         kind = 'cash';
       } else if (rowNo.includes('فروش')) {
@@ -365,7 +412,7 @@ export function normalizeTahesabData(
         convertedWeight750: converted750,
         amountIrr,
         foreignAmount: foreignAmt,
-        foreignCurrency: foreignAmt ? 'USD' : undefined,
+        foreignCurrency: detectedForeignCurrency,
         assayStampNumber: shSharti || undefined,
         assayLabName: parseText(dRow.name_az) || undefined,
         transferToken,

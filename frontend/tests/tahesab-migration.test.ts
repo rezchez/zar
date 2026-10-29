@@ -1521,6 +1521,175 @@ describe('Tahesab Accounting Migration Engine Tests', () => {
     expect(openTx102.goldAmount).toBe(-12.500);
     expect(openTx102.rialAmount).toBe(-2500000);
   });
+
+  // 25. Foreign Currency & Remittance Differentiation
+  it('25. Foreign Currency & Remittance Differentiation: correctly identifies unsettled currency purchase/sale from description, distinguishes from gold misc, and sets accurate accounting article and tab', async () => {
+    const rawDb: TahesabRawDatabase = {
+      moshtarian: [
+        {
+          code: '481',
+          name: 'شاهین زینالی دلار',
+          Arz: 'IRR',
+          Arz2: 'USD',
+          tahesabtala: '0',
+          tahesabriali: '0',
+          JamV_T: '0',
+          JamV_P: '0',
+        },
+        {
+          code: '188',
+          name: 'بهروز نعمتی',
+          Arz: 'IRR',
+          Arz2: 'USD',
+          tahesabtala: '0',
+          tahesabriali: '0',
+          JamV_T: '0',
+          JamV_P: '0',
+        },
+      ],
+      hesab: [
+        {
+          Factor_Code: 'F_HAVALEH_REC',
+          sh_factor: '3',
+          mcode: '481',
+          Tarikh: '2025-02-18 13:46:25.567',
+          Rec: 'شاهین زینالی دلار',
+          Arz: 'USD',
+        },
+        {
+          Factor_Code: 'F_HAVALEH_SND',
+          sh_factor: '5',
+          mcode: '188',
+          Tarikh: '2025-02-18 13:46:27.180',
+          Rec: 'بهروز نعمتی',
+          Arz: 'USD',
+        },
+      ],
+      hesab_detail: [
+        {
+          Factor_Code: 'F_HAVALEH_REC',
+          mcode: '481',
+          no: 'خروج وجه نقد',
+          Sharh: '(حواله از: 188 بهروز نعمتی)',
+          Command: '#HAVALEH#811085188#46446',
+          Arz: 'USD',
+          rial_kh: '50',
+          Tahesab_p: '-50',
+          Tahesab_t: '0',
+        },
+        {
+          Factor_Code: 'F_HAVALEH_SND',
+          mcode: '188',
+          no: 'ورود وجه نقد',
+          Sharh: '(حواله به: 481 شاهین زینالی دلار)',
+          Command: '#hshbe#811085188#46446',
+          Arz: 'USD',
+          rial_V: '50',
+          Tahesab_p: '-1.52',
+          Tahesab_t: '0',
+        },
+      ],
+      Hesab_bank: [],
+      bank: [],
+      Sekeh_Shemsh: [],
+      Sang: [],
+      raygiri: [],
+      khar_sakhte: [],
+      Cities: [],
+      Hazine_Baabat: [],
+      gorooh: [],
+      otherTables: {},
+    };
+
+    const norm = normalizeTahesabData(rawDb, { mohitCount: 1, dbType: 'SQL', version: '10.0', archiveCount: 0 });
+
+    // 1. Verify receiver (Shahin Zeinali Dollar)
+    const docRec = norm.documents.find((d) => d.sourceFactorCode === 'F_HAVALEH_REC');
+    expect(docRec).toBeDefined();
+    const lineRec = docRec!.lines[0];
+    expect(lineRec.kind).toBe('currency');
+    expect(lineRec.metalType).toBe('none');
+    expect(lineRec.nature).toBe('received');
+    expect(lineRec.partySide).toBe('creditor');
+    expect(lineRec.foreignAmount).toBe(50);
+    expect(lineRec.foreignCurrency).toBe('USD');
+    expect(lineRec.signedForeignAmount).toBe(50);
+    expect(lineRec.weight).toBe(0);
+    expect(lineRec.convertedWeight750).toBe(0);
+
+    // 2. Verify sender (Behrouz Nemati)
+    const docSnd = norm.documents.find((d) => d.sourceFactorCode === 'F_HAVALEH_SND');
+    expect(docSnd).toBeDefined();
+    const lineSnd = docSnd!.lines[0];
+    expect(lineSnd.kind).toBe('currency');
+    expect(lineSnd.metalType).toBe('none');
+    expect(lineSnd.nature).toBe('paid');
+    expect(lineSnd.partySide).toBe('debtor');
+    expect(lineSnd.foreignAmount).toBe(50);
+    expect(lineSnd.foreignCurrency).toBe('USD');
+    expect(lineSnd.signedForeignAmount).toBe(-50);
+
+    // 3. Test Import
+    const createdRecords: Record<string, any[]> = {};
+    const mockWriter = {
+      collection: (col: string) => ({
+        getFirstListItem: async () => { throw new Error('Not found'); },
+        create: async (data: Record<string, any>) => {
+          if (!createdRecords[col]) createdRecords[col] = [];
+          const rec = { id: `tx_${Date.now()}_${Math.random()}`, ...data };
+          createdRecords[col].push(rec);
+          return rec;
+        },
+        getFullList: async () => createdRecords[col] || [],
+      }),
+    } as any;
+
+    await importTahesabData(
+      mockWriter,
+      norm,
+      buildInitialMappings(norm, [], []),
+      { migrationId: 'test_cur_mig', dryRun: false },
+    );
+
+    const txList = createdRecords['transactions'] || [];
+    expect(txList.length).toBe(2);
+
+    const txRec = txList.find((t) => t.customerCode === 481);
+    expect(txRec).toBeDefined();
+    expect(txRec.documentTab).toBe('currency');
+    expect(txRec.documentSubType).toBe('currency-buy');
+    expect(txRec.documentNature).toBe('received');
+    expect(txRec.foreignAmount).toBe(50);
+    expect(txRec.foreignCurrency).toBe('USD');
+    expect(txRec.goldAmount).toBe(0);
+    expect(txRec.rialAmount).toBe(0);
+
+    const recDetails = JSON.parse(txRec.documentDetails);
+    expect(recDetails.rawKind).toBeUndefined();
+    expect(recDetails.metalType).toBeUndefined();
+    expect(recDetails.currencyQuantity).toBe(50);
+    expect(recDetails.currencyUnit).toBe('USD');
+
+    // 4. Verify breakdown
+    const {
+      getDocumentLineDescription,
+      getJournalLineBadge,
+      parseTransactionBreakdown,
+    } = await import('@/features/customers/utils/document-breakdown');
+
+    const desc = getDocumentLineDescription(txRec);
+    expect(desc.primary).toBe('خرید ارز بدون تسویه');
+    expect(desc.secondary).toContain('(حواله از: 188 بهروز نعمتی)');
+
+    const badge = getJournalLineBadge(txRec);
+    expect(badge.accountCode).toBe('۱۱۲۰');
+    expect(badge.accountTitle).toBe('اسناد و حساب‌های دریافتنی');
+    expect(badge.badgeColor).toBe('sky');
+
+    const itemSpec = parseTransactionBreakdown(txRec);
+    expect(itemSpec.category).toBe('currency');
+    expect(itemSpec.categoryLabel).not.toContain('طلای متفرقه');
+  });
 });
 
 

@@ -595,14 +595,24 @@ export async function importTahesabData(
                     }
                   }
 
-                  const docDetailsObj = {
+                  const isCurrencyLine = line.kind === 'currency' || Boolean(line.foreignCurrency);
+                  const isGoldLine = line.metalType === 'gold';
+                  const isSilverLine = line.metalType === 'silver';
+
+                  const docDetailsObj: Record<string, any> = {
                     sourceSystem: 'tahesab',
                     sourceFactorCode: doc.sourceFactorCode,
                     sourceLineNumber: line.lineNumber,
                     migrationId,
-                    metalType: line.metalType === 'silver' ? 'silver' : 'gold',
-                    baseKarat: line.metalType === 'silver' ? 999 : 750,
-                    rawKind: line.kind === 'conditional' ? 'conditional' : line.kind === 'melted' ? 'molten' : 'misc',
+                    metalType: isSilverLine ? 'silver' : isGoldLine ? 'gold' : undefined,
+                    baseKarat: isSilverLine ? 999 : isGoldLine ? 750 : undefined,
+                    rawKind: isGoldLine
+                      ? line.kind === 'conditional'
+                        ? 'conditional'
+                        : line.kind === 'melted'
+                        ? 'molten'
+                        : 'misc'
+                      : undefined,
                     rawWeight: line.weight > 0 ? String(line.weight) : '',
                     purity: line.grade > 0 ? String(line.grade) : '',
                     stampNumber: line.assayStampNumber || '',
@@ -622,6 +632,13 @@ export async function importTahesabData(
                     signedRialAmount: line.signedRialAmount,
                     signedForeignAmount: line.signedForeignAmount,
                   };
+
+                  if (isCurrencyLine) {
+                    docDetailsObj.currencyQuantity = line.foreignAmount;
+                    docDetailsObj.currencyUnit = line.foreignCurrency || 'USD';
+                    docDetailsObj.currencyName = line.foreignCurrency || 'USD';
+                    docDetailsObj.unsettledTrade = true;
+                  }
 
                   let lineDocNum = generateZfDocumentNumber();
                   while (session.usedDocNumbers.has(lineDocNum)) {
@@ -676,17 +693,21 @@ export async function importTahesabData(
                     foreignCurrencySymbol: line.foreignCurrency ? String(line.foreignCurrency) : '',
                     documentNature: line.nature,
                     documentTab:
-                      line.kind === 'melted' || line.kind === 'conditional'
+                      isCurrencyLine
+                        ? 'currency'
+                        : line.kind === 'melted' || line.kind === 'conditional'
                         ? 'raw-gold'
                         : line.kind === 'claim'
                         ? 'our-claim'
                         : line.kind === 'cash'
                         ? 'cash'
-                        : line.kind === 'currency'
-                        ? 'currency'
                         : 'general',
                     documentSubType:
-                      line.kind === 'melted'
+                      isCurrencyLine
+                        ? line.nature === 'received'
+                          ? 'currency-buy'
+                          : 'currency-sale'
+                        : line.kind === 'melted'
                         ? line.nature === 'received'
                           ? 'incoming-molten'
                           : 'outgoing-molten'

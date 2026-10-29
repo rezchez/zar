@@ -24,13 +24,21 @@ export function parseTransactionBreakdown(transaction: CustomerTransaction): Lin
 
   const attributes: { label: string; value: string; isMono?: boolean }[] = [];
 
+  const isCurrency =
+    tab === 'currency' ||
+    subType.includes('currency') ||
+    Boolean(transaction.foreignCurrency) ||
+    Boolean(details.currencyQuantity);
+  const hasGold = (Number(transaction.goldAmount) || 0) !== 0 || Boolean(details.rawWeight || details.weight);
+
   // 1. Raw Gold / Molten / Conditional / Misc
   if (
-    tab === 'raw-gold' ||
-    subType.includes('molten') ||
-    subType.includes('conditional') ||
-    subType.includes('misc') ||
-    details.rawKind
+    !isCurrency &&
+    (tab === 'raw-gold' ||
+      subType.includes('molten') ||
+      subType.includes('conditional') ||
+      subType.includes('misc') ||
+      (details.rawKind && hasGold))
   ) {
     const isConditional = details.isConditional || subType.includes('conditional');
     const rawKindFa =
@@ -494,6 +502,17 @@ export function getJournalLineBadge(transaction: CustomerTransaction): JournalLi
   const nature = transaction.documentNature;
   const isPaid = nature === 'paid' || transaction.goldAmount < 0 || transaction.rialAmount < 0;
 
+  const isCurrency =
+    tab === 'currency' ||
+    subType.includes('currency') ||
+    Boolean(transaction.foreignCurrency) ||
+    Boolean(details.currencyQuantity);
+  const hasGold = (Number(transaction.goldAmount) || 0) !== 0 || Boolean(details.rawWeight || details.weight);
+  const isUnsettled =
+    details.isUnsettled === true ||
+    details.unsettledTrade === true ||
+    transaction.settlementMethod === 'unsettled';
+
   // 1. Discount (تخفیفات فروش ۴۱۶۰ / تخفیفات نقدی خرید ۵۱۶۰)
   if (tab === 'discount' || subType.includes('discount')) {
     if (isPaid) {
@@ -629,14 +648,15 @@ export function getJournalLineBadge(transaction: CustomerTransaction): JournalLi
 
   // 5. Raw Gold / Molten / Conditional / Misc (طلای آبشده، خام، شرطی، متفرقه)
   if (
-    tab === 'raw-gold' ||
-    tab === 'gold-raw' ||
-    subType.includes('molten') ||
-    subType.includes('conditional') ||
-    subType.includes('misc') ||
-    subType.includes('raw_gold') ||
-    subType.includes('question') ||
-    details.rawKind
+    !isCurrency &&
+    (tab === 'raw-gold' ||
+      tab === 'gold-raw' ||
+      subType.includes('molten') ||
+      subType.includes('conditional') ||
+      subType.includes('misc') ||
+      subType.includes('raw_gold') ||
+      subType.includes('question') ||
+      (details.rawKind && hasGold))
   ) {
     const isConditional =
       details.isConditional || subType.includes('conditional') || details.rawKind === 'conditional';
@@ -746,7 +766,33 @@ export function getJournalLineBadge(transaction: CustomerTransaction): JournalLi
   }
 
   // 8. Foreign Currency (وجوه ارزی / صندوق ارز)
-  if (tab === 'currency' || subType.includes('currency') || transaction.foreignCurrency) {
+  if (isCurrency && !tab.includes('gold') && !subType.includes('molten') && !hasGold) {
+    if (isUnsettled) {
+      if (!isPaid) {
+        return {
+          accountCode: '۱۱۲۰',
+          accountTitle: 'اسناد و حساب‌های دریافتنی',
+          generalCode: '۱۱۰۰',
+          generalTitle: 'دارایی‌های جاری',
+          groupCode: '۱۰۰۰',
+          groupTitle: 'دارایی‌ها',
+          treePath: 'دارایی‌ها > دارایی‌های جاری > اسناد و حساب‌های دریافتنی (۱۱۲۰)',
+          subCategory: transaction.foreignCurrency ? `خرید ارز بدون تسویه (${transaction.foreignCurrency})` : 'خرید ارز بدون تسویه',
+          badgeColor: 'sky',
+        };
+      }
+      return {
+        accountCode: '۲۱۲۰',
+        accountTitle: 'بدهی به طرف حساب‌ها',
+        generalCode: '۲۱۰۰',
+        generalTitle: 'بدهی‌های جاری',
+        groupCode: '۲۰۰۰',
+        groupTitle: 'بدهی‌ها',
+        treePath: 'بدهی‌ها > بدهی‌های جاری > بدهی به طرف حساب‌ها (۲۱۲۰)',
+        subCategory: transaction.foreignCurrency ? `فروش ارز بدون تسویه (${transaction.foreignCurrency})` : 'فروش ارز بدون تسویه',
+        badgeColor: 'sky',
+      };
+    }
     return {
       accountCode: '۱۱۱۰',
       accountTitle: 'موجودی نقد و بانک',
@@ -872,16 +918,24 @@ export function getDocumentLineDescription(transaction: CustomerTransaction): Do
   let primary = '';
   const extraInfoParts: string[] = [];
 
+  const isCurrency =
+    tab === 'currency' ||
+    subType.includes('currency') ||
+    Boolean(transaction.foreignCurrency) ||
+    Boolean(details.currencyQuantity);
+  const hasGold = (Number(transaction.goldAmount) || 0) !== 0 || Boolean(details.rawWeight || details.weight);
+
   // 1. Raw Gold / Molten / Conditional / Misc
   if (
-    tab === 'raw-gold' ||
-    tab === 'gold-raw' ||
-    subType.includes('molten') ||
-    subType.includes('conditional') ||
-    subType.includes('misc') ||
-    subType.includes('raw_gold') ||
-    subType.includes('question') ||
-    details.rawKind
+    !isCurrency &&
+    (tab === 'raw-gold' ||
+      tab === 'gold-raw' ||
+      subType.includes('molten') ||
+      subType.includes('conditional') ||
+      subType.includes('misc') ||
+      subType.includes('raw_gold') ||
+      subType.includes('question') ||
+      (details.rawKind && hasGold))
   ) {
     if (isConditional) {
       primary = isReceived ? 'ورود آبشده شرطی' : 'خروج آبشده شرطی';
