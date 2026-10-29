@@ -996,9 +996,21 @@ export default function CustomerTransactionLedger({
                 <th
                   style={{ width: `${columnWidths.tick}px` }}
                   className="relative p-2.5 text-center select-none overflow-visible"
-                  title="تیک مغایرت‌گیری و بررسی (Space)"
+                  title="انتخاب یا لغو انتخاب تمام ردیف‌های صفحه"
                 >
-                  <div className="flex items-center justify-center">
+                  <div
+                    onClick={() => {
+                      const allSelected =
+                        paginatedRows.length > 0 &&
+                        paginatedRows.every((r) => selectedRowIds[r.id]);
+                      if (allSelected) {
+                        clearAllTicks();
+                      } else {
+                        selectAllVisible();
+                      }
+                    }}
+                    className="flex items-center justify-center cursor-pointer"
+                  >
                     <input
                       type="checkbox"
                       checked={
@@ -1014,14 +1026,8 @@ export default function CustomerTransactionLedger({
                           el.indeterminate = someSelected && !allSelected;
                         }
                       }}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          selectAllVisible();
-                        } else {
-                          clearAllTicks();
-                        }
-                      }}
-                      className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 border-slate-400 dark:border-slate-600 cursor-pointer"
+                      onChange={() => {}}
+                      className="w-4 h-4 rounded text-amber-600 focus:ring-0 border-slate-400 dark:border-slate-600 cursor-pointer pointer-events-none transition-all"
                     />
                   </div>
                   <ColumnResizer
@@ -1219,19 +1225,17 @@ export default function CustomerTransactionLedger({
                             setActiveRowId(row.id);
                             toggleRowTick(row.id);
                           }}
-                          className="p-2.5 text-center cursor-pointer"
-                          title="تیک زدن یا حذف تیک (Space)"
+                          className="p-2.5 text-center cursor-pointer select-none"
+                          title="تیک زدن یا حذف تیک (با یک کلیک یا کلید Space)"
                         >
-                          <input
-                            type="checkbox"
-                            checked={!!selectedRowIds[row.id]}
-                            onChange={(e) => {
-                              e.stopPropagation();
-                              setActiveRowId(row.id);
-                              toggleRowTick(row.id);
-                            }}
-                            className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 border-slate-400 dark:border-slate-600 cursor-pointer"
-                          />
+                          <div className="flex items-center justify-center">
+                            <input
+                              type="checkbox"
+                              checked={!!selectedRowIds[row.id]}
+                              onChange={() => {}}
+                              className="w-4 h-4 rounded text-amber-600 focus:ring-0 border-slate-400 dark:border-slate-600 cursor-pointer pointer-events-none transition-all"
+                            />
+                          </div>
                         </td>
                         <td className="p-2.5 text-center text-slate-400 font-mono text-[11px]">
                           {row.rowNumber}

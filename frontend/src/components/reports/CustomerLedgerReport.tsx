@@ -2263,9 +2263,21 @@ export default function CustomerLedgerReport({
                         rowSpan={goldVisibleCount > 0 || rialVisibleCount > 0 ? 2 : 1}
                         style={{ width: `${columnWidths.tick}px` }}
                         className="relative p-2 text-center border-l border-slate-300 dark:border-slate-700 bg-slate-200 dark:bg-slate-800 select-none overflow-visible"
-                        title="تیک مغایرت‌گیری و بررسی (Space)"
+                        title="انتخاب یا لغو انتخاب تمام ردیف‌های صفحه"
                       >
-                        <div className="flex items-center justify-center">
+                        <div
+                          onClick={() => {
+                            const allSelected =
+                              paginatedRows.length > 0 &&
+                              paginatedRows.every((r) => selectedRowIds[r.id]);
+                            if (allSelected) {
+                              clearAllTicks();
+                            } else {
+                              selectAllVisible();
+                            }
+                          }}
+                          className="flex items-center justify-center cursor-pointer py-0.5"
+                        >
                           <input
                             type="checkbox"
                             checked={
@@ -2281,14 +2293,8 @@ export default function CustomerLedgerReport({
                                 el.indeterminate = someSelected && !allSelected;
                               }
                             }}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                selectAllVisible();
-                              } else {
-                                clearAllTicks();
-                              }
-                            }}
-                            className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 border-slate-400 dark:border-slate-600 cursor-pointer transition-all"
+                            onChange={() => {}}
+                            className="w-4 h-4 rounded text-amber-600 focus:ring-0 border-slate-400 dark:border-slate-600 cursor-pointer pointer-events-none transition-all"
                             title="انتخاب یا لغو انتخاب تمام ردیف‌های صفحه"
                           />
                         </div>
@@ -2681,18 +2687,23 @@ export default function CustomerLedgerReport({
                       }`}
                     >
                       {visibleColumns.tick && (
-                        <td className="p-2.5 text-center border-l border-slate-200 dark:border-slate-800">
-                          <input
-                            type="checkbox"
-                            checked={!!selectedRowIds['carried-forward']}
-                            onChange={(e) => {
-                              e.stopPropagation();
-                              setActiveRowId('carried-forward');
-                              toggleRowTick('carried-forward');
-                            }}
-                            className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 border-slate-400 dark:border-slate-600 cursor-pointer"
-                            title="تیک ردیف مانده منقول برای مغایرت‌گیری"
-                          />
+                        <td
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveRowId('carried-forward');
+                            toggleRowTick('carried-forward');
+                          }}
+                          className="p-2.5 text-center border-l border-slate-200 dark:border-slate-800 cursor-pointer select-none"
+                          title="تیک ردیف مانده منقول برای مغایرت‌گیری"
+                        >
+                          <div className="flex items-center justify-center">
+                            <input
+                              type="checkbox"
+                              checked={!!selectedRowIds['carried-forward']}
+                              onChange={() => {}}
+                              className="w-4 h-4 rounded text-amber-600 focus:ring-0 border-slate-400 dark:border-slate-600 cursor-pointer pointer-events-none transition-all"
+                            />
+                          </div>
                         </td>
                       )}
                       {visibleColumns.rowNumber && (
@@ -2877,19 +2888,17 @@ export default function CustomerLedgerReport({
                                   setActiveRowId(row.id);
                                   toggleRowTick(row.id);
                                 }}
-                                className={`${pyClass} px-2 text-center border-l border-slate-200 dark:border-slate-800 cursor-pointer`}
-                                title="تیک زدن یا حذف تیک (Space)"
+                                className={`${pyClass} px-2 text-center border-l border-slate-200 dark:border-slate-800 cursor-pointer select-none`}
+                                title="تیک زدن یا حذف تیک (با یک کلیک یا کلید Space)"
                               >
-                                <input
-                                  type="checkbox"
-                                  checked={!!selectedRowIds[row.id]}
-                                  onChange={(e) => {
-                                    e.stopPropagation();
-                                    setActiveRowId(row.id);
-                                    toggleRowTick(row.id);
-                                  }}
-                                  className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 border-slate-400 dark:border-slate-600 cursor-pointer transition-all"
-                                />
+                                <div className="flex items-center justify-center">
+                                  <input
+                                    type="checkbox"
+                                    checked={!!selectedRowIds[row.id]}
+                                    onChange={() => {}}
+                                    className="w-4 h-4 rounded text-amber-600 focus:ring-0 border-slate-400 dark:border-slate-600 cursor-pointer pointer-events-none transition-all"
+                                  />
+                                </div>
                               </td>
                             )}
 
