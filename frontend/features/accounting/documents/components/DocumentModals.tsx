@@ -24,7 +24,8 @@ interface DocumentModalsProps {
   selectedCustomer: Customer | null;
   customers: Customer[];
   weightPrecision?: number;
-  onConfirmHawala: (targetCustomer: Customer) => void;
+  onConfirmHawala: (targetCustomer: Customer) => void | Promise<void>;
+  isSubmittingHawala?: boolean;
 
   // Unsaved changes exit guard
   showExitModal: boolean;
@@ -78,6 +79,7 @@ export default function DocumentModals({
   customers,
   weightPrecision = 3,
   onConfirmHawala,
+  isSubmittingHawala,
   showExitModal,
   onCloseExitModal,
   onConfirmExit,
@@ -117,6 +119,7 @@ export default function DocumentModals({
         weightPrecision={weightPrecision}
         onClose={() => setHawalaLine(null)}
         onConfirmHawala={onConfirmHawala}
+        isSubmitting={isSubmittingHawala}
       />
 
       {/* 2. UNSAVED CHANGES EXIT GUARD MODAL */}

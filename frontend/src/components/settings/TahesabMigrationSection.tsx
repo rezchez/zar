@@ -123,7 +123,7 @@ export default function TahesabMigrationSection() {
   const [preview, setPreview] = useState<MigrationPreviewStats | null>(null);
   const [mappings, setMappings] = useState<MigrationMappings | null>(null);
   const [validation, setValidation] = useState<MigrationValidationResult | null>(null);
-  const [mappingTab, setMappingTab] = useState<'accounts' | 'assayLabs' | 'parties'>('accounts');
+  const [mappingTab, setMappingTab] = useState<'accounts' | 'assayLabs' | 'parties' | 'currencies'>('accounts');
   const [importResult, setImportResult] = useState<MigrationResult | null>(null);
   const [migrationId, setMigrationId] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string>('');
@@ -216,6 +216,40 @@ export default function TahesabMigrationSection() {
     } catch {
       // ignore
     }
+  };
+
+  const handleUpdateCurrencyMapping = (sourceCode: string, targetCurrencyCode: string) => {
+    if (!mappings || !mappings.currencies) return;
+    const stdMap: Record<string, { name: string; symbol: string }> = {
+      USD: { name: 'دلار آمریکا', symbol: '$' },
+      EUR: { name: 'یورو', symbol: '€' },
+      AED: { name: 'درهم امارات', symbol: 'د.إ' },
+      GBP: { name: 'پوند انگلیس', symbol: '£' },
+      TRY: { name: 'لیر ترکیه', symbol: '₺' },
+      IRR: { name: 'ریال ایران (تومان)', symbol: 'تومان' },
+      IRT: { name: 'تومان', symbol: 'تومان' },
+    };
+    const updatedCurrencies = mappings.currencies.map((item) => {
+      if (item.sourceCode === sourceCode) {
+        const meta = stdMap[targetCurrencyCode.toUpperCase()] || {
+          name: targetCurrencyCode,
+          symbol: targetCurrencyCode,
+        };
+        return {
+          ...item,
+          targetCurrencyCode: targetCurrencyCode.toUpperCase(),
+          targetCurrencyName: meta.name,
+          targetCurrencySymbol: meta.symbol,
+          status: 'mapped' as const,
+          notes: `تطبیق به ${meta.name} (${targetCurrencyCode})`,
+        };
+      }
+      return item;
+    });
+    setMappings({
+      ...mappings,
+      currencies: updatedCurrencies,
+    });
   };
 
   // Analyze backup
@@ -1163,6 +1197,18 @@ export default function TahesabMigrationSection() {
               <Users className="h-3.5 w-3.5" />
               طرف‌حساب‌ها ({toFa(mappings.parties.length)})
             </button>
+            <button
+              type="button"
+              onClick={() => setMappingTab('currencies')}
+              className={`px-4 py-2 text-xs font-bold border-b-2 transition-colors flex items-center gap-1.5 ${
+                mappingTab === 'currencies'
+                  ? 'border-amber-500 text-amber-600 dark:text-amber-400'
+                  : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+              }`}
+            >
+              <Coins className="h-3.5 w-3.5" />
+              واحدهای پولی و ارزها ({toFa(mappings.currencies?.length || 0)})
+            </button>
           </div>
 
           {/* Tab 1: Accounts Mapping */}
@@ -1306,6 +1352,91 @@ export default function TahesabMigrationSection() {
                           ) : (
                             <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700 dark:bg-blue-950/60 dark:text-blue-300">
                               مشتری جدید
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Tab 4: Currencies Mapping */}
+          {mappingTab === 'currencies' && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                  تطبیق واحدهای پولی و ارزها ({toFa(mappings.currencies?.length || 0)} واحد ارزی)
+                </h4>
+                <div className="flex items-center gap-2 text-[11px]">
+                  <span className="text-emerald-600 font-semibold">
+                    {toFa(mappings.currencies?.filter((c) => c.status === 'mapped').length || 0)} تطبیق‌یافته
+                  </span>
+                  {(mappings.currencies?.filter((c) => c.status === 'needs_review').length || 0) > 0 && (
+                    <>
+                      <span className="text-slate-400">|</span>
+                      <span className="text-amber-600 font-semibold">
+                        {toFa(mappings.currencies?.filter((c) => c.status === 'needs_review').length || 0)} نیازمند بررسی
+                      </span>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 dark:border-slate-800 overflow-x-auto">
+                <table className="w-full text-right text-xs">
+                  <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-500">
+                    <tr>
+                      <th className="p-3">ارز در فایل ته‌حساب</th>
+                      <th className="p-3">کد مبدأ</th>
+                      <th className="p-3">ارز متناظر در زرفولیو</th>
+                      <th className="p-3">نماد</th>
+                      <th className="p-3">وضعیت تطبیق</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {(mappings.currencies || []).map((curr, idx) => (
+                      <tr key={idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
+                        <td className="p-3 font-semibold text-slate-700 dark:text-slate-200">
+                          {curr.sourceName || curr.sourceCode}
+                        </td>
+                        <td className="p-3 font-mono text-slate-500 font-bold">{curr.sourceCode}</td>
+                        <td className="p-3">
+                          <select
+                            value={curr.targetCurrencyCode || curr.sourceCode}
+                            onChange={(e) => handleUpdateCurrencyMapping(curr.sourceCode, e.target.value)}
+                            className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1 text-xs text-slate-700 dark:text-slate-200 focus:border-amber-500 focus:outline-none"
+                          >
+                            <option value="USD">USD - دلار آمریکا</option>
+                            <option value="EUR">EUR - یورو</option>
+                            <option value="AED">AED - درهم امارات</option>
+                            <option value="GBP">GBP - پوند انگلیس</option>
+                            <option value="TRY">TRY - لیر ترکیه</option>
+                            <option value="IRR">IRR - ریال ایران (تومان)</option>
+                            <option value="IRT">IRT - تومان</option>
+                            {curr.targetCurrencyCode &&
+                              !['USD', 'EUR', 'AED', 'GBP', 'TRY', 'IRR', 'IRT'].includes(
+                                curr.targetCurrencyCode.toUpperCase()
+                              ) && (
+                                <option value={curr.targetCurrencyCode}>
+                                  {curr.targetCurrencyCode} - {curr.targetCurrencyName}
+                                </option>
+                              )}
+                          </select>
+                        </td>
+                        <td className="p-3 font-mono font-bold text-amber-600 dark:text-amber-400">
+                          {curr.targetCurrencySymbol || '$'}
+                        </td>
+                        <td className="p-3">
+                          {curr.status === 'mapped' ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
+                              تطبیق‌یافته
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:bg-amber-950/60 dark:text-amber-300">
+                              نیاز به بررسی
                             </span>
                           )}
                         </td>

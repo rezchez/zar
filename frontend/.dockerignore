@@ -16,4 +16,9 @@ app_backups
 *.Mcbk
 *.mcbk
 *.MCBK
+*.Mbck
+*.mbck
+*.MBCK
+app_backups
+app_cleanups
 tests

@@ -107,3 +107,10 @@ coverage/
 migration/tahesab/fixtures/*.Mcbk
 migration/tahesab/fixtures/*.mcbk
 migration/tahesab/fixtures/*.MCBK
+migration/tahesab/fixtures/*.Mbck
+migration/tahesab/fixtures/*.mbck
+migration/tahesab/fixtures/*.MBCK
+app_backups/
+app_backups/**
+frontend/app_backups/
+frontend/app_backups/**

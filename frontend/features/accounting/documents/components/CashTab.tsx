@@ -2,6 +2,7 @@
 
 import {
   AlertCircle,
+  ArrowLeftRight,
   Banknote,
   CheckCircle2,
   ListPlus,
@@ -18,6 +19,7 @@ import MoneyInputField from '@/src/components/documents/MoneyInputField';
 import type { DetailState, DocumentLine } from '@/src/components/documents/RawGoldTab';
 import type { CashFundItem } from '@/src/components/inventory/CashFundsListClient';
 import InitialCashInventoryModal from '@/src/components/inventory/InitialCashInventoryModal';
+import type { Customer } from '@/lib/customer';
 import { parseLocalizedAmount } from '@/lib/money';
 import { sanitizeLineDetailsForTab } from '../utils/document-helpers';
 
@@ -35,6 +37,10 @@ type CashTabProps = {
   baseCurrency?: 'IRR' | 'IRT';
   selectedCurrency?: string;
   currencyLabel?: string;
+  isHawala?: boolean;
+  setIsHawala?: (val: boolean) => void;
+  onRequestHawala?: (line: DocumentLine) => void;
+  selectedCustomer?: Customer | null;
 };
 
 // Persistent & Module-level in-memory cache for cash funds across tab switches
@@ -114,9 +120,17 @@ export default function CashTab({
   baseCurrency = 'IRR',
   selectedCurrency,
   currencyLabel,
+  isHawala,
+  setIsHawala,
+  onRequestHawala,
+  selectedCustomer,
 }: CashTabProps) {
   const isReceived = nature === 'received';
   const titleText = isReceived ? 'ورود وجه نقد' : 'خروج وجه نقد';
+
+  const [internalIsHawala, setInternalIsHawala] = useState(false);
+  const isHawalaEffective = isHawala !== undefined ? isHawala : internalIsHawala;
+  const setIsHawalaEffective = setIsHawala || setInternalIsHawala;
 
   const initialCached = getInitialCachedCashFunds();
   const [funds, setFunds] = useState<CashFundItem[]>(() => initialCached || []);
@@ -193,10 +207,13 @@ export default function CashTab({
     if (!activeFund) return;
 
     const isForeign =
-      activeFund.currencyCode !== 'IRR' &&
-      activeFund.currencyCode !== 'IRT' &&
-      activeFund.currencyName !== 'تومان' &&
-      activeFund.currencyName !== 'ریال';
+      (activeFund.currencyCode !== 'IRR' &&
+        activeFund.currencyCode !== 'IRT' &&
+        activeFund.currencyName !== 'تومان' &&
+        activeFund.currencyName !== 'ریال') ||
+      /یورو|دلار|درهم|پوند|لیر|یوان|eur|usd|aed|gbp|try|cny/i.test(
+        `${activeFund.name} ${activeFund.currencyName || ''} ${activeFund.currencyCode || ''}`
+      );
 
     setDraftLine((current) => {
       // Avoid infinite loop if already synced
@@ -289,6 +306,56 @@ export default function CashTab({
       });
       return;
     }
+    if (!numericAmount || numericAmount <= 0) {
+      setNotice({
+        tone: 'error',
+        text: 'لطفاً مبلغ وجه نقد را وارد کنید.',
+      });
+      return;
+    }
+
+    if (isHawalaEffective) {
+      if (!selectedCustomer) {
+        setNotice({
+          tone: 'error',
+          text: 'ابتدا طرف‌حساب سند را از فهرست انتخاب کنید.',
+        });
+        return;
+      }
+      const fullLine: DocumentLine = {
+        ...draftLine,
+        id: draftLine.id || `cash_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        documentTab: 'cash',
+        sourceTab: 'cash',
+        documentNature: nature,
+        documentTypeLabel: nature === 'received' ? `دریافت وجه نقد به ${activeFund.name}` : `پرداخت نقد از ${activeFund.name}`,
+        converted750: 0,
+        details: sanitizeLineDetailsForTab('cash', {
+          ...draftLine.details,
+          cashFundId: activeFund.id,
+          cashFundName: activeFund.name,
+          cashFundCurrency: activeFund.currencyCode || activeFund.currencyName,
+          cashFundCurrencyId: activeFund.currencyId,
+          cashFundBalance: activeFund.balance,
+          currencyUnit: activeFund.currencySymbol || activeFund.currencyCode || activeFund.currencyName,
+          isForeignCash:
+            (activeFund.currencyCode !== 'IRR' &&
+              activeFund.currencyCode !== 'IRT' &&
+              activeFund.currencyName !== 'تومان' &&
+              activeFund.currencyName !== 'ریال') ||
+            /یورو|دلار|درهم|پوند|لیر|یوان|eur|usd|aed|gbp|try|cny/i.test(
+              `${activeFund.name} ${activeFund.currencyName || ''} ${activeFund.currencyCode || ''}`
+            ),
+          totalAmount: draftLine.details.totalAmount || '',
+        }, effectiveBaseCurrency),
+      };
+
+      if (onRequestHawala) {
+        onRequestHawala(fullLine);
+        return;
+      }
+    }
+
     commitDraftLine?.();
   };
 
@@ -304,6 +371,11 @@ export default function CashTab({
       }
       if (activeFund?.isBlocked) {
         e.preventDefault();
+        return;
+      }
+      if (isHawalaEffective) {
+        e.preventDefault();
+        handleCommitCashLine();
         return;
       }
       if (handleKeyDownEnter) {
@@ -532,6 +604,29 @@ export default function CashTab({
             />
           </Field>
 
+          {/* Hawala Checkbox (حواله طرف‌به‌طرف) */}
+          <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50">
+            <label className="flex items-center gap-2.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={isHawalaEffective}
+                onChange={(e) => setIsHawalaEffective(e.target.checked)}
+                className="size-4 rounded text-amber-500 focus:ring-amber-500 focus:ring-offset-0 border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 transition cursor-pointer"
+              />
+              <div className="flex items-center gap-2">
+                <ArrowLeftRight size={16} className={isHawalaEffective ? 'text-amber-500' : 'text-slate-400'} />
+                <span className="text-xs font-black text-slate-800 dark:text-slate-200">
+                  حواله شود
+                </span>
+              </div>
+            </label>
+            {isHawalaEffective && (
+              <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 dark:bg-amber-500/15 px-2.5 py-1 rounded-lg border border-amber-500/20">
+                پس از ثبت ردیف، پنجره انتخاب طرف‌حساب حواله باز می‌شود
+              </span>
+            )}
+          </div>
+
           {/* Optional Trade Settlement Selector */}
           {committedLines.some(
             (line) =>
@@ -604,7 +699,7 @@ export default function CashTab({
             disabled={Boolean(activeFund?.isBlocked) || isFundBalanceInsufficient}
             onClick={handleCommitCashLine}
           >
-            <ListPlus size={16} /> {editingLineId ? 'ثبت اصلاح ردیف' : 'ثبت ردیف'}
+            <ListPlus size={16} /> {editingLineId ? 'ثبت اصلاح ردیف' : isHawalaEffective ? 'ثبت ردیف و انتخاب طرف‌حساب حواله' : 'ثبت ردیف'}
           </button>
         </div>
       ) : null}

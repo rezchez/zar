@@ -51,6 +51,16 @@ describe('Tahesab Accounting Migration Engine Tests', () => {
     }
   });
 
+  // 1.2 .mbck Extension Detection
+  it('1.2. Detects via .mbck file extension path', async () => {
+    const mbckPath = path.resolve(process.cwd(), '../migration/tahesab/fixtures/1.mbck');
+    if (fs.existsSync(mbckPath)) {
+      const result = await detectTahesabBackup(mbckPath);
+      expect(result.isTahesab).toBe(true);
+      expect(result.backupInfo?.version).toBe('10.1405.4.20');
+    }
+  });
+
   // 2. Parser & SQL Table Discovery
   it('2. Parser & Table Discovery: parses SQL Server dump and discovers all financial tables', async () => {
     if (!fs.existsSync(FIXTURE_PATH)) return;
@@ -182,7 +192,7 @@ describe('Tahesab Accounting Migration Engine Tests', () => {
     let conditionalFound = false;
     for (const doc of normalized.documents) {
       for (const line of doc.lines) {
-        if (line.isConditional && line.assayStampNumber) {
+        if ((line.isConditional || line.kind === 'melted') && line.assayStampNumber) {
           conditionalFound = true;
           expect(line.kind === 'conditional' || line.kind === 'melted').toBe(true);
           break;
@@ -1689,6 +1699,437 @@ describe('Tahesab Accounting Migration Engine Tests', () => {
     const itemSpec = parseTransactionBreakdown(txRec);
     expect(itemSpec.category).toBe('currency');
     expect(itemSpec.categoryLabel).not.toContain('طلای متفرقه');
+  });
+
+  // 26. Currency Mapping & Foreign Currency Cash Receipt Detection
+  it('26. Foreign Currency Cash Receipt & Currency Mapping: accurately detects currency unit in cash receipts and generates currency mappings', async () => {
+    const rawDb: TahesabRawDatabase = {
+      moshtarian: [
+        {
+          code: '481',
+          name: 'شاهین زینالی دلار',
+          Arz2: 'USD',
+          tel: '09120000000',
+        },
+      ],
+      hesab: [
+        {
+          Factor_Code: '2',
+          code: '481',
+          sh_factor: '2',
+          tarikh: '1403/11/23',
+          Arz: 'USD',
+          mande_bed: '0',
+          mande_bes: '0',
+        },
+      ],
+      hesab_detail: [
+        {
+          Factor_Code: '2',
+          radif: '1',
+          no: 'خرید ارز',
+          Count: '800',
+          FiF: '927000',
+          rial_V: '741600000',
+          rial_kh: '0',
+          Sharh: '',
+        },
+        {
+          Factor_Code: '2',
+          radif: '2',
+          no: 'طلب',
+          Count: '0',
+          FiF: '0',
+          rial_V: '0',
+          rial_kh: '800',
+          Sharh: '#DSD1',
+        },
+        {
+          Factor_Code: '2',
+          radif: '3',
+          no: 'ورود وجه نقد',
+          Count: '0',
+          FiF: '0',
+          rial_V: '800',
+          rial_kh: '0',
+          Sharh: '',
+        },
+        {
+          Factor_Code: '2',
+          radif: '4',
+          no: 'خروج وجه از حساب بانکی',
+          Count: '0',
+          FiF: '0',
+          rial_V: '0',
+          rial_kh: '741600000',
+          name_bank: 'اقتصاد نوین',
+          Sharh: '',
+        },
+      ],
+      bank: [],
+      Hesab_bank: [
+        {
+          n_bank: 'اقتصاد نوین',
+          Sh_Hesab: '6274121198087223',
+          MojoodiA: '1000000000',
+          MoJoodi: '1000000000',
+        },
+      ],
+      Sekeh_Shemsh: [],
+      Sang: [],
+      raygiri: [],
+      khar_sakhte: [],
+      Cities: [],
+      Hazine_Baabat: [],
+      gorooh: [],
+      otherTables: {},
+    };
+
+    const info = parseBackupInfo('Info.Date=1403/11/23\nMohitCount=1\nVersion=10.1405.4.20');
+    const norm = normalizeTahesabData(rawDb, info);
+
+    // 1. Verify detected currencies in normalized data
+    expect(norm.currencies).toContain('USD');
+
+    // 2. Verify mappings generation includes currency mapping
+    const mappings = buildInitialMappings(norm, [], [], [], [
+      { id: 'curr_usd_pb', code: 'USD', name: 'دلار آمریکا', symbol: '$', isSystem: true },
+    ]);
+    expect(mappings.currencies).toBeDefined();
+    expect(mappings.currencies!.length).toBeGreaterThan(0);
+
+    const usdMapping = mappings.currencies!.find((c) => c.sourceCode === 'USD');
+    expect(usdMapping).toBeDefined();
+    expect(usdMapping?.targetCurrencyCode).toBe('USD');
+    expect(usdMapping?.targetCurrencyName).toBe('دلار آمریکا');
+    expect(usdMapping?.targetCurrencySymbol).toBe('$');
+    expect(usdMapping?.status).toBe('mapped');
+
+    // 3. Verify normalized document and lines: Error pair (طلب 800 & ورود وجه نقد 800) neutralized!
+    const doc = norm.documents.find((d) => d.sourceFactorCode === '2');
+    expect(doc).toBeDefined();
+    expect(doc!.lines.length).toBe(2); // exactly 2 clean lines, zero 80 Toman phantom line!
+
+    // Line 1: خرید ارز (800 USD, 741,600,000 IRR)
+    const lineTrade = doc!.lines[0];
+    expect(lineTrade.kind).toBe('currency');
+    expect(lineTrade.foreignAmount).toBe(800);
+    expect(lineTrade.foreignCurrency).toBe('USD');
+    expect(lineTrade.amountIrr).toBe(741600000);
+
+    // Line 2: خروج وجه از حساب بانکی (اقتصاد نوین)
+    const lineBank = doc!.lines[1];
+    expect(lineBank.kind).toBe('bank');
+    expect(lineBank.bankName).toBe('اقتصاد نوین');
+    expect(lineBank.bankAccountNumber).toBe('6274121198087223');
+    expect(lineBank.amountIrr).toBe(741600000);
+    expect(lineBank.nature).toBe('paid');
+
+    // 4. Test Import to verify transactions table persistence
+    const createdRecords: Record<string, any[]> = {};
+    const mockWriter = {
+      collection: (col: string) => ({
+        getFirstListItem: async () => { throw new Error('Not found'); },
+        create: async (data: Record<string, any>) => {
+          if (!createdRecords[col]) createdRecords[col] = [];
+          const rec = { id: `tx_${Date.now()}_${Math.random()}`, ...data };
+          createdRecords[col].push(rec);
+          return rec;
+        },
+        getFullList: async () => createdRecords[col] || [],
+      }),
+    } as any;
+
+    await importTahesabData(
+      mockWriter,
+      norm,
+      mappings,
+      { migrationId: 'test_factor2_mig', dryRun: false },
+    );
+
+    const txList = createdRecords['transactions'] || [];
+    expect(txList.length).toBe(2);
+
+    const txBank = txList.find((t) => t.documentTab === 'bank');
+    expect(txBank).toBeDefined();
+    expect(txBank.documentSubType).toBe('pay-to-customer');
+    expect(txBank.rialAmount).toBe(-741600000);
+
+    const bankDetails = JSON.parse(txBank.documentDetails);
+    expect(bankDetails.bankName).toBe('اقتصاد نوین');
+    expect(bankDetails.bankAccountNumber).toBe('6274121198087223');
+  });
+
+  // 27. Direct Foreign Cash Receipt (Factor 4804 - Shahin Zeinali)
+  it('27. Foreign Cash Receipt: accurately imports direct USD cash in to cash vault with 0 IRR effect', async () => {
+    const rawDb: any = {
+      moshtarian: [
+        {
+          code: '481',
+          name: 'شاهین زینالی دلار',
+          Arz2: 'USD',
+        },
+      ],
+      hesab: [
+        {
+          Factor_Code: '4804',
+          code: '481',
+          sh_factor: '4804',
+          Arz: 'USD',
+        },
+      ],
+      hesab_detail: [
+        {
+          Factor_Code: '4804',
+          radif: '1',
+          no: 'ورود وجه نقد',
+          rial_V: '600',
+          rial_kh: '0',
+          Arz: 'USD',
+          Sharh: 'دریافت از زینالی',
+        },
+      ],
+      bank: [],
+      Hesab_bank: [],
+      Sekeh_Shemsh: [],
+      Sang: [],
+      raygiri: [],
+      khar_sakhte: [],
+      Cities: [],
+      Hazine_Baabat: [],
+      gorooh: [],
+      otherTables: {},
+    };
+
+    const norm = normalizeTahesabData(rawDb, parseBackupInfo('Version=10.0'));
+    const doc = norm.documents.find((d) => d.sourceFactorCode === '4804');
+    expect(doc).toBeDefined();
+    expect(doc!.lines.length).toBe(1);
+
+    const line = doc!.lines[0];
+    expect(line.kind).toBe('cash');
+    expect(line.foreignAmount).toBe(600);
+    expect(line.foreignCurrency).toBe('USD');
+    expect(line.amountIrr).toBe(0); // Zero IRR
+    expect(line.nature).toBe('received');
+    expect(line.partySide).toBe('creditor');
+
+    const createdRecords: Record<string, any[]> = {};
+    const mockWriter = {
+      collection: (col: string) => ({
+        getFirstListItem: async () => { throw new Error('Not found'); },
+        create: async (data: Record<string, any>) => {
+          if (!createdRecords[col]) createdRecords[col] = [];
+          const rec = { id: `tx_${Date.now()}_${Math.random()}`, ...data };
+          createdRecords[col].push(rec);
+          return rec;
+        },
+        getFullList: async () => createdRecords[col] || [],
+      }),
+    } as any;
+
+    await importTahesabData(mockWriter, norm, buildInitialMappings(norm, [], [], [], []), {
+      migrationId: 'test_f4804_mig',
+      dryRun: false,
+    });
+
+    const txList = createdRecords['transactions'] || [];
+    expect(txList.length).toBe(1);
+    const tx = txList[0];
+    expect(tx.documentTab).toBe('cash');
+    expect(tx.documentSubType).toBe('cash-in');
+    expect(tx.foreignAmount).toBe(600);
+    expect(tx.foreignCurrency).toBe('USD');
+    expect(tx.rialAmount).toBe(0);
+  });
+
+  // 28. Melted Gold vs Conditional Gold & Opening Inventory
+  it('28. Melted Gold & Opening Inventory: classifies melted gold with assay stamp as melted, not conditional, and records opening inventory', async () => {
+    const rawDb: any = {
+      moshtarian: [],
+      hesab: [
+        {
+          Factor_Code: 'OP_GOLD_1',
+          code: '0',
+          mcode: '0',
+          sh_factor: '0',
+          SanadType: '9',
+          Rec: 'موجودی اولیه طلایی',
+        },
+      ],
+      hesab_detail: [
+        {
+          Factor_Code: 'OP_GOLD_1',
+          mcode: '0',
+          no: 'ورود طلا',
+          vazn: '70.78',
+          ayar: '749',
+          tabdil750_v: '70.686',
+          sh_sharti: '19862',
+          name_az: 'گلستانی پیرانشهر',
+          Sharh: 'موجودی اولیه طلایی [M#0035]',
+          SanadType: '9',
+        },
+      ],
+      bank: [],
+      Hesab_bank: [],
+      Sekeh_Shemsh: [],
+      Sang: [],
+      raygiri: [
+        { name: 'گلستانی پیرانشهر', Tel: '', Add: '' },
+      ],
+      khar_sakhte: [],
+      Cities: [],
+      Hazine_Baabat: [],
+      gorooh: [],
+      otherTables: {},
+    };
+
+    const norm = normalizeTahesabData(rawDb, parseBackupInfo('Version=10.0'));
+    const doc = norm.documents.find((d) => d.sourceFactorCode === 'OP_GOLD_1');
+    expect(doc).toBeDefined();
+    expect(doc!.isOpeningInventory).toBe(true);
+
+    const line = doc!.lines[0];
+    expect(line.isConditional).toBe(false); // NOT conditional because 'شرطی' is not in description/type
+    expect(line.kind).toBe('melted');
+    expect(line.metalType).toBe('gold');
+    expect(line.weight).toBe(70.78);
+    expect(line.grade).toBe(749);
+    expect(line.convertedWeight750).toBe(70.686);
+    expect(line.assayStampNumber).toBe('19862');
+    expect(line.assayLabName).toBe('گلستانی پیرانشهر');
+    expect(line.isOpeningInventory).toBe(true);
+
+    const createdRecords: Record<string, any[]> = {};
+    const mockWriter = {
+      collection: (col: string) => ({
+        getFirstListItem: async () => { throw new Error('Not found'); },
+        create: async (data: Record<string, any>) => {
+          if (!createdRecords[col]) createdRecords[col] = [];
+          const rec = { id: `rec_${Date.now()}_${Math.random()}`, ...data };
+          createdRecords[col].push(rec);
+          return rec;
+        },
+        getFullList: async () => createdRecords[col] || [],
+      }),
+    } as any;
+
+    await importTahesabData(mockWriter, norm, buildInitialMappings(norm, [], [], [], []), {
+      migrationId: 'test_opening_melted',
+      dryRun: false,
+    });
+
+    const lots = createdRecords['metal_inventory'] || [];
+    expect(lots.length).toBe(1);
+    expect(lots[0].inventory_type).toBe('melted');
+    expect(lots[0].raw_weight).toBe(70.78);
+    expect(lots[0].purity).toBe(749);
+    expect(lots[0].converted_weight).toBe(70.686);
+    expect(lots[0].stamp_number).toBe('19862');
+    expect(lots[0].lab_name).toBe('گلستانی پیرانشهر');
+    expect(lots[0].is_opening_balance).toBe(true);
+  });
+
+  // 29. Manufactured Gold with Percentage Wage (Factor 1 - Mrs. Tavakol)
+  it('29. Workmanship with Percentage Wage: merges percentage wage row into manufactured line, adds wage to converted weight, and eliminates #DSD artifact', async () => {
+    const rawDb: any = {
+      moshtarian: [
+        {
+          code: '418',
+          name: 'خانم توکل (شیخ)',
+        },
+      ],
+      hesab: [
+        {
+          Factor_Code: 'F_TAVAKOL_1',
+          code: '418',
+          sh_factor: '1',
+        },
+      ],
+      hesab_detail: [
+        {
+          Factor_Code: 'F_TAVAKOL_1',
+          radif: '1',
+          no: 'خروج کارساخته',
+          vazn: '36.12',
+          ayar: '750',
+          tabdil750_kh: '36.12',
+          Darsad: '16',
+          NO_kar: 'کارساخته1',
+          Sharh: 'سرویس',
+        },
+        {
+          Factor_Code: 'F_TAVAKOL_1',
+          radif: '2',
+          no: '16 درصد',
+          vazn: '5.779',
+          ayar: '750',
+          tabdil750_kh: '5.779',
+          Sharh: '#DSD1',
+        },
+      ],
+      bank: [],
+      Hesab_bank: [],
+      Sekeh_Shemsh: [],
+      Sang: [],
+      raygiri: [],
+      khar_sakhte: [],
+      Cities: [],
+      Hazine_Baabat: [],
+      gorooh: [],
+      otherTables: {},
+    };
+
+    const norm = normalizeTahesabData(rawDb, parseBackupInfo('Version=10.0'));
+    const doc = norm.documents.find((d) => d.sourceFactorCode === 'F_TAVAKOL_1');
+    expect(doc).toBeDefined();
+    expect(doc!.lines.length).toBe(1); // Merged into 1 single line!
+
+    const line = doc!.lines[0];
+    expect(line.kind).toBe('workmanship');
+    expect(line.workmanshipName).toBe('سرویس');
+    expect(line.weight).toBe(36.12);
+    expect(line.grade).toBe(750);
+    expect(line.wagePercent).toBe(16);
+    expect(line.wageGoldWeight).toBe(5.779);
+    // Converted weight 750 = base 36.12 + wage 5.779 = 41.899
+    expect(line.convertedWeight750).toBe(41.899);
+    expect(line.amountIrr).toBe(0); // Zero IRR effect
+    expect(line.nature).toBe('paid');
+    expect(line.partySide).toBe('debtor');
+
+    const createdRecords: Record<string, any[]> = {};
+    const mockWriter = {
+      collection: (col: string) => ({
+        getFirstListItem: async () => { throw new Error('Not found'); },
+        create: async (data: Record<string, any>) => {
+          if (!createdRecords[col]) createdRecords[col] = [];
+          const rec = { id: `tx_${Date.now()}_${Math.random()}`, ...data };
+          createdRecords[col].push(rec);
+          return rec;
+        },
+        getFullList: async () => createdRecords[col] || [],
+      }),
+    } as any;
+
+    await importTahesabData(mockWriter, norm, buildInitialMappings(norm, [], [], [], []), {
+      migrationId: 'test_tavakol_workmanship',
+      dryRun: false,
+    });
+
+    const txList = createdRecords['transactions'] || [];
+    expect(txList.length).toBe(1);
+    const tx = txList[0];
+    expect(tx.documentTab).toBe('workmanship');
+    expect(tx.documentSubType).toBe('exit_manufactured');
+    expect(tx.goldAmount).toBe(-41.899);
+    expect(tx.rialAmount).toBe(0);
+
+    const details = JSON.parse(tx.documentDetails);
+    expect(details.workmanshipName).toBe('سرویس');
+    expect(details.wagePercent).toBe(16);
+    expect(details.wageGoldWeight).toBe(5.779);
   });
 });
 

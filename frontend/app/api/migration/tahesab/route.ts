@@ -31,8 +31,14 @@ function resolveFixturePath(customPath?: string): string {
     path.resolve(process.cwd(), 'migration/tahesab/fixtures/1.mcbk'),
     path.resolve(process.cwd(), '../migration/tahesab/fixtures/1.Mcbk'),
     path.resolve(process.cwd(), 'migration/tahesab/fixtures/1.Mcbk'),
+    path.resolve(process.cwd(), '../migration/tahesab/fixtures/1.mbck'),
+    path.resolve(process.cwd(), 'migration/tahesab/fixtures/1.mbck'),
+    path.resolve(process.cwd(), '../migration/tahesab/fixtures/1.Mbck'),
+    path.resolve(process.cwd(), 'migration/tahesab/fixtures/1.Mbck'),
     '/home/reza/Desktop/Zar/migration/tahesab/fixtures/1.mcbk',
     '/home/reza/Desktop/Zar/migration/tahesab/fixtures/1.Mcbk',
+    '/home/reza/Desktop/Zar/migration/tahesab/fixtures/1.mbck',
+    '/home/reza/Desktop/Zar/migration/tahesab/fixtures/1.Mbck',
   ].filter(Boolean) as string[];
 
   for (const p of candidates) {
@@ -131,6 +137,18 @@ export async function POST(request: Request) {
 
       const migrationIdVal = formData.get('migrationId');
       if (typeof migrationIdVal === 'string') body.migrationId = migrationIdVal;
+
+      const docOffsetVal = formData.get('docOffset');
+      if (typeof docOffsetVal === 'string') body.docOffset = parseInt(docOffsetVal, 10);
+
+      const docLimitVal = formData.get('docLimit');
+      if (typeof docLimitVal === 'string') body.docLimit = parseInt(docLimitVal, 10);
+
+      const tempFilePathVal = formData.get('tempFilePath');
+      if (typeof tempFilePathVal === 'string') body.tempFilePath = tempFilePathVal;
+
+      const filePathVal = formData.get('filePath');
+      if (typeof filePathVal === 'string') body.filePath = filePathVal;
     } catch {
       return NextResponse.json({ message: 'خطا در خواندن فایل ارسالی.' }, { status: 400 });
     }
@@ -150,9 +168,19 @@ export async function POST(request: Request) {
     // -------------------------------------------------------------
     if (action === 'analyze') {
       let fileBuffer: Buffer;
+      let tempFilePath: string | undefined;
 
       if (uploadedBuffer && uploadedBuffer.length > 0) {
         fileBuffer = uploadedBuffer;
+        try {
+          const tempDir = path.resolve(process.cwd(), 'app_backups/tahesab_temp');
+          await fs.promises.mkdir(tempDir, { recursive: true });
+          const safeName = sourceFileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+          tempFilePath = path.join(tempDir, `upload_${Date.now()}_${safeName}`);
+          await fs.promises.writeFile(tempFilePath, fileBuffer);
+        } catch (e) {
+          console.warn('Failed to cache uploaded backup file to disk:', e);
+        }
       } else {
         const filePath = resolveFixturePath(typeof body.filePath === 'string' ? body.filePath : undefined);
         if (!fs.existsSync(/*turbopackIgnore: true*/ filePath)) {
@@ -169,7 +197,7 @@ export async function POST(request: Request) {
 
       if (!detection.isTahesab) {
         return NextResponse.json(
-          { message: detection.error || 'فایل ارسالی کانتینر معتبر ته‌حساب (.Mcbk) نیست.' },
+          { message: detection.error || 'فایل ارسالی کانتینر معتبر ته‌حساب (.Mcbk / .mbck) نیست.' },
           { status: 400 },
         );
       }
@@ -197,6 +225,12 @@ export async function POST(request: Request) {
         .getFullList({ fields: 'id,name,phone,city,province,code,is_active,is_custom' })
         .catch(() => []);
 
+      // Fetch existing currencies for mapping
+      const existingCurrencies = await servicePb
+        .collection('currencies')
+        .getFullList({ fields: 'id,code,name,symbol,is_system' })
+        .catch(() => []);
+
       const mappings = buildInitialMappings(
         normalized,
         existingCustomers.map((c) => ({
@@ -221,6 +255,13 @@ export async function POST(request: Request) {
           isActive: l.is_active,
           isCustom: l.is_custom,
         })),
+        existingCurrencies.map((curr) => ({
+          id: curr.id,
+          code: String(curr.code || '').trim().toUpperCase(),
+          name: String(curr.name || curr.title || '').trim(),
+          symbol: String(curr.symbol || curr.sign || '').trim(),
+          isSystem: Boolean(curr.is_system),
+        })),
       );
 
       const validation = validateTahesabMigration(normalized, mappings);
@@ -228,6 +269,7 @@ export async function POST(request: Request) {
       return NextResponse.json({
         success: true,
         sourceFileName,
+        tempFilePath,
         backupInfo: detection.backupInfo,
         entries: detection.entries.map((e) => ({
           name: e.name,
@@ -249,6 +291,12 @@ export async function POST(request: Request) {
 
       if (uploadedBuffer && uploadedBuffer.length > 0) {
         fileBuffer = uploadedBuffer;
+      } else if (typeof body.tempFilePath === 'string' && fs.existsSync(/*turbopackIgnore: true*/ body.tempFilePath)) {
+        fileBuffer = await fs.promises.readFile(/*turbopackIgnore: true*/ body.tempFilePath);
+        sourceFileName = path.basename(body.tempFilePath);
+      } else if (typeof body.filePath === 'string' && fs.existsSync(/*turbopackIgnore: true*/ body.filePath)) {
+        fileBuffer = await fs.promises.readFile(/*turbopackIgnore: true*/ body.filePath);
+        sourceFileName = path.basename(body.filePath);
       } else {
         const filePath = resolveFixturePath(typeof body.filePath === 'string' ? body.filePath : undefined);
         if (!fs.existsSync(/*turbopackIgnore: true*/ filePath)) {
@@ -260,7 +308,7 @@ export async function POST(request: Request) {
 
       const detection = await detectTahesabBackup(fileBuffer);
       if (!detection.isTahesab) {
-        return NextResponse.json({ message: detection.error || 'فایل نامعتبر است.' }, { status: 400 });
+        return NextResponse.json({ message: detection.error || 'فایل ارسالی کانتینر معتبر ته‌حساب (.Mcbk / .mbck) نیست.' }, { status: 400 });
       }
 
       const { rawDb, stats } = await parseTahesabBackup(fileBuffer);
@@ -271,8 +319,12 @@ export async function POST(request: Request) {
         ? body.migrationId.trim()
         : `mig_tahesab_${Date.now()}`;
 
-      const docOffset = typeof body.docOffset === 'number' ? body.docOffset : 0;
-      const docLimit = typeof body.docLimit === 'number' ? body.docLimit : undefined;
+      const docOffset = typeof body.docOffset === 'number' && !isNaN(body.docOffset)
+        ? body.docOffset
+        : (typeof body.docOffset === 'string' ? parseInt(body.docOffset, 10) || 0 : 0);
+      const docLimit = typeof body.docLimit === 'number' && !isNaN(body.docLimit)
+        ? body.docLimit
+        : (typeof body.docLimit === 'string' ? parseInt(body.docLimit, 10) || undefined : undefined);
 
       // Fallback or user provided mappings
       let mappings = userMappings;
@@ -280,6 +332,7 @@ export async function POST(request: Request) {
         const existingCustomers = await servicePb.collection('customers').getFullList().catch(() => []);
         const existingAccounts = await servicePb.collection('chart_of_accounts').getFullList().catch(() => []);
         const existingAssayLabs = await servicePb.collection('assay_laboratories').getFullList().catch(() => []);
+        const existingCurrencies = await servicePb.collection('currencies').getFullList().catch(() => []);
         mappings = buildInitialMappings(
           normalized,
           existingCustomers.map((c) => ({
@@ -303,6 +356,13 @@ export async function POST(request: Request) {
             code: String(l.code || ''),
             isActive: l.is_active,
             isCustom: l.is_custom,
+          })),
+          existingCurrencies.map((curr) => ({
+            id: curr.id,
+            code: String(curr.code || '').trim().toUpperCase(),
+            name: String(curr.name || curr.title || '').trim(),
+            symbol: String(curr.symbol || curr.sign || '').trim(),
+            isSystem: Boolean(curr.is_system),
           })),
         );
       }

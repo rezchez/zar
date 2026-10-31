@@ -49,6 +49,7 @@ export interface MigrationSessionState {
   existingTxByExactKey: Map<string, ExistingTxMeta>;
   existingTxByFactorAndLine: Map<string, ExistingTxMeta>;
   assayLabMapByName: Map<string, { id: string; name: string }>;
+  currencyMapByCode: Map<string, { id?: string; code: string; name: string; symbol: string }>;
   activePrefix: string;
 }
 
@@ -139,6 +140,7 @@ export async function importTahesabData(
       existingTxByExactKey: new Map(),
       existingTxByFactorAndLine: new Map(),
       assayLabMapByName: new Map(),
+      currencyMapByCode: new Map(),
       activePrefix: 'ZF',
     };
     migrationSessionCache.set(migrationId, session);
@@ -163,7 +165,7 @@ export async function importTahesabData(
           fields: 'id,name,phone,city,province,code',
         }).catch(() => []),
         writer.collection('bank_accounts').getFullList({
-          fields: 'id,accountNumber',
+          fields: 'id,accountNumber,bankName',
         }).catch(() => []),
         writer.collection('transactions').getFullList({
           fields: 'id,sourceKey,customer,goldAmount,rialAmount,documentNumber,documentSequence',
@@ -187,6 +189,7 @@ export async function importTahesabData(
 
       for (const b of existingBanks) {
         if (b.accountNumber) session.bankAccountMap.set(String(b.accountNumber), b.id);
+        if (b.bankName) session.bankAccountMap.set(String(b.bankName).trim(), b.id);
       }
 
       for (const lab of existingLabs) {
@@ -252,6 +255,38 @@ export async function importTahesabData(
         if (srcStripped) session.assayLabMapByName.set(srcStripped, item);
         session.assayLabMapByName.set(m.sourceName.trim(), item);
       }
+    }
+  }
+
+  // Pre-seed currency mappings
+  if (mappings.currencies) {
+    for (const c of mappings.currencies) {
+      const targetCode = (c.targetCurrencyCode || c.sourceCode || '').trim().toUpperCase();
+      const item = {
+        id: c.targetCurrencyId,
+        code: targetCode,
+        name: c.targetCurrencyName || c.sourceName || targetCode,
+        symbol: c.targetCurrencySymbol || (targetCode === 'USD' ? '$' : targetCode),
+      };
+      const srcCode = (c.sourceCode || '').trim().toUpperCase();
+      if (srcCode) session.currencyMapByCode.set(srcCode, item);
+      if (targetCode) session.currencyMapByCode.set(targetCode, item);
+      if (c.sourceName) session.currencyMapByCode.set(c.sourceName.trim(), item);
+    }
+  }
+
+  if (session.currencyMapByCode.size === 0) {
+    const defaultCurrencies = [
+      { code: 'USD', name: 'دلار آمریکا', symbol: '$' },
+      { code: 'EUR', name: 'یورو', symbol: '€' },
+      { code: 'AED', name: 'درهم امارات', symbol: 'د.إ' },
+      { code: 'GBP', name: 'پوند انگلیس', symbol: '£' },
+      { code: 'TRY', name: 'لیر ترکیه', symbol: '₺' },
+      { code: 'IRR', name: 'ریال ایران', symbol: 'تومان' },
+      { code: 'IRT', name: 'تومان', symbol: 'تومان' },
+    ];
+    for (const def of defaultCurrencies) {
+      session.currencyMapByCode.set(def.code, def);
     }
   }
 
@@ -363,6 +398,7 @@ export async function importTahesabData(
               createdBy: effectiveUserId || undefined,
             });
             session.bankAccountMap.set(bAcc.accountNumber, createdBank.id);
+            if (bAcc.bankName) session.bankAccountMap.set(bAcc.bankName.trim(), createdBank.id);
             importedBankAccounts++;
           }
         } catch (err) {
@@ -501,7 +537,62 @@ export async function importTahesabData(
             }
           }
 
+          let docImported = false;
+
           if (!targetCustId) {
+            if (doc.isOpeningInventory || doc.sourceCustomerCode === '0') {
+              // Direct opening inventory of metals without customer counterparty
+              for (const line of doc.lines) {
+                if (
+                  line.weight > 0 &&
+                  (line.kind === 'melted' || line.kind === 'conditional') &&
+                  (line.metalType === 'gold' || line.metalType === 'silver')
+                ) {
+                  if (!dryRun) {
+                    try {
+                      let matchedAssayLabName = line.assayLabName || '';
+                      if (matchedAssayLabName) {
+                        const m = session.assayLabMapByName.get(normalizeAssayLabText(matchedAssayLabName)) ||
+                                  session.assayLabMapByName.get(normalizeAssayLabText(stripAssayLabAffixes(matchedAssayLabName))) ||
+                                  session.assayLabMapByName.get(matchedAssayLabName.trim());
+                        if (m) matchedAssayLabName = m.name;
+                      }
+                      const baseKarat = line.metalType === 'silver' ? 999 : 750;
+                      await writer.collection('metal_inventory').create({
+                        metal: line.metalType,
+                        inventory_type: line.kind === 'conditional' ? 'conditional' : 'melted',
+                        direction: 'in',
+                        transaction_type: 'opening-balance',
+                        raw_weight: line.weight,
+                        purity: line.grade,
+                        base_karat: baseKarat,
+                        converted_weight: line.convertedWeight750,
+                        stamp_number: line.assayStampNumber || '',
+                        lab_name: matchedAssayLabName || '',
+                        date: line.dateIso || new Date().toISOString(),
+                        is_opening_balance: true,
+                        created_by: effectiveUserId || undefined,
+                        description: line.description || `موجودی اول دوره طلا سند #${doc.documentNumber}`,
+                      });
+                      importedMetalLots++;
+                      importedLines++;
+                      docImported = true;
+                    } catch {
+                      // Non-blocking
+                    }
+                  } else {
+                    importedMetalLots++;
+                    importedLines++;
+                    docImported = true;
+                  }
+                }
+              }
+              if (docImported) {
+                importedDocuments++;
+              }
+              return;
+            }
+
             warnings.push({
               code: 'WARN_DOC_SKIPPED_NO_PARTY',
               message: `سند شماره ${doc.documentNumber} (فاکتور: ${doc.sourceFactorCode}) نادیده گرفته شد. علت: طرف‌حساب با کد "${doc.sourceCustomerCode}" در سیستم زرفولیو یافت نشد و در جدول تطبیق تعیین تکلیف نشده بود.`,
@@ -517,8 +608,6 @@ export async function importTahesabData(
           // In-memory atomic sequence increment to eliminate per-document HTTP calls
           let docSeq = (session.customerSequenceMap.get(targetCustId) || 0) + 1;
           session.customerSequenceMap.set(targetCustId, docSeq);
-
-          let docImported = false;
 
           await Promise.all(
             doc.lines.map(async (line) => {
@@ -633,11 +722,44 @@ export async function importTahesabData(
                     signedForeignAmount: line.signedForeignAmount,
                   };
 
+                  if (line.kind === 'bank') {
+                    const bankAccId =
+                      (line.bankAccountNumber ? session.bankAccountMap.get(line.bankAccountNumber) : undefined) ||
+                      (line.bankName ? session.bankAccountMap.get(line.bankName) : undefined);
+                    docDetailsObj.bankName = line.bankName;
+                    docDetailsObj.bankAccountNumber = line.bankAccountNumber;
+                    docDetailsObj.bankAccountId = bankAccId;
+                    docDetailsObj.financialAccountId = bankAccId;
+                  }
+
+                  if (line.kind === 'workmanship') {
+                    docDetailsObj.workmanshipName = line.workmanshipName || line.description;
+                    docDetailsObj.wagePercent = line.wagePercent;
+                    docDetailsObj.wageGoldWeight = line.wageGoldWeight;
+                  }
+
+                  let lineCurrencyCode = '';
+                  let lineCurrencySymbol = '';
+                  let lineCurrencyName = '';
+
                   if (isCurrencyLine) {
+                    const rawCurr = (line.foreignCurrency || 'USD').trim().toUpperCase();
+                    const mappedCurr =
+                      session.currencyMapByCode.get(rawCurr) ||
+                      session.currencyMapByCode.get((line.foreignCurrency || '').trim());
+                    lineCurrencyCode = mappedCurr?.code || rawCurr || 'USD';
+                    lineCurrencySymbol = mappedCurr?.symbol || (lineCurrencyCode === 'USD' ? '$' : lineCurrencyCode);
+                    lineCurrencyName = mappedCurr?.name || lineCurrencyCode;
+
                     docDetailsObj.currencyQuantity = line.foreignAmount;
-                    docDetailsObj.currencyUnit = line.foreignCurrency || 'USD';
-                    docDetailsObj.currencyName = line.foreignCurrency || 'USD';
-                    docDetailsObj.unsettledTrade = true;
+                    docDetailsObj.currencyUnit = lineCurrencyCode;
+                    docDetailsObj.currencyName = lineCurrencyName;
+                    docDetailsObj.currencySymbol = lineCurrencySymbol;
+                    if (line.kind === 'cash') {
+                      docDetailsObj.isForeignCash = true;
+                    } else {
+                      docDetailsObj.unsettledTrade = true;
+                    }
                   }
 
                   let lineDocNum = generateZfDocumentNumber();
@@ -689,11 +811,15 @@ export async function importTahesabData(
                       typeof line.signedForeignAmount === 'number'
                         ? line.signedForeignAmount
                         : line.foreignAmount || 0,
-                    foreignCurrency: line.foreignCurrency || '',
-                    foreignCurrencySymbol: line.foreignCurrency ? String(line.foreignCurrency) : '',
+                    foreignCurrency: lineCurrencyCode,
+                    foreignCurrencySymbol: lineCurrencySymbol,
                     documentNature: line.nature,
                     documentTab:
-                      isCurrencyLine
+                      line.kind === 'bank'
+                        ? 'bank'
+                        : line.kind === 'workmanship'
+                        ? 'workmanship'
+                        : isCurrencyLine && line.kind !== 'cash'
                         ? 'currency'
                         : line.kind === 'melted' || line.kind === 'conditional'
                         ? 'raw-gold'
@@ -703,7 +829,19 @@ export async function importTahesabData(
                         ? 'cash'
                         : 'general',
                     documentSubType:
-                      isCurrencyLine
+                      line.kind === 'bank'
+                        ? line.nature === 'paid'
+                          ? 'pay-to-customer'
+                          : 'receive-from-customer'
+                        : line.kind === 'workmanship'
+                        ? line.nature === 'paid'
+                          ? 'exit_manufactured'
+                          : 'entry_manufactured'
+                        : line.kind === 'cash'
+                        ? line.nature === 'received'
+                          ? 'cash-in'
+                          : 'cash-out'
+                        : isCurrencyLine
                         ? line.nature === 'received'
                           ? 'currency-buy'
                           : 'currency-sale'
@@ -717,7 +855,7 @@ export async function importTahesabData(
                           : 'outgoing-conditional'
                         : '',
                     documentDateJalali: line.dateJalali || doc.dateJalali,
-                    settlementMethod: line.kind === 'cash' ? 'cash' : 'unsettled',
+                    settlementMethod: line.kind === 'cash' ? 'cash' : line.kind === 'bank' ? 'bank' : 'unsettled',
                     balanceSource: 'current',
                     documentDetails: JSON.stringify(docDetailsObj),
                     sourceKey: lineSourceKey,
@@ -747,7 +885,9 @@ export async function importTahesabData(
                       const baseKarat = line.metalType === 'silver' ? 999 : 750;
                       const invDirection = line.nature === 'received' ? 'in' : 'out';
                       const invTxType =
-                        line.kind === 'melted'
+                        line.isOpeningInventory
+                          ? 'opening-balance'
+                          : line.kind === 'melted'
                           ? invDirection === 'in'
                             ? 'incoming-molten'
                             : 'outgoing-molten'
@@ -770,6 +910,7 @@ export async function importTahesabData(
                         transaction_id: txRecord.id,
                         document_id: docUuid,
                         customer: targetCustId,
+                        is_opening_balance: Boolean(line.isOpeningInventory),
                         created_by: effectiveUserId || undefined,
                         description: `مهاجرت از ته‌حساب سند #${doc.documentNumber}`,
                       });
@@ -792,8 +933,10 @@ export async function importTahesabData(
                         counterpartAccountId = SYSTEM_ACCOUNT_CODES.GOLD_INVENTORY; // 1130
                       } else if (line.kind === 'wage') {
                         counterpartAccountId = '4120'; // درآمد اجرت و خدمات
-                      } else if (line.kind === 'opening') {
+                      } else if (line.kind === 'opening' || line.isOpeningInventory) {
                         counterpartAccountId = SYSTEM_ACCOUNT_CODES.OPENING_EQUITY; // 3100
+                      } else if (line.kind === 'bank' || line.kind === 'cash') {
+                        counterpartAccountId = SYSTEM_ACCOUNT_CODES.CASH_AND_BANK; // 1110
                       }
 
                       const journalLines: JournalLineInput[] = [];

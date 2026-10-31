@@ -101,19 +101,21 @@ export async function POST(request: Request) {
   try {
     // 1. Authenticate FIRST to prevent user enumeration via timing or block status
     let authRecord;
+    let nativeMfaChallengeId: string | undefined;
     try {
       authRecord = await pb.collection('users').authWithPassword(email, password);
     } catch (error) {
       // If authWithPassword fails, we check if it's an MFA requirement natively triggered by PocketBase OTP
       const response = error as { response?: { mfaId?: string } };
-      if (!response.response?.mfaId && !mfaId) {
+      nativeMfaChallengeId = response.response?.mfaId;
+      if (!nativeMfaChallengeId && !mfaId) {
         // Standard failed login (bad password or no account)
         return NextResponse.json(
           { message: 'ایمیل یا رمز عبور اشتباه است.' },
           { status: 401 },
         );
       }
-      // Re-throw or ignore to handle MFA challenge below
+      // Continue to handle MFA challenge below
     }
 
     let accountSecurity: {
@@ -169,20 +171,22 @@ export async function POST(request: Request) {
     }
 
     if (mfaId && authMethod === 'totp') {
-      // Authenticator سفارشی برنامه است؛ ابتدا رمز عبور را دوباره بررسی می‌کنیم
-      // و بعد از تأیید TOTP، همان نشست احراز‌شده را صادر می‌کنیم.
-      await pb.collection('users').authWithPassword(email, password);
+      // Authenticator سفارشی برنامه است؛ هویت کاربر و رمز عبور در مرحله قبل احراز شده است
+      const userId = accountSecurity?.id;
+      if (!userId) {
+        return NextResponse.json(
+          { message: 'ایمیل یا رمز عبور اشتباه است.' },
+          { status: 401 },
+        );
+      }
       const service = await getPocketBaseServiceClient();
-      const user = await service.collection('users').getFirstListItem(
-        service.filter('email = {:email} && authenticatorEnabled = true', { email }),
-      );
       const secretRecord = await service.collection('authenticator_secrets').getFirstListItem(
-        service.filter('user = {:userId} && verified = true', { userId: user.id }),
+        service.filter('user = {:userId} && verified = true', { userId }),
       );
 
       if (!verifyTotpCode(decryptTotpSecret(secretRecord.secretEncrypted), totpCode)) {
         await recordAuditEvent({
-          userId: user.id,
+          userId,
           event: 'login_failed',
           request,
           details: 'کد رمزساز نادرست',
@@ -211,41 +215,29 @@ export async function POST(request: Request) {
       }
 
       // Check native OTP requirement (if authWithPassword was skipped and threw a challenge)
-      if (!pb.authStore.isValid && !authRecord) {
-        // Trigger a new login attempt to capture the native MFA challenge
-        try {
-          await pb.collection('users').authWithPassword(email, password);
-        } catch (error) {
-          const response = error as { response?: { mfaId?: string } };
-          const challengeId = response.response?.mfaId;
+      if (!pb.authStore.isValid && !authRecord && nativeMfaChallengeId) {
+        let authenticatorAvailable = accountSecurity?.authenticatorEnabled ?? false;
+        let emailOtpAvailable = accountSecurity?.twoFactorEnabled ?? false;
 
-          if (!challengeId) {
-             throw error;
-          }
-
-          let authenticatorAvailable = accountSecurity?.authenticatorEnabled ?? false;
-          let emailOtpAvailable = accountSecurity?.twoFactorEnabled ?? false;
-
-          let nativeOtpId = '';
-          if (emailOtpAvailable || !authenticatorAvailable) {
-            const otp = await pb.collection('users').requestOTP(email);
-            nativeOtpId = otp.otpId;
-          }
-
-          return NextResponse.json(
-            {
-              mfaRequired: true,
-              mfaId: challengeId,
-              otpId: nativeOtpId || undefined,
-              authenticatorAvailable,
-              emailOtpAvailable: Boolean(nativeOtpId),
-              message: authenticatorAvailable && !nativeOtpId
-                ? 'کد رمزساز خود را وارد کنید.'
-                : 'کد تایید به ایمیل شما ارسال شد.',
-            },
-            { status: 401 },
-          );
+        let nativeOtpId = '';
+        if (emailOtpAvailable || !authenticatorAvailable) {
+          const otp = await pb.collection('users').requestOTP(email);
+          nativeOtpId = otp.otpId;
         }
+
+        return NextResponse.json(
+          {
+            mfaRequired: true,
+            mfaId: nativeMfaChallengeId,
+            otpId: nativeOtpId || undefined,
+            authenticatorAvailable,
+            emailOtpAvailable: Boolean(nativeOtpId),
+            message: authenticatorAvailable && !nativeOtpId
+              ? 'کد رمزساز خود را وارد کنید.'
+              : 'کد تایید به ایمیل شما ارسال شد.',
+          },
+          { status: 401 },
+        );
       }
     }
 

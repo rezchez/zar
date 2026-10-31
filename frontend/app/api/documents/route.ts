@@ -650,7 +650,7 @@ export async function POST(request: Request) {
       const line = rawLine && typeof rawLine === 'object' && !Array.isArray(rawLine)
         ? rawLine as Record<string, unknown>
         : {};
-      const details = normalizeDetails(line.documentDetails);
+      const details = normalizeDetails(line.documentDetails ?? line.details);
       const isBankLineForNature = line.documentTab === 'bank' || line.sourceTab === 'bank';
       const bankOpKind = isBankLineForNature
         ? String(details.bankOperationKind || line.documentSubType || '')
@@ -702,6 +702,10 @@ export async function POST(request: Request) {
       if (currencyEffect !== null) {
         lineAmounts.foreignAmount = currencyEffect;
         if (currencyLine.documentTab === 'cash') lineAmounts.rialAmount = 0;
+      } else if (currencyLine.documentTab === 'cash' && details.isForeignCash === true) {
+        const rawAmt = Math.abs(readAmount(line.foreignAmount) || readAmount(details.totalAmount) || 0);
+        lineAmounts.foreignAmount = rawAmt * (lineNature === 'received' ? 1 : -1);
+        lineAmounts.rialAmount = 0;
       }
 
       const isStoneLine = line.documentTab === 'stone' || line.sourceTab === 'stone';

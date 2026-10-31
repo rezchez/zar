@@ -13,7 +13,7 @@ import { normalizeCurrencyCode, type Customer } from '@/lib/customer';
 import type { DocumentNature } from '@/lib/document';
 import { formatJalaliDate } from '@/lib/jalali';
 import { generateUUID } from '@/lib/uuid';
-import { convertTomanToRial } from '@/lib/money';
+import { convertTomanToRial, parseLocalizedAmount } from '@/lib/money';
 import {
   DEFAULT_STANDARD_CURRENCIES,
   getCurrenciesForBaseCurrency,
@@ -41,6 +41,12 @@ import DocumentMetadataSection from './DocumentMetadataSection';
 import CommittedLinesTable from './CommittedLinesTable';
 import DocumentBalancePreview, { type DocumentBalancePreviewData } from './DocumentBalancePreview';
 import DocumentModals from './DocumentModals';
+import {
+  detectHawalaCurrency,
+  getCurrencyDisplayLabel,
+  isCustomerSupportingCurrency,
+  normalizeToCanonical,
+} from './HawalaModal';
 
 // Hooks & Services
 import {
@@ -294,6 +300,8 @@ export default function DocumentForm({
 
   // Hawala state
   const [hawalaLine, setHawalaLine] = useState<DocumentLine | null>(null);
+  const [isCashHawala, setIsCashHawala] = useState(false);
+  const [isSubmittingHawala, setIsSubmittingHawala] = useState(false);
   const [pendingHawala, setPendingHawala] = useState<{
     line: DocumentLine;
     targetCustomer: Customer;
@@ -1538,15 +1546,17 @@ export default function DocumentForm({
                                     ? coinRialAmount
                                     : (baseCurrency === 'IRT' ? convertTomanToRial(numberValue(line.details?.totalAmount || '')) : Math.round(numberValue(line.details?.totalAmount || ''))),
               foreignAmount:
-                isStoneRow
-                  ? stoneForeignAmount
-                  : currencyForeignEffect !== null
-                    ? Math.abs(currencyForeignEffect)
-                    : isClaimForeign
-                      ? rawClaimFinancial
-                    : isForeignWorkmanship && line.documentSubType === 'workmanship-wage'
-                        ? rawWorkmanshipAmount
-                        : 0,
+                isForeignCashRow
+                  ? rawCashAmount
+                  : isStoneRow
+                    ? stoneForeignAmount
+                    : currencyForeignEffect !== null
+                      ? Math.abs(currencyForeignEffect)
+                      : isClaimForeign
+                        ? rawClaimFinancial
+                      : isForeignWorkmanship && line.documentSubType === 'workmanship-wage'
+                          ? rawWorkmanshipAmount
+                          : 0,
               tertiaryAmount: 0,
             };
           }),
@@ -1678,6 +1688,126 @@ export default function DocumentForm({
         numberValue(line.details?.currencyTotalAmount) > 0,
     );
   }, [committedLines]);
+
+  const handleConfirmHawala = async (targetCustomer: Customer) => {
+    if (!hawalaLine || !selectedCustomer) return;
+
+    const isCash = hawalaLine.documentTab === 'cash' || hawalaLine.sourceTab === 'cash';
+
+    if (isCash) {
+      const currencyInfo = detectHawalaCurrency(hawalaLine, selectedCustomer);
+
+      setIsSubmittingHawala(true);
+      try {
+        const counterNature: DocumentNature = hawalaLine.documentNature === 'received' ? 'paid' : 'received';
+        const counterTypeLabel = counterNature === 'received'
+          ? `دریافت وجه نقد به ${hawalaLine.details?.cashFundName || 'صندوق'}`
+          : `پرداخت نقد از ${hawalaLine.details?.cashFundName || 'صندوق'}`;
+
+        const targetCode = targetCustomer.customerCode ? `کد حساب:${targetCustomer.customerCode}` : '';
+        const sourceCode = selectedCustomer.customerCode ? `کد حساب: ${selectedCustomer.customerCode}` : '';
+
+        // Formatting requested by user:
+        // Customer A: (حواله به ب کد حساب:کد حساب طرف حساب ب)
+        // Customer B: (حواله از الف کد حساب: کد حساب طرف حساب الف)
+        const hawalaNoteForA = `(حواله به ${targetCustomer.name} ${targetCode})`.replace(/\s+/g, ' ').trim();
+        const hawalaNoteForB = `(حواله از ${selectedCustomer.name} ${sourceCode})`.replace(/\s+/g, ' ').trim();
+
+        const descForA = hawalaLine.description?.trim()
+          ? `${hawalaLine.description.trim()} ${hawalaNoteForA}`
+          : hawalaNoteForA;
+
+        const descForB = hawalaLine.description?.trim()
+          ? `${hawalaLine.description.trim()} ${hawalaNoteForB}`
+          : hawalaNoteForB;
+
+        // 1. Immediately create and register the counter document for Customer B
+        const rawAmount = parseLocalizedAmount(hawalaLine.details?.totalAmount || '0');
+        const counterDetails = {
+          ...hawalaLine.details,
+          totalAmount: String(rawAmount),
+          cashFundCurrency: currencyInfo.code,
+          currencyUnit: currencyInfo.symbol,
+          isForeignCash: currencyInfo.isForeign,
+          documentTypeLabel: counterTypeLabel,
+        };
+
+        const counterLine = {
+          id: `line_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+          documentTab: 'cash',
+          sourceTab: 'cash',
+          documentNature: counterNature,
+          documentTypeLabel: counterTypeLabel,
+          description: descForB,
+          converted750: 0,
+          foreignCurrency: currencyInfo.isForeign ? currencyInfo.symbol || currencyInfo.code : undefined,
+          goldAmount: 0,
+          silverAmount: 0,
+          platinumAmount: 0,
+          rialAmount: currencyInfo.isForeign
+            ? 0
+            : (baseCurrency === 'IRT' ? convertTomanToRial(rawAmount) : Math.round(rawAmount)),
+          foreignAmount: currencyInfo.isForeign ? rawAmount : 0,
+          tertiaryAmount: 0,
+          details: counterDetails,
+          documentDetails: counterDetails,
+        };
+
+        const response = await fetch('/api/documents', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            customerId: targetCustomer.id,
+            documentDateJalali,
+            status: 'final',
+            baseCurrency,
+            lines: [counterLine],
+          }),
+        });
+
+        if (!response.ok) {
+          const errData = await response.json().catch(() => null);
+          throw new Error(errData?.message || 'خطا در ثبت سند برای طرف‌حساب مقصد حواله');
+        }
+
+        // 2. Commit line for Customer A with updated description and proper currency settings
+        const lineForA: DocumentLine = {
+          ...hawalaLine,
+          description: descForA,
+          details: {
+            ...hawalaLine.details,
+            totalAmount: String(rawAmount),
+            cashFundCurrency: currencyInfo.code,
+            currencyUnit: currencyInfo.symbol,
+            isForeignCash: currencyInfo.isForeign,
+          },
+        };
+
+        setCommittedLines((prev) => [...prev, lineForA]);
+
+        // Clean up draft and hawala state
+        cancelEdit();
+        delete tabDraftsRef.current['cash'];
+        setIsCashHawala(false);
+        setHawalaLine(null);
+
+        toast.success('حواله با موفقیت ثبت شد.');
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'خطا در ثبت حواله');
+      } finally {
+        setIsSubmittingHawala(false);
+      }
+      return;
+    }
+
+    // Fallback if non-cash line
+    setPendingHawala({
+      line: hawalaLine,
+      targetCustomer,
+      countdown: 10,
+    });
+    setHawalaLine(null);
+  };
 
   const handleCommitDraft = (customDraftLine?: DocumentLine) => {
     const validCustomLine = isDocumentLineObject(customDraftLine) ? customDraftLine : undefined;
@@ -2088,6 +2218,16 @@ export default function DocumentForm({
               baseCurrency={baseCurrency}
               selectedCurrency={selectedCurrency}
               currencyLabel={availableCurrencies.find((c) => c.code === selectedCurrency)?.name}
+              isHawala={isCashHawala}
+              setIsHawala={setIsCashHawala}
+              onRequestHawala={(line) => {
+                if (!selectedCustomer) {
+                  toast.warning('ابتدا طرف حساب را از فهرست انتخاب کنید');
+                  return;
+                }
+                setHawalaLine(line);
+              }}
+              selectedCustomer={selectedCustomer}
             />
           )}
           claimTabContent={(
@@ -2216,16 +2356,8 @@ export default function DocumentForm({
         selectedCustomer={selectedCustomer}
         customers={customers}
         weightPrecision={weightPrecision}
-        onConfirmHawala={(targetCustomer) => {
-          if (hawalaLine) {
-            setPendingHawala({
-              line: hawalaLine,
-              targetCustomer,
-              countdown: 10,
-            });
-            setHawalaLine(null);
-          }
-        }}
+        onConfirmHawala={handleConfirmHawala}
+        isSubmittingHawala={isSubmittingHawala}
         showExitModal={showExitModal}
         onCloseExitModal={() => setShowExitModal(false)}
         onConfirmExit={() => {

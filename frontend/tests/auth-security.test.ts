@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { POST as handleLogin } from '../app/api/auth/login/route';
 import { POST as handleBaleRequest } from '../app/api/auth/bale/request/route';
+import { POST as handleRegister } from '../app/api/auth/register/route';
 
 // Simple mock for IP extraction inside tests
 const makeReq = (path: string, ip: string, body?: Record<string, unknown>) => new Request(`http://localhost${path}`, {
@@ -38,6 +39,24 @@ describe('Authentication & Rate Limit Security', () => {
 
     for (let i = 0; i < 6; i++) {
       res = await handleBaleRequest(makeReq('/api/auth/bale/request', ip, { phone: '09123456789' }));
+    }
+
+    // 6th request should hit 429
+    expect(res?.status).toBe(429);
+  });
+
+  test('Register route rate limits after 5 attempts', async () => {
+    const ip = '192.168.3.1';
+    let res: Response | null = null;
+
+    for (let i = 0; i < 6; i++) {
+      res = await handleRegister(makeReq('/api/auth/register', ip, {
+        name: 'کاربر تستی',
+        email: 'register-test@example.com',
+        password: 'Password123!',
+        passwordConfirm: 'Password123!',
+        phone: '09129998877',
+      }));
     }
 
     // 6th request should hit 429

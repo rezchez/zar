@@ -36,6 +36,11 @@ function dateToJalaliString(d: Date): string {
   }
 }
 
+function cleanDescription(text: string): string {
+  if (!text) return '';
+  return text.replace(/#DSD\d+/gi, '').replace(/\s+/g, ' ').trim();
+}
+
 const normalizerCache = new WeakMap<TahesabRawDatabase, NormalizedMigrationData>();
 
 /**
@@ -77,6 +82,7 @@ export function normalizeTahesabData(
       openingGoldWeight: goldBal,
       openingRialBalance: rialBal,
       currency: parseText(row.Arz) || 'IRR',
+      secondaryCurrency: parseText(row.Arz2) || undefined,
       raw: row,
     });
   }
@@ -142,7 +148,7 @@ export function normalizeTahesabData(
 
   // 6. Normalize Inventory Items (khar_sakhte)
   const inventory: NormalizedInventoryItem[] = [];
-  for (const row of rawDb.khar_sakhte) {
+  for (const row of (rawDb.khar_sakhte || [])) {
     const code = parseText(row.Code);
     const name = parseText(row.name);
     if (!code && !name) continue;
@@ -172,12 +178,32 @@ export function normalizeTahesabData(
   // 8. Normalize Documents & Lines (hesab + hesab_detail)
   const documents: NormalizedDocument[] = [];
 
+  const partyMapByCode = new Map<string, NormalizedParty>();
+  for (const p of parties) {
+    partyMapByCode.set(p.sourceCode, p);
+  }
+
+  const bankMapByName = new Map<string, string>();
+  for (const b of rawDb.Hesab_bank) {
+    const bName = parseText(b.n_bank);
+    const acc = parseText(b.Sh_Hesab);
+    if (bName && acc) {
+      bankMapByName.set(bName, acc);
+    }
+  }
+
+  const allCurrencies = new Set<string>(['IRR', 'USD']);
+  for (const p of parties) {
+    if (p.currency && p.currency !== 'IRR') allCurrencies.add(p.currency.toUpperCase());
+    if (p.secondaryCurrency && p.secondaryCurrency !== 'IRR') allCurrencies.add(p.secondaryCurrency.toUpperCase());
+  }
+
   for (const hRow of rawDb.hesab) {
     const factorCode = parseText(hRow.Factor_Code);
     if (!factorCode) continue;
 
-    const sourceCustCode = parseText(hRow.mcode);
-    const rawDate = parseText(hRow.Tarikh);
+    const sourceCustCode = parseText(hRow.mcode) || parseText(hRow.code);
+    const rawDate = parseText(hRow.Tarikh) || parseText(hRow.tarikh);
     let dateIso = rawDate;
     let dateJalali = '';
 
@@ -195,21 +221,180 @@ export function normalizeTahesabData(
       }
     }
 
+    const isDocOpening =
+      sourceCustCode === '0' ||
+      parseText(hRow.SanadType) === '9' ||
+      parseText(hRow.sh_factor) === '0' ||
+      parseText(hRow.Rec).includes('موجودی اول') ||
+      parseText(hRow.Rec).includes('اولیه');
+
     const headerMetalCode = parseText(hRow.Jens_Felez);
     const docMetalType = headerMetalCode === '2' ? 'silver' : 'gold';
     const currency = parseText(hRow.Arz) || 'IRR';
 
+    const customerParty = partyMapByCode.get(sourceCustCode);
+    const customerSecondaryCurrency =
+      customerParty?.secondaryCurrency ||
+      (customerParty?.currency && customerParty.currency !== 'IRR' ? customerParty.currency : undefined);
+    const customerNameCurrency =
+      customerParty?.name?.includes('دلار') || parseText(hRow.Rec).includes('دلار')
+        ? 'USD'
+        : customerParty?.name?.includes('یورو') || parseText(hRow.Rec).includes('یورو')
+        ? 'EUR'
+        : customerParty?.name?.includes('درهم') || parseText(hRow.Rec).includes('درهم')
+        ? 'AED'
+        : customerParty?.name?.includes('لیر') || parseText(hRow.Rec).includes('لیر')
+        ? 'TRY'
+        : customerParty?.name?.includes('پوند') || parseText(hRow.Rec).includes('پوند')
+        ? 'GBP'
+        : undefined;
+
+    const customerCurrencyHint = customerSecondaryCurrency || customerNameCurrency;
+
+    let docForeignCurrency =
+      parseText(hRow.Arz2) ||
+      (parseText(hRow.Arz) && parseText(hRow.Arz) !== 'IRR' ? parseText(hRow.Arz) : undefined) ||
+      customerCurrencyHint;
+    let docForeignTradeAmount: number | undefined;
+
     const childDetailRows = detailsByFactor.get(factorCode) || [];
+
+    for (const dRow of childDetailRows) {
+      const dNo = parseText(dRow.no);
+      const dArz = parseText(dRow.Arz);
+      const dNoKar = parseText(dRow.NO_kar);
+      const dSharh = parseText(dRow.Sharh);
+
+      if (dArz && dArz !== 'IRR') {
+        docForeignCurrency = dArz.toUpperCase();
+        allCurrencies.add(dArz.toUpperCase());
+      } else if (dNoKar && ['USD', 'EUR', 'AED', 'GBP', 'TRY', 'IQD'].includes(dNoKar.toUpperCase())) {
+        docForeignCurrency = dNoKar.toUpperCase();
+        allCurrencies.add(dNoKar.toUpperCase());
+      } else if (dSharh.includes('دلار') || dNo.includes('دلار')) {
+        docForeignCurrency = 'USD';
+      } else if (dSharh.includes('یورو') || dNo.includes('یورو')) {
+        docForeignCurrency = 'EUR';
+      } else if (dSharh.includes('درهم') || dNo.includes('درهم')) {
+        docForeignCurrency = 'AED';
+      }
+
+      if (dNo.includes('خرید ارز') || dNo.includes('فروش ارز')) {
+        const rawCount = parseNum(dRow.Count, 0);
+        if (rawCount > 0) docForeignTradeAmount = rawCount;
+        if (!docForeignCurrency) docForeignCurrency = 'USD';
+      }
+    }
+
+    // 1. Detect offsetting error pairs in factors with currency trades (e.g. Factor 2 Shahin Zeinali)
+    const hasCurrencyTrade = childDetailRows.some((r) => {
+      const no = parseText(r.no);
+      return no.includes('خرید ارز') || no.includes('فروش ارز');
+    });
+
+    const errorPairRowIndices = new Set<number>();
+    if (hasCurrencyTrade) {
+      for (let idxA = 0; idxA < childDetailRows.length; idxA++) {
+        const rowA = childDetailRows[idxA];
+        const noA = parseText(rowA.no);
+        const sharhA = parseText(rowA.Sharh);
+        const isClaimOrDebtA = (noA === 'طلب' || noA === 'بدهی') && (sharhA.includes('#DSD') || Boolean(docForeignTradeAmount));
+        if (!isClaimOrDebtA) continue;
+
+        const amtA = parseNum(rowA.rial_V, 0) || parseNum(rowA.rial_kh, 0);
+        if (amtA <= 0) continue;
+
+        for (let idxB = 0; idxB < childDetailRows.length; idxB++) {
+          if (idxA === idxB || errorPairRowIndices.has(idxB)) continue;
+          const rowB = childDetailRows[idxB];
+          const noB = parseText(rowB.no);
+          const isCashB = noB.includes('وجه نقد') && !noB.includes('بانک');
+          if (!isCashB) continue;
+
+          const amtB = parseNum(rowB.rial_V, 0) || parseNum(rowB.rial_kh, 0);
+          if (Math.abs(amtA - amtB) < 0.001) {
+            errorPairRowIndices.add(idxA);
+            errorPairRowIndices.add(idxB);
+            break;
+          }
+        }
+      }
+    }
+
+    // 2. Detect Manufactured Gold percentage wage lines to merge into base item (e.g. Factor 1 Mrs. Tavakol)
+    interface MergedWageInfo {
+      wagePercent: number;
+      wageGoldWeight: number;
+    }
+    const wageByTargetIndex = new Map<number, MergedWageInfo>();
+    const consumedWageRowIndices = new Set<number>();
+
+    for (let i = 0; i < childDetailRows.length; i++) {
+      if (errorPairRowIndices.has(i)) continue;
+      const r = childDetailRows[i];
+      const rNo = parseText(r.no);
+      const rSharh = parseText(r.Sharh);
+      const isPercentWage =
+        Boolean(rNo.match(/^(\d+(?:\/\d+)?)\s*درصد$/)) ||
+        (parseNum(r.vazn, 0) > 0 && rSharh.includes('#DSD') && !rNo.includes('کارساخته'));
+
+      if (isPercentWage) {
+        let targetIdx = -1;
+        const dsdMatch = rSharh.match(/#DSD(\d+)/i);
+        if (dsdMatch) {
+          const dsdNum = parseInt(dsdMatch[1], 10);
+          if (dsdNum >= 1 && dsdNum <= childDetailRows.length) {
+            targetIdx = dsdNum - 1;
+          }
+        }
+        if (targetIdx === -1) {
+          for (let prev = i - 1; prev >= 0; prev--) {
+            const prevNo = parseText(childDetailRows[prev].no);
+            if (prevNo.includes('کارساخته')) {
+              targetIdx = prev;
+              break;
+            }
+          }
+        }
+
+        if (targetIdx !== -1) {
+          const percentMatch = rNo.match(/^(\d+(?:\/\d+)?)\s*درصد$/);
+          const wagePercent = percentMatch
+            ? parseFloat(percentMatch[1].replace('/', '.'))
+            : parseNum(childDetailRows[targetIdx].Darsad, 0);
+
+          const wageWeight = parseNum(r.tabdil750_kh || r.tabdil750_v || r.vazn, 0);
+
+          const existing = wageByTargetIndex.get(targetIdx) || { wagePercent: 0, wageGoldWeight: 0 };
+          existing.wagePercent = wagePercent || existing.wagePercent;
+          existing.wageGoldWeight += wageWeight;
+          wageByTargetIndex.set(targetIdx, existing);
+          consumedWageRowIndices.add(i);
+        }
+      }
+    }
+
     const lines: NormalizedDocumentLine[] = [];
 
     let lineSeq = 0;
-    for (const dRow of childDetailRows) {
+    for (let dIdx = 0; dIdx < childDetailRows.length; dIdx++) {
+      if (errorPairRowIndices.has(dIdx) || consumedWageRowIndices.has(dIdx)) {
+        continue;
+      }
+
+      const dRow = childDetailRows[dIdx];
       lineSeq++;
       const vazn = parseNum(dRow.vazn, 0);
       const rowNo = parseText(dRow.no);
       const dSharh = parseText(dRow.Sharh);
       const dNoKar = parseText(dRow.NO_kar);
       const isStone = rowNo.includes('سنگ') || dNoKar.includes('سنگ') || dSharh.includes('سنگ');
+      const isWorkmanship = rowNo.includes('کارساخته') || wageByTargetIndex.has(dIdx);
+
+      const dBankName = parseText(dRow.name_bank);
+      const isBankRow = rowNo.includes('بانک') || Boolean(dBankName);
+      const bankName = dBankName || (rowNo.includes('بانک') ? 'بانک' : undefined);
+      const bankAccountNumber = dBankName ? bankMapByName.get(dBankName) : parseText(dRow.sh_check) || undefined;
 
       const dJens = parseText(dRow.Jens_Felez);
       const metalCode = dJens || headerMetalCode;
@@ -243,46 +428,103 @@ export function normalizeTahesabData(
         metalType = 'none';
       } else if (isSilver) {
         metalType = 'silver';
-      } else if (vazn > 0 && !rowNo.includes('وجه') && !rowNo.includes('بانک') && !rowNo.includes('ارز')) {
+      } else if (vazn > 0 && !rowNo.includes('وجه') && !isBankRow && !rowNo.includes('ارز')) {
         metalType = 'gold';
       }
 
       const baseKaratForConv = metalType === 'silver' ? 999 : 750;
-      const converted750 = tabdil > 0
+      let converted750 = tabdil > 0
         ? tabdil
         : (vazn > 0 && ayar > 0 && !isStone && metalType !== 'none')
         ? Math.round(((vazn * ayar) / baseKaratForConv) * 1000) / 1000
         : 0;
+
+      const mergedWage = wageByTargetIndex.get(dIdx);
+      const wagePercent = mergedWage?.wagePercent || parseNum(dRow.Darsad, 0) || undefined;
+      const wageGoldWeight = mergedWage?.wageGoldWeight || undefined;
+
+      if (isWorkmanship && wageGoldWeight && wageGoldWeight > 0) {
+        converted750 = Math.round((converted750 + wageGoldWeight) * 1000) / 1000;
+      }
 
       const rawArz = parseText(dRow.Arz) || parseText(hRow.Arz);
       const isUsd = rawArz === 'USD' || dNoKar === 'USD' || dSharh.includes('دلار') || rowNo.includes('دلار');
       const isEur = rawArz === 'EUR' || dNoKar === 'EUR' || dSharh.includes('یورو');
       const isAed = rawArz === 'AED' || dNoKar === 'AED' || dSharh.includes('درهم');
       const isOtherForeign = Boolean(rawArz && rawArz !== 'IRR');
-      const detectedForeignCurrency = isUsd
+      let detectedForeignCurrency = isUsd
         ? 'USD'
         : isEur
         ? 'EUR'
         : isAed
         ? 'AED'
         : isOtherForeign
-        ? rawArz
+        ? rawArz.toUpperCase()
         : rowNo.includes('ارز') || dSharh.includes('ارز')
         ? 'USD'
         : undefined;
 
+      const isCurrencyTrade = rowNo.includes('خرید ارز') || rowNo.includes('فروش ارز');
+      const rawCount = parseNum(dRow.Count, 0);
+      const rawFiF = parseNum(dRow.FiF, 0);
+      const rawRial = parseNum(dRow.rial_V || dRow.rial_kh, 0);
+
+      const isForeignCashOrClaim =
+        !isBankRow &&
+        (
+          Boolean(detectedForeignCurrency) ||
+          (docForeignCurrency && (
+            (docForeignTradeAmount !== undefined && (rv === docForeignTradeAmount || rkh === docForeignTradeAmount)) ||
+            (rowNo.includes('وجه') && !isBankRow && (rv < 500000 && rkh < 500000) && (rv > 0 || rkh > 0)) ||
+            (rowNo === 'طلب' && (rv < 500000 && rkh < 500000) && (rv > 0 || rkh > 0) && docForeignTradeAmount !== undefined) ||
+            (rowNo === 'بدهی' && (rv < 500000 && rkh < 500000) && (rv > 0 || rkh > 0) && docForeignTradeAmount !== undefined)
+          ))
+        );
+
+      if (isForeignCashOrClaim && !detectedForeignCurrency) {
+        detectedForeignCurrency = docForeignCurrency || customerCurrencyHint || 'USD';
+      }
+
+      if (detectedForeignCurrency) {
+        allCurrencies.add(detectedForeignCurrency.toUpperCase());
+      }
+
       const hasGoldWeight =
-        (tabdil > 0 || vazn > 0) && !rowNo.includes('وجه') && !rowNo.includes('بانک') && !rowNo.includes('ارز');
-      const isCurrency = Boolean(detectedForeignCurrency) && !hasGoldWeight;
+        (tabdil > 0 || vazn > 0) && !rowNo.includes('وجه') && !isBankRow && !rowNo.includes('ارز');
+      const isCurrency =
+        !isBankRow &&
+        (Boolean(detectedForeignCurrency) || isCurrencyTrade || isForeignCashOrClaim) &&
+        !hasGoldWeight;
 
       if (isCurrency) {
         metalType = 'none';
       }
 
-      const foreignAmt = isCurrency
-        ? (rv > 0 ? rv : rkh > 0 ? rkh : undefined)
-        : (isUsd ? parseNum(dRow.rial_V || dRow.rial_kh, 0) : undefined);
-      const amountIrr = !isCurrency && !isUsd ? (rv > 0 ? rv : rkh > 0 ? rkh : 0) : 0;
+      let foreignAmt: number | undefined;
+      let amountIrr = 0;
+
+      if (isBankRow) {
+        amountIrr = rv > 0 ? rv : rkh > 0 ? rkh : 0;
+        foreignAmt = undefined;
+        metalType = 'none';
+      } else if (isCurrencyTrade) {
+        if (rawCount > 0) {
+          foreignAmt = rawCount;
+          amountIrr = rawRial > 0 ? rawRial : rawCount * rawFiF;
+        } else {
+          foreignAmt = rawRial;
+          amountIrr = 0;
+        }
+      } else if (isForeignCashOrClaim || isCurrency) {
+        foreignAmt = rv > 0 ? rv : rkh > 0 ? rkh : undefined;
+        amountIrr = 0;
+      } else if (isWorkmanship) {
+        amountIrr = 0;
+        foreignAmt = undefined;
+      } else {
+        amountIrr = rv > 0 ? rv : rkh > 0 ? rkh : 0;
+        foreignAmt = undefined;
+      }
 
       // Check Command for transfer tokens
       const cmd = parseText(dRow.Command);
@@ -329,10 +571,8 @@ export function normalizeTahesabData(
       // Determine Money Direction (ورود / خروج)
       let moneyNature: 'received' | 'paid' | 'none' = 'none';
       if (isHavalehAz) {
-        // Remittance FROM someone -> received into this customer's account (خرید ارز بدون تسویه / ورود وجه)
         moneyNature = 'received';
       } else if (isHavalehBe) {
-        // Remittance TO someone -> paid out of this customer's account (فروش ارز بدون تسویه / خروج وجه)
         moneyNature = 'paid';
       } else if (rowNo.includes('خرید ارز')) {
         moneyNature = 'received';
@@ -375,14 +615,30 @@ export function normalizeTahesabData(
 
       // Check conditional gold and assay receipt
       const shSharti = parseText(dRow.sh_sharti);
-      const isAbshode = dRow.Abshode === '-1' || parseText(dRow.Abshode).toLowerCase() === 'true';
-      const isConditional = shSharti !== '' && shSharti !== '0';
+      const isConditional =
+        rowNo.includes('شرطی') ||
+        dSharh.includes('شرطی') ||
+        dNoKar.includes('شرطی');
+
+      const isAbshode =
+        dRow.Abshode === '-1' ||
+        parseText(dRow.Abshode).toLowerCase() === 'true' ||
+        rowNo.includes('آبشده') ||
+        (!isConditional && !isWorkmanship && (rowNo.includes('طلا') || rowNo.includes('نقره')));
 
       let kind: NormalizedDocumentLine['kind'] = 'general_metal';
-      if (isCurrency) {
+      if (isBankRow) {
+        kind = 'bank';
+      } else if (isWorkmanship) {
+        kind = 'workmanship';
+      } else if (isCurrencyTrade) {
         kind = 'currency';
-      } else if (transferToken) {
-        kind = 'claim';
+      } else if (transferToken || isHavalehAz || isHavalehBe) {
+        kind = isCurrency ? 'currency' : 'claim';
+      } else if (isCurrency && rowNo.includes('وجه')) {
+        kind = 'cash';
+      } else if (isCurrency) {
+        kind = 'currency';
       } else if (isConditional) {
         kind = 'conditional';
       } else if (isAbshode) {
@@ -398,6 +654,17 @@ export function normalizeTahesabData(
       } else if (rowNo === 'از قبل') {
         kind = 'opening';
       }
+
+      const isLineOpening =
+        isDocOpening ||
+        dSharh.includes('موجودی اولیه') ||
+        dSharh.includes('موجودی اول دوره') ||
+        dSharh.includes('اول دوره') ||
+        parseText(dRow.SanadType) === '9' ||
+        parseText(dRow.mcode) === '0';
+
+      const workmanshipName = isWorkmanship ? cleanDescription(dSharh || dNoKar || 'کارساخته') : undefined;
+      const cleanDesc = cleanDescription(dSharh || dNoKar || '');
 
       lines.push({
         sourceFactorCode: factorCode,
@@ -418,8 +685,14 @@ export function normalizeTahesabData(
         transferToken,
         transferSide,
         transferPartnerName: parseText(dRow.name_az) || undefined,
-        description: parseText(dRow.Sharh) || parseText(dRow.NO_kar),
+        description: cleanDesc,
         isConditional,
+        bankName,
+        bankAccountNumber,
+        wagePercent,
+        wageGoldWeight,
+        workmanshipName,
+        isOpeningInventory: isLineOpening,
         signedGoldAmount,
         signedRialAmount,
         signedForeignAmount,
@@ -442,6 +715,7 @@ export function normalizeTahesabData(
       totalRialOut: Math.round(parseNum(hRow.rial_kh, 0)),
       currency,
       metalType: docMetalType,
+      isOpeningInventory: isDocOpening,
       lines,
       raw: hRow,
     });
@@ -456,6 +730,7 @@ export function normalizeTahesabData(
     gemstones,
     assayLabs,
     inventory,
+    currencies: Array.from(allCurrencies),
   };
 
   normalizerCache.set(rawDb, result);

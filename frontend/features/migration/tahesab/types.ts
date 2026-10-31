@@ -39,6 +39,7 @@ export interface NormalizedParty {
   openingGoldWeight: number; // grams 750
   openingRialBalance: number; // IRR integer
   currency: string;
+  secondaryCurrency?: string;
   raw: Record<string, unknown>;
 }
 
@@ -61,6 +62,7 @@ export interface NormalizedDocumentLine {
     | 'sale'
     | 'purchase'
     | 'wage'
+    | 'workmanship'
     | 'opening';
   metalType: 'gold' | 'silver' | 'none';
   weight: number;
@@ -77,6 +79,12 @@ export interface NormalizedDocumentLine {
   description: string;
   unitPrice?: number;
   isConditional: boolean;
+  bankName?: string;
+  bankAccountNumber?: string;
+  wagePercent?: number;
+  wageGoldWeight?: number;
+  workmanshipName?: string;
+  isOpeningInventory?: boolean;
   signedGoldAmount?: number;
   signedRialAmount?: number;
   signedForeignAmount?: number;
@@ -98,6 +106,7 @@ export interface NormalizedDocument {
   totalRialOut: number;
   currency: string;
   metalType: 'gold' | 'silver';
+  isOpeningInventory?: boolean;
   lines: NormalizedDocumentLine[];
   raw: Record<string, unknown>;
 }
@@ -150,6 +159,7 @@ export interface NormalizedMigrationData {
   gemstones: NormalizedGemstone[];
   assayLabs: NormalizedAssayLab[];
   inventory: NormalizedInventoryItem[];
+  currencies: string[];
 }
 
 export type AccountMappingStatus = 'mapped' | 'unmapped' | 'needs_review' | 'ignored';
@@ -192,10 +202,25 @@ export interface AssayLabMappingItem {
   notes?: string;
 }
 
+export type CurrencyMappingStatus = 'mapped' | 'unmapped' | 'needs_review' | 'create_new';
+
+export interface CurrencyMappingItem {
+  sourceCode: string;
+  sourceName: string;
+  targetCurrencyId?: string;
+  targetCurrencyCode: string;
+  targetCurrencyName: string;
+  targetCurrencySymbol: string;
+  status: CurrencyMappingStatus;
+  isSystem?: boolean;
+  notes?: string;
+}
+
 export interface MigrationMappings {
   accounts: AccountMappingItem[];
   parties: PartyMappingItem[];
   assayLabs?: AssayLabMappingItem[];
+  currencies?: CurrencyMappingItem[];
   defaultMetalKarat: number; // default 750
   defaultCurrency: string; // default IRR
 }

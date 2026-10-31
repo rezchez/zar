@@ -8,6 +8,7 @@ import type {
   PartyMappingItem,
   AccountMappingItem,
   AssayLabMappingItem,
+  CurrencyMappingItem,
 } from '../types';
 
 export interface ExistingCustomerSummary {
@@ -33,6 +34,14 @@ export interface ExistingAssayLabSummary {
   code?: string;
   isActive?: boolean;
   isCustom?: boolean;
+}
+
+export interface ExistingCurrencySummary {
+  id: string;
+  code: string;
+  name: string;
+  symbol: string;
+  isSystem?: boolean;
 }
 
 function cleanString(val?: string): string {
@@ -71,6 +80,7 @@ export function buildInitialMappings(
   existingCustomers: ExistingCustomerSummary[] = [],
   existingAccounts: ExistingAccountSummary[] = [],
   existingAssayLabs: ExistingAssayLabSummary[] = [],
+  existingCurrencies: ExistingCurrencySummary[] = [],
 ): MigrationMappings {
   // Index existing customers by clean name and clean phone
   const customersByName = new Map<string, ExistingCustomerSummary[]>();
@@ -193,10 +203,14 @@ export function buildInitialMappings(
   // 3. Assay Laboratory Mappings
   const assayLabMappings = buildAssayLabMappings(data.assayLabs || [], existingAssayLabs);
 
+  // 4. Currency Mappings
+  const currencyMappings = buildCurrencyMappings(data.currencies || [], existingCurrencies);
+
   return {
     accounts: accountMappings,
     parties: partyMappings,
     assayLabs: assayLabMappings,
+    currencies: currencyMappings,
     defaultMetalKarat: 750,
     defaultCurrency: 'IRR',
   };
@@ -418,6 +432,94 @@ export function buildAssayLabMappings(
       matchType: 'create_new',
       notes: 'ری‌گیری جدید (در زمان ایمپورت به صورت خودکار به لیست ری‌گیری‌های سیستم افزوده خواهد شد)',
     });
+  }
+
+  return results;
+}
+
+export function getSourceCurrencyName(code: string): string {
+  switch (code.toUpperCase()) {
+    case 'USD':
+      return 'دلار آمریکا';
+    case 'EUR':
+      return 'یورو';
+    case 'AED':
+      return 'درهم امارات';
+    case 'GBP':
+      return 'پوند انگلیس';
+    case 'TRY':
+      return 'لیر ترکیه';
+    case 'IQD':
+      return 'دینار عراق';
+    case 'CNY':
+      return 'یوآن چین';
+    case 'IRR':
+    case 'IRT':
+      return 'ریال ایران (تومان)';
+    default:
+      return code;
+  }
+}
+
+/**
+ * Maps Tahesab detected currencies to Zarfolio system currencies.
+ */
+export function buildCurrencyMappings(
+  detectedCurrencies: string[] = [],
+  existingCurrencies: ExistingCurrencySummary[] = [],
+): CurrencyMappingItem[] {
+  const standardCatalog: ExistingCurrencySummary[] = [
+    { id: 'curr_usd', code: 'USD', name: 'دلار آمریکا', symbol: '$', isSystem: true },
+    { id: 'curr_eur', code: 'EUR', name: 'یورو', symbol: '€', isSystem: true },
+    { id: 'curr_aed', code: 'AED', name: 'درهم امارات', symbol: 'د.إ', isSystem: true },
+    { id: 'curr_gbp', code: 'GBP', name: 'پوند انگلیس', symbol: '£', isSystem: true },
+    { id: 'curr_try', code: 'TRY', name: 'لیر ترکیه', symbol: '₺', isSystem: false },
+    { id: 'curr_irr', code: 'IRR', name: 'ریال ایران (تومان)', symbol: 'تومان', isSystem: true },
+  ];
+
+  const pool = [...existingCurrencies];
+  for (const std of standardCatalog) {
+    if (!pool.some((c) => c.code.toUpperCase() === std.code.toUpperCase())) {
+      pool.push(std);
+    }
+  }
+
+  const results: CurrencyMappingItem[] = [];
+  const sourceList = detectedCurrencies.length > 0 ? detectedCurrencies : ['IRR', 'USD'];
+
+  const seen = new Set<string>();
+  for (const src of sourceList) {
+    const srcUpper = (src || '').trim().toUpperCase();
+    if (!srcUpper || seen.has(srcUpper)) continue;
+    seen.add(srcUpper);
+
+    const matched =
+      pool.find((c) => c.code.toUpperCase() === srcUpper) ||
+      pool.find((c) => c.name.includes(src) || src.includes(c.name));
+
+    if (matched) {
+      results.push({
+        sourceCode: srcUpper,
+        sourceName: getSourceCurrencyName(srcUpper),
+        targetCurrencyId: matched.id,
+        targetCurrencyCode: matched.code.toUpperCase(),
+        targetCurrencyName: matched.name,
+        targetCurrencySymbol: matched.symbol,
+        status: 'mapped',
+        isSystem: matched.isSystem,
+        notes: `تطبیق خودکار با ارز ${matched.name} (${matched.code})`,
+      });
+    } else {
+      results.push({
+        sourceCode: srcUpper,
+        sourceName: getSourceCurrencyName(srcUpper),
+        targetCurrencyCode: srcUpper,
+        targetCurrencyName: srcUpper,
+        targetCurrencySymbol: srcUpper,
+        status: 'needs_review',
+        notes: 'ارز جدید نیازمند بررسی یا ایجاد در زرفولیو',
+      });
+    }
   }
 
   return results;
