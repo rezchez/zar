@@ -88,7 +88,7 @@ export async function POST(request: Request) {
     try {
       await recordAuditEvent({
         userId: newUser.id,
-        event: 'register',
+        event: 'user_created',
         request,
         details: 'ثبت‌نام کاربر جدید',
       });

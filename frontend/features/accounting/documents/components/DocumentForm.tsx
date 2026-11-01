@@ -1692,14 +1692,31 @@ export default function DocumentForm({
   const handleConfirmHawala = async (targetCustomer: Customer) => {
     if (!hawalaLine || !selectedCustomer) return;
 
+    if (targetCustomer.id === selectedCustomer.id) {
+      toast.error('طرف‌حساب مبدأ و مقصد حواله نمی‌توانند یکسان باشند.');
+      return;
+    }
+
     const isCash = hawalaLine.documentTab === 'cash' || hawalaLine.sourceTab === 'cash';
 
     if (isCash) {
+      const rawAmount = parseLocalizedAmount(hawalaLine.details?.totalAmount || '0');
+      if (!rawAmount || rawAmount <= 0) {
+        toast.error('مبلغ حواله باید بزرگتر از صفر باشد.');
+        return;
+      }
+
       const currencyInfo = detectHawalaCurrency(hawalaLine, selectedCustomer);
 
       setIsSubmittingHawala(true);
       try {
-        const counterNature: DocumentNature = hawalaLine.documentNature === 'received' ? 'paid' : 'received';
+        const isReceived = hawalaLine.documentNature === 'received';
+        const counterNature: DocumentNature = isReceived ? 'paid' : 'received';
+
+        const typeLabelForA = isReceived
+          ? `دریافت وجه نقد به ${hawalaLine.details?.cashFundName || 'صندوق'}`
+          : `پرداخت نقد از ${hawalaLine.details?.cashFundName || 'صندوق'}`;
+
         const counterTypeLabel = counterNature === 'received'
           ? `دریافت وجه نقد به ${hawalaLine.details?.cashFundName || 'صندوق'}`
           : `پرداخت نقد از ${hawalaLine.details?.cashFundName || 'صندوق'}`;
@@ -1721,8 +1738,36 @@ export default function DocumentForm({
           ? `${hawalaLine.description.trim()} ${hawalaNoteForB}`
           : hawalaNoteForB;
 
-        // 1. Immediately create and register the counter document for Customer B
-        const rawAmount = parseLocalizedAmount(hawalaLine.details?.totalAmount || '0');
+        const detailsForA = {
+          ...hawalaLine.details,
+          totalAmount: String(rawAmount),
+          cashFundCurrency: currencyInfo.code,
+          currencyUnit: currencyInfo.symbol,
+          isForeignCash: currencyInfo.isForeign,
+          documentTypeLabel: typeLabelForA,
+        };
+
+        const lineForA = {
+          id: `line_${Date.now()}_${Math.random().toString(36).substring(2, 7)}_a`,
+          documentTab: 'cash',
+          sourceTab: 'cash',
+          documentNature: hawalaLine.documentNature,
+          documentTypeLabel: typeLabelForA,
+          description: descForA,
+          converted750: 0,
+          foreignCurrency: currencyInfo.isForeign ? currencyInfo.symbol || currencyInfo.code : undefined,
+          goldAmount: 0,
+          silverAmount: 0,
+          platinumAmount: 0,
+          rialAmount: currencyInfo.isForeign
+            ? 0
+            : (baseCurrency === 'IRT' ? convertTomanToRial(rawAmount) : Math.round(rawAmount)),
+          foreignAmount: currencyInfo.isForeign ? rawAmount : 0,
+          tertiaryAmount: 0,
+          details: detailsForA,
+          documentDetails: detailsForA,
+        };
+
         const counterDetails = {
           ...hawalaLine.details,
           totalAmount: String(rawAmount),
@@ -1733,7 +1778,7 @@ export default function DocumentForm({
         };
 
         const counterLine = {
-          id: `line_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+          id: `line_${Date.now()}_${Math.random().toString(36).substring(2, 7)}_b`,
           documentTab: 'cash',
           sourceTab: 'cash',
           documentNature: counterNature,
@@ -1753,37 +1798,86 @@ export default function DocumentForm({
           documentDetails: counterDetails,
         };
 
-        const response = await fetch('/api/documents', {
+        // Determine inflow (ورود به صندوق) and outflow (خروج از صندوق)
+        // Inflow must execute FIRST so the cash fund balance increases before the outflow is processed.
+        const firstCustomer = isReceived ? selectedCustomer : targetCustomer;
+        const firstLine = isReceived ? lineForA : counterLine;
+        const secondCustomer = isReceived ? targetCustomer : selectedCustomer;
+        const secondLine = isReceived ? counterLine : lineForA;
+
+        // 1. Submit the inflow document first (ورود به صندوق)
+        const firstResponse = await fetch('/api/documents', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
-            customerId: targetCustomer.id,
+            customerId: firstCustomer.id,
             documentDateJalali,
             status: 'final',
             baseCurrency,
-            lines: [counterLine],
+            lines: [firstLine],
           }),
         });
 
-        if (!response.ok) {
-          const errData = await response.json().catch(() => null);
-          throw new Error(errData?.message || 'خطا در ثبت سند برای طرف‌حساب مقصد حواله');
+        if (!firstResponse.ok) {
+          const errData = await firstResponse.json().catch(() => null);
+          throw new Error(errData?.message || 'خطا در ثبت سند ورود وجه نقد حواله');
         }
 
-        // 2. Commit line for Customer A with updated description and proper currency settings
-        const lineForA: DocumentLine = {
-          ...hawalaLine,
-          description: descForA,
-          details: {
-            ...hawalaLine.details,
-            totalAmount: String(rawAmount),
-            cashFundCurrency: currencyInfo.code,
-            currencyUnit: currencyInfo.symbol,
-            isForeignCash: currencyInfo.isForeign,
-          },
-        };
+        const firstResult = await firstResponse.json().catch(() => null);
+        const firstDocId = firstResult?.transaction?.id || firstResult?.documentId;
 
-        setCommittedLines((prev) => [...prev, lineForA]);
+        // 2. Submit the outflow document second (خروج از صندوق با زدن حواله)
+        const secondResponse = await fetch('/api/documents', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            customerId: secondCustomer.id,
+            documentDateJalali,
+            status: 'final',
+            baseCurrency,
+            lines: [secondLine],
+          }),
+        });
+
+        if (!secondResponse.ok) {
+          const errData = await secondResponse.json().catch(() => null);
+          // Rollback the first document if possible to avoid orphan state
+          if (firstDocId) {
+            await fetch(`/api/documents/${firstDocId}`, { method: 'DELETE' }).catch(() => null);
+          }
+          throw new Error(errData?.message || 'خطا در ثبت سند خروج وجه نقد حواله');
+        }
+
+        const secondResult = await secondResponse.json().catch(() => null);
+
+        // Update local customer balances and caches
+        invalidateCashFundsCache();
+        if (selectedCustomer.id) {
+          void refreshCustomerBalances(selectedCustomer.id, true);
+        }
+        if (targetCustomer.id) {
+          void refreshCustomerBalances(targetCustomer.id, true);
+        }
+
+        if (firstResult?.customer) {
+          const cust = firstResult.customer as Customer;
+          setCustomers((prev) => prev.map((c) => (c.id === cust.id ? cust : c)));
+          if (selectedCustomer.id === cust.id) {
+            setActiveCustomerOverride(cust);
+          }
+        }
+        if (secondResult?.customer) {
+          const cust = secondResult.customer as Customer;
+          setCustomers((prev) => prev.map((c) => (c.id === cust.id ? cust : c)));
+          if (selectedCustomer.id === cust.id) {
+            setActiveCustomerOverride(cust);
+          }
+        }
+
+        // If hawalaLine was an existing line in committedLines (e.g. from table action), remove it
+        if (hawalaLine.id) {
+          setCommittedLines((prev) => prev.filter((l) => l.id !== hawalaLine.id));
+        }
 
         // Clean up draft and hawala state
         cancelEdit();
@@ -1791,7 +1885,7 @@ export default function DocumentForm({
         setIsCashHawala(false);
         setHawalaLine(null);
 
-        toast.success('حواله با موفقیت ثبت شد.');
+        toast.success(`حواله با موفقیت ثبت شد. ورود به صندوق برای «${firstCustomer.name}» و خروج برای «${secondCustomer.name}» با موفقیت صادر گردید.`);
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'خطا در ثبت حواله');
       } finally {

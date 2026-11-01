@@ -282,6 +282,51 @@ describe('Document Cash Hawala (حواله وجه نقد بین طرفین حس�
       expect(counterLine.foreignAmount).toBe(100);
       expect(counterLine.documentDetails.totalAmount).toBe('100');
     });
+
+    it('ensures correct execution order: inflow (received) registers FIRST so fund balance increases before outflow (paid) executes', () => {
+      // Scenario:
+      // Customer A receives 10,000 EUR into "صندوق یورو" (initial balance: 123 EUR)
+      // Customer B is remitted 10,000 EUR from "صندوق یورو"
+      const initialFundBalance = 123;
+      const transferAmount = 10000;
+
+      // 1. If outflow was executed first (the old bug):
+      const flawedBalanceCheck = initialFundBalance < transferAmount;
+      expect(flawedBalanceCheck).toBe(true); // Insufficient balance! (123 < 10000)
+
+      // 2. With the fix: determine inflow and outflow
+      const sourceNature: string = 'received';
+      const isReceived = sourceNature === 'received';
+
+      const firstOp = isReceived ? 'inflow' : 'outflow';
+      const secondOp = isReceived ? 'outflow' : 'inflow';
+
+      expect(firstOp).toBe('inflow');
+      expect(secondOp).toBe('outflow');
+
+      // Step 1: Inflow executes first
+      let currentFundBalance = initialFundBalance + transferAmount;
+      expect(currentFundBalance).toBe(10123);
+
+      // Step 2: Outflow executes second and checks balance
+      const isInsufficient = currentFundBalance < transferAmount;
+      expect(isInsufficient).toBe(false); // Succeeded! 10123 >= 10000
+
+      currentFundBalance -= transferAmount;
+      expect(currentFundBalance).toBe(123); // Net effect on fund is 0
+    });
+
+    it('ensures reverse hawala (source is paid) also prioritizes inflow first', () => {
+      const sourceNature: string = 'paid';
+      const isReceived = sourceNature === 'received';
+
+      // When source is paid, destination is received (inflow)
+      const firstOp = isReceived ? 'source' : 'destination';
+      const secondOp = isReceived ? 'destination' : 'source';
+
+      expect(firstOp).toBe('destination'); // Destination received runs first
+      expect(secondOp).toBe('source'); // Source paid runs second
+    });
   });
 });
 

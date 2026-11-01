@@ -102,12 +102,12 @@ export const REPORT_TYPE_DEFINITIONS: Record<ReportType, ReportTypeDefinition> =
     description: 'لیست، اطلاعات تماس و مانده حساب‌های طرف‌حساب‌ها',
     availableColumns: [
       { id: 'customerCode', label: 'کد حساب', defaultVisible: true, defaultWidth: 10, align: 'center', format: 'text', sampleValue: '۱۰۱' },
-      { id: 'name', label: 'نام طرف‌حساب', defaultVisible: true, defaultWidth: 24, align: 'right', format: 'text', sampleValue: 'طلا و جواهر زرتشت' },
+      { id: 'name', label: 'نام طرف‌حساب', defaultVisible: true, defaultWidth: 24, align: 'right', format: 'text', sampleValue: 'طرف‌حساب الف' },
       { id: 'groupName', label: 'گروه', defaultVisible: true, defaultWidth: 12, align: 'center', format: 'text', sampleValue: 'همکاران بازار' },
-      { id: 'phone1', label: 'تلفن تماس', defaultVisible: true, defaultWidth: 14, align: 'center', format: 'text', sampleValue: '۰۹۱۲۱۱۱۴۴۵۵' },
+      { id: 'phone1', label: 'تلفن تماس', defaultVisible: true, defaultWidth: 14, align: 'center', format: 'text', sampleValue: '۰۹۱۲۰۰۰۰۰۰۱' },
       { id: 'city', label: 'شهر', defaultVisible: true, defaultWidth: 10, align: 'center', format: 'text', sampleValue: 'تهران' },
       { id: 'province', label: 'استان', defaultVisible: false, defaultWidth: 10, align: 'center', format: 'text', sampleValue: 'تهران' },
-      { id: 'address', label: 'آدرس', defaultVisible: false, defaultWidth: 20, align: 'right', format: 'text', sampleValue: 'بازار بزرگ، سرای امید' },
+      { id: 'address', label: 'آدرس', defaultVisible: false, defaultWidth: 20, align: 'right', format: 'text', sampleValue: 'بازار بزرگ' },
       { id: 'goldBalance', label: 'مانده طلا (گرم)', defaultVisible: true, defaultWidth: 14, align: 'center', format: 'weight', sampleValue: '۱۲۵.۴۵۰' },
       { id: 'silverBalance', label: 'مانده نقره (گرم)', defaultVisible: false, defaultWidth: 12, align: 'center', format: 'weight', sampleValue: '۰.۰۰۰' },
       { id: 'platinumBalance', label: 'مانده پلاتین (گرم)', defaultVisible: false, defaultWidth: 12, align: 'center', format: 'weight', sampleValue: '۰.۰۰۰' },
@@ -115,10 +115,10 @@ export const REPORT_TYPE_DEFINITIONS: Record<ReportType, ReportTypeDefinition> =
       { id: 'foreignBalance', label: 'مانده ارز دوم', defaultVisible: false, defaultWidth: 12, align: 'center', format: 'currency', sampleValue: '۱,۲۰۰ $' },
     ],
     sampleRows: [
-      { customerCode: '۱۰۱', name: 'گالری طلای زرتشت', groupName: 'همکاران', phone1: '۰۹۱۲۱۱۱۴۴۵۵', city: 'تهران', goldBalance: '۱۲۵.۴۵۰', rialBalance: '۴۵۰,۰۰۰,۰۰۰' },
-      { customerCode: '۱۰۲', name: 'بنکداری برادران کمالی', groupName: 'بنکداران', phone1: '۰۹۱۲۳۳۳۷۷۸۸', city: 'اصفهان', goldBalance: '۲۴۰.۱۲۰', rialBalance: '۱,۲۰۰,۰۰۰,۰۰۰' },
-      { customerCode: '۱۰۳', name: 'جواهری الماس درخشان', groupName: 'کیفی‌ها', phone1: '۰۹۱۹۴۴۴۵۵۶۶', city: 'مشهد', goldBalance: '۱۵.۸۰۰', rialBalance: '۸۵,۰۰۰,۰۰۰' },
-      { customerCode: '۱۰۴', name: 'کارگاه طلاسازی پارس', groupName: 'سازندگان', phone1: '۰۹۱۲۹۹۹۲۲۱۱', city: 'تبریز', goldBalance: '۳۱۰.۵۰۰', rialBalance: '۶۲۰,۰۰۰,۰۰۰' },
+      { customerCode: '۱۰۱', name: 'طرف‌حساب الف', groupName: 'همکاران', phone1: '۰۹۱۲۰۰۰۰۰۰۱', city: 'تهران', goldBalance: '۱۲۵.۴۵۰', rialBalance: '۴۵۰,۰۰۰,۰۰۰' },
+      { customerCode: '۱۰۲', name: 'طرف‌حساب ب', groupName: 'بنکداران', phone1: '۰۹۱۲۰۰۰۰۰۰۲', city: 'اصفهان', goldBalance: '۲۴۰.۱۲۰', rialBalance: '۱,۲۰۰,۰۰۰,۰۰۰' },
+      { customerCode: '۱۰۳', name: 'طرف‌حساب الف (شعبه ۲)', groupName: 'کیفی‌ها', phone1: '۰۹۱۲۰۰۰۰۰۰۳', city: 'مشهد', goldBalance: '۱۵.۸۰۰', rialBalance: '۸۵,۰۰۰,۰۰۰' },
+      { customerCode: '۱۰۴', name: 'طرف‌حساب ب (کارگاه)', groupName: 'سازندگان', phone1: '۰۹۱۲۰۰۰۰۰۰۴', city: 'تبریز', goldBalance: '۳۱۰.۵۰۰', rialBalance: '۶۲۰,۰۰۰,۰۰۰' },
     ],
   },
   sales: {
@@ -128,14 +128,14 @@ export const REPORT_TYPE_DEFINITIONS: Record<ReportType, ReportTypeDefinition> =
     availableColumns: [
       { id: 'invoiceNumber', label: 'شماره فاکتور', defaultVisible: true, defaultWidth: 14, align: 'center', format: 'text', sampleValue: 'ف-۱۴۰۳-۰۸۹' },
       { id: 'date', label: 'تاریخ', defaultVisible: true, defaultWidth: 12, align: 'center', format: 'date', sampleValue: '۱۴۰۳/۰۸/۱۲' },
-      { id: 'customerName', label: 'خریدار', defaultVisible: true, defaultWidth: 24, align: 'right', format: 'text', sampleValue: 'امیرحسین رضایی' },
+      { id: 'customerName', label: 'خریدار', defaultVisible: true, defaultWidth: 24, align: 'right', format: 'text', sampleValue: 'طرف‌حساب الف' },
       { id: 'itemsCount', label: 'تعداد اقلام', defaultVisible: true, defaultWidth: 10, align: 'center', format: 'number', sampleValue: '۳' },
       { id: 'goldWeight', label: 'وزن طلا (گرم)', defaultVisible: true, defaultWidth: 16, align: 'center', format: 'weight', sampleValue: '۴۲.۶۵۰' },
       { id: 'totalPrice', label: 'مبلغ کل فاکتور', defaultVisible: true, defaultWidth: 24, align: 'center', format: 'currency', sampleValue: '۱۹۵,۰۰۰,۰۰۰ ریال' },
     ],
     sampleRows: [
-      { invoiceNumber: 'ف-۱۴۰۳-۰۰۱', date: '۱۴۰۳/۰۸/۱۰', customerName: 'محمد احمدی', itemsCount: '۲', goldWeight: '۲۵.۳۰۰', totalPrice: '۱۱۵,۰۰۰,۰۰۰ ریال' },
-      { invoiceNumber: 'ف-۱۴۰۳-۰۰۲', date: '۱۴۰۳/۰۸/۱۱', customerName: 'گالری پرنیا', itemsCount: '۵', goldWeight: '۸۸.۱۵۰', totalPrice: '۳۹۵,۰۰۰,۰۰۰ ریال' },
+      { invoiceNumber: 'ف-۱۴۰۳-۰۰۱', date: '۱۴۰۳/۰۸/۱۰', customerName: 'طرف‌حساب الف', itemsCount: '۲', goldWeight: '۲۵.۳۰۰', totalPrice: '۱۱۵,۰۰۰,۰۰۰ ریال' },
+      { invoiceNumber: 'ف-۱۴۰۳-۰۰۲', date: '۱۴۰۳/۰۸/۱۱', customerName: 'طرف‌حساب ب', itemsCount: '۵', goldWeight: '۸۸.۱۵۰', totalPrice: '۳۹۵,۰۰۰,۰۰۰ ریال' },
     ],
   },
   purchases: {
@@ -145,13 +145,13 @@ export const REPORT_TYPE_DEFINITIONS: Record<ReportType, ReportTypeDefinition> =
     availableColumns: [
       { id: 'invoiceNumber', label: 'شماره سند خرید', defaultVisible: true, defaultWidth: 14, align: 'center', format: 'text', sampleValue: 'خ-۱۴۰۳-۰۴۲' },
       { id: 'date', label: 'تاریخ', defaultVisible: true, defaultWidth: 12, align: 'center', format: 'date', sampleValue: '۱۴۰۳/۰۸/۱۴' },
-      { id: 'supplierName', label: 'فروشنده / تامین‌کننده', defaultVisible: true, defaultWidth: 24, align: 'right', format: 'text', sampleValue: 'آبشده‌فروشی مرکزی' },
+      { id: 'supplierName', label: 'فروشنده / تامین‌کننده', defaultVisible: true, defaultWidth: 24, align: 'right', format: 'text', sampleValue: 'طرف‌حساب الف' },
       { id: 'karat', label: 'عیار پایه', defaultVisible: true, defaultWidth: 10, align: 'center', format: 'number', sampleValue: '۷۵۰' },
       { id: 'goldWeight', label: 'وزن (گرم)', defaultVisible: true, defaultWidth: 16, align: 'center', format: 'weight', sampleValue: '۱۵۰.۰۰۰' },
       { id: 'totalPrice', label: 'مبلغ کل', defaultVisible: true, defaultWidth: 24, align: 'center', format: 'currency', sampleValue: '۶۷۵,۰۰۰,۰۰۰ ریال' },
     ],
     sampleRows: [
-      { invoiceNumber: 'خ-۱۴۰۳-۰۰۱', date: '۱۴۰۳/۰۸/۰۵', supplierName: 'ری‌گیری اعتماد', karat: '۷۵۰', goldWeight: '۱۰۰.۰۰۰', totalPrice: '۴۵۰,۰۰۰,۰۰۰ ریال' },
+      { invoiceNumber: 'خ-۱۴۰۳-۰۰۱', date: '۱۴۰۳/۰۸/۰۵', supplierName: 'طرف‌حساب ب', karat: '۷۵۰', goldWeight: '۱۰۰.۰۰۰', totalPrice: '۴۵۰,۰۰۰,۰۰۰ ریال' },
     ],
   },
   inventory: {
@@ -214,7 +214,7 @@ export const REPORT_TYPE_DEFINITIONS: Record<ReportType, ReportTypeDefinition> =
       { id: 'amount', label: 'مبلغ / مقدار', defaultVisible: true, defaultWidth: 18, align: 'center', format: 'currency', sampleValue: '۷۵,۰۰۰,۰۰۰ ریال' },
     ],
     sampleRows: [
-      { date: '۱۴۰۳/۰۸/۱۲', type: 'دریافت طلا', documentNumber: 'سند-۳۹۰', description: 'دریافت طلای متفرقه از مشتری', amount: '۱۴.۲۰۰ گرم' },
+      { date: '۱۴۰۳/۰۸/۱۲', type: 'دریافت طلا', documentNumber: 'سند-۳۹۰', description: 'دریافت طلای متفرقه از طرف‌حساب الف', amount: '۱۴.۲۰۰ گرم' },
     ],
   },
   general: {

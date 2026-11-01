@@ -295,7 +295,7 @@ export default function AddCustomerModal({
                   autoFocus
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="مثلاً: حاج علی حسینی، بازرگانی طلا و..."
+                  placeholder="مثلاً: طرف‌حساب الف، بازرگانی ب و..."
                   className="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-xs font-bold text-slate-900 transition-all focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                 />
               </div>

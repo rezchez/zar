@@ -4859,7 +4859,7 @@ function renderElementPreviewContent(el: InvoicePrintElement, settings: any, tem
           className="truncate px-1"
           style={{ fontWeight: getFontWeightCss(el.style?.fontWeight || 'bold') }}
         >
-          طرف‌حساب: آقای علی محمدی (کد: C-102)
+          طرف‌حساب: طرف‌حساب الف (کد: C-102)
         </div>
       );
 
