@@ -621,6 +621,58 @@ export async function POST(request: Request) {
           preservedSequence = typeof activePrimary.documentSequence === 'number' ? activePrimary.documentSequence : undefined;
           const rawDocNumber = String(activePrimary.documentNumber ?? '');
           preservedNumber = rawDocNumber.replace(/:edited:.*$/, '').replace(/:deleted:.*$/, '');
+
+          // Check if any old hawala line was removed from this document during edit
+          const requestedLinesList = Array.isArray(body.lines) ? body.lines : [body];
+          const newLinesList = requestedLinesList.length ? requestedLinesList : [body];
+          const incomingHawalaGroupIds = new Set<string>();
+          for (const nl of newLinesList) {
+            const d = parseDetails(nl.documentDetails || nl.details);
+            if (d.hawalaGroupId) {
+              incomingHawalaGroupIds.add(String(d.hawalaGroupId));
+            }
+          }
+
+          for (const sibling of recordsToDelete) {
+            const oldDetails = parseDetails(sibling.documentDetails);
+            if (oldDetails.isHawala && oldDetails.hawalaGroupId) {
+              const gId = String(oldDetails.hawalaGroupId);
+              if (!incomingHawalaGroupIds.has(gId)) {
+                // A hawala line was removed from this document during edit!
+                // Soft-delete counter transaction in counter document
+                const counterTxList = await writer.collection('transactions').getFullList({
+                  filter: writer.filter(
+                    'documentDetails ~ {:gId} && documentId != {:documentId} && is_deleted = false',
+                    { gId, documentId }
+                  ),
+                }).catch(() => []);
+
+                const delTime = Date.now();
+                for (const ctx of counterTxList) {
+                  const oldSourceKey = ctx.sourceKey || `document:${ctx.documentId || ctx.id}:1`;
+                  const oldDocNum = String(ctx.documentNumber ?? '');
+                  await writer.collection('transactions').update(ctx.id, {
+                    is_deleted: true,
+                    deleted_at: new Date().toISOString(),
+                    deleted_by: context.user.id,
+                    sourceKey: `${oldSourceKey}:deleted:${delTime}:${ctx.id}`,
+                    documentNumber: oldDocNum && !oldDocNum.includes(':deleted:') ? `${oldDocNum}:deleted:${delTime}:${ctx.id}` : oldDocNum,
+                  }).catch(() => null);
+
+                  const invList = await writer.collection('metal_inventory').getFullList({
+                    filter: writer.filter('sourceKey = {:sKey}', { sKey: oldSourceKey }),
+                  }).catch(() => []);
+                  for (const inv of invList) {
+                    await writer.collection('metal_inventory').update(inv.id, {
+                      is_deleted: true,
+                      sourceKey: `${inv.sourceKey}:deleted:${delTime}:${inv.id}`,
+                    }).catch(() => null);
+                  }
+                }
+              }
+            }
+          }
+
           for (let idx = 0; idx < recordsToDelete.length; idx++) {
             const sibling = recordsToDelete[idx];
             await writer.collection('transactions').delete(sibling.id).catch(() => null);

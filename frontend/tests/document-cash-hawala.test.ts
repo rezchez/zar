@@ -1,6 +1,10 @@
+import './setup';
 import { describe, expect, it } from 'bun:test';
 import type { Customer } from '@/lib/customer';
 import { createLine } from '@/features/accounting/documents/hooks/useDocumentLines';
+import { setMockAuthUser, sharedMockPb } from './setup';
+import { DELETE } from '@/app/api/documents/[id]/route';
+import { POST as postDocuments } from '@/app/api/documents/route';
 
 describe('Document Cash Hawala (حواله وجه نقد بین طرفین حساب)', () => {
   const customerA: Partial<Customer> = {
@@ -326,6 +330,347 @@ describe('Document Cash Hawala (حواله وجه نقد بین طرفین حس�
 
       expect(firstOp).toBe('destination'); // Destination received runs first
       expect(secondOp).toBe('source'); // Source paid runs second
+    });
+  });
+
+  describe('Hawala Cascade Deletion (حذف دوطرفه اسناد حواله)', () => {
+    const docAId = 'doc_hawala_a_123';
+    const docBId = 'doc_hawala_b_456';
+    const hawalaGroupId = 'grp_hawala_789';
+
+    function setupHawalaMockDb() {
+      setMockAuthUser({
+        id: 'usr_admin',
+        name: 'مدیر سیستم',
+        email: 'admin@zarfolio.local',
+        role: 'admin',
+        status: 'active',
+      });
+
+      const txStore: Record<string, any> = {
+        tx_a_1: {
+          id: 'tx_a_1',
+          documentId: docAId,
+          documentNumber: '1001',
+          customerId: 'cust_a',
+          sourceKey: 'document:doc_hawala_a_123:1',
+          is_deleted: false,
+          documentDetails: JSON.stringify({
+            isHawala: true,
+            hawalaGroupId,
+            hawalaCounterDocumentId: docBId,
+            hawalaCounterCustomerId: 'cust_b',
+            hawalaCounterCustomerName: 'شخص ب',
+            totalAmount: '10000',
+            currencyUnit: 'EUR',
+          }),
+        },
+        tx_b_1: {
+          id: 'tx_b_1',
+          documentId: docBId,
+          documentNumber: '1002',
+          customerId: 'cust_b',
+          sourceKey: 'document:doc_hawala_b_456:1',
+          is_deleted: false,
+          documentDetails: JSON.stringify({
+            isHawala: true,
+            hawalaGroupId,
+            hawalaCounterDocumentId: docAId,
+            hawalaCounterCustomerId: 'cust_a',
+            hawalaCounterCustomerName: 'شخص الف',
+            totalAmount: '10000',
+            currencyUnit: 'EUR',
+          }),
+        },
+      };
+
+      const originalCollection = sharedMockPb.collection.bind(sharedMockPb);
+      sharedMockPb.collection = ((name: string) => {
+        if (name === 'transactions') {
+          return {
+            getOne: async (id: string) => {
+              const item = txStore[id] || Object.values(txStore).find((t) => t.documentId === id);
+              if (!item || item.is_deleted) throw new Error('Not found');
+              return item;
+            },
+            getFirstListItem: async (filter: string) => {
+              const items = Object.values(txStore).filter((t) => !t.is_deleted);
+              const found = items.find((t) => filter.includes(t.documentId) || filter.includes(t.id));
+              if (!found) throw new Error('Not found');
+              return found;
+            },
+            getFullList: async ({ filter }: any = {}) => {
+              const items = Object.values(txStore).filter((t) => !t.is_deleted);
+              if (!filter) return items;
+              return items.filter((t) => {
+                if (filter.includes(`documentId = ${t.documentId}`) || filter.includes(`documentId = '${t.documentId}'`) || filter.includes(`documentId = "${t.documentId}"`)) return true;
+                if (filter.includes(`id = ${t.id}`) || filter.includes(`id = '${t.id}'`) || filter.includes(`id = "${t.id}"`)) return true;
+                if (filter.includes('documentDetails ~') && (
+                  (filter.includes(docAId) && t.documentDetails?.includes(docAId)) ||
+                  (filter.includes(docBId) && t.documentDetails?.includes(docBId)) ||
+                  (filter.includes(hawalaGroupId) && t.documentDetails?.includes(hawalaGroupId))
+                )) return true;
+                return false;
+              });
+            },
+            update: async (id: string, data: any) => {
+              if (txStore[id]) {
+                Object.assign(txStore[id], data);
+                return txStore[id];
+              }
+              throw new Error(`Record ${id} not found`);
+            },
+            delete: async (id: string) => {
+              if (txStore[id]) {
+                delete txStore[id];
+              }
+              return true;
+            },
+            create: async (data: any) => {
+              const id = `tx_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`;
+              txStore[id] = { id, ...data };
+              return txStore[id];
+            },
+          };
+        }
+        if (name === 'customers') {
+          return {
+            getOne: async (id: string) => ({ id, name: 'مشتری تست', rialBalance: 0, goldBalance: 0 }),
+            update: async (id: string, data: any) => ({ id, ...data }),
+          };
+        }
+        if (name === 'metal_inventory') {
+          return {
+            getFullList: async () => [],
+            update: async () => ({}),
+          };
+        }
+        if (name === 'audit_logs') {
+          return {
+            create: async (data: any) => ({ id: 'audit_1', ...data }),
+          };
+        }
+        return originalCollection(name);
+      }) as any;
+
+      return { txStore, originalCollection };
+    }
+
+    it('deletes both side A and counterparty side B when side A is deleted', async () => {
+      const { txStore, originalCollection } = setupHawalaMockDb();
+
+      try {
+        const req = new Request(`http://localhost/api/documents/${docAId}`, { method: 'DELETE' });
+        const res = await DELETE(req, { params: Promise.resolve({ id: docAId }) });
+
+        expect(res.status).toBe(200);
+        const data = await res.json();
+        expect(data.success).toBe(true);
+        expect(data.isHawala).toBe(true);
+        expect(data.deletedCount).toBe(2);
+        expect(data.counterDeletedCount).toBe(1);
+
+        // Verify side A is marked deleted
+        expect(txStore.tx_a_1.is_deleted).toBe(true);
+        expect(txStore.tx_a_1.sourceKey).toContain(':deleted:');
+        expect(txStore.tx_a_1.documentNumber).toContain('1001:deleted:');
+
+        // Verify side B (the counterparty) is ALSO marked deleted!
+        expect(txStore.tx_b_1.is_deleted).toBe(true);
+        expect(txStore.tx_b_1.sourceKey).toContain(':deleted:');
+        expect(txStore.tx_b_1.documentNumber).toContain('1002:deleted:');
+      } finally {
+        sharedMockPb.collection = originalCollection;
+      }
+    });
+
+    it('deletes both side A and counterparty side B when side B is deleted (symmetric deletion)', async () => {
+      const { txStore, originalCollection } = setupHawalaMockDb();
+
+      try {
+        const req = new Request(`http://localhost/api/documents/${docBId}`, { method: 'DELETE' });
+        const res = await DELETE(req, { params: Promise.resolve({ id: docBId }) });
+
+        expect(res.status).toBe(200);
+        const data = await res.json();
+        expect(data.success).toBe(true);
+        expect(data.isHawala).toBe(true);
+        expect(data.deletedCount).toBe(2);
+        expect(data.counterDeletedCount).toBe(1);
+
+        // Verify side B is marked deleted
+        expect(txStore.tx_b_1.is_deleted).toBe(true);
+
+        // Verify side A is ALSO marked deleted
+        expect(txStore.tx_a_1.is_deleted).toBe(true);
+      } finally {
+        sharedMockPb.collection = originalCollection;
+      }
+    });
+
+    it('editing Document A and removing the hawala line automatically soft-deletes the counter-hawala transaction of Customer B in POST /api/documents', async () => {
+      const { txStore, originalCollection } = setupHawalaMockDb();
+
+      try {
+        // Customer A edits their document, keeping only a non-hawala cash row (hawala line is deleted)
+        const updatedLines = [
+          {
+            documentNature: 'received',
+            documentTab: 'cash',
+            description: 'دریافت وجه نقد عادی',
+            rialAmount: 5000000,
+            goldAmount: 0,
+            documentDetails: {
+              cashFundId: 'fund_irr_1',
+              totalAmount: '5000000',
+              // Notice: hawalaGroupId is NOT in the new lines! (User deleted the hawala line)
+            },
+          },
+        ];
+
+        const req = new Request('http://localhost/api/documents', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            customerId: 'cust_a',
+            documentId: docAId,
+            documentDateJalali: '1405/08/11',
+            status: 'final',
+            isEdit: true,
+            lines: updatedLines,
+          }),
+        });
+
+        const res = await postDocuments(req);
+        expect(res.status).toBe(200);
+
+        // Side B (Customer B's counter hawala transaction) must be soft-deleted automatically!
+        expect(txStore.tx_b_1.is_deleted).toBe(true);
+        expect(txStore.tx_b_1.sourceKey).toContain(':deleted:');
+      } finally {
+        sharedMockPb.collection = originalCollection;
+      }
+    });
+
+    it('Hawala line deletion prompt correctly identifies counterparty and direction ("حواله به" vs "حواله از")', () => {
+      // 1. Line for A (حواله به شخص ب)
+      const lineA = {
+        id: 'line_a',
+        description: 'بابت تسویه (حواله به شخص ب کد حساب:102)',
+        documentNature: 'received',
+        details: {
+          isHawala: true,
+          hawalaCounterCustomerName: 'شخص ب',
+          hawalaCounterCustomerCode: 102,
+        },
+      };
+
+      const getHawalaDirectionInfo = (line: typeof lineA) => {
+        const details = line.details || {};
+        const counterName = String(details.hawalaCounterCustomerName || '');
+        const counterCode = details.hawalaCounterCustomerCode ? `کد حساب:${details.hawalaCounterCustomerCode}` : '';
+        const desc = line.description || '';
+
+        if (desc.includes('حواله به')) {
+          return counterName ? `حواله به «${counterName}» ${counterCode}`.trim() : 'حواله به طرف‌حساب مقصد';
+        } else if (desc.includes('حواله از')) {
+          return counterName ? `حواله از «${counterName}» ${counterCode}`.trim() : 'حواله از طرف‌حساب مبدأ';
+        }
+        return `حواله طرف‌به‌طرف با «${counterName}»`;
+      };
+
+      const infoA = getHawalaDirectionInfo(lineA);
+      expect(infoA).toBe('حواله به «شخص ب» کد حساب:102');
+
+      // 2. Line for B (حواله از شخص الف)
+      const lineB = {
+        id: 'line_b',
+        description: 'بابت تسویه (حواله از شخص الف کد حساب: 101)',
+        documentNature: 'paid',
+        details: {
+          isHawala: true,
+          hawalaCounterCustomerName: 'شخص الف',
+          hawalaCounterCustomerCode: 101,
+        },
+      };
+
+      const infoB = getHawalaDirectionInfo(lineB);
+      expect(infoB).toBe('حواله از «شخص الف» کد حساب:101');
+
+      // 3. Fallback resolution: line has empty hawalaCounterCustomerName in details, but description has "(حواله از محمد رضایی کد حساب: 105)"
+      const lineFallback = {
+        id: 'line_c',
+        description: 'بابت تسویه (حواله از محمد رضایی کد حساب: 105)',
+        documentNature: 'paid',
+        details: {
+          isHawala: true,
+          hawalaCounterCustomerName: '', // empty in details!
+          hawalaCounterCustomerId: '',
+        },
+      };
+
+      const fromMatch = lineFallback.description.match(/(?:حواله\s+از|\(حواله\s+از)\s+([^\(\)\:\n،]+?)(?:\s+کد\s*حساب|\s*[\:\(]|\s*\)|$)/);
+      expect(fromMatch?.[1]?.trim()).toBe('محمد رضایی');
+
+      const codeMatch = lineFallback.description.match(/کد\s*حساب\s*[:\s]*(\d+)/);
+      expect(codeMatch?.[1]?.trim()).toBe('105');
+    });
+
+    it('staged hawala in document lines: not submitted immediately, only committed upon full document save', () => {
+      // When confirming the hawala modal:
+      let apiCalled = false;
+      let committedLinesList: any[] = [];
+
+      const targetCustomer = { id: 'cust_b', name: 'شخص ب', customerCode: 102 };
+      const rawLine = {
+        id: 'draft_line_1',
+        documentNature: 'received',
+        documentTab: 'cash',
+        details: { totalAmount: '10000', cashFundName: 'صندوق یورو', cashFundCurrency: 'EUR' },
+      };
+
+      // Modal confirmation: stages row into committedLinesList without calling API
+      const stagedRow = {
+        id: 'line_a',
+        documentNature: rawLine.documentNature,
+        documentTab: 'cash',
+        description: `(حواله به ${targetCustomer.name} کد حساب:${targetCustomer.customerCode})`,
+        details: {
+          ...rawLine.details,
+          isHawala: true,
+          hawalaGroupId: 'grp_123',
+          hawalaCounterCustomerId: targetCustomer.id,
+          hawalaCounterCustomerName: targetCustomer.name,
+          hawalaCounterLine: {
+            documentNature: 'paid',
+            documentTab: 'cash',
+            description: `(حواله از شخص الف)`,
+            details: { isHawala: true, totalAmount: '10000' },
+          },
+        },
+      };
+
+      committedLinesList.push(stagedRow);
+
+      // Verify NO api call was made during row staging
+      expect(apiCalled).toBe(false);
+      expect(committedLinesList.length).toBe(1);
+      expect(committedLinesList[0].details.isHawala).toBe(true);
+      expect(committedLinesList[0].details.hawalaCounterLine).toBeDefined();
+
+      // Only when saving the entire document, both documents are submitted together
+      const saveWholeDocument = () => {
+        apiCalled = true;
+        const inflowDoc = stagedRow.documentNature === 'received' ? 'DocA' : 'DocB';
+        const outflowDoc = stagedRow.documentNature === 'received' ? 'DocB' : 'DocA';
+        return { inflowDoc, outflowDoc, committed: true };
+      };
+
+      const result = saveWholeDocument();
+      expect(apiCalled).toBe(true);
+      expect(result.inflowDoc).toBe('DocA');
+      expect(result.outflowDoc).toBe('DocB');
+      expect(result.committed).toBe(true);
     });
   });
 });

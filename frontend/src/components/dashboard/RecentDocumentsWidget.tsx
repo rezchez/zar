@@ -8,6 +8,7 @@ import {
   RefreshCw,
   Plus,
   Pencil,
+  Trash2,
   Calendar,
   User,
   ArrowDownLeft,
@@ -34,6 +35,7 @@ export default function RecentDocumentsWidget({
   const [documents, setDocuments] = useState<RecentDocumentItem[]>(initialDocuments);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [deletingDocId, setDeletingDocId] = useState<string | null>(null);
 
   const loadDocuments = useCallback(async () => {
     setLoading(true);
@@ -53,6 +55,28 @@ export default function RecentDocumentsWidget({
       setLoading(false);
     }
   }, []);
+
+  const handleDeleteDocument = async (doc: RecentDocumentItem) => {
+    const docLabel = doc.documentNumber ? `شماره ${doc.documentNumber}` : doc.documentId.slice(0, 8);
+    if (!window.confirm(`آیا از حذف کامل سند ${docLabel} اطمینان دارید؟ در صورت حواله بودن، طرف متقابل حواله نیز به صورت خودکار حذف خواهد شد.`)) {
+      return;
+    }
+    setDeletingDocId(doc.documentId);
+    try {
+      const res = await fetch(`/api/documents/${encodeURIComponent(doc.documentId)}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.message || 'خطا در حذف سند');
+      }
+      await loadDocuments();
+    } catch (err: any) {
+      alert(err?.message || 'خطا در حذف سند');
+    } finally {
+      setDeletingDocId(null);
+    }
+  };
 
   useEffect(() => {
     if (initialDocuments.length === 0) {
@@ -258,6 +282,19 @@ export default function RecentDocumentsWidget({
                             <Pencil size={14} />
                             <span className="sr-only sm:not-sr-only text-[11px] font-semibold">ویرایش</span>
                           </Link>
+
+                          {/* دکمه حذف */}
+                          <button
+                            type="button"
+                            disabled={deletingDocId === doc.documentId}
+                            onClick={() => void handleDeleteDocument(doc)}
+                            className="p-1.5 rounded-lg border transition-all bg-slate-50 hover:bg-rose-50 dark:bg-slate-800/80 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 border-slate-200 dark:border-slate-700 hover:border-rose-300 dark:hover:border-rose-700 shadow-2xs flex items-center gap-1 disabled:opacity-50"
+                            title="حذف سند"
+                            aria-label={`حذف سند شماره ${doc.documentNumber || doc.documentId}`}
+                          >
+                            <Trash2 size={14} />
+                            <span className="sr-only sm:not-sr-only text-[11px] font-semibold">حذف</span>
+                          </button>
                         </div>
                       </td>
                     </tr>

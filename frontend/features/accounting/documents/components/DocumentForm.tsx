@@ -4,7 +4,7 @@ import { getCurrencyTradeForeignEffect } from '../utils/currency-effects';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { PencilLine } from 'lucide-react';
+import { PencilLine, Trash2 } from 'lucide-react';
 
 import { useFavoriteCustomers } from '@/hooks/useFavoriteCustomers';
 import { useToastManager } from '@/components/ui/toast';
@@ -1275,16 +1275,7 @@ export default function DocumentForm({
       }
 
       // Prepare lines payload
-      const response = await fetch('/api/documents', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          customerId: selectedCustomerId,
-          documentId,
-          documentDateJalali,
-          status,
-          isEdit: isEditingExistingDoc,
-          lines: committedLines.map((line) => {
+      const mappedLines = committedLines.map((line) => {
             const metalType = line.details?.metalType || 'gold';
             const baseKarat = purityForMetal(metalType);
             const rawWeight =
@@ -1559,13 +1550,120 @@ export default function DocumentForm({
                           : 0,
               tertiaryAmount: 0,
             };
-          }),
-        }),
-      });
+          });
 
-      const data = await response.json().catch(() => null);
-      if (!response.ok) {
-        throw new Error(data?.message ?? 'ثبت سند انجام نشد.');
+      // Check for any hawala lines that have an associated counter line to create
+      const hawalaLinesWithCounter = committedLines.filter(
+        (l) => (l.details as Record<string, any>)?.isHawala && (l.details as Record<string, any>)?.hawalaCounterLine,
+      );
+
+      let data: any = null;
+
+      if (hawalaLinesWithCounter.length === 0) {
+        // Standard single-document submission
+        const response = await fetch('/api/documents', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            customerId: selectedCustomerId,
+            documentId,
+            documentDateJalali,
+            status,
+            isEdit: isEditingExistingDoc,
+            lines: mappedLines,
+          }),
+        });
+
+        data = await response.json().catch(() => null);
+        if (!response.ok) {
+          throw new Error(data?.message ?? 'ثبت سند انجام نشد.');
+        }
+      } else {
+        // Hawala submission: Document A + Counter Document(s)
+        for (const hwLine of hawalaLinesWithCounter) {
+          const hwDetails = (hwLine.details || {}) as Record<string, any>;
+          const isReceived = hwLine.documentNature === 'received';
+          const counterLine = hwDetails.hawalaCounterLine;
+          const targetCustomerId = hwDetails.hawalaCounterCustomerId;
+          const counterDocId = hwDetails.hawalaCounterDocumentId || generateUUID();
+
+          const payloadA = {
+            customerId: selectedCustomerId,
+            documentId,
+            documentDateJalali,
+            status,
+            isEdit: isEditingExistingDoc,
+            lines: mappedLines,
+          };
+
+          const payloadB = {
+            customerId: targetCustomerId,
+            documentId: counterDocId,
+            documentDateJalali,
+            status,
+            baseCurrency,
+            lines: [counterLine],
+          };
+
+          // Sequence: Inflow MUST be saved FIRST so vault balance increases
+          if (isReceived) {
+            // 1. Submit Document A (Inflow - ورود به صندوق)
+            const resA = await fetch('/api/documents', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify(payloadA),
+            });
+            if (!resA.ok) {
+              const err = await resA.json().catch(() => null);
+              throw new Error(err?.message || 'خطا در ثبت سند ورود وجه نقد حواله');
+            }
+            data = await resA.json().catch(() => null);
+
+            // 2. Submit Document B (Outflow - خروج از صندوق حواله)
+            const resB = await fetch('/api/documents', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify(payloadB),
+            });
+            if (!resB.ok) {
+              const err = await resB.json().catch(() => null);
+              // Rollback Document A to avoid orphan state
+              await fetch(`/api/documents/${documentId}`, { method: 'DELETE' }).catch(() => null);
+              throw new Error(err?.message || 'خطا در ثبت سند خروج وجه نقد حواله در طرف‌حساب دوم');
+            }
+          } else {
+            // Document A is paid, so Document B is Inflow (دریافت در طرف‌حساب دوم)
+            // 1. Submit Document B first
+            const resB = await fetch('/api/documents', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify(payloadB),
+            });
+            if (!resB.ok) {
+              const err = await resB.json().catch(() => null);
+              throw new Error(err?.message || 'خطا در ثبت سند ورود وجه نقد حواله در طرف‌حساب دوم');
+            }
+
+            // 2. Submit Document A second
+            const resA = await fetch('/api/documents', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify(payloadA),
+            });
+            if (!resA.ok) {
+              const err = await resA.json().catch(() => null);
+              // Rollback Document B to avoid orphan state
+              await fetch(`/api/documents/${counterDocId}`, { method: 'DELETE' }).catch(() => null);
+              throw new Error(err?.message || 'خطا در ثبت سند خروج وجه نقد حواله');
+            }
+            data = await resA.json().catch(() => null);
+          }
+
+          // Refresh counterparty balance
+          if (targetCustomerId) {
+            void refreshCustomerBalances(targetCustomerId, true);
+          }
+        }
       }
 
       const targetCustomerId = selectedCustomerId;
@@ -1738,35 +1836,8 @@ export default function DocumentForm({
           ? `${hawalaLine.description.trim()} ${hawalaNoteForB}`
           : hawalaNoteForB;
 
-        const detailsForA = {
-          ...hawalaLine.details,
-          totalAmount: String(rawAmount),
-          cashFundCurrency: currencyInfo.code,
-          currencyUnit: currencyInfo.symbol,
-          isForeignCash: currencyInfo.isForeign,
-          documentTypeLabel: typeLabelForA,
-        };
-
-        const lineForA = {
-          id: `line_${Date.now()}_${Math.random().toString(36).substring(2, 7)}_a`,
-          documentTab: 'cash',
-          sourceTab: 'cash',
-          documentNature: hawalaLine.documentNature,
-          documentTypeLabel: typeLabelForA,
-          description: descForA,
-          converted750: 0,
-          foreignCurrency: currencyInfo.isForeign ? currencyInfo.symbol || currencyInfo.code : undefined,
-          goldAmount: 0,
-          silverAmount: 0,
-          platinumAmount: 0,
-          rialAmount: currencyInfo.isForeign
-            ? 0
-            : (baseCurrency === 'IRT' ? convertTomanToRial(rawAmount) : Math.round(rawAmount)),
-          foreignAmount: currencyInfo.isForeign ? rawAmount : 0,
-          tertiaryAmount: 0,
-          details: detailsForA,
-          documentDetails: detailsForA,
-        };
+        const docBId = generateUUID();
+        const hawalaGroupId = generateUUID();
 
         const counterDetails = {
           ...hawalaLine.details,
@@ -1775,14 +1846,24 @@ export default function DocumentForm({
           currencyUnit: currencyInfo.symbol,
           isForeignCash: currencyInfo.isForeign,
           documentTypeLabel: counterTypeLabel,
+          isHawala: true,
+          hawalaGroupId,
+          hawalaCounterDocumentId: documentId,
+          hawalaCounterCustomerId: selectedCustomer.id,
+          hawalaCounterCustomerName: selectedCustomer.name,
+          hawalaCounterCustomerCode: selectedCustomer.customerCode,
         };
 
         const counterLine = {
+          ...hawalaLine,
           id: `line_${Date.now()}_${Math.random().toString(36).substring(2, 7)}_b`,
-          documentTab: 'cash',
+          documentTab: 'cash' as const,
           sourceTab: 'cash',
           documentNature: counterNature,
           documentTypeLabel: counterTypeLabel,
+          documentSubType: hawalaLine.documentSubType || 'cash',
+          settlementMethod: 'cash' as const,
+          balanceSource: 'current' as const,
           description: descForB,
           converted750: 0,
           foreignCurrency: currencyInfo.isForeign ? currencyInfo.symbol || currencyInfo.code : undefined,
@@ -1794,90 +1875,51 @@ export default function DocumentForm({
             : (baseCurrency === 'IRT' ? convertTomanToRial(rawAmount) : Math.round(rawAmount)),
           foreignAmount: currencyInfo.isForeign ? rawAmount : 0,
           tertiaryAmount: 0,
-          details: counterDetails,
+          details: counterDetails as any,
           documentDetails: counterDetails,
         };
 
-        // Determine inflow (ورود به صندوق) and outflow (خروج از صندوق)
-        // Inflow must execute FIRST so the cash fund balance increases before the outflow is processed.
-        const firstCustomer = isReceived ? selectedCustomer : targetCustomer;
-        const firstLine = isReceived ? lineForA : counterLine;
-        const secondCustomer = isReceived ? targetCustomer : selectedCustomer;
-        const secondLine = isReceived ? counterLine : lineForA;
+        const detailsForA = {
+          ...hawalaLine.details,
+          totalAmount: String(rawAmount),
+          cashFundCurrency: currencyInfo.code,
+          currencyUnit: currencyInfo.symbol,
+          isForeignCash: currencyInfo.isForeign,
+          documentTypeLabel: typeLabelForA,
+          isHawala: true,
+          hawalaGroupId,
+          hawalaCounterDocumentId: docBId,
+          hawalaCounterCustomerId: targetCustomer.id,
+          hawalaCounterCustomerName: targetCustomer.name,
+          hawalaCounterCustomerCode: targetCustomer.customerCode,
+          counterNature,
+          counterTypeLabel,
+          descForB,
+          hawalaCounterLine: counterLine,
+          hawalaTargetCustomer: targetCustomer,
+        };
 
-        // 1. Submit the inflow document first (ورود به صندوق)
-        const firstResponse = await fetch('/api/documents', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            customerId: firstCustomer.id,
-            documentDateJalali,
-            status: 'final',
-            baseCurrency,
-            lines: [firstLine],
-          }),
+        const lineForA: DocumentLine = {
+          ...hawalaLine,
+          id: hawalaLine.id || `line_${Date.now()}_${Math.random().toString(36).substring(2, 7)}_a`,
+          documentTab: 'cash',
+          sourceTab: 'cash',
+          documentNature: hawalaLine.documentNature,
+          documentTypeLabel: typeLabelForA,
+          documentSubType: hawalaLine.documentSubType || 'cash',
+          settlementMethod: 'cash',
+          balanceSource: 'current',
+          description: descForA,
+          converted750: 0,
+          details: detailsForA as any,
+        };
+
+        // Add lineForA to committedLines of current document
+        // Hawala submission is deferred until the whole document is submitted
+        setCommittedLines((prev) => {
+          const filtered = hawalaLine.id ? prev.filter((l) => l.id !== hawalaLine.id) : prev;
+          return [...filtered, lineForA];
         });
-
-        if (!firstResponse.ok) {
-          const errData = await firstResponse.json().catch(() => null);
-          throw new Error(errData?.message || 'خطا در ثبت سند ورود وجه نقد حواله');
-        }
-
-        const firstResult = await firstResponse.json().catch(() => null);
-        const firstDocId = firstResult?.transaction?.id || firstResult?.documentId;
-
-        // 2. Submit the outflow document second (خروج از صندوق با زدن حواله)
-        const secondResponse = await fetch('/api/documents', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            customerId: secondCustomer.id,
-            documentDateJalali,
-            status: 'final',
-            baseCurrency,
-            lines: [secondLine],
-          }),
-        });
-
-        if (!secondResponse.ok) {
-          const errData = await secondResponse.json().catch(() => null);
-          // Rollback the first document if possible to avoid orphan state
-          if (firstDocId) {
-            await fetch(`/api/documents/${firstDocId}`, { method: 'DELETE' }).catch(() => null);
-          }
-          throw new Error(errData?.message || 'خطا در ثبت سند خروج وجه نقد حواله');
-        }
-
-        const secondResult = await secondResponse.json().catch(() => null);
-
-        // Update local customer balances and caches
-        invalidateCashFundsCache();
-        if (selectedCustomer.id) {
-          void refreshCustomerBalances(selectedCustomer.id, true);
-        }
-        if (targetCustomer.id) {
-          void refreshCustomerBalances(targetCustomer.id, true);
-        }
-
-        if (firstResult?.customer) {
-          const cust = firstResult.customer as Customer;
-          setCustomers((prev) => prev.map((c) => (c.id === cust.id ? cust : c)));
-          if (selectedCustomer.id === cust.id) {
-            setActiveCustomerOverride(cust);
-          }
-        }
-        if (secondResult?.customer) {
-          const cust = secondResult.customer as Customer;
-          setCustomers((prev) => prev.map((c) => (c.id === cust.id ? cust : c)));
-          if (selectedCustomer.id === cust.id) {
-            setActiveCustomerOverride(cust);
-          }
-        }
-
-        // If hawalaLine was an existing line in committedLines (e.g. from table action), remove it
-        if (hawalaLine.id) {
-          setCommittedLines((prev) => prev.filter((l) => l.id !== hawalaLine.id));
-        }
 
         // Clean up draft and hawala state
         cancelEdit();
@@ -1885,9 +1927,9 @@ export default function DocumentForm({
         setIsCashHawala(false);
         setHawalaLine(null);
 
-        toast.success(`حواله با موفقیت ثبت شد. ورود به صندوق برای «${firstCustomer.name}» و خروج برای «${secondCustomer.name}» با موفقیت صادر گردید.`);
+        toast.success(`ردیف حواله به «${targetCustomer.name}» در فهرست ردیف‌های سند درج شد. با ثبت نهایی سند، حواله اعمال خواهد شد.`);
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'خطا در ثبت حواله');
+        toast.error(err instanceof Error ? err.message : 'خطا در ثبت ردیف حواله');
       } finally {
         setIsSubmittingHawala(false);
       }
@@ -1978,6 +2020,47 @@ export default function DocumentForm({
     ? (currentOpLabel ? `ویرایش ردیف ${currentOpLabel}` : 'ویرایش ردیف')
     : (currentOpLabel ? `ثبت ردیف ${currentOpLabel}` : 'ثبت ردیف');
 
+  const [isDeletingDoc, setIsDeletingDoc] = useState(false);
+
+  const handleDeleteDocument = async () => {
+    const docToDelete = editingExistingDocId || documentId;
+    if (!docToDelete) return;
+    if (!window.confirm('آیا از حذف کامل این سند اطمینان دارید؟ در صورت حواله بودن، طرف متقابل حواله نیز به صورت خودکار حذف خواهد شد.')) {
+      return;
+    }
+    setIsDeletingDoc(true);
+    try {
+      const res = await fetch(`/api/documents/${encodeURIComponent(docToDelete)}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.message || 'خطا در حذف سند');
+      }
+      const data = await res.json().catch(() => null);
+      if (data?.isHawala) {
+        toast.success('سند و طرف متقابل حواله با موفقیت حذف شدند.');
+      } else {
+        toast.success('سند با موفقیت حذف شد.');
+      }
+      const currentCustId = selectedCustomerId;
+      setIsEditingExistingDoc(false);
+      setEditingExistingDocId('');
+      setCommittedLines([]);
+      setDocumentId(generateUUID());
+      setDocumentNumberDisplay('');
+      setPreviewData(null);
+      if (currentCustId) {
+        void refreshCustomerBalances(currentCustId, true);
+      }
+      router.replace('/dashboard/documents/new');
+    } catch (err: any) {
+      toast.error(err instanceof Error ? err.message : 'خطا در حذف سند');
+    } finally {
+      setIsDeletingDoc(false);
+    }
+  };
+
   return (
     <div
       className={`document-form-page ${isLinesPinned ? 'is-pinned-page' : ''}`}
@@ -2008,25 +2091,36 @@ export default function DocumentForm({
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              const currentCustId = selectedCustomerId;
-              setIsEditingExistingDoc(false);
-              setEditingExistingDocId('');
-              setCommittedLines([]);
-              setDocumentId(generateUUID());
-              setDocumentNumberDisplay('');
-              setPreviewData(null);
-              if (currentCustId) {
-                void refreshCustomerBalances(currentCustId, true);
-              }
-              router.replace('/dashboard/documents/new');
-            }}
-            className="text-xs px-3 py-1.5 rounded-lg font-semibold bg-amber-500/20 hover:bg-amber-500/30 text-amber-900 dark:text-amber-200 transition-colors shrink-0"
-          >
-            انصراف از ویرایش
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              disabled={isDeletingDoc}
+              onClick={handleDeleteDocument}
+              className="text-xs px-3 py-1.5 rounded-lg font-semibold bg-rose-500/20 hover:bg-rose-500/30 text-rose-800 dark:text-rose-200 transition-colors flex items-center gap-1.5 disabled:opacity-50"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
+              <span>{isDeletingDoc ? 'در حال حذف...' : 'حذف سند'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const currentCustId = selectedCustomerId;
+                setIsEditingExistingDoc(false);
+                setEditingExistingDocId('');
+                setCommittedLines([]);
+                setDocumentId(generateUUID());
+                setDocumentNumberDisplay('');
+                setPreviewData(null);
+                if (currentCustId) {
+                  void refreshCustomerBalances(currentCustId, true);
+                }
+                router.replace('/dashboard/documents/new');
+              }}
+              className="text-xs px-3 py-1.5 rounded-lg font-semibold bg-amber-500/20 hover:bg-amber-500/30 text-amber-900 dark:text-amber-200 transition-colors shrink-0"
+            >
+              انصراف از ویرایش
+            </button>
+          </div>
         </div>
       )}
 

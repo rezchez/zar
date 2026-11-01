@@ -202,9 +202,123 @@ export default function DocumentModals({
                   <X size={16} />
                 </button>
               </div>
-              <p className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                آیا از حذف این ردیف سند اطمینان دارید؟
-              </p>
+              {(() => {
+                const details = ((deleteConfirmLine?.details || (deleteConfirmLine as any)?.documentDetails || {}) as Record<string, unknown>);
+                const desc = deleteConfirmLine?.description || '';
+                const isHawala = Boolean(
+                  details?.isHawala ||
+                  desc.includes('حواله')
+                );
+                if (isHawala) {
+                  let counterName = String(
+                    details.hawalaCounterCustomerName ||
+                    details.counterCustomerName ||
+                    details.targetCustomerName ||
+                    ''
+                  ).trim();
+
+                  let counterCode = String(
+                    details.hawalaCounterCustomerCode ||
+                    details.counterCustomerCode ||
+                    details.targetCustomerCode ||
+                    ''
+                  ).trim();
+
+                  // Lookup in customers list by ID if name is missing
+                  if (!counterName && details.hawalaCounterCustomerId && Array.isArray(customers)) {
+                    const found = customers.find((c) => c.id === details.hawalaCounterCustomerId);
+                    if (found) {
+                      counterName = found.name;
+                      if (!counterCode && found.customerCode) {
+                        counterCode = String(found.customerCode);
+                      }
+                    }
+                  }
+
+                  // Determine direction from desc or details
+                  let direction: 'from' | 'to' | 'general' = 'general';
+                  if (desc.includes('حواله به') || details.counterNature === 'paid') {
+                    direction = 'to';
+                  } else if (desc.includes('حواله از') || details.counterNature === 'received') {
+                    direction = 'from';
+                  }
+
+                  // If counterName is still missing, extract it directly from description text:
+                  // E.g. "(حواله از شخص الف کد حساب: 101)" -> "شخص الف"
+                  // E.g. "(حواله به شخص ب کد حساب: 102)" -> "شخص ب"
+                  if (!counterName && desc) {
+                    const fromMatch = desc.match(/(?:حواله\s+از|\(حواله\s+از)\s+([^\(\)\:\n،]+?)(?:\s+کد\s*حساب|\s*[\:\(]|\s*\)|$)/);
+                    const toMatch = desc.match(/(?:حواله\s+به|\(حواله\s+به)\s+([^\(\)\:\n،]+?)(?:\s+کد\s*حساب|\s*[\:\(]|\s*\)|$)/);
+
+                    if (fromMatch && fromMatch[1]?.trim()) {
+                      counterName = fromMatch[1].trim();
+                      direction = 'from';
+                    } else if (toMatch && toMatch[1]?.trim()) {
+                      counterName = toMatch[1].trim();
+                      direction = 'to';
+                    }
+                  }
+
+                  // Extract counterCode from description if still missing
+                  if (!counterCode && desc) {
+                    const codeMatch = desc.match(/کد\s*حساب\s*[:\s]*(\d+)/);
+                    if (codeMatch && codeMatch[1]) {
+                      counterCode = codeMatch[1].trim();
+                    }
+                  }
+
+                  // If we extracted a code, try to find canonical name in customers list
+                  if (counterCode && Array.isArray(customers)) {
+                    const foundByCode = customers.find((c) => String(c.customerCode) === String(counterCode));
+                    if (foundByCode && foundByCode.name) {
+                      counterName = foundByCode.name;
+                    }
+                  }
+
+                  const codeStr = counterCode ? ` (کد حساب: ${counterCode})` : '';
+
+                  let directionText = '';
+                  if (direction === 'from') {
+                    directionText = counterName
+                      ? `حواله از طرف‌حساب «${counterName}»${codeStr}`
+                      : 'حواله دریافتی از طرف‌حساب مقابل';
+                  } else if (direction === 'to') {
+                    directionText = counterName
+                      ? `حواله به طرف‌حساب «${counterName}»${codeStr}`
+                      : 'حواله پرداختی به طرف‌حساب مقابل';
+                  } else {
+                    directionText = counterName
+                      ? `حواله طرف‌به‌طرف با طرف‌حساب «${counterName}»${codeStr}`
+                      : 'حواله طرف‌به‌طرف';
+                  }
+
+                  const counterDisplay = counterName ? `«${counterName}»` : 'طرف‌حساب مقابل';
+
+                  return (
+                    <div className="space-y-3">
+                      <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-200 text-xs text-right space-y-1.5">
+                        <p className="font-bold flex items-center gap-1.5 text-amber-700 dark:text-amber-300">
+                          <span>⚠️ ردیف حواله طرف‌به‌طرف</span>
+                        </p>
+                        <p className="leading-relaxed">
+                          این ردیف مربوط به <strong>{directionText}</strong> می‌باشد.
+                        </p>
+                        <p className="text-slate-600 dark:text-slate-400 text-[11px] leading-relaxed">
+                          در صورت حذف، ردیف متناظر آن در سند {counterDisplay} نیز به‌صورت خودکار پاک خواهد شد.
+                        </p>
+                      </div>
+                      <p className="text-xs font-semibold text-rose-700 dark:text-rose-400">
+                        آیا از حذف این ردیف حواله و ردیف متناظر در سند {counterDisplay} اطمینان دارید؟
+                      </p>
+                    </div>
+                  );
+                }
+                return (
+                  <p className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                    آیا از حذف این ردیف سند اطمینان دارید؟
+                  </p>
+                );
+              })()}
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
