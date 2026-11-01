@@ -574,6 +574,10 @@ export async function POST(request: Request) {
     const isEditMode = body.isEdit === true;
     let preservedSequence: number | undefined;
     let preservedNumber: string | undefined;
+    let recordsToDelete: any[] = [];
+    let oldMetalInv: any[] = [];
+    const revertedVaultDeltas = new Map<string, number>();
+    const revertedBankDeltas = new Map<string, number>();
 
     let writer = context.pb;
     try {
@@ -581,6 +585,8 @@ export async function POST(request: Request) {
     } catch {
       // fallback
     }
+
+    const currenciesList = await writer.collection('currencies').getFullList().catch(() => []);
 
     // The document ID is the user-facing idempotency token; sourceKey is the
     // storage-level guard used for each row. Check both before creating a
@@ -615,12 +621,80 @@ export async function POST(request: Request) {
           }, { status: 200 });
         }
       } else {
-        const recordsToDelete = existingDocument.length > 0 ? existingDocument : (existingFirstLine ? [existingFirstLine] : []);
+        recordsToDelete = existingDocument.length > 0 ? existingDocument : (existingFirstLine ? [existingFirstLine] : []);
         if (recordsToDelete.length > 0) {
           const activePrimary = recordsToDelete.find((r) => !r.is_deleted) || recordsToDelete[0];
           preservedSequence = typeof activePrimary.documentSequence === 'number' ? activePrimary.documentSequence : undefined;
           const rawDocNumber = String(activePrimary.documentNumber ?? '');
           preservedNumber = rawDocNumber.replace(/:edited:.*$/, '').replace(/:deleted:.*$/, '');
+
+          // Compute reverted amounts for cash funds and bank accounts from the existing document
+          for (const rec of recordsToDelete) {
+            if (rec.is_deleted) continue;
+            const d = parseDetails(rec.documentDetails);
+            const tab = String(rec.documentTab || d.documentTab || d.sourceTab || '');
+            const nature = rec.documentNature === 'paid' ? 'paid' : 'received';
+
+            if (tab === 'cash' || d.cashFundId) {
+              const fundId = typeof d.cashFundId === 'string' ? d.cashFundId : null;
+              if (fundId && !d.isChildLine) {
+                const amount = Math.abs(Number(d.totalAmount) || Math.abs(Number(rec.rialAmount) || 0));
+                if (amount > 0) {
+                  const current = revertedVaultDeltas.get(fundId) || 0;
+                  // Old paid took money out; reverting it restores money (+amount)
+                  // Old received put money in; reverting it takes money back (-amount)
+                  revertedVaultDeltas.set(fundId, nature === 'paid' ? current + amount : current - amount);
+                }
+              }
+            }
+
+            if (tab === 'currency') {
+              const isUnsettled = d.unsettledTrade === true || d.settlementMethod === 'unsettled';
+              if (!isUnsettled) {
+                let fundId = typeof d.cashFundId === 'string' ? d.cashFundId : null;
+                const qty = Math.abs(Number(d.currencyQuantity) || 0);
+                if (!fundId) {
+                  const currencyUnit = String(d.currencyUnit || 'USD').trim();
+                  const matchedCur = currenciesList.find(
+                    (c: any) =>
+                      String(c.code).toUpperCase() === currencyUnit.toUpperCase() ||
+                      String(c.name).toUpperCase() === currencyUnit.toUpperCase() ||
+                      String(c.id) === currencyUnit,
+                  );
+                  const curId = matchedCur?.id || currencyUnit;
+                  const curName = matchedCur?.name || currencyUnit;
+                  const curFund = await writer.collection('cash_funds').getFirstListItem(
+                    writer.filter('currency = {:currencyId}', { currencyId: curId }),
+                  ).catch(async () => writer.collection('cash_funds').getFirstListItem(
+                    writer.filter('(currency = "" || currency = null) && currency_name = {:currency}', { currency: curName }),
+                  ).catch(() => null));
+                  if (curFund) fundId = curFund.id;
+                }
+                if (fundId && qty > 0) {
+                  const current = revertedVaultDeltas.get(fundId) || 0;
+                  revertedVaultDeltas.set(fundId, nature === 'paid' ? current + qty : current - qty);
+                }
+              }
+            }
+
+            if (tab === 'bank' || d.bankAccountId) {
+              const bankId = typeof d.bankAccountId === 'string' ? d.bankAccountId : null;
+              const opKind = String(d.bankOperationKind || rec.documentSubType || '');
+              const isCheck = opKind === 'check-payment' || opKind === 'check-receipt' || opKind === 'transfer-received-check' || Boolean(d.checkNumber) || Boolean(d.sayadId);
+              if (bankId && !isCheck) {
+                const amount = Math.abs(Number(rec.rialAmount) || Math.abs(Number(d.totalAmount) || 0));
+                const rawFee = Math.abs(Number(d.transferFee) || 0);
+                const isFeeToman = (d.currencyUnit === 'IRT' || d.baseCurrency === 'IRT') && !d.transferFeeInIrr;
+                const transferFee = isFeeToman ? convertTomanToRial(rawFee) : rawFee;
+                const isBankOutflow = opKind === 'pay-to-customer' ? true : opKind === 'receive-from-customer' ? false : nature === 'paid';
+                const totalDeduction = isBankOutflow ? amount + transferFee : amount;
+                if (totalDeduction > 0) {
+                  const current = revertedBankDeltas.get(bankId) || 0;
+                  revertedBankDeltas.set(bankId, isBankOutflow ? current + totalDeduction : current - amount);
+                }
+              }
+            }
+          }
 
           // Check if any old hawala line was removed from this document during edit
           const requestedLinesList = Array.isArray(body.lines) ? body.lines : [body];
@@ -672,18 +746,10 @@ export async function POST(request: Request) {
               }
             }
           }
-
-          for (let idx = 0; idx < recordsToDelete.length; idx++) {
-            const sibling = recordsToDelete[idx];
-            await writer.collection('transactions').delete(sibling.id).catch(() => null);
-          }
         }
-        const oldMetalInv = await writer.collection('metal_inventory').getFullList({
+        oldMetalInv = await writer.collection('metal_inventory').getFullList({
           filter: writer.filter('document_id = {:docId}', { docId: documentId }),
         }).catch(() => []);
-        for (const inv of oldMetalInv) {
-          await writer.collection('metal_inventory').delete(inv.id).catch(() => null);
-        }
       }
     }
 
@@ -1131,8 +1197,6 @@ export async function POST(request: Request) {
     // Validate that referenced cash funds and bank accounts are not blocked, and have sufficient balance
     const simulatedVaultBalances = new Map<string, number>();
     const simulatedBankBalances = new Map<string, number>();
-    const currenciesList = await writer.collection('currencies').getFullList().catch(() => []);
-
     for (const prepared of preparedLines) {
       const fundId = typeof prepared.documentDetails.cashFundId === 'string' ? prepared.documentDetails.cashFundId : null;
       if (fundId) {
@@ -1149,12 +1213,14 @@ export async function POST(request: Request) {
         }
         if (fund && (prepared.line.documentTab === 'cash' || prepared.line.sourceTab === 'cash') && !prepared.documentDetails.isChildLine) {
           if (!simulatedVaultBalances.has(fund.id)) {
-            simulatedVaultBalances.set(fund.id, Number(fund.balance ?? 0));
+            const startingBal = Number(fund.balance ?? 0) + (revertedVaultDeltas.get(fund.id) || 0);
+            simulatedVaultBalances.set(fund.id, startingBal);
           }
           const amount = Math.abs(Number(prepared.documentDetails.totalAmount) || Math.abs(prepared.lineAmounts.rialAmount ?? 0));
           const currentBal = simulatedVaultBalances.get(fund.id)!;
+          const isHawala = prepared.documentDetails.isHawala === true;
           if (prepared.lineNature === 'paid') {
-            if (currentBal < amount) {
+            if (!isHawala && currentBal < amount) {
               return NextResponse.json(
                 {
                   success: false,
@@ -1201,17 +1267,19 @@ export async function POST(request: Request) {
               );
             }
             if (!simulatedVaultBalances.has(curFund.id)) {
-              simulatedVaultBalances.set(curFund.id, Number(curFund.balance ?? 0));
+              const startingBal = Number(curFund.balance ?? 0) + (revertedVaultDeltas.get(curFund.id) || 0);
+              simulatedVaultBalances.set(curFund.id, startingBal);
             }
             const qty = Math.abs(Number(prepared.documentDetails.currencyQuantity) || 0);
             const currentBal = simulatedVaultBalances.get(curFund.id)!;
+            const isHawala = prepared.documentDetails.isHawala === true;
             if (prepared.lineNature === 'paid') {
-              if (currentBal < qty) {
+              if (!isHawala && currentBal < qty) {
                 return NextResponse.json(
                   {
                     success: false,
                     code: 'INSUFFICIENT_BALANCE',
-                    message: `موجودی صندوق «${curFund.name || curName}» کافی نیست. (موجودی: ${currentBal}، درخواستی: ${qty})`,
+                    message: `موجودی صندوق «${curFund.name || curName}» کافی نیست. (موجودی: ${currentBal.toLocaleString('fa-IR')}، درخواستی: ${qty.toLocaleString('fa-IR')})`,
                   },
                   { status: 400 },
                 );
@@ -1258,7 +1326,8 @@ export async function POST(request: Request) {
 
         if (bankAcc && (isBankOutflow || isBankInflow)) {
           if (!simulatedBankBalances.has(bankAcc.id)) {
-            simulatedBankBalances.set(bankAcc.id, Number(bankAcc.currentBalance ?? bankAcc.balance ?? 0));
+            const startingBal = Number(bankAcc.currentBalance ?? bankAcc.balance ?? 0) + (revertedBankDeltas.get(bankAcc.id) || 0);
+            simulatedBankBalances.set(bankAcc.id, startingBal);
           }
           const amount = Math.abs(prepared.lineAmounts.rialAmount ?? 0) || Math.abs(Number(prepared.documentDetails.totalAmount) || 0);
           const currentBal = simulatedBankBalances.get(bankAcc.id)!;
@@ -1361,6 +1430,27 @@ export async function POST(request: Request) {
       const currentCreatedRecords = [];
       const currentCreatedInventoryRecords = [];
       try {
+        if (isEditMode && recordsToDelete.length > 0) {
+          for (const sibling of recordsToDelete) {
+            await writer.collection('transactions').delete(sibling.id).catch(() => null);
+          }
+          for (const inv of oldMetalInv) {
+            await writer.collection('metal_inventory').delete(inv.id).catch(() => null);
+          }
+          const oldCashTxs = await writer.collection('cash_transactions').getFullList({
+            filter: writer.filter('source_key ~ {:docId}', { docId: documentId }),
+          }).catch(() => []);
+          for (const ctx of oldCashTxs) {
+            await writer.collection('cash_transactions').delete(ctx.id).catch(() => null);
+          }
+          const oldBankTxs = await writer.collection('bank_transactions').getFullList({
+            filter: writer.filter('source_key ~ {:docId}', { docId: documentId }),
+          }).catch(() => []);
+          for (const btx of oldBankTxs) {
+            await writer.collection('bank_transactions').delete(btx.id).catch(() => null);
+          }
+        }
+
         for (const payload of documentPayloads) {
           // Extra safety guard: ensure no lingering record in transactions still holds this sourceKey
           const lingering = await writer.collection('transactions').getFirstListItem(
@@ -1855,7 +1945,7 @@ export async function POST(request: Request) {
           const qty = Math.abs(Number(prepared.documentDetails.currencyQuantity) || 0);
           const currentBal = vaultWorkingBalances.has(vault.id)
             ? vaultWorkingBalances.get(vault.id)!
-            : Number(vault.balance ?? 0);
+            : Number(vault.balance ?? 0) + (revertedVaultDeltas.get(vault.id) || 0);
           const nextBal = prepared.lineNature === 'received' ? currentBal + qty : currentBal - qty;
           vaultWorkingBalances.set(vault.id, nextBal);
 
@@ -1941,7 +2031,7 @@ export async function POST(request: Request) {
 
           const currentBal = vaultWorkingBalances.has(vault.id)
             ? vaultWorkingBalances.get(vault.id)!
-            : Number(vault.balance ?? 0);
+            : Number(vault.balance ?? 0) + (revertedVaultDeltas.get(vault.id) || 0);
           const nextBal = prepared.lineNature === 'received' ? currentBal + amount : currentBal - amount;
           vaultWorkingBalances.set(vault.id, nextBal);
 
@@ -1971,6 +2061,21 @@ export async function POST(request: Request) {
               source_key: cashSourceKey,
               created_by: context.user.id,
             });
+          }
+        }
+
+        // If editing, apply reverted delta for any cash fund that had delta but was not referenced in new lines
+        for (const [fundId, delta] of revertedVaultDeltas.entries()) {
+          if (!vaultWorkingBalances.has(fundId) && delta !== 0) {
+            const vault = await writer.collection('cash_funds').getOne(fundId).catch(() => null);
+            if (vault) {
+              const nextBal = Number(vault.balance ?? 0) + delta;
+              await writer.collection('cash_funds').update(vault.id, {
+                balance: nextBal,
+                updated_by: context.user.id,
+              });
+              vaultWorkingBalances.set(vault.id, nextBal);
+            }
           }
         }
 
@@ -2285,7 +2390,8 @@ export async function POST(request: Request) {
             } else if (mappedBank) {
               // Direct bank-customer transfers (pay-to-customer / receive-from-customer)
               if (!bankWorkingBalances.has(mappedBank.id)) {
-                bankWorkingBalances.set(mappedBank.id, Number(mappedBank.currentBalance ?? mappedBank.balance ?? 0));
+                const startingBal = Number(mappedBank.currentBalance ?? mappedBank.balance ?? 0) + (revertedBankDeltas.get(mappedBank.id) || 0);
+                bankWorkingBalances.set(mappedBank.id, startingBal);
               }
               const currentBal = bankWorkingBalances.get(mappedBank.id)!;
               const isOutflow =
@@ -2354,6 +2460,22 @@ export async function POST(request: Request) {
                 } catch (bankJournalErr) {
                   console.error('Failed to post bank receipt journal entry:', bankJournalErr);
                 }
+              }
+            }
+          }
+
+          // If editing, apply reverted delta for any bank account that had delta but was not referenced in new lines
+          for (const [bankId, delta] of revertedBankDeltas.entries()) {
+            if (!bankWorkingBalances.has(bankId) && delta !== 0) {
+              const bankAcc = await writer.collection('bank_accounts').getOne(bankId).catch(() => null);
+              if (bankAcc) {
+                const nextBal = Number(bankAcc.currentBalance ?? bankAcc.balance ?? 0) + delta;
+                await writer.collection('bank_accounts').update(bankAcc.id, {
+                  balance: nextBal,
+                  currentBalance: nextBal,
+                  updatedBy: context.user.id,
+                }).catch(() => undefined);
+                bankWorkingBalances.set(bankAcc.id, nextBal);
               }
             }
           }

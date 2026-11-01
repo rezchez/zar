@@ -1596,12 +1596,14 @@ export default function DocumentForm({
             lines: mappedLines,
           };
 
+          const isCounterExisting = Boolean(hwDetails.hawalaCounterDocumentId);
           const payloadB = {
             customerId: targetCustomerId,
             documentId: counterDocId,
             documentDateJalali,
             status,
             baseCurrency,
+            isEdit: isCounterExisting,
             lines: [counterLine],
           };
 

@@ -140,6 +140,99 @@ export async function DELETE(
       }
     }
 
+    // Revert cash funds and bank accounts affected by all deleted records
+    const deleteRevertedVaultDeltas = new Map<string, number>();
+    const deleteRevertedBankDeltas = new Map<string, number>();
+
+    for (const item of allRecordsToDelete) {
+      const details = parseDetails(item.documentDetails);
+      const tab = String(item.documentTab || details.documentTab || details.sourceTab || '');
+      const nature: 'received' | 'paid' = item.documentNature === 'paid' ? 'paid' : 'received';
+
+      if (tab === 'cash' || details.cashFundId) {
+        const fundId = typeof details.cashFundId === 'string' ? details.cashFundId : null;
+        if (fundId && !details.isChildLine) {
+          const amount = Math.abs(Number(details.totalAmount) || Math.abs(Number(item.rialAmount) || 0));
+          if (amount > 0) {
+            const current = deleteRevertedVaultDeltas.get(fundId) || 0;
+            deleteRevertedVaultDeltas.set(fundId, nature === 'paid' ? current + amount : current - amount);
+          }
+        }
+      }
+
+      if (tab === 'currency') {
+        const isUnsettled = details.unsettledTrade === true || details.settlementMethod === 'unsettled';
+        if (!isUnsettled) {
+          const fundId = typeof details.cashFundId === 'string' ? details.cashFundId : null;
+          const qty = Math.abs(Number(details.currencyQuantity) || 0);
+          if (fundId && qty > 0) {
+            const current = deleteRevertedVaultDeltas.get(fundId) || 0;
+            deleteRevertedVaultDeltas.set(fundId, nature === 'paid' ? current + qty : current - qty);
+          }
+        }
+      }
+
+      if (tab === 'bank' || details.bankAccountId) {
+        const bankId = typeof details.bankAccountId === 'string' ? details.bankAccountId : null;
+        const opKind = String(details.bankOperationKind || item.documentSubType || '');
+        const isCheck = opKind === 'check-payment' || opKind === 'check-receipt' || opKind === 'transfer-received-check' || Boolean(details.checkNumber) || Boolean(details.sayadId);
+        if (bankId && !isCheck) {
+          const amount = Math.abs(Number(item.rialAmount) || Math.abs(Number(details.totalAmount) || 0));
+          const rawFee = Math.abs(Number(details.transferFee) || 0);
+          const isFeeToman = (details.currencyUnit === 'IRT' || details.baseCurrency === 'IRT') && !details.transferFeeInIrr;
+          const transferFee = isFeeToman ? rawFee * 10 : rawFee;
+          const isBankOutflow = opKind === 'pay-to-customer' ? true : opKind === 'receive-from-customer' ? false : nature === 'paid';
+          const totalDeduction = isBankOutflow ? amount + transferFee : amount;
+          if (totalDeduction > 0) {
+            const current = deleteRevertedBankDeltas.get(bankId) || 0;
+            deleteRevertedBankDeltas.set(bankId, isBankOutflow ? current + totalDeduction : current - amount);
+          }
+        }
+      }
+    }
+
+    for (const [fundId, delta] of deleteRevertedVaultDeltas.entries()) {
+      if (delta !== 0) {
+        const vault = await context.pb.collection('cash_funds').getOne(fundId).catch(() => null);
+        if (vault) {
+          await context.pb.collection('cash_funds').update(vault.id, {
+            balance: Number(vault.balance ?? 0) + delta,
+            updated_by: context.user.id,
+          }).catch(() => null);
+        }
+      }
+    }
+
+    for (const [bankId, delta] of deleteRevertedBankDeltas.entries()) {
+      if (delta !== 0) {
+        const bankAcc = await context.pb.collection('bank_accounts').getOne(bankId).catch(() => null);
+        if (bankAcc) {
+          const nextBal = Number(bankAcc.currentBalance ?? bankAcc.balance ?? 0) + delta;
+          await context.pb.collection('bank_accounts').update(bankAcc.id, {
+            balance: nextBal,
+            currentBalance: nextBal,
+            updatedBy: context.user.id,
+          }).catch(() => null);
+        }
+      }
+    }
+
+    for (const dId of docIdsToClean) {
+      if (!dId) continue;
+      const relatedCashTxs = await context.pb.collection('cash_transactions').getFullList({
+        filter: context.pb.filter('source_key ~ {:docId}', { docId: dId }),
+      }).catch(() => []);
+      for (const ctx of relatedCashTxs) {
+        await context.pb.collection('cash_transactions').delete(ctx.id).catch(() => null);
+      }
+      const relatedBankTxs = await context.pb.collection('bank_transactions').getFullList({
+        filter: context.pb.filter('source_key ~ {:docId}', { docId: dId }),
+      }).catch(() => []);
+      for (const btx of relatedBankTxs) {
+        await context.pb.collection('bank_transactions').delete(btx.id).catch(() => null);
+      }
+    }
+
     const isHawalaDeletion = counterSiblings.length > 0;
     const auditDetails = isHawalaDeletion
       ? `سند حواله ${record.documentNumber ?? record.id} و سند متقابل آن به‌صورت خودکار و هم‌زمان حذف شدند (${allRecordsToDelete.length} ردیف).`

@@ -279,6 +279,7 @@ export default function CashTab({
   const effectiveFundBalance = (activeFund?.balance ?? 0) + committedDelta;
 
   const isFundBalanceInsufficient =
+    !isHawalaEffective &&
     nature === 'paid' &&
     activeFund !== null &&
     numericAmount > 0 &&

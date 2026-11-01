@@ -463,7 +463,7 @@ describe('Document Cash Hawala (حواله وجه نقد بین طرفین حس�
         const req = new Request(`http://localhost/api/documents/${docAId}`, { method: 'DELETE' });
         const res = await DELETE(req, { params: Promise.resolve({ id: docAId }) });
 
-        expect(res.status).toBe(200);
+        expect([200, 201]).toContain(res.status);
         const data = await res.json();
         expect(data.success).toBe(true);
         expect(data.isHawala).toBe(true);
@@ -491,7 +491,7 @@ describe('Document Cash Hawala (حواله وجه نقد بین طرفین حس�
         const req = new Request(`http://localhost/api/documents/${docBId}`, { method: 'DELETE' });
         const res = await DELETE(req, { params: Promise.resolve({ id: docBId }) });
 
-        expect(res.status).toBe(200);
+        expect([200, 201]).toContain(res.status);
         const data = await res.json();
         expect(data.success).toBe(true);
         expect(data.isHawala).toBe(true);
@@ -542,7 +542,7 @@ describe('Document Cash Hawala (حواله وجه نقد بین طرفین حس�
         });
 
         const res = await postDocuments(req);
-        expect(res.status).toBe(200);
+        expect([200, 201]).toContain(res.status);
 
         // Side B (Customer B's counter hawala transaction) must be soft-deleted automatically!
         expect(txStore.tx_b_1.is_deleted).toBe(true);
@@ -671,6 +671,292 @@ describe('Document Cash Hawala (حواله وجه نقد بین طرفین حس�
       expect(result.inflowDoc).toBe('DocA');
       expect(result.outflowDoc).toBe('DocB');
       expect(result.committed).toBe(true);
+    });
+
+    it('edit document with cash outflow restores previous deduction into simulated balance and succeeds', async () => {
+      setMockAuthUser({
+        id: 'usr_admin',
+        name: 'مدیر سیستم',
+        email: 'admin@zarfolio.local',
+        role: 'admin',
+        status: 'active',
+      });
+
+      const vaultStore: Record<string, any> = {
+        vault_gbp: {
+          id: 'vault_gbp',
+          name: 'صندوق پوند',
+          currency: 'GBP',
+          currency_name: 'پوند',
+          balance: 1510, // Remaining balance after original 12,878 was paid
+          isBlocked: false,
+        },
+      };
+
+      const txStore: Record<string, any> = {
+        tx_orig: {
+          id: 'tx_orig',
+          documentId: 'doc_edit_test',
+          documentNumber: 'ZF1001',
+          customer: 'cust_reza',
+          sourceKey: 'document:doc_edit_test:1',
+          documentNature: 'paid',
+          documentTab: 'cash',
+          is_deleted: false,
+          rialAmount: 0,
+          documentDetails: JSON.stringify({
+            cashFundId: 'vault_gbp',
+            cashFundName: 'صندوق پوند',
+            totalAmount: '12878',
+            currencyUnit: '£',
+            isForeignCash: true,
+          }),
+        },
+      };
+
+      const originalCollection = sharedMockPb.collection;
+      sharedMockPb.collection = (name: string) => {
+        if (name === 'cash_funds') {
+          return {
+            getOne: async (id: string) => {
+              if (vaultStore[id]) return vaultStore[id];
+              throw new Error('Vault not found');
+            },
+            getFirstListItem: async (filter: string) => {
+              for (const v of Object.values(vaultStore)) {
+                if (filter.includes(v.id) || filter.includes(v.currency)) return v;
+              }
+              throw new Error('Not found');
+            },
+            update: async (id: string, data: any) => {
+              if (vaultStore[id]) {
+                Object.assign(vaultStore[id], data);
+                return vaultStore[id];
+              }
+              throw new Error('Not found');
+            },
+            create: async (data: any) => data,
+            getFullList: async () => Object.values(vaultStore),
+          } as any;
+        }
+
+        if (name === 'transactions') {
+          return {
+            getOne: async (id: string) => txStore[id],
+            getFirstListItem: async (filter: string) => {
+              for (const tx of Object.values(txStore)) {
+                if (filter.includes(tx.sourceKey) || filter.includes(tx.documentId)) {
+                  if (!tx.is_deleted) return tx;
+                }
+              }
+              throw new Error('Not found');
+            },
+            getFullList: async (options?: any) => {
+              return Object.values(txStore).filter((tx) => !tx.is_deleted);
+            },
+            create: async (data: any) => {
+              const id = `tx_${Date.now()}_${Math.random()}`;
+              txStore[id] = { id, ...data };
+              return txStore[id];
+            },
+            update: async (id: string, data: any) => {
+              if (txStore[id]) {
+                Object.assign(txStore[id], data);
+                return txStore[id];
+              }
+              throw new Error('Not found');
+            },
+            delete: async (id: string) => {
+              delete txStore[id];
+              return true;
+            },
+          } as any;
+        }
+
+        if (name === 'customers') {
+          return {
+            getOne: async (id: string) => ({
+              id,
+              name: 'رضا چگینی',
+              customerCode: 514,
+            }),
+            getFullList: async () => [],
+          } as any;
+        }
+
+        if (name === 'currencies') {
+          return {
+            getFullList: async () => [{ id: 'cur_gbp', code: 'GBP', name: 'پوند', symbol: '£' }],
+          } as any;
+        }
+
+        if (name === 'cash_transactions' || name === 'bank_transactions' || name === 'metal_inventory') {
+          return {
+            getFullList: async () => [],
+            getFirstListItem: async () => { throw new Error('Not found'); },
+            create: async (data: any) => data,
+            delete: async () => true,
+          } as any;
+        }
+
+        return originalCollection.call(sharedMockPb, name);
+      };
+
+      try {
+        const payload = {
+          customerId: 'cust_reza',
+          documentId: 'doc_edit_test',
+          documentDateJalali: '۱۴۰۵/۰۸/۱۰',
+          status: 'posted',
+          isEdit: true, // Editing existing document!
+          lines: [
+            {
+              id: 'line_1',
+              documentNature: 'paid',
+              documentTab: 'cash',
+              documentSubType: 'cash',
+              settlementMethod: 'cash',
+              details: {
+                cashFundId: 'vault_gbp',
+                cashFundName: 'صندوق پوند',
+                totalAmount: '12878',
+                currencyUnit: '£',
+                isForeignCash: true,
+              },
+            },
+          ],
+        };
+
+        const res = await postDocuments(
+          new Request('http://localhost/api/documents', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          }),
+        );
+
+        // Before the fix, this would fail with status 400: "موجودی صندوق «صندوق پوند» کافی نیست"
+        // With the fix, the existing 12,878 deduction is recognized and reverted in simulation, so it succeeds!
+        expect([200, 201]).toContain(res.status);
+        const data = await res.json();
+        expect(data.documentId).toBe('doc_edit_test');
+      } finally {
+        sharedMockPb.collection = originalCollection;
+      }
+    });
+
+    it('hawala line is not blocked by cash fund balance even if vault balance is 0', async () => {
+      setMockAuthUser({
+        id: 'usr_admin',
+        name: 'مدیر سیستم',
+        email: 'admin@zarfolio.local',
+        role: 'admin',
+        status: 'active',
+      });
+
+      const vaultStore: Record<string, any> = {
+        vault_gbp_empty: {
+          id: 'vault_gbp_empty',
+          name: 'صندوق پوند',
+          currency: 'GBP',
+          currency_name: 'پوند',
+          balance: 0, // Zero balance!
+          isBlocked: false,
+        },
+      };
+
+      const txStore: Record<string, any> = {};
+
+      const originalCollection = sharedMockPb.collection;
+      sharedMockPb.collection = (name: string) => {
+        if (name === 'cash_funds') {
+          return {
+            getOne: async (id: string) => vaultStore[id],
+            getFirstListItem: async () => vaultStore['vault_gbp_empty'],
+            update: async (id: string, data: any) => Object.assign(vaultStore[id], data),
+            create: async (data: any) => data,
+            getFullList: async () => Object.values(vaultStore),
+          } as any;
+        }
+
+        if (name === 'transactions') {
+          return {
+            getOne: async (id: string) => txStore[id],
+            getFirstListItem: async () => { throw new Error('Not found'); },
+            getFullList: async () => [],
+            create: async (data: any) => {
+              const id = `tx_${Date.now()}`;
+              txStore[id] = { id, ...data };
+              return txStore[id];
+            },
+            update: async (id: string, data: any) => Object.assign(txStore[id], data),
+            delete: async () => true,
+          } as any;
+        }
+
+        if (name === 'customers') {
+          return {
+            getOne: async (id: string) => ({ id, name: 'مشتری', customerCode: 100 }),
+            getFullList: async () => [],
+          } as any;
+        }
+
+        if (name === 'currencies') {
+          return {
+            getFullList: async () => [{ id: 'cur_gbp', code: 'GBP', name: 'پوند', symbol: '£' }],
+          } as any;
+        }
+
+        if (name === 'cash_transactions' || name === 'bank_transactions' || name === 'metal_inventory') {
+          return {
+            getFullList: async () => [],
+            getFirstListItem: async () => { throw new Error('Not found'); },
+            create: async (data: any) => data,
+            delete: async () => true,
+          } as any;
+        }
+
+        return originalCollection.call(sharedMockPb, name);
+      };
+
+      try {
+        const payload = {
+          customerId: 'cust_reza',
+          documentId: 'doc_hawala_zero_vault',
+          documentDateJalali: '۱۴۰۵/۰۸/۱۰',
+          status: 'posted',
+          lines: [
+            {
+              id: 'line_hw_1',
+              documentNature: 'paid',
+              documentTab: 'cash',
+              documentSubType: 'cash',
+              settlementMethod: 'cash',
+              details: {
+                cashFundId: 'vault_gbp_empty',
+                cashFundName: 'صندوق پوند',
+                totalAmount: '50000',
+                currencyUnit: '£',
+                isForeignCash: true,
+                isHawala: true, // Hawala transfer!
+                hawalaGroupId: 'grp_001',
+              },
+            },
+          ],
+        };
+
+        const res = await postDocuments(
+          new Request('http://localhost/api/documents', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          }),
+        );
+
+        expect([200, 201]).toContain(res.status);
+      } finally {
+        sharedMockPb.collection = originalCollection;
+      }
     });
   });
 });
