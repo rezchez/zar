@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import { getServerAuthContext } from '@/lib/auth';
 import { hasPermission } from '@/lib/authorization';
 import { jalaliDateToIso } from '@/lib/jalali';
-import { mapTransaction } from '@/lib/transaction';
+import { isZeroOpeningBalanceTransaction, mapTransaction } from '@/lib/transaction';
 
 export async function POST(request: Request) {
   const context = await getServerAuthContext();
@@ -154,7 +154,7 @@ export async function POST(request: Request) {
       (t as any).customerName = rec.expand?.customer?.name || '';
       (t as any).customerCode = rec.expand?.customer?.customerCode || (rec as any).customerCode || '';
       return t;
-    });
+    }).filter((transaction) => !isZeroOpeningBalanceTransaction(transaction));
 
     // Optional text search filter
     if (search && typeof search === 'string' && search.trim()) {

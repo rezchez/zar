@@ -50,7 +50,14 @@ describe('Document Registration - Add Customer Quick Modal', () => {
 
     // Collapsible Sections inspired by CustomerForm
     expect(modalSrc).toContain('اطلاعات تکمیلی');
-    expect(modalSrc).toContain('کد ملی / شناسه اقتصادی');
+    expect(modalSrc).toContain('کد ملی');
+    expect(modalSrc).toContain('شناسه ملی');
+    expect(modalSrc).toContain("nationalIdType === 'nationalCode'");
+    expect(modalSrc).toContain('iranianNationalCodeSchema.safeParse');
+    expect(modalSrc).toContain("digits.slice(0, 10)");
+    expect(modalSrc).toContain("setNationalId((value) => normalizeDigits(value).replace(/\\D/g, '').slice(0, 10))");
+    expect(modalSrc).toContain("maxLength={nationalIdType === 'nationalCode' ? 10 : undefined}");
+    expect(modalSrc).toContain('{nationalId.length}/۱۰ رقم');
     expect(modalSrc).toContain('استان');
     expect(modalSrc).toContain('شهر');
     expect(modalSrc).toContain('آدرس');

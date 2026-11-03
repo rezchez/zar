@@ -205,6 +205,24 @@ export function mapTransaction(record: RecordModel | Record<string, unknown>): C
   };
 }
 
+export function isZeroOpeningBalanceTransaction(transaction: CustomerTransaction) {
+  const isOpeningBalance =
+    transaction.transactionType === 'opening_balance' ||
+    transaction.isOpeningBalance ||
+    transaction.sourceKey.startsWith('opening:');
+
+  if (!isOpeningBalance) return false;
+
+  return [
+    transaction.goldAmount,
+    transaction.silverAmount,
+    transaction.platinumAmount,
+    transaction.rialAmount,
+    transaction.foreignAmount,
+    transaction.tertiaryAmount,
+  ].every((amount) => Number(amount) === 0);
+}
+
 export function sumPostedTransactions(transactions: CustomerTransaction[]) {
   return transactions
     .filter((transaction) => transaction.status === 'final' || transaction.status === 'posted')

@@ -13,6 +13,8 @@ import {
 } from 'lucide-react';
 
 import type { Customer } from '@/lib/customer';
+import { iranianNationalCodeSchema } from '@/lib/iranian-national-code';
+import { normalizeDigits } from '@/lib/jalali';
 import {
   customerBalanceFields,
   customerDateFields,
@@ -42,6 +44,8 @@ export default function AddCustomerModal({
   const [metalType, setMetalType] = useState<'gold' | 'silver' | 'platinum'>('gold');
   const [primaryCurrency, setPrimaryCurrency] = useState<'rial' | 'usd' | 'eur' | 'aed' | 'other'>('rial');
   const [nationalId, setNationalId] = useState('');
+  const [nationalIdType, setNationalIdType] = useState<'nationalCode' | 'nationalId'>('nationalCode');
+  const [nationalIdError, setNationalIdError] = useState('');
   const [province, setProvince] = useState('');
   const [city, setCity] = useState('');
   const [address1, setAddress1] = useState('');
@@ -160,8 +164,20 @@ export default function AddCustomerModal({
       return;
     }
 
+    const normalizedNationalId = normalizeDigits(nationalId.trim());
+    if (nationalIdType === 'nationalCode' && normalizedNationalId) {
+      const nationalCodeValidation = iranianNationalCodeSchema.safeParse(normalizedNationalId);
+      if (!nationalCodeValidation.success) {
+        setShowAdditional(true);
+        setNationalIdError(nationalCodeValidation.error.issues[0]?.message || 'کد ملی معتبر نیست.');
+        setErrorMessage('');
+        return;
+      }
+    }
+
     setLoading(true);
     setErrorMessage('');
+    setNationalIdError('');
 
     try {
       const formData = new FormData();
@@ -173,7 +189,7 @@ export default function AddCustomerModal({
       formData.append('groupName', groupName);
       formData.append('metalType', metalType);
       formData.append('primaryCurrency', primaryCurrency);
-      formData.append('nationalId', nationalId.trim());
+      formData.append('nationalId', normalizedNationalId);
       formData.append('province', province);
       formData.append('city', city);
       formData.append('address1', address1.trim());
@@ -468,17 +484,63 @@ export default function AddCustomerModal({
               <div className="p-4 grid grid-cols-1 gap-3 sm:grid-cols-2 bg-white dark:bg-slate-900">
                 {/* National ID */}
                 <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
-                    کد ملی / شناسه اقتصادی
-                  </label>
+                  <div className="flex items-center justify-between gap-2">
+                    <label htmlFor="add-customer-national-id" className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                      {nationalIdType === 'nationalCode' ? 'کد ملی' : 'شناسه ملی'}
+                    </label>
+                    <div className="inline-flex rounded-lg bg-slate-100 p-0.5 dark:bg-slate-800" aria-label="نوع شناسه">
+                      <button
+                        type="button"
+                        aria-pressed={nationalIdType === 'nationalCode'}
+                        onClick={() => {
+                          setNationalIdType('nationalCode');
+                          setNationalId((value) => normalizeDigits(value).replace(/\D/g, '').slice(0, 10));
+                          setNationalIdError('');
+                        }}
+                        className={`rounded-md px-2 py-1 text-[10px] font-bold transition-colors ${nationalIdType === 'nationalCode' ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                      >
+                        کد ملی
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={nationalIdType === 'nationalId'}
+                        onClick={() => {
+                          setNationalIdType('nationalId');
+                          setNationalIdError('');
+                        }}
+                        className={`rounded-md px-2 py-1 text-[10px] font-bold transition-colors ${nationalIdType === 'nationalId' ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                      >
+                        شناسه ملی
+                      </button>
+                    </div>
+                  </div>
                   <input
+                    id="add-customer-national-id"
                     type="text"
                     value={nationalId}
-                    onChange={(e) => setNationalId(e.target.value)}
-                    placeholder="کد ۱۰ رقمی ملی یا شناسه ملی"
+                    onChange={(e) => {
+                      const digits = normalizeDigits(e.target.value).replace(/\D/g, '');
+                      setNationalId(nationalIdType === 'nationalCode' ? digits.slice(0, 10) : digits);
+                      setNationalIdError('');
+                    }}
+                    placeholder={nationalIdType === 'nationalCode' ? 'کد ملی ۱۰ رقمی' : 'شناسه ملی'}
                     dir="ltr"
-                    className="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-xs font-bold text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white text-right"
+                    inputMode="numeric"
+                    maxLength={nationalIdType === 'nationalCode' ? 10 : undefined}
+                    aria-invalid={Boolean(nationalIdError)}
+                    aria-describedby={nationalIdError ? 'add-customer-national-id-error' : undefined}
+                    className={`h-10 w-full rounded-xl border bg-white px-3 text-xs font-bold text-slate-900 dark:bg-slate-800 dark:text-white text-right ${nationalIdError ? 'border-red-500 dark:border-red-500' : 'border-slate-300 dark:border-slate-700'}`}
                   />
+                  {nationalIdType === 'nationalCode' && (
+                    <p className="text-left text-[10px] text-slate-500 dark:text-slate-400" aria-live="polite">
+                      {nationalId.length}/۱۰ رقم
+                    </p>
+                  )}
+                  {nationalIdError && (
+                    <p id="add-customer-national-id-error" className="text-[10px] font-medium text-red-600 dark:text-red-400" role="alert">
+                      {nationalIdError}
+                    </p>
+                  )}
                 </div>
 
                 {/* Phone 2 */}
