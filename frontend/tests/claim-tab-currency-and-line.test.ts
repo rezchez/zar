@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { convertRialToToman, convertTomanToRial } from '@/lib/money';
 import { createLine } from '@/features/accounting/documents/hooks/useDocumentLines';
-import { getLineDocumentTypeLabel } from '@/features/accounting/documents/utils/document-helpers';
+import { getClaimDocumentTypeLabel, getLineDocumentTypeLabel } from '@/features/accounting/documents/utils/document-helpers';
 
 describe('Claim & Debt Tab (طلب و بدهی) Currency and Recorded Row Integration Tests', () => {
   describe('1. Currency Suffix and Field Label Resolution based on System Base Currency', () => {
@@ -252,6 +252,182 @@ describe('Claim & Debt Tab (طلب و بدهی) Currency and Recorded Row Integr
 
       expect(calculatedRialAmount).toBe(-100000000);
       expect(effectiveAbsRial).toBe(100000000);
+    });
+  });
+
+  describe('6. Accurate Claim/Debt Document Type Labels in Document Rows (ردیف‌های سند)', () => {
+    it('returns "بدهی مالی ما" for received nature with financial only', () => {
+      expect(getClaimDocumentTypeLabel('received', 15000000, 0)).toBe('بدهی مالی ما');
+      expect(getClaimDocumentTypeLabel('received', '15,000,000', '')).toBe('بدهی مالی ما');
+      expect(getClaimDocumentTypeLabel('received', '۱۵۰۰۰۰۰۰', null)).toBe('بدهی مالی ما');
+      expect(getLineDocumentTypeLabel('received', 'claim', undefined, undefined, undefined, undefined, undefined, undefined, '15000000', 0)).toBe('بدهی مالی ما');
+    });
+
+    it('returns "بدهی وزنی ما" for received nature with weight only', () => {
+      expect(getClaimDocumentTypeLabel('received', 0, 10.5)).toBe('بدهی وزنی ما');
+      expect(getClaimDocumentTypeLabel('received', '', '10.5')).toBe('بدهی وزنی ما');
+      expect(getClaimDocumentTypeLabel('received', null, '۱۰.۵')).toBe('بدهی وزنی ما');
+      expect(getLineDocumentTypeLabel('received', 'claim', undefined, undefined, undefined, undefined, undefined, undefined, 0, '10.5')).toBe('بدهی وزنی ما');
+    });
+
+    it('returns "بدهی مالی و وزنی ما" for received nature with both financial and weight', () => {
+      expect(getClaimDocumentTypeLabel('received', 20000000, 5.25)).toBe('بدهی مالی و وزنی ما');
+      expect(getClaimDocumentTypeLabel('received', '20,000,000', '5.25')).toBe('بدهی مالی و وزنی ما');
+      expect(getClaimDocumentTypeLabel('received', '۲۰۰۰۰۰۰۰', '۵.۲۵')).toBe('بدهی مالی و وزنی ما');
+      expect(getLineDocumentTypeLabel('received', 'claim', undefined, undefined, undefined, undefined, undefined, undefined, '20000000', '5.25')).toBe('بدهی مالی و وزنی ما');
+    });
+
+    it('returns "طلب مالی ما" for paid nature with financial only', () => {
+      expect(getClaimDocumentTypeLabel('paid', 35000000, 0)).toBe('طلب مالی ما');
+      expect(getClaimDocumentTypeLabel('paid', '35,000,000', '')).toBe('طلب مالی ما');
+      expect(getClaimDocumentTypeLabel('paid', '۳۵۰۰۰۰۰۰', null)).toBe('طلب مالی ما');
+      expect(getLineDocumentTypeLabel('paid', 'claim', undefined, undefined, undefined, undefined, undefined, undefined, '35000000', 0)).toBe('طلب مالی ما');
+    });
+
+    it('returns "طلب وزنی ما" for paid nature with weight only', () => {
+      expect(getClaimDocumentTypeLabel('paid', 0, 8.75)).toBe('طلب وزنی ما');
+      expect(getClaimDocumentTypeLabel('paid', '', '8.75')).toBe('طلب وزنی ما');
+      expect(getClaimDocumentTypeLabel('paid', null, '۸.۷۵')).toBe('طلب وزنی ما');
+      expect(getLineDocumentTypeLabel('paid', 'claim', undefined, undefined, undefined, undefined, undefined, undefined, 0, '8.75')).toBe('طلب وزنی ما');
+    });
+
+    it('returns "طلب مالی و وزنی ما" for paid nature with both financial and weight', () => {
+      expect(getClaimDocumentTypeLabel('paid', 50000000, 12.5)).toBe('طلب مالی و وزنی ما');
+      expect(getClaimDocumentTypeLabel('paid', '50,000,000', '12.5')).toBe('طلب مالی و وزنی ما');
+      expect(getClaimDocumentTypeLabel('paid', '۵۰۰۰۰۰۰۰', '۱۲.۵')).toBe('طلب مالی و وزنی ما');
+      expect(getLineDocumentTypeLabel('paid', 'claim', undefined, undefined, undefined, undefined, undefined, undefined, '50000000', '12.5')).toBe('طلب مالی و وزنی ما');
+    });
+
+    it('falls back to "بدهی ما" and "طلب ما" when neither financial nor weight is specified', () => {
+      expect(getClaimDocumentTypeLabel('received', 0, 0)).toBe('بدهی ما');
+      expect(getClaimDocumentTypeLabel('paid', 0, 0)).toBe('طلب ما');
+      expect(getLineDocumentTypeLabel('received', 'claim')).toBe('بدهی ما');
+      expect(getLineDocumentTypeLabel('paid', 'claim')).toBe('طلب ما');
+    });
+  });
+
+  describe('7. Editing Claim/Debt Line Preserves Exact Currency and Metal Type (عدم تغییر ارز و فلز در ویرایش)', () => {
+    it('accurately preserves USD currency and does not overwrite it with baseCurrency (IRT/IRR)', () => {
+      // 1. Line registered with USD
+      const usdClaimLine = {
+        id: 'line_usd_claim_1',
+        documentNature: 'paid' as const,
+        documentTab: 'claim' as const,
+        sourceTab: 'claim' as const,
+        documentSubType: 'claim',
+        documentTypeLabel: 'طلب مالی ما',
+        details: {
+          claimFinancial: '1500', // 1,500 USD
+          totalAmount: '1500',
+          currencyUnit: 'USD',
+          baseCurrency: 'IRT',
+          metalType: 'gold',
+        },
+      };
+
+      // 2. User edits line: sanitizeDocumentLine & draftLine loading
+      const baseCurr = 'IRT';
+      const { sanitizeDocumentLine } = require('@/features/accounting/documents/utils/document-helpers');
+      const cleaned = sanitizeDocumentLine(usdClaimLine, undefined, baseCurr, 750);
+
+      expect(cleaned.details.currencyUnit).toBe('USD');
+      expect(cleaned.details.claimFinancial).toBe('1500');
+
+      // 3. Simulating ClaimTab resolution when editingLineId is set
+      const editingLineId = cleaned.id;
+      const effectiveCurrency = (
+        editingLineId && cleaned.details?.currencyUnit
+          ? cleaned.details.currencyUnit
+          : baseCurr
+      ).trim().toUpperCase();
+
+      expect(effectiveCurrency).toBe('USD');
+
+      // 4. User modifies amount to 2000 USD and commits
+      const updatedDetails = {
+        ...cleaned.details,
+        claimFinancial: '2000',
+        totalAmount: '2000',
+        currencyUnit: effectiveCurrency, // must stay USD
+      };
+
+      expect(updatedDetails.currencyUnit).toBe('USD');
+      expect(updatedDetails.claimFinancial).toBe('2000');
+    });
+
+    it('accurately preserves silver/platinum metalType when editing weight claim line', () => {
+      // 1. Line registered with Silver
+      const silverClaimLine = {
+        id: 'line_silver_claim_1',
+        documentNature: 'received' as const,
+        documentTab: 'claim' as const,
+        sourceTab: 'claim' as const,
+        documentSubType: 'debt',
+        documentTypeLabel: 'بدهی وزنی ما',
+        details: {
+          claimWeight: '25.500',
+          rawWeight: '25.500',
+          metalType: 'silver',
+          baseKarat: 999,
+          currencyUnit: 'IRT',
+          baseCurrency: 'IRT',
+        },
+      };
+
+      // 2. User edits line
+      const { sanitizeDocumentLine } = require('@/features/accounting/documents/utils/document-helpers');
+      const cleaned = sanitizeDocumentLine(silverClaimLine, undefined, 'IRT', 999);
+
+      expect(cleaned.details.metalType).toBe('silver');
+      expect(cleaned.details.claimWeight).toBe('25.500');
+
+      // 3. Simulating ClaimTab effectiveMetalType resolution when editingLineId is set
+      const editingLineId = cleaned.id;
+      const effectiveMetalType = (
+        editingLineId && cleaned.details?.metalType
+          ? cleaned.details.metalType
+          : 'gold'
+      );
+
+      expect(effectiveMetalType).toBe('silver');
+
+      // 4. User updates weight to 30 grams
+      const updatedDetails = {
+        ...cleaned.details,
+        claimWeight: '30.000',
+        rawWeight: '30.000',
+        metalType: effectiveMetalType, // must stay silver
+      };
+
+      expect(updatedDetails.metalType).toBe('silver');
+      expect(updatedDetails.claimWeight).toBe('30.000');
+    });
+
+    it('isolates USD claim in foreign currency columns and prevents leakage into Rial columns', () => {
+      const { getLineCurrencyValues, getLineFinancialValues } = require('@/features/accounting/documents/utils/document-helpers');
+
+      const usdLine = {
+        documentNature: 'paid' as const,
+        documentTab: 'claim' as const,
+        sourceTab: 'claim' as const,
+        documentSubType: 'claim',
+        details: {
+          claimFinancial: '500',
+          totalAmount: '500',
+          currencyUnit: 'USD',
+          baseCurrency: 'IRT',
+        },
+      };
+
+      const curVal = getLineCurrencyValues(usdLine);
+      expect(curVal.currency).toBe('USD');
+      expect(curVal.debit).toBe(500);
+      expect(curVal.credit).toBe(0);
+
+      const finVal = getLineFinancialValues(usdLine);
+      expect(finVal.hasValue).toBe(false);
+      expect(finVal.debit).toBe(0);
+      expect(finVal.credit).toBe(0);
     });
   });
 });

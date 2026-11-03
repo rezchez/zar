@@ -2,6 +2,7 @@
 
 import {
   AlertCircle,
+  AlertTriangle,
   ArrowLeftRight,
   Banknote,
   CheckCircle2,
@@ -12,6 +13,7 @@ import {
   Wallet,
   X,
 } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
 import Field from '@/src/components/documents/Field';
@@ -22,6 +24,7 @@ import InitialCashInventoryModal from '@/src/components/inventory/InitialCashInv
 import type { Customer } from '@/lib/customer';
 import { parseLocalizedAmount } from '@/lib/money';
 import { sanitizeLineDetailsForTab } from '../utils/document-helpers';
+import HawalaCheckboxField from './HawalaCheckboxField';
 
 type CashTabProps = {
   nature: 'received' | 'paid';
@@ -278,12 +281,77 @@ export default function CashTab({
 
   const effectiveFundBalance = (activeFund?.balance ?? 0) + committedDelta;
 
+  const targetCurrency =
+    activeFund?.currencyName ||
+    activeFund?.currencyCode ||
+    currencySuffix ||
+    (activeFund?.name ? activeFund.name.replace(/^صندوق\s*/, '') : 'ارز مورد نظر');
+
   const isFundBalanceInsufficient =
     !isHawalaEffective &&
     nature === 'paid' &&
     activeFund !== null &&
     numericAmount > 0 &&
     numericAmount > effectiveFundBalance;
+
+  const isHawalaOverdraft =
+    isHawalaEffective &&
+    nature === 'paid' &&
+    activeFund !== null &&
+    numericAmount > 0 &&
+    numericAmount > effectiveFundBalance;
+
+  const [showNegativeConfirmModal, setShowNegativeConfirmModal] = useState(false);
+
+  const proceedWithHawala = (allowNegative: boolean) => {
+    if (!activeFund) return;
+    const fullLine: DocumentLine = {
+      ...draftLine,
+      id: draftLine.id || `cash_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      documentTab: 'cash',
+      sourceTab: 'cash',
+      documentNature: nature,
+      documentTypeLabel: nature === 'received' ? `دریافت وجه نقد به ${activeFund.name}` : `پرداخت نقد از ${activeFund.name}`,
+      converted750: 0,
+      details: sanitizeLineDetailsForTab('cash', {
+        ...draftLine.details,
+        cashFundId: activeFund.id,
+        cashFundName: activeFund.name,
+        cashFundCurrency: activeFund.currencyCode || activeFund.currencyName,
+        cashFundCurrencyId: activeFund.currencyId,
+        cashFundBalance: activeFund.balance,
+        currencyUnit: activeFund.currencySymbol || activeFund.currencyCode || activeFund.currencyName,
+        isForeignCash:
+          (activeFund.currencyCode !== 'IRR' &&
+            activeFund.currencyCode !== 'IRT' &&
+            activeFund.currencyName !== 'تومان' &&
+            activeFund.currencyName !== 'ریال') ||
+          /یورو|دلار|درهم|پوند|لیر|یوان|eur|usd|aed|gbp|try|cny/i.test(
+            `${activeFund.name} ${activeFund.currencyName || ''} ${activeFund.currencyCode || ''}`
+          ),
+        totalAmount: draftLine.details.totalAmount || '',
+        allowNegativeBalance: allowNegative,
+        isHawalaNegativeConfirmed: allowNegative,
+      }, effectiveBaseCurrency),
+    };
+
+    if (onRequestHawala) {
+      onRequestHawala(fullLine);
+    }
+  };
+
+  const handleCancelNegativeHawala = () => {
+    setShowNegativeConfirmModal(false);
+    setNotice({
+      tone: 'error',
+      text: 'عملیات حواله به دلیل کسری موجودی صندوق تایید نشد.',
+    });
+  };
+
+  const handleConfirmNegativeHawala = () => {
+    setShowNegativeConfirmModal(false);
+    proceedWithHawala(true);
+  };
 
   const handleCommitCashLine = () => {
     if (!activeFund) {
@@ -323,38 +391,12 @@ export default function CashTab({
         });
         return;
       }
-      const fullLine: DocumentLine = {
-        ...draftLine,
-        id: draftLine.id || `cash_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-        documentTab: 'cash',
-        sourceTab: 'cash',
-        documentNature: nature,
-        documentTypeLabel: nature === 'received' ? `دریافت وجه نقد به ${activeFund.name}` : `پرداخت نقد از ${activeFund.name}`,
-        converted750: 0,
-        details: sanitizeLineDetailsForTab('cash', {
-          ...draftLine.details,
-          cashFundId: activeFund.id,
-          cashFundName: activeFund.name,
-          cashFundCurrency: activeFund.currencyCode || activeFund.currencyName,
-          cashFundCurrencyId: activeFund.currencyId,
-          cashFundBalance: activeFund.balance,
-          currencyUnit: activeFund.currencySymbol || activeFund.currencyCode || activeFund.currencyName,
-          isForeignCash:
-            (activeFund.currencyCode !== 'IRR' &&
-              activeFund.currencyCode !== 'IRT' &&
-              activeFund.currencyName !== 'تومان' &&
-              activeFund.currencyName !== 'ریال') ||
-            /یورو|دلار|درهم|پوند|لیر|یوان|eur|usd|aed|gbp|try|cny/i.test(
-              `${activeFund.name} ${activeFund.currencyName || ''} ${activeFund.currencyCode || ''}`
-            ),
-          totalAmount: draftLine.details.totalAmount || '',
-        }, effectiveBaseCurrency),
-      };
-
-      if (onRequestHawala) {
-        onRequestHawala(fullLine);
+      if (isHawalaOverdraft) {
+        setShowNegativeConfirmModal(true);
         return;
       }
+      proceedWithHawala(false);
+      return;
     }
 
     commitDraftLine?.();
@@ -592,6 +634,16 @@ export default function CashTab({
             </div>
           ) : null}
 
+          {/* Insufficient Fund Balance Warning on Hawala Outflow */}
+          {isHawalaOverdraft ? (
+            <div className="flex items-center gap-2 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-200 text-xs font-bold">
+              <AlertTriangle size={16} className="shrink-0 text-amber-600" />
+              <span>
+                مبلغ خروج حواله ({Number(numericAmount).toLocaleString('fa-IR')} {targetCurrency}) از موجودی صندوق ({Number(effectiveFundBalance).toLocaleString('fa-IR')} {targetCurrency}) بیشتر است و ثبت آن نیاز به تایید منفی شدن موجودی دارد.
+              </span>
+            </div>
+          ) : null}
+
           {/* Description Field (شرح) */}
           <Field label="شرح" wide>
             <textarea
@@ -606,27 +658,10 @@ export default function CashTab({
           </Field>
 
           {/* Hawala Checkbox (حواله طرف‌به‌طرف) */}
-          <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50">
-            <label className="flex items-center gap-2.5 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={isHawalaEffective}
-                onChange={(e) => setIsHawalaEffective(e.target.checked)}
-                className="size-4 rounded text-amber-500 focus:ring-amber-500 focus:ring-offset-0 border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 transition cursor-pointer"
-              />
-              <div className="flex items-center gap-2">
-                <ArrowLeftRight size={16} className={isHawalaEffective ? 'text-amber-500' : 'text-slate-400'} />
-                <span className="text-xs font-black text-slate-800 dark:text-slate-200">
-                  حواله شود
-                </span>
-              </div>
-            </label>
-            {isHawalaEffective && (
-              <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 dark:bg-amber-500/15 px-2.5 py-1 rounded-lg border border-amber-500/20">
-                پس از ثبت ردیف، پنجره انتخاب طرف‌حساب حواله باز می‌شود
-              </span>
-            )}
-          </div>
+          <HawalaCheckboxField
+            checked={isHawalaEffective}
+            onChange={setIsHawalaEffective}
+          />
 
           {/* Optional Trade Settlement Selector */}
           {committedLines.some(
@@ -711,6 +746,87 @@ export default function CashTab({
         onClose={() => setShowAddModal(false)}
         onSuccess={handleFundCreated}
       />
+
+      {/* Hawala Negative Fund Balance Confirmation Modal */}
+      <AnimatePresence>
+        {showNegativeConfirmModal && activeFund ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 text-right"
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 10 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 10 }}
+              className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+                <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+                  <AlertTriangle size={20} className="shrink-0" />
+                  <span className="text-sm font-bold">
+                    تایید کسری و منفی شدن موجودی صندوق
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCancelNegativeHawala}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 space-y-2 text-xs">
+                <div className="flex justify-between items-center text-slate-600 dark:text-slate-400">
+                  <span>نام صندوق:</span>
+                  <span className="font-bold text-slate-900 dark:text-white">{activeFund.name}</span>
+                </div>
+                <div className="flex justify-between items-center text-slate-600 dark:text-slate-400">
+                  <span>موجودی فعلی صندوق:</span>
+                  <span className="font-bold text-slate-900 dark:text-white">
+                    {Number(effectiveFundBalance).toLocaleString('fa-IR')} {targetCurrency}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-slate-600 dark:text-slate-400">
+                  <span>مبلغ خروج حواله:</span>
+                  <span className="font-bold text-rose-600 dark:text-rose-400">
+                    {Number(numericAmount).toLocaleString('fa-IR')} {targetCurrency}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center pt-2 border-t border-amber-200/60 dark:border-amber-800/60 text-slate-700 dark:text-slate-300">
+                  <span>مانده پس از حواله:</span>
+                  <span className="font-black text-rose-600 dark:text-rose-400 dir-ltr">
+                    {Number(effectiveFundBalance - numericAmount).toLocaleString('fa-IR')} {targetCurrency}
+                  </span>
+                </div>
+              </div>
+
+              <p className="text-xs font-semibold leading-relaxed text-slate-800 dark:text-slate-200">
+                موجودی منفی می‌شود. آیا اجازه می‌دهید تا با حواله این ردیف موجودی صندوق ({targetCurrency}) منفی شود؟
+              </p>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={handleCancelNegativeHawala}
+                  className="rounded-xl border border-slate-300 dark:border-slate-700 px-4 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                >
+                  خیر، انصراف
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmNegativeHawala}
+                  className="rounded-xl bg-amber-600 px-4 py-2 text-xs font-bold text-white shadow-md hover:bg-amber-500 cursor-pointer"
+                >
+                  بله، اجازه می‌دهم
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </div>
   );
 }

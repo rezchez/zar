@@ -38,6 +38,8 @@ type DocumentEntryTabsProps = {
   incomeExpenseTabContent?: ReactNode;
   workmanshipTabContent?: ReactNode;
   discountTabContent?: ReactNode;
+  goodsTabContent?: ReactNode;
+  goodsTabLabel?: string;
   accountCodeZero?: string;
   selectedCustomer?: Customer | null;
   documentId?: string;
@@ -69,6 +71,8 @@ export default function DocumentEntryTabs({
   incomeExpenseTabContent,
   workmanshipTabContent,
   discountTabContent,
+  goodsTabContent,
+  goodsTabLabel,
   accountCodeZero = '0',
   selectedCustomer,
   documentId,
@@ -138,7 +142,12 @@ export default function DocumentEntryTabs({
       icon: Sparkles,
       content: stoneTabContent ?? <PlaceholderTab label="عملیات سنگ" />,
     },
-    { id: 'goods', label: 'کالا و خدمات', icon: Package, content: <PlaceholderTab label="کالا و خدمات" /> },
+    {
+      id: 'goods',
+      label: goodsTabLabel ?? 'کالا و خدمات',
+      icon: Package,
+      content: goodsTabContent ?? <PlaceholderTab label="کالا و خدمات" />,
+    },
     {
       id: 'income-expense',
       label: nature === 'received' ? 'درآمد' : 'هزینه',

@@ -15,6 +15,12 @@ export type AppSettings = {
   documentNumberPrefix: string;
   docCodePrefix: string;
 
+  // Etiquette Numbering Prefixes
+  etiquettePrefixPlain: string;
+  etiquettePrefixGemstone: string;
+  etiquettePrefixJewelry: string;
+  etiquettePrefixBase: string;
+
   bodyFontFamily: string;
   bodyFontSize: string;
   bodyFontSizeNumber?: number;
@@ -36,6 +42,30 @@ export type AppSettings = {
   printActiveTemplate: 'standard' | 'classic' | 'modern';
   printCustomerColumns: string[];
   printRecipients: Array<{ name: string; role?: string; telegramId?: string; mobile?: string; baleUserId?: string; enabled?: boolean }>;
+
+  // Etiquette Print Customization
+  etiquettePrintTemplate: 'slim_tail' | 'rat_tail' | 'rat_tail_wide' | 'thermal_single';
+  etiquettePrintSize: '44x10' | '60x10' | '70x10';
+  etiquettePrintOrientation: 'right_to_left' | 'left_to_right';
+  etiquettePrintStoreName: string;
+  etiquettePrintShowWage: boolean;
+  etiquettePrintShowPrice: boolean;
+  etiquettePrintShowQr: boolean;
+  etiquettePrintShowBarcode: boolean;
+  etiquettePrintShowPurity: boolean;
+  etiquettePrintShowWeight: boolean;
+
+  // Extended Etiquette Designer Customization
+  etiquetteFontSize: 'compact' | 'standard' | 'large';
+  etiquetteCustomNote: string;
+  etiquetteBarcodeLayout: 'both' | 'barcode_only' | 'qr_only' | 'code_only';
+  etiquettePurityFormat: 'standard' | 'karat_only' | 'full';
+  etiquettePrintShowStoreName: boolean;
+  etiquettePrintShowTitle: boolean;
+  etiquettePrintShowGrossWeight: boolean;
+  etiquettePrintShowStoneWeight: boolean;
+  etiquettePrintShowCode: boolean;
+  etiquettePrintShowLocation: boolean;
 
   // PWA Settings
   pwaEnabled: boolean;
@@ -103,6 +133,12 @@ export const defaultSettings: AppSettings = {
   documentNumberPrefix: 'سند-',
   docCodePrefix: 'سند-',
 
+  // Etiquette Numbering Prefixes
+  etiquettePrefixPlain: 'S-',
+  etiquettePrefixGemstone: 'G-',
+  etiquettePrefixJewelry: 'J-',
+  etiquettePrefixBase: 'P-',
+
   bodyFontFamily: 'Vazirmatn',
   bodyFontSize: 'md',
   bodyFontSizeNumber: 14,
@@ -123,6 +159,30 @@ export const defaultSettings: AppSettings = {
   printActiveTemplate: 'standard',
   printCustomerColumns: ['customerCode', 'name', 'groupName', 'phone1', 'city', 'goldBalance', 'rialBalance'],
   printRecipients: [],
+
+  // Etiquette Print Defaults
+  etiquettePrintTemplate: 'slim_tail',
+  etiquettePrintSize: '60x10',
+  etiquettePrintOrientation: 'right_to_left',
+  etiquettePrintStoreName: '',
+  etiquettePrintShowWage: true,
+  etiquettePrintShowPrice: false,
+  etiquettePrintShowQr: true,
+  etiquettePrintShowBarcode: true,
+  etiquettePrintShowPurity: true,
+  etiquettePrintShowWeight: true,
+
+  // Extended Etiquette Designer Defaults
+  etiquetteFontSize: 'standard',
+  etiquetteCustomNote: '',
+  etiquetteBarcodeLayout: 'both',
+  etiquettePurityFormat: 'standard',
+  etiquettePrintShowStoreName: true,
+  etiquettePrintShowTitle: true,
+  etiquettePrintShowGrossWeight: true,
+  etiquettePrintShowStoneWeight: true,
+  etiquettePrintShowCode: true,
+  etiquettePrintShowLocation: false,
 
   pwaEnabled: true,
   pwaAppName: 'زر فولیـو',
@@ -234,6 +294,11 @@ export function normalizeSettings(input: Record<string, unknown>): AppSettings {
     documentNumberPrefix,
     docCodePrefix: documentNumberPrefix,
 
+    etiquettePrefixPlain: String(input.etiquettePrefixPlain ?? defaultSettings.etiquettePrefixPlain).trim().slice(0, 20) || defaultSettings.etiquettePrefixPlain,
+    etiquettePrefixGemstone: String(input.etiquettePrefixGemstone ?? defaultSettings.etiquettePrefixGemstone).trim().slice(0, 20) || defaultSettings.etiquettePrefixGemstone,
+    etiquettePrefixJewelry: String(input.etiquettePrefixJewelry ?? defaultSettings.etiquettePrefixJewelry).trim().slice(0, 20) || defaultSettings.etiquettePrefixJewelry,
+    etiquettePrefixBase: String(input.etiquettePrefixBase ?? defaultSettings.etiquettePrefixBase).trim().slice(0, 20) || defaultSettings.etiquettePrefixBase,
+
     bodyFontFamily: String(input.bodyFontFamily ?? input.body_font_family ?? defaultSettings.bodyFontFamily).trim(),
     bodyFontSize: String(input.bodyFontSize ?? input.body_font_size ?? defaultSettings.bodyFontSize).trim(),
     bodyFontSizeNumber: (() => {
@@ -273,6 +338,40 @@ export function normalizeSettings(input: Record<string, unknown>): AppSettings {
       : typeof input.printRecipients === 'string'
         ? (() => { try { const value = JSON.parse(input.printRecipients as string); return Array.isArray(value) ? value as AppSettings['printRecipients'] : defaultSettings.printRecipients; } catch { return defaultSettings.printRecipients; } })()
         : defaultSettings.printRecipients,
+
+    etiquettePrintTemplate: (['slim_tail', 'rat_tail', 'rat_tail_wide', 'thermal_single'].includes(String(input.etiquettePrintTemplate))
+      ? input.etiquettePrintTemplate
+      : defaultSettings.etiquettePrintTemplate) as AppSettings['etiquettePrintTemplate'],
+    etiquettePrintSize: (['44x10', '60x10', '70x10'].includes(String(input.etiquettePrintSize))
+      ? input.etiquettePrintSize
+      : defaultSettings.etiquettePrintSize) as AppSettings['etiquettePrintSize'],
+    etiquettePrintOrientation: (['right_to_left', 'left_to_right'].includes(String(input.etiquettePrintOrientation))
+      ? input.etiquettePrintOrientation
+      : defaultSettings.etiquettePrintOrientation) as AppSettings['etiquettePrintOrientation'],
+    etiquettePrintStoreName: String(input.etiquettePrintStoreName ?? defaultSettings.etiquettePrintStoreName).trim(),
+    etiquettePrintShowWage: typeof input.etiquettePrintShowWage === 'boolean' ? input.etiquettePrintShowWage : defaultSettings.etiquettePrintShowWage,
+    etiquettePrintShowPrice: typeof input.etiquettePrintShowPrice === 'boolean' ? input.etiquettePrintShowPrice : defaultSettings.etiquettePrintShowPrice,
+    etiquettePrintShowQr: typeof input.etiquettePrintShowQr === 'boolean' ? input.etiquettePrintShowQr : defaultSettings.etiquettePrintShowQr,
+    etiquettePrintShowBarcode: typeof input.etiquettePrintShowBarcode === 'boolean' ? input.etiquettePrintShowBarcode : defaultSettings.etiquettePrintShowBarcode,
+    etiquettePrintShowPurity: typeof input.etiquettePrintShowPurity === 'boolean' ? input.etiquettePrintShowPurity : defaultSettings.etiquettePrintShowPurity,
+    etiquettePrintShowWeight: typeof input.etiquettePrintShowWeight === 'boolean' ? input.etiquettePrintShowWeight : defaultSettings.etiquettePrintShowWeight,
+
+    etiquetteFontSize: (['compact', 'standard', 'large'].includes(String(input.etiquetteFontSize))
+      ? input.etiquetteFontSize
+      : defaultSettings.etiquetteFontSize) as AppSettings['etiquetteFontSize'],
+    etiquetteCustomNote: String(input.etiquetteCustomNote ?? defaultSettings.etiquetteCustomNote).trim().slice(0, 120),
+    etiquetteBarcodeLayout: (['both', 'barcode_only', 'qr_only', 'code_only'].includes(String(input.etiquetteBarcodeLayout))
+      ? input.etiquetteBarcodeLayout
+      : defaultSettings.etiquetteBarcodeLayout) as AppSettings['etiquetteBarcodeLayout'],
+    etiquettePurityFormat: (['standard', 'karat_only', 'full'].includes(String(input.etiquettePurityFormat))
+      ? input.etiquettePurityFormat
+      : defaultSettings.etiquettePurityFormat) as AppSettings['etiquettePurityFormat'],
+    etiquettePrintShowStoreName: typeof input.etiquettePrintShowStoreName === 'boolean' ? input.etiquettePrintShowStoreName : defaultSettings.etiquettePrintShowStoreName,
+    etiquettePrintShowTitle: typeof input.etiquettePrintShowTitle === 'boolean' ? input.etiquettePrintShowTitle : defaultSettings.etiquettePrintShowTitle,
+    etiquettePrintShowGrossWeight: typeof input.etiquettePrintShowGrossWeight === 'boolean' ? input.etiquettePrintShowGrossWeight : defaultSettings.etiquettePrintShowGrossWeight,
+    etiquettePrintShowStoneWeight: typeof input.etiquettePrintShowStoneWeight === 'boolean' ? input.etiquettePrintShowStoneWeight : defaultSettings.etiquettePrintShowStoneWeight,
+    etiquettePrintShowCode: typeof input.etiquettePrintShowCode === 'boolean' ? input.etiquettePrintShowCode : defaultSettings.etiquettePrintShowCode,
+    etiquettePrintShowLocation: typeof input.etiquettePrintShowLocation === 'boolean' ? input.etiquettePrintShowLocation : defaultSettings.etiquettePrintShowLocation,
 
     pwaEnabled:
       typeof input.pwaEnabled === 'boolean'

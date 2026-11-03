@@ -13,7 +13,7 @@ describe('Program Settings — URL Tab Navigation & Deep Linking', () => {
     'pwa_settings',
   ] as const;
 
-  const VALID_PRINT_SUB_TABS = ['reports', 'invoices', 'logo', 'store_info'] as const;
+  const VALID_PRINT_SUB_TABS = ['reports', 'invoices', 'etiquettes', 'logo', 'store_info'] as const;
 
   it('validates all 9 settings tabs are supported and defined', () => {
     expect(VALID_TABS.length).toBe(9);
@@ -83,6 +83,9 @@ describe('Program Settings — URL Tab Navigation & Deep Linking', () => {
 
     expect(getPrintSubTabUrl('/dashboard/settings', '', 'invoices'))
       .toBe('/dashboard/settings?tab=print_customization&subTab=invoices');
+
+    expect(getPrintSubTabUrl('/dashboard/settings', '', 'etiquettes'))
+      .toBe('/dashboard/settings?tab=print_customization&subTab=etiquettes');
 
     expect(getPrintSubTabUrl('/dashboard/settings', 'tab=print_customization', 'logo'))
       .toBe('/dashboard/settings?tab=print_customization&subTab=logo');

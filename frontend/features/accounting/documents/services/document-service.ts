@@ -81,7 +81,7 @@ import type { RecordModel } from 'pocketbase';
 import { mapCustomer, type Customer } from '@/lib/customer';
 import type { DocumentNature } from '@/lib/document';
 import type { DetailState, DocumentLine } from '@/src/components/documents/RawGoldTab';
-import { getLineDocumentTypeLabel } from '../utils/document-helpers';
+import { getClaimDocumentTypeLabel, getLineDocumentTypeLabel } from '../utils/document-helpers';
 
 export type RecentDocumentItem = {
   documentId: string;
@@ -142,6 +142,15 @@ export function transactionRecordToDocumentLine(
   const goldAmount = typeof record.goldAmount === 'number' ? record.goldAmount : 0;
   const rialAmount = typeof record.rialAmount === 'number' ? record.rialAmount : 0;
 
+  if (record.foreignCurrency && !details.currencyUnit) {
+    details.currencyUnit = String(record.foreignCurrency).trim().toUpperCase();
+  }
+  if (typeof record.silverAmount === 'number' && record.silverAmount > 0 && !details.metalType) {
+    details.metalType = 'silver';
+  } else if (typeof record.platinumAmount === 'number' && record.platinumAmount > 0 && !details.metalType) {
+    details.metalType = 'platinum';
+  }
+
   if (!details.rawWeight && goldAmount !== 0) {
     details.rawWeight = String(Math.abs(goldAmount));
   }
@@ -155,16 +164,25 @@ export function transactionRecordToDocumentLine(
   const subType = typeof record.documentSubType === 'string' ? record.documentSubType : '';
   const desc = typeof record.description === 'string' ? record.description : '';
 
-  const label = (details as any).documentTypeLabel || getLineDocumentTypeLabel(
-    nature,
-    tab,
-    details.rawKind,
-    details.unsettledTrade,
-    (details as any).refiningOpKind,
-    (details as any).workmanshipOptionId,
-    subType || (details as any).workmanshipSubType || (details as any).documentSubType,
-    (details as any).coinName || (details as any).coinType || (details as any).metalType,
-  );
+  const isClaim = tab === 'claim' || (details as any).sourceTab === 'claim';
+  const label = isClaim
+    ? getClaimDocumentTypeLabel(
+        nature,
+        details.claimFinancial || details.totalAmount,
+        details.claimWeight || details.rawWeight || record.goldAmount,
+      )
+    : (details as any).documentTypeLabel || getLineDocumentTypeLabel(
+        nature,
+        tab,
+        details.rawKind,
+        details.unsettledTrade,
+        (details as any).refiningOpKind,
+        (details as any).workmanshipOptionId,
+        subType || (details as any).workmanshipSubType || (details as any).documentSubType,
+        (details as any).coinName || (details as any).coinType || (details as any).metalType,
+        details.claimFinancial || details.totalAmount,
+        details.claimWeight || details.rawWeight,
+      );
 
   return {
     id: String(record.id || generateUUID()),

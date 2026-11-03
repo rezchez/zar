@@ -36,6 +36,11 @@ import {
   FolderTree,
   Database,
   FileDigit,
+  Tag,
+  Gem,
+  Diamond,
+  Layers,
+  Sparkles,
 } from 'lucide-react';
 import { useAppSettings } from './SettingsProvider';
 import { useToastManager } from '@/components/ui/toast';
@@ -45,6 +50,7 @@ import type { PriceApiSettings, PriceApiUnit } from '@/lib/price-api';
 import InvoicePrintDesigner from '@/src/components/InvoicePrintDesigner';
 import LogoManager from '@/src/components/LogoManager';
 import ReportPrintDesigner from '@/src/components/ReportPrintDesigner';
+import EtiquettePrintDesigner from '@/features/settings/components/EtiquettePrintDesigner';
 import CustomFontManager from '@/src/components/CustomFontManager';
 import ChartOfAccounts from '@/src/components/accounting/ChartOfAccounts';
 import DatabaseBackupSection from '@/src/components/settings/DatabaseBackupSection';
@@ -190,7 +196,7 @@ const VALID_TABS = [
 
 type SettingsTab = (typeof VALID_TABS)[number];
 
-const VALID_PRINT_SUB_TABS = ['reports', 'invoices', 'logo', 'store_info'] as const;
+const VALID_PRINT_SUB_TABS = ['reports', 'invoices', 'etiquettes', 'logo', 'store_info'] as const;
 type PrintSubTab = (typeof VALID_PRINT_SUB_TABS)[number];
 
 interface ProgramSettingsProps {
@@ -768,6 +774,107 @@ export default function ProgramSettings({ currentUserRole }: ProgramSettingsProp
                     </small>
                   </label>
                 </div>
+
+                {/* Etiquette Barcode Starting Prefixes Section */}
+                <div className="account-panel-heading border-b border-slate-100 dark:border-slate-800 pb-4 pt-4">
+                  <div>
+                    <p className="eyebrow">شناسه و بارکد محصولات</p>
+                    <h2 className="flex items-center gap-2">
+                      <Tag size={18} className="text-amber-600" />
+                      متن شروع شماره‌گذاری و بارکد اتیکت‌ها
+                    </h2>
+                  </div>
+                </div>
+
+                <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                  پیشوند دلخواه خود را برای هر گروه از اتیکت‌های طلا و جواهر تعیین کنید. سامانه هنگام ثبت هر اتیکت، شماره سریال را به طور خودکار با این متن شروع تولید می‌کند.
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  {/* Plain Tag Prefix */}
+                  <label className="account-field">
+                    <span className="font-bold text-xs flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
+                      <Sparkles size={14} className="text-amber-500" />
+                      متن شروع اتیکت ساده
+                    </span>
+                    <input
+                      type="text"
+                      value={form.etiquettePrefixPlain || ''}
+                      onChange={(e) => updateFormField('etiquettePrefixPlain', e.target.value)}
+                      placeholder="مثال: S- یا ساده-"
+                      maxLength={20}
+                    />
+                    <small className="text-slate-500 flex items-center justify-between">
+                      <span>نمونه بارکد تولیدی:</span>
+                      <code className="font-mono font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded">
+                        {form.etiquettePrefixPlain || 'S-'}000001
+                      </code>
+                    </small>
+                  </label>
+
+                  {/* Gemstone Tag Prefix */}
+                  <label className="account-field">
+                    <span className="font-bold text-xs flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
+                      <Gem size={14} className="text-purple-500" />
+                      متن شروع اتیکت سنگ دار
+                    </span>
+                    <input
+                      type="text"
+                      value={form.etiquettePrefixGemstone || ''}
+                      onChange={(e) => updateFormField('etiquettePrefixGemstone', e.target.value)}
+                      placeholder="مثال: G- یا سنگ-"
+                      maxLength={20}
+                    />
+                    <small className="text-slate-500 flex items-center justify-between">
+                      <span>نمونه بارکد تولیدی:</span>
+                      <code className="font-mono font-bold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/40 px-2 py-0.5 rounded">
+                        {form.etiquettePrefixGemstone || 'G-'}000001
+                      </code>
+                    </small>
+                  </label>
+
+                  {/* Jewelry Tag Prefix */}
+                  <label className="account-field">
+                    <span className="font-bold text-xs flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
+                      <Diamond size={14} className="text-cyan-500" />
+                      متن شروع اتیکت جواهر
+                    </span>
+                    <input
+                      type="text"
+                      value={form.etiquettePrefixJewelry || ''}
+                      onChange={(e) => updateFormField('etiquettePrefixJewelry', e.target.value)}
+                      placeholder="مثال: J- یا جواهر-"
+                      maxLength={20}
+                    />
+                    <small className="text-slate-500 flex items-center justify-between">
+                      <span>نمونه بارکد تولیدی:</span>
+                      <code className="font-mono font-bold text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-950/40 px-2 py-0.5 rounded">
+                        {form.etiquettePrefixJewelry || 'J-'}000001
+                      </code>
+                    </small>
+                  </label>
+
+                  {/* Base Tag Prefix */}
+                  <label className="account-field">
+                    <span className="font-bold text-xs flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
+                      <Layers size={14} className="text-sky-500" />
+                      متن شروع اتیکت پایه
+                    </span>
+                    <input
+                      type="text"
+                      value={form.etiquettePrefixBase || ''}
+                      onChange={(e) => updateFormField('etiquettePrefixBase', e.target.value)}
+                      placeholder="مثال: P- یا پایه-"
+                      maxLength={20}
+                    />
+                    <small className="text-slate-500 flex items-center justify-between">
+                      <span>نمونه بارکد تولیدی:</span>
+                      <code className="font-mono font-bold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-950/40 px-2 py-0.5 rounded">
+                        {form.etiquettePrefixBase || 'P-'}000001
+                      </code>
+                    </small>
+                  </label>
+                </div>
               </section>
             </div>
           )}
@@ -1091,6 +1198,19 @@ export default function ProgramSettings({ currentUserRole }: ProgramSettingsProp
 
             <button
               type="button"
+              onClick={() => setPrintSubTab('etiquettes')}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition-all ${
+                printSubTab === 'etiquettes'
+                  ? 'bg-amber-500 text-slate-950 shadow-xs'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <Tag size={16} />
+              <span>تنظیمات چاپ اتیکت</span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => setPrintSubTab('logo')}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition-all ${
                 printSubTab === 'logo'
@@ -1127,6 +1247,16 @@ export default function ProgramSettings({ currentUserRole }: ProgramSettingsProp
 
           {printSubTab === 'invoices' && (
             <InvoicePrintDesigner />
+          )}
+
+          {printSubTab === 'etiquettes' && (
+            <EtiquettePrintDesigner
+              settings={form}
+              updateFormField={updateFormField}
+              onSave={handleSaveSettings}
+              isSaving={isSaving}
+              saveSuccess={saveSuccess}
+            />
           )}
 
           {printSubTab === 'logo' && (

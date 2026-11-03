@@ -16,6 +16,7 @@ import { formatJalaliDate, normalizeDigits } from '@/lib/jalali';
 import {
   actualWeightFromMoney,
   convertedTo750,
+  getClaimDocumentTypeLabel,
   getLineDocumentTypeLabel,
   getWorkmanshipPercentageLabel,
   numberValue,
@@ -109,7 +110,11 @@ export function createLine(nature: DocumentNature = 'received', sourceTab = 'met
                       ? 'refining'
                       : sourceTab === 'discount'
                         ? 'discount'
-                        : 'raw-gold';
+                        : sourceTab === 'goods'
+                          ? 'goods'
+                          : sourceTab === 'income-expense'
+                            ? 'income-expense'
+                            : 'raw-gold';
 
   const docSubType =
     sourceTab === 'discount'
@@ -118,19 +123,23 @@ export function createLine(nature: DocumentNature = 'received', sourceTab = 'met
       ? `${nature === 'received' ? 'gold-purchase' : 'gold-sale'}-molten`
       : sourceTab === 'stone'
         ? (nature === 'received' ? 'stone-purchase' : 'stone-sale')
-        : sourceTab === 'refining'
-          ? nature === 'paid'
-            ? 'outgoing-refining'
-            : 'incoming-refining'
-          : sourceTab === 'currency'
-            ? currencyDocumentSubType(nature)
-            : sourceTab === 'workmanship'
-              ? (nature === 'received' ? 'entry_manufactured' : 'exit_manufactured')
-              : sourceTab === 'coin'
-                ? (nature === 'received' ? 'incoming-coin' : 'outgoing-coin')
-                : sourceTab === 'claim'
-                  ? (nature === 'received' ? 'debt' : 'claim')
-                  : documentSubType(nature, 'molten');
+        : sourceTab === 'goods'
+          ? (nature === 'received' ? 'goods-buy' : 'goods-sell')
+          : sourceTab === 'refining'
+            ? nature === 'paid'
+              ? 'outgoing-refining'
+              : 'incoming-refining'
+            : sourceTab === 'currency'
+              ? currencyDocumentSubType(nature)
+              : sourceTab === 'workmanship'
+                ? (nature === 'received' ? 'entry_manufactured' : 'exit_manufactured')
+                : sourceTab === 'coin'
+                  ? (nature === 'received' ? 'incoming-coin' : 'outgoing-coin')
+                  : sourceTab === 'claim'
+                    ? (nature === 'received' ? 'debt' : 'claim')
+                    : sourceTab === 'income-expense'
+                      ? (nature === 'received' ? 'income' : 'expense')
+                      : documentSubType(nature, 'molten');
 
   const isMetal = isMetalBearingTab(sourceTab);
   return {
@@ -197,6 +206,12 @@ export function isLineReady(
     return Boolean(line.details.incomeExpenseAccountId?.trim())
       && numberValue(line.details.totalAmount) > 0
       && Boolean(line.description?.trim());
+  }
+  if (line.documentTab === 'goods' || line.sourceTab === 'goods') {
+    return Boolean(line.details.itemName?.trim())
+      && Boolean(line.details.goodsServiceAccountId?.trim())
+      && numberValue(line.details.quantity) > 0
+      && numberValue(line.details.totalAmount) > 0;
   }
   if (line.documentTab === 'stone' || line.sourceTab === 'stone') {
     const carats = numberValue(line.details.stoneCarats);
@@ -364,6 +379,15 @@ export function validateLine(
     if (!line.details.incomeExpenseAccountId?.trim()) return 'انتخاب سرفصل هزینه یا درآمد الزامی است.';
     if (numberValue(line.details.totalAmount) <= 0) return 'مبلغ هزینه یا درآمد باید بیشتر از صفر باشد.';
     if (!line.description?.trim()) return 'شرح دقیق ردیف هزینه یا درآمد را وارد کنید.';
+    return '';
+  }
+  if (line.documentTab === 'goods' || line.sourceTab === 'goods') {
+    if (!line.details.itemName?.trim()) return 'نام کالا یا خدمت را وارد کنید.';
+    if (!line.details.goodsServiceAccountId?.trim()) return 'انتخاب سرفصل کالا یا خدمت از درختواره حساب‌ها الزامی است.';
+    const qty = numberValue(line.details.quantity);
+    if (qty <= 0) return 'مقدار یا تعداد باید بیشتر از صفر باشد.';
+    const amount = numberValue(line.details.totalAmount);
+    if (amount <= 0) return 'مبلغ کل کالا یا خدمت باید بیشتر از صفر باشد.';
     return '';
   }
   if (line.documentTab === 'stone' || line.sourceTab === 'stone') {
@@ -899,9 +923,14 @@ export function useDocumentLines({
     const isClaimLine =
       lineSourceTab === 'claim' || activeDraft.documentTab === 'claim';
 
+    const claimFinancialVal =
+      activeDraft.details?.claimFinancial || activeDraft.details?.totalAmount || '0';
+    const claimWeightVal =
+      activeDraft.details?.claimWeight || activeDraft.details?.rawWeight || '0';
+
     const docTypeLabel =
       isClaimLine
-        ? (lineNature === 'received' ? 'بدهی ما' : 'طلب ما')
+        ? getClaimDocumentTypeLabel(lineNature, claimFinancialVal, claimWeightVal)
         : (lineSourceTab === 'cash' ||
             lineSourceTab === 'bank' ||
             lineSourceTab === 'stone' ||
@@ -950,6 +979,7 @@ export function useDocumentLines({
       effectiveTab,
       {
         ...activeDraft.details,
+        documentTypeLabel: isClaimLine ? docTypeLabel : activeDraft.details?.documentTypeLabel,
         baseKarat,
         currencyUnit:
           lineSourceTab === 'currency'

@@ -1,0 +1,133 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Light Mode Theme Gradients -->
+    <radialGradient id="bgGradL" cx="50%" cy="40%" r="65%">
+      <stop offset="0%" stop-color="#1e2029" />
+      <stop offset="55%" stop-color="#14151c" />
+      <stop offset="100%" stop-color="#0b0c10" />
+    </radialGradient>
+    <linearGradient id="goldBorderL" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFEBB0" />
+      <stop offset="25%" stop-color="#F7D070" />
+      <stop offset="60%" stop-color="#D9A132" />
+      <stop offset="85%" stop-color="#AF7512" />
+      <stop offset="100%" stop-color="#E9BF57" />
+    </linearGradient>
+    <linearGradient id="goldRodL" x1="20%" y1="0%" x2="80%" y2="100%">
+      <stop offset="0%" stop-color="#FFF2C6" />
+      <stop offset="25%" stop-color="#F5CB65" />
+      <stop offset="65%" stop-color="#D49B25" />
+      <stop offset="100%" stop-color="#A56E0E" />
+    </linearGradient>
+    <radialGradient id="goldNodeL" cx="35%" cy="30%" r="65%">
+      <stop offset="0%" stop-color="#FFF8D6" />
+      <stop offset="35%" stop-color="#F8D374" />
+      <stop offset="70%" stop-color="#D79E2A" />
+      <stop offset="100%" stop-color="#9E680A" />
+    </radialGradient>
+    <filter id="shadowL" x="-20%" y="-20%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="6" stdDeviation="5" flood-color="#000000" flood-opacity="0.85" />
+    </filter>
+
+    <!-- Dark Mode Theme Gradients (Inverted) -->
+    <radialGradient id="goldBgGradD" cx="45%" cy="32%" r="72%">
+      <stop offset="0%" stop-color="#FFF6D1" />
+      <stop offset="28%" stop-color="#FAD674" />
+      <stop offset="68%" stop-color="#DEA22B" />
+      <stop offset="100%" stop-color="#AD700A" />
+    </radialGradient>
+    <linearGradient id="onyxBorderD" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#323540" />
+      <stop offset="35%" stop-color="#181a22" />
+      <stop offset="75%" stop-color="#0b0c10" />
+      <stop offset="100%" stop-color="#242630" />
+    </linearGradient>
+    <linearGradient id="onyxRodD" x1="20%" y1="0%" x2="80%" y2="100%">
+      <stop offset="0%" stop-color="#2b2d38" />
+      <stop offset="50%" stop-color="#13141a" />
+      <stop offset="100%" stop-color="#07080b" />
+    </linearGradient>
+    <radialGradient id="onyxNodeD" cx="35%" cy="30%" r="65%">
+      <stop offset="0%" stop-color="#464a59" />
+      <stop offset="30%" stop-color="#222530" />
+      <stop offset="75%" stop-color="#0f1015" />
+      <stop offset="100%" stop-color="#040406" />
+    </radialGradient>
+    <filter id="shadowD" x="-20%" y="-20%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="5" stdDeviation="4" flood-color="#6B4103" flood-opacity="0.65" />
+    </filter>
+  </defs>
+
+  <style>
+    .light-group { display: block; }
+    .dark-group { display: none; }
+    @media (prefers-color-scheme: dark) {
+      .light-group { display: none; }
+      .dark-group { display: block; }
+    }
+  </style>
+
+  <!-- LIGHT THEME VERSION -->
+  <g class="light-group">
+    <rect x="7" y="7" width="498" height="498" rx="108" fill="url(#bgGradL)" stroke="url(#goldBorderL)" stroke-width="11" />
+    <g filter="url(#shadowL)">
+      <g stroke="url(#goldRodL)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" fill="none">
+        <line x1="240" y1="87" x2="296" y2="87" /><line x1="228" y1="104" x2="308" y2="104" />
+        <line x1="240" y1="87" x2="228" y2="104" /><line x1="240" y1="87" x2="254" y2="104" />
+        <line x1="268" y1="87" x2="254" y2="104" /><line x1="268" y1="87" x2="282" y2="104" />
+        <line x1="296" y1="87" x2="282" y2="104" /><line x1="296" y1="87" x2="308" y2="104" />
+        <line x1="228" y1="104" x2="268" y2="143" /><line x1="254" y1="104" x2="268" y2="143" />
+        <line x1="282" y1="104" x2="268" y2="143" /><line x1="308" y1="104" x2="268" y2="143" />
+      </g>
+      <g fill="url(#goldNodeL)">
+        <circle cx="240" cy="87" r="3.5" /><circle cx="268" cy="87" r="3.5" /><circle cx="296" cy="87" r="3.5" />
+        <circle cx="228" cy="104" r="3.5" /><circle cx="254" cy="104" r="3.5" /><circle cx="282" cy="104" r="3.5" /><circle cx="308" cy="104" r="3.5" />
+        <circle cx="268" cy="143" r="4.2" />
+      </g>
+      <g stroke="url(#goldRodL)" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="298" y1="180" x2="250" y2="216" /><line x1="298" y1="180" x2="328" y2="294" />
+        <line x1="250" y1="216" x2="328" y2="294" /><line x1="250" y1="216" x2="280" y2="331" />
+        <line x1="328" y1="294" x2="280" y2="331" /><line x1="328" y1="294" x2="307" y2="390" />
+        <line x1="280" y1="331" x2="181" y2="394" /><line x1="280" y1="331" x2="307" y2="390" />
+        <line x1="280" y1="331" x2="248" y2="425" /><line x1="181" y1="394" x2="248" y2="425" />
+        <line x1="248" y1="425" x2="307" y2="390" />
+      </g>
+      <g fill="url(#goldNodeL)" stroke="#6B4605" stroke-width="1.2">
+        <circle cx="298" cy="180" r="15.5" /><circle cx="250" cy="216" r="16.5" /><circle cx="328" cy="294" r="16.5" />
+        <circle cx="280" cy="331" r="16.5" /><circle cx="181" cy="394" r="15.5" /><circle cx="307" cy="390" r="15.0" /><circle cx="248" cy="425" r="14.5" />
+      </g>
+    </g>
+  </g>
+
+  <!-- DARK THEME VERSION (INVERTED) -->
+  <g class="dark-group">
+    <rect x="7" y="7" width="498" height="498" rx="108" fill="url(#goldBgGradD)" stroke="url(#onyxBorderD)" stroke-width="11" />
+    <g filter="url(#shadowD)">
+      <g stroke="url(#onyxRodD)" stroke-width="3.8" stroke-linecap="round" stroke-linejoin="round" fill="none">
+        <line x1="240" y1="87" x2="296" y2="87" /><line x1="228" y1="104" x2="308" y2="104" />
+        <line x1="240" y1="87" x2="228" y2="104" /><line x1="240" y1="87" x2="254" y2="104" />
+        <line x1="268" y1="87" x2="254" y2="104" /><line x1="268" y1="87" x2="282" y2="104" />
+        <line x1="296" y1="87" x2="282" y2="104" /><line x1="296" y1="87" x2="308" y2="104" />
+        <line x1="228" y1="104" x2="268" y2="143" /><line x1="254" y1="104" x2="268" y2="143" />
+        <line x1="282" y1="104" x2="268" y2="143" /><line x1="308" y1="104" x2="268" y2="143" />
+      </g>
+      <g fill="url(#onyxNodeD)" stroke="#464a59" stroke-width="0.8">
+        <circle cx="240" cy="87" r="3.5" /><circle cx="268" cy="87" r="3.5" /><circle cx="296" cy="87" r="3.5" />
+        <circle cx="228" cy="104" r="3.5" /><circle cx="254" cy="104" r="3.5" /><circle cx="282" cy="104" r="3.5" /><circle cx="308" cy="104" r="3.5" />
+        <circle cx="268" cy="143" r="4.2" />
+      </g>
+      <g stroke="url(#onyxRodD)" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="298" y1="180" x2="250" y2="216" /><line x1="298" y1="180" x2="328" y2="294" />
+        <line x1="250" y1="216" x2="328" y2="294" /><line x1="250" y1="216" x2="280" y2="331" />
+        <line x1="328" y1="294" x2="280" y2="331" /><line x1="328" y1="294" x2="307" y2="390" />
+        <line x1="280" y1="331" x2="181" y2="394" /><line x1="280" y1="331" x2="307" y2="390" />
+        <line x1="280" y1="331" x2="248" y2="425" /><line x1="181" y1="394" x2="248" y2="425" />
+        <line x1="248" y1="425" x2="307" y2="390" />
+      </g>
+      <g fill="url(#onyxNodeD)" stroke="#464a59" stroke-width="1.2">
+        <circle cx="298" cy="180" r="15.5" /><circle cx="250" cy="216" r="16.5" /><circle cx="328" cy="294" r="16.5" />
+        <circle cx="280" cy="331" r="16.5" /><circle cx="181" cy="394" r="15.5" /><circle cx="307" cy="390" r="15.0" /><circle cx="248" cy="425" r="14.5" />
+      </g>
+    </g>
+  </g>
+</svg>

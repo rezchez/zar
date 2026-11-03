@@ -1,7 +1,7 @@
 'use client';
 
 import { AnimatePresence, motion } from 'framer-motion';
-import { FlaskConical, ListPlus, Sparkles, Settings } from 'lucide-react';
+import { ArrowLeftRight, FlaskConical, ListPlus, Sparkles, Settings } from 'lucide-react';
 import type React from 'react';
 import { useEffect, useState, useMemo } from 'react';
 
@@ -15,6 +15,9 @@ import AmountRoundingModal from '@/features/accounting/documents/components/Amou
 import MetalInventoryPicker from '@/src/components/documents/MetalInventoryPicker';
 import { useToastManager } from '@/components/ui/toast';
 import { NumberField } from '@/components/ui/number-field';
+import type { Customer } from '@/lib/customer';
+import { getLineDocumentTypeLabel, sanitizeLineDetailsForTab } from '@/features/accounting/documents/utils/document-helpers';
+import HawalaCheckboxField from './HawalaCheckboxField';
 import {
   getInventoryItemAvailability,
   type DetailState,
@@ -61,6 +64,10 @@ type GoldSaleTabProps = {
   labInputRef?: React.RefObject<HTMLInputElement | null>;
   stampInputRef?: React.RefObject<HTMLInputElement | null>;
   commitRowLabel?: string;
+  isHawala?: boolean;
+  setIsHawala?: (val: boolean) => void;
+  onRequestHawala?: (line: DocumentLine) => void;
+  selectedCustomer?: Customer | null;
 };
 
 export default function GoldSaleTab({
@@ -91,6 +98,10 @@ export default function GoldSaleTab({
   labInputRef,
   stampInputRef,
   commitRowLabel,
+  isHawala,
+  setIsHawala,
+  onRequestHawala,
+  selectedCustomer,
 }: GoldSaleTabProps) {
   const { settings } = useAppSettings();
   const baseCurrency = settings.baseCurrency || 'IRR';
@@ -364,6 +375,87 @@ export default function GoldSaleTab({
   const isAssayRequired = isGold && isMoltenOrConditional && calculatedWeight > 0;
   const isPriceRequired = isWeightMode ? parseNumericValue(draftLine.details.rawWeight) > 0 : true;
   const isPaidRawFromInventory = nature === 'paid' && Boolean(draftLine.details.inventorySourceId);
+
+  const [internalIsHawala, setInternalIsHawala] = useState(false);
+  const isHawalaEffective = isHawala !== undefined ? isHawala : internalIsHawala;
+  const setIsHawalaEffective = setIsHawala || setInternalIsHawala;
+
+  const handleCommitGoldSaleLine = () => {
+    if (isHawalaEffective) {
+      if (!selectedCustomer) {
+        toast.warning('ابتدا طرف‌حساب سند را از فهرست انتخاب کنید.');
+        return;
+      }
+      const rawWeight = Number(draftLine.details.rawWeight || 0);
+      const totalAmount = Number(draftLine.details.totalAmount || 0);
+      if (rawWeight <= 0 && totalAmount <= 0) {
+        toast.error('لطفاً وزن یا مبلغ معامله را وارد کنید.');
+        return;
+      }
+      if (isAssayRequired) {
+        if (!draftLine.details.labName?.trim()) {
+          toast.error('نام آزمایشگاه ری‌گیری الزامی است.');
+          labInputRef?.current?.focus();
+          return;
+        }
+        if (!draftLine.details.stampNumber?.trim()) {
+          toast.error('شماره پاکت / انگ الزامی است.');
+          stampInputRef?.current?.focus();
+          return;
+        }
+      }
+
+      const metalType = draftLine.details.metalType || 'gold';
+      const effectiveBaseKarat = baseKarat || (metalType === 'silver' ? 999 : metalType === 'platinum' ? 999 : 750);
+      const convertedWeight = isWeightMode
+        ? convertedTo750(draftLine.details.rawWeight, draftLine.details.purity)
+        : convertedWeightFromTotal(draftLine.details.totalAmount, draftLine.details.metalPriceType, draftLine.details.metalPrice);
+
+      const metalSubType = draftLine.documentSubType || `${nature === 'received' ? 'gold-purchase' : 'gold-sale'}-${draftLine.details.rawKind || 'molten'}`;
+      const metalDocTypeLabel = getLineDocumentTypeLabel(
+        nature,
+        'gold-sale',
+        draftLine.details.rawKind,
+        false,
+        undefined,
+        undefined,
+        metalSubType,
+        metalType,
+      );
+
+      const fullLine: DocumentLine = {
+        ...draftLine,
+        id: draftLine.id || `gold_sale_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        documentTab: 'gold-sale',
+        sourceTab: 'gold-sale',
+        documentNature: nature,
+        documentTypeLabel: metalDocTypeLabel,
+        documentSubType: metalSubType,
+        converted750: convertedWeight,
+        details: sanitizeLineDetailsForTab('gold-sale', {
+          ...draftLine.details,
+          metalType,
+          rawWeight: isWeightMode ? draftLine.details.rawWeight : String(actualWeightFromMoney(draftLine.details)),
+          purity: draftLine.details.purity,
+          convertedWeight: String(convertedWeight),
+          totalAmount: draftLine.details.totalAmount,
+          metalPrice: draftLine.details.metalPrice,
+          metalPriceType: draftLine.details.metalPriceType,
+          calculationMethod: draftLine.details.calculationMethod,
+          isHawala: true,
+          documentTypeLabel: metalDocTypeLabel,
+          documentSubType: metalSubType,
+        }, undefined, effectiveBaseKarat),
+      };
+
+      if (onRequestHawala) {
+        onRequestHawala(fullLine);
+        return;
+      }
+    }
+
+    commitDraftLine();
+  };
 
   const inventoryLabel = draftLine.details.rawKind === 'conditional'
     ? 'موجودی شرطی'
@@ -663,6 +755,7 @@ export default function GoldSaleTab({
                   initialMode={roundingMode}
                   initialAutoApply={autoApplyRounding}
                   initialEnabled={roundingEnabled}
+                  autoApplyLabel="اعمال خودکار این تنظیمات رندسازی در محاسبات بعدی فروش فلزات"
                   onApply={handleApplyRounding}
                   onReset={handleResetRounding}
                   onDisable={handleDisableRounding}
@@ -747,11 +840,11 @@ export default function GoldSaleTab({
             {numericPrice > 0 && !isSilver && !isPlatinum ? (
               <div className="col-span-full flex flex-wrap items-center gap-3 rounded-xl border border-slate-200/80 bg-slate-50/80 dark:border-slate-800 dark:bg-slate-900/40 p-2.5 text-[11px] font-bold text-slate-600 dark:text-slate-300">
                 <span className="text-amber-600 dark:text-amber-400">معادل قیمت در سایر واحدها:</span>
-                <span>گرم ۱۸: {faNumber(priceTriple.gram18)} {baseCurrency === 'IRT' ? 'تومان' : 'ریال'}</span>
+                <span>گرم ۱۸: {faNumber(priceTriple.gram18, 0)} {baseCurrency === 'IRT' ? 'تومان' : 'ریال'}</span>
                 <span>·</span>
-                <span>مثقال ۱۷: {faNumber(priceTriple.mesghal17)} {baseCurrency === 'IRT' ? 'تومان' : 'ریال'}</span>
+                <span>مثقال ۱۷: {faNumber(priceTriple.mesghal17, 0)} {baseCurrency === 'IRT' ? 'تومان' : 'ریال'}</span>
                 <span>·</span>
-                <span>اونس: {faNumber(priceTriple.ounceUsd)} {baseCurrency === 'IRT' ? 'تومان' : 'ریال'}</span>
+                <span>اونس: {faNumber(priceTriple.ounceUsd, 2)} دلار</span>
               </div>
             ) : null}
 
@@ -818,7 +911,7 @@ export default function GoldSaleTab({
                   ? ` · عیار ${toPersianDigits(draftLine.details.purity)}`
                   : ''}
                 {numberValue(draftLine.details.totalAmount) > 0
-                  ? ` · مبلغ کل: ${toPersianDigits(faNumber(numberValue(draftLine.details.totalAmount)))} ${baseCurrency === 'IRT' ? 'تومان' : 'ریال'}`
+                  ? ` · مبلغ کل: ${toPersianDigits(faNumber(numberValue(draftLine.details.totalAmount), 0))} ${baseCurrency === 'IRT' ? 'تومان' : 'ریال'}`
                   : ''}
               </span>
             </div>
@@ -826,16 +919,22 @@ export default function GoldSaleTab({
         </motion.div>
       </AnimatePresence>
 
+      {/* Hawala Checkbox (حواله طرف‌به‌طرف) */}
+      <HawalaCheckboxField
+        checked={isHawalaEffective}
+        onChange={setIsHawalaEffective}
+      />
+
       {/* Sticky Commit Button */}
       {draftReady && !isLinesPinned ? (
         <div className="sticky bottom-3 z-30 flex justify-center pt-2 transition-all duration-300">
           <button
             type="button"
-            className="document-commit-line-button shadow-lg max-w-sm"
-            onClick={commitDraftLine}
+            className="document-commit-line-button shadow-lg max-w-sm cursor-pointer"
+            onClick={handleCommitGoldSaleLine}
           >
             <ListPlus size={16} />
-            {commitRowLabel || (editingLineId ? 'ثبت اصلاح ردیف' : 'ثبت ردیف')}
+            {commitRowLabel || (editingLineId ? 'ثبت اصلاح ردیف' : isHawalaEffective ? 'ثبت ردیف و انتخاب طرف‌حساب حواله' : 'ثبت ردیف')}
           </button>
         </div>
       ) : null}

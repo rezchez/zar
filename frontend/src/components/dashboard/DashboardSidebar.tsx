@@ -1,6 +1,7 @@
 'use client';
 
 import { Sparkles, X, ChevronDown, Settings, Moon, Sun, type LucideIcon } from 'lucide-react';
+import Image from 'next/image';
 import { MorphIcon } from 'morphicons/react';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -308,8 +309,25 @@ export default function DashboardSidebar({
         {/* هدر سایدبار / لوگو و برند */}
         <div className="flex h-16 shrink-0 items-center justify-between border-b border-slate-100 px-3.5 dark:border-slate-800/80">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-white shadow-md shadow-amber-500/25">
-              <Sparkles size={18} className="animate-pulse" />
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-xl overflow-hidden shadow-sm">
+              <Image
+                src="/logo.svg"
+                alt="لوگوی زرفولیو"
+                width={36}
+                height={36}
+                className="dark:hidden size-9 shrink-0 object-contain drop-shadow-sm"
+                priority
+                unoptimized
+              />
+              <Image
+                src="/logo-dark.svg"
+                alt="لوگوی زرفولیو"
+                width={36}
+                height={36}
+                className="hidden dark:block size-9 shrink-0 object-contain drop-shadow-sm"
+                priority
+                unoptimized
+              />
             </div>
 
             {!effectiveCollapsed && (

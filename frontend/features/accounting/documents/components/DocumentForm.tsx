@@ -34,6 +34,7 @@ import ClaimTab from '@/src/components/documents/ClaimTab';
 import WorkmanshipTab from './WorkmanshipTab';
 import DiscountTab from './DiscountTab';
 import IncomeExpenseTab from './IncomeExpenseTab';
+import GoodsTab from './GoodsTab';
 
 // Subcomponents
 import CustomerSection from './CustomerSection';
@@ -74,6 +75,7 @@ import {
   toPersianDigits,
   actualWeightFromMoney,
   actualWeightForLine,
+  getClaimDocumentTypeLabel,
   getLineDocumentTypeLabel,
   checkDocumentDateDiff,
   type DateDiffInfo,
@@ -301,6 +303,11 @@ export default function DocumentForm({
   // Hawala state
   const [hawalaLine, setHawalaLine] = useState<DocumentLine | null>(null);
   const [isCashHawala, setIsCashHawala] = useState(false);
+  const [isClaimHawala, setIsClaimHawala] = useState(false);
+  const [isRawGoldHawala, setIsRawGoldHawala] = useState(false);
+  const [isGoldSaleHawala, setIsGoldSaleHawala] = useState(false);
+  const [isCoinHawala, setIsCoinHawala] = useState(false);
+  const [isWorkmanshipHawala, setIsWorkmanshipHawala] = useState(false);
   const [isSubmittingHawala, setIsSubmittingHawala] = useState(false);
   const [pendingHawala, setPendingHawala] = useState<{
     line: DocumentLine;
@@ -948,6 +955,27 @@ export default function DocumentForm({
         setDocumentNature(targetLine.documentNature);
       }
 
+      const lineCurrency = targetLine.details?.currencyUnit || targetLine.details?.settlementCurrencyUnit;
+      if (lineCurrency) {
+        setSelectedCurrency(lineCurrency);
+      }
+
+      if (targetLine.details?.isHawala) {
+        if (targetTab === 'cash') setIsCashHawala(true);
+        else if (targetTab === 'claim') setIsClaimHawala(true);
+        else if (targetTab === 'metals' || targetTab === 'raw-gold') setIsRawGoldHawala(true);
+        else if (targetTab === 'gold-sale') setIsGoldSaleHawala(true);
+        else if (targetTab === 'coin') setIsCoinHawala(true);
+        else if (targetTab === 'workmanship') setIsWorkmanshipHawala(true);
+      } else {
+        if (targetTab === 'cash') setIsCashHawala(false);
+        else if (targetTab === 'claim') setIsClaimHawala(false);
+        else if (targetTab === 'metals' || targetTab === 'raw-gold') setIsRawGoldHawala(false);
+        else if (targetTab === 'gold-sale') setIsGoldSaleHawala(false);
+        else if (targetTab === 'coin') setIsCoinHawala(false);
+        else if (targetTab === 'workmanship') setIsWorkmanshipHawala(false);
+      }
+
       editLine(targetLine);
     },
     [committedLines, editLine],
@@ -1071,6 +1099,13 @@ export default function DocumentForm({
             handleUpdateCurrencyValue('currencyUnitPrice', String(finalRate));
           }
         }
+      }
+      const isClaim =
+        draftLine.documentTab === 'claim' ||
+        draftLine.sourceTab === 'claim' ||
+        activeEntryTab === 'claim';
+      if (isClaim) {
+        updateDraftDetail('currencyUnit', curr);
       }
     },
     [
@@ -1292,7 +1327,7 @@ export default function DocumentForm({
             const isCoinOpenBalance = isCoinRow && (
               coinSubType.includes('unsettled') || coinSubType.includes('claim') || coinSubType.includes('debt')
             );
-            const weightValue = (line.documentTab === 'gold-sale' || line.documentTab === 'raw-gold' || isCoinRow)
+            const weightValue = (line.documentTab === 'gold-sale' || line.documentTab === 'raw-gold' || isCoinRow || line.documentTab === 'workmanship')
               ? convertedWeight
               : (line.details?.calculationMethod === 'money' ? actualWeightForLine(line, baseKarat) : numberValue(line.details?.rawWeight));
             const isMetalRow =
@@ -1617,11 +1652,11 @@ export default function DocumentForm({
             });
             if (!resA.ok) {
               const err = await resA.json().catch(() => null);
-              throw new Error(err?.message || 'خطا در ثبت سند ورود وجه نقد حواله');
+              throw new Error(err?.message || 'خطا در ثبت سند ورود حواله');
             }
             data = await resA.json().catch(() => null);
 
-            // 2. Submit Document B (Outflow - خروج از صندوق حواله)
+            // 2. Submit Document B (Outflow - خروج حواله)
             const resB = await fetch('/api/documents', {
               method: 'POST',
               headers: { 'content-type': 'application/json' },
@@ -1631,7 +1666,7 @@ export default function DocumentForm({
               const err = await resB.json().catch(() => null);
               // Rollback Document A to avoid orphan state
               await fetch(`/api/documents/${documentId}`, { method: 'DELETE' }).catch(() => null);
-              throw new Error(err?.message || 'خطا در ثبت سند خروج وجه نقد حواله در طرف‌حساب دوم');
+              throw new Error(err?.message || 'خطا در ثبت سند خروج حواله در طرف‌حساب دوم');
             }
           } else {
             // Document A is paid, so Document B is Inflow (دریافت در طرف‌حساب دوم)
@@ -1643,7 +1678,7 @@ export default function DocumentForm({
             });
             if (!resB.ok) {
               const err = await resB.json().catch(() => null);
-              throw new Error(err?.message || 'خطا در ثبت سند ورود وجه نقد حواله در طرف‌حساب دوم');
+              throw new Error(err?.message || 'خطا در ثبت سند ورود حواله در طرف‌حساب دوم');
             }
 
             // 2. Submit Document A second
@@ -1656,7 +1691,7 @@ export default function DocumentForm({
               const err = await resA.json().catch(() => null);
               // Rollback Document B to avoid orphan state
               await fetch(`/api/documents/${counterDocId}`, { method: 'DELETE' }).catch(() => null);
-              throw new Error(err?.message || 'خطا در ثبت سند خروج وجه نقد حواله');
+              throw new Error(err?.message || 'خطا در ثبت سند خروج حواله');
             }
             data = await resA.json().catch(() => null);
           }
@@ -1938,6 +1973,829 @@ export default function DocumentForm({
       return;
     }
 
+    const isClaim = hawalaLine.documentTab === 'claim' || hawalaLine.sourceTab === 'claim';
+
+    if (isClaim) {
+      const rawFinancial = parseLocalizedAmount(hawalaLine.details?.claimFinancial || hawalaLine.details?.totalAmount || '0');
+      const rawWeight = parseLocalizedAmount(hawalaLine.details?.claimWeight || hawalaLine.details?.rawWeight || '0');
+
+      if ((!rawFinancial || rawFinancial <= 0) && (!rawWeight || rawWeight <= 0)) {
+        toast.error('مبلغ یا وزن حواله طلب/بدهی باید بزرگتر از صفر باشد.');
+        return;
+      }
+
+      const currencyInfo = detectHawalaCurrency(hawalaLine, selectedCustomer);
+
+      setIsSubmittingHawala(true);
+      try {
+        const isReceived = hawalaLine.documentNature === 'received';
+        const counterNature: DocumentNature = isReceived ? 'paid' : 'received';
+
+        const typeLabelForA = getClaimDocumentTypeLabel(hawalaLine.documentNature, rawFinancial, rawWeight);
+        const counterTypeLabel = getClaimDocumentTypeLabel(counterNature, rawFinancial, rawWeight);
+
+        const targetCode = targetCustomer.customerCode ? `کد حساب:${targetCustomer.customerCode}` : '';
+        const sourceCode = selectedCustomer.customerCode ? `کد حساب: ${selectedCustomer.customerCode}` : '';
+
+        const hawalaNoteForA = `(حواله به ${targetCustomer.name} ${targetCode})`.replace(/\s+/g, ' ').trim();
+        const hawalaNoteForB = `(حواله از ${selectedCustomer.name} ${sourceCode})`.replace(/\s+/g, ' ').trim();
+
+        const descForA = hawalaLine.description?.trim()
+          ? `${hawalaLine.description.trim()} ${hawalaNoteForA}`
+          : hawalaNoteForA;
+
+        const descForB = hawalaLine.description?.trim()
+          ? `${hawalaLine.description.trim()} ${hawalaNoteForB}`
+          : hawalaNoteForB;
+
+        const docBId = generateUUID();
+        const hawalaGroupId = generateUUID();
+
+        const isForeign = currencyInfo.isForeign && currencyInfo.code !== 'IRR' && currencyInfo.code !== 'IRT';
+        const canonicalCode = isForeign ? currencyInfo.code : (baseCurrency || 'IRT');
+        const isToman = canonicalCode === 'IRT';
+        const rialAmount = isForeign
+          ? 0
+          : (isToman ? convertTomanToRial(rawFinancial) : Math.round(rawFinancial));
+
+        const metalType = (hawalaLine.details?.metalType || 'gold') as MetalType;
+        const isGold = metalType === 'gold';
+        const isSilver = metalType === 'silver';
+        const isPlatinum = metalType === 'platinum';
+
+        const counterDetails = {
+          ...hawalaLine.details,
+          claimFinancial: rawFinancial > 0 ? String(rawFinancial) : '',
+          claimWeight: rawWeight > 0 ? String(rawWeight) : '',
+          totalAmount: rawFinancial > 0 ? String(rawFinancial) : '',
+          rawWeight: rawWeight > 0 ? String(rawWeight) : '',
+          currencyUnit: canonicalCode,
+          baseCurrency: isForeign ? baseCurrency : canonicalCode,
+          amountInIrr: isForeign ? 0 : rialAmount,
+          rialAmountInIrr: !isForeign,
+          documentTypeLabel: counterTypeLabel,
+          isHawala: true,
+          hawalaGroupId,
+          hawalaCounterDocumentId: documentId,
+          hawalaCounterCustomerId: selectedCustomer.id,
+          hawalaCounterCustomerName: selectedCustomer.name,
+          hawalaCounterCustomerCode: selectedCustomer.customerCode,
+        };
+
+        const counterLine: DocumentLine = {
+          ...hawalaLine,
+          id: `line_${Date.now()}_${Math.random().toString(36).substring(2, 7)}_b`,
+          documentTab: 'claim' as const,
+          sourceTab: 'claim',
+          documentNature: counterNature,
+          documentTypeLabel: counterTypeLabel,
+          documentSubType: counterNature === 'received' ? 'debt' : 'claim',
+          settlementMethod: 'unsettled' as const,
+          balanceSource: 'current' as const,
+          description: descForB,
+          converted750: isGold ? rawWeight : 0,
+          details: counterDetails as any,
+        };
+
+        const detailsForA = {
+          ...hawalaLine.details,
+          claimFinancial: rawFinancial > 0 ? String(rawFinancial) : '',
+          claimWeight: rawWeight > 0 ? String(rawWeight) : '',
+          totalAmount: rawFinancial > 0 ? String(rawFinancial) : '',
+          rawWeight: rawWeight > 0 ? String(rawWeight) : '',
+          currencyUnit: canonicalCode,
+          baseCurrency: isForeign ? baseCurrency : canonicalCode,
+          amountInIrr: isForeign ? 0 : rialAmount,
+          rialAmountInIrr: !isForeign,
+          documentTypeLabel: typeLabelForA,
+          isHawala: true,
+          hawalaGroupId,
+          hawalaCounterDocumentId: docBId,
+          hawalaCounterCustomerId: targetCustomer.id,
+          hawalaCounterCustomerName: targetCustomer.name,
+          hawalaCounterCustomerCode: targetCustomer.customerCode,
+          counterNature,
+          counterTypeLabel,
+          descForB,
+          hawalaCounterLine: counterLine,
+          hawalaTargetCustomer: targetCustomer,
+        };
+
+        const lineForA: DocumentLine = {
+          ...hawalaLine,
+          id: hawalaLine.id || `line_${Date.now()}_${Math.random().toString(36).substring(2, 7)}_a`,
+          documentTab: 'claim',
+          sourceTab: 'claim',
+          documentNature: hawalaLine.documentNature,
+          documentTypeLabel: typeLabelForA,
+          documentSubType: hawalaLine.documentNature === 'received' ? 'debt' : 'claim',
+          settlementMethod: 'unsettled',
+          balanceSource: 'current',
+          description: descForA,
+          converted750: isGold ? rawWeight : 0,
+          details: detailsForA as any,
+        };
+
+        setCommittedLines((prev) => {
+          const filtered = hawalaLine.id ? prev.filter((l) => l.id !== hawalaLine.id) : prev;
+          return [...filtered, lineForA];
+        });
+
+        cancelEdit();
+        delete tabDraftsRef.current['claim'];
+        setIsClaimHawala(false);
+        setHawalaLine(null);
+
+        toast.success(`ردیف حواله طلب/بدهی به «${targetCustomer.name}» در فهرست ردیف‌های سند درج شد. با ثبت نهایی سند، حواله اعمال خواهد شد.`);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'خطا در ثبت ردیف حواله طلب/بدهی');
+      } finally {
+        setIsSubmittingHawala(false);
+      }
+      return;
+    }
+
+    const isMetal =
+      hawalaLine.documentTab === 'raw-gold' ||
+      hawalaLine.sourceTab === 'metals' ||
+      hawalaLine.sourceTab === 'raw-gold';
+
+    if (isMetal) {
+      const rawWeight = parseLocalizedAmount(hawalaLine.details?.rawWeight || '0');
+      if (!rawWeight || rawWeight <= 0) {
+        toast.error('وزن فلز باید بزرگتر از صفر باشد.');
+        return;
+      }
+
+      setIsSubmittingHawala(true);
+      try {
+        const isReceived = hawalaLine.documentNature === 'received';
+        const counterNature: DocumentNature = isReceived ? 'paid' : 'received';
+
+        const metalType = (hawalaLine.details?.metalType || 'gold') as MetalType;
+        const effectiveBaseKarat = purityForMetal(metalType);
+        const purityNum = Number(hawalaLine.details?.purity) || effectiveBaseKarat;
+        const convertedWeight =
+          typeof hawalaLine.converted750 === 'number' && Number.isFinite(hawalaLine.converted750)
+            ? hawalaLine.converted750
+            : (rawWeight > 0 && purityNum > 0 ? (rawWeight * purityNum) / effectiveBaseKarat : 0);
+
+        const counterSubType = documentSubType(counterNature, hawalaLine.details?.rawKind || 'molten');
+        const typeLabelForA =
+          hawalaLine.documentTypeLabel ||
+          getLineDocumentTypeLabel(
+            hawalaLine.documentNature,
+            'metals',
+            hawalaLine.details?.rawKind,
+            false,
+            undefined,
+            undefined,
+            hawalaLine.documentSubType,
+            metalType,
+          );
+        const counterTypeLabel = getLineDocumentTypeLabel(
+          counterNature,
+          'metals',
+          hawalaLine.details?.rawKind,
+          false,
+          undefined,
+          undefined,
+          counterSubType,
+          metalType,
+        );
+
+        const targetCode = targetCustomer.customerCode ? `کد حساب:${targetCustomer.customerCode}` : '';
+        const sourceCode = selectedCustomer.customerCode ? `کد حساب: ${selectedCustomer.customerCode}` : '';
+
+        const hawalaNoteForA = `(حواله به ${targetCustomer.name} ${targetCode})`.replace(/\s+/g, ' ').trim();
+        const hawalaNoteForB = `(حواله از ${selectedCustomer.name} ${sourceCode})`.replace(/\s+/g, ' ').trim();
+
+        const descForA = hawalaLine.description?.trim()
+          ? `${hawalaLine.description.trim()} ${hawalaNoteForA}`
+          : hawalaNoteForA;
+
+        const descForB = hawalaLine.description?.trim()
+          ? `${hawalaLine.description.trim()} ${hawalaNoteForB}`
+          : hawalaNoteForB;
+
+        const docBId = generateUUID();
+        const hawalaGroupId = generateUUID();
+
+        const counterDetails = {
+          ...hawalaLine.details,
+          metalType,
+          rawWeight: String(rawWeight),
+          purity: String(purityNum),
+          convertedWeight: String(convertedWeight),
+          documentTypeLabel: counterTypeLabel,
+          documentSubType: counterSubType,
+          inventorySourceId: '',
+          isHawala: true,
+          hawalaGroupId,
+          hawalaCounterDocumentId: documentId,
+          hawalaCounterCustomerId: selectedCustomer.id,
+          hawalaCounterCustomerName: selectedCustomer.name,
+          hawalaCounterCustomerCode: selectedCustomer.customerCode,
+        };
+
+        const counterLine = {
+          ...hawalaLine,
+          id: `line_${Date.now()}_${Math.random().toString(36).substring(2, 7)}_b`,
+          documentTab: 'raw-gold' as const,
+          sourceTab: 'metals',
+          documentNature: counterNature,
+          documentTypeLabel: counterTypeLabel,
+          documentSubType: counterSubType,
+          settlementMethod: 'weight' as const,
+          balanceSource: 'current' as const,
+          description: descForB,
+          converted750: convertedWeight,
+          goldAmount: metalType === 'gold' ? convertedWeight : 0,
+          silverAmount: metalType === 'silver' ? convertedWeight : 0,
+          platinumAmount: metalType === 'platinum' ? convertedWeight : 0,
+          rialAmount: 0,
+          foreignAmount: 0,
+          tertiaryAmount: 0,
+          details: counterDetails as any,
+          documentDetails: counterDetails,
+        };
+
+        const detailsForA = {
+          ...hawalaLine.details,
+          metalType,
+          rawWeight: String(rawWeight),
+          purity: String(purityNum),
+          convertedWeight: String(convertedWeight),
+          documentTypeLabel: typeLabelForA,
+          isHawala: true,
+          hawalaGroupId,
+          hawalaCounterDocumentId: docBId,
+          hawalaCounterCustomerId: targetCustomer.id,
+          hawalaCounterCustomerName: targetCustomer.name,
+          hawalaCounterCustomerCode: targetCustomer.customerCode,
+          counterNature,
+          counterTypeLabel,
+          descForB,
+          hawalaCounterLine: counterLine,
+          hawalaTargetCustomer: targetCustomer,
+        };
+
+        const lineForA: DocumentLine = {
+          ...hawalaLine,
+          id: hawalaLine.id || `line_${Date.now()}_${Math.random().toString(36).substring(2, 7)}_a`,
+          documentTab: 'raw-gold',
+          sourceTab: 'metals',
+          documentNature: hawalaLine.documentNature,
+          documentTypeLabel: typeLabelForA,
+          documentSubType: hawalaLine.documentSubType || documentSubType(hawalaLine.documentNature, hawalaLine.details?.rawKind || 'molten'),
+          settlementMethod: 'weight',
+          balanceSource: 'current',
+          description: descForA,
+          converted750: convertedWeight,
+          details: detailsForA as any,
+        };
+
+        setCommittedLines((prev) => {
+          const filtered = hawalaLine.id ? prev.filter((l) => l.id !== hawalaLine.id) : prev;
+          return [...filtered, lineForA];
+        });
+
+        cancelEdit();
+        delete tabDraftsRef.current['metals'];
+        setIsRawGoldHawala(false);
+        setHawalaLine(null);
+
+        toast.success(`ردیف حواله فلز به «${targetCustomer.name}» در فهرست ردیف‌های سند درج شد. با ثبت نهایی سند، حواله اعمال خواهد شد.`);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'خطا در ثبت ردیف حواله فلز');
+      } finally {
+        setIsSubmittingHawala(false);
+      }
+      return;
+    }
+
+    const isGoldSale =
+      hawalaLine.documentTab === 'gold-sale' ||
+      hawalaLine.sourceTab === 'gold-sale';
+
+    if (isGoldSale) {
+      const rawWeight = parseLocalizedAmount(hawalaLine.details?.rawWeight || '0');
+      const totalAmount = parseLocalizedAmount(hawalaLine.details?.totalAmount || '0');
+      if ((!rawWeight || rawWeight <= 0) && (!totalAmount || totalAmount <= 0)) {
+        toast.error('وزن یا مبلغ معامله فلز باید بزرگتر از صفر باشد.');
+        return;
+      }
+
+      setIsSubmittingHawala(true);
+      try {
+        const isReceived = hawalaLine.documentNature === 'received';
+        const counterNature: DocumentNature = isReceived ? 'paid' : 'received';
+
+        const metalType = (hawalaLine.details?.metalType || 'gold') as MetalType;
+        const effectiveBaseKarat = purityForMetal(metalType);
+        const purityNum = Number(hawalaLine.details?.purity) || effectiveBaseKarat;
+        const convertedWeight =
+          typeof hawalaLine.converted750 === 'number' && Number.isFinite(hawalaLine.converted750)
+            ? hawalaLine.converted750
+            : (rawWeight > 0 && purityNum > 0 ? (rawWeight * purityNum) / effectiveBaseKarat : 0);
+
+        const rawKind = hawalaLine.details?.rawKind || 'molten';
+        const subTypeForA = hawalaLine.documentSubType || `${hawalaLine.documentNature === 'received' ? 'gold-purchase' : 'gold-sale'}-${rawKind}`;
+        const counterSubType = `${counterNature === 'received' ? 'gold-purchase' : 'gold-sale'}-${rawKind}`;
+
+        const typeLabelForA =
+          hawalaLine.documentTypeLabel ||
+          getLineDocumentTypeLabel(
+            hawalaLine.documentNature,
+            'gold-sale',
+            rawKind,
+            false,
+            undefined,
+            undefined,
+            subTypeForA,
+            metalType,
+          );
+        const counterTypeLabel = getLineDocumentTypeLabel(
+          counterNature,
+          'gold-sale',
+          rawKind,
+          false,
+          undefined,
+          undefined,
+          counterSubType,
+          metalType,
+        );
+
+        const targetCode = targetCustomer.customerCode ? `کد حساب:${targetCustomer.customerCode}` : '';
+        const sourceCode = selectedCustomer.customerCode ? `کد حساب: ${selectedCustomer.customerCode}` : '';
+
+        const hawalaNoteForA = `(حواله به ${targetCustomer.name} ${targetCode})`.replace(/\s+/g, ' ').trim();
+        const hawalaNoteForB = `(حواله از ${selectedCustomer.name} ${sourceCode})`.replace(/\s+/g, ' ').trim();
+
+        const descForA = hawalaLine.description?.trim()
+          ? `${hawalaLine.description.trim()} ${hawalaNoteForA}`
+          : hawalaNoteForA;
+
+        const descForB = hawalaLine.description?.trim()
+          ? `${hawalaLine.description.trim()} ${hawalaNoteForB}`
+          : hawalaNoteForB;
+
+        const docBId = generateUUID();
+        const hawalaGroupId = generateUUID();
+
+        const counterDetails = {
+          ...hawalaLine.details,
+          metalType,
+          rawWeight: String(rawWeight),
+          purity: String(purityNum),
+          convertedWeight: String(convertedWeight),
+          totalAmount: totalAmount > 0 ? String(totalAmount) : '',
+          documentTypeLabel: counterTypeLabel,
+          documentSubType: counterSubType,
+          inventorySourceId: '',
+          isHawala: true,
+          hawalaGroupId,
+          hawalaCounterDocumentId: documentId,
+          hawalaCounterCustomerId: selectedCustomer.id,
+          hawalaCounterCustomerName: selectedCustomer.name,
+          hawalaCounterCustomerCode: selectedCustomer.customerCode,
+        };
+
+        const counterLine = {
+          ...hawalaLine,
+          id: `line_${Date.now()}_${Math.random().toString(36).substring(2, 7)}_b`,
+          documentTab: 'gold-sale' as const,
+          sourceTab: 'gold-sale',
+          documentNature: counterNature,
+          documentTypeLabel: counterTypeLabel,
+          documentSubType: counterSubType,
+          settlementMethod: 'unsettled' as const,
+          balanceSource: 'current' as const,
+          description: descForB,
+          converted750: convertedWeight,
+          goldAmount: metalType === 'gold' ? convertedWeight : 0,
+          silverAmount: metalType === 'silver' ? convertedWeight : 0,
+          platinumAmount: metalType === 'platinum' ? convertedWeight : 0,
+          rialAmount: totalAmount > 0 ? (baseCurrency === 'IRT' ? convertTomanToRial(totalAmount) : Math.round(totalAmount)) : 0,
+          foreignAmount: 0,
+          tertiaryAmount: 0,
+          details: counterDetails as any,
+          documentDetails: counterDetails,
+        };
+
+        const detailsForA = {
+          ...hawalaLine.details,
+          metalType,
+          rawWeight: String(rawWeight),
+          purity: String(purityNum),
+          convertedWeight: String(convertedWeight),
+          totalAmount: totalAmount > 0 ? String(totalAmount) : '',
+          documentTypeLabel: typeLabelForA,
+          isHawala: true,
+          hawalaGroupId,
+          hawalaCounterDocumentId: docBId,
+          hawalaCounterCustomerId: targetCustomer.id,
+          hawalaCounterCustomerName: targetCustomer.name,
+          hawalaCounterCustomerCode: targetCustomer.customerCode,
+          counterNature,
+          counterTypeLabel,
+          descForB,
+          hawalaCounterLine: counterLine,
+          hawalaTargetCustomer: targetCustomer,
+        };
+
+        const lineForA: DocumentLine = {
+          ...hawalaLine,
+          id: hawalaLine.id || `line_${Date.now()}_${Math.random().toString(36).substring(2, 7)}_a`,
+          documentTab: 'gold-sale',
+          sourceTab: 'gold-sale',
+          documentNature: hawalaLine.documentNature,
+          documentTypeLabel: typeLabelForA,
+          documentSubType: subTypeForA,
+          settlementMethod: 'unsettled',
+          balanceSource: 'current',
+          description: descForA,
+          converted750: convertedWeight,
+          details: detailsForA as any,
+        };
+
+        setCommittedLines((prev) => {
+          const filtered = hawalaLine.id ? prev.filter((l) => l.id !== hawalaLine.id) : prev;
+          return [...filtered, lineForA];
+        });
+
+        cancelEdit();
+        delete tabDraftsRef.current['gold-sale'];
+        setIsGoldSaleHawala(false);
+        setHawalaLine(null);
+
+        toast.success(`ردیف حواله خرید/فروش فلز به «${targetCustomer.name}» در فهرست ردیف‌های سند درج شد. با ثبت نهایی سند، حواله اعمال خواهد شد.`);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'خطا در ثبت ردیف حواله خرید/فروش فلز');
+      } finally {
+        setIsSubmittingHawala(false);
+      }
+      return;
+    }
+
+    const isCoin =
+      hawalaLine.documentTab === 'coin' ||
+      hawalaLine.sourceTab === 'coin';
+
+    if (isCoin) {
+      const quantityNum = parseInt(String(hawalaLine.details?.quantity || '1').replace(/[^\d]/g, ''), 10) || 1;
+      const rawWeight = parseLocalizedAmount(hawalaLine.details?.rawWeight || '0');
+      const totalAmount = parseLocalizedAmount(hawalaLine.details?.totalAmount || hawalaLine.details?.currencyTotalAmount || '0');
+
+      if (quantityNum <= 0 && (!rawWeight || rawWeight <= 0)) {
+        toast.error('تعداد یا وزن سکه باید بزرگتر از صفر باشد.');
+        return;
+      }
+
+      setIsSubmittingHawala(true);
+      try {
+        const isReceived = hawalaLine.documentNature === 'received';
+        const counterNature: DocumentNature = isReceived ? 'paid' : 'received';
+
+        const sourceOp = hawalaLine.documentSubType || (isReceived ? 'receipt_entry' : 'payment_exit');
+        let counterOp: string = counterNature === 'received' ? 'receipt_entry' : 'payment_exit';
+        switch (sourceOp) {
+          case 'receipt_entry': counterOp = 'payment_exit'; break;
+          case 'payment_exit': counterOp = 'receipt_entry'; break;
+          case 'receipt_buy': counterOp = 'payment_sale'; break;
+          case 'payment_sale': counterOp = 'receipt_buy'; break;
+          case 'receipt_unsettled_buy': counterOp = 'payment_unsettled_sale'; break;
+          case 'payment_unsettled_sale': counterOp = 'receipt_unsettled_buy'; break;
+          case 'receipt_debt': counterOp = 'payment_claim'; break;
+          case 'payment_claim': counterOp = 'receipt_debt'; break;
+          default:
+            counterOp = counterNature === 'received' ? 'receipt_entry' : 'payment_exit';
+        }
+
+        const coinPresetOrCategory = hawalaLine.details?.coinType || hawalaLine.details?.coinName || '';
+        const typeLabelForA =
+          hawalaLine.documentTypeLabel ||
+          getLineDocumentTypeLabel(
+            hawalaLine.documentNature,
+            'coin',
+            undefined,
+            sourceOp.includes('unsettled'),
+            undefined,
+            undefined,
+            sourceOp,
+            coinPresetOrCategory,
+          );
+        const counterTypeLabel = getLineDocumentTypeLabel(
+          counterNature,
+          'coin',
+          undefined,
+          counterOp.includes('unsettled'),
+          undefined,
+          undefined,
+          counterOp,
+          coinPresetOrCategory,
+        );
+
+        const targetCode = targetCustomer.customerCode ? `کد حساب:${targetCustomer.customerCode}` : '';
+        const sourceCode = selectedCustomer.customerCode ? `کد حساب: ${selectedCustomer.customerCode}` : '';
+
+        const hawalaNoteForA = `(حواله به ${targetCustomer.name} ${targetCode})`.replace(/\s+/g, ' ').trim();
+        const hawalaNoteForB = `(حواله از ${selectedCustomer.name} ${sourceCode})`.replace(/\s+/g, ' ').trim();
+
+        const descForA = hawalaLine.description?.trim()
+          ? `${hawalaLine.description.trim()} ${hawalaNoteForA}`
+          : hawalaNoteForA;
+
+        const descForB = hawalaLine.description?.trim()
+          ? `${hawalaLine.description.trim()} ${hawalaNoteForB}`
+          : hawalaNoteForB;
+
+        const docBId = generateUUID();
+        const hawalaGroupId = generateUUID();
+
+        const purityNum = Number(hawalaLine.details?.purity) || 900;
+        const convertedWeight =
+          typeof hawalaLine.converted750 === 'number' && Number.isFinite(hawalaLine.converted750)
+            ? hawalaLine.converted750
+            : (rawWeight > 0 ? (rawWeight * purityNum) / goldBaseKarat : 0);
+
+        const counterDetails = {
+          ...hawalaLine.details,
+          metalType: 'gold',
+          rawWeight: String(rawWeight),
+          purity: String(purityNum),
+          convertedWeight: String(convertedWeight),
+          quantity: String(quantityNum),
+          currencyQuantity: String(quantityNum),
+          totalAmount: totalAmount > 0 ? String(totalAmount) : '',
+          currencyTotalAmount: totalAmount > 0 ? String(totalAmount) : '',
+          documentTypeLabel: counterTypeLabel,
+          documentSubType: counterOp,
+          unsettledTrade: counterOp.includes('unsettled'),
+          isHawala: true,
+          hawalaGroupId,
+          hawalaCounterDocumentId: documentId,
+          hawalaCounterCustomerId: selectedCustomer.id,
+          hawalaCounterCustomerName: selectedCustomer.name,
+          hawalaCounterCustomerCode: selectedCustomer.customerCode,
+        };
+
+        const counterLine = {
+          ...hawalaLine,
+          id: `line_${Date.now()}_${Math.random().toString(36).substring(2, 7)}_b`,
+          documentTab: 'coin' as const,
+          sourceTab: 'coin',
+          documentNature: counterNature,
+          documentTypeLabel: counterTypeLabel,
+          documentSubType: counterOp,
+          settlementMethod: totalAmount > 0 ? ('unsettled' as const) : ('weight' as const),
+          balanceSource: 'current' as const,
+          description: descForB,
+          converted750: convertedWeight,
+          goldAmount: convertedWeight,
+          silverAmount: 0,
+          platinumAmount: 0,
+          rialAmount: totalAmount > 0 ? (baseCurrency === 'IRT' ? convertTomanToRial(totalAmount) : Math.round(totalAmount)) : 0,
+          foreignAmount: 0,
+          tertiaryAmount: 0,
+          details: counterDetails as any,
+          documentDetails: counterDetails,
+        };
+
+        const detailsForA = {
+          ...hawalaLine.details,
+          metalType: 'gold',
+          rawWeight: String(rawWeight),
+          purity: String(purityNum),
+          convertedWeight: String(convertedWeight),
+          quantity: String(quantityNum),
+          currencyQuantity: String(quantityNum),
+          totalAmount: totalAmount > 0 ? String(totalAmount) : '',
+          currencyTotalAmount: totalAmount > 0 ? String(totalAmount) : '',
+          documentTypeLabel: typeLabelForA,
+          isHawala: true,
+          hawalaGroupId,
+          hawalaCounterDocumentId: docBId,
+          hawalaCounterCustomerId: targetCustomer.id,
+          hawalaCounterCustomerName: targetCustomer.name,
+          hawalaCounterCustomerCode: targetCustomer.customerCode,
+          counterNature,
+          counterTypeLabel,
+          descForB,
+          hawalaCounterLine: counterLine,
+          hawalaTargetCustomer: targetCustomer,
+        };
+
+        const lineForA: DocumentLine = {
+          ...hawalaLine,
+          id: hawalaLine.id || `line_${Date.now()}_${Math.random().toString(36).substring(2, 7)}_a`,
+          documentTab: 'coin',
+          sourceTab: 'coin',
+          documentNature: hawalaLine.documentNature,
+          documentTypeLabel: typeLabelForA,
+          documentSubType: sourceOp,
+          settlementMethod: totalAmount > 0 ? 'unsettled' : 'weight',
+          balanceSource: 'current',
+          description: descForA,
+          converted750: convertedWeight,
+          details: detailsForA as any,
+        };
+
+        setCommittedLines((prev) => {
+          const filtered = hawalaLine.id ? prev.filter((l) => l.id !== hawalaLine.id) : prev;
+          return [...filtered, lineForA];
+        });
+
+        cancelEdit();
+        delete tabDraftsRef.current['coin'];
+        setIsCoinHawala(false);
+        setHawalaLine(null);
+
+        toast.success(`ردیف حواله سکه/شمش به «${targetCustomer.name}» در فهرست ردیف‌های سند درج شد. با ثبت نهایی سند، حواله اعمال خواهد شد.`);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'خطا در ثبت ردیف حواله سکه/شمش');
+      } finally {
+        setIsSubmittingHawala(false);
+      }
+      return;
+    }
+
+    const isWorkmanship = hawalaLine.documentTab === 'workmanship' || hawalaLine.sourceTab === 'workmanship';
+
+    if (isWorkmanship) {
+      const metalType = (hawalaLine.details?.metalType || 'gold') as 'gold' | 'silver' | 'platinum';
+      const baseKarat = purityForMetal(metalType);
+      const rawWeight = parseLocalizedAmount(hawalaLine.details?.rawWeight || '0');
+      const purityNum = Number(hawalaLine.details?.purity) || baseKarat;
+      const convertedWeight =
+        typeof hawalaLine.converted750 === 'number' && Number.isFinite(hawalaLine.converted750)
+          ? hawalaLine.converted750
+          : (rawWeight > 0 ? (rawWeight * purityNum) / baseKarat : 0);
+      const totalAmount = parseLocalizedAmount(hawalaLine.details?.totalAmount || hawalaLine.details?.wageTotalAmount || '0');
+      const wageNum = parseLocalizedAmount(hawalaLine.details?.wage || '0');
+
+      if (rawWeight <= 0 && totalAmount <= 0 && wageNum <= 0) {
+        toast.error('وزن یا مبلغ/اجرت کارساخته باید بزرگتر از صفر باشد.');
+        return;
+      }
+
+      setIsSubmittingHawala(true);
+      try {
+        const isReceived = hawalaLine.documentNature === 'received';
+        const counterNature: DocumentNature = isReceived ? 'paid' : 'received';
+
+        const sourceOp = hawalaLine.documentSubType || (isReceived ? 'entry_manufactured' : 'exit_manufactured');
+        let counterOp: string = counterNature === 'received' ? 'entry_manufactured' : 'exit_manufactured';
+        switch (sourceOp) {
+          case 'entry_manufactured': counterOp = 'exit_manufactured'; break;
+          case 'exit_manufactured': counterOp = 'entry_manufactured'; break;
+          case 'buy_manufactured': counterOp = 'sale_manufactured'; break;
+          case 'sale_manufactured': counterOp = 'buy_manufactured'; break;
+          case 'return_entry': counterOp = 'return_exit'; break;
+          case 'return_exit': counterOp = 'return_entry'; break;
+          case 'return_buy': counterOp = 'return_sale'; break;
+          case 'return_sale': counterOp = 'return_buy'; break;
+          case 'workmanship-wage': counterOp = 'workmanship-wage'; break;
+          case 'workmanship-golden-percentage': counterOp = 'workmanship-golden-percentage'; break;
+          case 'workmanship-weight': counterOp = 'workmanship-weight'; break;
+          default:
+            counterOp = counterNature === 'received' ? 'entry_manufactured' : 'exit_manufactured';
+        }
+
+        const workmanshipOptId = hawalaLine.details?.workmanshipOptionId;
+        const typeLabelForA =
+          hawalaLine.documentTypeLabel ||
+          getLineDocumentTypeLabel(
+            hawalaLine.documentNature,
+            'workmanship',
+            undefined,
+            undefined,
+            undefined,
+            workmanshipOptId,
+            sourceOp,
+            metalType,
+          );
+
+        const counterTypeLabel = getLineDocumentTypeLabel(
+          counterNature,
+          'workmanship',
+          undefined,
+          undefined,
+          undefined,
+          workmanshipOptId,
+          counterOp,
+          metalType,
+        );
+
+        const targetCode = targetCustomer.customerCode ? `کد حساب:${targetCustomer.customerCode}` : '';
+        const sourceCode = selectedCustomer.customerCode ? `کد حساب: ${selectedCustomer.customerCode}` : '';
+
+        const hawalaNoteForA = `(حواله به ${targetCustomer.name} ${targetCode})`.replace(/\s+/g, ' ').trim();
+        const hawalaNoteForB = `(حواله از ${selectedCustomer.name} ${sourceCode})`.replace(/\s+/g, ' ').trim();
+
+        const descForA = hawalaLine.description?.trim()
+          ? `${hawalaLine.description.trim()} ${hawalaNoteForA}`
+          : hawalaNoteForA;
+
+        const descForB = hawalaLine.description?.trim()
+          ? `${hawalaLine.description.trim()} ${hawalaNoteForB}`
+          : hawalaNoteForB;
+
+        const docBId = generateUUID();
+        const hawalaGroupId = generateUUID();
+
+        const counterDetails = {
+          ...hawalaLine.details,
+          metalType,
+          rawWeight: String(rawWeight || ''),
+          purity: String(purityNum),
+          convertedWeight: String(convertedWeight),
+          totalAmount: totalAmount > 0 ? String(totalAmount) : '',
+          currencyTotalAmount: totalAmount > 0 ? String(totalAmount) : '',
+          wageTotalAmount: hawalaLine.details?.wageTotalAmount || '',
+          documentTypeLabel: counterTypeLabel,
+          documentSubType: counterOp,
+          isHawala: true,
+          hawalaGroupId,
+          hawalaCounterDocumentId: documentId,
+          hawalaCounterCustomerId: selectedCustomer.id,
+          hawalaCounterCustomerName: selectedCustomer.name,
+          hawalaCounterCustomerCode: selectedCustomer.customerCode,
+        };
+
+        const counterLine: DocumentLine = {
+          ...hawalaLine,
+          id: `line_${Date.now()}_${Math.random().toString(36).substring(2, 7)}_b`,
+          documentTab: 'workmanship' as const,
+          sourceTab: 'workmanship',
+          documentNature: counterNature,
+          documentTypeLabel: counterTypeLabel,
+          documentSubType: counterOp,
+          settlementMethod: 'weight' as const,
+          balanceSource: 'current' as const,
+          description: descForB,
+          converted750: convertedWeight,
+          details: counterDetails as any,
+        };
+
+        const detailsForA = {
+          ...hawalaLine.details,
+          metalType,
+          rawWeight: String(rawWeight || ''),
+          purity: String(purityNum),
+          convertedWeight: String(convertedWeight),
+          totalAmount: totalAmount > 0 ? String(totalAmount) : '',
+          currencyTotalAmount: totalAmount > 0 ? String(totalAmount) : '',
+          wageTotalAmount: hawalaLine.details?.wageTotalAmount || '',
+          documentTypeLabel: typeLabelForA,
+          documentSubType: sourceOp,
+          isHawala: true,
+          hawalaGroupId,
+          hawalaCounterDocumentId: docBId,
+          hawalaCounterCustomerId: targetCustomer.id,
+          hawalaCounterCustomerName: targetCustomer.name,
+          hawalaCounterCustomerCode: targetCustomer.customerCode,
+          counterNature,
+          counterTypeLabel,
+          descForB,
+          hawalaCounterLine: counterLine,
+          hawalaTargetCustomer: targetCustomer,
+        };
+
+        const lineForA: DocumentLine = {
+          ...hawalaLine,
+          id: hawalaLine.id || `line_${Date.now()}_${Math.random().toString(36).substring(2, 7)}_a`,
+          documentTab: 'workmanship',
+          sourceTab: 'workmanship',
+          documentNature: hawalaLine.documentNature,
+          documentTypeLabel: typeLabelForA,
+          documentSubType: sourceOp,
+          settlementMethod: 'weight',
+          balanceSource: 'current',
+          description: descForA,
+          converted750: convertedWeight,
+          details: detailsForA as any,
+        };
+
+        setCommittedLines((prev) => {
+          const filtered = hawalaLine.id ? prev.filter((l) => l.id !== hawalaLine.id) : prev;
+          return [...filtered, lineForA];
+        });
+
+        cancelEdit();
+        delete tabDraftsRef.current['workmanship'];
+        setIsWorkmanshipHawala(false);
+        setHawalaLine(null);
+
+        toast.success(`ردیف حواله کارساخته به «${targetCustomer.name}» در فهرست ردیف‌های سند درج شد. با ثبت نهایی سند، حواله اعمال خواهد شد.`);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'خطا در ثبت ردیف حواله کارساخته');
+      } finally {
+        setIsSubmittingHawala(false);
+      }
+      return;
+    }
+
     // Fallback if non-cash line
     setPendingHawala({
       line: hawalaLine,
@@ -2016,6 +2874,8 @@ export default function DocumentForm({
           currentLine?.details?.workmanshipOptionId,
           currentLine?.documentSubType,
           currentLine?.details?.coinName || currentLine?.details?.coinType || currentLine?.details?.metalType,
+          currentLine?.details?.claimFinancial ?? currentLine?.details?.totalAmount,
+          currentLine?.details?.claimWeight ?? currentLine?.details?.rawWeight,
         );
 
   const commitRowLabel = editingLineId
@@ -2210,7 +3070,15 @@ export default function DocumentForm({
             <button
               type="button"
               className="document-cancel-edit cursor-pointer"
-              onClick={cancelEdit}
+              onClick={() => {
+                cancelEdit();
+                setIsCashHawala(false);
+                setIsClaimHawala(false);
+                setIsRawGoldHawala(false);
+                setIsGoldSaleHawala(false);
+                setIsCoinHawala(false);
+                setIsWorkmanshipHawala(false);
+              }}
             >
               انصراف از ویرایش
             </button>
@@ -2263,6 +3131,16 @@ export default function DocumentForm({
               labInputRef={labInputRef}
               stampInputRef={stampInputRef}
               commitRowLabel={commitRowLabel}
+              isHawala={isRawGoldHawala}
+              setIsHawala={setIsRawGoldHawala}
+              onRequestHawala={(line) => {
+                if (!selectedCustomer) {
+                  toast.warning('ابتدا طرف حساب را از فهرست انتخاب کنید');
+                  return;
+                }
+                setHawalaLine(line);
+              }}
+              selectedCustomer={selectedCustomer}
             />
           )}
           goldSaleTabContent={(
@@ -2304,6 +3182,16 @@ export default function DocumentForm({
               labInputRef={labInputRef}
               stampInputRef={stampInputRef}
               commitRowLabel={commitRowLabel}
+              isHawala={isGoldSaleHawala}
+              setIsHawala={setIsGoldSaleHawala}
+              onRequestHawala={(line) => {
+                if (!selectedCustomer) {
+                  toast.warning('ابتدا طرف حساب را از فهرست انتخاب کنید');
+                  return;
+                }
+                setHawalaLine(line);
+              }}
+              selectedCustomer={selectedCustomer}
             />
           )}
           currencyTabContent={(
@@ -2374,6 +3262,16 @@ export default function DocumentForm({
               handleKeyDownEnter={handleKeyDownEnter}
               draftReady={draftReady}
               baseCurrency={baseCurrency}
+              isHawala={isCoinHawala}
+              setIsHawala={setIsCoinHawala}
+              onRequestHawala={(line) => {
+                if (!selectedCustomer) {
+                  toast.warning('ابتدا طرف حساب را از فهرست انتخاب کنید');
+                  return;
+                }
+                setHawalaLine(line);
+              }}
+              selectedCustomer={selectedCustomer}
             />
           )}
           bankTabContent={(
@@ -2432,14 +3330,61 @@ export default function DocumentForm({
               handleKeyDownEnter={handleKeyDownEnter}
               draftReady={draftReady}
               baseCurrency={baseCurrency}
-              selectedCurrency={selectedCurrency}
-              currencyLabel={activeCurrencies.find((currency) => currency.code.toUpperCase() === selectedCurrency.toUpperCase())?.name}
-              currencySymbol={activeCurrencies.find((currency) => currency.code.toUpperCase() === selectedCurrency.toUpperCase())?.symbol}
-              metalType={draftLine.details.metalType as MetalType}
+              selectedCurrency={
+                (editingLineId && draftLine.details?.currencyUnit)
+                  ? draftLine.details.currencyUnit
+                  : selectedCurrency
+              }
+              currencyLabel={
+                activeCurrencies.find(
+                  (currency) =>
+                    currency.code.toUpperCase() ===
+                    ((editingLineId && draftLine.details?.currencyUnit) || selectedCurrency).toUpperCase()
+                )?.name
+              }
+              currencySymbol={
+                activeCurrencies.find(
+                  (currency) =>
+                    currency.code.toUpperCase() ===
+                    ((editingLineId && draftLine.details?.currencyUnit) || selectedCurrency).toUpperCase()
+                )?.symbol
+              }
+              metalType={
+                ((editingLineId && draftLine.details?.metalType)
+                  ? draftLine.details.metalType
+                  : (draftLine.details?.metalType || 'gold')) as MetalType
+              }
+              isHawala={isClaimHawala}
+              setIsHawala={setIsClaimHawala}
+              onRequestHawala={(line) => {
+                if (!selectedCustomer) {
+                  toast.warning('ابتدا طرف حساب را از فهرست انتخاب کنید');
+                  return;
+                }
+                setHawalaLine(line);
+              }}
+              selectedCustomer={selectedCustomer}
             />
           )}
           incomeExpenseTabContent={(
             <IncomeExpenseTab
+              nature={documentNature}
+              draftLine={draftLine}
+              setDraftLine={setDraftLine}
+              committedLines={committedLines}
+              editingLineId={editingLineId}
+              isLinesPinned={isLinesPinned}
+              commitDraftLine={handleCommitDraft}
+              updateDraftDetail={updateDraftDetail}
+              handleKeyDownEnter={handleKeyDownEnter}
+              draftReady={draftReady}
+              baseCurrency={baseCurrency}
+              selectedCustomer={selectedCustomer}
+              onNatureChange={changeNature}
+            />
+          )}
+          goodsTabContent={(
+            <GoodsTab
               nature={documentNature}
               draftLine={draftLine}
               setDraftLine={setDraftLine}
@@ -2472,6 +3417,16 @@ export default function DocumentForm({
               currencyLabel={activeCurrencies.find((c) => c.code.toUpperCase() === (selectedCurrency || '').toUpperCase())?.name}
               activeCurrencies={activeCurrencies}
               selectedCustomer={selectedCustomer}
+              commitRowLabel={commitRowLabel}
+              isHawala={isWorkmanshipHawala}
+              setIsHawala={setIsWorkmanshipHawala}
+              onRequestHawala={(line) => {
+                if (!selectedCustomer) {
+                  toast.warning('ابتدا طرف‌حساب مبدأ سند را انتخاب کنید.');
+                  return;
+                }
+                setHawalaLine(line);
+              }}
             />
           )}
           discountTabContent={(

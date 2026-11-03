@@ -146,26 +146,32 @@ function getLineSortValue(
     case 'index':
       return originalIndex;
     case 'docType': {
+      const isClaim = line.documentTab === 'claim' || line.sourceTab === 'claim';
+      const derivedDocType = getLineDocumentTypeLabel(
+        line.documentNature,
+        line.sourceTab || line.documentTab,
+        line.details.rawKind,
+        line.details.unsettledTrade,
+        line.details.refiningOpKind,
+        line.details.workmanshipOptionId,
+        line.documentSubType || (line.details as any)?.documentSubType,
+        line.details.coinName || line.details.coinType || line.details.metalType,
+        line.details?.claimFinancial ?? line.details?.totalAmount,
+        line.details?.claimWeight ?? line.details?.rawWeight,
+      );
       const docType =
-        line.documentTypeLabel ||
-        (line.details as any)?.documentTypeLabel ||
-        getLineDocumentTypeLabel(
-          line.documentNature,
-          line.sourceTab || line.documentTab,
-          line.details.rawKind,
-          line.details.unsettledTrade,
-          line.details.refiningOpKind,
-          line.details.workmanshipOptionId,
-          line.documentSubType || (line.details as any)?.documentSubType,
-          line.details.coinName || line.details.coinType || line.details.metalType,
-        );
+        (line.documentTab === 'coin' || line.sourceTab === 'coin' || isClaim)
+          ? derivedDocType
+          : line.documentTypeLabel ||
+            (line.details as any)?.documentTypeLabel ||
+            derivedDocType;
       return docType || '';
     }
     case 'workmanshipName': {
       return line.details?.workmanshipName?.trim() || '';
     }
     case 'metal': {
-      return line.documentTab === 'currency' || line.documentTab === 'stone'
+      return !isMetalBearingLine(line)
         ? ''
         : line.details.metalType === 'silver'
         ? 'نقره'
@@ -174,17 +180,17 @@ function getLineSortValue(
         : 'طلا';
     }
     case 'weight': {
-      if (line.documentTab === 'currency' || line.documentTab === 'stone') return 0;
+      if (!isMetalBearingLine(line)) return 0;
       return line.details?.calculationMethod === 'money'
         ? actualWeightFromMoney(line.details, Number(line.details?.baseKarat || 750))
         : numberValue(line.details?.claimWeight || line.details?.rawWeight);
     }
     case 'purity': {
-      if (line.documentTab === 'currency' || line.documentTab === 'stone') return 0;
+      if (!isMetalBearingLine(line)) return 0;
       return numberValue(line.details?.purity);
     }
     case 'bedehkarVazni': {
-      if (line.documentTab === 'currency' || line.documentTab === 'stone') return 0;
+      if (!isMetalBearingLine(line)) return 0;
       const rawW =
         line.details?.calculationMethod === 'money'
           ? actualWeightFromMoney(line.details, Number(line.details?.baseKarat || 750))
@@ -201,7 +207,7 @@ function getLineSortValue(
       return isBedehkar ? c750 : 0;
     }
     case 'bostankarVazni': {
-      if (line.documentTab === 'currency' || line.documentTab === 'stone') return 0;
+      if (!isMetalBearingLine(line)) return 0;
       const rawW =
         line.details?.calculationMethod === 'money'
           ? actualWeightFromMoney(line.details, Number(line.details?.baseKarat || 750))

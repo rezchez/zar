@@ -5,7 +5,7 @@ import { ArrowLeftRight, CheckCircle2, Coins, Loader2, Search, UserCheck, X } fr
 import React, { useEffect, useMemo, useState } from 'react';
 
 import { type Customer } from '@/lib/customer';
-import { parseLocalizedAmount } from '@/lib/money';
+import { convertRialToToman, parseLocalizedAmount } from '@/lib/money';
 import type { DocumentLine } from '@/src/components/documents/RawGoldTab';
 
 export type DetectedCurrencyInfo = {
@@ -25,6 +25,8 @@ export function detectHawalaCurrency(
   const candidates = [
     line?.details?.cashFundCurrency,
     line?.details?.currencyUnit,
+    line?.details?.wageCurrency,
+    line?.details?.wageCurrencyUnit,
     line?.details?.cashFundName,
     sourceCustomer?.primaryCurrency,
   ].filter(Boolean).map(String);
@@ -148,8 +150,11 @@ export function getCustomerCurrencyBalance(customer: Customer | null | undefined
   const code = (currencyCode || 'IRR').toUpperCase();
 
   // Rial / Toman
-  if (code === 'IRR' || code === 'IRT') {
+  if (code === 'IRR') {
     return Number(customer.rialBalance || 0);
+  }
+  if (code === 'IRT') {
+    return convertRialToToman(Number(customer.rialBalance || 0));
   }
 
   // Check currencyBalances record if present
@@ -234,10 +239,37 @@ export default function HawalaModal({
     return detectHawalaCurrency(line, sourceCustomer);
   }, [line, sourceCustomer]);
 
+  const isClaim = line?.documentTab === 'claim' || line?.sourceTab === 'claim';
+  const isMetal =
+    line?.documentTab === 'raw-gold' ||
+    line?.sourceTab === 'metals' ||
+    line?.sourceTab === 'raw-gold';
+  const isGoldSale =
+    line?.documentTab === 'gold-sale' ||
+    line?.sourceTab === 'gold-sale';
+  const isCoin =
+    line?.documentTab === 'coin' ||
+    line?.sourceTab === 'coin';
+  const isWorkmanship =
+    line?.documentTab === 'workmanship' ||
+    line?.sourceTab === 'workmanship';
+
   // Clean numeric amount parsing
   const numericAmount = useMemo(() => {
     if (!line) return 0;
-    const rawStr = String(line.details?.totalAmount || line.details?.currencyTotalAmount || '0');
+    const rawStr = String(
+      line.details?.claimFinancial ||
+      line.details?.totalAmount ||
+      line.details?.currencyTotalAmount ||
+      line.details?.wageTotalAmount ||
+      '0',
+    );
+    return parseLocalizedAmount(rawStr);
+  }, [line]);
+
+  const claimWeight = useMemo(() => {
+    if (!line) return 0;
+    const rawStr = String(line.details?.claimWeight || line.details?.rawWeight || '0');
     return parseLocalizedAmount(rawStr);
   }, [line]);
 
@@ -262,18 +294,55 @@ export default function HawalaModal({
     if (!targetCustomer || !line) return null;
 
     // For Hawala: target customer gets the opposite effect of source customer
-    // If source customer received cash (+ in fund), target customer is paid cash (- for customer balance)
+    // If source customer received cash (+ in fund/debt), target customer is paid cash (- for customer balance/claim)
     const direction = isReceived ? -1 : 1;
     const current = getCustomerCurrencyBalance(targetCustomer, currency.code);
     const effect = direction * numericAmount;
     const projected = current + effect;
 
+    const metalType = (line.details?.metalType || 'gold') as 'gold' | 'silver' | 'platinum';
+    const isGold = metalType === 'gold';
+    const isSilver = metalType === 'silver';
+    const isPlatinum = metalType === 'platinum';
+
+    const metalWeight = (isMetal || isGoldSale || isCoin || isWorkmanship)
+      ? Number(line.converted750 || line.details?.convertedWeight || line.details?.rawWeight || 0)
+      : claimWeight;
+
+    let currentMetal = 0;
+    let metalName = 'طلا';
+
+    if (isSilver) {
+      currentMetal = Number(targetCustomer.silverBalance || 0);
+      metalName = 'نقره';
+    } else if (isPlatinum) {
+      currentMetal = Number(targetCustomer.platinumBalance || 0);
+      metalName = 'پلاتین';
+    } else {
+      currentMetal = Number(targetCustomer.goldBalance || 0);
+      metalName = 'طلا';
+    }
+
+    const effectMetal = direction * metalWeight;
+    const projectedMetal = currentMetal + effectMetal;
+
     return {
       current,
       effect,
       projected,
+      currentMetal,
+      effectMetal,
+      projectedMetal,
+      metalName,
+      // backwards compatibility:
+      currentGold: currentMetal,
+      effectGold: effectMetal,
+      projectedGold: projectedMetal,
+      hasFinancial: (!isMetal || isGoldSale || isCoin || isWorkmanship) && numericAmount > 0,
+      hasGold: (isGold || isMetal || isGoldSale || isCoin || isWorkmanship) && metalWeight > 0,
+      hasMetal: metalWeight > 0,
     };
-  }, [targetCustomer, line, isReceived, currency.code, numericAmount]);
+  }, [targetCustomer, line, isReceived, currency.code, numericAmount, claimWeight, isMetal, isGoldSale, isCoin, isWorkmanship]);
 
   if (!line || !sourceCustomer) return null;
 
@@ -328,23 +397,234 @@ export default function HawalaModal({
                     : 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
                 }`}
               >
-                {isReceived ? 'ورود وجه نقد (دریافت)' : 'خروج وجه نقد (پرداخت)'}
+                {isClaim
+                  ? (isReceived ? 'ثبت بدهی ما (دریافتی)' : 'ثبت طلب ما (پرداختی)')
+                  : isWorkmanship
+                    ? (line.documentTypeLabel || (isReceived ? 'ورود کار ساخته (دریافت)' : 'خروج کار ساخته (پرداخت)'))
+                    : isGoldSale
+                      ? (isReceived ? 'خرید فلزات (دریافت)' : 'فروش فلزات (پرداخت)')
+                      : isCoin
+                        ? (line.documentTypeLabel || (isReceived ? 'ورود/خرید سکه (دریافت)' : 'خروج/فروش سکه (پرداخت)'))
+                        : isMetal
+                          ? (isReceived ? 'ورود فلز (دریافت)' : 'خروج فلز (پرداخت)')
+                          : (isReceived ? 'ورود وجه نقد (دریافت)' : 'خروج وجه نقد (پرداخت)')}
               </span>
             </div>
 
             <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200 dark:border-slate-700">
-              <div>
-                <span className="text-slate-400 block text-[11px]">صندوق وجه نقد:</span>
-                <strong className="text-slate-800 dark:text-slate-200 text-xs">
-                  {line.details?.cashFundName || 'صندوق وجه نقد'}
-                </strong>
-              </div>
-              <div>
-                <span className="text-slate-400 block text-[11px]">مبلغ حواله:</span>
-                <strong className="text-amber-600 dark:text-amber-400 text-sm font-mono font-black">
-                  {numericAmount.toLocaleString('fa-IR')} {currency.symbol}
-                </strong>
-              </div>
+              {isClaim ? (
+                <>
+                  {claimWeight > 0 && (
+                    <div>
+                      <span className="text-slate-400 block text-[11px]">وزن طلا:</span>
+                      <strong className="text-amber-600 dark:text-amber-400 text-sm font-mono font-black">
+                        {claimWeight.toLocaleString('fa-IR')} گرم
+                      </strong>
+                    </div>
+                  )}
+                  {numericAmount > 0 && (
+                    <div>
+                      <span className="text-slate-400 block text-[11px]">مبلغ مالی:</span>
+                      <strong className="text-amber-600 dark:text-amber-400 text-sm font-mono font-black">
+                        {numericAmount.toLocaleString('fa-IR')} {currency.symbol}
+                      </strong>
+                    </div>
+                  )}
+                  {line.details?.claimPurpose ? (
+                    <div className="col-span-2">
+                      <span className="text-slate-400 block text-[11px]">بابت:</span>
+                      <strong className="text-slate-700 dark:text-slate-300 text-xs">
+                        {line.details.claimPurpose}
+                      </strong>
+                    </div>
+                  ) : null}
+                </>
+              ) : isGoldSale ? (
+                <>
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">نوع فلز:</span>
+                    <strong className="text-slate-800 dark:text-slate-100 text-xs font-bold">
+                      {line.details?.metalType === 'silver'
+                        ? 'نقره'
+                        : line.details?.metalType === 'platinum'
+                          ? 'پلاتین'
+                          : 'طلا'}
+                      {line.details?.rawKind ? ` (${
+                        line.details.rawKind === 'molten' ? 'آبشده' :
+                        line.details.rawKind === 'conditional' ? 'شرطی' :
+                        line.details.rawKind === 'misc' ? 'متفرقه' :
+                        line.details.rawKind === 'question' ? 'سواله' :
+                        line.details.rawKind === 'coin' ? 'سکه' : 'معمولی'
+                      })` : ''}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">وزن:</span>
+                    <strong className="text-amber-600 dark:text-amber-400 text-sm font-mono font-black">
+                      {Number(line.details?.rawWeight || 0).toLocaleString('fa-IR', { maximumFractionDigits: weightPrecision })} گرم
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">عیار:</span>
+                    <strong className="text-slate-700 dark:text-slate-300 text-xs font-mono font-bold">
+                      {line.details?.purity || 750}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">مبلغ کل:</span>
+                    <strong className="text-amber-600 dark:text-amber-400 text-sm font-mono font-black">
+                      {numericAmount.toLocaleString('fa-IR')} {currency.symbol}
+                    </strong>
+                  </div>
+                  {(line.details?.labName || line.details?.stampNumber) ? (
+                    <div className="col-span-2 flex gap-4 text-xs text-slate-600 dark:text-slate-400">
+                      {line.details?.labName && <span>ری‌گیری: <strong className="text-slate-800 dark:text-slate-200">{line.details.labName}</strong></span>}
+                      {line.details?.stampNumber && <span>شماره پاکت/انگ: <strong className="text-slate-800 dark:text-slate-200">{line.details.stampNumber}</strong></span>}
+                    </div>
+                  ) : null}
+                </>
+              ) : isCoin ? (
+                <>
+                  <div className="col-span-2">
+                    <span className="text-slate-400 block text-[11px]">نام سکه / شمش:</span>
+                    <strong className="text-slate-800 dark:text-slate-100 text-xs font-bold">
+                      {line.details?.coinName || line.details?.coinBalanceName || 'سکه / شمش'}
+                      {line.details?.mintYear ? ` (ضرب ${line.details.mintYear})` : ''}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">تعداد:</span>
+                    <strong className="text-amber-600 dark:text-amber-400 text-sm font-mono font-black">
+                      {Number(line.details?.quantity || 1).toLocaleString('fa-IR')} عدد
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">وزن کل:</span>
+                    <strong className="text-amber-600 dark:text-amber-400 text-sm font-mono font-black">
+                      {Number(line.details?.rawWeight || 0).toLocaleString('fa-IR', { maximumFractionDigits: weightPrecision })} گرم
+                    </strong>
+                  </div>
+                  {numericAmount > 0 ? (
+                    <div className="col-span-2">
+                      <span className="text-slate-400 block text-[11px]">مبلغ کل:</span>
+                      <strong className="text-emerald-600 dark:text-emerald-400 text-sm font-mono font-black">
+                        {numericAmount.toLocaleString('fa-IR')} {currency.symbol}
+                      </strong>
+                    </div>
+                  ) : null}
+                </>
+              ) : isWorkmanship ? (
+                <>
+                  <div className="col-span-2">
+                    <span className="text-slate-400 block text-[11px]">نام کارساخته:</span>
+                    <strong className="text-slate-800 dark:text-slate-100 text-xs font-bold">
+                      {line.details?.workmanshipName || 'کار ساخته'}
+                      {line.details?.quantity && Number(line.details.quantity) > 1 ? ` (${line.details.quantity} عدد)` : ''}
+                    </strong>
+                  </div>
+                  {Number(line.details?.rawWeight || 0) > 0 ? (
+                    <div>
+                      <span className="text-slate-400 block text-[11px]">وزن کارساخته:</span>
+                      <strong className="text-amber-600 dark:text-amber-400 text-sm font-mono font-black">
+                        {Number(line.details?.rawWeight || 0).toLocaleString('fa-IR', { maximumFractionDigits: weightPrecision })} گرم
+                      </strong>
+                    </div>
+                  ) : null}
+                  {line.details?.purity ? (
+                    <div>
+                      <span className="text-slate-400 block text-[11px]">عیار:</span>
+                      <strong className="text-slate-700 dark:text-slate-300 text-xs font-mono font-bold">
+                        {line.details.purity}
+                      </strong>
+                    </div>
+                  ) : null}
+                  {Number(line.details?.goldenPercentage || 0) > 0 ? (
+                    <div>
+                      <span className="text-slate-400 block text-[11px]">درصد طلایی:</span>
+                      <strong className="text-amber-600 dark:text-amber-400 text-xs font-mono font-bold">
+                        ٪{line.details.goldenPercentage}
+                      </strong>
+                    </div>
+                  ) : null}
+                  {Number(line.details?.wage || 0) > 0 || Number(line.details?.wageTotalAmount || 0) > 0 ? (
+                    <div>
+                      <span className="text-slate-400 block text-[11px]">اجرت کارساخته:</span>
+                      <strong className="text-slate-700 dark:text-slate-300 text-xs font-mono font-bold">
+                        {line.details?.wageTotalAmount
+                          ? `${Number(line.details.wageTotalAmount).toLocaleString('fa-IR')} ${currency.symbol}`
+                          : `${Number(line.details?.wage || 0).toLocaleString('fa-IR')} ${line.details?.wageMode === 'per_item' ? 'عددی' : 'گرمی'}`}
+                      </strong>
+                    </div>
+                  ) : null}
+                  {numericAmount > 0 ? (
+                    <div className="col-span-2">
+                      <span className="text-slate-400 block text-[11px]">مبلغ مالی / کل:</span>
+                      <strong className="text-emerald-600 dark:text-emerald-400 text-sm font-mono font-black">
+                        {numericAmount.toLocaleString('fa-IR')} {currency.symbol}
+                      </strong>
+                    </div>
+                  ) : null}
+                </>
+              ) : isMetal ? (
+                <>
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">نوع فلز:</span>
+                    <strong className="text-slate-800 dark:text-slate-100 text-xs font-bold">
+                      {line.details?.metalType === 'silver'
+                        ? 'نقره'
+                        : line.details?.metalType === 'platinum'
+                          ? 'پلاتین'
+                          : 'طلا'}
+                      {line.details?.rawKind ? ` (${
+                        line.details.rawKind === 'molten' ? 'آبشده' :
+                        line.details.rawKind === 'conditional' ? 'شرطی' :
+                        line.details.rawKind === 'misc' ? 'متفرقه' :
+                        line.details.rawKind === 'question' ? 'سواله' :
+                        line.details.rawKind === 'coin' ? 'سکه' : 'معمولی'
+                      })` : ''}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">وزن:</span>
+                    <strong className="text-amber-600 dark:text-amber-400 text-sm font-mono font-black">
+                      {Number(line.details?.rawWeight || 0).toLocaleString('fa-IR', { maximumFractionDigits: weightPrecision })} گرم
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">عیار:</span>
+                    <strong className="text-slate-700 dark:text-slate-300 text-xs font-mono font-bold">
+                      {line.details?.purity || 750}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">وزن معادل:</span>
+                    <strong className="text-amber-600 dark:text-amber-400 text-sm font-mono font-black">
+                      {Number(line.converted750 || line.details?.convertedWeight || 0).toLocaleString('fa-IR', { maximumFractionDigits: weightPrecision })} گرم
+                    </strong>
+                  </div>
+                  {(line.details?.labName || line.details?.stampNumber) ? (
+                    <div className="col-span-2 flex gap-4 text-xs text-slate-600 dark:text-slate-400">
+                      {line.details?.labName && <span>ری‌گیری: <strong className="text-slate-800 dark:text-slate-200">{line.details.labName}</strong></span>}
+                      {line.details?.stampNumber && <span>شماره پاکت/انگ: <strong className="text-slate-800 dark:text-slate-200">{line.details.stampNumber}</strong></span>}
+                    </div>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">صندوق وجه نقد:</span>
+                    <strong className="text-slate-800 dark:text-slate-200 text-xs">
+                      {line.details?.cashFundName || 'صندوق وجه نقد'}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">مبلغ حواله:</span>
+                    <strong className="text-amber-600 dark:text-amber-400 text-sm font-mono font-black">
+                      {numericAmount.toLocaleString('fa-IR')} {currency.symbol}
+                    </strong>
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
@@ -356,7 +636,11 @@ export default function HawalaModal({
               </label>
               <span className="inline-flex items-center gap-1 text-[11px] font-black text-amber-700 dark:text-amber-300 bg-amber-500/15 dark:bg-amber-500/20 px-2 py-0.5 rounded-lg border border-amber-500/30">
                 <Coins size={12} />
-                <span>واحد حواله: {currency.name} ({currency.symbol})</span>
+                <span>
+                  {isMetal || isGoldSale || isCoin || isWorkmanship
+                    ? `فلز: ${balancePreview?.metalName || 'طلا'}${numericAmount > 0 ? ` + مالی (${currency.name})` : ''}`
+                    : `واحد حواله: ${currency.name} (${currency.symbol})`}
+                </span>
               </span>
             </div>
 
@@ -415,41 +699,81 @@ export default function HawalaModal({
                     <UserCheck size={15} className="text-teal-600 dark:text-teal-400" />
                     <span>پیش‌نمایش تغییر مانده طرف‌حساب مقصد ({targetCustomer.name}):</span>
                   </div>
-                  <span className="text-[11px] font-bold text-teal-700 dark:text-teal-300 bg-teal-100 dark:bg-teal-900/40 px-2 py-0.5 rounded">
-                    ارز: {currency.name} ({currency.symbol})
-                  </span>
+                  {balancePreview.hasFinancial && (
+                    <span className="text-[11px] font-bold text-teal-700 dark:text-teal-300 bg-teal-100 dark:bg-teal-900/40 px-2 py-0.5 rounded">
+                      ارز: {currency.name} ({currency.symbol})
+                    </span>
+                  )}
                 </div>
 
                 <div className="space-y-1.5 font-medium">
-                  <div className="flex justify-between items-center text-slate-600 dark:text-slate-300">
-                    <span>مانده فعلی {currency.name}:</span>
-                    <span className="font-mono font-bold text-slate-800 dark:text-slate-100">
-                      {balancePreview.current.toLocaleString('fa-IR')} {currency.symbol}
-                    </span>
-                  </div>
+                  {balancePreview.hasFinancial && (
+                    <>
+                      <div className="flex justify-between items-center text-slate-600 dark:text-slate-300">
+                        <span>مانده فعلی {currency.name}:</span>
+                        <span className="font-mono font-bold text-slate-800 dark:text-slate-100">
+                          {balancePreview.current.toLocaleString('fa-IR')} {currency.symbol}
+                        </span>
+                      </div>
 
-                  <div className="flex justify-between items-center">
-                    <span className="text-slate-600 dark:text-slate-300">
-                      اثر این حواله ({isReceived ? 'سند پرداخت نقد' : 'سند دریافت نقد'}):
-                    </span>
-                    <span
-                      className={`font-mono font-bold ${
-                        balancePreview.effect < 0
-                          ? 'text-rose-600 dark:text-rose-400'
-                          : 'text-emerald-600 dark:text-emerald-400'
-                      }`}
-                    >
-                      {balancePreview.effect >= 0 ? '+' : '−'}
-                      {Math.abs(balancePreview.effect).toLocaleString('fa-IR')} {currency.symbol}
-                    </span>
-                  </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-600 dark:text-slate-300">
+                          اثر مالی حواله:
+                        </span>
+                        <span
+                          className={`font-mono font-bold ${
+                            balancePreview.effect < 0
+                              ? 'text-rose-600 dark:text-rose-400'
+                              : 'text-emerald-600 dark:text-emerald-400'
+                          }`}
+                        >
+                          {balancePreview.effect >= 0 ? '+' : '−'}
+                          {Math.abs(balancePreview.effect).toLocaleString('fa-IR')} {currency.symbol}
+                        </span>
+                      </div>
 
-                  <div className="flex justify-between items-center font-extrabold text-teal-800 dark:text-teal-200 pt-2 border-t border-teal-200/80 dark:border-teal-900/60">
-                    <span>مانده {currency.name} پس از حواله:</span>
-                    <span className="font-mono text-sm font-black text-teal-900 dark:text-teal-100">
-                      {balancePreview.projected.toLocaleString('fa-IR')} {currency.symbol}
-                    </span>
-                  </div>
+                      <div className="flex justify-between items-center font-extrabold text-teal-800 dark:text-teal-200 pt-1.5 border-t border-teal-200/80 dark:border-teal-900/60">
+                        <span>مانده {currency.name} پس از حواله:</span>
+                        <span className="font-mono text-sm font-black text-teal-900 dark:text-teal-100">
+                          {balancePreview.projected.toLocaleString('fa-IR')} {currency.symbol}
+                        </span>
+                      </div>
+                    </>
+                  )}
+
+                  {(balancePreview.hasMetal || balancePreview.hasGold) && (
+                    <>
+                      <div className={`flex justify-between items-center text-slate-600 dark:text-slate-300 ${balancePreview.hasFinancial ? 'pt-2 border-t border-teal-200/50' : ''}`}>
+                        <span>مانده فعلی {balancePreview.metalName}:</span>
+                        <span className="font-mono font-bold text-slate-800 dark:text-slate-100">
+                          {balancePreview.currentMetal.toFixed(weightPrecision)} گرم
+                        </span>
+                      </div>
+
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-600 dark:text-slate-300">
+                          اثر وزنی حواله:
+                        </span>
+                        <span
+                          className={`font-mono font-bold ${
+                            balancePreview.effectMetal < 0
+                              ? 'text-rose-600 dark:text-rose-400'
+                              : 'text-emerald-600 dark:text-emerald-400'
+                          }`}
+                        >
+                          {balancePreview.effectMetal >= 0 ? '+' : '−'}
+                          {Math.abs(balancePreview.effectMetal).toFixed(weightPrecision)} گرم
+                        </span>
+                      </div>
+
+                      <div className="flex justify-between items-center font-extrabold text-amber-700 dark:text-amber-400 pt-1.5 border-t border-teal-200/80 dark:border-teal-900/60">
+                        <span>مانده {balancePreview.metalName} پس از حواله:</span>
+                        <span className="font-mono text-sm font-black text-amber-900 dark:text-amber-200">
+                          {balancePreview.projectedMetal.toFixed(weightPrecision)} گرم
+                        </span>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             )}

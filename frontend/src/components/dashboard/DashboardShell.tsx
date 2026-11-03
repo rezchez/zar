@@ -145,7 +145,6 @@ export const navGroupsBase: NavGroupData[] = [
         title: 'اتیکت',
         icon: Tag,
         href: '/dashboard/etiquette',
-        badge: 'آلفا',
       },
       {
         id: 'reports',

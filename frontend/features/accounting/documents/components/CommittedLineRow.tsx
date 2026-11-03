@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import { ArrowLeftRight, Coins, Flame, PencilLine, Scale, Sparkles, Tag, Trash2 } from 'lucide-react';
+import { ArrowLeftRight, Coins, Flame, Package, PencilLine, Scale, Sparkles, Tag, Trash2 } from 'lucide-react';
 import { TableRow, TableCell } from '@/components/ui/data-table';
 import type { DocumentLine } from '@/src/components/documents/RawGoldTab';
 import {
@@ -51,6 +51,7 @@ export default function CommittedLineRow({
 }: CommittedLineRowProps) {
   const isPaid = line.documentNature === 'paid';
   const isReceived = line.documentNature === 'received';
+  const isClaim = line.documentTab === 'claim' || line.sourceTab === 'claim';
   const derivedDocType = getLineDocumentTypeLabel(
       line.documentNature,
       line.sourceTab || line.documentTab,
@@ -60,8 +61,10 @@ export default function CommittedLineRow({
       line.details.workmanshipOptionId,
       line.documentSubType || (line.details as any)?.documentSubType,
       line.details.coinName || line.details.coinType || line.details.metalType,
+      line.details?.claimFinancial ?? line.details?.totalAmount,
+      line.details?.claimWeight ?? line.details?.rawWeight,
     );
-  const docType = line.documentTab === 'coin' || line.sourceTab === 'coin'
+  const docType = (line.documentTab === 'coin' || line.sourceTab === 'coin' || isClaim)
     ? derivedDocType
     : line.documentTypeLabel || (line.details as any)?.documentTypeLabel || derivedDocType;
 
@@ -218,6 +221,12 @@ export default function CommittedLineRow({
               تخفیف
             </span>
           ) : null}
+          {(line.documentTab === 'goods' || line.sourceTab === 'goods') ? (
+            <span className="inline-flex items-center gap-0.5 rounded bg-blue-100 px-1 py-0.5 text-[9px] font-extrabold text-blue-900 border border-blue-300/80 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800 shrink-0">
+              <Package size={10} className="text-blue-600 dark:text-blue-400 shrink-0" />
+              کالا و خدمات
+            </span>
+          ) : null}
           <div className="min-w-0 flex-1">
             <span className="font-semibold text-xs text-slate-800 dark:text-slate-200 truncate block w-full" title={docType}>
               {line.details?.linkedLineId && (line.documentSubType === 'workmanship-golden-percentage' || line.documentSubType === 'workmanship-wage') ? (
@@ -246,6 +255,16 @@ export default function CommittedLineRow({
               >
                 {line.details.discountPercentage ? `${toPersianDigits(line.details.discountPercentage)}٪ تخفیف` : ''}
                 {line.details.claimPurpose ? ` (${line.details.claimPurpose})` : ''}
+              </span>
+            ) : null}
+            {(line.documentTab === 'goods' || line.sourceTab === 'goods') && line.details?.itemName ? (
+              <span
+                className="text-[10px] text-blue-600 dark:text-blue-400 font-bold truncate block"
+                title={`${line.details.itemName}${line.details.quantity ? ` (${toPersianDigits(line.details.quantity)} ${line.details.unit || 'عدد'})` : ''}`}
+              >
+                {line.details.itemName}
+                {line.details.quantity ? ` (${toPersianDigits(line.details.quantity)} ${line.details.unit || 'عدد'})` : ''}
+                {line.details.goodsServiceAccountName ? ` • ${line.details.goodsServiceAccountName}` : ''}
               </span>
             ) : null}
           </div>

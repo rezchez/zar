@@ -40,6 +40,7 @@ import {
   postWorkmanshipPurchase,
   postDiscountJournalEntry,
   postIncomeExpenseJournalEntry,
+  postGoodsServiceJournalEntry,
 } from '@/features/accounting/posting/posting-engine';
 import { ensureChecksCollection } from '@/lib/check-collection';
 import { mapBankAccount } from '@/lib/bank';
@@ -901,8 +902,8 @@ export async function POST(request: Request) {
 
       const isClaimLine = line.documentTab === 'claim' || line.sourceTab === 'claim';
       if (isClaimLine) {
-        const claimCurrency = normalizeCurrencyCode(String(details.currencyUnit || details.baseCurrency || ''));
-        const isToman = claimCurrency === 'IRT';
+        const claimCurrency = normalizeCurrencyCode(String(details.currencyUnit || details.baseCurrency || body?.baseCurrency || ''));
+        const isToman = claimCurrency === 'IRT' || normalizeCurrencyCode(String(body?.baseCurrency || details.baseCurrency || '')) === 'IRT';
         const isForeign = Boolean(claimCurrency && claimCurrency !== 'IRR' && claimCurrency !== 'IRT');
         const rawLineRial = Math.abs(readAmount(line.rialAmount) || 0);
         const detailTotal = Math.abs(readAmount(details.claimFinancial) || readAmount(details.totalAmount) || 0);
@@ -999,6 +1000,42 @@ export async function POST(request: Request) {
         }
         if (!readString(line.description, 500).trim()) {
           throw new Error(`شرح دقیق ردیف هزینه یا درآمد ${index + 1} را وارد کنید.`);
+        }
+      }
+
+      const isGoodsLine = line.documentTab === 'goods' || line.sourceTab === 'goods';
+      if (isGoodsLine) {
+        const goodsCurrency = normalizeCurrencyCode(String(details.currencyUnit || details.baseCurrency || body?.baseCurrency || ''));
+        const isToman = goodsCurrency === 'IRT' || details.baseCurrency === 'IRT' || body?.baseCurrency === 'IRT';
+        const rawLineRial = Math.abs(readAmount(line.rialAmount) || 0);
+        const detailTotal = Math.abs(readAmount(details.totalAmount) || 0);
+        const alreadyInIrr = details.rialAmountInIrr === true;
+
+        const effectiveAbsRial = isToman
+          ? (alreadyInIrr && rawLineRial > 0 && rawLineRial !== detailTotal
+              ? rawLineRial
+              : convertTomanToRial(detailTotal || rawLineRial))
+          : (rawLineRial || detailTotal);
+
+        lineAmounts.rialAmount = Math.round(effectiveAbsRial) * (lineNature === 'received' ? 1 : -1);
+        details.currencyUnit = isToman ? 'IRT' : 'IRR';
+        details.baseCurrency = isToman ? 'IRT' : 'IRR';
+        details.amountInIrr = Math.round(effectiveAbsRial);
+        details.rialAmountInIrr = true;
+        details.totalAmount = String(Math.round(effectiveAbsRial));
+
+        if (!String(details.itemName || '').trim()) {
+          throw new Error(`نام کالا یا خدمت در ردیف ${index + 1} الزامی است.`);
+        }
+        if (!String(details.goodsServiceAccountId || '').trim()) {
+          throw new Error(`انتخاب سرفصل کالا یا خدمت از درختواره در ردیف ${index + 1} الزامی است.`);
+        }
+        if (effectiveAbsRial <= 0) {
+          throw new Error(`مبلغ کل کالا یا خدمت در ردیف ${index + 1} باید بیشتر از صفر باشد.`);
+        }
+        if (!readString(line.description, 500).trim()) {
+          const autoDesc = `${lineNature === 'paid' ? 'فروش' : 'خرید'} ${details.itemName} به مقدار ${details.quantity || 1} ${details.unit || 'عدد'}`;
+          line.description = autoDesc;
         }
       }
 
@@ -1219,16 +1256,33 @@ export async function POST(request: Request) {
           const amount = Math.abs(Number(prepared.documentDetails.totalAmount) || Math.abs(prepared.lineAmounts.rialAmount ?? 0));
           const currentBal = simulatedVaultBalances.get(fund.id)!;
           const isHawala = prepared.documentDetails.isHawala === true;
+          const allowNegative =
+            prepared.documentDetails.allowNegativeBalance === true ||
+            prepared.documentDetails.isHawalaNegativeConfirmed === true ||
+            prepared.documentDetails.confirmedNegativeBalance === true;
           if (prepared.lineNature === 'paid') {
-            if (!isHawala && currentBal < amount) {
-              return NextResponse.json(
-                {
-                  success: false,
-                  code: 'INSUFFICIENT_BALANCE',
-                  message: `موجودی صندوق «${fund.name}» کافی نیست. (موجودی: ${currentBal.toLocaleString('fa-IR')}، درخواستی: ${amount.toLocaleString('fa-IR')})`,
-                },
-                { status: 400 },
-              );
+            if (currentBal < amount) {
+              if (isHawala) {
+                if (!allowNegative) {
+                  return NextResponse.json(
+                    {
+                      success: false,
+                      code: 'HAWALA_NEGATIVE_BALANCE_NOT_CONFIRMED',
+                      message: `موجودی صندوق «${fund.name}» کافی نیست. برای ثبت حواله با موجودی منفی، تایید کسری موجودی الزامی است.`,
+                    },
+                    { status: 400 },
+                  );
+                }
+              } else {
+                return NextResponse.json(
+                  {
+                    success: false,
+                    code: 'INSUFFICIENT_BALANCE',
+                    message: `موجودی صندوق «${fund.name}» کافی نیست. (موجودی: ${currentBal.toLocaleString('fa-IR')}، درخواستی: ${amount.toLocaleString('fa-IR')})`,
+                  },
+                  { status: 400 },
+                );
+              }
             }
             simulatedVaultBalances.set(fund.id, currentBal - amount);
           } else if (prepared.lineNature === 'received') {
@@ -1273,16 +1327,33 @@ export async function POST(request: Request) {
             const qty = Math.abs(Number(prepared.documentDetails.currencyQuantity) || 0);
             const currentBal = simulatedVaultBalances.get(curFund.id)!;
             const isHawala = prepared.documentDetails.isHawala === true;
+            const allowNegative =
+              prepared.documentDetails.allowNegativeBalance === true ||
+              prepared.documentDetails.isHawalaNegativeConfirmed === true ||
+              prepared.documentDetails.confirmedNegativeBalance === true;
             if (prepared.lineNature === 'paid') {
-              if (!isHawala && currentBal < qty) {
-                return NextResponse.json(
-                  {
-                    success: false,
-                    code: 'INSUFFICIENT_BALANCE',
-                    message: `موجودی صندوق «${curFund.name || curName}» کافی نیست. (موجودی: ${currentBal.toLocaleString('fa-IR')}، درخواستی: ${qty.toLocaleString('fa-IR')})`,
-                  },
-                  { status: 400 },
-                );
+              if (currentBal < qty) {
+                if (isHawala) {
+                  if (!allowNegative) {
+                    return NextResponse.json(
+                      {
+                        success: false,
+                        code: 'HAWALA_NEGATIVE_BALANCE_NOT_CONFIRMED',
+                        message: `موجودی صندوق «${curFund.name || curName}» کافی نیست. برای ثبت حواله با موجودی منفی، تایید کسری موجودی الزامی است.`,
+                      },
+                      { status: 400 },
+                    );
+                  }
+                } else {
+                  return NextResponse.json(
+                    {
+                      success: false,
+                      code: 'INSUFFICIENT_BALANCE',
+                      message: `موجودی صندوق «${curFund.name || curName}» کافی نیست. (موجودی: ${currentBal.toLocaleString('fa-IR')}، درخواستی: ${qty.toLocaleString('fa-IR')})`,
+                    },
+                    { status: 400 },
+                  );
+                }
               }
               simulatedVaultBalances.set(curFund.id, currentBal - qty);
             } else {
@@ -1574,19 +1645,41 @@ export async function POST(request: Request) {
         if (requestedStatus === 'posted') {
           for (const prepared of preparedLines) {
             const isIncomeExpense = prepared.line.documentTab === 'income-expense' || prepared.line.sourceTab === 'income-expense';
-            if (!isIncomeExpense) continue;
-            await postIncomeExpenseJournalEntry({
-              documentId,
-              lineNumber: prepared.lineNumber,
-              documentNumber: finalDocumentNumber,
-              entryDateJalali: documentDateJalali,
-              amountRials: Math.abs(prepared.lineAmounts.rialAmount ?? 0),
-              nature: prepared.lineNature,
-              accountId: String(prepared.documentDetails.incomeExpenseAccountId || ''),
-              description: readString(prepared.line.description, 500),
-              customer: { id: customer.id, name: customer.name },
-              userId: context.user.id,
-            }, writer);
+            if (isIncomeExpense) {
+              await postIncomeExpenseJournalEntry({
+                documentId,
+                lineNumber: prepared.lineNumber,
+                documentNumber: finalDocumentNumber,
+                entryDateJalali: documentDateJalali,
+                amountRials: Math.abs(prepared.lineAmounts.rialAmount ?? 0),
+                nature: prepared.lineNature,
+                accountId: String(prepared.documentDetails.incomeExpenseAccountId || ''),
+                description: readString(prepared.line.description, 500),
+                customer: { id: customer.id, name: customer.name },
+                userId: context.user.id,
+              }, writer);
+            }
+
+            const isGoods = prepared.line.documentTab === 'goods' || prepared.line.sourceTab === 'goods';
+            if (isGoods) {
+              await postGoodsServiceJournalEntry({
+                documentId,
+                lineNumber: prepared.lineNumber,
+                documentNumber: finalDocumentNumber,
+                entryDateJalali: documentDateJalali,
+                amountRials: Math.abs(prepared.lineAmounts.rialAmount ?? 0),
+                nature: prepared.lineNature,
+                operation: (prepared.documentDetails.goodsServiceOperation as 'buy' | 'sell') || (prepared.lineNature === 'paid' ? 'sell' : 'buy'),
+                itemType: (prepared.documentDetails.goodsServiceType as 'goods' | 'service') || 'goods',
+                accountId: String(prepared.documentDetails.goodsServiceAccountId || ''),
+                itemName: String(prepared.documentDetails.itemName || ''),
+                quantity: Number(prepared.documentDetails.quantity) || 1,
+                unit: String(prepared.documentDetails.unit || 'عدد'),
+                description: readString(prepared.line.description, 500),
+                customer: { id: customer.id, name: customer.name },
+                userId: context.user.id,
+              }, writer);
+            }
           }
         }
 

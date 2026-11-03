@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 
 import { useAppSettings } from '@/src/components/SettingsProvider';
+import { useToastManager } from '@/components/ui/toast';
 import { PriceInput } from '@/components/ui/price-input';
 import Field from '@/src/components/documents/Field';
 import type { DetailState, DocumentLine } from '@/src/components/documents/RawGoldTab';
@@ -25,7 +26,8 @@ import { normalizeDigits, toPersianDigits } from '@/lib/jalali';
 import { generateUUID } from '@/lib/uuid';
 import { parseLocalizedAmount, formatMoney } from '@/lib/money';
 import { DEFAULT_STANDARD_CURRENCIES } from '@/lib/currencies';
-import { getWorkmanshipPercentageLabel } from '../utils/document-helpers';
+import { getWorkmanshipPercentageLabel, sanitizeLineDetailsForTab } from '../utils/document-helpers';
+import HawalaCheckboxField from './HawalaCheckboxField';
 
 export type WorkmanshipOperationType =
   // Payment Document (سند پرداختی)
@@ -75,6 +77,10 @@ export interface WorkmanshipTabProps {
   activeCurrencies?: { code: string; name: string; symbol?: string; id?: string }[];
   selectedCustomer?: Customer | null;
   onAddLine?: (line: DocumentLine) => void;
+  commitRowLabel?: string;
+  isHawala?: boolean;
+  setIsHawala?: (val: boolean) => void;
+  onRequestHawala?: (line: DocumentLine) => void;
 }
 
 // Quick suggestions for manufactured jewelry names
@@ -110,7 +116,15 @@ export default function WorkmanshipTab({
   activeCurrencies,
   selectedCustomer,
   onAddLine,
+  commitRowLabel,
+  isHawala,
+  setIsHawala,
+  onRequestHawala,
 }: WorkmanshipTabProps) {
+  const toast = useToastManager();
+  const [internalIsHawala, setInternalIsHawala] = useState(false);
+  const isHawalaEffective = isHawala !== undefined ? isHawala : internalIsHawala;
+  const setIsHawalaEffective = setIsHawala || setInternalIsHawala;
   const isNaturePaid = nature === 'paid' || nature === 'pay';
   const { settings } = useAppSettings();
   const effectiveCurrency = baseCurrency || (settings.baseCurrency as 'IRR' | 'IRT') || 'IRR';
@@ -593,6 +607,76 @@ export default function WorkmanshipTab({
 
   // Handle Commit / Add Line
   const handleCommit = () => {
+    if (isHawalaEffective) {
+      if (!selectedCustomer) {
+        toast.warning('ابتدا طرف‌حساب سند را از فهرست انتخاب کنید.');
+        return;
+      }
+      if (!workmanshipName.trim()) {
+        toast.error('نام کار ساخته را وارد کنید.');
+        return;
+      }
+      if (numWeight <= 0 && calculatedTotalWage <= 0 && numWage <= 0) {
+        toast.error('وزن یا اجرت کار ساخته باید بیشتر از صفر باشد.');
+        return;
+      }
+
+      const effectiveBaseKarat = basePurity || 750;
+
+      const fullLine: DocumentLine = {
+        id: draftLine?.id || `workmanship_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        documentNature: isNaturePaid ? 'paid' : 'received',
+        documentTab: 'workmanship',
+        sourceTab: 'workmanship',
+        documentSubType: currentOption.key,
+        documentTypeLabel: currentOption.label,
+        converted750: calculatedConvertedWeight,
+        settlementMethod: 'weight',
+        balanceSource: 'current',
+        description: description,
+        details: sanitizeLineDetailsForTab(
+          'workmanship',
+          {
+            ...(draftLine?.details || {}),
+            metalType: currentMetalType,
+            rawWeight: rawWeightStr,
+            purity: purityStr || String(basePurity),
+            baseKarat: effectiveBaseKarat,
+            convertedWeight: calculatedConvertedWeight.toFixed(weightPrecision),
+            workmanshipName,
+            quantity: quantityStr || '1',
+            wage: wageStr,
+            wageMode,
+            wageCurrency: currentWageCurrencyCode,
+            wageCurrencyUnit: currentWageCurrencyCode,
+            wageTotalAmount: calculatedTotalWage > 0 ? String(calculatedTotalWage) : '',
+            goldenPercentage: goldenPercentageStr,
+            profitPercentage: profitPercentageStr,
+            metalTotalPrice: String(calculatedMetalTotalPrice),
+            profitAmount: String(calculatedProfitAmount),
+            totalAmount: totalAmountStr || (calculatedTotalWage > 0 ? String(calculatedTotalWage) : ''),
+            currencyTotalAmount: isForeignWage ? (totalAmountStr || String(calculatedTotalWage)) : '',
+            currencyQuantity: isForeignWage ? (totalAmountStr || String(calculatedTotalWage)) : '',
+            currencyUnitPrice: isForeignWage ? wageStr : '',
+            currencyUnit: currentWageCurrencyCode,
+            workmanshipOptionId: selectedOptionId,
+            workmanshipOptionLabel: currentOption.label,
+            workmanshipReturnSourceId: selectedReturnSourceId,
+            isHawala: true,
+            documentTypeLabel: currentOption.label,
+            documentSubType: currentOption.key,
+          },
+          baseCurrency,
+          effectiveBaseKarat,
+        ),
+      };
+
+      if (onRequestHawala) {
+        onRequestHawala(fullLine);
+        return;
+      }
+    }
+
     if (commitDraftLine) {
       commitDraftLine();
       return;
@@ -774,6 +858,17 @@ export default function WorkmanshipTab({
     }
   };
 
+  const handleKeyDown = (
+    event: React.KeyboardEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>,
+  ) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      handleCommit();
+      return;
+    }
+    handleKeyDownEnter?.(event);
+  };
+
   const isFormValid = useMemo(() => {
     return numWeight > 0 && workmanshipName.trim().length > 0;
   }, [numWeight, workmanshipName]);
@@ -943,7 +1038,7 @@ export default function WorkmanshipTab({
                   const cleaned = normalizeDigits(e.target.value).replace(/[^\d.]/g, '').slice(0, 9);
                   updateField('rawWeight', cleaned, true);
                 }}
-                onKeyDown={handleKeyDownEnter}
+                onKeyDown={handleKeyDown}
                 placeholder="۰.۰۰۰"
                 className="h-10 w-full text-center rounded-xl border border-slate-300 bg-white px-2 text-xs font-black text-slate-900 focus:border-amber-500 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-amber-500 shadow-xs"
               />
@@ -964,7 +1059,7 @@ export default function WorkmanshipTab({
                   const cleaned = normalizeDigits(e.target.value).replace(/\D/g, '').slice(0, 4);
                   updateField('purity', cleaned, true);
                 }}
-                onKeyDown={handleKeyDownEnter}
+                onKeyDown={handleKeyDown}
                 placeholder={toPersianDigits(String(basePurity))}
                 className="h-10 w-full text-center rounded-xl border border-slate-300 bg-white px-2 text-xs font-black text-slate-900 focus:border-amber-500 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-amber-500 shadow-xs"
               />
@@ -1043,7 +1138,7 @@ export default function WorkmanshipTab({
                     type="text"
                     value={workmanshipName}
                     onChange={(e) => updateField('workmanshipName', e.target.value, false)}
-                    onKeyDown={handleKeyDownEnter}
+                    onKeyDown={handleKeyDown}
                     placeholder="عنوان کار ساخته مرجوعی..."
                     className="h-10 w-full rounded-xl border border-emerald-400 bg-emerald-50/20 px-3 text-xs font-bold text-slate-900 focus:border-emerald-500 focus:outline-none dark:border-emerald-600 dark:bg-emerald-950/20 dark:text-slate-100 dark:focus:border-emerald-500 shadow-xs placeholder:text-slate-400 dark:placeholder:text-slate-500"
                   />
@@ -1084,7 +1179,7 @@ export default function WorkmanshipTab({
                     type="text"
                     value={workmanshipName}
                     onChange={(e) => updateField('workmanshipName', e.target.value, false)}
-                    onKeyDown={handleKeyDownEnter}
+                    onKeyDown={handleKeyDown}
                     placeholder={
                       !selectedCustomer
                         ? 'نام کار ساخته مرجوعی (ورود دستی یا انتخاب طرف‌حساب)...'
@@ -1100,7 +1195,7 @@ export default function WorkmanshipTab({
                   type="text"
                   value={workmanshipName}
                   onChange={(e) => updateField('workmanshipName', e.target.value, false)}
-                  onKeyDown={handleKeyDownEnter}
+                  onKeyDown={handleKeyDown}
                   placeholder="مثلاً: النگو ریخته، انگشتر زنانه..."
                   className="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-xs font-bold text-slate-900 focus:border-amber-500 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-amber-500 shadow-xs placeholder:text-slate-400 dark:placeholder:text-slate-500"
                 />
@@ -1122,7 +1217,7 @@ export default function WorkmanshipTab({
                   const cleaned = normalizeDigits(e.target.value).replace(/\D/g, '').slice(0, 4);
                   updateField('quantity', cleaned, true);
                 }}
-                onKeyDown={handleKeyDownEnter}
+                onKeyDown={handleKeyDown}
                 placeholder="۱"
                 className="h-10 w-full text-center rounded-xl border border-slate-300 bg-white px-2 text-xs font-black text-slate-900 focus:border-amber-500 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-amber-500 shadow-xs"
               />
@@ -1191,7 +1286,7 @@ export default function WorkmanshipTab({
                   currencySuffix={wageCurrencySuffix}
                   baseCurrency={currentWageCurrencyCode === 'IRT' ? 'IRT' : 'IRR'}
                   allowDecimals={isForeignWage}
-                  onKeyDown={handleKeyDownEnter}
+                  onKeyDown={handleKeyDown}
                   className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-xs font-black text-slate-900 focus:border-amber-500 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-amber-500 shadow-xs"
                 />
                 {numWage > 0 && (
@@ -1237,7 +1332,7 @@ export default function WorkmanshipTab({
                       const cleaned = normalizeDigits(e.target.value).replace(/[^\d.]/g, '').slice(0, 5);
                       updateField('goldenPercentage', cleaned, true);
                     }}
-                    onKeyDown={handleKeyDownEnter}
+                    onKeyDown={handleKeyDown}
                     placeholder="۰"
                     className="h-10 w-full text-center rounded-xl border border-slate-300 bg-white px-2 text-xs font-black text-slate-900 focus:border-amber-500 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-amber-500 shadow-xs"
                   />
@@ -1279,7 +1374,7 @@ export default function WorkmanshipTab({
                   baseCurrency={currentWageCurrencyCode === 'IRT' ? 'IRT' : 'IRR'}
                   allowDecimals={isForeignWage}
                   showWords={!isForeignWage}
-                  onKeyDown={handleKeyDownEnter}
+                  onKeyDown={handleKeyDown}
                   className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-xs font-black text-slate-900 focus:border-amber-500 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-amber-500 shadow-xs"
                 />
               </div>
@@ -1302,7 +1397,7 @@ export default function WorkmanshipTab({
                     currencySuffix={wageCurrencySuffix}
                     baseCurrency={currentWageCurrencyCode === 'IRT' ? 'IRT' : 'IRR'}
                     allowDecimals={isForeignWage}
-                    onKeyDown={handleKeyDownEnter}
+                    onKeyDown={handleKeyDown}
                     className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-xs font-black text-slate-900 focus:border-amber-500 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-amber-500 shadow-xs"
                   />
                 </div>
@@ -1364,7 +1459,7 @@ export default function WorkmanshipTab({
                     currencySuffix={wageCurrencySuffix}
                     baseCurrency={currentWageCurrencyCode === 'IRT' ? 'IRT' : 'IRR'}
                     allowDecimals={isForeignWage}
-                    onKeyDown={handleKeyDownEnter}
+                    onKeyDown={handleKeyDown}
                     className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-xs font-black text-slate-900 focus:border-amber-500 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-amber-500 shadow-xs"
                   />
                   {numWage > 0 && (
@@ -1394,7 +1489,7 @@ export default function WorkmanshipTab({
                       const cleaned = normalizeDigits(e.target.value).replace(/[^\d.]/g, '').slice(0, 5);
                       updateField('profitPercentage', cleaned, true);
                     }}
-                    onKeyDown={handleKeyDownEnter}
+                    onKeyDown={handleKeyDown}
                     placeholder="۰"
                     className="h-10 w-full text-center rounded-xl border border-slate-300 bg-white px-2 text-xs font-black text-slate-900 focus:border-amber-500 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-amber-500 shadow-xs"
                   />
@@ -1494,7 +1589,7 @@ export default function WorkmanshipTab({
                     baseCurrency={currentWageCurrencyCode === 'IRT' ? 'IRT' : 'IRR'}
                     allowDecimals={isForeignWage}
                     showWords={!isForeignWage}
-                    onKeyDown={handleKeyDownEnter}
+                    onKeyDown={handleKeyDown}
                     className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-xs font-black text-slate-800 focus:border-amber-500 focus:bg-white focus:outline-none dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-100 dark:focus:border-amber-500"
                   />
                 </div>
@@ -1514,7 +1609,7 @@ export default function WorkmanshipTab({
                   setDraftLine((prev) => ({ ...prev, description: val }));
                 }
               }}
-              onKeyDown={handleKeyDownEnter}
+              onKeyDown={handleKeyDown}
               placeholder="توضیحات تکمیلی، مشخصات سنگ، برند، مدل یا کد کارگاه..."
               rows={2}
               className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-900 focus:border-amber-500 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-amber-500 shadow-xs placeholder:text-slate-400 dark:placeholder:text-slate-500"
@@ -1600,6 +1695,12 @@ export default function WorkmanshipTab({
         </div>
       </div>
 
+      {/* Hawala Checkbox (حواله به طرف‌حساب دیگر) */}
+      <HawalaCheckboxField
+        checked={isHawalaEffective}
+        onChange={setIsHawalaEffective}
+      />
+
       {/* 6. Sticky Action Button */}
       {draftReady && !isLinesPinned ? (
         <div
@@ -1617,9 +1718,12 @@ export default function WorkmanshipTab({
           >
             <ListPlus size={17} />
             <span>
-              {editingLineId
-                ? `ثبت اصلاح ردیف ${currentOption.label}`
-                : `ثبت و افزودن ردیف ${currentOption.label}`}
+              {commitRowLabel ||
+                (editingLineId
+                  ? `ثبت اصلاح ردیف ${currentOption.label}`
+                  : isHawalaEffective
+                    ? 'ثبت ردیف و انتخاب طرف‌حساب حواله'
+                    : `ثبت و افزودن ردیف ${currentOption.label}`)}
             </span>
           </button>
         </div>

@@ -3,7 +3,7 @@
 import React from 'react';
 import { LoaderCircle } from 'lucide-react';
 import type { Customer } from '@/lib/customer';
-import { getCurrencyMeta } from '@/lib/customer';
+import { getCurrencyMeta, normalizeCurrencyCode } from '@/lib/customer';
 import { convertRialToToman } from '@/lib/money';
 import { faNumber } from '../utils/document-helpers';
 
@@ -112,13 +112,18 @@ export default function DocumentBalancePreview({
   ])).sort();
   const foreignRows = Array.from(new Set([
     ...Object.keys(previousCurrencies), ...Object.keys(effectCurrencies), ...Object.keys(projectedCurrencies),
-  ])).sort().map((code) => ({
-    code,
-    meta: getCurrencyMeta(code),
-    previous: previousCurrencies[code] || 0,
-    effect: effectCurrencies[code] || 0,
-    projected: projectedCurrencies[code] || 0,
-  })).filter((row) => row.previous !== 0 || row.effect !== 0 || row.projected !== 0 || row.code in effectCurrencies);
+  ])).sort()
+    .filter((code) => {
+      const norm = normalizeCurrencyCode(code);
+      return norm !== 'IRR' && norm !== 'IRT';
+    })
+    .map((code) => ({
+      code,
+      meta: getCurrencyMeta(code),
+      previous: previousCurrencies[code] || 0,
+      effect: effectCurrencies[code] || 0,
+      projected: projectedCurrencies[code] || 0,
+    })).filter((row) => row.previous !== 0 || row.effect !== 0 || row.projected !== 0 || row.code in effectCurrencies);
 
   const isToman = baseCurrency === 'IRT';
   const currencyUnitLabel = isToman ? 'تومان' : 'ریال';

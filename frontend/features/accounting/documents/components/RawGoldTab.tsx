@@ -1,15 +1,20 @@
 'use client';
 
-import { ListPlus } from 'lucide-react';
+import { ArrowLeftRight, ListPlus } from 'lucide-react';
 import type React from 'react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
+import { useToastManager } from '@/components/ui/toast';
 import Field from '@/src/components/documents/Field';
 import { RawMetalOperationTypeSelector } from '@/src/components/documents/DocumentOperationTypeSelector';
 import { AssayLaboratorySelect } from '@/components/AssayLaboratorySelect';
 import { getInventoryItemAvailability, type MeltedInventoryItem } from '@/lib/inventory-reservation';
 import MetalInventoryPicker from '@/src/components/documents/MetalInventoryPicker';
 import { NumberField } from '@/components/ui/number-field';
+import type { Customer } from '@/lib/customer';
+import { documentSubType } from '@/features/accounting/documents/hooks/useDocumentLines';
+import { getLineDocumentTypeLabel, sanitizeLineDetailsForTab } from '@/features/accounting/documents/utils/document-helpers';
+import HawalaCheckboxField from './HawalaCheckboxField';
 
 export type RawOperationKind = 'molten' | 'misc' | 'conditional' | 'question' | 'coin' | 'unsettled';
 
@@ -63,29 +68,52 @@ export type DetailState = {
   cashFundId?: string;
   cashFundName?: string;
   cashFundCurrency?: string;
+  cashFundCurrencyCode?: string;
   cashFundCurrencyId?: string;
   cashFundBalance?: number;
   workmanshipName?: string;
   workmanshipOptionId?: number;
   workmanshipOptionLabel?: string;
+  workmanshipReturnSourceId?: string;
   quantity?: string;
   coinType?: string;
   coinName?: string;
+  coinBalanceName?: string;
   coinYear?: string;
   mintYear?: string;
   unitWeight?: string;
   wage?: string;
   wageMode?: 'per_gram' | 'per_item';
+  wageCurrency?: string;
+  wageCurrencyUnit?: string;
+  wageCurrencyRate?: string;
   goldenPercentage?: string;
   profitPercentage?: string;
   metalTotalPrice?: string;
   profitAmount?: string;
   discountAmount?: string;
-  convertedWeight?: string;
+  discountPercentage?: string;
   incomeExpenseAccountId?: string;
   incomeExpenseAccountCode?: string;
   incomeExpenseAccountName?: string;
   incomeExpenseAccountPath?: string;
+  // Goods & Services fields
+  goodsServiceType?: 'goods' | 'service';
+  goodsServiceOperation?: 'buy' | 'sell';
+  goodsServiceCategory?: string;
+  goodsServiceAccountId?: string;
+  goodsServiceAccountCode?: string;
+  goodsServiceAccountName?: string;
+  goodsServiceAccountPath?: string;
+  goodsTypeId?: string;
+  goodsTypeName?: string;
+  itemName?: string;
+  unit?: string;
+  unitPrice?: string;
+  discountBaseAmount?: string;
+  discountType?: 'percent' | 'amount';
+  discountDirection?: 'given' | 'received';
+  convertedWeight?: string;
   refiningCaseId?: string;
   refiningCaseNumber?: string;
   refiningOpKind?: 'delivery' | 'receipt' | 'sample_send' | 'sample_receive' | 'fee';
@@ -161,6 +189,14 @@ export type DetailState = {
   documentTypeLabel?: string;
   documentSubType?: string;
   clientLineId?: string;
+  isHawala?: boolean;
+  hawalaGroupId?: string;
+  hawalaCounterDocumentId?: string;
+  hawalaCounterCustomerId?: string;
+  hawalaCounterCustomerName?: string;
+  hawalaCounterCustomerCode?: string | number;
+  allowNegativeBalance?: boolean;
+  isHawalaNegativeConfirmed?: boolean;
 };
 
 export type DocumentLine = {
@@ -200,6 +236,10 @@ type RawGoldTabProps = {
   labInputRef?: React.RefObject<HTMLInputElement | null>;
   stampInputRef?: React.RefObject<HTMLInputElement | null>;
   commitRowLabel?: string;
+  isHawala?: boolean;
+  setIsHawala?: (val: boolean) => void;
+  onRequestHawala?: (line: DocumentLine) => void;
+  selectedCustomer?: Customer | null;
 };
 
 export default function RawGoldTab({
@@ -223,12 +263,99 @@ export default function RawGoldTab({
   labInputRef,
   stampInputRef,
   commitRowLabel,
+  isHawala,
+  setIsHawala,
+  onRequestHawala,
+  selectedCustomer,
 }: RawGoldTabProps) {
+  const toast = useToastManager();
   const isGold = draftLine.details.metalType === 'gold';
   const isMoltenOrConditional = draftLine.details.rawKind === 'molten' || draftLine.details.rawKind === 'conditional';
   const hasValidWeight = Boolean(Number(draftLine.details.rawWeight) > 0);
   const isRequired = isGold && isMoltenOrConditional && hasValidWeight;
   const isPaidRawFromInventory = nature === 'paid' && Boolean(draftLine.details.inventorySourceId);
+
+  const [internalIsHawala, setInternalIsHawala] = useState(false);
+  const isHawalaEffective = isHawala !== undefined ? isHawala : internalIsHawala;
+  const setIsHawalaEffective = setIsHawala || setInternalIsHawala;
+
+  const handleCommitRawGoldLine = () => {
+    if (isHawalaEffective) {
+      if (!selectedCustomer) {
+        toast.warning('ابتدا طرف‌حساب سند را از فهرست انتخاب کنید.');
+        return;
+      }
+      const rawWeight = Number(draftLine.details.rawWeight || 0);
+      if (rawWeight <= 0) {
+        toast.error('لطفاً وزن فلز را وارد کنید.');
+        return;
+      }
+      if (isRequired) {
+        if (!draftLine.details.labName?.trim()) {
+          toast.error('نام آزمایشگاه ری‌گیری الزامی است.');
+          labInputRef?.current?.focus();
+          return;
+        }
+        if (!draftLine.details.stampNumber?.trim()) {
+          toast.error('شماره پاکت / انگ الزامی است.');
+          stampInputRef?.current?.focus();
+          return;
+        }
+      }
+
+      const metalType = draftLine.details.metalType || 'gold';
+      const effectiveBaseKarat = baseKarat || (metalType === 'silver' ? 999 : metalType === 'platinum' ? 999 : 750);
+      const convertedWeight = convertedTo750(draftLine.details.rawWeight, draftLine.details.purity);
+      const metalSubType = draftLine.documentSubType || documentSubType(nature, draftLine.details.rawKind || 'molten');
+      const metalDocTypeLabel = getLineDocumentTypeLabel(
+        nature,
+        'metals',
+        draftLine.details.rawKind,
+        false,
+        undefined,
+        undefined,
+        metalSubType,
+        metalType,
+      );
+
+      const fullLine: DocumentLine = {
+        ...draftLine,
+        id: draftLine.id || `raw_gold_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        documentTab: 'raw-gold',
+        sourceTab: 'metals',
+        documentNature: nature,
+        documentTypeLabel: metalDocTypeLabel,
+        documentSubType: metalSubType,
+        converted750: convertedWeight,
+        details: sanitizeLineDetailsForTab('raw-gold', {
+          ...draftLine.details,
+          metalType,
+          rawWeight: draftLine.details.rawWeight,
+          purity: draftLine.details.purity,
+          convertedWeight: String(convertedWeight),
+          isHawala: true,
+          documentTypeLabel: metalDocTypeLabel,
+          documentSubType: metalSubType,
+        }, undefined, effectiveBaseKarat),
+      };
+
+      if (onRequestHawala) {
+        onRequestHawala(fullLine);
+        return;
+      }
+    }
+
+    commitDraftLine();
+  };
+
+  const onKeyDown = (event: React.KeyboardEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      handleCommitRawGoldLine();
+      return;
+    }
+    handleKeyDownEnter(event);
+  };
 
   const inventoryLabel = draftLine.details.rawKind === 'conditional'
     ? 'موجودی شرطی'
@@ -341,7 +468,7 @@ export default function RawGoldTab({
               step={10 ** -weightPrecision}
               value={draftLine.details.rawWeight !== '' ? Number(draftLine.details.rawWeight) : undefined}
               onChange={(val) => updateDraftDetail('rawWeight', val !== undefined && !Number.isNaN(val) ? String(val) : '')}
-              onKeyDown={handleKeyDownEnter}
+              onKeyDown={onKeyDown}
               placeholder="۰"
               aria-label="وزن (گرم)"
               selectOnClick
@@ -356,7 +483,7 @@ export default function RawGoldTab({
               disabled={isPaidRawFromInventory}
               value={draftLine.details.purity ? Number(draftLine.details.purity) : 750}
               onChange={(val) => updateDraftDetail('purity', String(val))}
-              onKeyDown={handleKeyDownEnter}
+              onKeyDown={onKeyDown}
               aria-label="عیار ردیف سند"
               placeholder="۷۵۰"
               title={isPaidRawFromInventory ? 'عیار از موجودی انتخابی قفل شده است.' : 'عیار اول از تنظیمات برنامه خوانده می‌شود و قابل ویرایش است.'}
@@ -378,7 +505,7 @@ export default function RawGoldTab({
                   value={draftLine.details.labName}
                   disabled={isPaidRawFromInventory}
                   onChange={(val) => updateDraftDetail('labName', val)}
-                  onKeyDown={handleKeyDownEnter}
+                  onKeyDown={onKeyDown}
                   placeholder={isPaidRawFromInventory ? (draftLine.details.labName || 'بدون ری‌گیری در موجودی') : 'انتخاب یا جستجوی ری‌گیری...'}
                   error={errors.labName}
                 />
@@ -391,7 +518,7 @@ export default function RawGoldTab({
                     const cleaned = event.target.value.replace(/[^0-9]/g, '');
                     updateDraftDetail('stampNumber', cleaned);
                   }}
-                  onKeyDown={handleKeyDownEnter}
+                  onKeyDown={onKeyDown}
                   placeholder="شماره پاکت یا انگ (فقط عدد)"
                 />
               </Field>
@@ -401,17 +528,27 @@ export default function RawGoldTab({
             <textarea
               value={draftLine.description}
               onChange={(event) => setDraftLine((current) => ({ ...current, description: event.target.value }))}
-              onKeyDown={handleKeyDownEnter}
+              onKeyDown={onKeyDown}
               placeholder="توضیحات تکمیلی..."
             />
           </Field>
         </div>
+
+        {/* Hawala Checkbox (حواله طرف‌به‌طرف) */}
+        <HawalaCheckboxField
+          checked={isHawalaEffective}
+          onChange={setIsHawalaEffective}
+        />
       </div>
       {/* Sticky Floating Submit Row Button */}
       {draftReady && !isLinesPinned ? (
         <div className="sticky bottom-3 z-30 flex justify-center pt-2 transition-all duration-300">
-          <button type="button" className="document-commit-line-button shadow-lg max-w-sm" onClick={commitDraftLine}>
-            <ListPlus size={16} /> {commitRowLabel || (editingLineId ? 'ثبت اصلاح ردیف' : 'ثبت ردیف')}
+          <button
+            type="button"
+            className="document-commit-line-button shadow-lg max-w-sm cursor-pointer"
+            onClick={handleCommitRawGoldLine}
+          >
+            <ListPlus size={16} /> {commitRowLabel || (editingLineId ? 'ثبت اصلاح ردیف' : isHawalaEffective ? 'ثبت ردیف و انتخاب طرف‌حساب حواله' : 'ثبت ردیف')}
           </button>
         </div>
       ) : null}

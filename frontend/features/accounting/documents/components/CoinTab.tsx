@@ -10,6 +10,7 @@ import {
   X,
   Check,
   ArrowRightLeft,
+  ArrowLeftRight,
   ShoppingBag,
   TrendingDown,
   TrendingUp,
@@ -22,11 +23,14 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useAppSettings } from '@/src/components/SettingsProvider';
 import { PriceInput } from '@/components/ui/price-input';
 import { NumberField } from '@/components/ui/number-field';
+import { useToastManager } from '@/components/ui/toast';
+import type { Customer } from '@/lib/customer';
 import Field from '@/src/components/documents/Field';
 import type { DetailState, DocumentLine } from '@/src/components/documents/RawGoldTab';
 import { normalizeDigits, toPersianDigits } from '@/lib/jalali';
 import { parseLocalizedAmount } from '@/lib/money';
 import { getLineDocumentTypeLabel, sanitizeLineDetailsForTab } from '../utils/document-helpers';
+import HawalaCheckboxField from './HawalaCheckboxField';
 
 export type CoinOperationType =
   // Payment operations (سند پرداختی)
@@ -367,6 +371,10 @@ export interface CoinTabProps {
   handleKeyDownEnter?: (event: React.KeyboardEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => void;
   draftReady?: boolean;
   baseCurrency?: 'IRR' | 'IRT';
+  isHawala?: boolean;
+  setIsHawala?: (val: boolean) => void;
+  onRequestHawala?: (line: DocumentLine) => void;
+  selectedCustomer?: Customer | null;
 }
 
 export default function CoinTab({
@@ -380,12 +388,21 @@ export default function CoinTab({
   handleKeyDownEnter,
   draftReady = true,
   baseCurrency = 'IRR',
+  isHawala,
+  setIsHawala,
+  onRequestHawala,
+  selectedCustomer,
 }: CoinTabProps) {
   const { settings } = useAppSettings();
+  const toast = useToastManager();
   const basePurity = Number(settings.goldBaseKarat) || 750;
   const weightPrecision = Number(settings.weightDecimalPlaces) || 3;
   const effectiveCurrency = baseCurrency || (settings.baseCurrency as 'IRR' | 'IRT') || 'IRR';
   const currencySuffix = effectiveCurrency === 'IRT' ? 'تومان' : 'ریال';
+
+  const [internalIsHawala, setInternalIsHawala] = useState(false);
+  const isHawalaEffective = isHawala !== undefined ? isHawala : internalIsHawala;
+  const setIsHawalaEffective = setIsHawala || setInternalIsHawala;
 
   // Reset fields when row is committed
   const prevCommittedLengthRef = useRef(committedLines.length);
@@ -817,6 +834,84 @@ export default function CoinTab({
     weightPrecision,
     setDraftLine,
   ]);
+
+  const handleCommitCoinLine = () => {
+    if (isHawalaEffective) {
+      if (!selectedCustomer) {
+        toast.warning('ابتدا طرف‌حساب سند را از فهرست انتخاب کنید.');
+        return;
+      }
+      if (numericQuantity <= 0) {
+        toast.error('لطفاً تعداد سکه یا شمش را وارد کنید.');
+        return;
+      }
+
+      const computedDocumentTypeLabel = getLineDocumentTypeLabel(
+        nature,
+        'coin',
+        undefined,
+        selectedOperation.includes('unsettled'),
+        undefined,
+        undefined,
+        selectedOperation,
+        selectedPreset.category || selectedPreset.name,
+      );
+
+      const fullLine: DocumentLine = {
+        id: draftLine?.id || `coin_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        documentTab: 'coin',
+        sourceTab: 'coin',
+        documentNature: nature,
+        documentTypeLabel: computedDocumentTypeLabel,
+        documentSubType: selectedOperation,
+        settlementMethod: selectedOperation.includes('unsettled') ? 'unsettled' : 'weight',
+        balanceSource: 'current',
+        converted750: convertedToX,
+        description: description,
+        details: sanitizeLineDetailsForTab('coin', {
+          ...(draftLine?.details || {}),
+          metalType: 'gold',
+          rawWeight: totalWeight.toFixed(weightPrecision),
+          convertedWeight: String(convertedToX),
+          purity: String(numericPurity),
+          totalAmount: totalPrice,
+          quantity: String(numericQuantity),
+          currencyQuantity: String(numericQuantity),
+          currencyUnitPrice: unitPrice,
+          currencyTotalAmount: totalPrice,
+          currencyUnit: effectiveCurrency,
+          baseCurrency: effectiveCurrency,
+          coinType: selectedPreset.id,
+          coinName: effectiveCoinDisplayName,
+          coinBalanceName: selectedPreset.name,
+          coinYear: mintYear,
+          mintYear: mintYear,
+          unsettledTrade: selectedOperation.includes('unsettled'),
+          documentTypeLabel: computedDocumentTypeLabel,
+          documentSubType: selectedOperation,
+          isHawala: true,
+        }, effectiveCurrency, 900),
+      };
+
+      if (onRequestHawala) {
+        onRequestHawala(fullLine);
+        return;
+      }
+    }
+
+    commitDraftLine?.();
+  };
+
+  const onKeyDown = (
+    event: React.KeyboardEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>,
+  ) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      handleCommitCoinLine();
+      return;
+    }
+    handleKeyDownEnter?.(event);
+  };
 
   // Handle custom coin submission
   const handleCreateCustomCoin = async (e: React.FormEvent) => {
@@ -1255,7 +1350,7 @@ export default function CoinTab({
                 type="text"
                 value={mintYear}
                 onChange={(e) => setMintYear(e.target.value)}
-                onKeyDown={handleKeyDownEnter}
+                onKeyDown={onKeyDown}
                 placeholder="۱۳۸۶، قبل از ۸۶، طرح قدیم..."
                 className="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-xs font-black text-slate-950 transition-all focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
               />
@@ -1274,7 +1369,7 @@ export default function CoinTab({
                 min="0.001"
                 value={unitWeight}
                 onChange={(e) => setUnitWeight(e.target.value)}
-                onKeyDown={handleKeyDownEnter}
+                onKeyDown={onKeyDown}
                 placeholder="۸.۱۳۳"
                 className="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-xs font-black text-slate-950 transition-all focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
               />
@@ -1304,7 +1399,7 @@ export default function CoinTab({
               step="purity"
               value={purity ? Number(purity) : 900}
               onChange={(val) => setPurity(String(val))}
-              onKeyDown={handleKeyDownEnter}
+              onKeyDown={onKeyDown}
               placeholder="۹۰۰"
               aria-label="عیار سکه"
             />
@@ -1318,7 +1413,7 @@ export default function CoinTab({
                 <PriceInput
                   value={unitPrice}
                   onValueChange={(_parsed, raw) => handleUnitPriceChange(raw)}
-                  onKeyDown={handleKeyDownEnter}
+                  onKeyDown={onKeyDown}
                   placeholder="۰"
                   baseCurrency={effectiveCurrency}
                   currencySuffix={currencySuffix}
@@ -1331,7 +1426,7 @@ export default function CoinTab({
                 <PriceInput
                   value={totalPrice}
                   onValueChange={(_parsed, raw) => handleTotalPriceChange(raw)}
-                  onKeyDown={handleKeyDownEnter}
+                  onKeyDown={onKeyDown}
                   placeholder="۰"
                   baseCurrency={effectiveCurrency}
                   currencySuffix={currencySuffix}
@@ -1360,7 +1455,7 @@ export default function CoinTab({
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                onKeyDown={handleKeyDownEnter}
+                onKeyDown={onKeyDown}
                 placeholder="توضیحات بابت سکه یا شمش (سال ضرب، شماره پلمپ، نام صرافی، شماره سریال و...)"
                 rows={2}
                 className="w-full rounded-xl border border-slate-300 bg-white p-3 text-xs font-medium text-slate-900 transition-all focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
@@ -1402,15 +1497,21 @@ export default function CoinTab({
         </div>
       </div>
 
+      {/* Hawala Checkbox (حواله طرف‌به‌طرف) */}
+      <HawalaCheckboxField
+        checked={isHawalaEffective}
+        onChange={setIsHawalaEffective}
+      />
+
       {/* Sticky Commit Line Button */}
       {commitDraftLine && draftReady && !isLinesPinned ? (
         <div className="sticky bottom-3 z-30 flex justify-center pt-2 transition-all duration-300">
           <button
             type="button"
             className="document-commit-line-button shadow-lg max-w-sm cursor-pointer"
-            onClick={commitDraftLine}
+            onClick={handleCommitCoinLine}
           >
-            <ListPlus size={16} /> {editingLineId ? 'ثبت اصلاح ردیف' : 'ثبت ردیف'}
+            <ListPlus size={16} /> {editingLineId ? 'ثبت اصلاح ردیف' : isHawalaEffective ? 'ثبت ردیف و انتخاب طرف‌حساب حواله' : 'ثبت ردیف'}
           </button>
         </div>
       ) : null}

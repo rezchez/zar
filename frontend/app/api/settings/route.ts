@@ -98,6 +98,42 @@ async function handleUpdate(request: Request) {
     }
   }
 
+  const etiquettePrefixKeys = [
+    { key: 'etiquettePrefixPlain', label: 'اتیکت ساده' },
+    { key: 'etiquettePrefixGemstone', label: 'اتیکت سنگ دار' },
+    { key: 'etiquettePrefixJewelry', label: 'اتیکت جواهر' },
+    { key: 'etiquettePrefixBase', label: 'اتیکت پایه' },
+  ] as const;
+
+  for (const { key, label } of etiquettePrefixKeys) {
+    if (body[key] !== undefined) {
+      const rawPrefix = String(body[key]).trim();
+      if (/[\r\n\t\0]/.test(rawPrefix) || rawPrefix.length > 20) {
+        return NextResponse.json({ message: `متن شروع ${label} معتبر نیست یا بیش از حد طولانی است (حداکثر ۲۰ نویسه).` }, { status: 400 });
+      }
+    }
+  }
+
+  if (body.etiquettePrintTemplate !== undefined && !['slim_tail', 'rat_tail', 'rat_tail_wide', 'thermal_single'].includes(String(body.etiquettePrintTemplate))) {
+    return NextResponse.json({ message: 'قالب چاپ اتیکت نامعتبر است.' }, { status: 400 });
+  }
+
+  if (body.etiquettePrintSize !== undefined && !['44x10', '60x10', '70x10'].includes(String(body.etiquettePrintSize))) {
+    return NextResponse.json({ message: 'سایز چاپ اتیکت نامعتبر است.' }, { status: 400 });
+  }
+
+  if (body.etiquettePrintOrientation !== undefined && !['right_to_left', 'left_to_right'].includes(String(body.etiquettePrintOrientation))) {
+    return NextResponse.json({ message: 'جهت رول اتیکت نامعتبر است.' }, { status: 400 });
+  }
+
+  if (body.etiquetteFontSize !== undefined && !['compact', 'standard', 'large'].includes(String(body.etiquetteFontSize))) {
+    return NextResponse.json({ message: 'اندازه قلم اتیکت نامعتبر است.' }, { status: 400 });
+  }
+
+  if (body.etiquetteBarcodeLayout !== undefined && !['both', 'barcode_only', 'qr_only', 'code_only'].includes(String(body.etiquetteBarcodeLayout))) {
+    return NextResponse.json({ message: 'چیدمان بارکد اتیکت نامعتبر است.' }, { status: 400 });
+  }
+
   if (body.pwaEnabled !== undefined && typeof body.pwaEnabled !== 'boolean') {
     return NextResponse.json({ message: 'وضعیت فعال‌سازی PWA باید مقدار بولی (true/false) باشد.' }, { status: 400 });
   }
@@ -124,6 +160,11 @@ async function handleUpdate(request: Request) {
       documentNumberPrefix: nextNormalized.documentNumberPrefix,
       docCodePrefix: nextNormalized.documentNumberPrefix,
 
+      etiquettePrefixPlain: nextNormalized.etiquettePrefixPlain,
+      etiquettePrefixGemstone: nextNormalized.etiquettePrefixGemstone,
+      etiquettePrefixJewelry: nextNormalized.etiquettePrefixJewelry,
+      etiquettePrefixBase: nextNormalized.etiquettePrefixBase,
+
       bodyFontFamily: nextNormalized.bodyFontFamily,
       bodyFontSize: nextNormalized.bodyFontSize,
       bodyFontSizeNumber: nextNormalized.bodyFontSizeNumber,
@@ -143,6 +184,28 @@ async function handleUpdate(request: Request) {
       printActiveTemplate: nextNormalized.printActiveTemplate,
       printCustomerColumns: JSON.stringify(nextNormalized.printCustomerColumns),
       printRecipients: JSON.stringify(nextNormalized.printRecipients),
+
+      etiquettePrintTemplate: nextNormalized.etiquettePrintTemplate,
+      etiquettePrintSize: nextNormalized.etiquettePrintSize,
+      etiquettePrintOrientation: nextNormalized.etiquettePrintOrientation,
+      etiquettePrintStoreName: nextNormalized.etiquettePrintStoreName,
+      etiquettePrintShowWage: nextNormalized.etiquettePrintShowWage,
+      etiquettePrintShowPrice: nextNormalized.etiquettePrintShowPrice,
+      etiquettePrintShowQr: nextNormalized.etiquettePrintShowQr,
+      etiquettePrintShowBarcode: nextNormalized.etiquettePrintShowBarcode,
+      etiquettePrintShowPurity: nextNormalized.etiquettePrintShowPurity,
+      etiquettePrintShowWeight: nextNormalized.etiquettePrintShowWeight,
+
+      etiquetteFontSize: nextNormalized.etiquetteFontSize,
+      etiquetteCustomNote: nextNormalized.etiquetteCustomNote,
+      etiquetteBarcodeLayout: nextNormalized.etiquetteBarcodeLayout,
+      etiquettePurityFormat: nextNormalized.etiquettePurityFormat,
+      etiquettePrintShowStoreName: nextNormalized.etiquettePrintShowStoreName,
+      etiquettePrintShowTitle: nextNormalized.etiquettePrintShowTitle,
+      etiquettePrintShowGrossWeight: nextNormalized.etiquettePrintShowGrossWeight,
+      etiquettePrintShowStoneWeight: nextNormalized.etiquettePrintShowStoneWeight,
+      etiquettePrintShowCode: nextNormalized.etiquettePrintShowCode,
+      etiquettePrintShowLocation: nextNormalized.etiquettePrintShowLocation,
 
       pwaEnabled: nextNormalized.pwaEnabled,
       pwaAppName: nextNormalized.pwaAppName,

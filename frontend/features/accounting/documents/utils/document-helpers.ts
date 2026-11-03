@@ -37,6 +37,29 @@ export function getWorkmanshipPercentageLabel(metalType?: string): string {
   return 'درصد طلایی';
 }
 
+export function getClaimDocumentTypeLabel(
+  nature: 'received' | 'paid',
+  financial?: string | number | null,
+  weight?: string | number | null,
+): string {
+  const finVal = numberValue(financial);
+  const wtVal = numberValue(weight);
+  const hasFin = finVal > 0;
+  const hasWt = wtVal > 0;
+
+  if (nature === 'paid') {
+    if (hasFin && hasWt) return 'طلب مالی و وزنی ما';
+    if (hasWt) return 'طلب وزنی ما';
+    if (hasFin) return 'طلب مالی ما';
+    return 'طلب ما';
+  } else {
+    if (hasFin && hasWt) return 'بدهی مالی و وزنی ما';
+    if (hasWt) return 'بدهی وزنی ما';
+    if (hasFin) return 'بدهی مالی ما';
+    return 'بدهی ما';
+  }
+}
+
 export function getLineDocumentTypeLabel(
   nature: 'received' | 'paid',
   tab: string,
@@ -46,6 +69,8 @@ export function getLineDocumentTypeLabel(
   workmanshipOptionId?: number | string,
   workmanshipSubType?: string,
   metalType?: string,
+  claimFinancial?: string | number | null,
+  claimWeight?: string | number | null,
 ): string {
   if (tab === 'refining') {
     if (nature === 'paid') {
@@ -124,7 +149,11 @@ export function getLineDocumentTypeLabel(
   }
 
   if (tab === 'goods') {
-    return nature === 'received' ? 'ورود کالا' : 'خروج کالا';
+    if (workmanshipSubType === 'service-sell') return 'ارائه خدمات';
+    if (workmanshipSubType === 'service-buy') return 'خرید خدمات';
+    if (workmanshipSubType === 'goods-sell') return 'فروش کالا';
+    if (workmanshipSubType === 'goods-buy') return 'خرید کالا';
+    return nature === 'received' ? 'خرید کالا' : 'فروش کالا';
   }
 
   if (tab === 'stone') {
@@ -139,7 +168,7 @@ export function getLineDocumentTypeLabel(
   }
 
   if (tab === 'claim') {
-    return nature === 'received' ? 'بدهی ما' : 'طلب ما';
+    return getClaimDocumentTypeLabel(nature, claimFinancial, claimWeight);
   }
 
   if (tab === 'discount') {
@@ -556,6 +585,15 @@ export function getLineCurrencyValues(line: {
   let debit = 0;
   let credit = 0;
 
+  const isClaim = tab === 'claim';
+  const claimCurrency = isClaim
+    ? String(details.currencyUnit || details.baseCurrency || '').trim().toUpperCase()
+    : '';
+  const isForeignClaim = isClaim && claimCurrency !== 'IRR' && claimCurrency !== 'IRT';
+  const claimAmount = isClaim
+    ? numberValue(details.claimFinancial || details.totalAmount)
+    : 0;
+
   if (currencyEffect !== null) {
     debit = Math.max(0, -currencyEffect);
     credit = Math.max(0, currencyEffect);
@@ -565,6 +603,9 @@ export function getLineCurrencyValues(line: {
   } else if (isForeignWorkmanship && workmanshipWageAmount > 0) {
     if (isPaid) debit = workmanshipWageAmount;
     else if (isReceived) credit = workmanshipWageAmount;
+  } else if (isForeignClaim && claimAmount > 0) {
+    if (isPaid) debit = claimAmount;
+    else if (isReceived) credit = claimAmount;
   }
 
   return { debit, credit, currency: getDocumentLineForeignCurrency(line), hasValue: debit > 0 || credit > 0 };
@@ -602,12 +643,20 @@ export function getLineFinancialValues(line: {
   const isClaimLine = line.documentSubType === 'currency-claim';
   const isDebtLine = line.documentSubType === 'currency-debt';
 
+  const isClaim = tab === 'claim';
+  const claimCurrency = isClaim
+    ? String(details.currencyUnit || details.baseCurrency || '').trim().toUpperCase()
+    : '';
+  const isForeignClaim = isClaim && claimCurrency !== 'IRR' && claimCurrency !== 'IRT';
+
   const isForeignCash = tab === 'cash' && details.isForeignCash === true;
   const financialAmount = isForeignCash ? 0 : isCurrency
     ? (isClaimLine || isDebtLine ? 0 : numberValue(details.currencyTotalAmount))
     : isStone
     ? (isForeignStone ? 0 : stoneAmount)
     : isForeignWorkmanship
+    ? 0
+    : isForeignClaim
     ? 0
     : line.documentSubType === 'workmanship-golden-percentage'
     ? 0
@@ -705,6 +754,34 @@ export function sanitizeLineDetailsForTab(
       };
     }
 
+    case 'goods': {
+      return {
+        ...baseDefaults,
+        totalAmount: String(details.totalAmount || ''),
+        goodsServiceType: details.goodsServiceType || 'goods',
+        goodsServiceOperation: details.goodsServiceOperation || 'sell',
+        goodsServiceCategory: details.goodsServiceCategory || 'resin_casting',
+        goodsServiceAccountId: details.goodsServiceAccountId || '',
+        goodsServiceAccountCode: details.goodsServiceAccountCode || '',
+        goodsServiceAccountName: details.goodsServiceAccountName || '',
+        goodsServiceAccountPath: details.goodsServiceAccountPath || '',
+        goodsTypeId: details.goodsTypeId || undefined,
+        goodsTypeName: details.goodsTypeName || undefined,
+        itemName: details.itemName || '',
+        quantity: String(details.quantity || '1'),
+        unit: details.unit || 'عدد',
+        unitPrice: String(details.unitPrice || ''),
+        currencyUnit: details.currencyUnit || baseCurrency,
+        baseCurrency: details.baseCurrency || baseCurrency,
+        amountInIrr: details.amountInIrr,
+        rialAmountInIrr: details.rialAmountInIrr,
+        documentTypeLabel: details.documentTypeLabel,
+        documentSubType: details.documentSubType,
+        rawWeight: '',
+        purity: '',
+      };
+    }
+
     case 'cash': {
       return {
         ...baseDefaults,
@@ -724,6 +801,14 @@ export function sanitizeLineDetailsForTab(
         settlesTradeId: details.settlesTradeId || '',
         settlementCurrencyUnit: details.settlementCurrencyUnit || '',
         settlementQuantity: details.settlementQuantity || '',
+        isHawala: details.isHawala,
+        hawalaGroupId: details.hawalaGroupId,
+        hawalaCounterDocumentId: details.hawalaCounterDocumentId,
+        hawalaCounterCustomerId: details.hawalaCounterCustomerId,
+        hawalaCounterCustomerName: details.hawalaCounterCustomerName,
+        hawalaCounterCustomerCode: details.hawalaCounterCustomerCode,
+        allowNegativeBalance: details.allowNegativeBalance,
+        isHawalaNegativeConfirmed: details.isHawalaNegativeConfirmed,
         // Enforce 0 weight/purity for cash lines
         rawWeight: '',
         purity: '',
@@ -756,6 +841,14 @@ export function sanitizeLineDetailsForTab(
         documentTypeLabel: details.documentTypeLabel,
         documentSubType: details.documentSubType,
         clientLineId: (details as any).clientLineId,
+        isHawala: details.isHawala,
+        hawalaGroupId: details.hawalaGroupId,
+        hawalaCounterDocumentId: details.hawalaCounterDocumentId,
+        hawalaCounterCustomerId: details.hawalaCounterCustomerId,
+        hawalaCounterCustomerName: details.hawalaCounterCustomerName,
+        hawalaCounterCustomerCode: details.hawalaCounterCustomerCode,
+        allowNegativeBalance: details.allowNegativeBalance,
+        isHawalaNegativeConfirmed: details.isHawalaNegativeConfirmed,
         // Enforce 0 weight/purity for currency lines
         rawWeight: '',
         purity: '',
@@ -861,6 +954,17 @@ export function sanitizeLineDetailsForTab(
         currencyUnit: details.currencyUnit || baseCurrency,
         baseCurrency: details.baseCurrency || baseCurrency,
         unsettledTrade: Boolean(details.unsettledTrade),
+        documentTypeLabel: details.documentTypeLabel,
+        documentSubType: details.documentSubType,
+        clientLineId: (details as any).clientLineId,
+        isHawala: details.isHawala,
+        hawalaGroupId: details.hawalaGroupId,
+        hawalaCounterDocumentId: details.hawalaCounterDocumentId,
+        hawalaCounterCustomerId: details.hawalaCounterCustomerId,
+        hawalaCounterCustomerName: details.hawalaCounterCustomerName,
+        hawalaCounterCustomerCode: details.hawalaCounterCustomerCode,
+        allowNegativeBalance: details.allowNegativeBalance,
+        isHawalaNegativeConfirmed: details.isHawalaNegativeConfirmed,
       };
     }
 
@@ -897,23 +1001,44 @@ export function sanitizeLineDetailsForTab(
         wageTotalAmount: details.wageTotalAmount,
         hasChildLines: details.hasChildLines,
         isChildLine: details.isChildLine,
+        documentTypeLabel: details.documentTypeLabel,
+        documentSubType: details.documentSubType,
+        clientLineId: (details as any).clientLineId,
+        isHawala: details.isHawala,
+        hawalaGroupId: details.hawalaGroupId,
+        hawalaCounterDocumentId: details.hawalaCounterDocumentId,
+        hawalaCounterCustomerId: details.hawalaCounterCustomerId,
+        hawalaCounterCustomerName: details.hawalaCounterCustomerName,
+        hawalaCounterCustomerCode: details.hawalaCounterCustomerCode,
+        allowNegativeBalance: details.allowNegativeBalance,
+        isHawalaNegativeConfirmed: details.isHawalaNegativeConfirmed,
       };
     }
 
     case 'claim': {
-      const hasWeight = numberValue(details.claimWeight) > 0;
+      const claimFin = details.claimFinancial || details.totalAmount || '';
+      const claimWt = details.claimWeight || details.rawWeight || '';
+      const hasWeight = numberValue(claimWt) > 0;
       return {
         ...baseDefaults,
-        claimFinancial: details.claimFinancial || (hasWeight ? '' : details.totalAmount || ''),
-        claimWeight: details.claimWeight || '',
+        claimFinancial: claimFin,
+        claimWeight: claimWt,
         claimPurpose: details.claimPurpose || '',
-        totalAmount: details.totalAmount || details.claimFinancial || '',
-        rawWeight: hasWeight ? String(details.claimWeight) : '',
+        totalAmount: claimFin,
+        rawWeight: hasWeight ? String(claimWt) : '',
         purity: hasWeight ? String(details.baseKarat || baseKarat) : '',
         baseKarat: details.baseKarat || baseKarat,
         metalType: details.metalType || 'gold',
         currencyUnit: details.currencyUnit || baseCurrency,
         baseCurrency: details.baseCurrency || baseCurrency,
+        isHawala: details.isHawala,
+        hawalaGroupId: details.hawalaGroupId,
+        hawalaCounterDocumentId: details.hawalaCounterDocumentId,
+        hawalaCounterCustomerId: details.hawalaCounterCustomerId,
+        hawalaCounterCustomerName: details.hawalaCounterCustomerName,
+        hawalaCounterCustomerCode: details.hawalaCounterCustomerCode,
+        documentTypeLabel: details.documentTypeLabel,
+        documentSubType: details.documentSubType,
       };
     }
 
@@ -981,6 +1106,18 @@ export function sanitizeLineDetailsForTab(
         isAmountRounded: details.isAmountRounded,
         roundingDigits: details.roundingDigits,
         roundingMode: details.roundingMode,
+        convertedWeight: details.convertedWeight,
+        documentTypeLabel: details.documentTypeLabel,
+        documentSubType: details.documentSubType,
+        clientLineId: (details as any).clientLineId,
+        isHawala: details.isHawala,
+        hawalaGroupId: details.hawalaGroupId,
+        hawalaCounterDocumentId: details.hawalaCounterDocumentId,
+        hawalaCounterCustomerId: details.hawalaCounterCustomerId,
+        hawalaCounterCustomerName: details.hawalaCounterCustomerName,
+        hawalaCounterCustomerCode: details.hawalaCounterCustomerCode,
+        allowNegativeBalance: details.allowNegativeBalance,
+        isHawalaNegativeConfirmed: details.isHawalaNegativeConfirmed,
       };
     }
 
@@ -1005,6 +1142,18 @@ export function sanitizeLineDetailsForTab(
         currencyUnit: details.currencyUnit || baseCurrency,
         baseCurrency: details.baseCurrency || baseCurrency,
         unsettledTrade: Boolean(details.unsettledTrade),
+        convertedWeight: details.convertedWeight,
+        documentTypeLabel: details.documentTypeLabel,
+        documentSubType: details.documentSubType,
+        clientLineId: (details as any).clientLineId,
+        isHawala: details.isHawala,
+        hawalaGroupId: details.hawalaGroupId,
+        hawalaCounterDocumentId: details.hawalaCounterDocumentId,
+        hawalaCounterCustomerId: details.hawalaCounterCustomerId,
+        hawalaCounterCustomerName: details.hawalaCounterCustomerName,
+        hawalaCounterCustomerCode: details.hawalaCounterCustomerCode,
+        allowNegativeBalance: details.allowNegativeBalance,
+        isHawalaNegativeConfirmed: details.isHawalaNegativeConfirmed,
       };
     }
   }

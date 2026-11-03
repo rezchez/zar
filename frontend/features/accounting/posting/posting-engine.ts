@@ -628,6 +628,104 @@ export async function postIncomeExpenseJournalEntry(
   }, pb, { strictAccountResolution: true });
 }
 
+export interface PostGoodsServiceJournalParams {
+  documentId: string;
+  lineNumber: number;
+  documentNumber: string;
+  entryDateJalali: string;
+  amountRials: number;
+  nature: 'received' | 'paid';
+  operation?: 'buy' | 'sell';
+  itemType?: 'goods' | 'service';
+  accountId: string;
+  itemName: string;
+  quantity?: number;
+  unit?: string;
+  description: string;
+  customer: { id: string; name: string };
+  userId: string;
+}
+
+/**
+ * Double-entry journal posting for Goods & Services (کالا و خدمات):
+ * - Selling Goods / Providing Services:
+ *   Debit: Notes Receivable / Counterparty Asset (1120 اسناد و مطالبات تجاری)
+ *   Credit: Selected Tree Account (e.g. 4240 سایر درآمدهای خدماتی/طراحی، 4140 فروش کالا)
+ * - Buying Goods / Receiving Services:
+ *   Debit: Selected Tree Account (e.g. 113040 موجودی رزین، 1130 موجودی کالا، 5500 هزینه مستقیم)
+ *   Credit: Counterparty Liability (2120 بستانکاران تجاری / بدهی به طرف‌حساب)
+ */
+export async function postGoodsServiceJournalEntry(
+  params: PostGoodsServiceJournalParams,
+  pb: PocketBase,
+): Promise<JournalEntryResult> {
+  const amount = Math.round(Math.abs(params.amountRials));
+  if (amount <= 0) throw new Error('مبلغ کالا یا خدمت باید بیشتر از صفر باشد.');
+
+  const itemName = params.itemName.trim() || 'کالا یا خدمت';
+  const account = await resolveAccount(pb, params.accountId, true);
+  if (!account) {
+    throw new Error(`سرفصل حسابداری مربوطه (${params.accountId}) در کدینگ حساب‌ها یافت نشد.`);
+  }
+
+  const isSale = params.operation === 'sell' || params.nature === 'paid';
+  const isGoods = params.itemType !== 'service';
+  const opLabel = isSale
+    ? (isGoods ? 'فروش کالا' : 'ارائه خدمات')
+    : (isGoods ? 'خرید کالا' : 'خرید خدمات');
+
+  const description = params.description?.trim() || `${opLabel}: ${itemName}`;
+  const journalDescription = `${opLabel}: ${itemName} (سند ${params.documentNumber})`;
+
+  const lines: JournalLineInput[] = isSale
+    ? [
+        {
+          accountId: SYSTEM_ACCOUNT_CODES.NOTES_RECEIVABLE,
+          debit: amount,
+          credit: 0,
+          description: `بدهکار شدن طرف‌حساب ${params.customer.name} بابت ${opLabel}: ${itemName}`,
+          partyId: params.customer.id,
+        },
+        {
+          accountId: account.id,
+          debit: 0,
+          credit: amount,
+          description: `ثبت بستانکار سرفصل ${account.name} بابت ${opLabel}: ${itemName}`,
+          partyId: params.customer.id,
+        },
+      ]
+    : [
+        {
+          accountId: account.id,
+          debit: amount,
+          credit: 0,
+          description: `ثبت بدهکار سرفصل ${account.name} بابت ${opLabel}: ${itemName}`,
+          partyId: params.customer.id,
+        },
+        {
+          accountId: SYSTEM_ACCOUNT_CODES.COUNTERPARTY_LIABILITY,
+          debit: 0,
+          credit: amount,
+          description: `بستانکار شدن طرف‌حساب ${params.customer.name} بابت ${opLabel}: ${itemName}`,
+          partyId: params.customer.id,
+        },
+      ];
+
+  return postJournalEntry(
+    {
+      description: journalDescription,
+      sourceType: 'document',
+      sourceId: `${params.documentId}:${params.lineNumber}`,
+      sourceKey: `document:${params.documentId}:${params.lineNumber}:goods-service`,
+      entryDateJalali: params.entryDateJalali,
+      userId: params.userId,
+      lines,
+    },
+    pb,
+    { strictAccountResolution: true },
+  );
+}
+
 // -------------------------------------------------------------
 // CHEQUE POSTING WORKFLOWS
 // -------------------------------------------------------------

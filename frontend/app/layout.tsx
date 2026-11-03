@@ -14,6 +14,14 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: settings.organizationName || 'Zarfolio',
     description: 'Zarfolio workspace',
+    icons: {
+      icon: [
+        { url: '/icon.svg', type: 'image/svg+xml' },
+        { url: '/favicon.ico', sizes: 'any' },
+        { url: '/icon.png', sizes: '512x512', type: 'image/png' },
+      ],
+      apple: [{ url: '/apple-icon.png', sizes: '180x180', type: 'image/png' }],
+    },
     manifest: isPwaEnabled ? '/manifest.webmanifest' : undefined,
     appleWebApp: isPwaEnabled
       ? {

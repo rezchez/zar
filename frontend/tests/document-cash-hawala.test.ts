@@ -1,6 +1,7 @@
 import './setup';
 import { describe, expect, it } from 'bun:test';
 import type { Customer } from '@/lib/customer';
+import type { DocumentLine } from '@/src/components/documents/RawGoldTab';
 import { createLine } from '@/features/accounting/documents/hooks/useDocumentLines';
 import { setMockAuthUser, sharedMockPb } from './setup';
 import { DELETE } from '@/app/api/documents/[id]/route';
@@ -845,7 +846,7 @@ describe('Document Cash Hawala (حواله وجه نقد بین طرفین حس�
       }
     });
 
-    it('hawala line is not blocked by cash fund balance even if vault balance is 0', async () => {
+    it('hawala line requires confirmation when vault balance is insufficient, and succeeds when confirmed', async () => {
       setMockAuthUser({
         id: 'usr_admin',
         name: 'مدیر سیستم',
@@ -920,7 +921,47 @@ describe('Document Cash Hawala (حواله وجه نقد بین طرفین حس�
       };
 
       try {
-        const payload = {
+        // 1. Without confirmation (allowNegativeBalance: false): Must be rejected with 400
+        const unconfirmedPayload = {
+          customerId: 'cust_reza',
+          documentId: 'doc_hawala_zero_vault_unconfirmed',
+          documentDateJalali: '۱۴۰۵/۰۸/۱۰',
+          status: 'posted',
+          lines: [
+            {
+              id: 'line_hw_1',
+              documentNature: 'paid',
+              documentTab: 'cash',
+              documentSubType: 'cash',
+              settlementMethod: 'cash',
+              details: {
+                cashFundId: 'vault_gbp_empty',
+                cashFundName: 'صندوق پوند',
+                totalAmount: '50000',
+                currencyUnit: '£',
+                isForeignCash: true,
+                isHawala: true,
+                hawalaGroupId: 'grp_001',
+                allowNegativeBalance: false,
+              },
+            },
+          ],
+        };
+
+        const resUnconfirmed = await postDocuments(
+          new Request('http://localhost/api/documents', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(unconfirmedPayload),
+          }),
+        );
+
+        expect(resUnconfirmed.status).toBe(400);
+        const errJson = await resUnconfirmed.json();
+        expect(errJson.code).toBe('HAWALA_NEGATIVE_BALANCE_NOT_CONFIRMED');
+
+        // 2. With confirmation (allowNegativeBalance: true): Must succeed!
+        const confirmedPayload = {
           customerId: 'cust_reza',
           documentId: 'doc_hawala_zero_vault',
           documentDateJalali: '۱۴۰۵/۰۸/۱۰',
@@ -938,25 +979,220 @@ describe('Document Cash Hawala (حواله وجه نقد بین طرفین حس�
                 totalAmount: '50000',
                 currencyUnit: '£',
                 isForeignCash: true,
-                isHawala: true, // Hawala transfer!
+                isHawala: true,
+                allowNegativeBalance: true,
                 hawalaGroupId: 'grp_001',
               },
             },
           ],
         };
 
-        const res = await postDocuments(
+        const resConfirmed = await postDocuments(
           new Request('http://localhost/api/documents', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
+            body: JSON.stringify(confirmedPayload),
           }),
         );
 
-        expect([200, 201]).toContain(res.status);
+        expect([200, 201]).toContain(resConfirmed.status);
       } finally {
         sharedMockPb.collection = originalCollection;
       }
+    });
+
+    it('Claim Tab Hawala: creates opposing document line with financial and weight amounts', async () => {
+      setMockAuthUser({
+        id: 'usr_admin',
+        name: 'مدیر سیستم',
+        email: 'admin@zarfolio.local',
+        role: 'admin',
+        status: 'active',
+      });
+
+      const customerA = { id: 'cust_a', name: 'رضا چگینی', customerCode: 101 };
+      const customerB = { id: 'cust_b', name: 'سپنتا و ماهورا', customerCode: 202 };
+
+      const hawalaGroupId = 'hw_grp_claim_123';
+
+      // Customer A has a paid claim line (ثبت طلب ما)
+      const lineForA: DocumentLine = {
+        id: 'line_claim_a',
+        documentNature: 'paid', // ثبت طلب ما
+        documentTab: 'claim',
+        sourceTab: 'claim',
+        documentSubType: 'claim',
+        documentTypeLabel: 'ثبت طلب ما',
+        converted750: 0,
+        settlementMethod: 'unsettled',
+        balanceSource: 'current',
+        description: `بابت مانده (حواله به ${customerB.name} کد حساب:${customerB.customerCode})`,
+        details: {
+          claimFinancial: '50000000',
+          claimWeight: '12.5',
+          totalAmount: '50000000',
+          rawWeight: '12.5',
+          claimPurpose: 'تسویه مانده',
+          currencyUnit: 'IRR',
+          baseCurrency: 'IRR',
+          isHawala: true,
+          hawalaGroupId,
+          hawalaCounterCustomerId: customerB.id,
+          hawalaCounterCustomerName: customerB.name,
+          hawalaCounterCustomerCode: String(customerB.customerCode),
+        } as any,
+      };
+
+      // Counter line for Customer B must have received nature (ثبت بدهی ما)
+      const counterLineForB: DocumentLine = {
+        id: 'line_claim_b',
+        documentNature: 'received', // ثبت بدهی ما
+        documentTab: 'claim',
+        sourceTab: 'claim',
+        documentSubType: 'debt',
+        documentTypeLabel: 'ثبت بدهی ما',
+        converted750: 0,
+        settlementMethod: 'unsettled',
+        balanceSource: 'current',
+        description: `بابت مانده (حواله از ${customerA.name} کد حساب:${customerA.customerCode})`,
+        details: {
+          claimFinancial: '50000000',
+          claimWeight: '12.5',
+          totalAmount: '50000000',
+          rawWeight: '12.5',
+          claimPurpose: 'تسویه مانده',
+          currencyUnit: 'IRR',
+          baseCurrency: 'IRR',
+          isHawala: true,
+          hawalaGroupId,
+          hawalaCounterCustomerId: customerA.id,
+          hawalaCounterCustomerName: customerA.name,
+          hawalaCounterCustomerCode: String(customerA.customerCode),
+        } as any,
+      };
+
+      expect(lineForA.documentNature).toBe('paid');
+      expect(counterLineForB.documentNature).toBe('received');
+      expect(lineForA.details.hawalaGroupId).toBe(counterLineForB.details.hawalaGroupId);
+      expect(lineForA.details.claimFinancial).toBe(counterLineForB.details.claimFinancial);
+      expect(lineForA.details.claimWeight).toBe(counterLineForB.details.claimWeight);
+
+      // Verify POST /api/documents accepts both claim lines
+      const payloadA = {
+        customerId: customerA.id,
+        documentId: 'doc_claim_a',
+        documentDateJalali: '۱۴۰۵/۰۸/۱۰',
+        status: 'posted',
+        lines: [lineForA],
+      };
+
+      const payloadB = {
+        customerId: customerB.id,
+        documentId: 'doc_claim_b',
+        documentDateJalali: '۱۴۰۵/۰۸/۱۰',
+        status: 'posted',
+        lines: [counterLineForB],
+      };
+
+      const resA = await postDocuments(
+        new Request('http://localhost/api/documents', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payloadA),
+        }),
+      );
+      expect([200, 201]).toContain(resA.status);
+
+      const resB = await postDocuments(
+        new Request('http://localhost/api/documents', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payloadB),
+        }),
+      );
+      expect([200, 201]).toContain(resB.status);
+    });
+
+    it('correctly maps Toman claim hawala to financial rialAmount without creating a fake foreign currency balance', async () => {
+      setMockAuthUser({
+        id: 'usr_admin',
+        name: 'مدیر سیستم',
+        email: 'admin@zarfolio.local',
+        role: 'admin',
+        status: 'active',
+      });
+
+      const { normalizeCurrencyCode } = await import('@/lib/customer');
+      const { getDocumentLineForeignCurrency } = await import('@/features/accounting/documents/utils/currency-effects');
+
+      // 1. normalizeCurrencyCode checks
+      expect(normalizeCurrencyCode('تومان')).toBe('IRT');
+      expect(normalizeCurrencyCode('ریال')).toBe('IRR');
+      expect(normalizeCurrencyCode('پوند')).toBe('GBP');
+      expect(normalizeCurrencyCode('یورو')).toBe('EUR');
+      expect(normalizeCurrencyCode('دلار')).toBe('USD');
+
+      // 2. getDocumentLineForeignCurrency must return empty string for Toman claim line
+      const claimLineToman = {
+        documentTab: 'claim',
+        sourceTab: 'claim',
+        documentNature: 'paid',
+        details: {
+          currencyUnit: 'تومان',
+          baseCurrency: 'IRT',
+          claimFinancial: '100000000',
+        },
+      };
+      expect(getDocumentLineForeignCurrency(claimLineToman)).toBe('');
+
+      // 3. Document submission with Toman claim hawala persists rialAmount as integer (100,000,000 Toman = 1,000,000,000 Rial)
+      const docWithTomanClaim = {
+        customerId: customerA.id,
+        documentId: 'doc_toman_claim_a',
+        documentDateJalali: '۱۴۰۵/۰۸/۱۰',
+        baseCurrency: 'IRT',
+        status: 'posted',
+        lines: [
+          {
+            id: 'line_toman_a',
+            documentNature: 'paid',
+            documentTab: 'claim',
+            sourceTab: 'claim',
+            documentSubType: 'claim',
+            documentTypeLabel: 'ثبت طلب ما',
+            converted750: 0,
+            settlementMethod: 'unsettled',
+            balanceSource: 'current',
+            description: '(حواله به جمشیدی کد حساب:598)',
+            details: {
+              claimFinancial: '100000000',
+              totalAmount: '100000000',
+              currencyUnit: 'IRT',
+              baseCurrency: 'IRT',
+              isHawala: true,
+              hawalaGroupId: 'grp_toman_1',
+            },
+          },
+        ],
+      };
+
+      const res = await postDocuments(
+        new Request('http://localhost/api/documents', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(docWithTomanClaim),
+        }),
+      );
+      expect([200, 201]).toContain(res.status);
+      const json = await res.json();
+      expect(json.documentId).toBe('doc_toman_claim_a');
+
+      // Verify the transaction created has rialAmount = -1,000,000,000 IRR (paid = -1) and foreignAmount = 0
+      const tx = json.transactions?.[0];
+      expect(tx).toBeDefined();
+      expect(tx.rialAmount).toBe(-1000000000);
+      expect(tx.foreignAmount || 0).toBe(0);
+      expect(tx.foreignCurrency || '').toBe('');
     });
   });
 });

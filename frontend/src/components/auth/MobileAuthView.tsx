@@ -2,6 +2,7 @@
 
 import { useCallback, useRef } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { AnimatePresence, motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import { ArrowLeft, Check, Eye, EyeOff, LockKeyhole, Mail, Phone, ShieldCheck, Sparkles, UserRound } from 'lucide-react';
 
@@ -76,11 +77,24 @@ export function MobileAuthView({ logic }: { logic: AuthLogicReturn }) {
           {/* Logo / Brand Header */}
           <div className="flex flex-col items-center text-center mb-5 sm:mb-6">
             <div className="relative mb-3">
-              <div className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-br from-neutral-900 via-purple-950 to-neutral-950 border border-white/20 flex items-center justify-center text-white shadow-lg">
-                <span className="font-extrabold text-2xl tracking-wider bg-gradient-to-br from-white via-purple-200 to-cyan-200 bg-clip-text text-transparent">
-                  Z
-                </span>
-              </div>
+              <Image
+                src="/logo.svg"
+                alt="لوگوی زرفولیو"
+                width={56}
+                height={56}
+                className="dark:hidden w-13 h-13 sm:w-14 sm:h-14 rounded-2xl object-contain drop-shadow-xl"
+                priority
+                unoptimized
+              />
+              <Image
+                src="/logo-dark.svg"
+                alt="لوگوی زرفولیو"
+                width={56}
+                height={56}
+                className="hidden dark:block w-13 h-13 sm:w-14 sm:h-14 rounded-2xl object-contain drop-shadow-xl"
+                priority
+                unoptimized
+              />
             </div>
 
             <span className="text-[11px] font-bold tracking-[0.22em] text-cyan-400/90 uppercase mb-1 flex items-center gap-1.5">

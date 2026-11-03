@@ -351,16 +351,16 @@ export function normalizeCurrencyCode(code?: string): string {
   if (SYMBOL_TO_CODE[raw]) return SYMBOL_TO_CODE[raw];
   const upper = raw.toUpperCase();
   if (CURRENCY_METADATA[upper]) return upper;
-  const lower = raw.toLowerCase();
-  if (lower === 'usd') return 'USD';
-  if (lower === 'eur') return 'EUR';
-  if (lower === 'aed') return 'AED';
-  if (lower === 'gbp') return 'GBP';
-  if (lower === 'try') return 'TRY';
-  if (lower === 'cny') return 'CNY';
-  if (lower === 'sar') return 'SAR';
-  if (lower === 'irr' || lower === 'rial') return 'IRR';
-  if (lower === 'irt' || lower === 'toman') return 'IRT';
+  const lower = raw.toLowerCase().replace(/ي/g, 'ی').replace(/ك/g, 'ک');
+  if (lower === 'usd' || lower.includes('دلار')) return 'USD';
+  if (lower === 'eur' || lower.includes('یورو')) return 'EUR';
+  if (lower === 'aed' || lower.includes('درهم')) return 'AED';
+  if (lower === 'gbp' || lower.includes('پوند')) return 'GBP';
+  if (lower === 'try' || lower.includes('لیر')) return 'TRY';
+  if (lower === 'cny' || lower.includes('یوان')) return 'CNY';
+  if (lower === 'sar' || lower.includes('سعودی')) return 'SAR';
+  if (lower === 'irr' || lower === 'rial' || lower.includes('ریال')) return 'IRR';
+  if (lower === 'irt' || lower === 'toman' || lower.includes('تومان')) return 'IRT';
   return upper;
 }
 

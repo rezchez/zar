@@ -340,7 +340,7 @@ export async function POST(request: Request) {
         const claimCurrency = normalizeCurrencyCode(String(details.currencyUnit || details.baseCurrency || body?.baseCurrency || ''));
         const isForeignClaim = Boolean(claimCurrency && claimCurrency !== 'IRR' && claimCurrency !== 'IRT');
         if (!isForeignClaim) {
-          const isToman = claimCurrency === 'IRT';
+          const isToman = claimCurrency === 'IRT' || normalizeCurrencyCode(String(body?.baseCurrency || details.baseCurrency || '')) === 'IRT';
           rialAmount = isToman ? convertTomanToRial(rawAmt) : rawAmt;
         }
       } else if (docTab === 'stone') {
