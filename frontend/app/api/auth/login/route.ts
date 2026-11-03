@@ -22,6 +22,7 @@ type LoginBody = {
 };
 
 export async function POST(request: Request) {
+  const isNativeClient = request.headers.get('x-zarfolio-client') === 'android';
   const ip = getClientIp(request);
   const rateLimitResult = rateLimit(`login_${ip}`, 10, 60_000); // 10 attempts per minute per IP
   if (!rateLimitResult.success) {
@@ -276,19 +277,33 @@ export async function POST(request: Request) {
 
     const response = isNativeFormSubmit
       ? NextResponse.redirect(new URL('/dashboard', request.url), 303)
-      : NextResponse.json({ success: true });
-    response.headers.set(
-      'Set-Cookie',
-      pb.authStore.exportToCookie(
-        {
-          httpOnly: true,
-          secure: isSecureRequest(request),
-          sameSite: 'lax',
-          path: '/',
-        },
-        PB_AUTH_COOKIE,
-      ),
-    );
+      : isNativeClient
+        ? NextResponse.json({
+            success: true,
+            token: pb.authStore.token,
+            user: record ? {
+              id: record.id,
+              email: record.email,
+              name: record.name,
+              role: record.role,
+            } : null,
+          })
+        : NextResponse.json({ success: true });
+    response.headers.set('Cache-Control', 'no-store');
+    if (!isNativeClient) {
+      response.headers.set(
+        'Set-Cookie',
+        pb.authStore.exportToCookie(
+          {
+            httpOnly: true,
+            secure: isSecureRequest(request),
+            sameSite: 'lax',
+            path: '/',
+          },
+          PB_AUTH_COOKIE,
+        ),
+      );
+    }
 
     return response;
   } catch {

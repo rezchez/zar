@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useId } from 'react';
 import { createPortal } from 'react-dom';
 import { Printer } from 'lucide-react';
 import type { Customer } from '@/lib/customer';
@@ -50,6 +50,8 @@ export default function DocumentPrint({
   className,
 }: DocumentPrintProps) {
   const { settings } = useAppSettings();
+  const printRootId = `document-print-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
+  const printableContentId = `${printRootId}-content`;
 
   const [activeTemplate, setActiveTemplate] = useState<InvoicePrintTemplate>(DEFAULT_INVOICE_TEMPLATE);
   const [isMounted, setIsMounted] = useState(false);
@@ -84,8 +86,38 @@ export default function DocumentPrint({
     let secondFrame = 0;
     const firstFrame = window.requestAnimationFrame(() => {
       secondFrame = window.requestAnimationFrame(() => {
-        window.print();
-        setPrintRequested(false);
+        document.body.setAttribute('data-printing-document', printRootId);
+        const selectedPrintRoot = document.getElementById(printRootId);
+        if (!selectedPrintRoot) {
+          document.body.removeAttribute('data-printing-document');
+          setPrintRequested(false);
+          return;
+        }
+
+        const printRoots = Array.from(document.querySelectorAll<HTMLElement>('.document-print-root'));
+        const previousDisplayStyles = printRoots.map((root) => ({
+          root,
+          value: root.style.getPropertyValue('display'),
+          priority: root.style.getPropertyPriority('display'),
+        }));
+
+        for (const root of printRoots) {
+          root.style.setProperty('display', root === selectedPrintRoot ? 'block' : 'none', 'important');
+        }
+
+        try {
+          window.print();
+        } finally {
+          for (const { root, value, priority } of previousDisplayStyles) {
+            if (value) {
+              root.style.setProperty('display', value, priority);
+            } else {
+              root.style.removeProperty('display');
+            }
+          }
+          document.body.removeAttribute('data-printing-document');
+          setPrintRequested(false);
+        }
       });
     });
 
@@ -146,7 +178,7 @@ export default function DocumentPrint({
       )}
 
       {isMounted && createPortal(
-        <div className="document-print-root hidden bg-white p-0 font-sans leading-relaxed text-right text-black" dir="rtl">
+        <div id={printRootId} className="document-print-root hidden bg-white p-0 font-sans leading-relaxed text-right text-black" dir="rtl">
         <style>{`
           @media print {
             @page {
@@ -160,8 +192,9 @@ export default function DocumentPrint({
               padding: 0 !important;
             }
             body > *:not(.document-print-root) { display: none !important; }
-            .document-print-root { display: block !important; }
-            #printable-document {
+            body .document-print-root { display: none !important; }
+            body[data-printing-document="${printRootId}"] #${printRootId} { display: block !important; }
+            #${printRootId} #${printableContentId} {
               position: relative;
               width: ${pageDims.widthMm}mm;
               height: ${pageDims.heightMm}mm;
@@ -176,7 +209,7 @@ export default function DocumentPrint({
         `}</style>
 
         <div
-          id="printable-document"
+          id={printableContentId}
           style={{
             width: `${pageDims.widthMm}mm`,
             height: `${pageDims.heightMm}mm`,

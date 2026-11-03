@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   ChevronDown,
@@ -501,21 +501,15 @@ export default function AddCustomerModal({
                   <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
                     استان
                   </label>
-                  <select
+                  <SearchableLocationSelect
+                    label="انتخاب استان..."
                     value={province}
-                    onChange={(e) => {
-                      setProvince(e.target.value);
+                    options={provinces}
+                    onChange={(value) => {
+                      setProvince(value);
                       setCity('');
                     }}
-                    className="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-xs font-bold text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                  >
-                    <option value="">انتخاب استان...</option>
-                    {provinces.map((p) => (
-                      <option key={p} value={p}>
-                        {p}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </div>
 
                 {/* City */}
@@ -523,19 +517,13 @@ export default function AddCustomerModal({
                   <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
                     شهر
                   </label>
-                  <select
+                  <SearchableLocationSelect
+                    label={province ? 'انتخاب شهر...' : 'ابتدا استان را انتخاب کنید'}
                     value={city}
-                    onChange={(e) => setCity(e.target.value)}
+                    options={cities}
                     disabled={!province}
-                    className="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-xs font-bold text-slate-900 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                  >
-                    <option value="">{province ? 'انتخاب شهر...' : 'ابتدا استان را انتخاب کنید'}</option>
-                    {cities.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setCity}
+                  />
                 </div>
 
                 {/* Address */}
@@ -601,5 +589,184 @@ export default function AddCustomerModal({
       </div>
     </div>,
     document.body,
+  );
+}
+
+function SearchableLocationSelect({
+  label,
+  value,
+  options,
+  onChange,
+  disabled = false,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+  disabled?: boolean;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [menuPosition, setMenuPosition] = useState<{
+    left: number;
+    top: number;
+    bottom: number;
+    width: number;
+    maxHeight: number;
+    opensUpward: boolean;
+  } | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const filteredOptions = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase('fa');
+    if (!normalizedQuery) return options;
+    return options.filter((option) => option.toLocaleLowerCase('fa').includes(normalizedQuery));
+  }, [options, query]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const updateMenuPosition = () => {
+      const trigger = triggerRef.current;
+      if (!trigger) return;
+
+      const rect = trigger.getBoundingClientRect();
+      const viewportMargin = 12;
+      const gap = 6;
+      const preferredHeight = 320;
+      const spaceBelow = Math.max(0, window.innerHeight - rect.bottom - viewportMargin - gap);
+      const spaceAbove = Math.max(0, rect.top - viewportMargin - gap);
+      const opensUpward = spaceBelow < Math.min(220, preferredHeight) && spaceAbove > spaceBelow;
+      const availableSpace = opensUpward ? spaceAbove : spaceBelow;
+      const maxHeight = Math.min(preferredHeight, availableSpace);
+
+      setMenuPosition({
+        left: Math.max(viewportMargin, Math.min(rect.left, window.innerWidth - rect.width - viewportMargin)),
+        top: rect.bottom + gap,
+        bottom: window.innerHeight - rect.top + gap,
+        width: rect.width,
+        maxHeight,
+        opensUpward,
+      });
+    };
+
+    const handleOutsidePointerDown = (event: PointerEvent) => {
+      if (
+        event.target instanceof Node
+        && !containerRef.current?.contains(event.target)
+        && !menuRef.current?.contains(event.target)
+      ) {
+        setIsOpen(false);
+        setQuery('');
+      }
+    };
+
+    updateMenuPosition();
+    window.addEventListener('resize', updateMenuPosition);
+    document.addEventListener('scroll', updateMenuPosition, true);
+    document.addEventListener('pointerdown', handleOutsidePointerDown);
+    searchRef.current?.focus();
+    return () => {
+      window.removeEventListener('resize', updateMenuPosition);
+      document.removeEventListener('scroll', updateMenuPosition, true);
+      document.removeEventListener('pointerdown', handleOutsidePointerDown);
+    };
+  }, [isOpen]);
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        disabled={disabled}
+        onClick={() => {
+          setIsOpen((open) => !open);
+          setQuery('');
+        }}
+        className="flex h-10 w-full items-center justify-between rounded-xl border border-slate-300 bg-white px-3 text-right text-xs font-bold text-slate-900 transition-colors hover:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+      >
+        <span className={value ? '' : 'text-slate-400'}>{value || label}</span>
+        <ChevronDown size={14} className={`shrink-0 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {isOpen && menuPosition ? createPortal(
+        <div
+          ref={menuRef}
+          className="fixed z-[70] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-800"
+          style={{
+            left: menuPosition.left,
+            top: menuPosition.opensUpward ? 'auto' : menuPosition.top,
+            bottom: menuPosition.opensUpward ? menuPosition.bottom : 'auto',
+            width: menuPosition.width,
+            maxHeight: menuPosition.maxHeight,
+          }}
+        >
+          <div className="border-b border-slate-100 p-2 dark:border-slate-700">
+            <input
+              ref={searchRef}
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                }
+                if (event.key === 'Escape') {
+                  event.stopPropagation();
+                  setIsOpen(false);
+                  setQuery('');
+                }
+              }}
+              placeholder="جستجو..."
+              aria-label={`جستجوی ${label.replace('انتخاب ', '')}`}
+              className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs font-medium text-slate-900 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+            />
+          </div>
+          <div
+            role="listbox"
+            aria-label={label}
+            className="overflow-y-auto p-1"
+            style={{ maxHeight: Math.max(32, menuPosition.maxHeight - 54) }}
+          >
+            <button
+              type="button"
+              role="option"
+              aria-selected={!value}
+              onClick={() => {
+                onChange('');
+                setIsOpen(false);
+                setQuery('');
+              }}
+              className="w-full rounded-lg px-3 py-2 text-right text-xs font-medium text-slate-500 hover:bg-amber-50 hover:text-slate-900 dark:hover:bg-slate-700 dark:hover:text-white"
+            >
+              {label}
+            </button>
+            {filteredOptions.length ? filteredOptions.map((option) => (
+              <button
+                key={option}
+                type="button"
+                role="option"
+                aria-selected={value === option}
+                onClick={() => {
+                  onChange(option);
+                  setIsOpen(false);
+                  setQuery('');
+                }}
+                className={`w-full rounded-lg px-3 py-2 text-right text-xs font-bold transition-colors hover:bg-amber-50 dark:hover:bg-slate-700 ${value === option ? 'bg-amber-50 text-amber-800 dark:bg-amber-500/10 dark:text-amber-300' : 'text-slate-800 dark:text-slate-100'}`}
+              >
+                {option}
+              </button>
+            )) : (
+              <p className="px-3 py-3 text-center text-xs text-slate-500">موردی پیدا نشد.</p>
+            )}
+          </div>
+        </div>,
+        document.body,
+      ) : null}
+    </div>
   );
 }

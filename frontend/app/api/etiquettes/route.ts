@@ -70,8 +70,7 @@ export async function GET(request: NextRequest) {
       .getFullList({
         filter: 'is_deleted = false',
         sort: '-created',
-      })
-      .catch(() => []);
+      });
 
     const allMapped: EtiquetteRecord[] = records.map(mapEtiquetteRecord);
     const summary = summarizeEtiquettes(allMapped);

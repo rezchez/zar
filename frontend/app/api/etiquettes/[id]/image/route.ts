@@ -60,7 +60,9 @@ export async function GET(
       status: 200,
       headers: {
         'Content-Type': contentType,
-        'Cache-Control': 'public, max-age=31536000, immutable',
+        // Image requests require an authenticated session; never let a shared
+        // cache replay a private product image to another tenant or user.
+        'Cache-Control': 'private, no-store',
       },
     });
   } catch (error) {

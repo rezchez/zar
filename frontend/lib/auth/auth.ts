@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import type { AuthRecord } from 'pocketbase';
 
 import {
@@ -62,6 +62,29 @@ function readCookie(value: string | undefined): PocketBaseCookie | null {
 }
 
 export async function getServerAuthContext() {
+  const requestHeaders = await headers();
+  const authorization = requestHeaders.get('authorization') ?? '';
+  const bearerToken = authorization.match(/^Bearer\s+(.+)$/i)?.[1]?.trim();
+
+  // Native clients keep the PocketBase auth token in Android Keystore and send
+  // it as a bearer token. The same auth refresh and permission mapping used for
+  // browser cookies still applies to every protected route.
+  if (bearerToken) {
+    const pb = createPocketBaseClient();
+    pb.authStore.save(bearerToken);
+    if (!pb.authStore.isValid) return null;
+
+    try {
+      const refreshedRecord = await pb.collection('users').authRefresh();
+      const userId = String(refreshedRecord.record?.id ?? '');
+      if (!userId) return null;
+      const user = mapAuthenticatedUser(pb, refreshedRecord.record);
+      return { pb, user, record: refreshedRecord.record, phoneSession: false };
+    } catch {
+      return null;
+    }
+  }
+
   const cookieStore = await cookies();
   const phoneSessionToken = cookieStore.get(BALE_PHONE_COOKIE)?.value;
   if (phoneSessionToken) {
