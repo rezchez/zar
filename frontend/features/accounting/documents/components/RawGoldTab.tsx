@@ -42,6 +42,8 @@ export type DetailState = {
   inventorySourceId: string;
   linkedLineId?: string;
   isForeignCash?: boolean;
+  hasNoVault?: boolean;
+  coinTypeName?: string;
   claimFinancial?: string;
   claimWeight?: string;
   claimPurpose?: string;

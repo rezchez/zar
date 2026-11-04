@@ -3014,9 +3014,9 @@ export default function CustomerLedgerReport({
                               >
                                 <div className="flex flex-col">
                                   <span className="font-bold text-slate-800 dark:text-slate-100 text-xs">
-                                    {row.lineDescription?.primary || row.description || '—'}
+                                    {row.description || row.lineDescription?.primary || '—'}
                                   </span>
-                                  {row.lineDescription?.secondary && (
+                                  {row.lineDescription?.secondary && row.description !== row.lineDescription.secondary && (
                                     <span
                                       className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5"
                                       title={row.lineDescription.secondary}

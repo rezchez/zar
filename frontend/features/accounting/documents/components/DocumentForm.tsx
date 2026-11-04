@@ -2805,8 +2805,21 @@ export default function DocumentForm({
     setHawalaLine(null);
   };
 
+  const tabCommitHandlerRef = useRef<(() => boolean | void) | null>(null);
+
+  const handleRegisterTabCommit = useCallback((handler: (() => boolean | void) | null) => {
+    tabCommitHandlerRef.current = handler;
+  }, []);
+
   const handleCommitDraft = (customDraftLine?: DocumentLine) => {
     const validCustomLine = isDocumentLineObject(customDraftLine) ? customDraftLine : undefined;
+
+    // When committing without a custom line (e.g. from the pinned lines panel "ثبت ردیف" button)
+    // and the active tab has registered its own commit validation/handler (e.g. CurrencyTab),
+    // delegate to it to run tab-level vault validations, modal triggers, and form reset.
+    if (!validCustomLine && activeEntryTab === 'currency' && tabCommitHandlerRef.current) {
+      return tabCommitHandlerRef.current();
+    }
     // Check if this is the first committed row
     const isFirstRow = committedLines.length === 0 && !editingLineId;
     const activeDraft = validCustomLine || draftLine;
@@ -2878,9 +2891,12 @@ export default function DocumentForm({
           currentLine?.details?.claimWeight ?? currentLine?.details?.rawWeight,
         );
 
-  const commitRowLabel = editingLineId
-    ? (currentOpLabel ? `ویرایش ردیف ${currentOpLabel}` : 'ویرایش ردیف')
-    : (currentOpLabel ? `ثبت ردیف ${currentOpLabel}` : 'ثبت ردیف');
+  const isCurrencyNoVault = activeEntryTab === 'currency' && Boolean(draftLine.details?.hasNoVault);
+  const commitRowLabel = isCurrencyNoVault
+    ? `ابتدا صندوق ${draftLine.details?.currencyUnit || 'ارز'} را ایجاد کنید`
+    : editingLineId
+      ? (currentOpLabel ? `ویرایش ردیف ${currentOpLabel}` : 'ویرایش ردیف')
+      : (currentOpLabel ? `ثبت ردیف ${currentOpLabel}` : 'ثبت ردیف');
 
   const [isDeletingDoc, setIsDeletingDoc] = useState(false);
 
@@ -3227,6 +3243,7 @@ export default function DocumentForm({
               handleKeyDownEnter={handleKeyDownEnter}
               draftReady={draftReady}
               committedLines={committedLines}
+              onRegisterTabCommit={handleRegisterTabCommit}
             />
           )}
           stoneTabContent={(
@@ -3466,6 +3483,7 @@ export default function DocumentForm({
           onSave={save}
           onCommitDraftLine={handleCommitDraft}
           commitRowLabel={commitRowLabel}
+          commitRowWarning={isCurrencyNoVault}
           selectedCustomer={selectedCustomer}
           effectiveDocumentNumberDisplay={documentNumberDisplay}
           documentDateJalali={documentDateJalali}

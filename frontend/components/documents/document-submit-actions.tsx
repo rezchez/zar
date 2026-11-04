@@ -9,11 +9,13 @@ export default function DocumentSubmitActions({
   onCommitRow,
   showCommitRow,
   commitRowLabel = 'ثبت ردیف',
+  commitRowWarning = false,
 }: {
   onSubmit: (status: 'temporary' | 'final') => Promise<void>;
   onCommitRow?: () => void;
   showCommitRow?: boolean;
   commitRowLabel?: string;
+  commitRowWarning?: boolean;
 }) {
   const [temporaryLoading, setTemporaryLoading] = useState<boolean>(false);
   const [finalLoading, setFinalLoading] = useState<boolean>(false);
@@ -58,7 +60,11 @@ export default function DocumentSubmitActions({
             type="button"
             onClick={() => onCommitRow()}
             disabled={isLoading}
-            className="inline-flex h-7.5 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-amber-500 hover:bg-amber-600 dark:bg-amber-600 dark:hover:bg-amber-500 px-2.5 text-[11px] font-black text-slate-950 dark:text-white shadow-xs transition disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
+            className={`inline-flex h-7.5 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 text-[11px] font-black transition disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer ${
+              commitRowWarning
+                ? 'bg-rose-600 hover:bg-rose-700 dark:bg-rose-700 dark:hover:bg-rose-600 text-white shadow-xs'
+                : 'bg-amber-500 hover:bg-amber-600 dark:bg-amber-600 dark:hover:bg-amber-500 text-slate-950 dark:text-white shadow-xs'
+            }`}
             title={commitRowLabel}
           >
             <Plus size={13} strokeWidth={2.5} />

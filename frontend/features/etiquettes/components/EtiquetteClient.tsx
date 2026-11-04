@@ -115,7 +115,7 @@ export default function EtiquetteClient({
   const [editingItem, setEditingItem] = useState<EtiquetteRecord | null>(null);
   const [initialFromApp, setInitialFromApp] = useState<Partial<EtiquetteRecord> & { draftImageUrl?: string } | null>(null);
   const [addFromAppOpen, setAddFromAppOpen] = useState(false);
-  const [fullImagePreview, setFullImagePreview] = useState<{ url: string; title: string } | null>(null);
+  const [fullImagePreview, setFullImagePreview] = useState<{ urls: string[]; title: string; index: number } | null>(null);
 
   const [printModalOpen, setPrintModalOpen] = useState(false);
   const [itemsToPrint, setItemsToPrint] = useState<EtiquetteRecord[]>([]);
@@ -695,14 +695,17 @@ export default function EtiquetteClient({
                         {it.image || it.imageUrl ? (
                           <button
                             type="button"
-                            onClick={() =>
+                            onClick={() => {
+                              const names = (it.images || (it.image ? [it.image] : [])).slice(0, 5);
+                              const urls = names.map((name, index) => it.imageUrls?.[index] || `/api/etiquettes/${it.id}/image?name=${encodeURIComponent(name)}`);
                               setFullImagePreview({
-                                url: it.imageUrl || `/api/etiquettes/${it.id}/image`,
+                                urls: urls.length ? urls : [it.imageUrl || `/api/etiquettes/${it.id}/image`],
                                 title: it.title,
-                              })
-                            }
+                                index: 0,
+                              });
+                            }}
                             className="group relative size-10 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 shadow-2xs hover:scale-105 transition cursor-pointer mx-auto block"
-                            title="مشاهده تصویر بزرگ"
+                            title={`مشاهده آلبوم ${Math.min(5, it.images?.length || 1)} عکس`}
                           >
                             <img
                               src={it.imageUrl || `/api/etiquettes/${it.id}/image`}
@@ -712,6 +715,11 @@ export default function EtiquetteClient({
                             <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition">
                               <Eye size={12} />
                             </div>
+                            {(it.images?.length || 0) > 1 && (
+                              <span className="absolute -bottom-0.5 -right-0.5 min-w-4 rounded-full bg-amber-600 px-1 text-[8px] font-black leading-4 text-white">
+                                {Math.min(5, it.images?.length || 0)}
+                              </span>
+                            )}
                           </button>
                         ) : (
                           <div className="size-10 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 flex items-center justify-center text-slate-300 dark:text-slate-600 mx-auto">
@@ -1107,11 +1115,18 @@ export default function EtiquetteClient({
             </div>
             <div className="w-full aspect-square rounded-2xl overflow-hidden bg-black flex items-center justify-center">
               <img
-                src={fullImagePreview.url}
+                src={fullImagePreview.urls[fullImagePreview.index]}
                 alt={fullImagePreview.title}
                 className="w-full h-full object-contain"
               />
             </div>
+            {fullImagePreview.urls.length > 1 && (
+              <div className="flex items-center justify-between gap-3">
+                <button type="button" onClick={() => setFullImagePreview((current) => current && ({ ...current, index: (current.index - 1 + current.urls.length) % current.urls.length }))} className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs hover:bg-slate-800">قبلی</button>
+                <span className="text-xs text-slate-300">عکس {fullImagePreview.index + 1} از {fullImagePreview.urls.length}</span>
+                <button type="button" onClick={() => setFullImagePreview((current) => current && ({ ...current, index: (current.index + 1) % current.urls.length }))} className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs hover:bg-slate-800">بعدی</button>
+              </div>
+            )}
           </div>
         </div>
       )}

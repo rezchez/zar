@@ -77,6 +77,8 @@ export interface EtiquetteRecord {
   mountedStones?: EtiquetteMountedStone[]; // Multi-gemstone mounting list (سنگ‌های سوار شده)
   image?: string; // Product photo filename in PocketBase storage
   imageUrl?: string; // Resolved photo URL
+  images?: string[];
+  imageUrls?: string[];
   appSyncId?: string; // Linked sync ID from Zarfolio mobile app
   isDeleted: boolean;
   createdBy?: string;
@@ -529,7 +531,9 @@ export function mapEtiquetteRecord(data: any): EtiquetteRecord {
     etiquetteType = hasPrecious ? 'jewelry' : 'gemstone';
   }
 
-  const rawImage = data.image ? String(data.image) : undefined;
+  const rawImages = (Array.isArray(data.image) ? data.image : [data.image])
+    .filter((value: unknown): value is string => typeof value === 'string' && value.length > 0);
+  const rawImage = rawImages[0];
   const idStr = String(data.id || '');
   const imageUrl = rawImage ? `/api/etiquettes/${idStr}/image` : undefined;
 
@@ -575,6 +579,8 @@ export function mapEtiquetteRecord(data: any): EtiquetteRecord {
     mountedStones,
     image: rawImage,
     imageUrl,
+    images: rawImages,
+    imageUrls: rawImages.map((name: string) => `/api/etiquettes/${idStr}/image?name=${encodeURIComponent(name)}`),
     appSyncId: data.app_sync_id ? String(data.app_sync_id) : undefined,
     isDeleted: Boolean(data.is_deleted),
     createdBy: data.created_by ? String(data.created_by) : undefined,

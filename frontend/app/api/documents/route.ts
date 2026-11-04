@@ -49,6 +49,7 @@ import { getCurrencyMeta, normalizeCurrencyCode } from '@/lib/customer';
 import { convertTomanToRial } from '@/lib/money';
 
 import { getCurrencyTradeForeignEffect, getDocumentLineForeignCurrency } from '@/features/accounting/documents/utils/currency-effects';
+import { getCoinDisplayPersianName, getCoinOperationPrefix } from '@/features/coins/services/coin';
 
 const amountFields = [
   'goldAmount',
@@ -1465,6 +1466,29 @@ export async function POST(request: Request) {
           ? getCurrencyMeta(resolvedForeignCur).symbol
           : String(customer.secondaryCurrencySymbol ?? '');
 
+        const tab = readString(prepared.line.documentTab ?? body.documentTab, 40) || 'general';
+        let lineDescription = readString(prepared.line.description ?? body.description, 2000);
+        if (!lineDescription && tab === 'currency') {
+          const isPurchase = prepared.lineNature === 'received';
+          const isUnsettled =
+            prepared.line.settlementMethod === 'unsettled' ||
+            Boolean(prepared.documentDetails?.unsettledTrade);
+          const cur = resolvedForeignCur || String(prepared.documentDetails?.currencyUnit || '');
+          lineDescription = `${isPurchase ? 'خرید' : 'فروش'} ارز ${isUnsettled ? 'بدون تسویه' : 'با تسویه'} (${cur})`;
+        } else if (!lineDescription && (tab === 'coin' || tab === 'coins')) {
+          const opPrefix = getCoinOperationPrefix(
+            prepared.line?.documentSubType || prepared.documentDetails?.subType,
+            prepared.lineNature,
+          );
+          const coinName = getCoinDisplayPersianName(
+            prepared.documentDetails?.coinType,
+            prepared.documentDetails?.coinName,
+            prepared.documentDetails?.coinTypeName,
+            prepared.documentDetails?.mintYear || prepared.documentDetails?.coinYear,
+          );
+          lineDescription = `${opPrefix} سکه ${coinName}`.trim();
+        }
+
         return {
           customer: customer.id,
           customerCode: Number(customer.customerCode ?? 0),
@@ -1479,9 +1503,9 @@ export async function POST(request: Request) {
           documentSequence: finalSequence,
           documentNumberPrefixSnapshot: activePrefix,
           documentNumber: finalDocumentNumber,
-          description: readString(prepared.line.description ?? body.description, 2000),
+          description: lineDescription,
           documentNature: prepared.lineNature,
-          documentTab: readString(prepared.line.documentTab ?? body.documentTab, 40) || 'general',
+          documentTab: tab,
           documentSubType: readString(prepared.line.documentSubType ?? body.documentSubType, 80),
           documentDateJalali,
           settlementMethod: (['amount', 'weight', 'mixed', 'unsettled', 'cash'].includes(readString(prepared.line.settlementMethod ?? body.settlementMethod, 20)))

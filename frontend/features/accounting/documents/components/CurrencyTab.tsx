@@ -36,6 +36,7 @@ type CurrencyTabProps = {
   handleKeyDownEnter: (event: React.KeyboardEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => void;
   draftReady: boolean;
   committedLines?: DocumentLine[];
+  onRegisterTabCommit?: (handler: (() => boolean | void) | null) => void;
 };
 
 export default function CurrencyTab({
@@ -56,6 +57,7 @@ export default function CurrencyTab({
   handleKeyDownEnter,
   draftReady,
   committedLines = [],
+  onRegisterTabCommit,
 }: CurrencyTabProps) {
   const { settings } = useAppSettings();
   const toast = useToastManager();
@@ -353,21 +355,60 @@ export default function CurrencyTab({
   const isUnsettled = Boolean(draftLine.details.unsettledTrade) || draftLine.settlementMethod === 'unsettled';
   const hasNoVault = !matchingVault && !isLoadingVaults;
   const isOverdraft = Boolean(matchingVault) && nature === 'paid' && !isUnsettled && qtyNum > 0 && currentVaultBalance < qtyNum;
-  const isUncreatedVaultCash = hasNoVault && nature === 'paid' && !isUnsettled && qtyNum > 0;
   const isVaultBlocked = Boolean(matchingVault?.isBlocked);
 
-  const handleCommit = () => {
-    if (isUncreatedVaultCash) {
-      toast.error(`صندوقی برای ارز «${currentUnit}» ایجاد نشده است. برای ثبت معامله، ابتدا صندوق را ایجاد کنید یا روش تسویه را روی «بدون تسویه» قرار دهید.`);
-      return;
+  // Keep draftLine details continuously synchronized with vault metadata so external commit (e.g. pinned lines panel) works safely
+  useEffect(() => {
+    setDraftLine((prev) => {
+      const prevDetails = prev.details || {};
+      const newCashFundId = matchingVault ? matchingVault.id : '';
+      const newCashFundName = matchingVault ? matchingVault.name : '';
+      const newCashFundCurrency = matchingVault ? (matchingVault.currencyName || currentUnit) : currentUnit;
+      const newCashFundCurrencyCode = matchingVault ? (matchingVault.currencyCode || currentUnit) : currentUnit;
+      const newCashFundCurrencyId = matchingVault ? (matchingVault.currencyId || '') : '';
+      const newCashFundBalance = matchingVault ? matchingVault.balance : 0;
+      const newHasNoVault = hasNoVault;
+
+      if (
+        prevDetails.currencyUnit === currentUnit &&
+        prevDetails.cashFundId === newCashFundId &&
+        prevDetails.cashFundName === newCashFundName &&
+        prevDetails.cashFundBalance === newCashFundBalance &&
+        prevDetails.hasNoVault === newHasNoVault
+      ) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        details: {
+          ...prevDetails,
+          currencyUnit: currentUnit,
+          cashFundId: newCashFundId,
+          cashFundName: newCashFundName,
+          cashFundCurrency: newCashFundCurrency,
+          cashFundCurrencyCode: newCashFundCurrencyCode,
+          cashFundCurrencyId: newCashFundCurrencyId,
+          cashFundBalance: newCashFundBalance,
+          hasNoVault: newHasNoVault,
+        },
+      };
+    });
+  }, [matchingVault, hasNoVault, currentUnit, setDraftLine]);
+
+  const handleCommit = useCallback(() => {
+    if (hasNoVault) {
+      toast.error(`صندوقی برای ارز «${currentUnit}» ایجاد نشده است. برای انجام هرگونه معامله، ورود و خروج ارز، ابتدا باید صندوق ارزی آن را بسازید.`);
+      setIsCreateVaultModalOpen(true);
+      return false;
     }
     if (isOverdraft) {
       toast.error(`موجودی صندوق ارزی «${matchingVault?.name || currentUnit}» کافی نیست (موجودی: ${toPersianDigits(currentVaultBalance.toLocaleString())} ${currentUnit}). برای ثبت بدون موجودی صندوق، روش تسویه را روی «بدون تسویه» قرار دهید.`);
-      return;
+      return false;
     }
     if (isVaultBlocked && !isUnsettled) {
       toast.error(`صندوق ارزی «${matchingVault?.name || currentUnit}» مسدود است و امکان تسویه نقدی وجود ندارد.`);
-      return;
+      return false;
     }
     const draftWithVault = matchingVault
       ? {
@@ -381,18 +422,41 @@ export default function CurrencyTab({
             cashFundCurrencyCode: matchingVault.currencyCode || currentUnit,
             cashFundCurrencyId: matchingVault.currencyId || '',
             cashFundBalance: matchingVault.balance,
+            hasNoVault: false,
           },
         }
       : undefined;
     commitDraftLine(draftWithVault);
     updateCurrencyValue('currencyQuantity', '');
     updateCurrencyValue('currencyTotalAmount', '');
-  };
+    return true;
+  }, [
+    hasNoVault,
+    isOverdraft,
+    isVaultBlocked,
+    currentUnit,
+    matchingVault,
+    currentVaultBalance,
+    isUnsettled,
+    draftLine,
+    commitDraftLine,
+    updateCurrencyValue,
+    toast,
+  ]);
+
+  useEffect(() => {
+    if (!onRegisterTabCommit) return;
+    onRegisterTabCommit(handleCommit);
+    return () => {
+      onRegisterTabCommit(null);
+    };
+  }, [onRegisterTabCommit, handleCommit]);
 
   const onKeyDownEnter = (e: React.KeyboardEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     if (e.key === 'Enter') {
-      if (isUncreatedVaultCash) {
-        toast.error(`صندوقی برای ارز «${currentUnit}» ایجاد نشده است. برای ثبت معامله، ابتدا صندوق را ایجاد کنید یا روش تسویه را روی «بدون تسویه» قرار دهید.`);
+      if (hasNoVault) {
+        toast.error(`صندوقی برای ارز «${currentUnit}» ایجاد نشده است. برای انجام هرگونه معامله، ورود و خروج ارز، ابتدا باید صندوق ارزی آن را بسازید.`);
+        setIsCreateVaultModalOpen(true);
         e.preventDefault();
         e.stopPropagation();
         return;
@@ -514,17 +578,15 @@ export default function CurrencyTab({
               placeholder="۰"
               aria-label="تعداد ارز"
               selectOnClick
-              className={`w-full ${isOverdraft || isUncreatedVaultCash ? 'border-rose-400 dark:border-rose-600 focus:border-rose-500 ring-1 ring-rose-400/40' : ''}`}
+              className={`w-full ${isOverdraft || hasNoVault ? 'border-rose-400 dark:border-rose-600 focus:border-rose-500 ring-1 ring-rose-400/40' : ''}`}
             />
           </Field>
 
           {/* Cash Fund Vault Balance Card */}
           <div
             className={`rounded-xl border p-2.5 text-xs transition-colors flex flex-col justify-between min-h-[58px] ${
-              isOverdraft || isUncreatedVaultCash
+              hasNoVault || isOverdraft
                 ? 'border-rose-300 bg-rose-50/90 dark:border-rose-900/60 dark:bg-rose-950/40 text-rose-800 dark:text-rose-200 shadow-2xs'
-                : hasNoVault
-                ? 'border-amber-200/80 bg-amber-50/30 dark:border-amber-900/40 dark:bg-amber-950/20 text-slate-700 dark:text-slate-300'
                 : 'border-slate-200/80 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-900/40 text-slate-700 dark:text-slate-300'
             }`}
           >
@@ -533,10 +595,8 @@ export default function CurrencyTab({
                 <Wallet
                   size={13}
                   className={
-                    isOverdraft || isUncreatedVaultCash
+                    hasNoVault || isOverdraft
                       ? 'text-rose-500 shrink-0'
-                      : hasNoVault
-                      ? 'text-amber-500 shrink-0'
                       : 'text-emerald-500 shrink-0'
                   }
                 />
@@ -546,17 +606,17 @@ export default function CurrencyTab({
                 <span className="font-mono text-slate-400">...</span>
               ) : hasNoVault ? (
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[11px] font-bold text-amber-700 dark:text-amber-300 bg-amber-100/90 dark:bg-amber-950/70 px-2 py-0.5 rounded-md border border-amber-300/70 dark:border-amber-800/70 shadow-2xs">
-                    صندوق ایجاد نشده
+                  <span className="text-[11px] font-bold text-rose-700 dark:text-rose-300 bg-rose-100/90 dark:bg-rose-950/70 px-2 py-0.5 rounded-md border border-rose-300/70 dark:border-rose-800/70 shadow-2xs">
+                    صندوق تعریف نشده
                   </span>
                   <button
                     type="button"
                     onClick={() => setIsCreateVaultModalOpen(true)}
-                    className="inline-flex items-center gap-1 text-[11px] font-bold bg-amber-600 hover:bg-amber-700 text-white px-2 py-0.5 rounded-md shadow-2xs transition-colors cursor-pointer"
-                    title={`ایجاد صندوق برای ارز ${currentUnit}`}
+                    className="inline-flex items-center gap-1 text-[11px] font-bold bg-rose-600 hover:bg-rose-700 text-white px-2.5 py-0.5 rounded-md shadow-2xs transition-colors cursor-pointer"
+                    title={`ایجاد صندوق ارزی برای ${currentUnit}`}
                   >
                     <Plus size={12} />
-                    <span>ایجاد صندوق</span>
+                    <span>ایجاد صندوق ارزی</span>
                   </button>
                 </div>
               ) : (
@@ -577,9 +637,10 @@ export default function CurrencyTab({
               )}
             </div>
 
-            {isUncreatedVaultCash ? (
-              <div className="mt-1 text-[10px] text-rose-600 dark:text-rose-400 font-bold">
-                <span>جهت تسویه نقدی نیاز به تعریف صندوق این ارز دارید یا تسویه را «بدون تسویه» قرار دهید.</span>
+            {hasNoVault ? (
+              <div className="mt-1.5 text-[11px] text-rose-700 dark:text-rose-300 font-bold flex items-center gap-1">
+                <AlertCircle size={13} className="shrink-0 text-rose-600" />
+                <span>برای انجام معامله، ورود و خروج ارز، حتماً باید ابتدا صندوق ارزی {currentUnit} ساخته شود.</span>
               </div>
             ) : isOverdraft ? (
               <div className="mt-1.5 flex items-center justify-between text-[11px] font-bold text-rose-600 dark:text-rose-400">
@@ -587,10 +648,6 @@ export default function CurrencyTab({
                 <span className="font-mono font-black">
                   -{toPersianDigits((qtyNum - currentVaultBalance).toLocaleString())} {currentUnit}
                 </span>
-              </div>
-            ) : hasNoVault ? (
-              <div className="mt-1 text-[10px] text-amber-700 dark:text-amber-300">
-                <span>{isUnsettled ? 'معامله بدون تسویه (بدون نیاز به صندوق نقدی)' : 'صندوقی برای این ارز وجود ندارد'}</span>
               </div>
             ) : qtyNum > 0 && !isUnsettled ? (
               <div className="mt-1.5 flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400">
@@ -733,12 +790,12 @@ export default function CurrencyTab({
         </div>
 
         {/* Uncreated Vault Warning Banner */}
-        {isUncreatedVaultCash && (
+        {hasNoVault && (
           <div className="col-span-1 md:col-span-3 flex flex-wrap items-center justify-between gap-3 p-3 text-xs rounded-xl bg-rose-50 text-rose-800 border border-rose-200 dark:bg-rose-950/50 dark:text-rose-200 dark:border-rose-800 animate-fadeIn">
             <div className="flex items-center gap-2">
               <AlertCircle size={16} className="shrink-0 text-rose-600 dark:text-rose-400" />
               <span>
-                <strong>صندوق ایجاد نشده:</strong> صندوقی برای ارز «{currentUnit}» در سامانه ایجاد نشده است. جهت ثبت این معامله به صورت نقدی ابتدا صندوق را ایجاد کنید یا روش تسویه را روی «بدون تسویه» قرار دهید.
+                <strong>صندوق ایجاد نشده:</strong> صندوقی برای ارز «{currentUnit}» در سامانه ایجاد نشده است. برای انجام هرگونه معامله، ورود و خروج ارز، ابتدا باید صندوق ارزی آن را بسازید.
               </span>
             </div>
             <button
@@ -897,11 +954,11 @@ export default function CurrencyTab({
         <div className="sticky bottom-3 z-30 flex justify-center pt-2 transition-all duration-300">
           <button
             type="button"
-            className="document-commit-line-button shadow-lg max-w-sm"
+            className={`document-commit-line-button shadow-lg max-w-sm ${hasNoVault ? 'bg-rose-600 hover:bg-rose-700' : ''}`}
             onClick={handleCommit}
           >
             <ListPlus size={16} />
-            {editingLineId ? 'ثبت اصلاح ردیف' : 'ثبت ردیف'}
+            {hasNoVault ? `ابتدا صندوق ${currentUnit} را ایجاد کنید` : editingLineId ? 'ثبت اصلاح ردیف' : 'ثبت ردیف'}
           </button>
         </div>
       ) : null}

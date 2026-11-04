@@ -402,6 +402,16 @@ describe('Zarfolio Jewelry Etiquette (اتیکت و بارکد طلا) Tests', (
       expect(inferredPlain.etiquetteType).toBe('plain');
     });
 
+    it('maps each product photo to its own image URL and the correct etiquette id', () => {
+      const mapped = mapEtiquetteRecord({ id: 'photo-owner-42', image: ['front view.webp', 'back.webp'] });
+      expect(mapped.images).toEqual(['front view.webp', 'back.webp']);
+      expect(mapped.imageUrls).toEqual([
+        '/api/etiquettes/photo-owner-42/image?name=front%20view.webp',
+        '/api/etiquettes/photo-owner-42/image?name=back.webp',
+      ]);
+      expect(mapped.imageUrl).toBe('/api/etiquettes/photo-owner-42/image');
+    });
+
     it('hasNaturalPreciousStone: reliably detects natural diamonds and precious stones vs synthetic/atomic', () => {
       // 1. Natural diamonds / brilliants
       expect(hasNaturalPreciousStone([{ id: '1', name: 'برلیان گرد پاک', quantity: 1, weightCarat: 0.5, weightGram: 0.1, unitPrice: 0, totalPrice: 0, isDeducted: true }])).toBe(true);

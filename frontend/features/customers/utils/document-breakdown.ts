@@ -1,4 +1,5 @@
 import type { CustomerTransaction } from '@/lib/transaction';
+import { getCoinDisplayPersianName, getCoinOperationPrefix, getCoinDefinition } from '@/features/coins/services/coin';
 
 export type LineBreakdown = {
   category: string;
@@ -232,11 +233,31 @@ export function parseTransactionBreakdown(transaction: CustomerTransaction): Lin
 
   // 6. Coins
   if (tab === 'coin' || subType.includes('coin')) {
-    if (details.coinTypeName || details.coinType) {
-      attributes.push({ label: 'نوع سکه', value: String(details.coinTypeName || details.coinType) });
+    const coinDisplay = getCoinDisplayPersianName(details.coinType, details.coinName, details.coinTypeName, details.mintYear || details.coinYear);
+    if (coinDisplay) {
+      attributes.push({ label: 'نوع سکه', value: coinDisplay });
     }
     if (details.quantity) {
-      attributes.push({ label: 'تعداد', value: `${details.quantity} عدد`, isMono: true });
+      const qty = String(details.quantity);
+      let unitW = '';
+      let purity = details.purity ? String(details.purity) : '';
+      if (details.coinType) {
+        const def = getCoinDefinition(details.coinType);
+        if (def?.unitWeight) unitW = String(def.unitWeight);
+        if (!purity && def?.purity) purity = String(def.purity);
+      }
+      if (!unitW && details.rawWeight) {
+        const numQty = Number(qty) || 1;
+        const numWeight = Number(details.rawWeight) || 0;
+        if (numQty > 0 && numWeight > 0) {
+          unitW = (numWeight / numQty).toFixed(3).replace(/\.?0+$/, '');
+        } else {
+          unitW = String(details.rawWeight);
+        }
+      }
+      if (!purity) purity = '900';
+      const formulaVal = unitW ? `${qty} * ${unitW} گرم - عیار ${purity}` : qty;
+      attributes.push({ label: 'مشخصات', value: formulaVal, isMono: true });
     }
     if (details.unitPrice) {
       attributes.push({
@@ -1047,15 +1068,42 @@ export function getDocumentLineDescription(transaction: CustomerTransaction): Do
 
   // 6. Coin
   else if (tab === 'coin' || tab === 'coins' || subType.includes('coin')) {
-    const coinName = details.coinTypeName || details.coinType || '';
-    primary = isReceived
-      ? coinName
-        ? `خرید سکه ${coinName}`
-        : 'خرید/ورود سکه'
-      : coinName
-      ? `فروش سکه ${coinName}`
-      : 'فروش/خروج سکه';
-    if (details.quantity) extraInfoParts.push(`${details.quantity} عدد`);
+    const coinName = getCoinDisplayPersianName(details.coinType, details.coinName, details.coinTypeName, details.mintYear || details.coinYear);
+    const opPrefix = getCoinOperationPrefix(subType || transaction.documentSubType || details.subType, isReceived ? 'received' : 'paid');
+    primary = coinName
+      ? `${opPrefix} سکه ${coinName}`
+      : `${opPrefix} سکه`;
+
+    const qty = details.quantity ? String(details.quantity) : '1';
+    let unitW = '';
+    let purity = details.purity ? String(details.purity) : '';
+    if (details.coinType) {
+      const def = getCoinDefinition(details.coinType);
+      if (def?.unitWeight) {
+        unitW = String(def.unitWeight);
+      }
+      if (!purity && def?.purity) {
+        purity = String(def.purity);
+      }
+    }
+    if (!unitW && details.rawWeight) {
+      const numQty = Number(qty) || 1;
+      const numWeight = Number(details.rawWeight) || 0;
+      if (numQty > 0 && numWeight > 0) {
+        unitW = (numWeight / numQty).toFixed(3).replace(/\.?0+$/, '');
+      } else {
+        unitW = String(details.rawWeight);
+      }
+    }
+    if (!purity) {
+      purity = '900';
+    }
+
+    if (unitW) {
+      extraInfoParts.push(`${qty} * ${unitW} گرم - عیار ${purity}`);
+    } else if (details.quantity) {
+      extraInfoParts.push(String(details.quantity));
+    }
   }
 
   // 7. Stone
@@ -1100,12 +1148,25 @@ export function getDocumentLineDescription(transaction: CustomerTransaction): Do
 
   // Construct secondary text
   const secondaryParts: string[] = [];
+  const isCoinTab = tab === 'coin' || tab === 'coins' || subType.includes('coin');
   if (
     transaction.description &&
     transaction.description.trim() &&
     transaction.description.trim() !== primary.trim()
   ) {
-    secondaryParts.push(transaction.description.trim());
+    const trimmedDesc = transaction.description.trim();
+    const isRedundantCoinDesc =
+      isCoinTab &&
+      (trimmedDesc === primary.trim() ||
+        trimmedDesc.replace(/^(ورود|خروج|خرید|فروش)\s+/, '') ===
+          primary.replace(/^(ورود|خروج|خرید|فروش)\s+/, '') ||
+        trimmedDesc.startsWith('خرید سکه') ||
+        trimmedDesc.startsWith('ورود سکه') ||
+        trimmedDesc.startsWith('فروش سکه') ||
+        trimmedDesc.startsWith('خروج سکه'));
+    if (!isRedundantCoinDesc) {
+      secondaryParts.push(trimmedDesc);
+    }
   }
   if (extraInfoParts.length > 0) {
     secondaryParts.push(extraInfoParts.join(' | '));

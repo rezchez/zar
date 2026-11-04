@@ -9,9 +9,11 @@ export function createSettledCurrencyLines(
 ): [DocumentLine, DocumentLine] {
   const currency = getDocumentLineForeignCurrency(line);
   const isPurchase = line.documentNature === 'received';
+  const defaultTradeDesc = `${isPurchase ? 'خرید' : 'فروش'} ارز با تسویه (${currency})`;
   const trade: DocumentLine = {
     ...line,
     settlementMethod: 'cash',
+    description: line.description?.trim() ? line.description.trim() : defaultTradeDesc,
     details: {
       ...line.details,
       currencyUnit: currency,

@@ -183,6 +183,19 @@ describe('Document Currency Tab & Distinct Currencies', () => {
     expect(validateLine(line, [], [], null, 'IRR')).toBe('');
   });
 
+  it('validateLine strictly rejects committing currency row if no vault has been created (hasNoVault: true)', () => {
+    const line = createCurrencyLine('received', 'EUR', 'IRR');
+    line.details.currencyUnit = 'EUR';
+    line.details.currencyQuantity = '100';
+    line.details.currencyUnitPrice = '2346150';
+    line.details.currencyTotalAmount = '234615000';
+    line.details.hasNoVault = true;
+
+    expect(validateLine(line, [], [], null, 'IRR')).toBe(
+      'صندوقی برای ارز «EUR» ایجاد نشده است. برای انجام هرگونه معامله، ورود و خروج ارز، ابتدا باید صندوق ارزی آن را بسازید.',
+    );
+  });
+
   it('validateLine rejects IRR and IRT as traded currencies in currency tab', () => {
     const lineIrr = createCurrencyLine('received', 'USD', 'IRR');
     lineIrr.details.currencyUnit = 'IRR';

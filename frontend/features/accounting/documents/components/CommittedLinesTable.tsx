@@ -341,6 +341,7 @@ interface CommittedLinesTableProps {
   onSave: (status: 'temporary' | 'final') => Promise<void>;
   onCommitDraftLine: () => void;
   commitRowLabel?: string;
+  commitRowWarning?: boolean;
   selectedCustomer: Customer | null;
   effectiveDocumentNumberDisplay: string;
   documentDateJalali: string;
@@ -362,6 +363,7 @@ export default function CommittedLinesTable({
   onSave,
   onCommitDraftLine,
   commitRowLabel,
+  commitRowWarning = false,
   selectedCustomer,
   effectiveDocumentNumberDisplay,
   documentDateJalali,
@@ -674,6 +676,7 @@ export default function CommittedLinesTable({
             onCommitRow={onCommitDraftLine}
             showCommitRow={isLinesPinned}
             commitRowLabel={commitRowLabel}
+            commitRowWarning={commitRowWarning}
           />
 
           <span className="mx-0.5 h-5 w-px bg-slate-200 dark:bg-slate-700" aria-hidden="true" />

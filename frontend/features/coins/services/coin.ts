@@ -3,7 +3,7 @@
  * Zarfolio Financial Management System
  */
 
-import { normalizeDigits } from '@/lib/jalali';
+import { normalizeDigits, toPersianDigits } from '@/lib/jalali';
 import { parseLocalizedAmount } from '@/lib/money';
 
 export type CoinCategory = 'emami_coin' | 'bahar_coin' | 'bank_coin' | 'parsian' | 'bar' | 'custom';
@@ -30,6 +30,82 @@ export const COIN_CATEGORY_LABELS: Record<string, string> = {
   bar: 'شمش‌های طلا (۲۴ عیار)',
   custom: 'انواع سفارشی',
 };
+
+export const COIN_TYPE_PERSIAN_NAMES: Record<string, string> = {
+  emami_full: 'امامی تمام',
+  emami_pre86: 'امامی تمام (قبل از ۸۶)',
+  bahar_azadi_old: 'بهار آزادی طرح قدیم',
+  bahar_full: 'بهار آزادی تمام',
+  half_bahar: 'نیم بهار آزادی',
+  half_bahar_pre86: 'نیم بهار آزادی (قبل از ۸۶)',
+  quarter_bahar: 'ربع بهار آزادی',
+  quarter_bahar_pre86: 'ربع بهار آزادی (قبل از ۸۶)',
+  quarter_bahar_1403: 'ربع بهار آزادی ۱۴۰۳',
+  gram_coin: 'یک گرمی بهار آزادی',
+  gerami: 'یک گرمی بهار آزادی',
+  parsian_300: 'پارسیان ۰.۳۰۰ (۳۰۰ سوتی)',
+  parsian_500: 'پارسیان ۰.۵۰۰ (۵۰۰ سوتی)',
+  parsian_1000: 'پارسیان ۱.۰۰۰ (۱ گرمی)',
+  parsian_1500: 'پارسیان ۱.۵۰۰ (۱.۵ گرمی)',
+  parsian_2000: 'پارسیان ۲.۰۰۰ (۲ گرمی)',
+};
+
+export function getCoinDisplayPersianName(
+  coinType?: string,
+  coinName?: string,
+  coinTypeName?: string,
+  mintYear?: string,
+): string {
+  const normalizedType = String(coinType || '').trim().toLowerCase();
+  let baseName = '';
+  if (normalizedType && COIN_TYPE_PERSIAN_NAMES[normalizedType]) {
+    baseName = COIN_TYPE_PERSIAN_NAMES[normalizedType];
+  } else {
+    const rawName = String(coinTypeName || coinName || coinType || '').trim();
+    if (!rawName) return '';
+
+    const lowerName = rawName.toLowerCase();
+    if (COIN_TYPE_PERSIAN_NAMES[lowerName]) {
+      baseName = COIN_TYPE_PERSIAN_NAMES[lowerName];
+    } else {
+      let cleaned = rawName.replace(/^(سکه\s*های\s+|سکهٔ\s+|سکه\s+)/i, '').trim();
+      if (cleaned.startsWith('تمام امامی')) {
+        cleaned = cleaned.replace(/^تمام امامی/, 'امامی تمام');
+      }
+      cleaned = cleaned.replace(/(\d+)\s*سوت\b/g, '$1 سوتی').replace(/سوت\)/g, 'سوتی)');
+      baseName = cleaned || rawName;
+    }
+  }
+
+  // Handle mint year (e.g. "ضرب ۱۳۸۶")
+  const rawYear = String(mintYear || '').trim();
+  const effectiveYear = rawYear || (normalizedType === 'emami_full' ? '۱۳۸۶' : '');
+  if (effectiveYear && !baseName.includes('ضرب') && !baseName.includes(effectiveYear)) {
+    const pYear = toPersianDigits(effectiveYear);
+    return `${baseName} (ضرب ${pYear})`;
+  }
+
+  return baseName;
+}
+
+/**
+ * Returns Persian operation prefix for coin lines (ورود / خروج / خرید / فروش / ...)
+ */
+export function getCoinOperationPrefix(
+  subType?: string,
+  nature: 'received' | 'paid' = 'received',
+): string {
+  const norm = String(subType || '').toLowerCase().trim();
+  if (norm === 'receipt_entry' || norm === 'entry' || norm === 'incoming-coin') return 'ورود';
+  if (norm === 'payment_exit' || norm === 'exit' || norm === 'outgoing-coin') return 'خروج';
+  if (norm === 'receipt_buy' || norm === 'coin_purchase') return 'خرید';
+  if (norm === 'payment_sale' || norm === 'coin_sale') return 'فروش';
+  if (norm === 'receipt_unsettled_buy') return 'خرید بدون تسویه';
+  if (norm === 'payment_unsettled_sale') return 'فروش بدون تسویه';
+  if (norm === 'payment_claim') return 'طلب';
+  if (norm === 'receipt_debt') return 'بدهی';
+  return nature === 'received' ? 'ورود' : 'خروج';
+}
 
 /**
  * Standard, verified catalog of coins and gold bars in the Iranian market.
@@ -169,7 +245,7 @@ export const STANDARD_COINS: CoinDefinition[] = [
     isFixedWeight: true,
     isFixedPurity: true,
     isActive: true,
-    description: 'سکه پارسیان ۳۰۰ سوت - وزن ۰.۳ گرم با عیار ۷۵۰',
+    description: 'سکه پارسیان ۳۰۰ سوتی - وزن ۰.۳ گرم با عیار ۷۵۰',
   },
   {
     id: 'parsian_500',

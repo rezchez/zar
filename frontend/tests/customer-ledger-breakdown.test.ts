@@ -381,6 +381,73 @@ describe('Customer Ledger Document Breakdown Tests', () => {
 
       expect(getDocumentLineDescription(unsettledTx).primary).toBe('خرید طلا بدون تسویه');
     });
+
+    it('formats coin line descriptions using Persian names instead of slug keys and correct operation prefixes', () => {
+      const emamiCoinTx = {
+        documentTab: 'coin',
+        documentNature: 'received',
+        documentSubType: 'receipt_entry',
+        documentDetails: JSON.stringify({
+          coinType: 'emami_full',
+          quantity: 1,
+        }),
+      } as CustomerTransaction;
+
+      expect(getDocumentLineDescription(emamiCoinTx).primary).toBe('ورود سکه امامی تمام (ضرب ۱۳۸۶)');
+      expect(getDocumentLineDescription(emamiCoinTx).secondary).toBe('1 * 8.133 گرم - عیار 900');
+
+      const coinBuyTx = {
+        documentTab: 'coin',
+        documentNature: 'received',
+        documentSubType: 'receipt_buy',
+        documentDetails: JSON.stringify({
+          coinType: 'emami_full',
+          quantity: 1,
+        }),
+      } as CustomerTransaction;
+
+      expect(getDocumentLineDescription(coinBuyTx).primary).toBe('خرید سکه امامی تمام (ضرب ۱۳۸۶)');
+      expect(getDocumentLineDescription(coinBuyTx).secondary).toBe('1 * 8.133 گرم - عیار 900');
+
+      const baharCoinTx = {
+        documentTab: 'coin',
+        documentNature: 'paid',
+        documentSubType: 'payment_sale',
+        documentDetails: JSON.stringify({
+          coinType: 'half_bahar',
+          quantity: 2,
+        }),
+      } as CustomerTransaction;
+
+      expect(getDocumentLineDescription(baharCoinTx).primary).toBe('فروش سکه نیم بهار آزادی');
+      expect(getDocumentLineDescription(baharCoinTx).secondary).toBe('2 * 4.066 گرم - عیار 900');
+
+      const baharExitTx = {
+        documentTab: 'coin',
+        documentNature: 'paid',
+        documentSubType: 'payment_exit',
+        documentDetails: JSON.stringify({
+          coinType: 'half_bahar',
+          quantity: 2,
+        }),
+      } as CustomerTransaction;
+
+      expect(getDocumentLineDescription(baharExitTx).primary).toBe('خروج سکه نیم بهار آزادی');
+      expect(getDocumentLineDescription(baharExitTx).secondary).toBe('2 * 4.066 گرم - عیار 900');
+
+      const parsianTx = {
+        documentTab: 'coin',
+        documentNature: 'received',
+        documentSubType: 'receipt_entry',
+        documentDetails: JSON.stringify({
+          coinType: 'parsian_300',
+          quantity: 1,
+        }),
+      } as CustomerTransaction;
+
+      expect(getDocumentLineDescription(parsianTx).primary).toBe('ورود سکه پارسیان ۰.۳۰۰ (۳۰۰ سوتی)');
+      expect(getDocumentLineDescription(parsianTx).secondary).toBe('1 * 0.3 گرم - عیار 750');
+    });
   });
 
   describe('RowExtraDetails extraction for dynamic columns', () => {

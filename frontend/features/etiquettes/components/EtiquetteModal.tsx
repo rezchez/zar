@@ -111,8 +111,9 @@ export default function EtiquetteModal({
   const [mountedStones, setMountedStones] = useState<EtiquetteMountedStone[]>([]);
 
   // Product Photo State
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [imageFiles, setImageFiles] = useState<File[]>([]);
+  const [imagePreviews, setImagePreviews] = useState<Array<{ url: string; file?: File; name?: string }>>([]);
+  const [removedImageNames, setRemovedImageNames] = useState<string[]>([]);
   const [isConvertingImage, setIsConvertingImage] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -154,8 +155,11 @@ export default function EtiquetteModal({
       setStatus(editingItem.status);
       setDescription(editingItem.description || '');
       setMountedStones(editingItem.mountedStones || []);
-      setImageFile(null);
-      setImagePreview(editingItem.imageUrl || (editingItem.image ? `/api/etiquettes/${editingItem.id}/image` : null));
+      setImageFiles([]);
+      const names = editingItem.images || (editingItem.image ? [editingItem.image] : []);
+      const urls = editingItem.imageUrls || (editingItem.imageUrl ? [editingItem.imageUrl] : []);
+      setImagePreviews(names.map((name, index) => ({ name, url: urls[index] || `/api/etiquettes/${editingItem.id}/image?name=${encodeURIComponent(name)}` })));
+      setRemovedImageNames([]);
     } else if (initialFromApp) {
       const type = initialFromApp.etiquetteType || 'plain';
       setBarcode(getBarcodeForType(type));
@@ -179,8 +183,9 @@ export default function EtiquetteModal({
       setStatus('available');
       setDescription(initialFromApp.description || '');
       setMountedStones(initialFromApp.mountedStones || []);
-      setImageFile(null);
-      setImagePreview(initialFromApp.draftImageUrl || null);
+      setImageFiles([]);
+      setImagePreviews(initialFromApp.draftImageUrl ? [{ url: initialFromApp.draftImageUrl }] : []);
+      setRemovedImageNames([]);
     } else {
       // New item: automatically resolve barcode according to chosen/initial etiquette type
       const type = initialType || 'plain';
@@ -205,30 +210,40 @@ export default function EtiquetteModal({
       setStatus('available');
       setDescription('');
       setMountedStones([]);
-      setImageFile(null);
-      setImagePreview(null);
+      setImageFiles([]);
+      setImagePreviews([]);
+      setRemovedImageNames([]);
     }
   }, [isOpen, editingItem, initialFromApp, initialType, getBarcodeForType]);
 
   // Handle image selection with WebP optimization
   const handleSelectImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    const available = 5 - imagePreviews.length;
+    if (files.length > available) {
+      setError(`برای هر اتیکت حداکثر ۵ عکس می‌توانید ثبت کنید؛ اکنون ${available} جای خالی باقی مانده است.`);
+    }
+    const selected = files.slice(0, Math.max(0, available));
+    if (!selected.length) { e.target.value = ''; return; }
     setIsConvertingImage(true);
     try {
-      const res = await convertImageToWebP(file);
-      setImageFile(res.file);
-      setImagePreview(res.previewUrl);
+      const processed = await Promise.all(selected.map((file) => convertImageToWebP(file)));
+      setImageFiles((current) => [...current, ...processed.map((item) => item.file)]);
+      setImagePreviews((current) => [...current, ...processed.map((item) => ({ url: item.previewUrl, file: item.file }))]);
     } catch {
       setError('خطا در تبدیل و پردازش تصویر محصول.');
     } finally {
       setIsConvertingImage(false);
+      e.target.value = '';
     }
   };
 
-  const handleRemoveImage = () => {
-    setImageFile(null);
-    setImagePreview(null);
+  const handleRemoveImage = (index: number) => {
+    const image = imagePreviews[index];
+    if (image?.name) setRemovedImageNames((current) => [...current, image.name!]);
+    if (image?.file) setImageFiles((current) => current.filter((file) => file !== image.file));
+    setImagePreviews((current) => current.filter((_, itemIndex) => itemIndex !== index));
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -284,7 +299,7 @@ export default function EtiquetteModal({
     if (draft.wageType) setWageType(draft.wageType);
     if (draft.storageLocation) setStorageLocation(draft.storageLocation);
     if (draft.mountedStones) setMountedStones(draft.mountedStones);
-    if (draft.draftImageUrl) setImagePreview(draft.draftImageUrl);
+    if (draft.draftImageUrl) setImagePreviews([{ url: draft.draftImageUrl }]);
   };
 
   // Handle metal change -> update default purity and suggest default color
@@ -328,7 +343,7 @@ export default function EtiquetteModal({
     storageLocation,
     status,
     mountedStones,
-    imageUrl: imagePreview || undefined,
+    imageUrl: imagePreviews[0]?.url || undefined,
   };
 
   const stonesSummary = calculateMountedStonesSummary(mountedStones);
@@ -380,29 +395,23 @@ export default function EtiquetteModal({
       let savedRecord = data.item;
 
       // If an image was selected/changed, upload it now
-      if (imageFile && savedRecord?.id) {
-        try {
+      if (savedRecord?.id) {
+        for (const imageName of removedImageNames) {
+          const removeRes = await fetch(`/api/etiquettes/${savedRecord.id}/image?name=${encodeURIComponent(imageName)}`, { method: 'DELETE' });
+          if (!removeRes.ok) throw new Error('حذف یکی از عکس‌های اتیکت انجام نشد. دوباره تلاش کنید.');
+          const removeData = await removeRes.json();
+          if (removeData.item) savedRecord = removeData.item;
+        }
+        for (const imageFile of imageFiles) {
           const imgFormData = new FormData();
           imgFormData.append('image', imageFile);
-          const imgRes = await fetch(`/api/etiquettes/${savedRecord.id}/image`, {
-            method: 'POST',
-            body: imgFormData,
-          });
-          if (imgRes.ok) {
-            const imgData = await imgRes.json();
-            if (imgData.item) {
-              savedRecord = imgData.item;
-            }
+          const imgRes = await fetch(`/api/etiquettes/${savedRecord.id}/image`, { method: 'POST', body: imgFormData });
+          if (!imgRes.ok) {
+            const imgData = await imgRes.json().catch(() => null);
+            throw new Error(imgData?.message || 'افزودن یکی از عکس‌های اتیکت انجام نشد.');
           }
-        } catch (imgErr) {
-          console.error('Failed to attach image to etiquette:', imgErr);
-        }
-      } else if (!imagePreview && editingItem?.image) {
-        // Image was cleared by user
-        try {
-          await fetch(`/api/etiquettes/${editingItem.id}/image`, { method: 'DELETE' });
-        } catch (delErr) {
-          console.error('Failed to clear image:', delErr);
+          const imgData = await imgRes.json();
+          if (imgData.item) savedRecord = imgData.item;
         }
       }
 
@@ -722,37 +731,31 @@ export default function EtiquetteModal({
                 </button>
               </div>
 
-              <div className="flex flex-col sm:flex-row items-center gap-4">
-                {/* Preview Thumbnail */}
-                {imagePreview ? (
-                  <div className="relative size-24 rounded-2xl overflow-hidden border-2 border-amber-500/40 shadow-sm shrink-0 bg-slate-100 dark:bg-slate-800">
-                    <img
-                      src={imagePreview}
-                      alt="پیش‌نمایش محصول"
-                      className="size-full object-cover"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleRemoveImage}
-                      className="absolute top-1 right-1 p-1 rounded-lg bg-rose-600/90 hover:bg-rose-700 text-white transition cursor-pointer shadow-xs"
-                      title="حذف تصویر"
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                ) : (
-                  <div className="size-24 rounded-2xl border-2 border-dashed border-slate-300 dark:border-slate-700 flex flex-col items-center justify-center text-slate-400 shrink-0 bg-white/50 dark:bg-slate-900/50">
-                    <ImagePlus size={26} className="opacity-60" />
-                    <span className="text-[10px] font-bold mt-1">بدون تصویر</span>
-                  </div>
-                )}
+              <div className="space-y-3">
+                <div className="flex flex-wrap gap-3">
+                  {imagePreviews.map((image, index) => (
+                    <div key={image.name || image.url} className="relative size-24 rounded-2xl overflow-hidden border-2 border-amber-500/40 shadow-sm bg-slate-100 dark:bg-slate-800">
+                      <img src={image.url} alt={`تصویر ${index + 1} محصول`} className="size-full object-cover" />
+                      <span className="absolute bottom-1 left-1 rounded-md bg-black/65 px-1.5 py-0.5 text-[10px] font-bold text-white">{index + 1}</span>
+                      <button type="button" onClick={() => handleRemoveImage(index)} className="absolute top-1 right-1 p-1 rounded-lg bg-rose-600/90 hover:bg-rose-700 text-white transition cursor-pointer shadow-xs" title="حذف تصویر">
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  ))}
+                  {imagePreviews.length === 0 && (
+                    <div className="size-24 rounded-2xl border-2 border-dashed border-slate-300 dark:border-slate-700 flex flex-col items-center justify-center text-slate-400 bg-white/50 dark:bg-slate-900/50">
+                      <ImagePlus size={26} className="opacity-60" />
+                      <span className="text-[10px] font-bold mt-1">بدون تصویر</span>
+                    </div>
+                  )}
+                </div>
 
-                {/* Upload Actions & Input */}
-                <div className="flex-1 w-full space-y-2">
+                <div className="w-full space-y-2">
                   <input
                     ref={fileInputRef}
                     type="file"
                     accept="image/*"
+                    multiple
                     onChange={handleSelectImage}
                     className="hidden"
                     id="etiquette-product-image-input"
@@ -764,7 +767,7 @@ export default function EtiquetteModal({
                       className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer shadow-2xs"
                     >
                       <UploadCloud size={15} className="text-amber-500" />
-                      <span>{imagePreview ? 'تغییر تصویر' : 'انتخاب یا آپلود عکس'}</span>
+                      <span>انتخاب عکس</span>
                     </label>
 
                     {isConvertingImage && (
@@ -776,7 +779,7 @@ export default function EtiquetteModal({
                   </div>
 
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    فرمت‌های JPG, PNG, WebP پشتیبانی می‌شوند و به طور خودکار فشرده‌سازی می‌گردند.
+                    {imagePreviews.length} از ۵ عکس. چند عکس را هم‌زمان انتخاب کنید؛ فرمت JPG, PNG و WebP به‌طور خودکار فشرده می‌شود.
                   </p>
                 </div>
               </div>

@@ -30,6 +30,7 @@ import type { DetailState, DocumentLine } from '@/src/components/documents/RawGo
 import { normalizeDigits, toPersianDigits } from '@/lib/jalali';
 import { parseLocalizedAmount } from '@/lib/money';
 import { getLineDocumentTypeLabel, sanitizeLineDetailsForTab } from '../utils/document-helpers';
+import { getCoinDisplayPersianName, getCoinOperationPrefix } from '@/features/coins/services/coin';
 import HawalaCheckboxField from './HawalaCheckboxField';
 
 export type CoinOperationType =
@@ -783,6 +784,10 @@ export default function CoinTab({
         selectedPreset.category || selectedPreset.name,
       );
 
+      const coinPersianName = getCoinDisplayPersianName(selectedPreset.id, effectiveCoinDisplayName, undefined, mintYear);
+      const opPrefix = getCoinOperationPrefix(selectedOperation, nature);
+      const defaultCoinDesc = `${opPrefix} سکه ${coinPersianName}`.trim();
+
       setDraftLine((curr) => ({
         ...curr,
         documentTab: 'coin',
@@ -790,7 +795,7 @@ export default function CoinTab({
         documentSubType: selectedOperation,
         documentTypeLabel: computedDocumentTypeLabel,
         converted750: convertedToX,
-        description: description,
+        description: description.trim() ? description.trim() : defaultCoinDesc,
         details: sanitizeLineDetailsForTab('coin', {
           ...curr.details,
           metalType: 'gold',
@@ -867,7 +872,9 @@ export default function CoinTab({
         settlementMethod: selectedOperation.includes('unsettled') ? 'unsettled' : 'weight',
         balanceSource: 'current',
         converted750: convertedToX,
-        description: description,
+        description: description.trim()
+          ? description.trim()
+          : `${getCoinOperationPrefix(selectedOperation, nature)} سکه ${getCoinDisplayPersianName(selectedPreset.id, effectiveCoinDisplayName, undefined, mintYear)}`.trim(),
         details: sanitizeLineDetailsForTab('coin', {
           ...(draftLine?.details || {}),
           metalType: 'gold',

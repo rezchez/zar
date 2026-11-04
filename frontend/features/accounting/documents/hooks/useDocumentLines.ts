@@ -26,6 +26,7 @@ import {
   sanitizeLineDetailsForTab,
   sanitizeDocumentLine,
 } from '../utils/document-helpers';
+import { getCoinDisplayPersianName, getCoinOperationPrefix } from '@/features/coins/services/coin';
 
 type CalculationMethod = DetailState['calculationMethod'];
 type MetalPriceType = DetailState['metalPriceType'];
@@ -411,6 +412,10 @@ export function validateLine(
     return '';
   }
   if (line.documentTab === 'currency' || line.sourceTab === 'currency') {
+    if (line.details?.hasNoVault) {
+      const u = (line.details.currencyUnit || '').trim();
+      return `صندوقی برای ارز «${u}» ایجاد نشده است. برای انجام هرگونه معامله، ورود و خروج ارز، ابتدا باید صندوق ارزی آن را بسازید.`;
+    }
     const unitUpper = (line.details.currencyUnit || '').trim().toUpperCase();
     if (!unitUpper) return 'واحد ارز را انتخاب کنید.';
     if (unitUpper === 'IRR' || unitUpper === 'IRT') {
@@ -874,6 +879,15 @@ export function useDocumentLines({
       activeDraft.details.settlementCurrencyUnit = selectedCurrency || 'IRR';
     }
 
+    if (
+      (activeDraft.documentTab === 'currency' || activeDraft.sourceTab === 'currency' || activeEntryTab === 'currency') &&
+      activeDraft.details?.hasNoVault
+    ) {
+      const u = (activeDraft.details?.currencyUnit || '').trim();
+      toast.error(`صندوقی برای ارز «${u}» ایجاد نشده است. برای انجام هرگونه معامله، ورود و خروج ارز، ابتدا باید صندوق ارزی آن را بسازید.`);
+      return false;
+    }
+
     const validationMessage = validateLine(activeDraft, validInventory, committedLines, editingLineId, selectedCurrency);
     if (validationMessage) {
       toast.error(validationMessage);
@@ -1008,7 +1022,16 @@ export function useDocumentLines({
         : activeDraft.documentSubType,
       documentTypeLabel: docTypeLabel,
       converted750: c750,
-      description: activeDraft.description ? activeDraft.description.trim() : '',
+      description:
+        activeDraft.description?.trim() ||
+        ((effectiveTab === 'coin' || lineSourceTab === 'coin')
+          ? `${getCoinOperationPrefix(activeDraft.documentSubType, lineNature)} سکه ${getCoinDisplayPersianName(
+              activeDraft.details?.coinType,
+              activeDraft.details?.coinName,
+              activeDraft.details?.coinTypeName,
+              activeDraft.details?.mintYear || activeDraft.details?.coinYear,
+            )}`.trim()
+          : ''),
       details: cleanDetails,
     };
 
@@ -1324,6 +1347,10 @@ export function useDocumentLines({
           const tradeIdx = current.findIndex((l) => l.id === editingLineId);
           const currentTradeLine = tradeIdx !== -1 ? current[tradeIdx] : null;
 
+          const defaultTradeDesc = isUnsettledCurrency
+            ? `${lineNature === 'received' ? 'خرید' : 'فروش'} ارز بدون تسویه (${effectiveCurrencyUnit})`
+            : `${lineNature === 'received' ? 'خرید' : 'فروش'} ارز با تسویه (${effectiveCurrencyUnit})`;
+
           const tradeLine: DocumentLine = {
             ...lineToCommit,
             documentNature: lineNature,
@@ -1331,6 +1358,7 @@ export function useDocumentLines({
             sourceTab: 'currency',
             documentTypeLabel: currencyTradeDocTypeLabel,
             documentSubType: currencyTradeSubType,
+            description: draftLine.description?.trim() ? draftLine.description.trim() : defaultTradeDesc,
             details: {
               ...lineToCommit.details,
               currencyUnit: effectiveCurrencyUnit,
@@ -1566,6 +1594,7 @@ export function useDocumentLines({
 
         if (isUnsettledCurrency) {
           const claimLineId = generateUUID();
+          const defaultUnsettledTradeDesc = `${lineNature === 'received' ? 'خرید' : 'فروش'} ارز بدون تسویه (${effectiveCurrencyUnit})`;
 
           const tradeLineToCommit: DocumentLine = {
             ...lineToCommit,
@@ -1575,6 +1604,9 @@ export function useDocumentLines({
             sourceTab: 'currency',
             documentTypeLabel: currencyTradeDocTypeLabel,
             documentSubType: currencyTradeSubType,
+            description: activeDraft.description?.trim()
+              ? activeDraft.description.trim()
+              : defaultUnsettledTradeDesc,
             details: {
               ...lineToCommit.details,
               documentTypeLabel: currencyTradeDocTypeLabel,

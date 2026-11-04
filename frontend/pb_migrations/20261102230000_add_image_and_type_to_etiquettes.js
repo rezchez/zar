@@ -25,7 +25,8 @@ migrate((app) => {
     if (!etiquettesCol.fields.getByName("image")) {
       etiquettesCol.fields.add(new FileField({
         name: "image",
-        maxSelect: 1,
+        // Keep legacy image records while allowing up to five product views.
+        maxSelect: 5,
         maxSize: 15728640,
         mimeTypes: ["image/jpeg", "image/png", "image/webp"],
         required: false,

@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import Link from 'next/link';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Sparkles,
@@ -13,6 +14,7 @@ import {
   Calendar,
   Tag,
   ChevronLeft,
+  Users,
 } from 'lucide-react';
 import { CHANGELOG_RELEASES, type ChangelogItem, type ChangelogRelease } from '../data/changelog';
 import { APP_VERSION_FA } from '@/lib/version';
@@ -254,10 +256,20 @@ export default function ChangelogModal({ isOpen: controlledIsOpen, onClose }: Ch
             </div>
 
             {/* Footer */}
-            <div className="border-t border-slate-100 dark:border-slate-800 px-6 py-3.5 bg-slate-50/50 dark:bg-slate-800/30 flex items-center justify-between text-xs">
-              <span className="text-slate-500 dark:text-slate-400">
-                سامانه هوشمند طلا، سکه و حسابداری زر (Zarfolio)
-              </span>
+            <div className="border-t border-slate-100 dark:border-slate-800 px-6 py-3.5 bg-slate-50/50 dark:bg-slate-800/30 flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2.5">
+                <span className="text-slate-500 dark:text-slate-400">
+                  سامانه هوشمند طلا، سکه و حسابداری زر (Zarfolio)
+                </span>
+                <Link
+                  href="/about"
+                  onClick={handleClose}
+                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-500/20 font-bold transition-all hover:scale-105 active:scale-95 cursor-pointer shadow-xs"
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  <span>درباره ما</span>
+                </Link>
+              </div>
               <button
                 type="button"
                 onClick={handleClose}
