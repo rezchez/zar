@@ -1,5 +1,10 @@
 import type { CustomerTransaction } from '@/lib/transaction';
-import { getCoinDisplayPersianName, getCoinOperationPrefix, getCoinDefinition } from '@/features/coins/services/coin';
+import {
+  getCoinDisplayPersianName,
+  getCoinOperationPrefix,
+  getCoinDefinition,
+  formatCoinItemTitle,
+} from '@/features/coins/services/coin';
 
 export type LineBreakdown = {
   category: string;
@@ -35,6 +40,7 @@ export function parseTransactionBreakdown(transaction: CustomerTransaction): Lin
   // 1. Raw Gold / Molten / Conditional / Misc
   if (
     !isCurrency &&
+    tab !== 'bank' && tab !== 'check' && tab !== 'cash' &&
     (tab === 'raw-gold' ||
       subType.includes('molten') ||
       subType.includes('conditional') ||
@@ -277,6 +283,16 @@ export function parseTransactionBreakdown(transaction: CustomerTransaction): Lin
 
   // 7. Stone & Gems
   if (tab === 'stone' || subType.includes('stone')) {
+    const rawCur = String(details.settlementCurrencyUnit || details.currencyUnit || transaction.foreignCurrency || details.baseCurrency || 'IRR').trim().toUpperCase();
+    const curLabel =
+      rawCur === 'USD' ? 'دلار' :
+      rawCur === 'EUR' ? 'یورو' :
+      rawCur === 'AED' ? 'درهم' :
+      rawCur === 'GBP' ? 'پوند' :
+      rawCur === 'IRT' ? 'تومان' :
+      rawCur === 'IRR' ? 'ریال' :
+      rawCur;
+
     if (details.stoneSpeciesName || details.stoneCategory) {
       attributes.push({ label: 'نوع سنگ', value: String(details.stoneSpeciesName || details.stoneCategory) });
     }
@@ -286,12 +302,37 @@ export function parseTransactionBreakdown(transaction: CustomerTransaction): Lin
     if (details.stoneCarats) {
       attributes.push({ label: 'وزن قیراط', value: `${details.stoneCarats} ct`, isMono: true });
     }
+    if (details.stoneGrams) {
+      attributes.push({ label: 'وزن گرم', value: `${details.stoneGrams} g`, isMono: true });
+    }
     if (details.stoneUnitPrice) {
       attributes.push({
         label: 'قیمت قیراط',
-        value: `${Number(details.stoneUnitPrice).toLocaleString('fa-IR')} ریال`,
+        value: `${Number(details.stoneUnitPrice).toLocaleString('fa-IR')} ${curLabel}`,
         isMono: true,
       });
+    }
+    if (details.stoneTotalAmount || details.totalAmount) {
+      const tot = Number(details.stoneTotalAmount || details.totalAmount);
+      if (tot > 0) {
+        attributes.push({
+          label: 'مبلغ کل معامله',
+          value: `${tot.toLocaleString('fa-IR')} ${curLabel}`,
+          isMono: true,
+        });
+      }
+    }
+    if (details.stoneColor) {
+      attributes.push({ label: 'رنگ', value: String(details.stoneColor) });
+    }
+    if (details.stoneClarity) {
+      attributes.push({ label: 'درجه پاکی', value: String(details.stoneClarity) });
+    }
+    if (details.stoneCut) {
+      attributes.push({ label: 'کیفیت تراش', value: String(details.stoneCut) });
+    }
+    if (details.stoneShapeName || details.stoneShape) {
+      attributes.push({ label: 'شکل', value: String(details.stoneShapeName || details.stoneShape) });
     }
 
     return {
@@ -928,6 +969,8 @@ export function getDocumentLineDescription(transaction: CustomerTransaction): Do
       ? 'molten'
       : subType.includes('misc')
       ? 'misc'
+      : subType.includes('question') || subType.includes('sowaleh')
+      ? 'question'
       : undefined);
   const isConditional =
     rawKind === 'conditional' || details.isConditional || subType.includes('conditional');
@@ -949,6 +992,7 @@ export function getDocumentLineDescription(transaction: CustomerTransaction): Do
   // 1. Raw Gold / Molten / Conditional / Misc
   if (
     !isCurrency &&
+    tab !== 'bank' && tab !== 'check' && tab !== 'cash' &&
     (tab === 'raw-gold' ||
       tab === 'gold-raw' ||
       subType.includes('molten') ||
@@ -958,16 +1002,29 @@ export function getDocumentLineDescription(transaction: CustomerTransaction): Do
       subType.includes('question') ||
       (details.rawKind && hasGold))
   ) {
+    const isTradePurchase = subType.startsWith('gold-purchase') || subType.includes('purchase');
+    const isTradeSale = subType.startsWith('gold-sale') || subType.includes('sale');
+
     if (isConditional) {
-      primary = isReceived ? 'ورود آبشده شرطی' : 'خروج آبشده شرطی';
+      if (isTradePurchase) primary = 'خرید طلای شرطی';
+      else if (isTradeSale) primary = 'فروش طلای شرطی';
+      else primary = isReceived ? 'ورود آبشده شرطی طلا' : 'خروج آبشده شرطی طلا';
     } else if (isUnsettled) {
-      primary = isReceived ? 'خرید طلا بدون تسویه' : 'فروش طلا بدون تسویه';
+      if (isTradePurchase) primary = 'خرید طلا بدون تسویه';
+      else if (isTradeSale) primary = 'فروش طلا بدون تسویه';
+      else primary = isReceived ? 'خرید طلا بدون تسویه' : 'فروش طلا بدون تسویه';
     } else if (rawKind === 'misc') {
-      primary = isReceived ? 'ورود طلای متفرقه' : 'خروج طلای متفرقه';
+      if (isTradePurchase) primary = 'خرید متفرقه طلا';
+      else if (isTradeSale) primary = 'فروش متفرقه طلا';
+      else primary = isReceived ? 'ورود متفرقه طلا' : 'خروج متفرقه طلا';
     } else if (rawKind === 'question') {
-      primary = isReceived ? 'ورود طلای مظنه' : 'خروج طلای مظنه';
+      if (isTradePurchase) primary = 'خرید سواله طلا';
+      else if (isTradeSale) primary = 'فروش سواله طلا';
+      else primary = isReceived ? 'ورود سواله طلا' : 'خروج سواله طلا';
     } else {
-      primary = isReceived ? 'ورود آبشده طلا' : 'خروج آبشده طلا';
+      if (isTradePurchase) primary = 'خرید آبشده طلا';
+      else if (isTradeSale) primary = 'فروش آبشده طلا';
+      else primary = isReceived ? 'ورود آبشده طلا' : 'خروج آبشده طلا';
     }
 
     if (details.stampNumber || details.assayStampNumber) {
@@ -975,6 +1032,16 @@ export function getDocumentLineDescription(transaction: CustomerTransaction): Do
     }
     if (details.labName || details.assayLabName) {
       extraInfoParts.push(`ری‌گیری: ${details.labName || details.assayLabName}`);
+    }
+
+    const numPrice = Number(details.metalPrice) || 0;
+    if (numPrice > 0) {
+      const isGram = details.metalPriceType !== 'mesghal17';
+      const gramPrice = isGram ? numPrice : Math.round(numPrice / 4.3318);
+      const mesghalPrice = isGram ? Math.round(numPrice * 4.3318) : numPrice;
+      const unitStr = details.currencyUnit === 'IRR' ? 'ریال' : 'تومان';
+
+      extraInfoParts.push(`در گرمی (${gramPrice.toLocaleString('fa-IR')} ${unitStr}) و مثقالی (${mesghalPrice.toLocaleString('fa-IR')} ${unitStr})`);
     }
   }
 
@@ -1031,19 +1098,25 @@ export function getDocumentLineDescription(transaction: CustomerTransaction): Do
       details.bankOperationKind?.includes('check');
 
     if (isCheck) {
-      primary = isReceived ? 'دریافت چک صیادی' : 'پرداخت چک صیادی';
+      const sayad = details.sayadId || details.sayadNumber;
+      if (sayad) {
+        primary = isReceived ? `ورود چک صیاد: ${sayad}` : `خروج چک صیاد: ${sayad}`;
+      } else {
+        primary = isReceived ? 'ورود چک' : 'خروج چک';
+      }
       if (details.checkNumber) extraInfoParts.push(`شماره چک: ${details.checkNumber}`);
       if (details.dueDateJalali || details.checkDueDateJalali) {
         extraInfoParts.push(`سررسید: ${details.dueDateJalali || details.checkDueDateJalali}`);
       }
-      if (details.sayadId) extraInfoParts.push(`صیاد: ${details.sayadId}`);
-      if (details.bankName || details.bankAccountName) {
-        extraInfoParts.push(String(details.bankName || details.bankAccountName));
-      }
     } else {
       primary = isReceived ? 'واریز به حساب بانکی' : 'حواله از حساب بانکی';
       if (details.bankAccountName || details.bankName) {
-        extraInfoParts.push(String(details.bankAccountName || details.bankName));
+        let bTitle = String(details.bankAccountName || details.bankName);
+        if (details.bankBranch) bTitle += ` (شعبه ${details.bankBranch})`;
+        extraInfoParts.push(bTitle);
+      }
+      if (details.accountNumber) {
+        extraInfoParts.push(`شماره حساب: ${details.accountNumber}`);
       }
       if (details.trackingNumber) extraInfoParts.push(`کد پیگیری: ${details.trackingNumber}`);
     }
@@ -1070,9 +1143,7 @@ export function getDocumentLineDescription(transaction: CustomerTransaction): Do
   else if (tab === 'coin' || tab === 'coins' || subType.includes('coin')) {
     const coinName = getCoinDisplayPersianName(details.coinType, details.coinName, details.coinTypeName, details.mintYear || details.coinYear);
     const opPrefix = getCoinOperationPrefix(subType || transaction.documentSubType || details.subType, isReceived ? 'received' : 'paid');
-    primary = coinName
-      ? `${opPrefix} سکه ${coinName}`
-      : `${opPrefix} سکه`;
+    primary = formatCoinItemTitle(opPrefix, coinName);
 
     const qty = details.quantity ? String(details.quantity) : '1';
     let unitW = '';
@@ -1108,10 +1179,72 @@ export function getDocumentLineDescription(transaction: CustomerTransaction): Do
 
   // 7. Stone
   else if (tab === 'stone' || subType.includes('stone')) {
-    if (isUnsettled) {
-      primary = isReceived ? 'خرید سنگ بدون تسویه' : 'فروش سنگ بدون تسویه';
+    const stoneOp = String(details.stoneOperationKind || '');
+    const species = String(
+      details.stoneSpeciesName ||
+        details.stoneItemName ||
+        details.stoneCategoryFa ||
+        details.stoneCategory ||
+        '',
+    ).trim();
+
+    let opPrefix = '';
+    if (stoneOp === 'purchase') opPrefix = 'خرید سنگ';
+    else if (stoneOp === 'sale') opPrefix = 'فروش سنگ';
+    else if (stoneOp === 'unsettled_purchase') opPrefix = 'خرید سنگ (بدون تسویه مالی)';
+    else if (stoneOp === 'unsettled_sale') opPrefix = 'فروش سنگ (بدون تسویه مالی)';
+    else if (stoneOp === 'entry') opPrefix = 'ورود سنگ';
+    else if (stoneOp === 'exit') opPrefix = 'خروج سنگ';
+    else if (isUnsettled) opPrefix = isReceived ? 'خرید سنگ (بدون تسویه مالی)' : 'فروش سنگ (بدون تسویه مالی)';
+    else if (subType.includes('purchase')) opPrefix = 'خرید سنگ';
+    else if (subType.includes('sale')) opPrefix = 'فروش سنگ';
+    else opPrefix = isReceived ? 'ورود سنگ' : 'خروج سنگ';
+
+    if (species) {
+      primary = `${opPrefix}: ${species}`;
     } else {
-      primary = isReceived ? 'ورود سنگ و جواهر' : 'خروج سنگ و جواهر';
+      primary = opPrefix;
+    }
+
+    const rawCur = String(details.settlementCurrencyUnit || details.currencyUnit || transaction.foreignCurrency || details.baseCurrency || 'IRR').trim().toUpperCase();
+    const curLabel =
+      rawCur === 'USD' ? 'دلار' :
+      rawCur === 'EUR' ? 'یورو' :
+      rawCur === 'AED' ? 'درهم' :
+      rawCur === 'GBP' ? 'پوند' :
+      rawCur === 'IRT' ? 'تومان' :
+      rawCur === 'IRR' ? 'ریال' :
+      rawCur;
+
+    const totalAmt = Number(details.stoneTotalAmount || details.totalAmount || 0);
+    if (totalAmt > 0) {
+      extraInfoParts.push(`مبلغ: ${totalAmt.toLocaleString('fa-IR')} ${curLabel}`);
+    }
+
+    const ct = details.stoneCarats ? String(details.stoneCarats) : '';
+    const g = details.stoneGrams ? String(details.stoneGrams) : '';
+    if (ct && g) {
+      extraInfoParts.push(`وزن: ${ct} ct (${g} گرم)`);
+    } else if (ct) {
+      extraInfoParts.push(`وزن: ${ct} ct`);
+    } else if (g) {
+      extraInfoParts.push(`وزن: ${g} گرم`);
+    }
+    if (details.stonePieces) {
+      extraInfoParts.push(`تعداد: ${details.stonePieces} عدد`);
+    }
+    if (details.stoneShapeName || details.stoneShape) {
+      const shapeFa = String(details.stoneShapeName || details.stoneShape);
+      extraInfoParts.push(`شکل: ${shapeFa}`);
+    }
+    if (details.stoneColor) {
+      extraInfoParts.push(`رنگ: ${details.stoneColor}`);
+    }
+    if (details.stoneClarity) {
+      extraInfoParts.push(`پاکی: ${details.stoneClarity}`);
+    }
+    if (details.stoneCut) {
+      extraInfoParts.push(`تراش: ${details.stoneCut}`);
     }
   }
 
@@ -1149,6 +1282,9 @@ export function getDocumentLineDescription(transaction: CustomerTransaction): Do
   // Construct secondary text
   const secondaryParts: string[] = [];
   const isCoinTab = tab === 'coin' || tab === 'coins' || subType.includes('coin');
+  const isCheckItem =
+    tab === 'check' ||
+    tab === 'bank' && (subType.includes('check') || Boolean(details.checkNumber) || Boolean(details.bankOperationKind?.includes('check')));
   if (
     transaction.description &&
     transaction.description.trim() &&
@@ -1164,7 +1300,33 @@ export function getDocumentLineDescription(transaction: CustomerTransaction): Do
         trimmedDesc.startsWith('ورود سکه') ||
         trimmedDesc.startsWith('فروش سکه') ||
         trimmedDesc.startsWith('خروج سکه'));
-    if (!isRedundantCoinDesc) {
+    const isRedundantCheckDesc =
+      isCheckItem &&
+      (trimmedDesc === primary.trim() ||
+        trimmedDesc === 'ورود چک' ||
+        trimmedDesc === 'خروج چک' ||
+        trimmedDesc === 'دریافت چک' ||
+        trimmedDesc === 'پرداخت چک' ||
+        trimmedDesc === 'دریافت چک صیادی' ||
+        trimmedDesc === 'پرداخت چک صیادی' ||
+        trimmedDesc.startsWith('ورود چک') ||
+        trimmedDesc.startsWith('خروج چک') ||
+        trimmedDesc.startsWith('دریافت چک') ||
+        trimmedDesc.startsWith('پرداخت چک'));
+    const isRedundantStoneDesc =
+      (tab === 'stone' || subType.includes('stone')) &&
+      (trimmedDesc === primary.trim() ||
+        trimmedDesc === 'ورود سنگ و جواهر' ||
+        trimmedDesc === 'خروج سنگ و جواهر' ||
+        trimmedDesc === 'خرید سنگ' ||
+        trimmedDesc === 'فروش سنگ' ||
+        trimmedDesc === 'ورود سنگ' ||
+        trimmedDesc === 'خروج سنگ' ||
+        trimmedDesc.startsWith('خرید سنگ:') ||
+        trimmedDesc.startsWith('فروش سنگ:') ||
+        trimmedDesc.startsWith('ورود سنگ:') ||
+        trimmedDesc.startsWith('خروج سنگ:'));
+    if (!isRedundantCoinDesc && !isRedundantCheckDesc && !isRedundantStoneDesc) {
       secondaryParts.push(trimmedDesc);
     }
   }
@@ -1241,10 +1403,16 @@ export function getRowExtraDetails(transaction: CustomerTransaction): RowExtraDe
   }
 
   let foreignCurrency = '';
-  if (transaction.foreignCurrency && transaction.foreignAmount) {
+  if (transaction.foreignCurrency && Number(transaction.foreignAmount) !== 0) {
     foreignCurrency = `${Math.abs(Number(transaction.foreignAmount)).toLocaleString('fa-IR')} ${transaction.foreignCurrency}`;
   } else if (details.currencyQuantity && (details.currencyName || transaction.foreignCurrency)) {
     foreignCurrency = `${Number(details.currencyQuantity).toLocaleString('fa-IR')} ${details.currencyName || transaction.foreignCurrency}`;
+  } else {
+    const rawCur = String(details.settlementCurrencyUnit || details.currencyUnit || transaction.foreignCurrency || '').trim().toUpperCase();
+    const tradeAmt = Math.abs(Number(details.stoneTotalAmount || details.totalAmount || details.amount || 0));
+    if (tradeAmt > 0 && rawCur && rawCur !== 'IRR' && rawCur !== 'IRT') {
+      foreignCurrency = `${tradeAmt.toLocaleString('fa-IR')} ${rawCur}`;
+    }
   }
 
   return {

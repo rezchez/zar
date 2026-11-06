@@ -26,7 +26,11 @@ import {
   sanitizeLineDetailsForTab,
   sanitizeDocumentLine,
 } from '../utils/document-helpers';
-import { getCoinDisplayPersianName, getCoinOperationPrefix } from '@/features/coins/services/coin';
+import {
+  getCoinDisplayPersianName,
+  getCoinOperationPrefix,
+  formatCoinItemTitle,
+} from '@/features/coins/services/coin';
 
 type CalculationMethod = DetailState['calculationMethod'];
 type MetalPriceType = DetailState['metalPriceType'];
@@ -218,6 +222,7 @@ export function isLineReady(
     const carats = numberValue(line.details.stoneCarats);
     const grams = numberValue(line.details.stoneGrams);
     const pieces = numberValue(line.details.stonePieces);
+    if (carats < 0 || grams < 0 || pieces < 0) return false;
     const hasWeightOrPieces = carats > 0 || grams > 0 || pieces > 0;
     const isTrade =
       line.details.stoneOperationKind === 'purchase' ||
@@ -395,6 +400,9 @@ export function validateLine(
     const carats = numberValue(line.details.stoneCarats);
     const grams = numberValue(line.details.stoneGrams);
     const pieces = numberValue(line.details.stonePieces);
+    if (carats < 0 || grams < 0 || pieces < 0) {
+      return 'وزن و تعداد سنگ نمی‌تواند عدد منفی باشد.';
+    }
     if (carats <= 0 && grams <= 0 && pieces <= 0) {
       return 'وارد کردن وزن (قیراط یا گرم) یا تعداد سنگ الزامی است.';
     }
@@ -1025,12 +1033,15 @@ export function useDocumentLines({
       description:
         activeDraft.description?.trim() ||
         ((effectiveTab === 'coin' || lineSourceTab === 'coin')
-          ? `${getCoinOperationPrefix(activeDraft.documentSubType, lineNature)} سکه ${getCoinDisplayPersianName(
-              activeDraft.details?.coinType,
-              activeDraft.details?.coinName,
-              activeDraft.details?.coinTypeName,
-              activeDraft.details?.mintYear || activeDraft.details?.coinYear,
-            )}`.trim()
+          ? formatCoinItemTitle(
+              getCoinOperationPrefix(activeDraft.documentSubType, lineNature),
+              getCoinDisplayPersianName(
+                activeDraft.details?.coinType,
+                activeDraft.details?.coinName,
+                activeDraft.details?.coinTypeName,
+                activeDraft.details?.mintYear || activeDraft.details?.coinYear,
+              ),
+            )
           : ''),
       details: cleanDetails,
     };
@@ -1040,6 +1051,45 @@ export function useDocumentLines({
       (activeDraft.details.rawKind === 'molten' || activeDraft.details.rawKind === 'misc') &&
       !activeDraft.details.unsettledTrade &&
       activeDraft.settlementMethod !== 'unsettled';
+
+    const isCoinRow =
+      effectiveTab === 'coin' || lineSourceTab === 'coin' || activeDraft.documentTab === 'coin';
+    const isSettledCoinTrade =
+      isCoinRow &&
+      (activeDraft.documentSubType === 'receipt_buy' || activeDraft.documentSubType === 'payment_sale') &&
+      !activeDraft.details?.unsettledTrade &&
+      activeDraft.settlementMethod !== 'unsettled';
+
+    const coinPersianName = getCoinDisplayPersianName(
+      activeDraft.details?.coinType,
+      activeDraft.details?.coinName,
+      activeDraft.details?.coinTypeName,
+      activeDraft.details?.mintYear || activeDraft.details?.coinYear,
+    );
+    const isCoinBar =
+      coinPersianName.includes('شمش') ||
+      String(activeDraft.details?.coinType || '').includes('bar') ||
+      String(activeDraft.details?.coinType || '').includes('zioto');
+
+    const coinTradeDocTypeLabel = isCoinBar
+      ? (lineNature === 'received' ? 'خرید شمش' : 'فروش شمش')
+      : (lineNature === 'received' ? 'خرید سکه' : 'فروش سکه');
+
+    const coinPhysicalTypeLabel = isCoinBar
+      ? (lineNature === 'received' ? 'ورود شمش' : 'خروج شمش')
+      : (lineNature === 'received' ? 'ورود سکه' : 'خروج سکه');
+
+    const coinPhysicalSubType = lineNature === 'received' ? 'receipt_entry' : 'payment_exit';
+    const coinTradeSubType = lineNature === 'received' ? 'receipt_buy' : 'payment_sale';
+
+    const coinTradeDesc = activeDraft.description?.trim()
+      ? activeDraft.description.trim()
+      : formatCoinItemTitle(lineNature === 'received' ? 'خرید' : 'فروش', coinPersianName);
+
+    const coinPhysicalDesc = formatCoinItemTitle(
+      lineNature === 'received' ? 'ورود' : 'خروج',
+      coinPersianName,
+    );
 
     const isCurrencyTrade =
       lineSourceTab === 'currency' || activeDraft.documentTab === 'currency' || activeEntryTab === 'currency';
@@ -1296,7 +1346,97 @@ export function useDocumentLines({
             ? 'ردیف خرید و ردیف ورود فیزیکی با موفقیت ویرایش شدند.'
             : 'ردیف فروش و ردیف خروج فیزیکی با موفقیت ویرایش شدند.',
         );
-      } else if (draftLine.documentTab === 'raw-gold' && draftLine.details.linkedLineId) {
+      } else if (isSettledCoinTrade) {
+        setCommittedLines((current) => {
+          const tradeLine: DocumentLine = {
+            ...lineToCommit,
+            id: editingLineId,
+            documentNature: lineNature,
+            documentTab: 'coin',
+            sourceTab: 'coin',
+            documentTypeLabel: coinTradeDocTypeLabel,
+            documentSubType: coinTradeSubType,
+            converted750: c750,
+            description: coinTradeDesc,
+            details: {
+              ...lineToCommit.details,
+              baseKarat,
+              documentTypeLabel: coinTradeDocTypeLabel,
+              documentSubType: coinTradeSubType,
+            },
+          };
+
+          const existingPhysicalIndex = current.findIndex(
+            (l) =>
+              (tradeLine.details.linkedLineId && l.id === tradeLine.details.linkedLineId) ||
+              (l.details?.linkedLineId === editingLineId && (l.documentTab === 'coin' || l.sourceTab === 'coin')),
+          );
+
+          if (existingPhysicalIndex !== -1) {
+            const existingPhysical = current[existingPhysicalIndex];
+            const updatedPhysical: DocumentLine = {
+              ...existingPhysical,
+              documentNature: lineNature,
+              converted750: c750,
+              documentTypeLabel: coinPhysicalTypeLabel,
+              documentSubType: coinPhysicalSubType,
+              description: coinPhysicalDesc,
+              details: {
+                ...existingPhysical.details,
+                ...cleanDetails,
+                baseKarat,
+                totalAmount: '0',
+                currencyTotalAmount: '0',
+                currencyUnitPrice: '0',
+                documentTypeLabel: coinPhysicalTypeLabel,
+                documentSubType: coinPhysicalSubType,
+                linkedLineId: tradeLine.id,
+              },
+            };
+            tradeLine.details.linkedLineId = updatedPhysical.id;
+            return current.map((l) => {
+              if (l.id === editingLineId) return tradeLine;
+              if (l.id === updatedPhysical.id) return updatedPhysical;
+              return l;
+            });
+          } else {
+            const physicalLineId = generateUUID();
+            tradeLine.details.linkedLineId = physicalLineId;
+            const newPhysical: DocumentLine = {
+              id: physicalLineId,
+              documentNature: lineNature,
+              documentTab: 'coin',
+              sourceTab: 'coin',
+              documentTypeLabel: coinPhysicalTypeLabel,
+              documentSubType: coinPhysicalSubType,
+              settlementMethod: 'weight',
+              balanceSource: 'current',
+              converted750: c750,
+              description: coinPhysicalDesc,
+              details: {
+                ...cleanDetails,
+                baseKarat,
+                totalAmount: '0',
+                currencyTotalAmount: '0',
+                currencyUnitPrice: '0',
+                documentTypeLabel: coinPhysicalTypeLabel,
+                documentSubType: coinPhysicalSubType,
+                linkedLineId: tradeLine.id,
+              },
+            };
+            return current.map((l) => (l.id === editingLineId ? tradeLine : l)).concat(newPhysical);
+          }
+        });
+        setEditingLineId(null);
+        toast.success(
+          lineNature === 'received'
+            ? (isCoinBar ? 'ردیف خرید و ردیف ورود فیزیکی شمش با موفقیت ویرایش شدند.' : 'ردیف خرید و ردیف ورود فیزیکی سکه با موفقیت ویرایش شدند.')
+            : (isCoinBar ? 'ردیف فروش و ردیف خروج فیزیکی شمش با موفقیت ویرایش شدند.' : 'ردیف فروش و ردیف خروج فیزیکی سکه با موفقیت ویرایش شدند.'),
+        );
+      } else if (
+        (draftLine.documentTab === 'raw-gold' || draftLine.documentTab === 'coin') &&
+        draftLine.details.linkedLineId
+      ) {
         setCommittedLines((current) => {
           const physicalLine = {
             ...lineToCommit,
@@ -1328,6 +1468,24 @@ export function useDocumentLines({
                   stampNumber: draftLine.details.stampNumber?.trim() || '',
                   baseKarat,
                   totalAmount: recomputedTotal ? String(recomputedTotal) : l.details.totalAmount,
+                },
+              };
+            }
+            if (l.id === draftLine.details.linkedLineId && l.documentTab === 'coin') {
+              return {
+                ...l,
+                converted750: c750,
+                details: {
+                  ...l.details,
+                  quantity: String(draftLine.details.quantity || ''),
+                  currencyQuantity: String(draftLine.details.quantity || ''),
+                  rawWeight: String(draftLine.details.rawWeight || ''),
+                  unitWeight: draftLine.details.unitWeight,
+                  purity: String(draftLine.details.purity || '900'),
+                  coinType: draftLine.details.coinType,
+                  coinName: draftLine.details.coinName,
+                  coinYear: draftLine.details.coinYear,
+                  mintYear: draftLine.details.mintYear,
                 },
               };
             }
@@ -1526,7 +1684,8 @@ export function useDocumentLines({
         const linkedId = draftLine.details?.linkedLineId;
         setCommittedLines((current) => {
           let updated = current.map((line) => (line.id === editingLineId ? lineToCommit : line));
-          if (lineToCommit.documentTab === 'gold-sale' && !isSettledMetalTrade && linkedId) {
+          if (((lineToCommit.documentTab === 'gold-sale' && !isSettledMetalTrade) ||
+               (lineToCommit.documentTab === 'coin' && !isSettledCoinTrade)) && linkedId) {
             updated = updated.filter((l) => l.id !== linkedId);
           }
           return updated;
@@ -1588,6 +1747,58 @@ export function useDocumentLines({
           lineNature === 'received'
             ? 'ردیف خرید و ردیف ورود فیزیکی طلا به سند اضافه شدند.'
             : 'ردیف فروش و ردیف خروج فیزیکی طلا به سند اضافه شدند.',
+        );
+      } else if (isSettledCoinTrade) {
+        const tradeLineId = activeDraft.id || generateUUID();
+        const physicalLineId = generateUUID();
+
+        const tradeLineToCommit: DocumentLine = {
+          ...lineToCommit,
+          id: tradeLineId,
+          documentNature: lineNature,
+          documentTab: 'coin',
+          sourceTab: 'coin',
+          documentTypeLabel: coinTradeDocTypeLabel,
+          documentSubType: coinTradeSubType,
+          converted750: c750,
+          description: coinTradeDesc,
+          details: {
+            ...lineToCommit.details,
+            baseKarat,
+            documentTypeLabel: coinTradeDocTypeLabel,
+            documentSubType: coinTradeSubType,
+            linkedLineId: physicalLineId,
+          },
+        };
+
+        const physicalLineToCommit: DocumentLine = {
+          id: physicalLineId,
+          documentNature: lineNature,
+          documentTab: 'coin',
+          sourceTab: 'coin',
+          documentTypeLabel: coinPhysicalTypeLabel,
+          documentSubType: coinPhysicalSubType,
+          settlementMethod: 'weight',
+          balanceSource: 'current',
+          converted750: c750,
+          description: coinPhysicalDesc,
+          details: {
+            ...cleanDetails,
+            baseKarat,
+            totalAmount: '0',
+            currencyTotalAmount: '0',
+            currencyUnitPrice: '0',
+            documentTypeLabel: coinPhysicalTypeLabel,
+            documentSubType: coinPhysicalSubType,
+            linkedLineId: tradeLineId,
+          },
+        };
+
+        setCommittedLines((current) => [...current, tradeLineToCommit, physicalLineToCommit]);
+        toast.success(
+          lineNature === 'received'
+            ? (isCoinBar ? 'ردیف خرید و ردیف ورود فیزیکی شمش به سند اضافه شدند.' : 'ردیف خرید و ردیف ورود فیزیکی سکه به سند اضافه شدند.')
+            : (isCoinBar ? 'ردیف فروش و ردیف خروج فیزیکی شمش به سند اضافه شدند.' : 'ردیف فروش و ردیف خروج فیزیکی سکه به سند اضافه شدند.'),
         );
       } else if (isCurrencyTrade) {
         const tradeLineId = activeDraft.id || generateUUID();

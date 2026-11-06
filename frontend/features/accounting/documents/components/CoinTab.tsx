@@ -30,7 +30,11 @@ import type { DetailState, DocumentLine } from '@/src/components/documents/RawGo
 import { normalizeDigits, toPersianDigits } from '@/lib/jalali';
 import { parseLocalizedAmount } from '@/lib/money';
 import { getLineDocumentTypeLabel, sanitizeLineDetailsForTab } from '../utils/document-helpers';
-import { getCoinDisplayPersianName, getCoinOperationPrefix } from '@/features/coins/services/coin';
+import {
+  getCoinDisplayPersianName,
+  getCoinOperationPrefix,
+  formatCoinItemTitle,
+} from '@/features/coins/services/coin';
 import HawalaCheckboxField from './HawalaCheckboxField';
 
 export type CoinOperationType =
@@ -786,7 +790,7 @@ export default function CoinTab({
 
       const coinPersianName = getCoinDisplayPersianName(selectedPreset.id, effectiveCoinDisplayName, undefined, mintYear);
       const opPrefix = getCoinOperationPrefix(selectedOperation, nature);
-      const defaultCoinDesc = `${opPrefix} سکه ${coinPersianName}`.trim();
+      const defaultCoinDesc = formatCoinItemTitle(opPrefix, coinPersianName);
 
       setDraftLine((curr) => ({
         ...curr,
@@ -874,7 +878,10 @@ export default function CoinTab({
         converted750: convertedToX,
         description: description.trim()
           ? description.trim()
-          : `${getCoinOperationPrefix(selectedOperation, nature)} سکه ${getCoinDisplayPersianName(selectedPreset.id, effectiveCoinDisplayName, undefined, mintYear)}`.trim(),
+          : formatCoinItemTitle(
+              getCoinOperationPrefix(selectedOperation, nature),
+              getCoinDisplayPersianName(selectedPreset.id, effectiveCoinDisplayName, undefined, mintYear),
+            ),
         details: sanitizeLineDetailsForTab('coin', {
           ...(draftLine?.details || {}),
           metalType: 'gold',

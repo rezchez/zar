@@ -68,7 +68,7 @@ export default function BankOperation({
 
   const initialCached = getInitialCachedBanks();
   const [banks, setBanks] = useState<BankAccount[]>(() => initialCached || []);
-  const [isFetchingBanks, setIsFetchingBanks] = useState(() => !initialCached || initialCached.length === 0);
+  const [isFetchingBanks, setIsFetchingBanks] = useState(() => initialCached === null);
   const [search, setSearch] = useState('');
   const [selectedSource, setSelectedSource] = useState(() => (initialCached && initialCached.length > 0 ? initialCached[0].id : ''));
   const [selectedDestination, setSelectedDestination] = useState('');

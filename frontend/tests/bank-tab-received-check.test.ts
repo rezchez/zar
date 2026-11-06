@@ -201,4 +201,31 @@ describe('BankTab Received Check vs Check Payment (دریافت چک در سند
     expect(creditLine?.accountCode).toBe(SYSTEM_ACCOUNT_CODES.COUNTERPARTY_LIABILITY);
     expect(creditLine?.description).toContain('جناب زرگر');
   });
+
+  it('renders empty state "هنوز هیچ حساب بانکی ثبت نشده است." when bank accounts list is empty and user selects receive-from-customer', () => {
+    setCachedBanksForTesting([]);
+    const baseLine = createLine('received', 'bank');
+    const receiveMoneyLine: DocumentLine = {
+      ...baseLine,
+      id: 'draft-line-2',
+      details: {
+        ...baseLine.details,
+        bankOperationKind: 'receive-from-customer',
+      },
+    };
+
+    const html = renderWithToast(
+      React.createElement(BankTab, {
+        nature: 'received',
+        selectedCustomer: { id: 'c1', name: 'جناب زرگر' } as any,
+        draftLine: receiveMoneyLine,
+        setDraftLine: () => {},
+      }),
+    );
+
+    expect(html).toContain('هنوز هیچ حساب بانکی ثبت نشده است.');
+    expect(html).not.toContain('در حال دریافت حساب‌های بانکی...');
+    expect(html).toContain('افزودن حساب بانکی');
+    expect(html).toContain('تعریف موجودی اولیه حساب بانکی');
+  });
 });

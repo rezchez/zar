@@ -92,6 +92,35 @@ describe('Stone Tab Validation & Accounting Operations', () => {
       expect(isLineReady(line)).toBe(false);
     });
 
+    it('returns false when stone carats, grams, or pieces are negative', () => {
+      const lineNegativeCarats: DocumentLine = {
+        ...baseStoneLine,
+        details: {
+          ...baseStoneLine.details,
+          stoneCarats: '-1.5',
+        },
+      };
+      expect(isLineReady(lineNegativeCarats)).toBe(false);
+
+      const lineNegativeGrams: DocumentLine = {
+        ...baseStoneLine,
+        details: {
+          ...baseStoneLine.details,
+          stoneGrams: '-0.3',
+        },
+      };
+      expect(isLineReady(lineNegativeGrams)).toBe(false);
+
+      const lineNegativePieces: DocumentLine = {
+        ...baseStoneLine,
+        details: {
+          ...baseStoneLine.details,
+          stonePieces: '-2',
+        },
+      };
+      expect(isLineReady(lineNegativePieces)).toBe(false);
+    });
+
     it('requires totalAmount > 0 for settled purchase (خرید سنگ)', () => {
       const lineWithoutAmount: DocumentLine = {
         ...baseStoneLine,
@@ -165,6 +194,35 @@ describe('Stone Tab Validation & Accounting Operations', () => {
   });
 
   describe('validateLine for Stone Operations', () => {
+    it('returns persian error when stone carats, grams, or pieces are negative', () => {
+      const lineNegativeCarats: DocumentLine = {
+        ...baseStoneLine,
+        details: {
+          ...baseStoneLine.details,
+          stoneCarats: '-2.5',
+        },
+      };
+      expect(validateLine(lineNegativeCarats)).toBe('وزن و تعداد سنگ نمی‌تواند عدد منفی باشد.');
+
+      const lineNegativeGrams: DocumentLine = {
+        ...baseStoneLine,
+        details: {
+          ...baseStoneLine.details,
+          stoneGrams: '-0.5',
+        },
+      };
+      expect(validateLine(lineNegativeGrams)).toBe('وزن و تعداد سنگ نمی‌تواند عدد منفی باشد.');
+
+      const lineNegativePieces: DocumentLine = {
+        ...baseStoneLine,
+        details: {
+          ...baseStoneLine.details,
+          stonePieces: '-1',
+        },
+      };
+      expect(validateLine(lineNegativePieces)).toBe('وزن و تعداد سنگ نمی‌تواند عدد منفی باشد.');
+    });
+
     it('returns persian error when carats, grams, and pieces are all zero', () => {
       const line: DocumentLine = {
         ...baseStoneLine,
@@ -221,12 +279,12 @@ describe('Stone Tab Validation & Accounting Operations', () => {
       expect(getLineDocumentTypeLabel('paid', 'stone')).toBe('خروج سنگ');
     });
 
-    it('returns "خرید سنگ (بدون تسویه)" for unsettled received stone trade', () => {
-      expect(getLineDocumentTypeLabel('received', 'stone', undefined, true)).toBe('خرید سنگ (بدون تسویه)');
+    it('returns "خرید سنگ (بدون تسویه مالی)" for unsettled received stone trade', () => {
+      expect(getLineDocumentTypeLabel('received', 'stone', undefined, true)).toBe('خرید سنگ (بدون تسویه مالی)');
     });
 
-    it('returns "فروش سنگ (بدون تسویه)" for unsettled paid stone trade', () => {
-      expect(getLineDocumentTypeLabel('paid', 'stone', undefined, true)).toBe('فروش سنگ (بدون تسویه)');
+    it('returns "فروش سنگ (بدون تسویه مالی)" for unsettled paid stone trade', () => {
+      expect(getLineDocumentTypeLabel('paid', 'stone', undefined, true)).toBe('فروش سنگ (بدون تسویه مالی)');
     });
   });
 

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerAuthContext } from '@/lib/auth';
 import { hasPermission } from '@/lib/authorization';
 import { imageService } from '@/lib/images';
+import { sanitizeFileNameBase } from '@/lib/images/image-storage';
 import { mapEtiquetteRecord } from '@/lib/etiquette';
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
 
@@ -123,14 +124,6 @@ export async function POST(
       return NextResponse.json({ message: 'فایل تصویر ارسال نشده است.' }, { status: 400 });
     }
 
-    // Validate and process image to WebP format
-    const uploadResult = await imageService.processUpload({
-      file: imageFile,
-      purpose: 'jewelry',
-      entityId: id,
-      declaredMimeType: imageFile.type,
-    });
-
     const existingImages = (Array.isArray(existing.image) ? existing.image : [existing.image])
       .filter((value: unknown): value is string => typeof value === 'string' && value.length > 0);
     const replaceName = formData.get('replace')?.toString();
@@ -141,8 +134,32 @@ export async function POST(
       return NextResponse.json({ message: 'هر اتیکت حداکثر می‌تواند ۵ تصویر داشته باشد.' }, { status: 409 });
     }
 
+    // Use the etiquette barcode as the stable filename stem. Additional
+    // photos get a numbered suffix so PocketBase never replaces an earlier
+    // image with the same filename (for example ETK-000042-2.webp).
+    const filenameBase = sanitizeFileNameBase(String(existing.barcode || existing.item_code || id));
+    const retainedImages = existingImages.filter((name: string) => name !== replaceName);
+    const retainedStems = new Set(retainedImages.map((name) => name.replace(/\.[^.]+$/, '')));
+    const replacedStem = replaceName?.replace(/\.[^.]+$/, '');
+    let uploadStem = replacedStem && !retainedStems.has(replacedStem) ? replacedStem : filenameBase;
+    if (retainedStems.has(uploadStem)) {
+      let suffix = 2;
+      while (retainedStems.has(`${filenameBase}-${suffix}`)) suffix += 1;
+      uploadStem = `${filenameBase}-${suffix}`;
+    }
+
+    // Validate and process image to WebP format. Source encoding may be JPEG,
+    // PNG or WebP; storage is normalized to WebP on the server.
+    const uploadResult = await imageService.processUpload({
+      file: imageFile,
+      purpose: 'jewelry',
+      entityId: id,
+      filenameBase: uploadStem,
+      declaredMimeType: imageFile.type,
+    });
+
     const updateFormData = new FormData();
-    existingImages.filter((name: string) => name !== replaceName).forEach((name: string) => updateFormData.append('image', name));
+    retainedImages.forEach((name: string) => updateFormData.append('image', name));
     if (replaceName) updateFormData.append('image-', replaceName);
     updateFormData.append('image', uploadResult.file, uploadResult.filename);
 

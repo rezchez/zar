@@ -48,6 +48,21 @@ export const COIN_TYPE_PERSIAN_NAMES: Record<string, string> = {
   parsian_1000: 'پارسیان ۱.۰۰۰ (۱ گرمی)',
   parsian_1500: 'پارسیان ۱.۵۰۰ (۱.۵ گرمی)',
   parsian_2000: 'پارسیان ۲.۰۰۰ (۲ گرمی)',
+  zioto_1g: 'شمش زیوتو (۱ گرمی)',
+  zioto_2_5g: 'شمش زیوتو (۲.۵ گرمی)',
+  zioto_5g: 'شمش زیوتو (۵ گرمی)',
+  zioto_10g: 'شمش زیوتو (۱۰ گرمی)',
+  zioto_20g: 'شمش زیوتو (۲۰ گرمی)',
+  zioto_50g: 'شمش زیوتو (۵۰ گرمی)',
+  zioto_100g: 'شمش زیوتو (۱۰۰ گرمی)',
+  bar_1g: 'شمش ۱ گرمی',
+  bar_2_5g: 'شمش ۲.۵ گرمی',
+  bar_5g: 'شمش ۵ گرمی',
+  bar_10g: 'شمش ۱۰ گرمی',
+  bar_20g: 'شمش ۲۰ گرمی',
+  bar_50g: 'شمش ۵۰ گرمی',
+  bar_100g: 'شمش ۱۰۰ گرمی',
+  bar_1000g: 'شمش ۱۰۰۰ گرمی (یک کیلویی)',
 };
 
 export function getCoinDisplayPersianName(
@@ -61,26 +76,70 @@ export function getCoinDisplayPersianName(
   if (normalizedType && COIN_TYPE_PERSIAN_NAMES[normalizedType]) {
     baseName = COIN_TYPE_PERSIAN_NAMES[normalizedType];
   } else {
-    const rawName = String(coinTypeName || coinName || coinType || '').trim();
-    if (!rawName) return '';
-
-    const lowerName = rawName.toLowerCase();
-    if (COIN_TYPE_PERSIAN_NAMES[lowerName]) {
-      baseName = COIN_TYPE_PERSIAN_NAMES[lowerName];
-    } else {
-      let cleaned = rawName.replace(/^(سکه\s*های\s+|سکهٔ\s+|سکه\s+)/i, '').trim();
-      if (cleaned.startsWith('تمام امامی')) {
-        cleaned = cleaned.replace(/^تمام امامی/, 'امامی تمام');
+    if (typeof STANDARD_COINS !== 'undefined' && Array.isArray(STANDARD_COINS)) {
+      const def = STANDARD_COINS.find(
+        (c) => c.id.toLowerCase() === normalizedType || c.code?.toLowerCase() === normalizedType,
+      );
+      if (def && def.id !== 'custom_coin' && def.name) {
+        baseName = def.name;
       }
-      cleaned = cleaned.replace(/(\d+)\s*سوت\b/g, '$1 سوتی').replace(/سوت\)/g, 'سوتی)');
-      baseName = cleaned || rawName;
+    }
+
+    if (!baseName) {
+      const rawName = String(coinTypeName || coinName || coinType || '').trim();
+      if (!rawName) return '';
+
+      const lowerName = rawName.toLowerCase();
+      if (COIN_TYPE_PERSIAN_NAMES[lowerName]) {
+        baseName = COIN_TYPE_PERSIAN_NAMES[lowerName];
+      } else {
+        if (typeof STANDARD_COINS !== 'undefined' && Array.isArray(STANDARD_COINS)) {
+          const foundByName = STANDARD_COINS.find(
+            (c) => c.id.toLowerCase() === lowerName || c.name.toLowerCase() === lowerName,
+          );
+          if (foundByName && foundByName.id !== 'custom_coin' && foundByName.name) {
+            baseName = foundByName.name;
+          }
+        }
+
+        if (!baseName) {
+          let cleaned = rawName.replace(/^(سکه\s*های\s+|سکهٔ\s+|سکه\s+)/i, '').trim();
+          if (cleaned.startsWith('تمام امامی')) {
+            cleaned = cleaned.replace(/^تمام امامی/, 'امامی تمام');
+          }
+          cleaned = cleaned.replace(/(\d+)\s*سوت\b/g, '$1 سوتی').replace(/سوت\)/g, 'سوتی)');
+          baseName = cleaned || rawName;
+        }
+      }
     }
   }
 
   // Handle mint year (e.g. "ضرب ۱۳۸۶")
+  const isBar =
+    baseName.includes('شمش') ||
+    normalizedType.includes('bar') ||
+    normalizedType.includes('zioto') ||
+    normalizedType.includes('parsis');
+  const isParsian = baseName.includes('پارسیان') || normalizedType.includes('parsian');
+  if (isBar || isParsian) {
+    // Bars and Parsian medals never have mint year
+    return baseName;
+  }
+
   const rawYear = String(mintYear || '').trim();
+  if (!rawYear || rawYear === 'بدون تاریخ' || rawYear.includes('بدون تاریخ')) {
+    if (normalizedType !== 'emami_full') {
+      return baseName;
+    }
+  }
+
   const effectiveYear = rawYear || (normalizedType === 'emami_full' ? '۱۳۸۶' : '');
-  if (effectiveYear && !baseName.includes('ضرب') && !baseName.includes(effectiveYear)) {
+  if (
+    effectiveYear &&
+    effectiveYear !== 'بدون تاریخ' &&
+    !baseName.includes('ضرب') &&
+    !baseName.includes(effectiveYear)
+  ) {
     const pYear = toPersianDigits(effectiveYear);
     return `${baseName} (ضرب ${pYear})`;
   }
@@ -105,6 +164,18 @@ export function getCoinOperationPrefix(
   if (norm === 'payment_claim') return 'طلب';
   if (norm === 'receipt_debt') return 'بدهی';
   return nature === 'received' ? 'ورود' : 'خروج';
+}
+
+/**
+ * Formats coin/bar line title, preventing awkward text like "ورود سکه شمش ..."
+ */
+export function formatCoinItemTitle(opPrefix: string, coinPersianName: string): string {
+  const trimmed = String(coinPersianName || '').trim();
+  if (!trimmed) return `${opPrefix} مسکوکات/شمش`.trim();
+  if (trimmed.startsWith('شمش')) {
+    return `${opPrefix} ${trimmed}`.trim();
+  }
+  return `${opPrefix} سکه ${trimmed}`.trim();
 }
 
 /**
@@ -314,6 +385,84 @@ export const STANDARD_COINS: CoinDefinition[] = [
   },
 
   // 4. شمش‌های طلا (شمش ۲۴ عیار / ۹۹۵ یا ۹۹۹.۹)
+  {
+    id: 'zioto_1g',
+    code: 'BAR-ZIOTO-1G',
+    name: 'شمش زیوتو (۱ گرمی)',
+    category: 'bar',
+    categoryLabel: 'شمش‌های زیوتو (Zioto)',
+    unitWeight: 1.0,
+    purity: 995,
+    isFixedWeight: true,
+    isFixedPurity: true,
+    isActive: true,
+    description: 'شمش زیوتو ۱ گرمی - عیار ۹۹۵',
+  },
+  {
+    id: 'zioto_2_5g',
+    code: 'BAR-ZIOTO-2.5G',
+    name: 'شمش زیوتو (۲.۵ گرمی)',
+    category: 'bar',
+    categoryLabel: 'شمش‌های زیوتو (Zioto)',
+    unitWeight: 2.5,
+    purity: 995,
+    isFixedWeight: true,
+    isFixedPurity: true,
+    isActive: true,
+    description: 'شمش زیوتو ۲.۵ گرمی - عیار ۹۹۵',
+  },
+  {
+    id: 'zioto_5g',
+    code: 'BAR-ZIOTO-5G',
+    name: 'شمش زیوتو (۵ گرمی)',
+    category: 'bar',
+    categoryLabel: 'شمش‌های زیوتو (Zioto)',
+    unitWeight: 5.0,
+    purity: 995,
+    isFixedWeight: true,
+    isFixedPurity: true,
+    isActive: true,
+    description: 'شمش زیوتو ۵ گرمی - عیار ۹۹۵',
+  },
+  {
+    id: 'zioto_10g',
+    code: 'BAR-ZIOTO-10G',
+    name: 'شمش زیوتو (۱۰ گرمی)',
+    category: 'bar',
+    categoryLabel: 'شمش‌های زیوتو (Zioto)',
+    unitWeight: 10.0,
+    purity: 995,
+    isFixedWeight: true,
+    isFixedPurity: true,
+    isActive: true,
+    description: 'شمش زیوتو ۱۰ گرمی - عیار ۹۹۵',
+  },
+  {
+    id: 'zioto_50g',
+    code: 'BAR-ZIOTO-50G',
+    name: 'شمش زیوتو (۵۰ گرمی)',
+    category: 'bar',
+    categoryLabel: 'شمش‌های زیوتو (Zioto)',
+    unitWeight: 50.0,
+    purity: 995,
+    isFixedWeight: true,
+    isFixedPurity: true,
+    isActive: true,
+    description: 'شمش زیوتو ۵۰ گرمی - عیار ۹۹۵',
+  },
+  {
+    id: 'zioto_100g',
+    code: 'BAR-ZIOTO-100G',
+    name: 'شمش زیوتو (۱۰۰ گرمی)',
+    category: 'bar',
+    categoryLabel: 'شمش‌های زیوتو (Zioto)',
+    unitWeight: 100.0,
+    purity: 995,
+    isFixedWeight: true,
+    isFixedPurity: true,
+    isActive: true,
+    description: 'شمش زیوتو ۱۰۰ گرمی - عیار ۹۹۵',
+  },
   {
     id: 'bar_1g',
     code: 'BAR-GOLD-1G',

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import {
   RefreshCw,
@@ -18,7 +19,7 @@ import {
   Percent,
   Layers,
   Scale,
-  Calendar,
+  Calendar as CalendarIcon,
   CalendarDays,
   User,
   Users,
@@ -49,6 +50,8 @@ import {
 import type { Customer } from '@/lib/customer';
 import type { CustomerTransaction } from '@/lib/transaction';
 import { useAppSettings } from '@/src/components/SettingsProvider';
+import { Calendar } from '@/components/ui/calendar';
+import { formatDate, parseDate, toPersianDigits } from '@/lib/persian-date';
 import {
   parseTransactionBreakdown,
   matchesLedgerCategoryFilter,
@@ -201,14 +204,14 @@ const COLUMN_GROUPS: {
   },
   {
     id: 'financial',
-    title: 'گردش و مانده طلا و ریال',
+    title: 'گردش و مانده فلزات و مالی',
     columns: [
-      { key: 'goldDebtor', label: 'بدهکار طلا (۷۵۰)' },
-      { key: 'goldCreditor', label: 'بستانکار طلا (۷۵۰)' },
-      { key: 'goldBalance', label: 'مانده طلای ۷۵۰' },
-      { key: 'rialDebtor', label: 'بدهکار ریالی' },
-      { key: 'rialCreditor', label: 'بستانکار ریالی' },
-      { key: 'rialBalance', label: 'مانده ریالی' },
+      { key: 'goldDebtor', label: 'بدهکار فلزات' },
+      { key: 'goldCreditor', label: 'بستانکار فلزات' },
+      { key: 'goldBalance', label: 'مانده فلزات' },
+      { key: 'rialDebtor', label: 'بدهکار مالی' },
+      { key: 'rialCreditor', label: 'بستانکار مالی' },
+      { key: 'rialBalance', label: 'مانده مالی' },
       { key: 'actions', label: 'ستون عملیات' },
     ],
   },
@@ -502,9 +505,38 @@ export default function CustomerLedgerReport({
   const [activeDatePreset, setActiveDatePreset] = useState<DatePresetType>('30days');
   const [fromDate, setFromDate] = useState(() => getPresetDates('30days').from);
   const [toDate, setToDate] = useState(() => getPresetDates('30days').to);
+  const [openDatePicker, setOpenDatePicker] = useState<'from' | 'to' | null>(null);
+  const [datePickerCalendarType, setDatePickerCalendarType] = useState<'shamsi' | 'miladi'>('shamsi');
+  const dateRangeRef = useRef<HTMLDivElement>(null);
+  const datePickerDialogRef = useRef<HTMLDivElement>(null);
   const [activeTab, setActiveTab] = useState('all');
   const [sortParam, setSortParam] = useState<'date_asc' | 'date_desc' | 'doc_num'>('date_asc');
   const [searchTerm, setSearchTerm] = useState('');
+
+  useEffect(() => {
+    if (!openDatePicker) return;
+
+    function handleOutsideClick(event: MouseEvent) {
+      const target = event.target as Node;
+      if (
+        !dateRangeRef.current?.contains(target)
+        && !datePickerDialogRef.current?.contains(target)
+      ) {
+        setOpenDatePicker(null);
+      }
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') setOpenDatePicker(null);
+    }
+
+    document.addEventListener('mousedown', handleOutsideClick);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [openDatePicker]);
 
   // Table display options
   const [isCompact, setIsCompact] = useState(false);
@@ -747,6 +779,45 @@ export default function CustomerLedgerReport({
   function handleManualToDateChange(val: string) {
     setToDate(val);
     setActiveDatePreset('custom');
+  }
+
+  function handleCalendarDateSelect(target: 'from' | 'to', jalaliDate: string) {
+    if (target === 'from') {
+      handleManualFromDateChange(jalaliDate);
+    } else {
+      handleManualToDateChange(jalaliDate);
+    }
+    setOpenDatePicker(null);
+  }
+
+  function openDatePickerFor(target: 'from' | 'to') {
+    setDatePickerCalendarType('shamsi');
+    setOpenDatePicker(target);
+  }
+
+  function toggleDatePickerFor(target: 'from' | 'to') {
+    if (openDatePicker === target) {
+      setOpenDatePicker(null);
+      return;
+    }
+    openDatePickerFor(target);
+  }
+
+  function getDateDistanceLabel(value: string) {
+    if (!value.trim()) return '';
+
+    const selectedDate = parseDate(value, 'yyyy/MM/dd', new Date(), { calendarType: 'shamsi' });
+    if (!selectedDate) return '';
+
+    const today = new Date();
+    const selectedDay = Date.UTC(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
+    const todayDay = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+    const distance = Math.round((selectedDay - todayDay) / 86_400_000);
+
+    if (distance === 0) return 'امروز';
+    if (distance === -1) return 'دیروز';
+    if (distance === 1) return 'فردا';
+    return `${toPersianDigits(Math.abs(distance))} روز ${distance < 0 ? 'پیش' : 'بعد'}`;
   }
 
   function handleSelectCategory(catId: string) {
@@ -1359,8 +1430,79 @@ export default function CustomerLedgerReport({
   const areAllExpanded =
     paginatedRows.length > 0 && paginatedRows.every((r) => expandedRows[r.id]);
 
+  const selectedDatePicker = openDatePicker;
+  const datePickerDialog = selectedDatePicker && typeof document !== 'undefined'
+    ? createPortal(
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/45 p-3 sm:p-5"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setOpenDatePicker(null);
+          }}
+        >
+          <div
+            ref={datePickerDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="ledger-date-picker-title"
+            className="max-h-[calc(100dvh-1.5rem)] w-full max-w-[22rem] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl dark:border-slate-700 dark:bg-slate-900 sm:max-h-[calc(100dvh-2.5rem)]"
+            dir="rtl"
+          >
+            <div className="mb-1 flex items-center justify-between px-2 pt-1">
+              <h2 id="ledger-date-picker-title" className="text-sm font-bold text-slate-800 dark:text-slate-100">
+                {selectedDatePicker === 'from' ? 'انتخاب تاریخ شروع' : 'انتخاب تاریخ پایان'}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setOpenDatePicker(null)}
+                className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+                aria-label="بستن تقویم"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDatePickerCalendarType((current) => current === 'shamsi' ? 'miladi' : 'shamsi')}
+              aria-pressed={datePickerCalendarType === 'miladi'}
+              className="mx-2 mb-1 rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:border-amber-400 hover:bg-amber-50 hover:text-amber-800 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+            >
+              {datePickerCalendarType === 'shamsi' ? 'نمایش تاریخ میلادی' : 'نمایش تاریخ شمسی'}
+            </button>
+            <Calendar
+              calendarType={datePickerCalendarType}
+              showHolidays={false}
+              mode="single"
+              selected={parseDate(
+                selectedDatePicker === 'from' ? fromDate : toDate,
+                'yyyy/MM/dd',
+                new Date(),
+                { calendarType: 'shamsi' },
+              ) ?? undefined}
+              defaultMonth={parseDate(
+                selectedDatePicker === 'from' ? fromDate : toDate,
+                'yyyy/MM/dd',
+                new Date(),
+                { calendarType: 'shamsi' },
+              ) ?? new Date()}
+              onSelect={(date) => {
+                if (date) {
+                  handleCalendarDateSelect(
+                    selectedDatePicker,
+                    formatDate(date, 'yyyy/MM/dd', { calendarType: 'shamsi' }),
+                  );
+                }
+              }}
+              className="w-full bg-transparent p-1"
+            />
+          </div>
+        </div>,
+        document.body,
+      )
+    : null;
+
   return (
     <div className="space-y-6 text-sm dashboard-panel p-4 md:p-6 printable-container">
+      {datePickerDialog}
       {/* Page Heading & Actions */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-5 non-printable">
         <div>
@@ -1662,28 +1804,62 @@ export default function CustomerLedgerReport({
               </div>
 
               {/* Jalali From and To Date Inputs */}
-              <div className="md:col-span-5 grid grid-cols-2 gap-1.5">
-                <div className="relative">
+              <div className="md:col-span-5 grid grid-cols-2 gap-1.5" ref={dateRangeRef}>
+                <div className="relative flex flex-col gap-1">
+                  <span className="min-h-4 text-center text-[10px] font-medium text-slate-500 dark:text-slate-400" aria-live="polite">
+                    {getDateDistanceLabel(fromDate)}
+                  </span>
                   <input
                     type="text"
                     placeholder="از: 1403/01/01"
                     value={fromDate}
                     onChange={(e) => handleManualFromDateChange(e.target.value)}
-                    className="w-full px-2.5 py-1.5 text-xs border rounded-xl bg-slate-50/70 dark:bg-slate-800/80 text-slate-900 dark:text-slate-100 border-slate-300 dark:border-slate-700 text-center font-mono focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 transition-all placeholder:text-slate-400"
+                    onFocus={() => openDatePickerFor('from')}
+                    className="w-full pl-8 pr-2.5 py-1.5 text-xs border rounded-xl bg-slate-50/70 dark:bg-slate-800/80 text-slate-900 dark:text-slate-100 border-slate-300 dark:border-slate-700 text-center font-mono focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 transition-all placeholder:text-slate-400"
                     dir="ltr"
                     title="از تاریخ شمسی"
+                    aria-haspopup="dialog"
+                    aria-expanded={openDatePicker === 'from'}
                   />
+                  <button
+                    type="button"
+                    onClick={() => toggleDatePickerFor('from')}
+                    className="absolute left-1.5 top-[2.25rem] -translate-y-1/2 p-1 rounded-md text-amber-600 hover:bg-amber-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+                    title="انتخاب تاریخ شروع از تقویم"
+                    aria-label="باز کردن تقویم تاریخ شروع"
+                    aria-haspopup="dialog"
+                    aria-expanded={openDatePicker === 'from'}
+                  >
+                    <CalendarIcon size={14} />
+                  </button>
                 </div>
-                <div className="relative">
+                <div className="relative flex flex-col gap-1">
+                  <span className="min-h-4 text-center text-[10px] font-medium text-slate-500 dark:text-slate-400" aria-live="polite">
+                    {getDateDistanceLabel(toDate)}
+                  </span>
                   <input
                     type="text"
                     placeholder="تا: 1403/12/29"
                     value={toDate}
                     onChange={(e) => handleManualToDateChange(e.target.value)}
-                    className="w-full px-2.5 py-1.5 text-xs border rounded-xl bg-slate-50/70 dark:bg-slate-800/80 text-slate-900 dark:text-slate-100 border-slate-300 dark:border-slate-700 text-center font-mono focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 transition-all placeholder:text-slate-400"
+                    onFocus={() => openDatePickerFor('to')}
+                    className="w-full pl-8 pr-2.5 py-1.5 text-xs border rounded-xl bg-slate-50/70 dark:bg-slate-800/80 text-slate-900 dark:text-slate-100 border-slate-300 dark:border-slate-700 text-center font-mono focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 transition-all placeholder:text-slate-400"
                     dir="ltr"
                     title="تا تاریخ شمسی"
+                    aria-haspopup="dialog"
+                    aria-expanded={openDatePicker === 'to'}
                   />
+                  <button
+                    type="button"
+                    onClick={() => toggleDatePickerFor('to')}
+                    className="absolute left-1.5 top-[2.25rem] -translate-y-1/2 p-1 rounded-md text-amber-600 hover:bg-amber-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+                    title="انتخاب تاریخ پایان از تقویم"
+                    aria-label="باز کردن تقویم تاریخ پایان"
+                    aria-haspopup="dialog"
+                    aria-expanded={openDatePicker === 'to'}
+                  >
+                    <CalendarIcon size={14} />
+                  </button>
                 </div>
               </div>
             </div>
@@ -2531,7 +2707,7 @@ export default function CustomerLedgerReport({
                       </th>
                     )}
                     
-                    {/* Gold Super Header */}
+                    {/* Metals Super Header */}
                     {goldVisibleCount > 0 && (
                       <th
                         colSpan={goldVisibleCount}
@@ -2539,7 +2715,7 @@ export default function CustomerLedgerReport({
                       >
                         <div className="flex items-center justify-center gap-1">
                           <Scale size={13} className="text-amber-600 dark:text-amber-400" />
-                          <span>گردش و مانده طلا (۷۵۰)</span>
+                          <span>گردش و مانده فلزات</span>
                         </div>
                       </th>
                     )}
@@ -2552,7 +2728,7 @@ export default function CustomerLedgerReport({
                       >
                         <div className="flex items-center justify-center gap-1">
                           <Banknote size={13} className="text-emerald-600 dark:text-emerald-400" />
-                          <span>گردش و مانده مالی ({baseCurrencySymbol})</span>
+                          <span>گردش و مانده مالی (همه ارزها)</span>
                         </div>
                       </th>
                     )}
@@ -2610,7 +2786,7 @@ export default function CustomerLedgerReport({
                           className="relative p-2 text-left border-l border-slate-300 dark:border-slate-700 bg-amber-200 dark:bg-amber-900 font-black text-amber-950 dark:text-amber-100 select-none overflow-visible"
                         >
                           <SortableHeader column="goldBalance" currentSort={sortState} onSort={handleHeaderSort} align="left">
-                            مانده طلا (g)
+                            مانده فلزات (g)
                           </SortableHeader>
                           <ColumnResizer
                             colKey="goldBalance"
@@ -3014,9 +3190,9 @@ export default function CustomerLedgerReport({
                               >
                                 <div className="flex flex-col">
                                   <span className="font-bold text-slate-800 dark:text-slate-100 text-xs">
-                                    {row.description || row.lineDescription?.primary || '—'}
+                                    {row.lineDescription?.primary || row.description || '—'}
                                   </span>
-                                  {row.lineDescription?.secondary && row.description !== row.lineDescription.secondary && (
+                                  {row.lineDescription?.secondary && (
                                     <span
                                       className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5"
                                       title={row.lineDescription.secondary}

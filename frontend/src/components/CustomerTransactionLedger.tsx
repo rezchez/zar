@@ -34,7 +34,10 @@ import {
   sumPostedTransactions,
 } from '@/lib/transaction';
 import { useAppSettings } from '@/src/components/SettingsProvider';
-import { parseTransactionBreakdown } from '@/features/customers/utils/document-breakdown';
+import {
+  parseTransactionBreakdown,
+  getDocumentLineDescription,
+} from '@/features/customers/utils/document-breakdown';
 import * as xlsx from 'xlsx';
 
 const transactionLabels: Record<string, string> = {
@@ -551,6 +554,7 @@ export default function CustomerTransactionLedger({
       ...item,
       rowNumber: start + idx + 1,
       breakdown: parseTransactionBreakdown(item),
+      lineDescription: getDocumentLineDescription(item),
     }));
   }, [filteredRows, safeCurrentPage, pageSize]);
 
@@ -713,13 +717,17 @@ export default function CustomerTransactionLedger({
 
     filteredRows.forEach((row, idx) => {
       const breakdown = parseTransactionBreakdown(row);
+      const lineDesc = getDocumentLineDescription(row);
+      const fullDesc = [lineDesc.primary || row.description, lineDesc.secondary]
+        .filter(Boolean)
+        .join(' — ');
       wsData.push([
         idx + 1,
         row.documentDateJalali || formatDate(row.transactionDate),
         row.documentNumber || '—',
         transactionLabels[row.transactionType] || row.transactionType,
         breakdown.categoryLabel,
-        row.description || '—',
+        fullDesc || '—',
         row.goldDebtor,
         row.goldCreditor,
         Math.abs(row.runningGold),
@@ -1268,10 +1276,21 @@ export default function CustomerTransactionLedger({
                           </span>
                         </td>
                         <td
-                          className="p-2.5 max-w-[200px] truncate text-slate-600 dark:text-slate-300"
-                          title={row.description}
+                          className="p-2.5 max-w-[240px] text-slate-600 dark:text-slate-300"
                         >
-                          {row.description || '—'}
+                          <div className="flex flex-col">
+                            <span className="font-bold text-slate-800 dark:text-slate-100 text-xs">
+                              {row.lineDescription?.primary || row.description || '—'}
+                            </span>
+                            {row.lineDescription?.secondary && (
+                              <span
+                                className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5"
+                                title={row.lineDescription.secondary}
+                              >
+                                {row.lineDescription.secondary}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td
                           className="p-2.5 text-left font-mono text-rose-600 dark:text-rose-400"

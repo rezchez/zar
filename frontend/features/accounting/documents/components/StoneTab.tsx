@@ -38,10 +38,12 @@ import Field from '@/src/components/documents/Field';
 import MoneyInputField from '@/src/components/documents/MoneyInputField';
 import { PriceInput } from '@/components/ui/price-input';
 import { NumberField } from '@/components/ui/number-field';
+import { useToastManager } from '@/components/ui/toast';
 import type { DetailState, DocumentLine } from '@/src/components/documents/RawGoldTab';
 import type { Customer, CustomerStoneItemDetail } from '@/lib/customer';
 import type { CustomerTransaction } from '@/lib/transaction';
-import { calculateCustomerDetailedStonePositions } from '@/features/accounting/transactions/services/transaction';
+import { calculateCustomerDetailedStonePositions, mapTransaction } from '@/features/accounting/transactions/services/transaction';
+import { getDocumentLineDescription } from '@/features/customers/utils/document-breakdown';
 import {
   matchUnsettledStoneWithInventory,
   type GemstoneInventoryRecord,
@@ -158,6 +160,7 @@ export default function StoneTab({
   currencyLabel,
   activeCurrencies,
 }: StoneTabProps) {
+  const toast = useToastManager();
   const isReceived = nature === 'received';
 
   // Available operations based on document nature
@@ -174,16 +177,16 @@ export default function StoneTab({
         {
           id: 'purchase',
           label: 'خرید سنگ',
-          desc: `خرید سنگ از ${customerDisplayName} (${customerDisplayName} به ما سنگ را بدهکار است)`,
-          natureBadge: `${customerDisplayName} به ما سنگ را بدهکار است`,
-          accountingImpact: `خرید سنگ از ${customerDisplayName} · ${customerDisplayName} به ما سنگ را بدهکار است`,
+          desc: `خرید نقدی سنگ از ${customerDisplayName} (تسویه آنی وجه)`,
+          natureBadge: 'تسویه نقدی',
+          accountingImpact: `خرید نقدی سنگ از ${customerDisplayName} · ورود سنگ به انبار و تسویه نقدی وجه`,
         },
         {
           id: 'unsettled_purchase',
-          label: 'خرید سنگ (بدون تسویه)',
-          desc: `خرید اعتباری/دفتری سنگ از ${customerDisplayName} (${customerDisplayName} به ما سنگ را بدهکار است)`,
-          natureBadge: `${customerDisplayName} به ما سنگ را بدهکار است`,
-          accountingImpact: `خرید دفتری سنگ از ${customerDisplayName} · ${customerDisplayName} به ما سنگ را بدهکار است`,
+          label: 'خرید سنگ (بدون تسویه مالی)',
+          desc: `خرید سنگ از ${customerDisplayName} بدون پرداخت وجه (افزایش موجودی سنگ و بستانکاری مالی طرف‌حساب)`,
+          natureBadge: `بستانکاری مالی ${customerDisplayName}`,
+          accountingImpact: `خرید سنگ از ${customerDisplayName} · دریافت سنگ و ورود به موجودی · ثبت مبلغ معامله به عنوان بدهی مالی ما (بستانکاری طرف‌حساب)`,
         },
         {
           id: 'entry',
@@ -198,16 +201,16 @@ export default function StoneTab({
       {
         id: 'sale',
         label: 'فروش سنگ',
-        desc: `فروش سنگ به ${customerDisplayName} (${customerDisplayName} سنگ را از ما طلبکار می‌شود)`,
-        natureBadge: `${customerDisplayName} سنگ را از ما طلبکار می‌شود`,
-        accountingImpact: `فروش سنگ به ${customerDisplayName} · ${customerDisplayName} سنگ را از ما طلبکار می‌شود`,
+        desc: `فروش نقدی سنگ به ${customerDisplayName} (تسویه آنی وجه)`,
+        natureBadge: 'تسویه نقدی',
+        accountingImpact: `فروش نقدی سنگ به ${customerDisplayName} · خروج سنگ از انبار و دریافت نقدی وجه`,
       },
       {
         id: 'unsettled_sale',
-        label: 'فروش سنگ (بدون تسویه)',
-        desc: `فروش اعتباری/دفتری سنگ به ${customerDisplayName} (${customerDisplayName} سنگ را از ما طلبکار می‌شود)`,
-        natureBadge: `${customerDisplayName} سنگ را از ما طلبکار می‌شود`,
-        accountingImpact: `فروش دفتری سنگ به ${customerDisplayName} · ${customerDisplayName} سنگ را از ما طلبکار می‌شود`,
+        label: 'فروش سنگ (بدون تسویه مالی)',
+        desc: `فروش سنگ به ${customerDisplayName} بدون دریافت وجه (کسر از موجودی سنگ و بدهکاری مالی طرف‌حساب)`,
+        natureBadge: `بدهکاری مالی ${customerDisplayName}`,
+        accountingImpact: `فروش سنگ به ${customerDisplayName} · تحویل سنگ و کسر از موجودی · ثبت مبلغ معامله به عنوان طلب مالی ما (بدهکاری طرف‌حساب)`,
       },
       {
         id: 'exit',
@@ -1152,10 +1155,13 @@ export default function StoneTab({
 
   // Weight conversions
   const handleCaratsChange = (val: string) => {
-    const rawVal = normalizeDigits(val);
+    let rawVal = normalizeDigits(val).replace(/[-+]/g, '');
+    const num = parseFloat(rawVal);
+    if (!isNaN(num) && num < 0) {
+      rawVal = '';
+    }
     setWeightCt(rawVal);
     setSieveCalcHint('');
-    const num = parseFloat(rawVal);
     if (!isNaN(num) && num > 0) {
       const g = String(caratsToExactGrams(num));
       setWeightG(g);
@@ -1172,10 +1178,13 @@ export default function StoneTab({
   };
 
   const handleGramsChange = (val: string) => {
-    const rawVal = normalizeDigits(val);
+    let rawVal = normalizeDigits(val).replace(/[-+]/g, '');
+    const num = parseFloat(rawVal);
+    if (!isNaN(num) && num < 0) {
+      rawVal = '';
+    }
     setWeightG(rawVal);
     setSieveCalcHint('');
-    const num = parseFloat(rawVal);
     if (!isNaN(num) && num > 0) {
       const ct = String(gramsToExactCarats(num));
       setWeightCt(ct);
@@ -1199,10 +1208,13 @@ export default function StoneTab({
   };
 
   const handlePiecesChange = (val: string) => {
-    const rawVal = normalizeDigits(val);
+    let rawVal = normalizeDigits(val).replace(/[-+]/g, '');
+    const pNum = parseInt(rawVal, 10);
+    if (!isNaN(pNum) && pNum < 0) {
+      rawVal = '';
+    }
     setPieces(rawVal);
     setSieveCalcHint('');
-    const pNum = parseInt(rawVal, 10);
     if (valuationMethod === 'per_piece' && !isNaN(pNum) && pNum > 0) {
       const up = parseLocalizedAmount(unitPrice);
       if (up > 0) {
@@ -1345,6 +1357,8 @@ export default function StoneTab({
         ? 'stone-purchase'
         : 'stone-sale';
 
+    const defaultStoneDesc = speciesDisplayName ? `${opLabel}: ${speciesDisplayName}` : opLabel;
+
     setDraftLine((curr) => ({
       ...curr,
       documentTab: 'stone',
@@ -1353,7 +1367,7 @@ export default function StoneTab({
       documentSubType: subType,
       documentTypeLabel: opLabel,
       settlementMethod: isUnsettled ? 'unsettled' : isTrade ? 'cash' : 'weight',
-      description: description || curr.description,
+      description: description.trim() || curr.description || defaultStoneDesc,
       converted750: 0,
       details: sanitizeLineDetailsForTab('stone', {
         ...curr.details,
@@ -1492,6 +1506,13 @@ export default function StoneTab({
   ]);
 
   const handleCommit = () => {
+    const numCt = parseFloat(normalizeDigits(weightCt));
+    const numG = parseFloat(normalizeDigits(weightG));
+    const numPieces = parseInt(normalizeDigits(pieces), 10);
+    if ((!isNaN(numCt) && numCt < 0) || (!isNaN(numG) && numG < 0) || (!isNaN(numPieces) && numPieces < 0)) {
+      toast.error('وزن و تعداد سنگ نمی‌تواند عدد منفی باشد.');
+      return;
+    }
     if (!commitDraftLine) return;
     commitDraftLine();
 
@@ -1502,9 +1523,14 @@ export default function StoneTab({
       setPieces('1');
     }
     setTotalAmount('');
+    setDescription('');
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    if (e.key === '-' || e.key === 'Minus') {
+      e.preventDefault();
+      return;
+    }
     if (e.key === 'Enter') {
       if (handleKeyDownEnter) {
         handleKeyDownEnter(e);
@@ -3029,6 +3055,7 @@ export default function StoneTab({
               <input
                 ref={weightCtInputRef}
                 type="number"
+                min="0"
                 step="any"
                 value={weightCt}
                 onChange={(e) => handleCaratsChange(e.target.value)}
@@ -3044,6 +3071,7 @@ export default function StoneTab({
               </label>
               <input
                 type="number"
+                min="0"
                 step="any"
                 value={weightG}
                 onChange={(e) => handleGramsChange(e.target.value)}
@@ -3516,7 +3544,30 @@ export default function StoneTab({
         </div>
 
         {/* Section I: Description Field */}
-        <Field label="شرح / بابت ردیف سنگ" wide>
+        <Field
+          label="شرح / بابت ردیف سنگ"
+          wide
+          action={
+            <button
+              type="button"
+              onClick={() => {
+                const tx = mapTransaction(draftLine as any);
+                const breakdownDesc = getDocumentLineDescription(tx);
+                const auto = breakdownDesc.secondary
+                  ? `${breakdownDesc.primary} — ${breakdownDesc.secondary}`
+                  : breakdownDesc.primary;
+                if (auto) {
+                  setDescription(auto);
+                  setDraftLine((prev) => ({ ...prev, description: auto }));
+                }
+              }}
+              className="text-[11px] text-amber-600 dark:text-amber-400 hover:text-amber-700 font-bold hover:underline cursor-pointer flex items-center gap-1"
+            >
+              <Sparkles size={12} />
+              <span>تکمیل خودکار مشخصات در شرح</span>
+            </button>
+          }
+        >
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}

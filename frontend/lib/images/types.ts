@@ -84,6 +84,8 @@ export interface ProcessImageOptions {
   purpose: ImagePurpose;
   /** Optional associated entity ID (e.g. userId) for filename generation */
   entityId?: string;
+  /** Optional sanitized business key used as the output filename stem. */
+  filenameBase?: string;
   /** Optional client-declared MIME type */
   declaredMimeType?: string;
   /** Optional overrides for configuration */

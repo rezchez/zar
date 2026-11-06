@@ -3,6 +3,7 @@ import sharp from 'sharp';
 import {
   detectMagicBytes,
   generateSafeFileName,
+  sanitizeFileNameBase,
   buildVersionedUrl,
   createWebpFileFromBuffer,
   imageService,
@@ -11,6 +12,19 @@ import {
 } from '@/lib/images';
 
 describe('Zarfolio Central Image Service Infrastructure Tests', () => {
+  test('business filename stems are sanitized and may be used for WebP uploads', async () => {
+    expect(sanitizeFileNameBase('ETK-۰۰۰۰۴۲')).toBe('ETK-000042');
+    const validUpload = await createSampleImage({ format: 'jpeg', width: 80, height: 80 });
+    const result = await imageService.processUpload({
+      file: validUpload,
+      purpose: 'jewelry',
+      entityId: 'record-id',
+      filenameBase: 'ETK-000042-2',
+    });
+    expect(result.filename).toBe('ETK-000042-2.webp');
+    expect(result.file.type).toBe('image/webp');
+  });
+
   // Helper to generate test images using Sharp
   async function createSampleImage(options: {
     format: 'jpeg' | 'png' | 'webp';

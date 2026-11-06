@@ -252,14 +252,33 @@ describe('Customer Ledger Document Breakdown Tests', () => {
       expect(outBadge.treePath).toBe('درآمدها > درآمدهای عملیاتی > درآمد فروش طلا (۴۱۱۰)');
     });
 
-    it('produces "ورود آبشده شرطی" with 1130 inventory tree', () => {
+    it('produces "ورود چک صیاد: [sayad]" with secondary "شماره چک: [num] — سررسید: [date]"', () => {
+      const checkTx = {
+        documentTab: 'bank',
+        documentSubType: 'check-receipt',
+        documentNature: 'received',
+        rialAmount: 1000000000,
+        documentDetails: JSON.stringify({
+          checkNumber: '123456789',
+          sayadId: '1222222222222222',
+          dueDateJalali: '1405/08/29',
+          bankName: 'بانک ملی ایران',
+        }),
+      } as CustomerTransaction;
+
+      const desc = getDocumentLineDescription(checkTx);
+      expect(desc.primary).toBe('ورود چک صیاد: 1222222222222222');
+      expect(desc.secondary).toBe('شماره چک: 123456789 | سررسید: 1405/08/29');
+    });
+
+    it('produces "ورود آبشده شرطی طلا" with 1130 inventory tree', () => {
       const condTx = {
         documentTab: 'raw-gold',
         documentNature: 'received',
         documentDetails: JSON.stringify({ isConditional: true }),
       } as CustomerTransaction;
 
-      expect(getDocumentLineDescription(condTx).primary).toBe('ورود آبشده شرطی');
+      expect(getDocumentLineDescription(condTx).primary).toBe('ورود آبشده شرطی طلا');
       const badge = getJournalLineBadge(condTx);
       expect(badge.accountCode).toBe('۱۱۳۰');
       expect(badge.accountTitle).toBe('موجودی کالا و طلا');
@@ -447,6 +466,68 @@ describe('Customer Ledger Document Breakdown Tests', () => {
 
       expect(getDocumentLineDescription(parsianTx).primary).toBe('ورود سکه پارسیان ۰.۳۰۰ (۳۰۰ سوتی)');
       expect(getDocumentLineDescription(parsianTx).secondary).toBe('1 * 0.3 گرم - عیار 750');
+
+      const ziotoBarTx = {
+        documentTab: 'coin',
+        documentNature: 'received',
+        documentSubType: 'receipt_entry',
+        documentDetails: JSON.stringify({
+          coinType: 'zioto_100g',
+          quantity: 1,
+          purity: 995,
+          mintYear: 'بدون تاریخ',
+        }),
+      } as CustomerTransaction;
+
+      expect(getDocumentLineDescription(ziotoBarTx).primary).toBe('ورود شمش زیوتو (۱۰۰ گرمی)');
+      expect(getDocumentLineDescription(ziotoBarTx).secondary).toBe('1 * 100 گرم - عیار 995');
+
+      const ziotoBuyTx = {
+        documentTab: 'coin',
+        documentNature: 'received',
+        documentSubType: 'receipt_buy',
+        documentDetails: JSON.stringify({
+          coinType: 'zioto_100g',
+          quantity: 1,
+          purity: 995,
+          mintYear: 'بدون تاریخ',
+        }),
+      } as CustomerTransaction;
+
+      expect(getDocumentLineDescription(ziotoBuyTx).primary).toBe('خرید شمش زیوتو (۱۰۰ گرمی)');
+      expect(getDocumentLineDescription(ziotoBuyTx).secondary).toBe('1 * 100 گرم - عیار 995');
+    });
+
+    it('formats stone purchase primary description and detailed specifications in secondary', () => {
+      const stoneTx = {
+        documentTab: 'stone',
+        documentSubType: 'stone-purchase',
+        documentNature: 'received',
+        documentDetails: JSON.stringify({
+          stoneOperationKind: 'purchase',
+          stoneSpeciesName: 'برلیان',
+          stoneCarats: '1.25',
+          stoneGrams: '0.25',
+          stonePieces: '1',
+          stoneShapeName: 'گرد',
+          stoneColor: 'G',
+          stoneClarity: 'VS1',
+          stoneCut: 'excellent',
+        }),
+      } as CustomerTransaction;
+
+      const desc = getDocumentLineDescription(stoneTx);
+      expect(desc.primary).toBe('خرید سنگ: برلیان');
+      expect(desc.secondary).toBe('وزن: 1.25 ct (0.25 گرم) | تعداد: 1 عدد | شکل: گرد | رنگ: G | پاکی: VS1 | تراش: excellent');
+
+      const breakdown = parseTransactionBreakdown(stoneTx);
+      expect(breakdown.category).toBe('stone');
+      expect(breakdown.categoryLabel).toBe('سنگ و جواهر');
+      expect(breakdown.attributes.some((a) => a.label === 'نوع سنگ' && a.value === 'برلیان')).toBe(true);
+      expect(breakdown.attributes.some((a) => a.label === 'وزن قیراط' && a.value === '1.25 ct')).toBe(true);
+      expect(breakdown.attributes.some((a) => a.label === 'وزن گرم' && a.value === '0.25 g')).toBe(true);
+      expect(breakdown.attributes.some((a) => a.label === 'رنگ' && a.value === 'G')).toBe(true);
+      expect(breakdown.attributes.some((a) => a.label === 'درجه پاکی' && a.value === 'VS1')).toBe(true);
     });
   });
 

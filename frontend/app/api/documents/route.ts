@@ -22,6 +22,8 @@ import { isRefinerGroup } from '@/lib/customer-groups';
 import { jalaliDateToIso, normalizeDigits } from '@/lib/jalali';
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
 import { createRefiningCase, syncCaseTotals } from '@/features/refining/services/refining-service';
+import { mapTransaction } from '@/features/accounting/transactions/services/transaction';
+import { getDocumentLineDescription } from '@/features/customers/utils/document-breakdown';
 import {
   postMetalSale,
   postMetalPurchase,
@@ -49,7 +51,7 @@ import { getCurrencyMeta, normalizeCurrencyCode } from '@/lib/customer';
 import { convertTomanToRial } from '@/lib/money';
 
 import { getCurrencyTradeForeignEffect, getDocumentLineForeignCurrency } from '@/features/accounting/documents/utils/currency-effects';
-import { getCoinDisplayPersianName, getCoinOperationPrefix } from '@/features/coins/services/coin';
+import { formatCoinItemTitle, getCoinDisplayPersianName, getCoinOperationPrefix } from '@/features/coins/services/coin';
 
 const amountFields = [
   'goldAmount',
@@ -841,8 +843,9 @@ export async function POST(request: Request) {
           line.settlementMethod === 'unsettled';
         const stoneCurrency = normalizeCurrencyCode(String(details.settlementCurrencyUnit || ''));
         const isForeignStone = Boolean(stoneCurrency && stoneCurrency !== 'IRR' && stoneCurrency !== 'IRT');
-        // قاعده بازار سنگ: خرید از مشتری یعنی مشتری سنگ را به ما بدهکار می‌شود (-1)، فروش به مشتری یعنی مشتری سنگ را از ما طلبکار می‌شود (+1)
-        const stoneDirection = lineNature === 'received' ? -1 : 1;
+        // در خرید سنگ بدون تسویه مالی (received): سنگ وارد موجودی ما شده و ما به مشتری بدهکار مالی هستیم (مشتری بستانکار مالی +1)
+        // در فروش سنگ بدون تسویه مالی (paid): سنگ از موجودی ما خارج شده و مشتری به ما بدهکار مالی است (مشتری بدهکار مالی -1)
+        const stoneDirection = lineNature === 'received' ? 1 : -1;
         const detailTotal = Math.abs(
           readAmount(details.stoneTotalAmount) || readAmount(details.totalAmount) || 0,
         );
@@ -1131,6 +1134,15 @@ export async function POST(request: Request) {
 
           lineAmounts.rialAmount = Math.round(effectiveAbsRial) * (lineNature === 'received' ? 1 : -1);
           details.rialAmountInIrr = true;
+        }
+      }
+
+      if (isStoneLine) {
+        const stoneCt = Number(details.stoneCarats || 0);
+        const stoneG = Number(details.stoneGrams || 0);
+        const stonePcs = Number(details.stonePieces || 0);
+        if (stoneCt < 0 || stoneG < 0 || stonePcs < 0) {
+          throw new Error(`وزن و تعداد سنگ در ردیف ${index + 1} نمی‌تواند عدد منفی باشد.`);
         }
       }
 
@@ -1486,7 +1498,32 @@ export async function POST(request: Request) {
             prepared.documentDetails?.coinTypeName,
             prepared.documentDetails?.mintYear || prepared.documentDetails?.coinYear,
           );
-          lineDescription = `${opPrefix} سکه ${coinName}`.trim();
+          lineDescription = formatCoinItemTitle(opPrefix, coinName);
+        } else if (
+          !lineDescription &&
+          (tab === 'bank' || tab === 'check') &&
+          (String(prepared.line?.documentSubType || '').includes('check') ||
+            Boolean(prepared.documentDetails?.checkNumber) ||
+            String(prepared.documentDetails?.bankOperationKind || '').includes('check'))
+        ) {
+          const sayad = String(prepared.documentDetails?.sayadId || prepared.documentDetails?.sayadNumber || '').trim();
+          const sayadSuffix = sayad ? ` صیاد: ${sayad}` : '';
+          lineDescription = prepared.lineNature === 'received' ? `ورود چک${sayadSuffix}` : `خروج چک${sayadSuffix}`;
+        } else if (
+          !lineDescription &&
+          (tab === 'stone' || String(prepared.line?.documentSubType || '').includes('stone'))
+        ) {
+          const breakdownTx = mapTransaction({
+            ...prepared.line,
+            documentTab: 'stone',
+            documentNature: prepared.lineNature,
+            documentSubType: prepared.line?.documentSubType || prepared.documentDetails?.documentSubType,
+            documentDetails: prepared.documentDetails,
+          } as any);
+          const breakdownDesc = getDocumentLineDescription(breakdownTx);
+          lineDescription = breakdownDesc.secondary
+            ? `${breakdownDesc.primary} — ${breakdownDesc.secondary}`
+            : breakdownDesc.primary;
         }
 
         return {

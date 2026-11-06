@@ -157,8 +157,17 @@ export function getLineDocumentTypeLabel(
   }
 
   if (tab === 'stone') {
-    if (unsettledTrade) {
-      return nature === 'received' ? 'خرید سنگ (بدون تسویه)' : 'فروش سنگ (بدون تسویه)';
+    if (workmanshipSubType === 'stone-unsettled-sale' || workmanshipSubType === 'unsettled_sale' || (nature === 'paid' && unsettledTrade)) {
+      return 'فروش سنگ (بدون تسویه مالی)';
+    }
+    if (unsettledTrade || workmanshipSubType === 'stone-unsettled-purchase' || workmanshipSubType === 'unsettled_purchase') {
+      return 'خرید سنگ (بدون تسویه مالی)';
+    }
+    if (workmanshipSubType === 'stone-purchase' || workmanshipSubType === 'purchase') {
+      return 'خرید سنگ';
+    }
+    if (workmanshipSubType === 'stone-sale' || workmanshipSubType === 'sale') {
+      return 'فروش سنگ';
     }
     return nature === 'received' ? 'ورود سنگ' : 'خروج سنگ';
   }
@@ -837,9 +846,9 @@ export function sanitizeLineDetailsForTab(
         cashFundCurrencyId: details.cashFundCurrencyId,
         cashFundBalance: details.cashFundBalance,
         hasChildLines: details.hasChildLines,
-        linkedLineId: details.linkedLineId,
         documentTypeLabel: details.documentTypeLabel,
         documentSubType: details.documentSubType,
+        linkedLineId: details.linkedLineId,
         clientLineId: (details as any).clientLineId,
         isHawala: details.isHawala,
         hawalaGroupId: details.hawalaGroupId,
@@ -956,6 +965,7 @@ export function sanitizeLineDetailsForTab(
         unsettledTrade: Boolean(details.unsettledTrade),
         documentTypeLabel: details.documentTypeLabel,
         documentSubType: details.documentSubType,
+        linkedLineId: details.linkedLineId,
         clientLineId: (details as any).clientLineId,
         isHawala: details.isHawala,
         hawalaGroupId: details.hawalaGroupId,
@@ -997,12 +1007,12 @@ export function sanitizeLineDetailsForTab(
         currencyQuantity: details.currencyQuantity || '',
         currencyUnitPrice: details.currencyUnitPrice || '',
         baseCurrency: details.baseCurrency || baseCurrency,
-        linkedLineId: details.linkedLineId,
         wageTotalAmount: details.wageTotalAmount,
         hasChildLines: details.hasChildLines,
         isChildLine: details.isChildLine,
         documentTypeLabel: details.documentTypeLabel,
         documentSubType: details.documentSubType,
+        linkedLineId: details.linkedLineId,
         clientLineId: (details as any).clientLineId,
         isHawala: details.isHawala,
         hawalaGroupId: details.hawalaGroupId,
@@ -1097,7 +1107,6 @@ export function sanitizeLineDetailsForTab(
         labName: details.labName || '',
         stampNumber: details.stampNumber || '',
         inventorySourceId: details.inventorySourceId || '',
-        linkedLineId: details.linkedLineId,
         currencyUnit: details.currencyUnit || baseCurrency,
         baseCurrency: details.baseCurrency || baseCurrency,
         unsettledTrade: Boolean(details.unsettledTrade),
@@ -1109,6 +1118,7 @@ export function sanitizeLineDetailsForTab(
         convertedWeight: details.convertedWeight,
         documentTypeLabel: details.documentTypeLabel,
         documentSubType: details.documentSubType,
+        linkedLineId: details.linkedLineId,
         clientLineId: (details as any).clientLineId,
         isHawala: details.isHawala,
         hawalaGroupId: details.hawalaGroupId,
@@ -1138,13 +1148,13 @@ export function sanitizeLineDetailsForTab(
         labName: details.labName || '',
         stampNumber: details.stampNumber || '',
         inventorySourceId: details.inventorySourceId || '',
-        linkedLineId: details.linkedLineId,
         currencyUnit: details.currencyUnit || baseCurrency,
         baseCurrency: details.baseCurrency || baseCurrency,
         unsettledTrade: Boolean(details.unsettledTrade),
         convertedWeight: details.convertedWeight,
         documentTypeLabel: details.documentTypeLabel,
         documentSubType: details.documentSubType,
+        linkedLineId: details.linkedLineId,
         clientLineId: (details as any).clientLineId,
         isHawala: details.isHawala,
         hawalaGroupId: details.hawalaGroupId,

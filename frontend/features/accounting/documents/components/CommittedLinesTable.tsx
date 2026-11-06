@@ -200,10 +200,14 @@ function getLineSortValue(
         line.converted750 ??
         (rawW > 0 && p > 0 ? (rawW * p) / Number(line.details?.baseKarat || 750) : 0);
 
-      const isBedehkar =
-        line.documentTab === 'gold-sale'
-          ? line.documentNature === 'received'
-          : line.documentNature === 'paid';
+      const isTradeLine =
+        line.documentTab === 'gold-sale' ||
+        ((line.documentTab === 'coin' || line.sourceTab === 'coin') &&
+          (line.documentSubType === 'receipt_buy' || line.documentSubType === 'payment_sale'));
+
+      const isBedehkar = isTradeLine
+        ? line.documentNature === 'received'
+        : line.documentNature === 'paid';
       return isBedehkar ? c750 : 0;
     }
     case 'bostankarVazni': {
@@ -217,10 +221,14 @@ function getLineSortValue(
         line.converted750 ??
         (rawW > 0 && p > 0 ? (rawW * p) / Number(line.details?.baseKarat || 750) : 0);
 
-      const isBostankar =
-        line.documentTab === 'gold-sale'
-          ? line.documentNature === 'paid'
-          : line.documentNature === 'received';
+      const isTradeLine =
+        line.documentTab === 'gold-sale' ||
+        ((line.documentTab === 'coin' || line.sourceTab === 'coin') &&
+          (line.documentSubType === 'receipt_buy' || line.documentSubType === 'payment_sale'));
+
+      const isBostankar = isTradeLine
+        ? line.documentNature === 'paid'
+        : line.documentNature === 'received';
       return isBostankar ? c750 : 0;
     }
     case 'currency':

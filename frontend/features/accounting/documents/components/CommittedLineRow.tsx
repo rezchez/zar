@@ -15,6 +15,8 @@ import {
   getLineCurrencyValues,
   getLineFinancialValues,
 } from '../utils/document-helpers';
+import { mapTransaction } from '@/features/accounting/transactions/services/transaction';
+import { getDocumentLineDescription } from '@/features/customers/utils/document-breakdown';
 
 interface CommittedLineRowProps {
   line: DocumentLine;
@@ -102,16 +104,21 @@ export default function CommittedLineRow({
   let bostankarVazni: string | null = null;
 
   if (isMetalLine) {
-    if (line.documentTab === 'gold-sale') {
+    const isTradeLine =
+      line.documentTab === 'gold-sale' ||
+      ((line.documentTab === 'coin' || line.sourceTab === 'coin') &&
+        (line.documentSubType === 'receipt_buy' || line.documentSubType === 'payment_sale'));
+
+    if (isTradeLine) {
       if (isReceived) {
-        // معامله خرید طلا: مشتری متعهد تحویل طلاست و بدهکار وزنی می‌شود
+        // معامله خرید طلا یا سکه/شمش: مشتری متعهد تحویل طلاست و بدهکار وزنی می‌شود
         bedehkarVazni = c750 > 0 ? faNumber(c750, weightPrecision) : null;
       } else if (isPaid) {
-        // معامله فروش طلا: مشتری خریدار طلاست و بستانکار وزنی می‌شود
+        // معامله فروش طلا یا سکه/شمش: مشتری خریدار طلاست و بستانکار وزنی می‌شود
         bostankarVazni = c750 > 0 ? faNumber(c750, weightPrecision) : null;
       }
     } else {
-      // ردیف‌های فیزیکی (ورود و خروج فلزات) و سایر ردیف‌ها
+      // ردیف‌های فیزیکی (ورود و خروج فلزات و مسکوکات/شمش) و سایر ردیف‌ها
       if (isPaid) {
         bedehkarVazni = c750 > 0 ? faNumber(c750, weightPrecision) : null;
       } else if (isReceived) {
@@ -437,9 +444,26 @@ export default function CommittedLineRow({
 
       {/* 12. Description */}
       <TableCell className="px-2 py-1.5 text-right border-s border-slate-200/60 dark:border-slate-800/60">
-        <span className="text-xs text-slate-600 dark:text-slate-300 block truncate w-full" title={line.description}>
-          {line.description || '-'}
-        </span>
+        {(() => {
+          const tx = mapTransaction(line as any);
+          const breakdownDesc = getDocumentLineDescription(tx);
+          const primaryText = line.description?.trim() || breakdownDesc.primary || '-';
+          const secondaryText = breakdownDesc.secondary;
+          const fullTooltip = secondaryText ? `${primaryText} — ${secondaryText}` : primaryText;
+
+          return (
+            <div className="flex flex-col min-w-0" title={fullTooltip}>
+              <span className="text-xs font-bold text-slate-800 dark:text-slate-100 block truncate w-full">
+                {primaryText}
+              </span>
+              {secondaryText && (
+                <span className="text-[10px] text-slate-500 dark:text-slate-400 block truncate w-full mt-0.5">
+                  {secondaryText}
+                </span>
+              )}
+            </div>
+          );
+        })()}
       </TableCell>
 
       {/* 13. Actions */}

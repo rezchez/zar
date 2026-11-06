@@ -87,7 +87,7 @@ export function setCachedBanksForTesting(banks: BankAccount[] | null) {
 }
 
 export function getInitialCachedBanks(): BankAccount[] | null {
-  if (cachedBanks && cachedBanks.length > 0) {
+  if (cachedBanks !== null) {
     return cachedBanks;
   }
   if (typeof window !== 'undefined' || typeof localStorage !== 'undefined') {
@@ -95,7 +95,7 @@ export function getInitialCachedBanks(): BankAccount[] | null {
       const stored = typeof localStorage !== 'undefined' ? localStorage.getItem(BANKS_CACHE_STORAGE_KEY) : null;
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) {
+        if (Array.isArray(parsed)) {
           cachedBanks = parsed;
           return parsed;
         }
@@ -241,7 +241,7 @@ export default function BankTab({
 
   const initialCached = getInitialCachedBanks();
   const [banks, setBanks] = useState<BankAccount[]>(() => initialCached || []);
-  const [isFetchingBanks, setIsFetchingBanks] = useState(() => !initialCached || initialCached.length === 0);
+  const [isFetchingBanks, setIsFetchingBanks] = useState(() => initialCached === null);
   const [search, setSearch] = useState('');
   const [selectedSource, setSelectedSource] = useState(() => (initialCached && initialCached.length > 0 ? initialCached[0].id : ''));
   const [selectedDestination, setSelectedDestination] = useState('');
@@ -374,6 +374,11 @@ export default function BankTab({
           toast.error(error instanceof Error ? error.message : 'دریافت حساب‌های بانکی انجام نشد.');
         }
       })
+      .finally(() => {
+        if (!cancelled) {
+          setIsFetchingBanks(false);
+        }
+      });
     const handleInvalidation = () => {
       if (!cancelled) {
         setIsFetchingBanks(true);
@@ -834,18 +839,22 @@ export default function BankTab({
       toast.warning('با توجه به اینکه چک در حال صدور به تاریخ امروز می‌باشد، لذا نسبت به افزایش موجودی حساب بانکی اقدام نمایید و سپس چک را صادر کنید.');
     }
 
-    const opLabel = operationOptions.find((o) => o.value === kind)?.label || (kind === 'check-receipt' ? 'دریافت چک' : kind === 'check-payment' ? 'پرداخت چک از حساب بانکی' : kind === 'transfer-received-check' ? 'خرج / عودت چک دریافتی' : 'عملیات بانکی');
+    const opLabel = operationOptions.find((o) => o.value === kind)?.label || (kind === 'check-receipt' ? 'ورود چک' : kind === 'check-payment' ? 'خروج چک' : kind === 'transfer-received-check' ? 'خرج / عودت چک دریافتی' : 'عملیات بانکی');
     const isReceivedCheckTransfer = kind === 'transfer-received-check';
     const isReturnToDrawer = Boolean(selectedCustomer && originalCustomerId === selectedCustomer.id);
     const transferType = isReceivedCheckTransfer ? (isReturnToDrawer ? 'return_to_drawer' : 'transfer_to_customer') : undefined;
+
+    const sayadStr = normalizedSayad ? ` صیاد: ${normalizedSayad}` : '';
+    const defaultCheckDesc = kind === 'check-receipt' ? `ورود چک${sayadStr}` : kind === 'check-payment' ? `خروج چک${sayadStr}` : '';
 
     const completeLine: DocumentLine = sanitizeDocumentLine({
       ...draftLine,
       documentTab: 'bank',
       sourceTab: 'bank',
+      documentSubType: kind,
       documentNature: effectiveNature,
       documentTypeLabel: opLabel,
-      description: description || draftLine.description,
+      description: description || defaultCheckDesc || draftLine.description,
       converted750: 0,
       details: {
         ...draftLine.details,

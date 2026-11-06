@@ -27,6 +27,15 @@ export function generateSafeFileName(
   return `${cleanPurpose}_${timestamp}_${randomSuffix}.${cleanExtension}`;
 }
 
+/** Keep a caller-selected business key as a safe filename stem. */
+export function sanitizeFileNameBase(value: string): string {
+  const asciiDigits = value
+    .replace(/[۰-۹]/g, (digit) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)))
+    .replace(/[٠-٩]/g, (digit) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)));
+  const safe = asciiDigits.normalize('NFKD').replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64);
+  return safe || 'etiquette';
+}
+
 /**
  * Appends a cache-busting version parameter to the URL to prevent stale browser caching.
  */

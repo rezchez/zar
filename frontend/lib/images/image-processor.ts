@@ -1,6 +1,6 @@
 import sharp from 'sharp';
 import { getImageConfig } from './config';
-import { generateSafeFileName } from './image-storage';
+import { generateSafeFileName, sanitizeFileNameBase } from './image-storage';
 import {
   ImageCropPosition,
   ImageValidationResult,
@@ -234,11 +234,9 @@ export async function processImage(
   const outputBuffer = await transformer.toBuffer();
   const outputMetadata = await sharp(outputBuffer).metadata();
 
-  const filename = generateSafeFileName(
-    options.purpose,
-    options.entityId,
-    config.format,
-  );
+  const filename = options.filenameBase
+    ? `${sanitizeFileNameBase(options.filenameBase)}.${config.format}`
+    : generateSafeFileName(options.purpose, options.entityId, config.format);
 
   return {
     buffer: outputBuffer,

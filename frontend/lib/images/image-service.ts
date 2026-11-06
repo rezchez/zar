@@ -89,6 +89,7 @@ export class ImageService {
     file: File | Blob | Buffer | Uint8Array | ArrayBuffer;
     purpose: ImagePurpose;
     entityId?: string;
+    filenameBase?: string;
     declaredMimeType?: string;
     overrides?: Partial<ImagePurposeConfig>;
   }): Promise<ProcessUploadResult> {
@@ -103,6 +104,7 @@ export class ImageService {
       input: buffer,
       purpose: options.purpose,
       entityId: options.entityId,
+      filenameBase: options.filenameBase,
       declaredMimeType,
       overrides: options.overrides,
     });
