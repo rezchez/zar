@@ -95,6 +95,18 @@ export async function POST(request: Request) {
     } catch {
       // Keep resolved email as emailInput so PocketBase authWithPassword fails naturally with generic 401
     }
+  } else if (!emailInput.includes('@')) {
+    try {
+      const service = await getPocketBaseServiceClient();
+      const userByUsername = await service.collection('users').getFirstListItem(
+        service.filter('email ~ {:username}', { username: emailInput }),
+      );
+      if (userByUsername?.email) {
+        email = userByUsername.email;
+      }
+    } catch {
+      // Keep resolved email as emailInput so PocketBase authWithPassword fails naturally with generic 401
+    }
   }
 
   const pb = createPocketBaseClient();
@@ -286,6 +298,8 @@ export async function POST(request: Request) {
               email: record.email,
               name: record.name,
               role: record.role,
+              avatar: record.avatar || null,
+              avatarUrl: record.avatar ? `/api/account/avatar?userId=${record.id}&v=${encodeURIComponent(record.updated || '')}` : null,
             } : null,
           })
         : NextResponse.json({ success: true });

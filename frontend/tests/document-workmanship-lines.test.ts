@@ -753,5 +753,82 @@ describe('Document Workmanship Lines (ردیف سند تب کار ساخته) Te
       expect(getLineDocumentTypeLabel('received', 'workmanship', undefined, undefined, undefined, 1, 'workmanship-golden-percentage', 'silver')).toBe('درصد نقره‌ای کارساخته');
       expect(getLineDocumentTypeLabel('received', 'workmanship', undefined, undefined, undefined, 1, 'workmanship-golden-percentage', 'platinum')).toBe('درصد پلاتینی کارساخته');
     });
+
+    it('creates golden percentage sub-row for خرید کارساخته (Option 2 Received) like ورود کارساخته', () => {
+      const baseLine = createLine('received', 'workmanship');
+      const rawWeight = 10;
+      const goldenPercentage = 10; // 10%
+      const goldenWeight = rawWeight * (goldenPercentage / 100); // 1g
+      const workmanshipName = 'گردنبند';
+      const mainLineId = 'buy_main_123';
+
+      const mainLine: DocumentLine = {
+        ...baseLine,
+        id: mainLineId,
+        documentNature: 'received',
+        documentTab: 'workmanship',
+        sourceTab: 'workmanship',
+        documentSubType: 'buy_manufactured',
+        documentTypeLabel: 'خرید کارساخته',
+        converted750: rawWeight,
+        settlementMethod: 'weight',
+        balanceSource: 'current',
+        description: 'خرید کارساخته گردنبند',
+        details: {
+          ...baseLine.details,
+          metalType: 'gold',
+          rawKind: 'molten',
+          rawWeight: String(rawWeight),
+          purity: '750',
+          baseKarat: 750,
+          convertedWeight: '10.000',
+          workmanshipName,
+          workmanshipOptionId: 2,
+          goldenPercentage: String(goldenPercentage),
+          profitPercentage: String(goldenPercentage),
+          metalTotalPrice: '258000000',
+          profitAmount: '25800000',
+          totalAmount: '283800000',
+          hasChildLines: true,
+        },
+      };
+
+      const goldenLine: DocumentLine = {
+        ...baseLine,
+        id: 'buy_golden_sub_456',
+        documentNature: 'received',
+        documentTab: 'workmanship',
+        sourceTab: 'workmanship',
+        documentSubType: 'workmanship-golden-percentage',
+        documentTypeLabel: `درصد طلایی کارساخته (${toPersianDigits(String(goldenPercentage))}٪)`,
+        converted750: goldenWeight,
+        settlementMethod: 'weight',
+        balanceSource: 'current',
+        description: `بابت درصد طلایی کارساخته (${toPersianDigits(String(goldenPercentage))}٪) - ${workmanshipName}`,
+        details: {
+          ...baseLine.details,
+          metalType: 'gold',
+          rawKind: 'molten',
+          rawWeight: goldenWeight.toFixed(3),
+          purity: '750',
+          baseKarat: 750,
+          convertedWeight: goldenWeight.toFixed(3),
+          workmanshipName,
+          goldenPercentage: String(goldenPercentage),
+          workmanshipOptionId: 2,
+          linkedLineId: mainLineId,
+          isChildLine: true,
+        },
+      };
+
+      const committedLines = [mainLine, goldenLine];
+      expect(committedLines.length).toBe(2);
+      expect(committedLines[0].documentSubType).toBe('buy_manufactured');
+      expect(committedLines[1].documentSubType).toBe('workmanship-golden-percentage');
+      expect(committedLines[1].converted750).toBe(1);
+      expect(committedLines[1].details.goldenPercentage).toBe('10');
+      expect(committedLines[1].details.linkedLineId).toBe(mainLine.id);
+      expect(committedLines[0].details.totalAmount).toBe('283800000');
+    });
   });
 });

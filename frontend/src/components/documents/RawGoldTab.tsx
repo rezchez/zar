@@ -199,12 +199,18 @@ export type DetailState = {
   hawalaCounterCustomerCode?: string | number;
   allowNegativeBalance?: boolean;
   isHawalaNegativeConfirmed?: boolean;
+  barcode?: string;
+  itemCode?: string;
+  etiquetteCode?: string;
+  isEtiquette?: boolean;
+  isGoldenPercentageLine?: boolean;
+  storageLocation?: string;
 };
 
 export type DocumentLine = {
   id: string;
   documentNature: 'received' | 'paid';
-  documentTab: 'raw-gold' | 'gold-sale' | 'currency' | 'cash' | 'workmanship' | 'coin' | 'bank' | 'claim' | 'refining' | 'stone' | 'goods' | 'discount' | 'income-expense';
+  documentTab: 'raw-gold' | 'gold-sale' | 'currency' | 'cash' | 'workmanship' | 'etiquette' | 'itak' | 'coin' | 'bank' | 'claim' | 'refining' | 'stone' | 'goods' | 'discount' | 'income-expense';
   sourceTab?: string;
   documentSubType: string;
   documentTypeLabel?: string;

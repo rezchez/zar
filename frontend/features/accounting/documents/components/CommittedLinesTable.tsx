@@ -158,6 +158,7 @@ function getLineSortValue(
         line.details.coinName || line.details.coinType || line.details.metalType,
         line.details?.claimFinancial ?? line.details?.totalAmount,
         line.details?.claimWeight ?? line.details?.rawWeight,
+        line.details?.goldenPercentage || line.details?.profitPercentage,
       );
       const docType =
         (line.documentTab === 'coin' || line.sourceTab === 'coin' || isClaim)

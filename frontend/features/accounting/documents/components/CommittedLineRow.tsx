@@ -65,10 +65,11 @@ export default function CommittedLineRow({
       line.details.coinName || line.details.coinType || line.details.metalType,
       line.details?.claimFinancial ?? line.details?.totalAmount,
       line.details?.claimWeight ?? line.details?.rawWeight,
+      line.details?.goldenPercentage || line.details?.profitPercentage,
     );
-  const docType = (line.documentTab === 'coin' || line.sourceTab === 'coin' || isClaim)
+  const docType = (line.documentTab === 'coin' || line.sourceTab === 'coin')
     ? derivedDocType
-    : line.documentTypeLabel || (line.details as any)?.documentTypeLabel || derivedDocType;
+    : line.documentTypeLabel || (line.details as any)?.documentTypeLabel || (line.details as any)?.claimDocumentTypeLabel || derivedDocType;
 
   const isMetalLine = isMetalBearingLine(line);
 
@@ -210,6 +211,11 @@ export default function CommittedLineRow({
               <Coins size={10} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
               اجرت مالی
             </span>
+          ) : (line.documentTab === 'etiquette' || line.sourceTab === 'etiquette' || (line.details as any)?.isEtiquette) ? (
+            <span className="inline-flex items-center gap-0.5 rounded bg-amber-100 px-1 py-0.5 text-[9px] font-extrabold text-amber-900 border border-amber-300/80 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800 shrink-0">
+              <Tag size={10} className="text-amber-600 dark:text-amber-400 shrink-0" />
+              اتیکت
+            </span>
           ) : (line.documentTab === 'workmanship' || line.sourceTab === 'workmanship') ? (
             <span className="inline-flex items-center gap-0.5 rounded bg-amber-100 px-1 py-0.5 text-[9px] font-extrabold text-amber-900 border border-amber-300/80 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800 shrink-0">
               <Sparkles size={10} className="text-amber-600 dark:text-amber-400 shrink-0" />
@@ -236,14 +242,15 @@ export default function CommittedLineRow({
           ) : null}
           <div className="min-w-0 flex-1">
             <span className="font-semibold text-xs text-slate-800 dark:text-slate-200 truncate block w-full" title={docType}>
-              {line.details?.linkedLineId && (line.documentSubType === 'workmanship-golden-percentage' || line.documentSubType === 'workmanship-wage') ? (
+              {line.details?.linkedLineId && (line.documentSubType === 'workmanship-golden-percentage' || line.documentSubType === 'workmanship-wage' || (line.details as any)?.isGoldenPercentageLine) ? (
                 <span className="text-slate-400 dark:text-slate-500 font-bold ml-1">↳</span>
               ) : null}
               {docType}
             </span>
-            {line.details?.workmanshipName && !hasWorkmanshipLines && (line.documentTab === 'workmanship' || line.sourceTab === 'workmanship') ? (
+            {line.details?.workmanshipName && !hasWorkmanshipLines && (line.documentTab === 'workmanship' || line.sourceTab === 'workmanship' || line.documentTab === 'etiquette' || line.sourceTab === 'etiquette' || (line.details as any)?.isEtiquette) ? (
               <span className="text-[10px] text-amber-600 dark:text-amber-400 font-bold truncate block" title={line.details.workmanshipName}>
                 {line.details.workmanshipName}
+                {(line.details as any)?.barcode ? ` (بارکد: ${toPersianDigits((line.details as any).barcode)})` : ''}
               </span>
             ) : null}
             {line.details?.coinName && (line.documentTab === 'coin' || line.sourceTab === 'coin') ? (

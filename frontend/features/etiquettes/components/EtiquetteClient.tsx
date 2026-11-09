@@ -4,7 +4,6 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   Barcode,
-  Camera,
   Check,
   CheckSquare,
   Copy,
@@ -22,7 +21,6 @@ import {
   RefreshCw,
   Scale,
   Search,
-  Smartphone,
   Sparkles,
   Square,
   Tag,
@@ -30,7 +28,6 @@ import {
   Wrench,
   X,
 } from 'lucide-react';
-import AddFromAppModal from './AddFromAppModal';
 import EtiquetteModal from './EtiquetteModal';
 import EtiquettePrintModal from './EtiquettePrintModal';
 import ImportFromWorkmanshipModal from './ImportFromWorkmanshipModal';
@@ -113,8 +110,6 @@ export default function EtiquetteClient({
   // Modals
   const [modalOpen, setModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<EtiquetteRecord | null>(null);
-  const [initialFromApp, setInitialFromApp] = useState<Partial<EtiquetteRecord> & { draftImageUrl?: string } | null>(null);
-  const [addFromAppOpen, setAddFromAppOpen] = useState(false);
   const [fullImagePreview, setFullImagePreview] = useState<{ urls: string[]; title: string; index: number } | null>(null);
 
   const [printModalOpen, setPrintModalOpen] = useState(false);
@@ -243,7 +238,6 @@ export default function EtiquetteClient({
   // Open Actions
   const handleOpenCreate = () => {
     setEditingItem(null);
-    setInitialFromApp(null);
     setModalOpen(true);
   };
 
@@ -378,15 +372,6 @@ export default function EtiquetteClient({
           >
             <Wrench size={15} className="text-amber-600" />
             <span>ورود از کارساخته</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setAddFromAppOpen(true)}
-            className="flex items-center gap-1.5 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-3.5 py-2 text-xs font-bold text-amber-800 dark:text-amber-300 hover:bg-amber-500/20 transition-all shadow-xs cursor-pointer"
-          >
-            <Smartphone size={15} />
-            <span>افزودن از اپلیکیشن زرفولیو</span>
           </button>
 
           {summary.pendingPrintCount > 0 && (
@@ -1070,26 +1055,13 @@ export default function EtiquetteClient({
         isOpen={modalOpen}
         onClose={() => {
           setModalOpen(false);
-          setInitialFromApp(null);
         }}
         editingItem={editingItem}
-        initialFromApp={initialFromApp}
         initialType={etiquetteTypeFilter !== 'all' ? (etiquetteTypeFilter as EtiquetteType) : undefined}
         suggestedBarcode={nextBarcode}
         nextBarcodes={nextBarcodes}
         existingBarcodes={items.map((it) => it.barcode)}
         onSuccess={() => void fetchEtiquettes()}
-      />
-
-      {/* Modal: Add from Zarfolio App */}
-      <AddFromAppModal
-        isOpen={addFromAppOpen}
-        onClose={() => setAddFromAppOpen(false)}
-        onSelectDraft={(draft) => {
-          setInitialFromApp(draft);
-          setEditingItem(null);
-          setModalOpen(true);
-        }}
       />
 
       {/* Modal: Full Image Preview */}

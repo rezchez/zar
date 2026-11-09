@@ -22,7 +22,7 @@ describe('DocumentForm Tabs URL Sync & Customer Lock Persistence Tests', () => {
   };
 
   describe('Entry Tabs Configuration & URL Hash Resolution', () => {
-    it('defines all 12 expected document entry tabs with exact requested tab order', () => {
+    it('defines all 13 expected document entry tabs with exact requested tab order', () => {
       expect(VALID_ENTRY_TABS).toEqual([
         'metals',
         'gold-sale',
@@ -35,6 +35,7 @@ describe('DocumentForm Tabs URL Sync & Customer Lock Persistence Tests', () => {
         'goods',
         'income-expense',
         'workmanship',
+        'etiquette',
         'discount',
       ]);
       expect(VALID_ENTRY_TABS[2]).toBe('coin');
@@ -42,7 +43,8 @@ describe('DocumentForm Tabs URL Sync & Customer Lock Persistence Tests', () => {
       expect(VALID_ENTRY_TABS[4]).toBe('bank');
       expect(VALID_ENTRY_TABS[5]).toBe('cash');
       expect(VALID_ENTRY_TABS[6]).toBe('claim');
-      expect(VALID_ENTRY_TABS[11]).toBe('discount');
+      expect(VALID_ENTRY_TABS[11]).toBe('etiquette');
+      expect(VALID_ENTRY_TABS[12]).toBe('discount');
     });
 
     it('resolves valid URL hash to matching active tab without falling back to default', () => {

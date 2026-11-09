@@ -201,6 +201,10 @@ export function validateTahesabMigration(
   const mappedAssayLabsCount = (mappings.assayLabs || []).filter((l) => l.status === 'mapped').length;
   const newAssayLabsCount = (mappings.assayLabs || []).filter((l) => l.status === 'new_lab').length;
 
+  const totalEtiquettes = data.etiquettes?.length || 0;
+  const totalAvailableEtiquettes = (data.etiquettes || []).filter((e) => e.status === 'available').length;
+  const totalSoldEtiquettes = (data.etiquettes || []).filter((e) => e.status === 'sold').length;
+
   const isBlocked = errors.some((e) => e.severity === 'BLOCKING');
   const preview: MigrationPreviewStats = {
     totalDocuments: data.documents.length,
@@ -215,6 +219,9 @@ export function validateTahesabMigration(
     totalAssayLabs: data.assayLabs.length,
     totalMappedAssayLabs: mappedAssayLabsCount,
     totalNewAssayLabs: newAssayLabsCount,
+    totalEtiquettes,
+    totalAvailableEtiquettes,
+    totalSoldEtiquettes,
     totalConditionalLots: conditionalLots,
     totalTransferPairs: matchedTransferPairs,
     totalGoldVolumeGrams: Math.round(totalGoldGrams * 1000) / 1000,

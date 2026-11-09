@@ -22,7 +22,7 @@ import {
 import type { DetailState, DocumentLine, MeltedInventoryItem, RawOperationKind } from '@/src/components/documents/RawGoldTab';
 
 // Document entry tabs
-import DocumentEntryTabs from '@/src/components/documents/DocumentEntryTabs';
+import DocumentEntryTabs from './DocumentEntryTabs';
 import RawGoldTab from '@/src/components/documents/RawGoldTab';
 import GoldSaleTab from '@/src/components/documents/GoldSaleTab';
 import CurrencyTab from './CurrencyTab';
@@ -32,6 +32,7 @@ import CashTab, { fetchCashFunds, invalidateCashFundsCache } from '@/src/compone
 import BankTab, { fetchBankAccounts, invalidateBankAccountsCache } from './BankTab';
 import ClaimTab from '@/src/components/documents/ClaimTab';
 import WorkmanshipTab from './WorkmanshipTab';
+import EtiquetteTab from './EtiquetteTab';
 import DiscountTab from './DiscountTab';
 import IncomeExpenseTab from './IncomeExpenseTab';
 import GoodsTab from './GoodsTab';
@@ -99,6 +100,7 @@ export const VALID_ENTRY_TABS = [
   'goods',
   'income-expense',
   'workmanship',
+  'etiquette',
   'discount',
 ] as const;
 
@@ -1437,6 +1439,7 @@ export default function DocumentForm({
             const isCurrencyToman = isCurrencyRow && (line.details?.baseCurrency === 'IRT' || baseCurrency === 'IRT');
             const rawCurrencyRial = isCurrencyRow ? numberValue(line.details?.currencyTotalAmount || '') : 0;
             const currencyRialAmount = isCurrencyToman ? convertTomanToRial(rawCurrencyRial) : Math.round(rawCurrencyRial);
+            const rawCurrencyQuantity = isCurrencyRow ? numberValue(line.details?.currencyQuantity || '') : 0;
 
             const isDiscountRow = line.documentTab === 'discount' || line.sourceTab === 'discount';
             const isDiscountToman = isDiscountRow && (line.details?.currencyUnit === 'IRT' || line.details?.baseCurrency === 'IRT' || baseCurrency === 'IRT');
@@ -1577,12 +1580,14 @@ export default function DocumentForm({
                   : isStoneRow
                     ? stoneForeignAmount
                     : currencyForeignEffect !== null
-                      ? Math.abs(currencyForeignEffect)
-                      : isClaimForeign
-                        ? rawClaimFinancial
-                      : isForeignWorkmanship && line.documentSubType === 'workmanship-wage'
-                          ? rawWorkmanshipAmount
-                          : 0,
+                      ? (currencyForeignEffect !== 0 ? Math.abs(currencyForeignEffect) : (rawCurrencyQuantity || 0))
+                      : isCurrencyRow
+                        ? (rawCurrencyQuantity || 0)
+                        : isClaimForeign
+                          ? rawClaimFinancial
+                        : isForeignWorkmanship && line.documentSubType === 'workmanship-wage'
+                            ? rawWorkmanshipAmount
+                            : 0,
               tertiaryAmount: 0,
             };
           });
@@ -3433,6 +3438,32 @@ export default function DocumentForm({
               selectedCurrency={selectedCurrency}
               currencyLabel={activeCurrencies.find((c) => c.code.toUpperCase() === (selectedCurrency || '').toUpperCase())?.name}
               activeCurrencies={activeCurrencies}
+              selectedCustomer={selectedCustomer}
+              commitRowLabel={commitRowLabel}
+              isHawala={isWorkmanshipHawala}
+              setIsHawala={setIsWorkmanshipHawala}
+              onRequestHawala={(line) => {
+                if (!selectedCustomer) {
+                  toast.warning('ابتدا طرف‌حساب مبدأ سند را انتخاب کنید.');
+                  return;
+                }
+                setHawalaLine(line);
+              }}
+            />
+          )}
+          etiquetteTabContent={(
+            <EtiquetteTab
+              nature={documentNature}
+              draftLine={draftLine}
+              setDraftLine={setDraftLine}
+              committedLines={committedLines}
+              editingLineId={editingLineId}
+              isLinesPinned={isLinesPinned}
+              commitDraftLine={handleCommitDraft}
+              updateDraftDetail={updateDraftDetail}
+              handleKeyDownEnter={handleKeyDownEnter}
+              draftReady={draftReady}
+              baseCurrency={baseCurrency}
               selectedCustomer={selectedCustomer}
               commitRowLabel={commitRowLabel}
               isHawala={isWorkmanshipHawala}

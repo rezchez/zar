@@ -37,25 +37,50 @@ export function parseTransactionBreakdown(transaction: CustomerTransaction): Lin
     Boolean(details.currencyQuantity);
   const hasGold = (Number(transaction.goldAmount) || 0) !== 0 || Boolean(details.rawWeight || details.weight);
 
-  // 1. Raw Gold / Molten / Conditional / Misc
+  // 1. Raw Gold / Molten / Conditional / Misc (ورود و خروج وزنی)
   if (
     !isCurrency &&
     tab !== 'bank' && tab !== 'check' && tab !== 'cash' &&
+    tab !== 'workmanship' && !subType.includes('workmanship') &&
+    tab !== 'gold-sale' && !subType.startsWith('gold-purchase') && !subType.startsWith('gold-sale') &&
+    tab !== 'manufactured' && !subType.includes('manufactured') &&
+    subType !== 'exit_manufactured' &&
+    subType !== 'entry_manufactured' &&
+    subType !== 'sale_manufactured' &&
+    subType !== 'buy_manufactured' &&
+    !details.workmanshipName &&
     (tab === 'raw-gold' ||
       subType.includes('molten') ||
       subType.includes('conditional') ||
       subType.includes('misc') ||
       (details.rawKind && hasGold))
   ) {
+    const isHawala =
+      details.isHawala === true ||
+      Boolean(details.hawalaGroupId) ||
+      Boolean(details.transferToken);
     const isConditional = details.isConditional || subType.includes('conditional');
     const rawKindFa =
-      details.rawKind === 'conditional' || isConditional
+      isHawala
+        ? (isConditional ? 'حواله طلای شرطی' : 'حواله طلا')
+        : details.rawKind === 'conditional' || isConditional
         ? 'طلای آبشده شرطی'
         : details.rawKind === 'misc'
         ? 'طلای متفرقه / شکسته'
         : details.rawKind === 'question'
         ? 'طلای مظنه / سوالی'
         : 'طلای آبشده';
+
+    if (isHawala) {
+      const counterName = details.hawalaCounterCustomerName || details.transferPartnerName;
+      if (counterName) {
+        const counterCode = details.hawalaCounterCustomerCode ? ` (${details.hawalaCounterCustomerCode})` : '';
+        attributes.push({
+          label: 'طرف حواله',
+          value: `${counterName}${counterCode}`,
+        });
+      }
+    }
 
     if (details.rawWeight || details.weight) {
       attributes.push({
@@ -89,9 +114,12 @@ export function parseTransactionBreakdown(transaction: CustomerTransaction): Lin
     }
 
     if (details.metalPrice) {
+      const p = Number(details.metalPrice) || 0;
+      const isAlreadyToman = details.currencyUnit === 'IRT';
+      const pToman = isAlreadyToman ? p : Math.floor(p / 10);
       attributes.push({
-        label: 'قیمت هر گرم',
-        value: `${Number(details.metalPrice).toLocaleString('fa-IR')} ریال`,
+        label: details.metalPriceType === 'mesghal17' ? 'مظنه مثقال' : 'قیمت هر گرم',
+        value: `${pToman.toLocaleString('fa-IR')} تومان`,
         isMono: true,
       });
     }
@@ -99,44 +127,105 @@ export function parseTransactionBreakdown(transaction: CustomerTransaction): Lin
     return {
       category: 'gold-raw',
       categoryLabel: rawKindFa,
-      badgeColor: isConditional ? 'amber' : 'emerald',
+      badgeColor: isHawala ? 'purple' : isConditional ? 'amber' : 'emerald',
       attributes,
     };
   }
 
-  // 2. Manufactured Gold Sale / Purchase
-  if (tab === 'gold-sale' || subType.includes('gold-sale')) {
-    if (details.rawWeight) {
-      attributes.push({ label: 'وزن کار', value: `${details.rawWeight} گرم`, isMono: true });
-    }
-    if (details.purity) {
-      attributes.push({ label: 'عیار', value: String(details.purity), isMono: true });
-    }
-    if (details.wagePercentage) {
-      attributes.push({ label: 'اجرت ساخت', value: `${details.wagePercentage}٪`, isMono: true });
-    }
-    if (details.profitPercentage) {
-      attributes.push({ label: 'سود فروشنده', value: `${details.profitPercentage}٪`, isMono: true });
-    }
-    if (details.metalPrice) {
+  // 2. Gold Trade (خرید و فروش طلای آبشده، متفرقه، شرطی و بدون تسویه)
+  if (
+    tab === 'gold-sale' ||
+    subType.startsWith('gold-purchase') ||
+    subType.startsWith('gold-sale')
+  ) {
+    const isUnsettled =
+      details.unsettledTrade === true ||
+      details.rawKind === 'unsettled' ||
+      subType.includes('unsettled') ||
+      transaction.settlementMethod === 'unsettled';
+    const isConditional =
+      details.rawKind === 'conditional' ||
+      details.isConditional ||
+      subType.includes('conditional');
+    const isReceived = transaction.documentNature === 'received' || transaction.goldAmount > 0;
+
+    const weightLabel =
+      details.rawKind === 'misc' || subType.includes('misc')
+        ? 'وزن متفرقه'
+        : isConditional
+        ? 'وزن شرطی'
+        : 'وزن آبشده';
+
+    if (details.rawWeight || details.weight) {
       attributes.push({
-        label: 'مظنه/قیمت گرم',
-        value: `${Number(details.metalPrice).toLocaleString('fa-IR')} ریال`,
+        label: weightLabel,
+        value: `${details.rawWeight || details.weight} گرم`,
         isMono: true,
       });
     }
-    if (details.totalAmount) {
+    if (details.purity || details.grade) {
+      attributes.push({
+        label: isConditional ? 'عیار موقت' : 'عیار',
+        value: String(details.purity || details.grade),
+        isMono: true,
+      });
+    }
+    if (details.stampNumber || details.assayStampNumber) {
+      attributes.push({
+        label: 'شماره انگ',
+        value: String(details.stampNumber || details.assayStampNumber),
+        isMono: true,
+      });
+    }
+    if (details.labName || details.assayLabName) {
+      attributes.push({
+        label: 'ری‌گیری',
+        value: String(details.labName || details.assayLabName),
+      });
+    }
+
+    const formatToToman = (val: number | string) => {
+      const num = Number(val) || 0;
+      if (num === 0) return '۰ تومان';
+      const isAlreadyToman = details.currencyUnit === 'IRT';
+      const valToman = isAlreadyToman ? num : Math.floor(num / 10);
+      return `${valToman.toLocaleString('fa-IR')} تومان`;
+    };
+
+    if (details.metalPrice) {
+      const priceLabel = details.metalPriceType === 'mesghal17' ? 'مظنه مثقال' : 'مظنه/قیمت گرم';
+      attributes.push({
+        label: priceLabel,
+        value: formatToToman(details.metalPrice),
+        isMono: true,
+      });
+    }
+    if (details.totalAmount || Math.abs(Number(transaction.rialAmount)) > 0) {
+      const totVal = details.totalAmount || Math.abs(Number(transaction.rialAmount));
       attributes.push({
         label: 'مبلغ کل فاکتور',
-        value: `${Number(details.totalAmount).toLocaleString('fa-IR')} ریال`,
+        value: formatToToman(totVal),
         isMono: true,
       });
     }
 
+    let catLabel = '';
+    if (isUnsettled) {
+      catLabel = isReceived ? 'خرید طلا بدون تسویه' : 'فروش طلا بدون تسویه';
+    } else if (isConditional) {
+      catLabel = isReceived ? 'خرید طلای آبشده شرطی' : 'فروش طلای آبشده شرطی';
+    } else if (details.rawKind === 'misc' || subType.includes('misc')) {
+      catLabel = isReceived ? 'خرید طلای متفرقه' : 'فروش طلای متفرقه';
+    } else if (details.rawKind === 'question' || subType.includes('question')) {
+      catLabel = isReceived ? 'خرید سواله طلا' : 'فروش سواله طلا';
+    } else {
+      catLabel = isReceived ? 'خرید آبشده طلا' : 'فروش آبشده طلا';
+    }
+
     return {
       category: 'gold-sale',
-      categoryLabel: transaction.documentNature === 'received' ? 'خرید کار ساخته' : 'فروش کار ساخته',
-      badgeColor: 'indigo',
+      categoryLabel: catLabel,
+      badgeColor: isConditional ? 'amber' : isReceived ? 'emerald' : 'amber',
       attributes,
     };
   }
@@ -179,9 +268,12 @@ export function parseTransactionBreakdown(transaction: CustomerTransaction): Lin
       attributes.push({ label: 'کد پیگیری', value: String(details.trackingNumber), isMono: true });
     }
     if (details.transferFee) {
+      const fee = Number(details.transferFee) || 0;
+      const isAlreadyToman = details.currencyUnit === 'IRT';
+      const feeToman = isAlreadyToman ? fee : Math.floor(fee / 10);
       attributes.push({
         label: 'کارمزد انتقال',
-        value: `${Number(details.transferFee).toLocaleString('fa-IR')} ریال`,
+        value: `${feeToman.toLocaleString('fa-IR')} تومان`,
         isMono: true,
       });
     }
@@ -199,18 +291,41 @@ export function parseTransactionBreakdown(transaction: CustomerTransaction): Lin
     if (details.cashFundName) {
       attributes.push({ label: 'صندوق', value: String(details.cashFundName) });
     }
-    if (details.cashAmount || details.totalAmount) {
+    if (details.cashAmount || details.totalAmount || Math.abs(Number(transaction.rialAmount)) > 0) {
+      const c = Number(details.cashAmount || details.totalAmount || Math.abs(Number(transaction.rialAmount))) || 0;
+      const isAlreadyToman = details.currencyUnit === 'IRT';
+      const cToman = isAlreadyToman ? c : Math.floor(c / 10);
       attributes.push({
         label: 'مبلغ نقد',
-        value: `${Number(details.cashAmount || details.totalAmount).toLocaleString('fa-IR')} ریال`,
+        value: `${cToman.toLocaleString('fa-IR')} تومان`,
         isMono: true,
       });
     }
 
+    const isHawala =
+      details.isHawala === true ||
+      Boolean(details.hawalaGroupId) ||
+      Boolean(details.transferToken);
+
+    if (isHawala) {
+      const counterName = details.hawalaCounterCustomerName || details.transferPartnerName;
+      if (counterName) {
+        const counterCode = details.hawalaCounterCustomerCode ? ` (${details.hawalaCounterCustomerCode})` : '';
+        attributes.push({
+          label: 'طرف حواله',
+          value: `${counterName}${counterCode}`,
+        });
+      }
+    }
+
     return {
       category: 'cash',
-      categoryLabel: transaction.documentNature === 'received' ? 'دریافت وجه نقد' : 'پرداخت وجه نقد',
-      badgeColor: 'emerald',
+      categoryLabel: isHawala
+        ? 'حواله نقدی'
+        : transaction.documentNature === 'received'
+        ? 'دریافت وجه نقد'
+        : 'پرداخت وجه نقد',
+      badgeColor: isHawala ? 'purple' : 'emerald',
       attributes,
     };
   }
@@ -221,10 +336,13 @@ export function parseTransactionBreakdown(transaction: CustomerTransaction): Lin
     if (details.discountPercentage) {
       attributes.push({ label: 'درصد تخفیف', value: `${details.discountPercentage}٪`, isMono: true });
     }
-    if (details.discountAmount) {
+    if (details.discountAmount || Math.abs(Number(transaction.rialAmount)) > 0) {
+      const d = Number(details.discountAmount || Math.abs(Number(transaction.rialAmount))) || 0;
+      const isAlreadyToman = details.currencyUnit === 'IRT';
+      const dToman = isAlreadyToman ? d : Math.floor(d / 10);
       attributes.push({
         label: 'مبلغ تخفیف',
-        value: `${Number(details.discountAmount).toLocaleString('fa-IR')} ریال`,
+        value: `${dToman.toLocaleString('fa-IR')} تومان`,
         isMono: true,
       });
     }
@@ -266,9 +384,12 @@ export function parseTransactionBreakdown(transaction: CustomerTransaction): Lin
       attributes.push({ label: 'مشخصات', value: formulaVal, isMono: true });
     }
     if (details.unitPrice) {
+      const p = Number(details.unitPrice) || 0;
+      const isAlreadyToman = details.currencyUnit === 'IRT';
+      const pToman = isAlreadyToman ? p : Math.floor(p / 10);
       attributes.push({
         label: 'قیمت هر سکه',
-        value: `${Number(details.unitPrice).toLocaleString('fa-IR')} ریال`,
+        value: `${pToman.toLocaleString('fa-IR')} تومان`,
         isMono: true,
       });
     }
@@ -345,6 +466,21 @@ export function parseTransactionBreakdown(transaction: CustomerTransaction): Lin
 
   // 8. Foreign Currency
   if (tab === 'currency' || subType.includes('currency') || transaction.foreignCurrency) {
+    const isHawala =
+      details.isHawala === true ||
+      Boolean(details.hawalaGroupId) ||
+      Boolean(details.transferToken);
+
+    if (isHawala) {
+      const counterName = details.hawalaCounterCustomerName || details.transferPartnerName;
+      if (counterName) {
+        const counterCode = details.hawalaCounterCustomerCode ? ` (${details.hawalaCounterCustomerCode})` : '';
+        attributes.push({
+          label: 'طرف حواله',
+          value: `${counterName}${counterCode}`,
+        });
+      }
+    }
     if (transaction.foreignCurrency) {
       attributes.push({ label: 'نوع ارز', value: transaction.foreignCurrency, isMono: true });
     }
@@ -356,38 +492,81 @@ export function parseTransactionBreakdown(transaction: CustomerTransaction): Lin
       });
     }
     if (details.currencyUnitPrice) {
+      const p = Number(details.currencyUnitPrice) || 0;
+      const isAlreadyToman = details.currencyUnit === 'IRT';
+      const pToman = isAlreadyToman ? p : Math.floor(p / 10);
       attributes.push({
         label: 'نرخ تسعیر',
-        value: `${Number(details.currencyUnitPrice).toLocaleString('fa-IR')} ریال`,
+        value: `${pToman.toLocaleString('fa-IR')} تومان`,
         isMono: true,
       });
     }
 
     return {
       category: 'currency',
-      categoryLabel: 'مبادله ارزی',
-      badgeColor: 'sky',
+      categoryLabel: isHawala ? 'حواله ارزی' : 'مبادله ارزی',
+      badgeColor: isHawala ? 'purple' : 'sky',
       attributes,
     };
   }
 
   // 9. Workmanship / اجرت و ساخت
-  if (tab === 'workmanship' || subType.includes('workmanship')) {
+  if (
+    tab === 'workmanship' ||
+    subType.includes('workmanship') ||
+    subType === 'exit_manufactured' ||
+    subType === 'entry_manufactured' ||
+    subType === 'sale_manufactured' ||
+    subType === 'buy_manufactured'
+  ) {
+    if (details.workmanshipName) {
+      attributes.push({ label: 'نام کار ساخته', value: String(details.workmanshipName) });
+    }
     if (details.rawWeight) {
       attributes.push({ label: 'وزن پایه', value: `${details.rawWeight} گرم`, isMono: true });
     }
+    if (details.purity) {
+      attributes.push({ label: 'عیار', value: String(details.purity), isMono: true });
+    }
+    if (details.goldenPercentage) {
+      attributes.push({ label: 'درصد طلایی', value: `${details.goldenPercentage}٪`, isMono: true });
+    }
     if (details.wageAmount) {
+      const w = Number(details.wageAmount) || 0;
+      const isAlreadyToman = details.currencyUnit === 'IRT' || details.wageCurrency === 'IRT';
+      const wToman = isAlreadyToman ? w : Math.floor(w / 10);
       attributes.push({
         label: 'مبلغ اجرت',
-        value: `${Number(details.wageAmount).toLocaleString('fa-IR')} ریال`,
+        value: `${wToman.toLocaleString('fa-IR')} تومان`,
         isMono: true,
       });
     }
 
+    let catLabel = 'اجرت و خدمات ساخت';
+    const optId = Number(details.workmanshipOptionId);
+    const isPaid = transaction.documentNature === 'paid' || transaction.goldAmount < 0 || transaction.rialAmount < 0;
+    const isReturn = optId === 3 || optId === 4 || subType.includes('return');
+
+    if (subType === 'workmanship-golden-percentage') {
+      catLabel = 'درصد طلایی کار ساخته';
+    } else if (optId === 3 || subType.includes('return_entry') || subType.includes('return_exit')) {
+      catLabel = isPaid || subType === 'return_exit' ? 'خروج مرجوعی' : 'ورود مرجوعی';
+    } else if (optId === 4 || subType.includes('return_buy') || subType.includes('return_sale')) {
+      catLabel = isPaid || subType === 'return_sale' ? 'فروش مرجوعی' : 'خرید مرجوعی';
+    } else if (subType === 'buy_manufactured' || (optId === 2 && !isPaid)) {
+      catLabel = 'خرید کارساخته';
+    } else if (subType === 'sale_manufactured' || (optId === 2 && isPaid)) {
+      catLabel = 'فروش کارساخته';
+    } else if (subType.includes('exit') || isPaid) {
+      catLabel = 'خروج کار ساخته';
+    } else {
+      catLabel = 'ورود کار ساخته';
+    }
+
     return {
       category: 'workmanship',
-      categoryLabel: 'اجرت و خدمات ساخت',
-      badgeColor: 'indigo',
+      categoryLabel: catLabel,
+      badgeColor: isReturn ? (isPaid || subType === 'return_exit' ? 'amber' : 'rose') : 'indigo',
       attributes,
     };
   }
@@ -604,17 +783,22 @@ export function getJournalLineBadge(transaction: CustomerTransaction): JournalLi
   }
 
   // 2. Returns (برگشت از فروش ۴۱۵۰ / برگشت از خرید ۵۱۵۰)
-  const optionId = details.workmanshipOptionId;
+  const optionId = Number(details.workmanshipOptionId);
   const isReturnEntry =
-    optionId === 3 ||
+    (optionId === 3 && !isPaid) ||
+    subType === 'return_entry' ||
     subType.includes('return-entry') ||
-    subType.includes('return_entry') ||
     subType.includes('sales-return') ||
     subType.includes('sales_return');
-  const isReturnBuy =
+
+  const isReturnExitOrBuy =
+    (optionId === 3 && isPaid) ||
     optionId === 4 ||
+    subType === 'return_exit' ||
+    subType.includes('return-exit') ||
     subType.includes('return-buy') ||
     subType.includes('return_buy') ||
+    subType.includes('return_sale') ||
     subType.includes('purchase-return') ||
     subType.includes('purchase_return');
 
@@ -632,7 +816,7 @@ export function getJournalLineBadge(transaction: CustomerTransaction): JournalLi
     };
   }
 
-  if (isReturnBuy) {
+  if (isReturnExitOrBuy) {
     return {
       accountCode: '۵۱۵۰',
       accountTitle: 'برگشت از خرید و تخفیفات',
@@ -675,12 +859,22 @@ export function getJournalLineBadge(transaction: CustomerTransaction): JournalLi
   }
 
   // 4. Manufactured Gold (کار ساخته - فروش ۴۱۲۰ / موجودی ۱۱۳۰)
+  const isWorkmanshipItem =
+    Boolean(details.workmanshipName) ||
+    Boolean(details.itemName) ||
+    Boolean(details.productName) ||
+    Boolean(details.jewelryName) ||
+    Boolean(details.goldenPercentage) ||
+    Boolean(details.wagePercentage && !subType.startsWith('gold-'));
+
   if (
-    tab === 'gold-sale' ||
+    isWorkmanshipItem ||
     tab === 'manufactured' ||
-    subType.includes('gold-sale') ||
     subType.includes('manufactured') ||
-    subType.includes('gold_sale')
+    subType === 'exit_manufactured' ||
+    subType === 'entry_manufactured' ||
+    subType === 'sale_manufactured' ||
+    subType === 'buy_manufactured'
   ) {
     if (isPaid) {
       return {
@@ -691,7 +885,7 @@ export function getJournalLineBadge(transaction: CustomerTransaction): JournalLi
         groupCode: '۴۰۰۰',
         groupTitle: 'درآمدها',
         treePath: 'درآمدها > درآمدهای عملیاتی > درآمد فروش مصنوعات (۴۱۲۰)',
-        subCategory: 'فروش کارساخته طلا',
+        subCategory: 'فروش کار ساخته طلا',
         badgeColor: 'indigo',
       };
     }
@@ -708,27 +902,37 @@ export function getJournalLineBadge(transaction: CustomerTransaction): JournalLi
     };
   }
 
-  // 5. Raw Gold / Molten / Conditional / Misc (طلای آبشده، خام، شرطی، متفرقه)
+  // 5. Raw Gold / Molten / Conditional / Misc / Trade (طلای آبشده، خام، شرطی، متفرقه، معاملات خرید و فروش طلا)
   if (
     !isCurrency &&
     (tab === 'raw-gold' ||
       tab === 'gold-raw' ||
+      tab === 'gold-sale' ||
       subType.includes('molten') ||
       subType.includes('conditional') ||
       subType.includes('misc') ||
       subType.includes('raw_gold') ||
       subType.includes('question') ||
+      subType.startsWith('gold-purchase') ||
+      subType.startsWith('gold-sale') ||
       (details.rawKind && hasGold))
   ) {
     const isConditional =
       details.isConditional || subType.includes('conditional') || details.rawKind === 'conditional';
+    const isUnsettled =
+      details.unsettledTrade === true || details.rawKind === 'unsettled' || subType.includes('unsettled');
+    const isTrade =
+      tab === 'gold-sale' || subType.startsWith('gold-purchase') || subType.startsWith('gold-sale');
+
     const subCat = isConditional
-      ? 'طلای آبشده شرطی'
+      ? (isTrade ? (isPaid ? 'فروش طلای آبشده شرطی' : 'خرید طلای آبشده شرطی') : 'طلای آبشده شرطی')
+      : isUnsettled
+      ? (isTrade ? (isPaid ? 'فروش طلا بدون تسویه' : 'خرید طلا بدون تسویه') : 'طلای بدون تسویه')
       : details.rawKind === 'misc'
-      ? 'طلای متفرقه'
+      ? (isTrade ? (isPaid ? 'فروش طلای متفرقه' : 'خرید طلای متفرقه') : 'طلای متفرقه')
       : details.rawKind === 'question'
-      ? 'طلای مظنه'
-      : 'طلای آبشده';
+      ? (isTrade ? (isPaid ? 'فروش سواله طلا' : 'خرید سواله طلا') : 'طلای مظنه')
+      : (isTrade ? (isPaid ? 'فروش طلای آبشده' : 'خرید طلای آبشده') : 'طلای آبشده');
 
     if (isPaid) {
       return {
@@ -739,7 +943,7 @@ export function getJournalLineBadge(transaction: CustomerTransaction): JournalLi
         groupCode: '۴۰۰۰',
         groupTitle: 'درآمدها',
         treePath: 'درآمدها > درآمدهای عملیاتی > درآمد فروش طلا (۴۱۱۰)',
-        subCategory: `فروش ${subCat}`,
+        subCategory: isTrade ? subCat : `فروش ${subCat}`,
         badgeColor: 'amber',
       };
     }
@@ -989,21 +1193,78 @@ export function getDocumentLineDescription(transaction: CustomerTransaction): Do
     Boolean(details.currencyQuantity);
   const hasGold = (Number(transaction.goldAmount) || 0) !== 0 || Boolean(details.rawWeight || details.weight);
 
-  // 1. Raw Gold / Molten / Conditional / Misc
-  if (
+  const itemName =
+    details.workmanshipName || details.itemName || details.productName || details.jewelryName || details.title || '';
+  const isWorkmanshipItem =
+    tab === 'workmanship' ||
+    tab === 'manufactured' ||
+    subType.includes('workmanship') ||
+    subType.includes('manufactured') ||
+    subType === 'exit_manufactured' ||
+    subType === 'entry_manufactured' ||
+    subType === 'sale_manufactured' ||
+    subType === 'buy_manufactured' ||
+    Boolean(itemName) ||
+    Boolean(details.goldenPercentage) ||
+    Boolean(details.wagePercentage && !subType.startsWith('gold-'));
+
+  const isHawala =
+    details.isHawala === true ||
+    Boolean(details.hawalaGroupId) ||
+    Boolean(details.transferToken);
+
+  const hawalaPartner =
+    details.hawalaCounterCustomerName ||
+    details.counterCustomerName ||
+    details.targetCustomerName ||
+    details.transferPartnerName ||
+    '';
+  const hawalaCode =
+    details.hawalaCounterCustomerCode ||
+    details.counterCustomerCode ||
+    details.targetCustomerCode ||
+    '';
+  const hawalaDisplay = hawalaPartner
+    ? (hawalaCode ? `${hawalaPartner} (${hawalaCode})` : hawalaPartner)
+    : '';
+
+  // 1. Hawala (حواله طلا، حواله نقدی، حواله ارزی)
+  if (isHawala) {
+    if (hasGold) {
+      const hawalaTitle = isConditional ? 'حواله طلای شرطی' : 'حواله طلا';
+      primary = isReceived
+        ? (hawalaDisplay ? `${hawalaTitle} از: ${hawalaDisplay}` : `دریافت ${hawalaTitle}`)
+        : (hawalaDisplay ? `${hawalaTitle} به: ${hawalaDisplay}` : `پرداخت ${hawalaTitle}`);
+    } else if (isCurrency) {
+      primary = isReceived
+        ? (hawalaDisplay ? `حواله ارزی از: ${hawalaDisplay}` : 'دریافت حواله ارزی')
+        : (hawalaDisplay ? `حواله ارزی به: ${hawalaDisplay}` : 'پرداخت حواله ارزی');
+    } else {
+      primary = isReceived
+        ? (hawalaDisplay ? `حواله نقدی از: ${hawalaDisplay}` : 'دریافت حواله نقدی')
+        : (hawalaDisplay ? `حواله نقدی به: ${hawalaDisplay}` : 'پرداخت حواله نقدی');
+    }
+  }
+
+  // 2. Raw Gold / Molten / Conditional / Misc / Gold Trade
+  else if (
     !isCurrency &&
     tab !== 'bank' && tab !== 'check' && tab !== 'cash' &&
+    !isWorkmanshipItem &&
     (tab === 'raw-gold' ||
       tab === 'gold-raw' ||
+      tab === 'gold-sale' ||
       subType.includes('molten') ||
       subType.includes('conditional') ||
       subType.includes('misc') ||
       subType.includes('raw_gold') ||
       subType.includes('question') ||
+      subType.startsWith('gold-purchase') ||
+      subType.startsWith('gold-sale') ||
       (details.rawKind && hasGold))
   ) {
-    const isTradePurchase = subType.startsWith('gold-purchase') || subType.includes('purchase');
-    const isTradeSale = subType.startsWith('gold-sale') || subType.includes('sale');
+    const isTradePurchase = subType.startsWith('gold-purchase') || subType.includes('purchase') || (tab === 'gold-sale' && isReceived);
+    const isTradeSale = subType.startsWith('gold-sale') || subType.includes('sale') || (tab === 'gold-sale' && isPaid);
 
     if (isConditional) {
       if (isTradePurchase) primary = 'خرید طلای شرطی';
@@ -1037,28 +1298,39 @@ export function getDocumentLineDescription(transaction: CustomerTransaction): Do
     const numPrice = Number(details.metalPrice) || 0;
     if (numPrice > 0) {
       const isGram = details.metalPriceType !== 'mesghal17';
-      const gramPrice = isGram ? numPrice : Math.round(numPrice / 4.3318);
-      const mesghalPrice = isGram ? Math.round(numPrice * 4.3318) : numPrice;
-      const unitStr = details.currencyUnit === 'IRR' ? 'ریال' : 'تومان';
+      const isAlreadyToman = details.currencyUnit === 'IRT';
+      const pToman = isAlreadyToman ? numPrice : Math.floor(numPrice / 10);
+      const gramPrice = isGram ? pToman : Math.round(pToman / 4.3318);
+      const mesghalPrice = isGram ? Math.round(pToman * 4.3318) : pToman;
 
-      extraInfoParts.push(`در گرمی (${gramPrice.toLocaleString('fa-IR')} ${unitStr}) و مثقالی (${mesghalPrice.toLocaleString('fa-IR')} ${unitStr})`);
+      extraInfoParts.push(`در گرمی (${gramPrice.toLocaleString('fa-IR')} تومان) و مثقالی (${mesghalPrice.toLocaleString('fa-IR')} تومان)`);
     }
   }
 
   // 2. Manufactured Gold (کار ساخته) & Workmanship
   else if (
-    tab === 'gold-sale' ||
+    isWorkmanshipItem ||
     tab === 'manufactured' ||
     tab === 'workmanship' ||
-    subType.includes('gold-sale') ||
     subType.includes('manufactured') ||
-    subType.includes('workmanship')
+    subType.includes('workmanship') ||
+    subType === 'exit_manufactured' ||
+    subType === 'entry_manufactured' ||
+    subType === 'sale_manufactured' ||
+    subType === 'buy_manufactured'
   ) {
-    const itemName =
-      details.itemName || details.productName || details.jewelryName || details.title || '';
     const optId = Number(details.workmanshipOptionId);
 
-    if (optId === 3 || subType.includes('return_entry') || subType.includes('return_exit')) {
+    if (subType === 'workmanship-golden-percentage') {
+      if (transaction.description && transaction.description.trim()) {
+        primary = transaction.description.trim().replace(/^بابت\s+/, '');
+      } else {
+        const gPct = details.goldenPercentage ? ` (${details.goldenPercentage}٪)` : '';
+        primary = itemName
+          ? `درصد طلایی کارساخته${gPct}: ${itemName}`
+          : `درصد طلایی کارساخته${gPct}`;
+      }
+    } else if (optId === 3 || subType.includes('return_entry') || subType.includes('return_exit')) {
       if (isPaid || subType === 'return_exit') {
         primary = itemName ? `خروج مرجوعی ${itemName}` : 'خروج مرجوعی';
       } else {
@@ -1070,16 +1342,30 @@ export function getDocumentLineDescription(transaction: CustomerTransaction): Do
       } else {
         primary = itemName ? `خرید مرجوعی ${itemName}` : 'خرید مرجوعی';
       }
+    } else if (subType === 'buy_manufactured' || (optId === 2 && !isPaid)) {
+      primary = itemName ? `خرید کارساخته ${itemName}` : 'خرید کارساخته طلا';
+    } else if (subType === 'sale_manufactured' || (optId === 2 && isPaid)) {
+      primary = itemName ? `فروش کارساخته ${itemName}` : 'فروش کارساخته طلا';
     } else {
-      if (isPaid) {
-        primary = itemName ? `خروج کارساخته ${itemName}` : 'خروج کارساخته طلا';
+      if (isPaid || subType === 'exit_manufactured') {
+        primary = itemName ? `خروج کارساخته ${itemName}` : 'خروج کار ساخته طلا';
       } else {
-        primary = itemName ? `ورود کارساخته ${itemName}` : 'ورود کارساخته طلا';
+        primary = itemName ? `ورود کارساخته ${itemName}` : 'ورود کار ساخته طلا';
       }
     }
 
+    const effectiveGoldenPct = details.goldenPercentage || details.profitPercentage;
+    if (effectiveGoldenPct && subType !== 'workmanship-golden-percentage') {
+      extraInfoParts.push(`درصد طلایی: ${effectiveGoldenPct}٪`);
+    }
     if (details.wagePercentage) {
       extraInfoParts.push(`اجرت: ${details.wagePercentage}٪`);
+    }
+    if (details.wageAmount) {
+      const wAmt = Number(details.wageAmount) || 0;
+      const isAlreadyToman = details.currencyUnit === 'IRT' || details.wageCurrency === 'IRT';
+      const wToman = isAlreadyToman ? wAmt : Math.floor(wAmt / 10);
+      extraInfoParts.push(`مبلغ اجرت: ${wToman.toLocaleString('fa-IR')} تومان`);
     }
   }
 
@@ -1218,7 +1504,12 @@ export function getDocumentLineDescription(transaction: CustomerTransaction): Do
 
     const totalAmt = Number(details.stoneTotalAmount || details.totalAmount || 0);
     if (totalAmt > 0) {
-      extraInfoParts.push(`مبلغ: ${totalAmt.toLocaleString('fa-IR')} ${curLabel}`);
+      if (rawCur === 'IRR') {
+        const valToman = Math.floor(totalAmt / 10);
+        extraInfoParts.push(`مبلغ: ${valToman.toLocaleString('fa-IR')} تومان`);
+      } else {
+        extraInfoParts.push(`مبلغ: ${totalAmt.toLocaleString('fa-IR')} ${curLabel}`);
+      }
     }
 
     const ct = details.stoneCarats ? String(details.stoneCarats) : '';
@@ -1326,7 +1617,39 @@ export function getDocumentLineDescription(transaction: CustomerTransaction): Do
         trimmedDesc.startsWith('فروش سنگ:') ||
         trimmedDesc.startsWith('ورود سنگ:') ||
         trimmedDesc.startsWith('خروج سنگ:'));
-    if (!isRedundantCoinDesc && !isRedundantCheckDesc && !isRedundantStoneDesc) {
+    const isRedundantWorkmanshipDesc =
+      (tab === 'workmanship' || subType.includes('workmanship')) &&
+      (trimmedDesc === primary.trim() ||
+        trimmedDesc === `بابت ${primary.trim()}` ||
+        `بابت ${trimmedDesc}` === primary.trim() ||
+        primary.includes(trimmedDesc) ||
+        trimmedDesc.includes(primary));
+    const isRedundantRawGoldDesc =
+      trimmedDesc === primary.trim() ||
+      trimmedDesc === primary.replace(/\s+طلا$/, '') ||
+      primary === `${trimmedDesc} طلا` ||
+      primary === trimmedDesc.replace(/\s+طلا$/, '') ||
+      (trimmedDesc.startsWith('خرید آبشده') && primary.startsWith('خرید آبشده')) ||
+      (trimmedDesc.startsWith('فروش آبشده') && primary.startsWith('فروش آبشده')) ||
+      (trimmedDesc.startsWith('ورود آبشده') && primary.startsWith('ورود آبشده')) ||
+      (trimmedDesc.startsWith('خروج آبشده') && primary.startsWith('خروج آبشده')) ||
+      (trimmedDesc.startsWith('خرید متفرقه') && primary.startsWith('خرید متفرقه')) ||
+      (trimmedDesc.startsWith('فروش متفرقه') && primary.startsWith('فروش متفرقه')) ||
+      (trimmedDesc.startsWith('خرید طلا بدون تسویه') && primary.startsWith('خرید طلا بدون تسویه')) ||
+      (trimmedDesc.startsWith('فروش طلا بدون تسویه') && primary.startsWith('فروش طلا بدون تسویه'));
+    const isRedundantHawalaDesc =
+      isHawala &&
+      (trimmedDesc === primary.trim() ||
+        primary.includes(trimmedDesc) ||
+        (hawalaPartner && trimmedDesc.includes(hawalaPartner)));
+    if (
+      !isRedundantCoinDesc &&
+      !isRedundantCheckDesc &&
+      !isRedundantStoneDesc &&
+      !isRedundantWorkmanshipDesc &&
+      !isRedundantRawGoldDesc &&
+      !isRedundantHawalaDesc
+    ) {
       secondaryParts.push(trimmedDesc);
     }
   }

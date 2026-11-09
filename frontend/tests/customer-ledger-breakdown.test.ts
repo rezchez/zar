@@ -571,5 +571,48 @@ describe('Customer Ledger Document Breakdown Tests', () => {
       const bankExtra = getRowExtraDetails(bank);
       expect(bankExtra.bankDetails).toBe('بانک ملت | پیگیری: TRK-9900');
     });
+
+    it('correctly handles gold-sale tab as raw gold trade instead of manufactured jewelry', () => {
+      const tradePurchase = {
+        documentTab: 'gold-sale',
+        documentSubType: 'gold-purchase-molten',
+        documentNature: 'received',
+        goldAmount: 10,
+        rialAmount: 4500000000,
+        description: 'خرید آبشده طلا',
+        documentDetails: JSON.stringify({
+          rawKind: 'molten',
+          rawWeight: '10.00',
+          purity: '750',
+          metalPrice: '450000000',
+          metalPriceType: 'gram18',
+          totalAmount: '4500000000',
+          currencyUnit: 'IRR',
+        }),
+      } as CustomerTransaction;
+
+      const lineDesc = getDocumentLineDescription(tradePurchase);
+      expect(lineDesc.primary).toBe('خرید آبشده طلا');
+      expect(lineDesc.secondary).toContain('۴۵٬۰۰۰٬۰۰۰ تومان');
+
+      const badge = getJournalLineBadge(tradePurchase);
+      expect(badge.accountCode).toBe('۱۱۳۰');
+      expect(badge.accountTitle).toBe('موجودی کالا و طلا');
+      expect(badge.subCategory).toBe('خرید طلای آبشده');
+
+      const breakdown = parseTransactionBreakdown(tradePurchase);
+      expect(breakdown.category).toBe('gold-sale');
+      expect(breakdown.categoryLabel).toBe('خرید آبشده طلا');
+      expect(breakdown.badgeColor).toBe('emerald');
+
+      const wAttr = breakdown.attributes.find((a) => a.label === 'وزن آبشده');
+      expect(wAttr?.value).toBe('10.00 گرم');
+
+      const pAttr = breakdown.attributes.find((a) => a.label === 'مظنه/قیمت گرم');
+      expect(pAttr?.value).toBe('۴۵٬۰۰۰٬۰۰۰ تومان');
+
+      const totAttr = breakdown.attributes.find((a) => a.label === 'مبلغ کل فاکتور');
+      expect(totAttr?.value).toBe('۴۵۰٬۰۰۰٬۰۰۰ تومان');
+    });
   });
 });

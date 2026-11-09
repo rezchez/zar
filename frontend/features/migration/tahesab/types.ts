@@ -63,6 +63,7 @@ export interface NormalizedDocumentLine {
     | 'purchase'
     | 'wage'
     | 'workmanship'
+    | 'etiquette'
     | 'opening';
   metalType: 'gold' | 'silver' | 'none';
   weight: number;
@@ -73,9 +74,13 @@ export interface NormalizedDocumentLine {
   foreignCurrency?: string;
   assayStampNumber?: string; // شماره قبض یا انگ
   assayLabName?: string;
+  isHawala?: boolean;
   transferToken?: string; // UUID from #HAVALEH# or #hshbe#
   transferSide?: 'source' | 'destination';
   transferPartnerName?: string;
+  hawalaCounterCustomerCode?: string | number;
+  hawalaCounterCustomerName?: string;
+  hawalaCounterFactorCode?: string;
   description: string;
   unitPrice?: number;
   isConditional: boolean;
@@ -84,6 +89,12 @@ export interface NormalizedDocumentLine {
   wagePercent?: number;
   wageGoldWeight?: number;
   workmanshipName?: string;
+  isEtiquette?: boolean;
+  etiquetteBarcode?: string;
+  etiquetteCode?: string;
+  isGoldenPercentageLine?: boolean;
+  parentLineNumber?: number;
+  documentTypeLabel?: string;
   isOpeningInventory?: boolean;
   signedGoldAmount?: number;
   signedRialAmount?: number;
@@ -141,6 +152,47 @@ export interface NormalizedAssayLab {
   raw: Record<string, unknown>;
 }
 
+export interface NormalizedEtiquetteStone {
+  name: string;
+  quantity: number;
+  weightCarat: number;
+  weightGram: number;
+  unitPrice: number;
+  totalPrice: number;
+  isDeducted: boolean;
+  shape?: string;
+}
+
+export interface NormalizedEtiquette {
+  barcode: string;
+  title: string;
+  itemCode?: string;
+  metal: 'gold' | 'silver' | 'platinum';
+  purity: number;
+  totalWeight: number; // Gross weight in grams
+  stoneWeight: number; // Gem deduction in grams
+  netWeight: number; // Net precious metal weight in grams
+  stoneCount: number;
+  stonePrice: number; // IRR
+  wage: number;
+  wageType: 'percentage' | 'per_gram' | 'fixed';
+  profitPercentage: number;
+  storageLocation: string;
+  status: 'available' | 'sold';
+  printStatus: 'printed' | 'not_printed';
+  printCount: number;
+  mountedStones: NormalizedEtiquetteStone[];
+  dateIso?: string;
+  dateJalali?: string;
+  creatorName?: string;
+  exitFactorCode?: string;
+  exitFactorNumber?: string;
+  exitCustomerCode?: string;
+  exitCustomerName?: string;
+  exitDateJalali?: string;
+  raw: Record<string, unknown>;
+}
+
 export interface NormalizedInventoryItem {
   code: string;
   name: string;
@@ -159,6 +211,7 @@ export interface NormalizedMigrationData {
   gemstones: NormalizedGemstone[];
   assayLabs: NormalizedAssayLab[];
   inventory: NormalizedInventoryItem[];
+  etiquettes?: NormalizedEtiquette[];
   currencies: string[];
 }
 
@@ -238,6 +291,9 @@ export interface MigrationPreviewStats {
   totalAssayLabs: number;
   totalMappedAssayLabs?: number;
   totalNewAssayLabs?: number;
+  totalEtiquettes?: number;
+  totalAvailableEtiquettes?: number;
+  totalSoldEtiquettes?: number;
   totalConditionalLots: number;
   totalTransferPairs: number;
   totalGoldVolumeGrams: number;
@@ -280,6 +336,7 @@ export interface MigrationResult {
   importedLines: number;
   importedJournalEntries: number;
   importedMetalInventoryLots: number;
+  importedEtiquettes?: number;
   skippedDuplicates: number;
   durationMs: number;
   startTimeIso?: string;

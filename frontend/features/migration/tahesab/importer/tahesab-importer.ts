@@ -50,6 +50,7 @@ export interface MigrationSessionState {
   existingTxByFactorAndLine: Map<string, ExistingTxMeta>;
   assayLabMapByName: Map<string, { id: string; name: string }>;
   currencyMapByCode: Map<string, { id?: string; code: string; name: string; symbol: string }>;
+  docUuidByFactorCode: Map<string, string>;
   activePrefix: string;
 }
 
@@ -100,6 +101,7 @@ export async function importTahesabData(
   let importedLines = 0;
   let importedJournalEntries = 0;
   let importedMetalLots = 0;
+  let importedEtiquettes = 0;
   let skippedDuplicates = 0;
 
   let writer = pb;
@@ -141,6 +143,7 @@ export async function importTahesabData(
       existingTxByFactorAndLine: new Map(),
       assayLabMapByName: new Map(),
       currencyMapByCode: new Map(),
+      docUuidByFactorCode: new Map(),
       activePrefix: 'ZF',
     };
     migrationSessionCache.set(migrationId, session);
@@ -603,16 +606,21 @@ export async function importTahesabData(
             return;
           }
 
-          const docUuid = randomUUID();
+          let docUuid = session.docUuidByFactorCode.get(doc.sourceFactorCode);
+          if (!docUuid) {
+            docUuid = randomUUID();
+            session.docUuidByFactorCode.set(doc.sourceFactorCode, docUuid);
+          }
 
           // In-memory atomic sequence increment to eliminate per-document HTTP calls
           let docSeq = (session.customerSequenceMap.get(targetCustId) || 0) + 1;
           session.customerSequenceMap.set(targetCustId, docSeq);
 
-          await Promise.all(
-            doc.lines.map(async (line) => {
-              const lineSourceKey = `tahesab:${migrationId}:${doc.sourceFactorCode}:${line.lineNumber}`;
-              const factorLineKey = `${doc.sourceFactorCode}:${line.lineNumber}`;
+          const createdTxIdByLineNumber = new Map<number, string>();
+
+          for (const line of doc.lines) {
+            const lineSourceKey = `tahesab:${migrationId}:${doc.sourceFactorCode}:${line.lineNumber}`;
+            const factorLineKey = `${doc.sourceFactorCode}:${line.lineNumber}`;
 
               if (!dryRun) {
                 try {
@@ -696,7 +704,7 @@ export async function importTahesabData(
                     metalType: isSilverLine ? 'silver' : isGoldLine ? 'gold' : undefined,
                     baseKarat: isSilverLine ? 999 : isGoldLine ? 750 : undefined,
                     rawKind: isGoldLine
-                      ? line.kind === 'conditional'
+                      ? (line.kind === 'conditional' || line.isConditional)
                         ? 'conditional'
                         : line.kind === 'melted'
                         ? 'molten'
@@ -722,6 +730,53 @@ export async function importTahesabData(
                     signedForeignAmount: line.signedForeignAmount,
                   };
 
+                  const isHawala = Boolean(line.isHawala || line.transferToken);
+                  if (isHawala) {
+                    docDetailsObj.isHawala = true;
+                    docDetailsObj.hawalaGroupId = line.transferToken;
+
+                    let counterCustId = '';
+                    let counterCustCode = line.hawalaCounterCustomerCode;
+                    let counterCustName = line.hawalaCounterCustomerName || line.transferPartnerName;
+
+                    if (counterCustCode !== undefined && counterCustCode !== null) {
+                      counterCustId = session.customerIdBySourceCode.get(String(counterCustCode)) || '';
+                      if (!counterCustName && counterCustId) {
+                        counterCustName = session.customerById.get(counterCustId)?.name;
+                      }
+                    }
+
+                    let counterDocId = '';
+                    if (line.hawalaCounterFactorCode) {
+                      counterDocId = session.docUuidByFactorCode.get(line.hawalaCounterFactorCode) || '';
+                      if (!counterDocId) {
+                        counterDocId = randomUUID();
+                        session.docUuidByFactorCode.set(line.hawalaCounterFactorCode, counterDocId);
+                      }
+                    }
+
+                    docDetailsObj.hawalaCounterCustomerId = counterCustId || undefined;
+                    docDetailsObj.hawalaCounterCustomerCode = counterCustCode || undefined;
+                    docDetailsObj.hawalaCounterCustomerName = counterCustName || undefined;
+                    docDetailsObj.hawalaCounterDocumentId = counterDocId || undefined;
+
+                    if (line.documentTypeLabel) {
+                      docDetailsObj.documentTypeLabel = line.documentTypeLabel;
+                      if (isGoldLine) {
+                        docDetailsObj.rawKind = line.isConditional ? 'conditional' : 'molten';
+                        docDetailsObj.inventorySourceId = '';
+                      }
+                    } else if (isGoldLine) {
+                      docDetailsObj.documentTypeLabel = line.isConditional ? 'حواله طلای شرطی' : 'حواله طلا';
+                      docDetailsObj.rawKind = line.isConditional ? 'conditional' : 'molten';
+                      docDetailsObj.inventorySourceId = '';
+                    } else if (isCurrencyLine) {
+                      docDetailsObj.documentTypeLabel = 'حواله ارزی';
+                    } else if (line.kind === 'cash') {
+                      docDetailsObj.documentTypeLabel = 'حواله نقدی';
+                    }
+                  }
+
                   if (line.kind === 'bank') {
                     const bankAccId =
                       (line.bankAccountNumber ? session.bankAccountMap.get(line.bankAccountNumber) : undefined) ||
@@ -732,10 +787,54 @@ export async function importTahesabData(
                     docDetailsObj.financialAccountId = bankAccId;
                   }
 
+                  if (line.kind === 'claim' || line.documentTypeLabel === 'بدهی ما' || line.documentTypeLabel === 'طلب ما') {
+                    docDetailsObj.documentTypeLabel = line.documentTypeLabel || (line.nature === 'received' ? 'بدهی ما' : 'طلب ما');
+                    docDetailsObj.claimDocumentTypeLabel = docDetailsObj.documentTypeLabel;
+                    docDetailsObj.claimWeight = line.weight > 0 ? String(line.weight) : (line.convertedWeight750 > 0 ? String(line.convertedWeight750) : '');
+                    docDetailsObj.claimFinancial = line.amountIrr > 0 ? String(line.amountIrr) : '';
+                    if (line.kind === 'claim') {
+                      docDetailsObj.sourceTab = 'claim';
+                    }
+                  }
+
+                  if (line.kind === 'etiquette') {
+                    docDetailsObj.documentTypeLabel = line.documentTypeLabel;
+                    docDetailsObj.isEtiquette = true;
+                    docDetailsObj.barcode = line.etiquetteBarcode;
+                    docDetailsObj.etiquetteCode = line.etiquetteCode;
+                    docDetailsObj.workmanshipName = line.workmanshipName || line.description;
+                    docDetailsObj.wagePercent = line.wagePercent;
+                    docDetailsObj.goldenPercentage = line.wagePercent ? String(line.wagePercent) : '';
+                    docDetailsObj.sourceTab = 'etiquette';
+                    docDetailsObj.isChildLine = Boolean(line.isGoldenPercentageLine);
+                    docDetailsObj.isGoldenPercentageLine = Boolean(line.isGoldenPercentageLine);
+                    if (line.isGoldenPercentageLine && line.parentLineNumber) {
+                      const parentTxId = createdTxIdByLineNumber.get(line.parentLineNumber);
+                      if (parentTxId) {
+                        docDetailsObj.linkedLineId = parentTxId;
+                      }
+                    }
+                  }
+
                   if (line.kind === 'workmanship') {
                     docDetailsObj.workmanshipName = line.workmanshipName || line.description;
                     docDetailsObj.wagePercent = line.wagePercent;
                     docDetailsObj.wageGoldWeight = line.wageGoldWeight;
+                    docDetailsObj.goldenPercentage = line.wagePercent ? String(line.wagePercent) : '';
+                    if (line.isGoldenPercentageLine) {
+                      docDetailsObj.isChildLine = true;
+                      docDetailsObj.isGoldenPercentageLine = true;
+                      if (line.parentLineNumber) {
+                        const parentTxId = createdTxIdByLineNumber.get(line.parentLineNumber);
+                        if (parentTxId) {
+                          docDetailsObj.linkedLineId = parentTxId;
+                        }
+                      }
+                    }
+                  }
+
+                  if (doc.lines.some((l) => l.parentLineNumber === line.lineNumber)) {
+                    docDetailsObj.hasChildLines = true;
                   }
 
                   let lineCurrencyCode = '';
@@ -768,14 +867,25 @@ export async function importTahesabData(
                   }
                   session.usedDocNumbers.add(lineDocNum);
 
-                  const txRecord = await writer.collection('transactions').create({
+                  const validSettlementMethods = new Set(['amount', 'weight', 'mixed', 'unsettled', 'cash', 'bank']);
+                  let targetSettlementMethod = line.kind === 'cash' ? 'cash' : line.kind === 'bank' ? 'bank' : 'unsettled';
+                  if (line.kind === 'etiquette' || line.kind === 'workmanship') {
+                    targetSettlementMethod = 'weight';
+                  } else if (line.kind === 'claim') {
+                    targetSettlementMethod = (line.metalType === 'gold' || line.convertedWeight750 > 0) ? 'weight' : line.amountIrr > 0 ? 'amount' : 'unsettled';
+                  }
+                  if (!validSettlementMethods.has(targetSettlementMethod)) {
+                    targetSettlementMethod = 'unsettled';
+                  }
+
+                  const txPayload: Record<string, any> = {
                     customer: targetCustId,
                     customerCode: targetCustCode,
                     createdBy: effectiveUserId || undefined,
                     updatedBy: effectiveUserId || undefined,
                     transactionType: 'document',
                     status: 'posted',
-                    isOpeningBalance: false,
+                    isOpeningBalance: Boolean(line.isOpeningInventory || line.kind === 'opening'),
                     transactionDate: line.dateIso || new Date().toISOString(),
                     documentId: docUuid,
                     documentSequence: docSeq,
@@ -800,17 +910,17 @@ export async function importTahesabData(
                         : 0,
                     platinumAmount: 0,
                     rialAmount:
-                      typeof line.signedRialAmount === 'number'
+                      (typeof line.signedRialAmount === 'number'
                         ? line.signedRialAmount
                         : line.amountIrr > 0
                         ? line.nature === 'received'
                           ? line.amountIrr
                           : -line.amountIrr
-                        : 0,
+                        : 0) || 0,
                     foreignAmount:
-                      typeof line.signedForeignAmount === 'number'
+                      (typeof line.signedForeignAmount === 'number'
                         ? line.signedForeignAmount
-                        : line.foreignAmount || 0,
+                        : line.foreignAmount || 0) || 0,
                     foreignCurrency: lineCurrencyCode,
                     foreignCurrencySymbol: lineCurrencySymbol,
                     documentNature: line.nature,
@@ -819,12 +929,14 @@ export async function importTahesabData(
                         ? 'bank'
                         : line.kind === 'workmanship'
                         ? 'workmanship'
+                        : line.kind === 'etiquette'
+                        ? 'etiquette'
                         : isCurrencyLine && line.kind !== 'cash'
                         ? 'currency'
-                        : line.kind === 'melted' || line.kind === 'conditional'
-                        ? 'raw-gold'
                         : line.kind === 'claim'
-                        ? 'our-claim'
+                        ? 'claim'
+                        : isGoldLine || line.kind === 'melted' || line.kind === 'conditional'
+                        ? 'raw-gold'
                         : line.kind === 'cash'
                         ? 'cash'
                         : 'general',
@@ -834,9 +946,21 @@ export async function importTahesabData(
                           ? 'pay-to-customer'
                           : 'receive-from-customer'
                         : line.kind === 'workmanship'
-                        ? line.nature === 'paid'
+                        ? line.isGoldenPercentageLine
+                          ? 'workmanship-golden-percentage'
+                          : line.nature === 'paid'
                           ? 'exit_manufactured'
                           : 'entry_manufactured'
+                        : line.kind === 'etiquette'
+                        ? line.isGoldenPercentageLine
+                          ? 'workmanship-golden-percentage'
+                          : line.nature === 'paid'
+                          ? 'exit_etiquette'
+                          : 'entry_etiquette'
+                        : line.kind === 'claim'
+                        ? line.nature === 'received'
+                          ? 'our-debt'
+                          : 'our-claim'
                         : line.kind === 'cash'
                         ? line.nature === 'received'
                           ? 'cash-in'
@@ -855,11 +979,27 @@ export async function importTahesabData(
                           : 'outgoing-conditional'
                         : '',
                     documentDateJalali: line.dateJalali || doc.dateJalali,
-                    settlementMethod: line.kind === 'cash' ? 'cash' : line.kind === 'bank' ? 'bank' : 'unsettled',
+                    settlementMethod: targetSettlementMethod,
                     balanceSource: 'current',
                     documentDetails: JSON.stringify(docDetailsObj),
                     sourceKey: lineSourceKey,
-                  });
+                  };
+
+                  let txRecord: any;
+                  try {
+                    txRecord = await writer.collection('transactions').create(txPayload);
+                  } catch (txCreateErr: any) {
+                    if (
+                      txCreateErr?.data?.data?.settlementMethod ||
+                      txCreateErr?.response?.data?.settlementMethod ||
+                      txCreateErr?.message?.includes('settlementMethod')
+                    ) {
+                      txPayload.settlementMethod = 'unsettled';
+                      txRecord = await writer.collection('transactions').create(txPayload);
+                    } else {
+                      throw txCreateErr;
+                    }
+                  }
 
                   const createdMeta: ExistingTxMeta = {
                     id: txRecord.id,
@@ -871,12 +1011,15 @@ export async function importTahesabData(
                   };
                   session.existingTxByExactKey.set(lineSourceKey, createdMeta);
                   session.existingTxByFactorAndLine.set(factorLineKey, createdMeta);
+                  createdTxIdByLineNumber.set(line.lineNumber, txRecord.id);
 
                   importedLines++;
                   docImported = true;
 
                   // Register in metal_inventory if raw/melted/conditional metal (both incoming and outgoing)
+                  // Note: Interpersonal Hawala lines do NOT touch physical inventory.
                   if (
+                    !isHawala &&
                     line.weight > 0 &&
                     (line.kind === 'melted' || line.kind === 'conditional') &&
                     (line.metalType === 'gold' || line.metalType === 'silver')
@@ -995,10 +1138,15 @@ export async function importTahesabData(
                       });
                     }
                   }
-                } catch (err) {
+                } catch (err: any) {
+                  const errorDetail = err?.response?.data
+                    ? JSON.stringify(err.response.data)
+                    : err?.data
+                    ? JSON.stringify(err.data)
+                    : '';
                   errors.push({
                     code: 'ERR_IMPORT_LINE',
-                    message: `خطا در ثبت ردیف ${line.lineNumber} سند ${doc.documentNumber}: ${err instanceof Error ? err.message : String(err)}`,
+                    message: `خطا در ثبت ردیف ${line.lineNumber} سند ${doc.documentNumber}: ${err instanceof Error ? err.message : String(err)}${errorDetail ? ` (${errorDetail})` : ''}`,
                     severity: 'ERROR',
                     sourceType: 'document_line',
                     sourceId: lineSourceKey,
@@ -1008,14 +1156,13 @@ export async function importTahesabData(
                 importedLines++;
                 docImported = true;
               }
-            }),
-          );
+            }
 
-          if (docImported) {
-            importedDocuments++;
-          }
-        }),
-      );
+            if (docImported) {
+              importedDocuments++;
+            }
+          }),
+        );
     }
 
     const currentPercent = Math.min(95, 50 + Math.round(((startIndex + i + chunk.length) / totalDocs) * 45));
@@ -1100,6 +1247,112 @@ export async function importTahesabData(
       }
     }
 
+    // --- Step 4.5: Import Jewelry Etiquettes (اتیکت‌ها و بارکدهای طلا و جواهر) ---
+    if (data.etiquettes && data.etiquettes.length > 0) {
+      onProgress?.({
+        stage: 'importing',
+        percent: 92,
+        currentStep: 4,
+        totalSteps: 5,
+        message: `در حال ایمپورت اتیکت‌های طلا و جواهر (${data.etiquettes.length} قطعه)...`,
+      });
+
+      // Fetch existing barcodes in DB to ensure idempotency
+      const existingEtiquetteBarcodes = new Set<string>();
+      if (!dryRun) {
+        try {
+          const existingList = await writer
+            .collection('etiquettes')
+            .getFullList({ fields: 'barcode,sourceKey' })
+            .catch(() => []);
+          for (const item of existingList) {
+            if (item.barcode) existingEtiquetteBarcodes.add(String(item.barcode).trim());
+            if (item.sourceKey) existingEtiquetteBarcodes.add(String(item.sourceKey).trim());
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      for (const et of data.etiquettes) {
+        const etiquetteSourceKey = `tahesab:etiquette:${et.barcode}`;
+        if (existingEtiquetteBarcodes.has(et.barcode) || existingEtiquetteBarcodes.has(etiquetteSourceKey)) {
+          skippedDuplicates++;
+          continue;
+        }
+
+        if (dryRun) {
+          importedEtiquettes++;
+          continue;
+        }
+
+        try {
+          const effectiveType = et.mountedStones && et.mountedStones.length > 0 ? 'gemstone' : 'plain';
+          const mountedStonesPayload = et.mountedStones.map((s, idx) => ({
+            id: `mig_st_${et.barcode}_${idx + 1}`,
+            name: s.name,
+            quantity: s.quantity,
+            weightCarat: s.weightCarat,
+            weightGram: s.weightGram,
+            unitPrice: s.unitPrice,
+            totalPrice: s.totalPrice,
+            isDeducted: s.isDeducted,
+            shape: s.shape,
+          }));
+
+          let desc = et.status === 'sold' && et.exitFactorNumber
+            ? `فروخته‌شده طی فاکتور ${et.exitFactorNumber} ته‌حساب${et.exitCustomerName ? ` به ${et.exitCustomerName}` : ''}${et.exitDateJalali ? ` در تاریخ ${et.exitDateJalali}` : ''}.`
+            : '';
+          if (et.creatorName) {
+            desc = desc ? `${desc} سازنده: ${et.creatorName}` : `سازنده: ${et.creatorName}`;
+          }
+
+          const etiquetteRecordPayload: Record<string, unknown> = {
+            barcode: et.barcode,
+            title: et.title,
+            item_code: et.itemCode || '',
+            etiquette_type: effectiveType,
+            product_color: 'yellow',
+            metal: et.metal,
+            purity: et.purity,
+            total_weight: et.totalWeight,
+            stone_weight: et.stoneWeight,
+            net_weight: et.netWeight,
+            stone_count: et.stoneCount,
+            stone_price: et.stonePrice,
+            wage: et.wage,
+            wage_type: et.wageType,
+            profit_percentage: et.profitPercentage,
+            other_costs: 0,
+            total_price: 0,
+            storage_location: et.storageLocation,
+            quantity: 1,
+            status: et.status,
+            print_status: et.printStatus,
+            print_count: et.printCount,
+            description: desc,
+            mounted_stones: mountedStonesPayload,
+            date: et.dateJalali || '',
+            is_deleted: false,
+            created_by: effectiveUserId || '',
+          };
+
+          await writer.collection('etiquettes').create(etiquetteRecordPayload);
+          existingEtiquetteBarcodes.add(et.barcode);
+          existingEtiquetteBarcodes.add(etiquetteSourceKey);
+          importedEtiquettes++;
+        } catch (etErr) {
+          warnings.push({
+            code: 'WARN_ETIQUETTE_IMPORT',
+            message: `خطا در ایجاد اتیکت بارکد "${et.barcode}": ${etErr instanceof Error ? etErr.message : String(etErr)}`,
+            severity: 'WARNING',
+            sourceType: 'etiquette',
+            sourceId: et.barcode,
+          });
+        }
+      }
+    }
+
     onProgress?.({
       stage: 'finalizing',
       percent: 100,
@@ -1141,6 +1394,7 @@ export async function importTahesabData(
     importedLines,
     importedJournalEntries,
     importedMetalInventoryLots: importedMetalLots,
+    importedEtiquettes,
     skippedDuplicates,
     durationMs,
     startTimeIso,

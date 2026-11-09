@@ -172,7 +172,7 @@ export function getCoinOperationPrefix(
 export function formatCoinItemTitle(opPrefix: string, coinPersianName: string): string {
   const trimmed = String(coinPersianName || '').trim();
   if (!trimmed) return `${opPrefix} مسکوکات/شمش`.trim();
-  if (trimmed.startsWith('شمش')) {
+  if (trimmed.startsWith('شمش') || trimmed.startsWith('سکه')) {
     return `${opPrefix} ${trimmed}`.trim();
   }
   return `${opPrefix} سکه ${trimmed}`.trim();

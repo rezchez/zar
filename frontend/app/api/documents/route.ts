@@ -821,7 +821,17 @@ export async function POST(request: Request) {
         details,
       };
       const currencyEffect = getCurrencyTradeForeignEffect(currencyLine);
-      if (currencyEffect !== null) {
+      if (currencyEffect !== null && currencyEffect !== 0) {
+        lineAmounts.foreignAmount = currencyEffect;
+        if (currencyLine.documentTab === 'cash') lineAmounts.rialAmount = 0;
+      } else if (currencyLine.documentTab === 'currency') {
+        const rawCurrencyQty = Math.abs(readAmount(line.foreignAmount) || readAmount(details.currencyQuantity) || 0);
+        if (rawCurrencyQty > 0) {
+          lineAmounts.foreignAmount = rawCurrencyQty * (lineNature === 'received' ? 1 : -1);
+        } else if (currencyEffect !== null) {
+          lineAmounts.foreignAmount = currencyEffect;
+        }
+      } else if (currencyEffect !== null) {
         lineAmounts.foreignAmount = currencyEffect;
         if (currencyLine.documentTab === 'cash') lineAmounts.rialAmount = 0;
       } else if (currencyLine.documentTab === 'cash' && details.isForeignCash === true) {
@@ -1153,8 +1163,10 @@ export async function POST(request: Request) {
           Number(details.stonePieces || 0) > 0);
       const hasCoinQuantity =
         isCoinLine && (readAmount(details.quantity) || readAmount(details.currencyQuantity) || 0) > 0;
+      const hasCurrencyQuantity =
+        isCurrencyLine && (readAmount(details.currencyQuantity) || readAmount(line.foreignAmount) || 0) > 0;
 
-      if (!hasAmount(lineAmounts) && !hasStoneQuantity && !hasCoinQuantity) {
+      if (!hasAmount(lineAmounts) && !hasStoneQuantity && !hasCoinQuantity && !hasCurrencyQuantity) {
         throw new Error(`ردیف ${index + 1} باید حداقل یک مبلغ یا وزن غیرصفر داشته باشد.`);
       }
 
@@ -1516,6 +1528,25 @@ export async function POST(request: Request) {
           const breakdownTx = mapTransaction({
             ...prepared.line,
             documentTab: 'stone',
+            documentNature: prepared.lineNature,
+            documentSubType: prepared.line?.documentSubType || prepared.documentDetails?.documentSubType,
+            documentDetails: prepared.documentDetails,
+          } as any);
+          const breakdownDesc = getDocumentLineDescription(breakdownTx);
+          lineDescription = breakdownDesc.secondary
+            ? `${breakdownDesc.primary} — ${breakdownDesc.secondary}`
+            : breakdownDesc.primary;
+        } else if (
+          !lineDescription &&
+          (tab === 'workmanship' ||
+            tab === 'gold-sale' ||
+            tab === 'manufactured' ||
+            String(prepared.line?.documentSubType || '').includes('manufactured') ||
+            String(prepared.line?.documentSubType || '').includes('workmanship'))
+        ) {
+          const breakdownTx = mapTransaction({
+            ...prepared.line,
+            documentTab: tab,
             documentNature: prepared.lineNature,
             documentSubType: prepared.line?.documentSubType || prepared.documentDetails?.documentSubType,
             documentDetails: prepared.documentDetails,

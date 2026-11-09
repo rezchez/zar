@@ -71,6 +71,7 @@ export function getLineDocumentTypeLabel(
   metalType?: string,
   claimFinancial?: string | number | null,
   claimWeight?: string | number | null,
+  percentage?: string | number | null,
 ): string {
   if (tab === 'refining') {
     if (nature === 'paid') {
@@ -184,9 +185,23 @@ export function getLineDocumentTypeLabel(
     return nature === 'received' ? 'تخفیف اعطایی' : 'تخفیف دریافتی';
   }
 
+  if (tab === 'etiquette' || tab === 'itak') {
+    if (workmanshipSubType === 'workmanship-golden-percentage') {
+      const pctStr = percentage ? String(percentage).trim() : '';
+      return pctStr
+        ? `درصد طلایی اتیکت طلا (${toPersianDigits(pctStr)}٪)`
+        : `درصد طلایی اتیکت طلا`;
+    }
+    if (workmanshipSubType === 'workmanship-wage') return 'اجرت اتیکت طلا';
+    return nature === 'received' ? 'ورود اتیکت طلا' : 'خروج اتیکت طلا';
+  }
+
   if (tab === 'workmanship') {
     if (workmanshipSubType === 'workmanship-golden-percentage') {
-      return `${getWorkmanshipPercentageLabel(metalType)} کارساخته`;
+      const pctStr = percentage ? String(percentage).trim() : '';
+      return pctStr
+        ? `${getWorkmanshipPercentageLabel(metalType)} کارساخته (${toPersianDigits(pctStr)}٪)`
+        : `${getWorkmanshipPercentageLabel(metalType)} کارساخته`;
     }
     if (workmanshipSubType === 'workmanship-wage') return 'اجرت کارساخته';
     const optId = Number(workmanshipOptionId);
@@ -537,7 +552,7 @@ export function findCashVault<T extends { currencyCode?: string; currencyName?: 
  */
 export function isMetalBearingTab(tab: string | undefined): boolean {
   if (!tab) return false;
-  return ['metals', 'raw-gold', 'gold-sale', 'coin', 'workmanship', 'refining'].includes(tab);
+  return ['metals', 'raw-gold', 'gold-sale', 'coin', 'workmanship', 'refining', 'etiquette', 'itak'].includes(tab);
 }
 
 /**
@@ -992,6 +1007,55 @@ export function sanitizeLineDetailsForTab(
         workmanshipOptionId: details.workmanshipOptionId,
         workmanshipOptionLabel: details.workmanshipOptionLabel,
         workmanshipReturnSourceId: details.workmanshipReturnSourceId,
+        wage: details.wage,
+        wageMode: details.wageMode,
+        wageCurrency: details.wageCurrency,
+        wageCurrencyUnit: details.wageCurrencyUnit,
+        wageCurrencyRate: details.wageCurrencyRate,
+        goldenPercentage: details.goldenPercentage,
+        profitPercentage: details.profitPercentage,
+        metalTotalPrice: details.metalTotalPrice,
+        profitAmount: details.profitAmount,
+        discountAmount: details.discountAmount,
+        currencyUnit: details.currencyUnit || baseCurrency,
+        currencyTotalAmount: details.currencyTotalAmount || '',
+        currencyQuantity: details.currencyQuantity || '',
+        currencyUnitPrice: details.currencyUnitPrice || '',
+        baseCurrency: details.baseCurrency || baseCurrency,
+        wageTotalAmount: details.wageTotalAmount,
+        hasChildLines: details.hasChildLines,
+        isChildLine: details.isChildLine,
+        documentTypeLabel: details.documentTypeLabel,
+        documentSubType: details.documentSubType,
+        linkedLineId: details.linkedLineId,
+        clientLineId: (details as any).clientLineId,
+        isHawala: details.isHawala,
+        hawalaGroupId: details.hawalaGroupId,
+        hawalaCounterDocumentId: details.hawalaCounterDocumentId,
+        hawalaCounterCustomerId: details.hawalaCounterCustomerId,
+        hawalaCounterCustomerName: details.hawalaCounterCustomerName,
+        hawalaCounterCustomerCode: details.hawalaCounterCustomerCode,
+        allowNegativeBalance: details.allowNegativeBalance,
+        isHawalaNegativeConfirmed: details.isHawalaNegativeConfirmed,
+      };
+    }
+
+    case 'etiquette':
+    case 'itak': {
+      return {
+        ...baseDefaults,
+        metalType: details.metalType || 'gold',
+        baseKarat: details.baseKarat || baseKarat,
+        rawWeight: String(details.rawWeight || ''),
+        purity: String(details.purity || String(baseKarat)),
+        convertedWeight: details.convertedWeight,
+        totalAmount: String(details.totalAmount || ''),
+        quantity: details.quantity,
+        workmanshipName: details.workmanshipName,
+        barcode: (details as any).barcode,
+        itemCode: (details as any).itemCode,
+        etiquetteCode: (details as any).etiquetteCode,
+        isEtiquette: true,
         wage: details.wage,
         wageMode: details.wageMode,
         wageCurrency: details.wageCurrency,

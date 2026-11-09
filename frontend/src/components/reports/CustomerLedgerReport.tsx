@@ -7,6 +7,7 @@ import {
   RefreshCw,
   Printer,
   Download,
+  FileCode,
   Filter,
   Search,
   ChevronDown,
@@ -1427,6 +1428,236 @@ export default function CustomerLedgerReport({
     );
   }
 
+  function handleExportHtml() {
+    if (!ledgerRows.length) return;
+    const customer = availableCustomers.find((c) => c.id === customerId);
+    const customerTitle = customer
+      ? `${customer.customerCode ? `[${customer.customerCode}] ` : ''}${customer.name}`
+      : selectedCustomer
+      ? `${selectedCustomer.customerCode ? `[${selectedCustomer.customerCode}] ` : ''}${selectedCustomer.name}`
+      : 'کلیه طرف‌حساب‌ها';
+    const dateRangeStr = `از ${fromDate || 'ابتدای دوره'} تا ${toDate || 'اکنون'}`;
+    const printDate = new Date().toLocaleDateString('fa-IR');
+
+    const rowsHtml: string[] = [];
+
+    if (hasPreviousBalance) {
+      const gBal = openingBalances.goldAmount;
+      const rBal = openingBalances.rialAmount;
+      rowsHtml.push(`
+        <tr style="background-color: #f1f5f9; font-weight: bold;">
+          <td style="text-align: center;">—</td>
+          <td>${fromDate || 'پیش از دوره'}</td>
+          <td style="text-align: center;">—</td>
+          <td>${customerTitle}</td>
+          <td>مانده منقول</td>
+          <td>مانده منقول از دوره قبل (پیش از ${fromDate || 'ابتدای دوره'})</td>
+          <td style="text-align: left; font-family: monospace;">${gBal < 0 ? formatWeight(Math.abs(gBal)) : '۰'}</td>
+          <td style="text-align: left; font-family: monospace;">${gBal > 0 ? formatWeight(gBal) : '۰'}</td>
+          <td style="text-align: left; font-family: monospace; color: ${gBal > 0.0005 ? '#059669' : gBal < -0.0005 ? '#e11d48' : '#334155'};">
+            ${formatWeight(Math.abs(gBal))} ${gBal > 0.0005 ? '(بس)' : gBal < -0.0005 ? '(بد)' : ''}
+          </td>
+          <td style="text-align: left; font-family: monospace;">${rBal < 0 ? formatMoney(Math.abs(rBal)) : '۰'}</td>
+          <td style="text-align: left; font-family: monospace;">${rBal > 0 ? formatMoney(rBal) : '۰'}</td>
+          <td style="text-align: left; font-family: monospace; color: ${rBal > 50 ? '#059669' : rBal < -50 ? '#e11d48' : '#334155'};">
+            ${formatMoney(Math.abs(rBal))} ${rBal > 50 ? '(بس)' : rBal < -50 ? '(بد)' : ''}
+          </td>
+        </tr>
+      `);
+    }
+
+    ledgerRows.forEach((row, idx) => {
+      const journalLine = getJournalLineBadge(row);
+      const lineDesc = getDocumentLineDescription(row);
+      const rowCustName = (row as any).customerName || customerTitle;
+      const jTitle = journalLine.accountTitle || '—';
+      const pDesc = lineDesc.primary || row.description || '—';
+      const sDesc = lineDesc.secondary ? `<div style="font-size: 11px; color: #64748b; margin-top: 2px;">${lineDesc.secondary}</div>` : '';
+
+      const gDeb = row.goldDebtor ? formatWeight(row.goldDebtor) : '۰';
+      const gCred = row.goldCreditor ? formatWeight(row.goldCreditor) : '۰';
+      const gBal = formatWeight(Math.abs(row.runningGold));
+      const gStatus = row.runningGold > 0.0005 ? '(بس)' : row.runningGold < -0.0005 ? '(بد)' : '';
+      const gColor = row.runningGold > 0.0005 ? '#059669' : row.runningGold < -0.0005 ? '#e11d48' : '#334155';
+
+      const rDeb = row.rialDebtor ? formatMoney(row.rialDebtor) : '۰';
+      const rCred = row.rialCreditor ? formatMoney(row.rialCreditor) : '۰';
+      const rBal = formatMoney(Math.abs(row.runningRial));
+      const rStatus = row.runningRial > 50 ? '(بس)' : row.runningRial < -50 ? '(بد)' : '';
+      const rColor = row.runningRial > 50 ? '#059669' : row.runningRial < -50 ? '#e11d48' : '#334155';
+
+      rowsHtml.push(`
+        <tr>
+          <td style="text-align: center;">${idx + 1}</td>
+          <td style="white-space: nowrap;">${row.documentDateJalali || row.transactionDate?.slice(0, 10) || '—'}</td>
+          <td style="text-align: center; font-family: monospace; font-weight: bold;">${row.documentNumber || '—'}</td>
+          <td>${rowCustName}</td>
+          <td>${jTitle}</td>
+          <td>
+            <div style="font-weight: 600;">${pDesc}</div>
+            ${sDesc}
+          </td>
+          <td style="text-align: left; font-family: monospace;">${gDeb}</td>
+          <td style="text-align: left; font-family: monospace;">${gCred}</td>
+          <td style="text-align: left; font-family: monospace; font-weight: bold; color: ${gColor};">${gBal} ${gStatus}</td>
+          <td style="text-align: left; font-family: monospace;">${rDeb}</td>
+          <td style="text-align: left; font-family: monospace;">${rCred}</td>
+          <td style="text-align: left; font-family: monospace; font-weight: bold; color: ${rColor};">${rBal} ${rStatus}</td>
+        </tr>
+      `);
+    });
+
+    const fullHtml = `<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>گزارش جامع ریز اسناد - ${customerTitle}</title>
+  <style>
+    body {
+      font-family: Tahoma, 'Vazirmatn', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      direction: rtl;
+      background: #f8fafc;
+      color: #0f172a;
+      margin: 0;
+      padding: 24px;
+    }
+    .report-card {
+      max-width: 1300px;
+      margin: 0 auto;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.08);
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 2px solid #e2e8f0;
+      padding-bottom: 16px;
+      margin-bottom: 20px;
+    }
+    .title {
+      font-size: 20px;
+      font-weight: 800;
+      color: #0f172a;
+      margin: 0 0 6px 0;
+    }
+    .subtitle {
+      font-size: 13px;
+      color: #475569;
+    }
+    .meta {
+      font-size: 12px;
+      text-align: left;
+      color: #64748b;
+      line-height: 1.8;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      text-align: right;
+    }
+    th {
+      background: #f1f5f9;
+      color: #1e293b;
+      font-weight: 700;
+      border: 1px solid #cbd5e1;
+      padding: 8px 10px;
+      white-space: nowrap;
+    }
+    td {
+      border: 1px solid #e2e8f0;
+      padding: 7px 10px;
+      vertical-align: middle;
+    }
+    tr:nth-child(even) {
+      background: #f8fafc;
+    }
+    tr:hover {
+      background: #f1f5f9;
+    }
+    tfoot td {
+      background: #f8fafc;
+      border-top: 2px solid #94a3b8;
+      font-weight: 800;
+      padding: 10px;
+    }
+    @media print {
+      body { background: #fff; padding: 0; }
+      .report-card { border: none; box-shadow: none; padding: 0; max-width: 100%; }
+      table { font-size: 9pt; }
+      th, td { padding: 4px 6px; }
+      @page { size: A4 landscape; margin: 8mm; }
+    }
+  </style>
+</head>
+<body>
+  <div class="report-card">
+    <div class="header">
+      <div>
+        <h1 class="title">گزارش جامع ریز اسناد و صورت‌حساب طرف‌حساب</h1>
+        <div class="subtitle">طرف‌حساب: <strong>${customerTitle}</strong> | بازه: <strong>${dateRangeStr}</strong></div>
+      </div>
+      <div class="meta">
+        <div>تاریخ صدور گزارش: <strong>${printDate}</strong></div>
+        <div>تعداد ردیف‌ها: <strong>${totalStats.count}</strong></div>
+      </div>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 40px; text-align: center;">ردیف</th>
+          <th>تاریخ</th>
+          <th style="text-align: center;">شماره سند</th>
+          <th>طرف‌حساب</th>
+          <th>سرفصل معین</th>
+          <th>شرح ردیف سند</th>
+          <th style="text-align: left;">بدهکار طلا (g)</th>
+          <th style="text-align: left;">بستانکار طلا (g)</th>
+          <th style="text-align: left;">مانده طلا (g)</th>
+          <th style="text-align: left;">بدهکار (${baseCurrencySymbol})</th>
+          <th style="text-align: left;">بستانکار (${baseCurrencySymbol})</th>
+          <th style="text-align: left;">مانده (${baseCurrencySymbol})</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rowsHtml.join('')}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="6" style="text-align: center;">مجموع گردش و مانده نهایی (${totalStats.count} ردیف)</td>
+          <td style="text-align: left; font-family: monospace;">${formatWeight(totalStats.totalGoldDebtor)}</td>
+          <td style="text-align: left; font-family: monospace;">${formatWeight(totalStats.totalGoldCreditor)}</td>
+          <td style="text-align: left; font-family: monospace; color: ${totalStats.finalGold > 0.0005 ? '#059669' : totalStats.finalGold < -0.0005 ? '#e11d48' : '#334155'};">
+            ${formatWeight(Math.abs(totalStats.finalGold))} ${totalStats.finalGold > 0.0005 ? '(بس)' : totalStats.finalGold < -0.0005 ? '(بد)' : ''}
+          </td>
+          <td style="text-align: left; font-family: monospace;">${formatMoney(totalStats.totalRialDebtor)}</td>
+          <td style="text-align: left; font-family: monospace;">${formatMoney(totalStats.totalRialCreditor)}</td>
+          <td style="text-align: left; font-family: monospace; color: ${totalStats.finalRial > 50 ? '#059669' : totalStats.finalRial < -50 ? '#e11d48' : '#334155'};">
+            ${formatMoney(Math.abs(totalStats.finalRial))} ${totalStats.finalRial > 50 ? '(بس)' : totalStats.finalRial < -50 ? '(بد)' : ''}
+          </td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+</body>
+</html>`;
+
+    const blob = new Blob([fullHtml], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Ledger_${selectedCustomer?.name || 'All'}_${Date.now()}.html`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
   const areAllExpanded =
     paginatedRows.length > 0 && paginatedRows.every((r) => expandedRows[r.id]);
 
@@ -1501,7 +1732,7 @@ export default function CustomerLedgerReport({
     : null;
 
   return (
-    <div className="space-y-6 text-sm dashboard-panel p-4 md:p-6 printable-container">
+    <div className="space-y-6 text-sm dashboard-panel p-4 md:p-6">
       {datePickerDialog}
       {/* Page Heading & Actions */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-5 non-printable">
@@ -1519,31 +1750,7 @@ export default function CustomerLedgerReport({
               </h2>
             </div>
           </div>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed">
-            مشاهده کامل ردیف‌های اسناد (آبشده، ساخته، نقد، بانک، چک، تخفیف، سکه)
-            همراه با مانده متناوب لحظه‌ای در جدول دیتادار رسمی.
-          </p>
-        </div>
 
-        <div className="flex items-center gap-2.5 self-stretch md:self-auto">
-          {searched && ledgerRows.length > 0 && (
-            <>
-              <button
-                onClick={handleExportExcel}
-                className="dashboard-secondary-button flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-all text-slate-700 dark:text-slate-200 shadow-xs"
-              >
-                <Download size={15} className="text-emerald-600" />
-                خروجی Excel
-              </button>
-              <button
-                onClick={() => window.print()}
-                className="dashboard-secondary-button flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-all text-slate-700 dark:text-slate-200 shadow-xs"
-              >
-                <Printer size={15} className="text-sky-600" />
-                چاپ A4
-              </button>
-            </>
-          )}
         </div>
       </div>
 
@@ -1988,7 +2195,7 @@ export default function CustomerLedgerReport({
 
       {/* KPI Balance Summary Cards */}
       {searched && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 non-printable">
           {/* Gold Balance */}
           <div className="p-4 rounded-2xl bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-900/50 flex flex-col justify-between">
             <div className="flex items-center justify-between">
@@ -2161,7 +2368,39 @@ export default function CustomerLedgerReport({
               </span>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                onClick={handleExportExcel}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-emerald-300 dark:border-emerald-700/80 bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition-all font-bold text-[11px] shadow-2xs"
+                title="خروجی فایل اکسل از کلیه ردیف‌های گزارش"
+              >
+                <Download size={13} className="text-emerald-600" />
+                <span>خروجی Excel</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleExportHtml}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-indigo-300 dark:border-indigo-700/80 bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 transition-all font-bold text-[11px] shadow-2xs"
+                title="خروجی فایل HTML مستقل و قابل مشاهده آفلاین"
+              >
+                <FileCode size={13} className="text-indigo-600" />
+                <span>خروجی HTML</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-sky-300 dark:border-sky-700/80 bg-white dark:bg-slate-900 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-950/40 transition-all font-bold text-[11px] shadow-2xs"
+                title="چاپ یا ذخیره PDF محیط جدول به صورت افقی در اندازه A4"
+              >
+                <Printer size={13} className="text-sky-600" />
+                <span>چاپ A4</span>
+              </button>
+
+              <span className="text-slate-300 dark:text-slate-700 mx-0.5">|</span>
+
               <button
                 type="button"
                 onClick={toggleExpandAll}
@@ -2409,7 +2648,25 @@ export default function CustomerLedgerReport({
           )}
 
           {/* Data Grid with Official Accounting Multi-tier Header & Freeze Pane Header */}
-          <div className="border border-slate-300 dark:border-slate-700 rounded-2xl overflow-hidden shadow-sm bg-white dark:bg-slate-900">
+          <div
+            id="printable-ledger-table-area"
+            className="border border-slate-300 dark:border-slate-700 rounded-2xl overflow-hidden shadow-sm bg-white dark:bg-slate-900"
+          >
+            {/* Dedicated Print-only Header for Official Accounting Table */}
+            <div className="hidden print:block p-4 border-b-2 border-slate-900 text-slate-950 bg-white">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h1 className="text-base font-black text-slate-950">گزارش جامع ریز اسناد و صورت‌حساب طرف‌حساب‌ها</h1>
+                  <p className="text-xs font-bold text-slate-700 mt-1">
+                    طرف‌حساب: {selectedCustomer ? `${selectedCustomer.name} (${selectedCustomer.customerCode || '—'})` : 'کلیه طرف‌حساب‌ها'}
+                  </p>
+                </div>
+                <div className="text-left text-xs font-mono text-slate-700 space-y-0.5">
+                  <div>تاریخ گزارش: {new Date().toLocaleDateString('fa-IR')}</div>
+                  <div>بازه تاریخی: از {fromDate || 'ابتدای دوره'} تا {toDate || 'اکنون'}</div>
+                </div>
+              </div>
+            </div>
             <div className="overflow-auto max-h-[calc(100vh-220px)] min-h-[400px] relative scrollbar-thin">
               <table
                 className="w-full text-xs text-right whitespace-nowrap border-collapse border border-slate-200 dark:border-slate-700/80 font-sans table-fixed"
@@ -2438,7 +2695,7 @@ export default function CustomerLedgerReport({
                       <th
                         rowSpan={goldVisibleCount > 0 || rialVisibleCount > 0 ? 2 : 1}
                         style={{ width: `${columnWidths.tick}px` }}
-                        className="relative p-2 text-center border-l border-slate-300 dark:border-slate-700 bg-slate-200 dark:bg-slate-800 select-none overflow-visible"
+                        className="relative p-2 text-center border-l border-slate-300 dark:border-slate-700 bg-slate-200 dark:bg-slate-800 select-none overflow-visible non-printable"
                         title="انتخاب یا لغو انتخاب تمام ردیف‌های صفحه"
                       >
                         <div
@@ -2869,7 +3126,7 @@ export default function CustomerLedgerReport({
                             setActiveRowId('carried-forward');
                             toggleRowTick('carried-forward');
                           }}
-                          className="p-2.5 text-center border-l border-slate-200 dark:border-slate-800 cursor-pointer select-none"
+                          className="p-2.5 text-center border-l border-slate-200 dark:border-slate-800 cursor-pointer select-none non-printable"
                           title="تیک ردیف مانده منقول برای مغایرت‌گیری"
                         >
                           <div className="flex items-center justify-center">
@@ -3064,7 +3321,7 @@ export default function CustomerLedgerReport({
                                   setActiveRowId(row.id);
                                   toggleRowTick(row.id);
                                 }}
-                                className={`${pyClass} px-2 text-center border-l border-slate-200 dark:border-slate-800 cursor-pointer select-none`}
+                                className={`${pyClass} px-2 text-center border-l border-slate-200 dark:border-slate-800 cursor-pointer select-none non-printable`}
                                 title="تیک زدن یا حذف تیک (با یک کلیک یا کلید Space)"
                               >
                                 <div className="flex items-center justify-center">
@@ -3627,38 +3884,70 @@ export default function CustomerLedgerReport({
         </div>
       )}
 
-      {/* Printable Styles for Clean A4 Landscape */}
+      {/* Printable Styles for Clean A4 Landscape (محیط جدول فقط) */}
       <style
         dangerouslySetInnerHTML={{
           __html: `
         @media print {
+          /* پنهان کردن کل بدنه و عناصر صفحه وب */
           body * {
-            visibility: hidden;
+            visibility: hidden !important;
           }
-          .printable-container, .printable-container * {
-            visibility: visible;
+          /* نمایش انحصاری محیط جدول ریز اسناد */
+          #printable-ledger-table-area,
+          #printable-ledger-table-area * {
+            visibility: visible !important;
           }
-          .printable-container {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
-            direction: rtl;
+          #printable-ledger-table-area {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
             background: white !important;
             color: black !important;
-            padding: 0 !important;
+            box-shadow: none !important;
+            border: none !important;
+            border-radius: 0 !important;
+            overflow: visible !important;
           }
           .non-printable {
             display: none !important;
           }
-          table {
+          #printable-ledger-table-area .overflow-auto,
+          #printable-ledger-table-area .overflow-hidden {
+            overflow: visible !important;
+            max-height: none !important;
+            height: auto !important;
+          }
+          #printable-ledger-table-area table {
             border-collapse: collapse !important;
             width: 100% !important;
+            min-width: 100% !important;
+            max-width: 100% !important;
+            table-layout: auto !important;
+            page-break-inside: auto !important;
+          }
+          #printable-ledger-table-area colgroup {
+            display: none !important;
+          }
+          thead {
+            display: table-header-group !important;
+          }
+          tfoot {
+            display: table-footer-group !important;
+          }
+          tr {
+            page-break-inside: avoid !important;
+            page-break-after: auto !important;
           }
           th, td {
-            border: 1px solid #cbd5e1 !important;
-            padding: 4px 6px !important;
-            font-size: 9pt !important;
+            border: 1px solid #475569 !important;
+            padding: 3px 5px !important;
+            font-size: 8pt !important;
+            color: #000000 !important;
+            background: transparent !important;
           }
           @page {
             size: A4 landscape;

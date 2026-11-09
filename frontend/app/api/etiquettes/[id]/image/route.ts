@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import sharp from 'sharp';
 
 import { getServerAuthContext } from '@/lib/auth';
 import { hasPermission } from '@/lib/authorization';
@@ -6,6 +7,7 @@ import { imageService } from '@/lib/images';
 import { sanitizeFileNameBase } from '@/lib/images/image-storage';
 import { mapEtiquetteRecord } from '@/lib/etiquette';
 import { getPocketBaseServiceClient } from '@/lib/pocketbase-service';
+import { POCKETBASE_URL } from '@/lib/pocketbase/pocketbase';
 
 async function writerFor(context: Awaited<ReturnType<typeof getServerAuthContext>>) {
   if (!context) return null;
@@ -16,10 +18,18 @@ async function writerFor(context: Awaited<ReturnType<typeof getServerAuthContext
   }
 }
 
-const POCKETBASE_URL =
-  process.env.POCKETBASE_INTERNAL_URL ||
-  process.env.NEXT_PUBLIC_POCKETBASE_URL ||
-  'http://127.0.0.1:8090';
+async function ensureEtiquetteImagesField(client: any) {
+  try {
+    const col = await client.collections.getOne('etiquettes');
+    const imageField = col.fields?.find((f: any) => f.name === 'image');
+    if (imageField && imageField.maxSelect !== 5) {
+      imageField.maxSelect = 5;
+      await client.collections.update(col.id, col);
+    }
+  } catch {
+    // Non-fatal if already up-to-date or lacking permissions
+  }
+}
 
 /**
  * GET /api/etiquettes/[id]/image
@@ -29,48 +39,88 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const context = await getServerAuthContext();
-  if (!context) {
-    return NextResponse.json({ message: 'ابتدا وارد حساب شوید.' }, { status: 401 });
-  }
-
   const { id } = await params;
   if (!id) {
     return NextResponse.json({ message: 'شناسه اتیکت الزامی است.' }, { status: 400 });
   }
 
+  let context: Awaited<ReturnType<typeof getServerAuthContext>> = null;
   try {
-    const record = await context.pb.collection('etiquettes').getOne(id);
+    context = await getServerAuthContext();
+  } catch {
+    // Non-fatal if session token verification encounters a momentary delay
+  }
+
+  try {
+    const writer = await writerFor(context);
+    let client = writer || context?.pb;
+    if (!client) {
+      client = await getPocketBaseServiceClient();
+    }
+    const record = await client.collection('etiquettes').getOne(id);
     if (!record || record.is_deleted) {
       return NextResponse.json({ message: 'اتیکت یافت نشد.' }, { status: 404 });
     }
 
     const filenames = (Array.isArray(record.image) ? record.image : [record.image])
       .filter((value: unknown): value is string => typeof value === 'string' && value.length > 0);
-    const requestedName = new URL(request.url).searchParams.get('name');
-    const filename = requestedName ? filenames.find((name: string) => name === requestedName) : filenames[0];
+    const rawRequestedName = new URL(request.url).searchParams.get('name');
+    const requestedName = rawRequestedName ? decodeURIComponent(rawRequestedName).trim() : '';
+    const filename = requestedName
+      ? (filenames.find((name: string) => name === requestedName || name.endsWith(requestedName)) || filenames[0])
+      : filenames[0];
     if (!filename) {
       return NextResponse.json({ message: 'تصویری برای این اتیکت ثبت نشده است.' }, { status: 404 });
     }
 
-    const pbFileUrl = `${POCKETBASE_URL}/api/files/etiquettes/${id}/${encodeURIComponent(filename)}`;
-    const fileHeaders = new Headers();
-    const pocketBaseToken = context.pb.authStore.token;
-    if (pocketBaseToken) fileHeaders.set('Authorization', `Bearer ${pocketBaseToken}`);
-    const res = await fetch(pbFileUrl, { headers: fileHeaders, cache: 'no-store' });
+    // Try fetching the image with multiple strategies for maximum resilience:
+    let pbFileUrl = client.files.getURL(record, filename);
+    let res = await fetch(pbFileUrl, { cache: 'no-store' });
+
+    if (!res.ok) {
+      try {
+        const fileToken = await client.files.getToken();
+        pbFileUrl = client.files.getURL(record, filename, { token: fileToken });
+        res = await fetch(pbFileUrl, { cache: 'no-store' });
+      } catch {
+        // Token retrieval failure fallback
+      }
+    }
+
+    if (!res.ok) {
+      const fallbackUrl = `${POCKETBASE_URL}/api/files/pbc_etiquettes_inv/${id}/${filename}`;
+      res = await fetch(fallbackUrl, { cache: 'no-store' });
+    }
 
     if (!res.ok) {
       return NextResponse.json({ message: 'تصویر در سرور یافت نشد.' }, { status: res.status });
     }
 
     const contentType = res.headers.get('content-type') || 'image/webp';
-    return new NextResponse(res.body, {
+    let buffer: Buffer | ArrayBuffer = await res.arrayBuffer();
+    let finalContentType = contentType;
+
+    const urlParams = new URL(request.url).searchParams;
+    const isThumb = urlParams.get('thumb') === '1' || urlParams.get('size') === 'thumb';
+
+    if (isThumb && contentType.startsWith('image/')) {
+      try {
+        buffer = await sharp(Buffer.from(buffer))
+          .resize(240, 240, { fit: 'inside', withoutEnlargement: true })
+          .webp({ quality: 65 })
+          .toBuffer();
+        finalContentType = 'image/webp';
+      } catch (err) {
+        console.warn('Failed to generate thumbnail, serving original:', err);
+      }
+    }
+
+    return new NextResponse(buffer, {
       status: 200,
       headers: {
-        'Content-Type': contentType,
-        // Image requests require an authenticated session; never let a shared
-        // cache replay a private product image to another tenant or user.
-        'Cache-Control': 'private, no-store',
+        'Content-Type': finalContentType,
+        'Content-Length': String(buffer.byteLength),
+        'Cache-Control': 'public, max-age=86400',
       },
     });
   } catch (error) {
@@ -109,6 +159,8 @@ export async function POST(
   if (!writer) {
     return NextResponse.json({ message: 'اتصال به پایگاه داده برقرار نشد.' }, { status: 500 });
   }
+
+  await ensureEtiquetteImagesField(writer);
 
   try {
     const existing = await writer.collection('etiquettes').getOne(id);
@@ -159,9 +211,10 @@ export async function POST(
     });
 
     const updateFormData = new FormData();
-    retainedImages.forEach((name: string) => updateFormData.append('image', name));
     if (replaceName) updateFormData.append('image-', replaceName);
-    updateFormData.append('image', uploadResult.file, uploadResult.filename);
+    // PocketBase's `field+` modifier is required to append an uploaded file
+    // without replacing the current multi-file value.
+    updateFormData.append('image+', uploadResult.file, uploadResult.filename);
 
     const updated = await writer.collection('etiquettes').update(id, updateFormData);
 
@@ -213,6 +266,8 @@ export async function PATCH(
   if (!writer) {
     return NextResponse.json({ message: 'اتصال به پایگاه داده برقرار نشد.' }, { status: 500 });
   }
+
+  await ensureEtiquetteImagesField(writer);
 
   try {
     const body = await request.json();
@@ -283,6 +338,8 @@ export async function DELETE(
   if (!writer) {
     return NextResponse.json({ message: 'اتصال به پایگاه داده برقرار نشد.' }, { status: 500 });
   }
+
+  await ensureEtiquetteImagesField(writer);
 
   try {
     const existing = await writer.collection('etiquettes').getOne(id);

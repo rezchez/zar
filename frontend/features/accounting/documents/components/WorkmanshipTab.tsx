@@ -457,16 +457,16 @@ export default function WorkmanshipTab({
   }, [purityStr, basePurity]);
 
   const numGoldenPercentage = useMemo(() => {
-    const raw = normalizeDigits(goldenPercentageStr).replace(/,/g, '');
+    const raw = normalizeDigits(goldenPercentageStr || profitPercentageStr).replace(/,/g, '');
     const val = parseFloat(raw);
     return isNaN(val) ? 0 : val;
-  }, [goldenPercentageStr]);
+  }, [goldenPercentageStr, profitPercentageStr]);
 
   const numProfitPercentage = useMemo(() => {
-    const raw = normalizeDigits(profitPercentageStr).replace(/,/g, '');
+    const raw = normalizeDigits(profitPercentageStr || goldenPercentageStr).replace(/,/g, '');
     const val = parseFloat(raw);
     return isNaN(val) ? 0 : val;
-  }, [profitPercentageStr]);
+  }, [profitPercentageStr, goldenPercentageStr]);
 
   const numMetalPrice = useMemo(() => {
     return parseLocalizedAmount(metalPriceStr);
@@ -489,11 +489,8 @@ export default function WorkmanshipTab({
   const calculatedConvertedWeight = useMemo(() => {
     if (basePurity <= 0 || numWeight <= 0) return 0;
     const baseConverted = (numWeight * numPurity) / basePurity;
-    if (selectedOptionId === 1 || selectedOptionId === 3) {
-      return baseConverted + calculatedGoldenAddition;
-    }
-    return baseConverted;
-  }, [basePurity, numWeight, numPurity, selectedOptionId, calculatedGoldenAddition]);
+    return baseConverted + calculatedGoldenAddition;
+  }, [basePurity, numWeight, numPurity, calculatedGoldenAddition]);
 
   const calculatedMetalTotalPrice = useMemo(() => {
     if (numWeight <= 0 || numMetalPrice <= 0) return 0;
@@ -545,14 +542,21 @@ export default function WorkmanshipTab({
           const nextGoldenPct = field === 'goldenPercentage' ? (parseFloat(normalizeDigits(String(value))) || 0) : (parseFloat(normalizeDigits(updatedDetails.goldenPercentage || '')) || 0);
           const nextMetalPrice = field === 'metalPrice' ? parseLocalizedAmount(String(value)) : parseLocalizedAmount(updatedDetails.metalPrice || '');
           const nextProfitPct = field === 'profitPercentage' ? (parseFloat(normalizeDigits(String(value))) || 0) : (parseFloat(normalizeDigits(updatedDetails.profitPercentage || '')) || 0);
+          const effectivePct = nextGoldenPct || nextProfitPct;
           const optId = (field === 'workmanshipOptionId' ? Number(value) : updatedDetails.workmanshipOptionId) || 1;
+
+          if (field === 'profitPercentage' && !updatedDetails.goldenPercentage) {
+            updatedDetails.goldenPercentage = String(value);
+          } else if (field === 'goldenPercentage' && !updatedDetails.profitPercentage) {
+            updatedDetails.profitPercentage = String(value);
+          }
 
           const rawTWage = nextWageMode === 'per_gram' ? nextWeight * nextWage : nextQty * nextWage;
           const tWage = nextIsForeignWage ? Math.round(rawTWage * 100) / 100 : Math.round(rawTWage);
           const stdW = basePurity > 0 ? (nextWeight * nextPurity) / basePurity : nextWeight;
-          const convW = (optId === 1 || optId === 3) ? stdW + (nextWeight * (nextGoldenPct / 100)) : stdW;
+          const convW = stdW + (nextWeight * (effectivePct / 100));
           const mTotalPrice = Math.round(stdW * nextMetalPrice);
-          const pAmount = Math.round((mTotalPrice + tWage) * (nextProfitPct / 100));
+          const pAmount = Math.round((mTotalPrice + tWage) * (effectivePct / 100));
 
           updatedDetails.wageCurrency = nextWageCurrency;
           updatedDetails.currencyUnit = nextWageCurrency;
@@ -685,11 +689,18 @@ export default function WorkmanshipTab({
     if (onAddLine) {
       const isPhysicalOp = selectedOptionId === 1 || selectedOptionId === 3;
       const baseStdWeight = basePurity > 0 ? (numWeight * numPurity) / basePurity : numWeight;
-      const hasGolden = isPhysicalOp && numGoldenPercentage > 0 && numWeight > 0;
+      const effectiveGoldenPct = goldenPercentageStr || profitPercentageStr;
+      const hasGolden = numGoldenPercentage > 0 && numWeight > 0;
       const hasWage = isPhysicalOp && (calculatedTotalWage > 0 || numWage > 0);
-      const hasSubRows = isPhysicalOp && (hasGolden || hasWage);
+      const hasSubRows = hasGolden || hasWage;
 
       const mainLineId = generateUUID();
+      const autoMainDesc = `${currentOption.label}${workmanshipName ? ` ${workmanshipName.trim()}` : ''}${effectiveGoldenPct ? ` — ${percentageFieldLabel}: ${toPersianDigits(effectiveGoldenPct)}٪` : ''}`;
+      let mainDesc = description.trim();
+      if (!mainDesc || mainDesc.startsWith('ورود کار') || mainDesc.startsWith('خرید کار') || mainDesc.startsWith('خروج کار') || mainDesc.startsWith('فروش کار')) {
+        mainDesc = autoMainDesc;
+      }
+
       const newLine: DocumentLine = {
         id: mainLineId,
         documentNature: isNaturePaid ? 'paid' : 'received',
@@ -700,7 +711,7 @@ export default function WorkmanshipTab({
         converted750: hasSubRows ? baseStdWeight : calculatedConvertedWeight,
         settlementMethod: 'weight',
         balanceSource: 'current',
-        description: description,
+        description: mainDesc,
         details: {
           metalType: currentMetalType,
           rawKind: 'molten',
@@ -709,14 +720,14 @@ export default function WorkmanshipTab({
           calculationMethod: 'weight',
           metalPriceType: 'gram18',
           metalPrice: metalPriceStr,
-          totalAmount: hasWage ? '' : totalAmountStr,
+          totalAmount: isPhysicalOp && hasWage ? '' : totalAmountStr,
           wageTotalAmount: String(calculatedTotalWage),
           labName: '',
           stampNumber: '',
           currencyUnit: currentWageCurrencyCode,
-          currencyQuantity: hasWage ? '' : (isForeignWage ? (totalAmountStr || String(calculatedFormulaTotalAmount)) : ''),
+          currencyQuantity: isPhysicalOp && hasWage ? '' : (isForeignWage ? (totalAmountStr || String(calculatedFormulaTotalAmount)) : ''),
           currencyUnitPrice: isForeignWage ? wageStr : '',
-          currencyTotalAmount: hasWage ? '' : (isForeignWage ? (totalAmountStr || String(calculatedFormulaTotalAmount)) : ''),
+          currencyTotalAmount: isPhysicalOp && hasWage ? '' : (isForeignWage ? (totalAmountStr || String(calculatedFormulaTotalAmount)) : ''),
           wageCurrency: currentWageCurrencyCode,
           wageCurrencyUnit: currentWageCurrencyCode,
           unsettledTrade: false,
@@ -729,7 +740,7 @@ export default function WorkmanshipTab({
           quantity: quantityStr || '1',
           wage: wageStr,
           wageMode: wageMode,
-          goldenPercentage: goldenPercentageStr,
+          goldenPercentage: effectiveGoldenPct,
           profitPercentage: profitPercentageStr,
           metalTotalPrice: String(calculatedMetalTotalPrice),
           profitAmount: String(calculatedProfitAmount),
@@ -751,13 +762,13 @@ export default function WorkmanshipTab({
           documentTab: 'workmanship',
           sourceTab: 'workmanship',
           documentSubType: 'workmanship-golden-percentage',
-          documentTypeLabel: `${percentageFieldLabel} کارساخته (${toPersianDigits(goldenPercentageStr)}٪)`,
+          documentTypeLabel: `${percentageFieldLabel} کارساخته (${toPersianDigits(effectiveGoldenPct)}٪)`,
           converted750: calculatedGoldenAddition,
           settlementMethod: 'weight',
           balanceSource: 'current',
           description: workmanshipName
-            ? `بابت ${percentageFieldLabel} کارساخته (${toPersianDigits(goldenPercentageStr)}٪) - ${workmanshipName.trim()}`
-            : `بابت ${percentageFieldLabel} کارساخته (${toPersianDigits(goldenPercentageStr)}٪)`,
+            ? `بابت ${percentageFieldLabel} کارساخته (${toPersianDigits(effectiveGoldenPct)}٪) - ${workmanshipName.trim()}`
+            : `بابت ${percentageFieldLabel} کارساخته (${toPersianDigits(effectiveGoldenPct)}٪)`,
           details: {
             metalType: currentMetalType,
             rawKind: 'molten',
@@ -783,14 +794,14 @@ export default function WorkmanshipTab({
             quantity: quantityStr || '1',
             wage: '',
             wageMode: wageMode,
-            goldenPercentage: goldenPercentageStr,
+            goldenPercentage: effectiveGoldenPct,
             profitPercentage: '',
             metalTotalPrice: '',
             profitAmount: '',
             discountAmount: '',
             convertedWeight: goldenWeightStr,
             workmanshipOptionId: selectedOptionId,
-            workmanshipOptionLabel: `${percentageFieldLabel} (${toPersianDigits(goldenPercentageStr)}٪)`,
+            workmanshipOptionLabel: `${percentageFieldLabel} (${toPersianDigits(effectiveGoldenPct)}٪)`,
             linkedLineId: mainLineId,
             isChildLine: true,
           },
@@ -1475,19 +1486,20 @@ export default function WorkmanshipTab({
                 </div>
               </div>
 
-              {/* Field: درصد سود (Profit Percentage) */}
+              {/* Field: درصد طلایی / سود */}
               <div className="w-[96px] shrink-0">
-                <Field label="درصد سود (٪)">
+                <Field label={`${!isNaturePaid ? percentageFieldLabel : `${percentageFieldLabel} / سود`} (٪)`}>
                   <input
                     type="text"
                     inputMode="decimal"
                     maxLength={5}
-                    value={profitPercentageStr ? toPersianDigits(profitPercentageStr) : ''}
+                    value={(profitPercentageStr || goldenPercentageStr) ? toPersianDigits(profitPercentageStr || goldenPercentageStr) : ''}
                     onFocus={(e) => e.currentTarget.select()}
                     onClick={(e) => e.currentTarget.select()}
                     onChange={(e) => {
                       const cleaned = normalizeDigits(e.target.value).replace(/[^\d.]/g, '').slice(0, 5);
-                      updateField('profitPercentage', cleaned, true);
+                      updateField('profitPercentage', cleaned, false);
+                      updateField('goldenPercentage', cleaned, true);
                     }}
                     onKeyDown={handleKeyDown}
                     placeholder="۰"
@@ -1630,18 +1642,16 @@ export default function WorkmanshipTab({
             </span>
           </div>
 
-          {(selectedOptionId === 1 || selectedOptionId === 3) && (
+          {numGoldenPercentage > 0 && (
             <div className="rounded-xl border border-slate-200/70 bg-white/70 p-2.5 text-right dark:border-slate-800 dark:bg-slate-800/70">
               <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block">
                 مقدار {percentageFieldLabel}:
               </span>
               <span className="text-xs font-black text-amber-600 dark:text-amber-400">
                 {toPersianDigits(calculatedGoldenAddition.toFixed(weightPrecision))} گرم
-                {numGoldenPercentage > 0 ? (
-                  <span className="text-[10px] font-medium text-slate-400 mr-1">
-                    ({toPersianDigits(goldenPercentageStr)}٪)
-                  </span>
-                ) : null}
+                <span className="text-[10px] font-medium text-slate-400 mr-1">
+                  ({toPersianDigits(goldenPercentageStr || profitPercentageStr)}٪)
+                </span>
               </span>
             </div>
           )}
@@ -1649,13 +1659,13 @@ export default function WorkmanshipTab({
           {(selectedOptionId === 2 || selectedOptionId === 4) && (
             <div className="rounded-xl border border-slate-200/70 bg-white/70 p-2.5 text-right dark:border-slate-800 dark:bg-slate-800/70">
               <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block">
-                مبلغ سود:
+                {!isNaturePaid ? `مبلغ ${percentageFieldLabel}:` : 'مبلغ سود:'}
               </span>
               <span className="text-xs font-black text-amber-600 dark:text-amber-400">
                 {formatMoney(calculatedProfitAmount, effectiveCurrency)}
                 {numProfitPercentage > 0 ? (
                   <span className="text-[10px] font-medium text-slate-400 mr-1">
-                    ({toPersianDigits(profitPercentageStr)}٪)
+                    ({toPersianDigits(profitPercentageStr || goldenPercentageStr)}٪)
                   </span>
                 ) : null}
               </span>

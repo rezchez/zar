@@ -4,11 +4,12 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AlertCircle,
   Barcode,
-  Camera,
   Check,
   ChevronDown,
   Database,
   Diamond,
+  Eye,
+  EyeOff,
   Gem,
   Image as ImageIcon,
   ImagePlus,
@@ -16,15 +17,12 @@ import {
   Plus,
   RefreshCw,
   Scale,
-  Smartphone,
-  Sparkles,
   Tag,
   Trash2,
   UploadCloud,
   Wrench,
   X,
 } from 'lucide-react';
-import AddFromAppModal from './AddFromAppModal';
 import LabelPreviewCard from './LabelPreviewCard';
 import MountedStonesModal from './MountedStonesModal';
 import { convertImageToWebP } from '@/features/checks/services/check-image';
@@ -58,7 +56,6 @@ export interface EtiquetteModalProps {
   suggestedBarcode?: string;
   nextBarcodes?: Record<string, string>;
   existingBarcodes?: string[];
-  initialFromApp?: Partial<EtiquetteRecord> & { draftImageUrl?: string } | null;
   initialType?: EtiquetteType;
 }
 
@@ -70,7 +67,6 @@ export default function EtiquetteModal({
   suggestedBarcode = '',
   nextBarcodes,
   existingBarcodes = [],
-  initialFromApp = null,
   initialType,
 }: EtiquetteModalProps) {
   const { settings, formatMoney } = useAppSettings();
@@ -119,13 +115,13 @@ export default function EtiquetteModal({
 
   // Sub-modals
   const [isStoneModalOpen, setIsStoneModalOpen] = useState(false);
-  const [isAppSyncModalOpen, setIsAppSyncModalOpen] = useState(false);
   const [showJewelryWarningModal, setShowJewelryWarningModal] = useState(false);
+  const [isPreviewVisible, setIsPreviewVisible] = useState(true);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Sync form when opening or changing editingItem / initialFromApp
+  // Sync form when opening or changing editingItem
   useEffect(() => {
     if (!isOpen) return;
     setError(null);
@@ -160,32 +156,6 @@ export default function EtiquetteModal({
       const urls = editingItem.imageUrls || (editingItem.imageUrl ? [editingItem.imageUrl] : []);
       setImagePreviews(names.map((name, index) => ({ name, url: urls[index] || `/api/etiquettes/${editingItem.id}/image?name=${encodeURIComponent(name)}` })));
       setRemovedImageNames([]);
-    } else if (initialFromApp) {
-      const type = initialFromApp.etiquetteType || 'plain';
-      setBarcode(getBarcodeForType(type));
-      setTitle(initialFromApp.title || '');
-      setItemCode(initialFromApp.itemCode || '');
-      setEtiquetteType(type);
-      setProductColor(initialFromApp.productColor || 'yellow');
-      setMetal(initialFromApp.metal || 'gold');
-      setPurity(initialFromApp.purity || 750);
-      setTotalWeight(initialFromApp.totalWeight ? String(initialFromApp.totalWeight) : '');
-      setStoneWeight(initialFromApp.stoneWeight ? String(initialFromApp.stoneWeight) : '0');
-      setStoneCount(initialFromApp.stoneCount ? String(initialFromApp.stoneCount) : '0');
-      setStonePrice(initialFromApp.stonePrice ? String(initialFromApp.stonePrice) : '0');
-      setWage(initialFromApp.wage ? String(initialFromApp.wage) : '12');
-      setWageType(initialFromApp.wageType || 'percentage');
-      setProfitPercentage(initialFromApp.profitPercentage ? String(initialFromApp.profitPercentage) : '7');
-      setOtherCosts('0');
-      setTotalPrice('0');
-      setStorageLocation(initialFromApp.storageLocation || 'ویترین');
-      setQuantity(1);
-      setStatus('available');
-      setDescription(initialFromApp.description || '');
-      setMountedStones(initialFromApp.mountedStones || []);
-      setImageFiles([]);
-      setImagePreviews(initialFromApp.draftImageUrl ? [{ url: initialFromApp.draftImageUrl }] : []);
-      setRemovedImageNames([]);
     } else {
       // New item: automatically resolve barcode according to chosen/initial etiquette type
       const type = initialType || 'plain';
@@ -214,7 +184,7 @@ export default function EtiquetteModal({
       setImagePreviews([]);
       setRemovedImageNames([]);
     }
-  }, [isOpen, editingItem, initialFromApp, initialType, getBarcodeForType]);
+  }, [isOpen, editingItem, initialType, getBarcodeForType]);
 
   // Handle image selection with WebP optimization
   const handleSelectImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -281,25 +251,6 @@ export default function EtiquetteModal({
       setStoneCount('0');
       setStonePrice('0');
     }
-  };
-
-  // Handle draft selected from Zarfolio app modal
-  const handleSelectDraftFromApp = (draft: Partial<EtiquetteRecord> & { draftImageUrl?: string }) => {
-    if (draft.title) setTitle(draft.title);
-    if (draft.etiquetteType) {
-      setEtiquetteType(draft.etiquetteType);
-      setBarcode(getBarcodeForType(draft.etiquetteType));
-    }
-    if (draft.productColor) setProductColor(draft.productColor);
-    if (draft.metal) setMetal(draft.metal);
-    if (draft.purity) setPurity(draft.purity);
-    if (draft.totalWeight) setTotalWeight(String(draft.totalWeight));
-    if (draft.stoneWeight !== undefined) setStoneWeight(String(draft.stoneWeight));
-    if (draft.wage !== undefined) setWage(String(draft.wage));
-    if (draft.wageType) setWageType(draft.wageType);
-    if (draft.storageLocation) setStorageLocation(draft.storageLocation);
-    if (draft.mountedStones) setMountedStones(draft.mountedStones);
-    if (draft.draftImageUrl) setImagePreviews([{ url: draft.draftImageUrl }]);
   };
 
   // Handle metal change -> update default purity and suggest default color
@@ -472,9 +423,9 @@ export default function EtiquetteModal({
         className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200"
       >
         <div className="relative w-full max-w-4xl max-h-[92vh] flex flex-col rounded-3xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-2xl ring-1 ring-black/10 dark:ring-white/10 overflow-hidden">
-          {/* Modal Header */}
-          <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 px-6 py-4 bg-slate-50 dark:bg-slate-800/60 shrink-0">
-            <div className="flex items-center gap-3">
+          {/* Keep the live label preview inline with the modal title, using the same header background. */}
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-slate-200 dark:border-slate-800 px-4 py-3 sm:px-6 sm:py-4 bg-slate-50 dark:bg-slate-800/60 shrink-0">
+            <div className="flex min-w-0 items-center gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/25">
                 <Tag size={22} className="stroke-[2.2]" />
               </div>
@@ -482,23 +433,33 @@ export default function EtiquetteModal({
                 <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
                   {editingItem ? 'ویرایش اتیکت طلا و جواهر' : 'تعریف اتیکت جدید طلا و جواهر'}
                 </h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  شناسنامه، اوزان، دسته‌بندی سنگ و برلیان، عکس محصول و چاپ بارکد دم‌موشی
-                </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex min-w-0 flex-1 items-center justify-end gap-2 sm:gap-3">
+              {isPreviewVisible && (
+                <div className="shrink-0">
+                  <LabelPreviewCard
+                    item={previewItem}
+                    template={settings.etiquettePrintTemplate || 'slim_tail'}
+                    size={settings.etiquettePrintSize || '60x10'}
+                    orientation={settings.etiquettePrintOrientation || 'right_to_left'}
+                    storeName={settings.organizationName || 'گالری طلا'}
+                    showWage={true}
+                  />
+                </div>
+              )}
               <button
                 type="button"
-                onClick={() => setIsAppSyncModalOpen(true)}
-                className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black bg-amber-500/10 hover:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-500/30 transition cursor-pointer"
-                title="اتصال با اپلیکیشن زرفولیو"
+                role="switch"
+                aria-checked={isPreviewVisible}
+                aria-label={isPreviewVisible ? 'خاموش کردن پیش‌نمایش اتیکت' : 'روشن کردن پیش‌نمایش اتیکت'}
+                title={isPreviewVisible ? 'خاموش کردن پیش‌نمایش اتیکت' : 'روشن کردن پیش‌نمایش اتیکت'}
+                onClick={() => setIsPreviewVisible((visible) => !visible)}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-300 text-slate-600 transition-colors hover:bg-white dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700 cursor-pointer"
               >
-                <Smartphone size={14} />
-                <span>افزودن از اپلیکیشن زرفولیو</span>
+                {isPreviewVisible ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
-
               <button
                 type="button"
                 onClick={onClose}
@@ -518,38 +479,6 @@ export default function EtiquetteModal({
                 <span>{error}</span>
               </div>
             )}
-
-            {/* Live Label Preview & Mobile Sync Callout */}
-            <div className="rounded-2xl border border-amber-500/25 bg-amber-50/60 dark:bg-amber-950/20 p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-              <div className="space-y-1 text-right">
-                <div className="inline-flex items-center gap-1.5 text-xs font-black text-amber-800 dark:text-amber-300">
-                  <Sparkles size={14} />
-                  <span>پیش‌نمایش زنده استیکر دم‌موشی طلافروشی</span>
-                </div>
-                <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
-                  برچسب دم‌موشی به صورت خودکار با تغییر نام، نوع اتیکت، اوزان و بارکد تنظیم می‌شود.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setIsAppSyncModalOpen(true)}
-                  className="sm:hidden inline-flex items-center gap-1.5 mt-2 px-3 py-1 rounded-lg text-[11px] font-black bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/30"
-                >
-                  <Smartphone size={13} />
-                  <span>افزودن از اپلیکیشن زرفولیو</span>
-                </button>
-              </div>
-
-              <div className="shrink-0">
-                <LabelPreviewCard
-                  item={previewItem}
-                  template={settings.etiquettePrintTemplate || 'slim_tail'}
-                  size={settings.etiquettePrintSize || '60x10'}
-                  orientation={settings.etiquettePrintOrientation || 'right_to_left'}
-                  storeName={settings.organizationName || 'گالری طلا'}
-                  showWage={true}
-                />
-              </div>
-            </div>
 
             {/* Section 1: Item Info & Category Dropdown */}
             <div className="rounded-2xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/70 dark:bg-slate-800/40 p-4 space-y-4">
@@ -721,14 +650,6 @@ export default function EtiquetteModal({
                   <ImageIcon size={15} className="text-amber-500" />
                   <span>عکس محصول طلا و جواهر (اختیاری)</span>
                 </span>
-                <button
-                  type="button"
-                  onClick={() => setIsAppSyncModalOpen(true)}
-                  className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-600 dark:text-amber-400 hover:underline cursor-pointer"
-                >
-                  <Camera size={13} />
-                  <span>عکاسی با دوربین گوشی</span>
-                </button>
               </div>
 
               <div className="space-y-3">
@@ -1157,13 +1078,6 @@ export default function EtiquetteModal({
         stones={mountedStones}
         onSave={handleSaveStones}
         etiquetteType={etiquetteType}
-      />
-
-      {/* Sub-Modal: Add From Zarfolio App */}
-      <AddFromAppModal
-        isOpen={isAppSyncModalOpen}
-        onClose={() => setIsAppSyncModalOpen(false)}
-        onSelectDraft={handleSelectDraftFromApp}
       />
 
       {/* Jewelry Natural Stone Warning Modal */}

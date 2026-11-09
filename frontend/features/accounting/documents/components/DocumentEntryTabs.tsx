@@ -37,6 +37,7 @@ type DocumentEntryTabsProps = {
   claimTabContent?: ReactNode;
   incomeExpenseTabContent?: ReactNode;
   workmanshipTabContent?: ReactNode;
+  etiquetteTabContent?: ReactNode;
   discountTabContent?: ReactNode;
   goodsTabContent?: ReactNode;
   goodsTabLabel?: string;
@@ -70,6 +71,7 @@ export default function DocumentEntryTabs({
   claimTabContent,
   incomeExpenseTabContent,
   workmanshipTabContent,
+  etiquetteTabContent,
   discountTabContent,
   goodsTabContent,
   goodsTabLabel,
@@ -159,6 +161,12 @@ export default function DocumentEntryTabs({
       label: 'کار ساخته',
       icon: Wrench,
       content: workmanshipTabContent ?? <PlaceholderTab label="کار ساخته" />,
+    },
+    {
+      id: 'etiquette',
+      label: 'اتیکت',
+      icon: Tag,
+      content: etiquetteTabContent ?? <PlaceholderTab label="اتیکت طلا و جواهر" />,
     },
     {
       id: 'discount',

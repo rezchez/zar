@@ -1679,6 +1679,9 @@ describe('Tahesab Accounting Migration Engine Tests', () => {
     expect(recDetails.metalType).toBeUndefined();
     expect(recDetails.currencyQuantity).toBe(50);
     expect(recDetails.currencyUnit).toBe('USD');
+    expect(recDetails.isHawala).toBe(true);
+    expect(recDetails.hawalaCounterCustomerName).toBe('بهروز نعمتی');
+    expect(recDetails.hawalaCounterCustomerCode).toBe('188');
 
     // 4. Verify breakdown
     const {
@@ -1688,8 +1691,7 @@ describe('Tahesab Accounting Migration Engine Tests', () => {
     } = await import('@/features/customers/utils/document-breakdown');
 
     const desc = getDocumentLineDescription(txRec);
-    expect(desc.primary).toBe('خرید ارز بدون تسویه');
-    expect(desc.secondary).toContain('(حواله از: 188 بهروز نعمتی)');
+    expect(desc.primary).toBe('حواله ارزی از: بهروز نعمتی (188)');
 
     const badge = getJournalLineBadge(txRec);
     expect(badge.accountCode).toBe('۱۱۲۰');
@@ -1698,7 +1700,9 @@ describe('Tahesab Accounting Migration Engine Tests', () => {
 
     const itemSpec = parseTransactionBreakdown(txRec);
     expect(itemSpec.category).toBe('currency');
-    expect(itemSpec.categoryLabel).not.toContain('طلای متفرقه');
+    expect(itemSpec.categoryLabel).toBe('حواله ارزی');
+    expect(itemSpec.badgeColor).toBe('purple');
+    expect(itemSpec.attributes.find((a) => a.label === 'طرف حواله')?.value).toContain('بهروز نعمتی');
   });
 
   // 26. Currency Mapping & Foreign Currency Cash Receipt Detection
@@ -2032,7 +2036,7 @@ describe('Tahesab Accounting Migration Engine Tests', () => {
   });
 
   // 29. Manufactured Gold with Percentage Wage (Factor 1 - Mrs. Tavakol)
-  it('29. Workmanship with Percentage Wage: merges percentage wage row into manufactured line, adds wage to converted weight, and eliminates #DSD artifact', async () => {
+  it('29. Workmanship with Percentage Wage: accurately retains base line and separate golden percentage row with child linking', async () => {
     const rawDb: any = {
       moshtarian: [
         {
@@ -2084,20 +2088,29 @@ describe('Tahesab Accounting Migration Engine Tests', () => {
     const norm = normalizeTahesabData(rawDb, parseBackupInfo('Version=10.0'));
     const doc = norm.documents.find((d) => d.sourceFactorCode === 'F_TAVAKOL_1');
     expect(doc).toBeDefined();
-    expect(doc!.lines.length).toBe(1); // Merged into 1 single line!
+    expect(doc!.lines.length).toBe(2); // Preserves exact breakdown into 2 lines!
 
-    const line = doc!.lines[0];
-    expect(line.kind).toBe('workmanship');
-    expect(line.workmanshipName).toBe('سرویس');
-    expect(line.weight).toBe(36.12);
-    expect(line.grade).toBe(750);
-    expect(line.wagePercent).toBe(16);
-    expect(line.wageGoldWeight).toBe(5.779);
-    // Converted weight 750 = base 36.12 + wage 5.779 = 41.899
-    expect(line.convertedWeight750).toBe(41.899);
-    expect(line.amountIrr).toBe(0); // Zero IRR effect
-    expect(line.nature).toBe('paid');
-    expect(line.partySide).toBe('debtor');
+    const line1 = doc!.lines[0];
+    expect(line1.kind).toBe('workmanship');
+    expect(line1.workmanshipName).toBe('سرویس');
+    expect(line1.weight).toBe(36.12);
+    expect(line1.grade).toBe(750);
+    expect(line1.wagePercent).toBe(16);
+    expect(line1.wageGoldWeight).toBe(5.779);
+    expect(line1.convertedWeight750).toBe(36.12);
+    expect(line1.amountIrr).toBe(0);
+    expect(line1.nature).toBe('paid');
+    expect(line1.partySide).toBe('debtor');
+    expect(line1.signedGoldAmount).toBe(-36.12);
+
+    const line2 = doc!.lines[1];
+    expect(line2.kind).toBe('workmanship');
+    expect(line2.isGoldenPercentageLine).toBe(true);
+    expect(line2.parentLineNumber).toBe(1);
+    expect(line2.wagePercent).toBe(16);
+    expect(line2.weight).toBe(5.779);
+    expect(line2.convertedWeight750).toBe(5.779);
+    expect(line2.signedGoldAmount).toBe(-5.779);
 
     const createdRecords: Record<string, any[]> = {};
     const mockWriter = {
@@ -2119,17 +2132,715 @@ describe('Tahesab Accounting Migration Engine Tests', () => {
     });
 
     const txList = createdRecords['transactions'] || [];
-    expect(txList.length).toBe(1);
-    const tx = txList[0];
-    expect(tx.documentTab).toBe('workmanship');
-    expect(tx.documentSubType).toBe('exit_manufactured');
-    expect(tx.goldAmount).toBe(-41.899);
-    expect(tx.rialAmount).toBe(0);
+    expect(txList.length).toBe(2);
+    const tx1 = txList[0];
+    expect(tx1.documentTab).toBe('workmanship');
+    expect(tx1.documentSubType).toBe('exit_manufactured');
+    expect(tx1.goldAmount).toBe(-36.12);
+    expect(tx1.rialAmount).toBe(0);
 
+    const details1 = JSON.parse(tx1.documentDetails);
+    expect(details1.workmanshipName).toBe('سرویس');
+    expect(details1.wagePercent).toBe(16);
+    expect(details1.hasChildLines).toBe(true);
+
+    const tx2 = txList[1];
+    expect(tx2.documentTab).toBe('workmanship');
+    expect(tx2.documentSubType).toBe('workmanship-golden-percentage');
+    expect(tx2.goldAmount).toBe(-5.779);
+
+    const details2 = JSON.parse(tx2.documentDetails);
+    expect(details2.linkedLineId).toBe(tx1.id);
+    expect(details2.isChildLine).toBe(true);
+    expect(details2.isGoldenPercentageLine).toBe(true);
+
+    // Sum of gold amounts = -41.899
+    expect(tx1.goldAmount + tx2.goldAmount).toBeCloseTo(-41.899, 3);
+  });
+
+  // 30. End-to-End Hawala (Remittance) Pairing & Ledger Integration
+  it('30. End-to-End Hawala Pairing & Ledger Integration: perfectly pairs gold remittances, avoids physical inventory impact, and displays full Hawala details in ledger', async () => {
+    const rawDb: TahesabRawDatabase = {
+      moshtarian: [
+        {
+          code: '148',
+          name: 'کارگاه تهران',
+          Tel: '09121111111',
+          gorooh: 'کارگاه‌ها',
+          GID: '2',
+          tahesabtala: '0',
+          tahesabriali: '0',
+          Arz: 'IRR',
+        },
+        {
+          code: '211',
+          name: 'اجرت کارگاه مرکزی',
+          Tel: '09122222222',
+          gorooh: 'اجرت',
+          GID: '2',
+          tahesabtala: '0',
+          tahesabriali: '0',
+          Arz: 'IRR',
+        },
+      ],
+      hesab: [
+        {
+          Factor_Code: 'FACT_HAWALA_SND',
+          sh_factor: '101',
+          mcode: '148',
+          Tarikh: '2024-04-09 15:10:59',
+          Rec: 'کارگاه تهران',
+          geram_kh: '12.450',
+          Arz: 'IRR',
+        },
+        {
+          Factor_Code: 'FACT_HAWALA_REC',
+          sh_factor: '102',
+          mcode: '211',
+          Tarikh: '2024-04-09 15:12:24',
+          Rec: 'اجرت کارگاه مرکزی',
+          geram_v: '12.450',
+          Arz: 'IRR',
+        },
+      ],
+      hesab_detail: [
+        {
+          Factor_Code: 'FACT_HAWALA_SND',
+          mcode: '148',
+          no: 'طلب',
+          Sharh: '(حواله به: 211 اجرت کارگاه مرکزی)',
+          Command: '#hshbe#HAWALA_TOKEN_12345#99',
+          vazn: '12.450',
+          ayar: '750',
+          tabdil750_kh: '12.450',
+          Tahesab_t: '-12.450',
+          Tahesab_p: '0',
+        },
+        {
+          Factor_Code: 'FACT_HAWALA_REC',
+          mcode: '211',
+          no: 'بدهی',
+          Sharh: '(حواله از: 148 کارگاه تهران)',
+          Command: '#HAVALEH#HAWALA_TOKEN_12345#99',
+          vazn: '12.450',
+          ayar: '750',
+          tabdil750_v: '12.450',
+          Tahesab_t: '12.450',
+          Tahesab_p: '0',
+        },
+      ],
+      Hesab_bank: [],
+      bank: [],
+      Sekeh_Shemsh: [],
+      Sang: [],
+      raygiri: [],
+      khar_sakhte: [],
+      Cities: [],
+      Hazine_Baabat: [],
+      gorooh: [],
+      otherTables: {},
+    };
+
+    const norm = normalizeTahesabData(rawDb, {
+      mohitCount: 1,
+      dbType: 'SQL',
+      version: '10.0',
+      archiveCount: 0,
+    });
+
+    // 1. Verify normalized pair links
+    const docSnd = norm.documents.find((d) => d.sourceFactorCode === 'FACT_HAWALA_SND');
+    const docRec = norm.documents.find((d) => d.sourceFactorCode === 'FACT_HAWALA_REC');
+    expect(docSnd).toBeDefined();
+    expect(docRec).toBeDefined();
+
+    const lineSnd = docSnd!.lines[0];
+    const lineRec = docRec!.lines[0];
+
+    expect(lineSnd.isHawala).toBe(true);
+    expect(lineSnd.kind).toBe('melted');
+    expect(lineSnd.metalType).toBe('gold');
+    expect(lineSnd.nature).toBe('paid');
+    expect(lineSnd.signedGoldAmount).toBe(-12.45);
+    expect(lineSnd.hawalaCounterCustomerCode).toBe('211');
+    expect(lineSnd.hawalaCounterCustomerName).toBe('اجرت کارگاه مرکزی');
+    expect(lineSnd.hawalaCounterFactorCode).toBe('FACT_HAWALA_REC');
+
+    expect(lineRec.isHawala).toBe(true);
+    expect(lineRec.kind).toBe('melted');
+    expect(lineRec.metalType).toBe('gold');
+    expect(lineRec.nature).toBe('received');
+    expect(lineRec.signedGoldAmount).toBe(12.45);
+    expect(lineRec.hawalaCounterCustomerCode).toBe('148');
+    expect(lineRec.hawalaCounterCustomerName).toBe('کارگاه تهران');
+    expect(lineRec.hawalaCounterFactorCode).toBe('FACT_HAWALA_SND');
+
+    // 2. Import into Zarfolio domain
+    const createdRecords: Record<string, any[]> = {};
+    const mockWriter = {
+      collection: (col: string) => ({
+        getFirstListItem: async () => { throw new Error('Not found'); },
+        create: async (data: Record<string, any>) => {
+          if (!createdRecords[col]) createdRecords[col] = [];
+          const rec = { id: `id_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`, ...data };
+          createdRecords[col].push(rec);
+          return rec;
+        },
+        getFullList: async () => createdRecords[col] || [],
+      }),
+    } as any;
+
+    await importTahesabData(
+      mockWriter,
+      norm,
+      buildInitialMappings(norm, [], []),
+      { migrationId: 'test_hawala_mig', dryRun: false },
+    );
+
+    const txList = createdRecords['transactions'] || [];
+    expect(txList.length).toBe(2);
+
+    const txSnd = txList.find((t) => t.customerCode === 148);
+    const txRec = txList.find((t) => t.customerCode === 211);
+    expect(txSnd).toBeDefined();
+    expect(txRec).toBeDefined();
+
+    // Verify Sender (Line A)
+    expect(txSnd.documentTab).toBe('raw-gold');
+    expect(txSnd.documentSubType).toBe('outgoing-molten');
+    expect(txSnd.goldAmount).toBe(-12.45);
+    expect(txSnd.rialAmount).toBe(0);
+
+    const detailsSnd = JSON.parse(txSnd.documentDetails);
+    expect(detailsSnd.isHawala).toBe(true);
+    expect(detailsSnd.hawalaGroupId).toBe('HAWALA_TOKEN_12345#99');
+    expect(detailsSnd.documentTypeLabel).toBe('حواله طلا');
+    expect(detailsSnd.hawalaCounterCustomerCode).toBe('211');
+    expect(detailsSnd.hawalaCounterCustomerName).toBe('اجرت کارگاه مرکزی');
+    expect(detailsSnd.hawalaCounterDocumentId).toBe(txRec.documentId);
+
+    // Verify Receiver (Line B)
+    expect(txRec.documentTab).toBe('raw-gold');
+    expect(txRec.documentSubType).toBe('incoming-molten');
+    expect(txRec.goldAmount).toBe(12.45);
+    expect(txRec.rialAmount).toBe(0);
+
+    const detailsRec = JSON.parse(txRec.documentDetails);
+    expect(detailsRec.isHawala).toBe(true);
+    expect(detailsRec.hawalaGroupId).toBe('HAWALA_TOKEN_12345#99');
+    expect(detailsRec.documentTypeLabel).toBe('حواله طلا');
+    expect(detailsRec.hawalaCounterCustomerCode).toBe('148');
+    expect(detailsRec.hawalaCounterCustomerName).toBe('کارگاه تهران');
+    expect(detailsRec.hawalaCounterDocumentId).toBe(txSnd.documentId);
+
+    // Crucial: Interpersonal Hawala MUST NOT write physical inventory into metal_inventory!
+    const inventoryLots = createdRecords['metal_inventory'] || [];
+    expect(inventoryLots.length).toBe(0);
+
+    // 3. Verify Customer Ledger Breakdown & Filter Matching
+    const {
+      getDocumentLineDescription,
+      parseTransactionBreakdown,
+      matchesLedgerCategoryFilter,
+    } = await import('@/features/customers/utils/document-breakdown');
+
+    // Sender breakdown
+    const breakdownSnd = parseTransactionBreakdown(txSnd);
+    expect(breakdownSnd.category).toBe('gold-raw');
+    expect(breakdownSnd.categoryLabel).toBe('حواله طلا');
+    expect(breakdownSnd.badgeColor).toBe('purple');
+    expect(breakdownSnd.attributes.find((a) => a.label === 'طرف حواله')?.value).toContain('اجرت کارگاه مرکزی');
+
+    const descSnd = getDocumentLineDescription(txSnd);
+    expect(descSnd.primary).toBe('حواله طلا به: اجرت کارگاه مرکزی (211)');
+
+    // Receiver breakdown
+    const breakdownRec = parseTransactionBreakdown(txRec);
+    expect(breakdownRec.category).toBe('gold-raw');
+    expect(breakdownRec.categoryLabel).toBe('حواله طلا');
+    expect(breakdownRec.badgeColor).toBe('purple');
+    expect(breakdownRec.attributes.find((a) => a.label === 'طرف حواله')?.value).toContain('کارگاه تهران');
+
+    const descRec = getDocumentLineDescription(txRec);
+    expect(descRec.primary).toBe('حواله طلا از: کارگاه تهران (148)');
+
+    // Filter matching
+    expect(matchesLedgerCategoryFilter(txSnd, 'raw-gold')).toBe(true);
+    expect(matchesLedgerCategoryFilter(txRec, 'raw-gold')).toBe(true);
+    expect(matchesLedgerCategoryFilter(txSnd, 'bank')).toBe(false);
+  });
+
+  // 31. Conditional Gold with Karat (عیار شرطی): Accurately detects conditional gold even with populated ayar
+  it('31. Conditional Gold with Karat: identifies conditional gold with provisional karat, stamp number and assay lab, and handles conditional hawala', async () => {
+    const rawDb: any = {
+      moshtarian: [
+        {
+          code: '35',
+          name: 'قاسم ضیغمی',
+          Tel: '09121111111',
+          gorooh: 'بنکدار',
+          GID: '2',
+          tahesabtala: '0',
+          tahesabriali: '0',
+          Arz: 'IRR',
+        },
+        {
+          code: '148',
+          name: 'کارگاه تهران',
+          Tel: '09122222222',
+          gorooh: 'کارگاه',
+          GID: '2',
+          tahesabtala: '0',
+          tahesabriali: '0',
+          Arz: 'IRR',
+        },
+      ],
+      hesab: [
+        {
+          Factor_Code: 'FACT_COND_1',
+          sh_factor: '2155',
+          mcode: '35',
+          Tarikh: '2025-05-28 12:41:48',
+          Rec: 'قاسم ضیغمی',
+          geram_v: '40.570',
+          Arz: 'IRR',
+        },
+        {
+          Factor_Code: 'FACT_COND_HAWALA',
+          sh_factor: '2156',
+          mcode: '35',
+          Tarikh: '2025-05-28 14:00:00',
+          Rec: 'قاسم ضیغمی',
+          geram_kh: '25.600',
+          Arz: 'IRR',
+        },
+      ],
+      hesab_detail: [
+        {
+          // Direct Conditional Gold Trade with Ayar (Command2: 171)
+          Factor_Code: 'FACT_COND_1',
+          mcode: '35',
+          sh_factor: '2155',
+          Tarikh: '2025-05-28 12:41:48',
+          no: 'ورود طلا',
+          vazn: '40.57',
+          ayar: '746',
+          tabdil750_v: '40.354',
+          sh_sharti: '460917',
+          name_az: 'بلوط',
+          Temp: 'ورود آبشده شرطی (40/57*746) [460917 بلوط]',
+          Command2: '171',
+          SanadType: '0',
+          Abshode: '-1',
+        },
+        {
+          // Conditional Gold Hawala with Ayar
+          Factor_Code: 'FACT_COND_HAWALA',
+          mcode: '35',
+          sh_factor: '2156',
+          Tarikh: '2025-05-28 14:00:00',
+          no: 'طلب',
+          vazn: '25.60',
+          ayar: '746',
+          tabdil750_kh: '25.463',
+          sh_sharti: '848643',
+          name_az: 'حمیدقدیم',
+          Sharh: '(حواله به: 148 کارگاه تهران)',
+          Command: '#hshbe#COND_TOKEN_999#1',
+          Command2: '171',
+          SanadType: '0',
+          Abshode: '-1',
+        },
+      ],
+      Hesab_bank: [],
+      bank: [],
+      Sekeh_Shemsh: [],
+      Sang: [],
+      raygiri: [
+        { name: 'بلوط', Tel: '', Add: '' },
+        { name: 'حمیدقدیم', Tel: '', Add: '' },
+      ],
+      khar_sakhte: [],
+      Cities: [],
+      Hazine_Baabat: [],
+      gorooh: [],
+      otherTables: {},
+    };
+
+    const norm = normalizeTahesabData(rawDb, {
+      mohitCount: 1,
+      dbType: 'SQL',
+      version: '10.0',
+      archiveCount: 0,
+    });
+
+    // 1. Verify Normalizer recognizes conditional gold with ayar
+    const doc1 = norm.documents.find((d) => d.sourceFactorCode === 'FACT_COND_1');
+    expect(doc1).toBeDefined();
+    const line1 = doc1!.lines[0];
+
+    expect(line1.isConditional).toBe(true);
+    expect(line1.kind).toBe('conditional');
+    expect(line1.metalType).toBe('gold');
+    expect(line1.weight).toBe(40.57);
+    expect(line1.grade).toBe(746);
+    expect(line1.convertedWeight750).toBe(40.354);
+    expect(line1.assayStampNumber).toBe('460917');
+    expect(line1.assayLabName).toBe('بلوط');
+    expect(line1.isHawala).toBe(false);
+
+    // Conditional Hawala line
+    const docHawala = norm.documents.find((d) => d.sourceFactorCode === 'FACT_COND_HAWALA');
+    expect(docHawala).toBeDefined();
+    const lineHawala = docHawala!.lines[0];
+
+    expect(lineHawala.isConditional).toBe(true);
+    expect(lineHawala.isHawala).toBe(true);
+    expect(lineHawala.kind).toBe('conditional');
+    expect(lineHawala.weight).toBe(25.6);
+    expect(lineHawala.grade).toBe(746);
+    expect(lineHawala.convertedWeight750).toBe(25.463);
+    expect(lineHawala.assayStampNumber).toBe('848643');
+
+    // 2. Verify Importer maps into Zarfolio schema correctly
+    const createdRecords: Record<string, any[]> = {};
+    const mockWriter = {
+      collection: (col: string) => ({
+        getFirstListItem: async () => { throw new Error('Not found'); },
+        create: async (data: Record<string, any>) => {
+          if (!createdRecords[col]) createdRecords[col] = [];
+          const rec = { id: `rec_${Date.now()}_${Math.random()}`, ...data };
+          createdRecords[col].push(rec);
+          return rec;
+        },
+        getFullList: async () => createdRecords[col] || [],
+      }),
+    } as any;
+
+    await importTahesabData(mockWriter, norm, buildInitialMappings(norm, [], [], [], []), {
+      migrationId: 'test_conditional_karat',
+      dryRun: false,
+    });
+
+    const txRecords = createdRecords['transactions'] || [];
+    expect(txRecords.length).toBe(2);
+
+    const txDirect = txRecords.find((t) => t.sourceKey?.includes('FACT_COND_1'));
+    expect(txDirect).toBeDefined();
+    expect(txDirect.documentTab).toBe('raw-gold');
+    expect(txDirect.documentSubType).toBe('incoming-conditional');
+    expect(txDirect.goldAmount).toBe(40.354);
+
+    const detailsDirect = JSON.parse(txDirect.documentDetails);
+    expect(detailsDirect.isConditional).toBe(true);
+    expect(detailsDirect.rawKind).toBe('conditional');
+    expect(detailsDirect.purity).toBe('746');
+    expect(detailsDirect.rawWeight).toBe('40.57');
+    expect(detailsDirect.stampNumber).toBe('460917');
+    expect(detailsDirect.labName).toContain('بلوط');
+
+    // Verify metal_inventory lot created for direct trade
+    const inventoryLots = createdRecords['metal_inventory'] || [];
+    expect(inventoryLots.length).toBe(1);
+    expect(inventoryLots[0].inventory_type).toBe('conditional');
+    expect(inventoryLots[0].direction).toBe('in');
+    expect(inventoryLots[0].transaction_type).toBe('incoming-conditional');
+    expect(inventoryLots[0].purity).toBe(746);
+    expect(inventoryLots[0].raw_weight).toBe(40.57);
+    expect(inventoryLots[0].stamp_number).toBe('460917');
+    expect(inventoryLots[0].lab_name).toContain('بلوط');
+
+    // Verify Hawala transaction has conditional details but NO inventory lot
+    const txHawala = txRecords.find((t) => t.sourceKey?.includes('FACT_COND_HAWALA'));
+    expect(txHawala).toBeDefined();
+    expect(txHawala.documentTab).toBe('raw-gold');
+    expect(txHawala.goldAmount).toBe(-25.463);
+
+    const detailsHawala = JSON.parse(txHawala.documentDetails);
+    expect(detailsHawala.isHawala).toBe(true);
+    expect(detailsHawala.isConditional).toBe(true);
+    expect(detailsHawala.rawKind).toBe('conditional');
+    expect(detailsHawala.documentTypeLabel).toBe('حواله طلای شرطی');
+
+    // 3. Verify Ledger Breakdown for Conditional Gold
+    const {
+      getDocumentLineDescription,
+      parseTransactionBreakdown,
+      matchesLedgerCategoryFilter,
+    } = await import('@/features/customers/utils/document-breakdown');
+
+    const breakdownDirect = parseTransactionBreakdown(txDirect);
+    expect(breakdownDirect.category).toBe('gold-raw');
+    expect(breakdownDirect.categoryLabel).toBe('طلای آبشده شرطی');
+    expect(breakdownDirect.badgeColor).toBe('amber');
+
+    const karatAttr = breakdownDirect.attributes.find((a) => a.label === 'عیار موقت');
+    expect(karatAttr).toBeDefined();
+    expect(karatAttr?.value).toBe('746');
+
+    const stampAttr = breakdownDirect.attributes.find((a) => a.label === 'شماره انگ');
+    expect(stampAttr).toBeDefined();
+    expect(stampAttr?.value).toBe('460917');
+
+    const labAttr = breakdownDirect.attributes.find((a) => a.label?.includes('ری‌گیری'));
+    expect(labAttr).toBeDefined();
+    expect(labAttr?.value).toContain('بلوط');
+
+    const descDirect = getDocumentLineDescription(txDirect);
+    expect(descDirect.primary).toBe('ورود آبشده شرطی طلا');
+
+    // Breakdown for conditional Hawala
+    const breakdownHawala = parseTransactionBreakdown(txHawala);
+    expect(breakdownHawala.category).toBe('gold-raw');
+    expect(breakdownHawala.categoryLabel).toBe('حواله طلای شرطی');
+    expect(breakdownHawala.badgeColor).toBe('purple');
+
+    const descHawala = getDocumentLineDescription(txHawala);
+    expect(descHawala.primary).toContain('حواله طلای شرطی به: کارگاه تهران (148)');
+
+    expect(matchesLedgerCategoryFilter(txDirect, 'raw-gold')).toBe(true);
+    expect(matchesLedgerCategoryFilter(txHawala, 'raw-gold')).toBe(true);
+  });
+
+  // 32. Jewelry Etiquette Migration & Forensics
+  it('32. Jewelry Etiquette Migration: accurately distinguishes genuine etiquettes, migrates available/sold items and mounted stones', async () => {
+    if (!fs.existsSync(FIXTURE_PATH)) return;
+    const { rawDb } = await parseTahesabBackup(FIXTURE_PATH, { maxDetailRows: 500 });
+    const info = parseBackupInfo('Version=10.0');
+    const normalized = normalizeTahesabData(rawDb, info);
+
+    expect(normalized.etiquettes).toBeDefined();
+    expect(normalized.etiquettes?.length).toBe(215);
+
+    const available = normalized.etiquettes?.filter((e) => e.status === 'available') || [];
+    const sold = normalized.etiquettes?.filter((e) => e.status === 'sold') || [];
+
+    expect(available.length).toBe(62);
+    expect(sold.length).toBe(153);
+
+    // Verify mounted stones
+    const withStones = normalized.etiquettes?.filter((e) => e.mountedStones.length > 0) || [];
+    expect(withStones.length).toBe(62);
+
+    const sampleWithStones = withStones.find((e) => e.barcode === '43');
+    expect(sampleWithStones).toBeDefined();
+    expect(sampleWithStones?.title).toBe('گردنبند تنیس');
+    expect(sampleWithStones?.totalWeight).toBe(16.41);
+    expect(sampleWithStones?.mountedStones.length).toBe(1);
+    expect(sampleWithStones?.mountedStones[0].name).toBe('اتمی');
+    expect(sampleWithStones?.mountedStones[0].quantity).toBe(56);
+    expect(sampleWithStones?.mountedStones[0].weightCarat).toBe(25.4);
+
+    // Verify sold item exit link details
+    const sampleSold = sold.find((e) => e.barcode === '1');
+    expect(sampleSold).toBeDefined();
+    expect(sampleSold?.title).toBe('انگشتر');
+    expect(sampleSold?.itemCode).toBe('SH1000');
+    expect(sampleSold?.exitCustomerName).toContain('لیلا خلیفه');
+    expect(sampleSold?.exitDateJalali).toBe('1404/09/22');
+    expect(sampleSold?.status).toBe('sold');
+
+    // Test Validation Preview Stats
+    const mappings = buildInitialMappings(normalized, [], []);
+    const validation = validateTahesabMigration(normalized, mappings);
+    expect(validation.preview.totalEtiquettes).toBe(215);
+    expect(validation.preview.totalAvailableEtiquettes).toBe(62);
+    expect(validation.preview.totalSoldEtiquettes).toBe(153);
+
+    // Test Importer with Mock PB
+    const createdEtiquettes: any[] = [];
+    const mockPb: any = {
+      filter: (tmpl: string) => tmpl,
+      collection: (col: string) => ({
+        getFullList: async () => [],
+        getFirstListItem: async () => null,
+        create: async (data: any) => {
+          if (col === 'etiquettes') {
+            createdEtiquettes.push(data);
+          }
+          return { id: `rec_${col}_${Date.now()}`, ...data };
+        },
+      }),
+    };
+
+    const importResult = await importTahesabData(mockPb, normalized, mappings, {
+      migrationId: 'etiquette_test_mig',
+      userId: 'admin_test_user',
+      dryRun: false,
+    });
+
+    expect(importResult.importedEtiquettes).toBe(215);
+    expect(createdEtiquettes.length).toBe(215);
+
+    const createdAvailable = createdEtiquettes.filter((e) => e.status === 'available');
+    const createdSold = createdEtiquettes.filter((e) => e.status === 'sold');
+    expect(createdAvailable.length).toBe(62);
+    expect(createdSold.length).toBe(153);
+
+    const createdStonesItem = createdEtiquettes.find((e) => e.barcode === '43');
+    expect(createdStonesItem).toBeDefined();
+    expect(createdStonesItem.etiquette_type).toBe('gemstone');
+    expect(createdStonesItem.mounted_stones.length).toBe(1);
+
+    // Test Idempotency: Running again should skip all 215 as duplicates
+    const mockPbWithExisting: any = {
+      filter: (tmpl: string) => tmpl,
+      collection: (col: string) => ({
+        getFullList: async () => createdEtiquettes.map((e) => ({ barcode: e.barcode, sourceKey: `tahesab:etiquette:${e.barcode}` })),
+        getFirstListItem: async () => null,
+        create: async () => {
+          throw new Error('Should not be called during idempotent second run');
+        },
+      }),
+    };
+
+    const secondRun = await importTahesabData(mockPbWithExisting, normalized, mappings, {
+      migrationId: 'etiquette_test_mig_2',
+      userId: 'admin_test_user',
+      dryRun: false,
+    });
+
+    expect(secondRun.importedEtiquettes).toBe(0);
+    expect(secondRun.skippedDuplicates).toBeGreaterThanOrEqual(215);
+  });
+
+  // 34. Salmanzadeh Factor 3532: Gold Etiquette Exit (2.87g) + Golden Percentage (11%, 0.316g)
+  it('34. Salmanzadeh Factor 3532: accurately normalizes and imports etiquette exit with separate golden percentage line', async () => {
+    if (!fs.existsSync(FIXTURE_PATH)) return;
+    const { rawDb } = await parseTahesabBackup(FIXTURE_PATH);
+    const info = parseBackupInfo('Version=10.0');
+    const normalized = normalizeTahesabData(rawDb, info);
+
+    const doc3532 = normalized.documents.find(
+      (d) => d.sourceFactorCode === '401174399202605311259263288343925' || (d.documentNumber === '3532' && d.sourceCustomerCode === '565'),
+    );
+    expect(doc3532).toBeDefined();
+    expect(doc3532!.sourceCustomerCode).toBe('565'); // Reza Salmanzadeh
+    expect(doc3532!.lines.length).toBe(2);
+
+    const mainLine = doc3532!.lines[0];
+    expect(mainLine.kind).toBe('etiquette');
+    expect(mainLine.isEtiquette).toBe(true);
+    expect(mainLine.etiquetteBarcode).toBe('178');
+    expect(mainLine.weight).toBe(2.87);
+    expect(mainLine.convertedWeight750).toBe(2.87);
+    expect(mainLine.wagePercent).toBe(11);
+    expect(mainLine.documentTypeLabel).toBe('خروج اتیکت طلا');
+    expect(mainLine.nature).toBe('paid');
+    expect(mainLine.signedGoldAmount).toBe(-2.87);
+
+    const goldenLine = doc3532!.lines[1];
+    expect(goldenLine.kind).toBe('etiquette');
+    expect(goldenLine.isEtiquette).toBe(true);
+    expect(goldenLine.isGoldenPercentageLine).toBe(true);
+    expect(goldenLine.parentLineNumber).toBe(1);
+    expect(goldenLine.weight).toBe(0.316);
+    expect(goldenLine.convertedWeight750).toBe(0.316);
+    expect(goldenLine.wagePercent).toBe(11);
+    expect(goldenLine.documentTypeLabel).toBe('درصد طلایی اتیکت طلا (۱۱٪)');
+    expect(goldenLine.nature).toBe('paid');
+    expect(goldenLine.signedGoldAmount).toBe(-0.316);
+
+    // Mock importer run for document 3532
+    const createdTransactions: any[] = [];
+    const mockPb: any = {
+      filter: (tmpl: string) => tmpl,
+      collection: (col: string) => ({
+        getFullList: async () => [],
+        getFirstListItem: async () => null,
+        create: async (data: any) => {
+          const rec = { id: `tx_${col}_${Date.now()}_${Math.random()}`, ...data };
+          if (col === 'transactions') createdTransactions.push(rec);
+          return rec;
+        },
+      }),
+    };
+
+    const singleDocData = {
+      ...normalized,
+      parties: normalized.parties.filter((p) => p.sourceCode === '565'),
+      documents: [doc3532!],
+    };
+
+    await importTahesabData(mockPb, singleDocData, buildInitialMappings(singleDocData, [], [], [], []), {
+      migrationId: 'test_salmanzadeh_3532',
+      dryRun: false,
+    });
+
+    expect(createdTransactions.length).toBe(2);
+    const tx1 = createdTransactions[0];
+    expect(tx1.documentTab).toBe('etiquette');
+    expect(tx1.documentSubType).toBe('exit_etiquette');
+    expect(tx1.goldAmount).toBe(-2.87);
+    const details1 = JSON.parse(tx1.documentDetails);
+    expect(details1.isEtiquette).toBe(true);
+    expect(details1.barcode).toBe('178');
+    expect(details1.hasChildLines).toBe(true);
+
+    const tx2 = createdTransactions[1];
+    expect(tx2.documentTab).toBe('etiquette');
+    expect(tx2.documentSubType).toBe('workmanship-golden-percentage');
+    expect(tx2.goldAmount).toBe(-0.316);
+    const details2 = JSON.parse(tx2.documentDetails);
+    expect(details2.isEtiquette).toBe(true);
+    expect(details2.isGoldenPercentageLine).toBe(true);
+    expect(details2.linkedLineId).toBe(tx1.id);
+  });
+
+  // 35. Salmanzadeh Factor 3531: Remittance of Gold Debt (32g) registered as "بدهی ما"
+  it('35. Salmanzadeh Factor 3531: accurately maps melted debt remittance to label="بدهی ما"', async () => {
+    if (!fs.existsSync(FIXTURE_PATH)) return;
+    const { rawDb } = await parseTahesabBackup(FIXTURE_PATH);
+    const info = parseBackupInfo('Version=10.0');
+    const normalized = normalizeTahesabData(rawDb, info);
+
+    const doc3531 = normalized.documents.find(
+      (d) => d.sourceFactorCode === '8419931482026051813312961444858552' || (d.documentNumber === '3531' && d.sourceCustomerCode === '565'),
+    );
+    expect(doc3531).toBeDefined();
+    expect(doc3531!.sourceCustomerCode).toBe('565'); // Reza Salmanzadeh
+    expect(doc3531!.lines.length).toBe(1);
+
+    const line = doc3531!.lines[0];
+    expect(line.nature).toBe('received');
+    expect(line.weight).toBe(32);
+    expect(line.convertedWeight750).toBe(32);
+    expect(line.signedGoldAmount).toBe(32);
+    expect(line.isHawala).toBe(true);
+    expect(line.documentTypeLabel).toBe('بدهی ما');
+
+    // Mock importer run for document 3531
+    const createdTransactions: any[] = [];
+    const mockPb: any = {
+      filter: (tmpl: string) => tmpl,
+      collection: (col: string) => ({
+        getFullList: async () => [],
+        getFirstListItem: async () => null,
+        create: async (data: any) => {
+          if (col === 'transactions') createdTransactions.push({ id: `tx_salman_debt_${Date.now()}`, ...data });
+          return { id: `rec_${col}_${Date.now()}`, ...data };
+        },
+      }),
+    };
+
+    const singleDocData = {
+      ...normalized,
+      parties: normalized.parties.filter((p) => p.sourceCode === '565'),
+      documents: [doc3531!],
+    };
+
+    await importTahesabData(mockPb, singleDocData, buildInitialMappings(singleDocData, [], [], [], []), {
+      migrationId: 'test_salmanzadeh_3531',
+      dryRun: false,
+    });
+
+    expect(createdTransactions.length).toBe(1);
+    const tx = createdTransactions[0];
+    expect(tx.goldAmount).toBe(32);
     const details = JSON.parse(tx.documentDetails);
-    expect(details.workmanshipName).toBe('سرویس');
-    expect(details.wagePercent).toBe(16);
-    expect(details.wageGoldWeight).toBe(5.779);
+    expect(details.documentTypeLabel).toBe('بدهی ما');
+    expect(details.claimDocumentTypeLabel).toBe('بدهی ما');
+    expect(details.claimWeight).toBe('32');
   });
 });
 

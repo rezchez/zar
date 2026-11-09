@@ -1127,7 +1127,7 @@ export function useDocumentLines({
         ? activeDraft.details.rawKind === 'misc' ? 'incoming-misc' : 'incoming-molten'
         : activeDraft.details.rawKind === 'misc' ? 'outgoing-misc' : 'outgoing-molten';
 
-    // Workmanship Operation details & Sub-rows preparation (ورود/خروج کار ساخته و مرجوعی)
+    // Workmanship Operation details & Sub-rows preparation (ورود/خروج کار ساخته، خرید/فروش و مرجوعی)
     const isWorkmanshipLine =
       lineSourceTab === 'workmanship' ||
       activeDraft.documentTab === 'workmanship' ||
@@ -1136,7 +1136,8 @@ export function useDocumentLines({
     const workmanshipOptId = Number(activeDraft.details.workmanshipOptionId || 1);
     const isWorkmanshipPhysicalOp = isWorkmanshipLine && (workmanshipOptId === 1 || workmanshipOptId === 3);
 
-    const numGoldenPct = numberValue(activeDraft.details.goldenPercentage);
+    const rawGoldenPct = activeDraft.details.goldenPercentage || activeDraft.details.profitPercentage;
+    const numGoldenPct = numberValue(rawGoldenPct);
     const numWage = numberValue(activeDraft.details.wage);
     const wageMode = activeDraft.details.wageMode || 'per_gram';
     const quantity = parseInt(activeDraft.details.quantity || '1', 10) || 1;
@@ -1147,26 +1148,37 @@ export function useDocumentLines({
     const totalWageAmount = numberValue(activeDraft.details.totalAmount) || calcTWage;
     const weightPrecision = settings?.weightDecimalPlaces ?? 3;
 
-    const hasWorkmanshipGoldenPct = isWorkmanshipPhysicalOp && numGoldenPct > 0 && rawWeight > 0;
+    const hasWorkmanshipGoldenPct = isWorkmanshipLine && numGoldenPct > 0 && rawWeight > 0;
     const hasWorkmanshipWage = isWorkmanshipPhysicalOp && (totalWageAmount > 0 || numWage > 0);
-    const hasWorkmanshipSubRows = isWorkmanshipPhysicalOp && (hasWorkmanshipGoldenPct || hasWorkmanshipWage);
+    const hasWorkmanshipSubRows = isWorkmanshipLine && (hasWorkmanshipGoldenPct || hasWorkmanshipWage);
 
     const workmanshipLinesToCommit: DocumentLine[] = [];
-    if (isWorkmanshipPhysicalOp) {
+    if (isWorkmanshipLine && (isWorkmanshipPhysicalOp || hasWorkmanshipSubRows)) {
       const mainLineId = editingLineId || activeDraft.id || generateUUID();
       const stdConvertedWeight = baseKarat > 0 ? (rawWeight * Number(activeDraft.details?.purity || baseKarat)) / baseKarat : rawWeight;
       const wName = activeDraft.details.workmanshipName?.trim() || '';
+      const effectiveGoldenPctStr = String(rawGoldenPct || '').trim();
+      const metalType = activeDraft.details.metalType || 'gold';
+      const pctLabel = getWorkmanshipPercentageLabel(metalType);
+
+      const autoMainDesc = `${lineToCommit.documentTypeLabel || 'کار ساخته'}${wName ? ` ${wName}` : ''}${effectiveGoldenPctStr ? ` — ${pctLabel}: ${toPersianDigits(effectiveGoldenPctStr)}٪` : ''}`;
+      let mainDesc = activeDraft.description?.trim();
+      if (!mainDesc || mainDesc.startsWith('ورود کار') || mainDesc.startsWith('خرید کار') || mainDesc.startsWith('خروج کار') || mainDesc.startsWith('فروش کار')) {
+        mainDesc = autoMainDesc;
+      }
 
       const mainLineToCommit: DocumentLine = {
         ...lineToCommit,
         id: mainLineId,
+        description: mainDesc,
         converted750: stdConvertedWeight,
         details: {
           ...lineToCommit.details,
           baseKarat,
           convertedWeight: stdConvertedWeight.toFixed(weightPrecision),
-          totalAmount: hasWorkmanshipWage ? '' : (lineToCommit.details.totalAmount || ''),
-          currencyTotalAmount: hasWorkmanshipWage ? '' : (lineToCommit.details.currencyTotalAmount || ''),
+          goldenPercentage: effectiveGoldenPctStr || lineToCommit.details.goldenPercentage,
+          totalAmount: isWorkmanshipPhysicalOp && hasWorkmanshipWage ? '' : (lineToCommit.details.totalAmount || ''),
+          currencyTotalAmount: isWorkmanshipPhysicalOp && hasWorkmanshipWage ? '' : (lineToCommit.details.currencyTotalAmount || ''),
           wageTotalAmount: totalWageAmount > 0 ? String(totalWageAmount) : '',
           hasChildLines: hasWorkmanshipSubRows,
         },
@@ -1186,13 +1198,13 @@ export function useDocumentLines({
           documentTab: 'workmanship',
           sourceTab: 'workmanship',
           documentSubType: 'workmanship-golden-percentage',
-          documentTypeLabel: `${pctLabel} کارساخته (${toPersianDigits(activeDraft.details.goldenPercentage || '')}٪)`,
+          documentTypeLabel: `${pctLabel} کارساخته (${toPersianDigits(effectiveGoldenPctStr)}٪)`,
           settlementMethod: 'weight',
           balanceSource: 'current',
           converted750: goldenWeight,
           description: wName
-            ? `بابت ${pctLabel} کارساخته (${toPersianDigits(activeDraft.details.goldenPercentage || '')}٪) - ${wName}`
-            : `بابت ${pctLabel} کارساخته (${toPersianDigits(activeDraft.details.goldenPercentage || '')}٪)`,
+            ? `بابت ${pctLabel} کارساخته (${toPersianDigits(effectiveGoldenPctStr)}٪) - ${wName}`
+            : `بابت ${pctLabel} کارساخته (${toPersianDigits(effectiveGoldenPctStr)}٪)`,
           details: {
             ...cleanDetails,
             metalType,
@@ -1202,7 +1214,7 @@ export function useDocumentLines({
             baseKarat,
             convertedWeight: goldenWeightStr,
             workmanshipName: wName,
-            goldenPercentage: activeDraft.details.goldenPercentage,
+            goldenPercentage: effectiveGoldenPctStr,
             totalAmount: '',
             currencyTotalAmount: '',
             currencyQuantity: '',
@@ -1663,7 +1675,7 @@ export function useDocumentLines({
                 ? 'ردیف خرید ارز با تسویه آنی ویرایش شد.'
                 : 'ردیف فروش ارز با تسویه آنی ویرایش شد.')
         );
-      } else if (isWorkmanshipPhysicalOp) {
+      } else if (isWorkmanshipLine && (hasWorkmanshipSubRows || isWorkmanshipPhysicalOp)) {
         setCommittedLines((current) => {
           const updated: DocumentLine[] = [];
           for (const line of current) {
@@ -1879,12 +1891,16 @@ export function useDocumentLines({
               : 'ردیف فروش ارز با تسویه آنی ثبت شد.',
           );
         }
-      } else if (isWorkmanshipPhysicalOp && hasWorkmanshipSubRows) {
+      } else if (isWorkmanshipLine && hasWorkmanshipSubRows) {
         setCommittedLines((current) => [...current, ...workmanshipLinesToCommit]);
         toast.success(
           lineNature === 'received'
-            ? 'ردیف ورود کار ساخته و ردیف‌های مربوطه به سند اضافه شدند.'
-            : 'ردیف خروج کار ساخته و ردیف‌های مربوطه به سند اضافه شدند.',
+            ? (workmanshipOptId === 2
+                ? 'ردیف خرید کار ساخته و ردیف درصد طلایی به سند اضافه شدند.'
+                : 'ردیف ورود کار ساخته و ردیف‌های مربوطه به سند اضافه شدند.')
+            : (workmanshipOptId === 2
+                ? 'ردیف فروش کار ساخته و ردیف درصد طلایی به سند اضافه شدند.'
+                : 'ردیف خروج کار ساخته و ردیف‌های مربوطه به سند اضافه شدند.'),
         );
       } else {
         setCommittedLines((current) => [...current, lineToCommit]);

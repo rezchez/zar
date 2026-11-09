@@ -14,12 +14,14 @@ export type DocumentTab =
   | 'expense'
   | 'coin'
   | 'our-claim'
+  | 'claim'
   | 'bank'
   | 'cash-conversion'
   | 'gold-sale'
   | 'check'
   | 'cash'
   | 'itak'
+  | 'etiquette'
   | 'workmanship'
   | 'raw-gold'
   | 'other';
@@ -34,12 +36,14 @@ export const documentTabs: Array<{ id: DocumentTab; label: string }> = [
   { id: 'expense', label: 'هزینه' },
   { id: 'coin', label: 'سکه و شمش' },
   { id: 'our-claim', label: 'طلب ما' },
+  { id: 'claim', label: 'طلب / بدهی' },
   { id: 'bank', label: 'عملیات بانکی' },
   { id: 'cash-conversion', label: 'پولی کردن' },
   { id: 'gold-sale', label: 'فروش طلا' },
   { id: 'check', label: 'چک' },
   { id: 'cash', label: 'وجه نقد' },
   { id: 'itak', label: 'ایتک' },
+  { id: 'etiquette', label: 'اتیکت' },
   { id: 'workmanship', label: 'کارساخت' },
   { id: 'raw-gold', label: 'طلا خام' },
   { id: 'other', label: 'سایر' },
