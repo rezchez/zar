@@ -61,6 +61,7 @@ import {
   getRowExtraDetails,
 } from '@/features/customers/utils/document-breakdown';
 import * as xlsx from 'xlsx';
+import LedgerReportPrintPortal from './LedgerReportPrintPortal';
 
 type LedgerOpeningBalances = {
   goldAmount: number;
@@ -172,51 +173,68 @@ const DEFAULT_COLUMNS: ColumnVisibility = {
   actions: true,
 };
 
-const COLUMN_GROUPS: {
+export type MetalFilterType = 'gold' | 'silver' | 'platinum';
+
+export const METAL_FILTER_OPTIONS: {
+  id: MetalFilterType;
+  label: string;
+  icon: string;
+  activeColor: string;
+}[] = [
+  { id: 'gold', label: 'طلا', icon: '🟡', activeColor: 'bg-amber-500 text-white border-amber-600 shadow-sm' },
+  { id: 'silver', label: 'نقره', icon: '🥈', activeColor: 'bg-slate-600 text-white border-slate-700 shadow-sm' },
+  { id: 'platinum', label: 'پلاتین', icon: '⚪', activeColor: 'bg-zinc-700 text-white border-zinc-800 shadow-sm' },
+];
+
+export function getColumnGroups(metalLabel: string = 'طلا'): {
   id: string;
   title: string;
   columns: { key: keyof ColumnVisibility; label: string; desc?: string }[];
-}[] = [
-  {
-    id: 'base',
-    title: 'ستون‌های اصلی سند',
-    columns: [
-      { key: 'tick', label: 'تیک بررسی و مغایرت‌گیری (Space)', desc: 'انتخاب ردیف برای جمع اقلام و مغایرت‌گیری' },
-      { key: 'rowNumber', label: '# (ردیف)' },
-      { key: 'date', label: 'تاریخ و ساعت سند' },
-      { key: 'docNumber', label: 'شماره سند' },
-      { key: 'customer', label: 'طرف‌حساب' },
-      { key: 'journalLine', label: 'آرتیکل سند (درختواره حساب‌ها)' },
-      { key: 'description', label: 'شرح ردیف سند' },
-    ],
-  },
-  {
-    id: 'extra',
-    title: 'ستون‌های تکمیلی تراکنش‌ها (قابل افزودن)',
-    columns: [
-      { key: 'stampNumber', label: 'شماره انگ طلا', desc: 'کد انگ آزمایشگاه' },
-      { key: 'assayLab', label: 'آزمایشگاه ری‌گیری', desc: 'مرکز عیارسنجی' },
-      { key: 'rawWeight', label: 'وزن ناخالص / کار', desc: 'وزن فیزیکی' },
-      { key: 'purity', label: 'عیار طلا', desc: 'عیار مستقیم یا شرطی' },
-      { key: 'checkDetails', label: 'مشخصات چک صیادی', desc: 'شماره، سررسید و صیاد' },
-      { key: 'bankDetails', label: 'بانک و کد پیگیری', desc: 'حساب و شماره پیگیری' },
-      { key: 'foreignCurrency', label: 'ارز و مبالغ ارزی', desc: 'نوع ارز و مبلغ' },
-    ],
-  },
-  {
-    id: 'financial',
-    title: 'گردش و مانده فلزات و مالی',
-    columns: [
-      { key: 'goldDebtor', label: 'بدهکار فلزات' },
-      { key: 'goldCreditor', label: 'بستانکار فلزات' },
-      { key: 'goldBalance', label: 'مانده فلزات' },
-      { key: 'rialDebtor', label: 'بدهکار مالی' },
-      { key: 'rialCreditor', label: 'بستانکار مالی' },
-      { key: 'rialBalance', label: 'مانده مالی' },
-      { key: 'actions', label: 'ستون عملیات' },
-    ],
-  },
-];
+}[] {
+  return [
+    {
+      id: 'base',
+      title: 'ستون‌های اصلی سند',
+      columns: [
+        { key: 'tick', label: 'تیک بررسی و مغایرت‌گیری (Space)', desc: 'انتخاب ردیف برای جمع اقلام و مغایرت‌گیری' },
+        { key: 'rowNumber', label: '# (ردیف)' },
+        { key: 'date', label: 'تاریخ و ساعت سند' },
+        { key: 'docNumber', label: 'شماره سند' },
+        { key: 'customer', label: 'طرف‌حساب' },
+        { key: 'journalLine', label: 'آرتیکل سند (درختواره حساب‌ها)' },
+        { key: 'description', label: 'شرح ردیف سند' },
+      ],
+    },
+    {
+      id: 'extra',
+      title: 'ستون‌های تکمیلی تراکنش‌ها (قابل افزودن)',
+      columns: [
+        { key: 'stampNumber', label: `شماره انگ ${metalLabel}`, desc: 'کد انگ آزمایشگاه' },
+        { key: 'assayLab', label: 'آزمایشگاه ری‌گیری', desc: 'مرکز عیارسنجی' },
+        { key: 'rawWeight', label: 'وزن ناخالص / کار', desc: 'وزن فیزیکی' },
+        { key: 'purity', label: `عیار ${metalLabel}`, desc: 'عیار مستقیم یا شرطی' },
+        { key: 'checkDetails', label: 'مشخصات چک صیادی', desc: 'شماره، سررسید و صیاد' },
+        { key: 'bankDetails', label: 'بانک و کد پیگیری', desc: 'حساب و شماره پیگیری' },
+        { key: 'foreignCurrency', label: 'ارز و مبالغ ارزی', desc: 'نوع ارز و مبلغ' },
+      ],
+    },
+    {
+      id: 'financial',
+      title: `گردش و مانده ${metalLabel} و مالی`,
+      columns: [
+        { key: 'goldDebtor', label: `بدهکار ${metalLabel}` },
+        { key: 'goldCreditor', label: `بستانکار ${metalLabel}` },
+        { key: 'goldBalance', label: `مانده ${metalLabel}` },
+        { key: 'rialDebtor', label: 'بدهکار مالی' },
+        { key: 'rialCreditor', label: 'بستانکار مالی' },
+        { key: 'rialBalance', label: 'مانده مالی' },
+        { key: 'actions', label: 'ستون عملیات' },
+      ],
+    },
+  ];
+}
+
+const COLUMN_GROUPS = getColumnGroups('طلا');
 
 const DATE_PRESETS = [
   { id: 'today', label: 'امروز' },
@@ -511,8 +529,23 @@ export default function CustomerLedgerReport({
   const dateRangeRef = useRef<HTMLDivElement>(null);
   const datePickerDialogRef = useRef<HTMLDivElement>(null);
   const [activeTab, setActiveTab] = useState('all');
+  const [selectedMetal, setSelectedMetal] = useState<MetalFilterType>('gold');
   const [sortParam, setSortParam] = useState<'date_asc' | 'date_desc' | 'doc_num'>('date_asc');
   const [searchTerm, setSearchTerm] = useState('');
+
+  const metalLabel = useMemo(() => {
+    switch (selectedMetal) {
+      case 'silver':
+        return 'نقره';
+      case 'platinum':
+        return 'پلاتین';
+      case 'gold':
+      default:
+        return 'طلا';
+    }
+  }, [selectedMetal]);
+
+  const columnGroups = useMemo(() => getColumnGroups(metalLabel), [metalLabel]);
 
   useEffect(() => {
     if (!openDatePicker) return;
@@ -542,6 +575,40 @@ export default function CustomerLedgerReport({
   // Table display options
   const [isCompact, setIsCompact] = useState(false);
   const [copiedDoc, setCopiedDoc] = useState<string | null>(null);
+
+  // Dedicated Print State for High-Fidelity A4 and A5 Reports
+  const [printPaperSize, setPrintPaperSize] = useState<'A4' | 'A5'>('A4');
+  const [isPrinting, setIsPrinting] = useState<boolean>(false);
+
+  const handleTriggerPrint = (size: 'A4' | 'A5') => {
+    setPrintPaperSize(size);
+    setIsPrinting(true);
+  };
+
+  useEffect(() => {
+    if (!isPrinting) return;
+
+    document.body.setAttribute('data-printing-ledger-report', printPaperSize);
+
+    const raf1 = requestAnimationFrame(() => {
+      const raf2 = requestAnimationFrame(() => {
+        window.print();
+      });
+    });
+
+    const handleAfterPrint = () => {
+      document.body.removeAttribute('data-printing-ledger-report');
+      setIsPrinting(false);
+    };
+
+    window.addEventListener('afterprint', handleAfterPrint);
+
+    return () => {
+      cancelAnimationFrame(raf1);
+      window.removeEventListener('afterprint', handleAfterPrint);
+      document.body.removeAttribute('data-printing-ledger-report');
+    };
+  }, [isPrinting, printPaperSize]);
 
   // Column Visibility & Customization state
   const [visibleColumns, setVisibleColumns] = useState<ColumnVisibility>(() => {
@@ -712,6 +779,18 @@ export default function CustomerLedgerReport({
     rialAmount: 0,
   });
 
+  const openingMetalAmount = useMemo(() => {
+    switch (selectedMetal) {
+      case 'silver':
+        return openingBalances.silverAmount || 0;
+      case 'platinum':
+        return openingBalances.platinumAmount || 0;
+      case 'gold':
+      default:
+        return openingBalances.goldAmount || 0;
+    }
+  }, [selectedMetal, openingBalances]);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [searched, setSearched] = useState(false);
@@ -864,11 +943,42 @@ export default function CustomerLedgerReport({
 
   // Calculate Running Balances chronologically without heavy DOM rendering
   const fullCalculatedLedger = useMemo(() => {
-    let runningGold = openingBalances.goldAmount || 0;
+    const initialMetalBalance =
+      selectedMetal === 'silver'
+        ? openingBalances.silverAmount || 0
+        : selectedMetal === 'platinum'
+        ? openingBalances.platinumAmount || 0
+        : openingBalances.goldAmount || 0;
+
+    let runningGold = initialMetalBalance;
     let runningRial = openingBalances.rialAmount || 0;
 
+    // Filter transactions relevant to selected metal (strictly separate metals)
+    const filteredByMetal = transactions.filter((t) => {
+      const gAmt = Number(t.goldAmount) || 0;
+      const sAmt = Number(t.silverAmount) || 0;
+      const pAmt = Number(t.platinumAmount) || 0;
+
+      if (selectedMetal === 'gold') {
+        if (gAmt !== 0) return true;
+        if (sAmt !== 0 || pAmt !== 0) return false;
+        return true;
+      }
+      if (selectedMetal === 'silver') {
+        if (sAmt !== 0) return true;
+        if (gAmt !== 0 || pAmt !== 0) return false;
+        return true;
+      }
+      if (selectedMetal === 'platinum') {
+        if (pAmt !== 0) return true;
+        if (gAmt !== 0 || sAmt !== 0) return false;
+        return true;
+      }
+      return true;
+    });
+
     // Chronological order for running balance
-    const chronological = [...transactions].sort((a, b) => {
+    const chronological = [...filteredByMetal].sort((a, b) => {
       const dateA = a.documentDateJalali || a.transactionDate || '';
       const dateB = b.documentDateJalali || b.transactionDate || '';
       return dateA.localeCompare(dateB);
@@ -887,15 +997,20 @@ export default function CustomerLedgerReport({
     >();
 
     for (const t of chronological) {
-      const gAmt = Number(t.goldAmount) || 0;
+      const mAmt =
+        selectedMetal === 'silver'
+          ? Number(t.silverAmount) || 0
+          : selectedMetal === 'platinum'
+          ? Number(t.platinumAmount) || 0
+          : Number(t.goldAmount) || 0;
       const rAmt = Number(t.rialAmount) || 0;
 
-      const goldDebtor = gAmt < 0 ? Math.abs(gAmt) : 0;
-      const goldCreditor = gAmt > 0 ? gAmt : 0;
+      const goldDebtor = mAmt < 0 ? Math.abs(mAmt) : 0;
+      const goldCreditor = mAmt > 0 ? mAmt : 0;
       const rialDebtor = rAmt < 0 ? Math.abs(rAmt) : 0;
       const rialCreditor = rAmt > 0 ? rAmt : 0;
 
-      runningGold += gAmt;
+      runningGold += mAmt;
       runningRial += rAmt;
 
       calculatedMap.set(t.id, {
@@ -908,7 +1023,7 @@ export default function CustomerLedgerReport({
       });
     }
 
-    const mapped = transactions.map((t) => {
+    const mapped = filteredByMetal.map((t) => {
       const calc = calculatedMap.get(t.id) || {
         runningGold: 0,
         runningRial: 0,
@@ -953,25 +1068,44 @@ export default function CustomerLedgerReport({
     }
 
     return mapped;
-  }, [transactions, openingBalances, sortState, sortParam]);
+  }, [transactions, openingBalances, selectedMetal, sortState, sortParam]);
 
   // Check if there is a non-zero balance carried forward strictly prior to fromDate
   const hasPreviousBalance = useMemo(() => {
     if (!fromDate) return false;
-    const gold = Math.abs(openingBalances.goldAmount || 0);
+    const metalAmt =
+      selectedMetal === 'silver'
+        ? Math.abs(openingBalances.silverAmount || 0)
+        : selectedMetal === 'platinum'
+        ? Math.abs(openingBalances.platinumAmount || 0)
+        : Math.abs(openingBalances.goldAmount || 0);
     const rial = Math.abs(openingBalances.rialAmount || 0);
-    const silver = Math.abs(openingBalances.silverAmount || 0);
-    const platinum = Math.abs(openingBalances.platinumAmount || 0);
     const foreign = Object.values(openingBalances.foreignBalances || {}).some(
       (v) => Math.abs(v) > 0.0001,
     );
-    return gold > 0.0005 || rial > 50 || silver > 0.0005 || platinum > 0.0005 || foreign;
-  }, [fromDate, openingBalances]);
+    return metalAmt > 0.0005 || rial > 50 || foreign;
+  }, [fromDate, openingBalances, selectedMetal]);
+
+  // Dynamic counts for each metal option
+  const metalCounts = useMemo(() => {
+    let gold = 0;
+    let silver = 0;
+    let platinum = 0;
+    for (const t of transactions) {
+      const gAmt = Number(t.goldAmount) || 0;
+      const sAmt = Number(t.silverAmount) || 0;
+      const pAmt = Number(t.platinumAmount) || 0;
+      if (gAmt !== 0) gold++;
+      if (sAmt !== 0) silver++;
+      if (pAmt !== 0) platinum++;
+    }
+    return { gold, silver, platinum };
+  }, [transactions]);
 
   // Dynamic counts for each category filter button
   const categoryCounts = useMemo(() => {
     const counts: Record<string, number> = {
-      all: transactions.length,
+      all: fullCalculatedLedger.length,
       'raw-gold': 0,
       'gold-sale': 0,
       bank: 0,
@@ -979,7 +1113,7 @@ export default function CustomerLedgerReport({
       discount: 0,
       coin: 0,
     };
-    for (const t of transactions) {
+    for (const t of fullCalculatedLedger) {
       if (matchesLedgerCategoryFilter(t, 'raw-gold')) counts['raw-gold']++;
       if (matchesLedgerCategoryFilter(t, 'gold-sale')) counts['gold-sale']++;
       if (matchesLedgerCategoryFilter(t, 'bank')) counts.bank++;
@@ -988,7 +1122,7 @@ export default function CustomerLedgerReport({
       if (matchesLedgerCategoryFilter(t, 'coin')) counts.coin++;
     }
     return counts;
-  }, [transactions]);
+  }, [fullCalculatedLedger]);
 
   // Visible Ledger Rows: filtered by active category tab and live search
   const ledgerRows = useMemo(() => {
@@ -1015,8 +1149,15 @@ export default function CustomerLedgerReport({
       totalRialCreditor += row.rialCreditor;
     }
 
+    const initialMetalBalance =
+      selectedMetal === 'silver'
+        ? openingBalances.silverAmount || 0
+        : selectedMetal === 'platinum'
+        ? openingBalances.platinumAmount || 0
+        : openingBalances.goldAmount || 0;
+
     const finalGold =
-      (openingBalances.goldAmount || 0) + totalGoldCreditor - totalGoldDebtor;
+      initialMetalBalance + totalGoldCreditor - totalGoldDebtor;
     const finalRial =
       (openingBalances.rialAmount || 0) + totalRialCreditor - totalRialDebtor;
 
@@ -1029,7 +1170,7 @@ export default function CustomerLedgerReport({
       finalRial,
       count: ledgerRows.length,
     };
-  }, [ledgerRows, openingBalances]);
+  }, [ledgerRows, openingBalances, selectedMetal]);
 
   // Paginated Rows: only the active page is parsed and rendered in DOM
   const totalPages = Math.max(1, Math.ceil(ledgerRows.length / pageSize));
@@ -1180,10 +1321,17 @@ export default function CustomerLedgerReport({
 
     if (selectedRowIds['carried-forward'] && hasPreviousBalance) {
       count += 1;
-      if (openingBalances.goldAmount < 0) {
-        goldDebtor += Math.abs(openingBalances.goldAmount);
-      } else if (openingBalances.goldAmount > 0) {
-        goldCreditor += openingBalances.goldAmount;
+      const metalOpening =
+        selectedMetal === 'silver'
+          ? openingBalances.silverAmount
+          : selectedMetal === 'platinum'
+          ? openingBalances.platinumAmount
+          : openingBalances.goldAmount;
+
+      if (metalOpening < 0) {
+        goldDebtor += Math.abs(metalOpening);
+      } else if (metalOpening > 0) {
+        goldCreditor += metalOpening;
       }
       if (openingBalances.rialAmount < 0) {
         rialDebtor += Math.abs(openingBalances.rialAmount);
@@ -1223,7 +1371,46 @@ export default function CustomerLedgerReport({
       rialDiscrepancy,
       isRialBalanced,
     };
-  }, [selectedRowIds, ledgerRows, hasPreviousBalance, openingBalances]);
+  }, [selectedRowIds, ledgerRows, hasPreviousBalance, openingBalances, selectedMetal]);
+
+  // Dedicated rows and stats for high-fidelity multi-page printing (A4 / A5)
+  const rowsForPrint = useMemo(() => {
+    const isTickedMode = tickedStats.count > 0;
+    const targetRows = isTickedMode
+      ? ledgerRows.filter((r) => selectedRowIds[r.id])
+      : ledgerRows;
+
+    return targetRows.map((item, idx) => ({
+      ...item,
+      rowNumber: idx + 1,
+      breakdown: parseTransactionBreakdown(item),
+      journalLine: getJournalLineBadge(item),
+      lineDescription: getDocumentLineDescription(item),
+      extra: getRowExtraDetails(item),
+    }));
+  }, [ledgerRows, selectedRowIds, tickedStats.count]);
+
+  const printStats = useMemo(() => {
+    if (tickedStats.count > 0) {
+      return {
+        count: tickedStats.count,
+        totalGoldDebtor: tickedStats.goldDebtor,
+        totalGoldCreditor: tickedStats.goldCreditor,
+        finalGold: tickedStats.goldCreditor - tickedStats.goldDebtor,
+        totalRialDebtor: tickedStats.rialDebtor,
+        totalRialCreditor: tickedStats.rialCreditor,
+        finalRial: tickedStats.rialCreditor - tickedStats.rialDebtor,
+      };
+    }
+    return totalStats;
+  }, [tickedStats, totalStats]);
+
+  const printHasPreviousBalance = useMemo(() => {
+    if (tickedStats.count > 0) {
+      return !!selectedRowIds['carried-forward'] && hasPreviousBalance;
+    }
+    return hasPreviousBalance;
+  }, [tickedStats.count, selectedRowIds, hasPreviousBalance]);
 
   // Space key and Arrow keys listener for rapid keyboard audit & ticking
   useEffect(() => {
@@ -1312,10 +1499,10 @@ export default function CustomerLedgerReport({
         'آرتیکل سند (سرفصل معین)',
         'شرح (توضیح ردیف سند)',
         'یادداشت و جزئیات پیگیری',
-        'بدهکار طلا (گرم)',
-        'بستانکار طلا (گرم)',
-        'مانده طلا (گرم)',
-        'وضعیت طلا',
+        `بدهکار ${metalLabel} (گرم)`,
+        `بستانکار ${metalLabel} (گرم)`,
+        `مانده ${metalLabel} (گرم)`,
+        `وضعیت ${metalLabel}`,
         `بدهکار مالی (${baseCurrencySymbol})`,
         `بستانکار مالی (${baseCurrencySymbol})`,
         `مانده مالی (${baseCurrencySymbol})`,
@@ -1332,12 +1519,12 @@ export default function CustomerLedgerReport({
         'مانده منقول',
         `مانده منقول از دوره قبل (پیش از ${fromDate})`,
         'انتقال مانده پیشین',
-        openingBalances.goldAmount < 0 ? Math.abs(openingBalances.goldAmount) : 0,
-        openingBalances.goldAmount > 0 ? openingBalances.goldAmount : 0,
-        Math.abs(openingBalances.goldAmount),
-        openingBalances.goldAmount > 0
+        openingMetalAmount < 0 ? Math.abs(openingMetalAmount) : 0,
+        openingMetalAmount > 0 ? openingMetalAmount : 0,
+        Math.abs(openingMetalAmount),
+        openingMetalAmount > 0
           ? 'بستانکار (طلب از ما)'
-          : openingBalances.goldAmount < 0
+          : openingMetalAmount < 0
           ? 'بدهکار (به ما)'
           : 'تسویه',
         openingBalances.rialAmount < 0 ? Math.abs(openingBalances.rialAmount) : 0,
@@ -1442,7 +1629,7 @@ export default function CustomerLedgerReport({
     const rowsHtml: string[] = [];
 
     if (hasPreviousBalance) {
-      const gBal = openingBalances.goldAmount;
+      const gBal = openingMetalAmount;
       const rBal = openingBalances.rialAmount;
       rowsHtml.push(`
         <tr style="background-color: #f1f5f9; font-weight: bold;">
@@ -1452,14 +1639,14 @@ export default function CustomerLedgerReport({
           <td>${customerTitle}</td>
           <td>مانده منقول</td>
           <td>مانده منقول از دوره قبل (پیش از ${fromDate || 'ابتدای دوره'})</td>
-          <td style="text-align: left; font-family: monospace;">${gBal < 0 ? formatWeight(Math.abs(gBal)) : '۰'}</td>
-          <td style="text-align: left; font-family: monospace;">${gBal > 0 ? formatWeight(gBal) : '۰'}</td>
-          <td style="text-align: left; font-family: monospace; color: ${gBal > 0.0005 ? '#059669' : gBal < -0.0005 ? '#e11d48' : '#334155'};">
+          <td style="text-align: left;">${gBal < 0 ? formatWeight(Math.abs(gBal)) : '۰'}</td>
+          <td style="text-align: left;">${gBal > 0 ? formatWeight(gBal) : '۰'}</td>
+          <td style="text-align: left; color: ${gBal > 0.0005 ? '#059669' : gBal < -0.0005 ? '#e11d48' : '#334155'};">
             ${formatWeight(Math.abs(gBal))} ${gBal > 0.0005 ? '(بس)' : gBal < -0.0005 ? '(بد)' : ''}
           </td>
-          <td style="text-align: left; font-family: monospace;">${rBal < 0 ? formatMoney(Math.abs(rBal)) : '۰'}</td>
-          <td style="text-align: left; font-family: monospace;">${rBal > 0 ? formatMoney(rBal) : '۰'}</td>
-          <td style="text-align: left; font-family: monospace; color: ${rBal > 50 ? '#059669' : rBal < -50 ? '#e11d48' : '#334155'};">
+          <td style="text-align: left;">${rBal < 0 ? formatMoney(Math.abs(rBal)) : '۰'}</td>
+          <td style="text-align: left;">${rBal > 0 ? formatMoney(rBal) : '۰'}</td>
+          <td style="text-align: left; color: ${rBal > 50 ? '#059669' : rBal < -50 ? '#e11d48' : '#334155'};">
             ${formatMoney(Math.abs(rBal))} ${rBal > 50 ? '(بس)' : rBal < -50 ? '(بد)' : ''}
           </td>
         </tr>
@@ -1490,19 +1677,19 @@ export default function CustomerLedgerReport({
         <tr>
           <td style="text-align: center;">${idx + 1}</td>
           <td style="white-space: nowrap;">${row.documentDateJalali || row.transactionDate?.slice(0, 10) || '—'}</td>
-          <td style="text-align: center; font-family: monospace; font-weight: bold;">${row.documentNumber || '—'}</td>
+          <td style="text-align: center; font-weight: bold;">${row.documentNumber || '—'}</td>
           <td>${rowCustName}</td>
           <td>${jTitle}</td>
           <td>
             <div style="font-weight: 600;">${pDesc}</div>
             ${sDesc}
           </td>
-          <td style="text-align: left; font-family: monospace;">${gDeb}</td>
-          <td style="text-align: left; font-family: monospace;">${gCred}</td>
-          <td style="text-align: left; font-family: monospace; font-weight: bold; color: ${gColor};">${gBal} ${gStatus}</td>
-          <td style="text-align: left; font-family: monospace;">${rDeb}</td>
-          <td style="text-align: left; font-family: monospace;">${rCred}</td>
-          <td style="text-align: left; font-family: monospace; font-weight: bold; color: ${rColor};">${rBal} ${rStatus}</td>
+          <td style="text-align: left;">${gDeb}</td>
+          <td style="text-align: left;">${gCred}</td>
+          <td style="text-align: left; font-weight: bold; color: ${gColor};">${gBal} ${gStatus}</td>
+          <td style="text-align: left;">${rDeb}</td>
+          <td style="text-align: left;">${rCred}</td>
+          <td style="text-align: left; font-weight: bold; color: ${rColor};">${rBal} ${rStatus}</td>
         </tr>
       `);
     });
@@ -1616,9 +1803,9 @@ export default function CustomerLedgerReport({
           <th>طرف‌حساب</th>
           <th>سرفصل معین</th>
           <th>شرح ردیف سند</th>
-          <th style="text-align: left;">بدهکار طلا (g)</th>
-          <th style="text-align: left;">بستانکار طلا (g)</th>
-          <th style="text-align: left;">مانده طلا (g)</th>
+          <th style="text-align: left;">بدهکار ${metalLabel} (g)</th>
+          <th style="text-align: left;">بستانکار ${metalLabel} (g)</th>
+          <th style="text-align: left;">مانده ${metalLabel} (g)</th>
           <th style="text-align: left;">بدهکار (${baseCurrencySymbol})</th>
           <th style="text-align: left;">بستانکار (${baseCurrencySymbol})</th>
           <th style="text-align: left;">مانده (${baseCurrencySymbol})</th>
@@ -1630,14 +1817,14 @@ export default function CustomerLedgerReport({
       <tfoot>
         <tr>
           <td colspan="6" style="text-align: center;">مجموع گردش و مانده نهایی (${totalStats.count} ردیف)</td>
-          <td style="text-align: left; font-family: monospace;">${formatWeight(totalStats.totalGoldDebtor)}</td>
-          <td style="text-align: left; font-family: monospace;">${formatWeight(totalStats.totalGoldCreditor)}</td>
-          <td style="text-align: left; font-family: monospace; color: ${totalStats.finalGold > 0.0005 ? '#059669' : totalStats.finalGold < -0.0005 ? '#e11d48' : '#334155'};">
+          <td style="text-align: left;">${formatWeight(totalStats.totalGoldDebtor)}</td>
+          <td style="text-align: left;">${formatWeight(totalStats.totalGoldCreditor)}</td>
+          <td style="text-align: left; color: ${totalStats.finalGold > 0.0005 ? '#059669' : totalStats.finalGold < -0.0005 ? '#e11d48' : '#334155'};">
             ${formatWeight(Math.abs(totalStats.finalGold))} ${totalStats.finalGold > 0.0005 ? '(بس)' : totalStats.finalGold < -0.0005 ? '(بد)' : ''}
           </td>
-          <td style="text-align: left; font-family: monospace;">${formatMoney(totalStats.totalRialDebtor)}</td>
-          <td style="text-align: left; font-family: monospace;">${formatMoney(totalStats.totalRialCreditor)}</td>
-          <td style="text-align: left; font-family: monospace; color: ${totalStats.finalRial > 50 ? '#059669' : totalStats.finalRial < -50 ? '#e11d48' : '#334155'};">
+          <td style="text-align: left;">${formatMoney(totalStats.totalRialDebtor)}</td>
+          <td style="text-align: left;">${formatMoney(totalStats.totalRialCreditor)}</td>
+          <td style="text-align: left; color: ${totalStats.finalRial > 50 ? '#059669' : totalStats.finalRial < -50 ? '#e11d48' : '#334155'};">
             ${formatMoney(Math.abs(totalStats.finalRial))} ${totalStats.finalRial > 50 ? '(بس)' : totalStats.finalRial < -50 ? '(بد)' : ''}
           </td>
         </tr>
@@ -2073,6 +2260,51 @@ export default function CustomerLedgerReport({
           </div>
         </div>
 
+        {/* Metal Separation Filter Row */}
+        <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300">
+              <Scale size={14} className="text-amber-500" />
+              <span>تفکیک فلز گزارش:</span>
+            </div>
+            <div className="flex items-center gap-2 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0 scrollbar-none">
+              {METAL_FILTER_OPTIONS.map((metal) => {
+                const isActive = selectedMetal === metal.id;
+                const count = metalCounts[metal.id] ?? 0;
+                return (
+                  <button
+                    key={metal.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedMetal(metal.id);
+                      setCurrentPage(1);
+                    }}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-xl font-bold transition-all border whitespace-nowrap cursor-pointer select-none active:scale-95 ${
+                      isActive
+                        ? metal.activeColor
+                        : 'bg-slate-50/80 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-700/60 border-slate-200 dark:border-slate-700/80'
+                    }`}
+                  >
+                    <span>{metal.icon}</span>
+                    <span>{metal.label}</span>
+                    {searched && (
+                      <span
+                        className={`px-1.5 py-0.2 text-[10px] rounded-full font-mono font-bold leading-tight ${
+                          isActive
+                            ? 'bg-black/20 dark:bg-white/25'
+                            : 'bg-slate-200/80 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
+                        }`}
+                      >
+                        {count.toLocaleString('fa-IR')}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
         {/* Category Filter Buttons Row */}
         <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80">
           <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-2.5">
@@ -2196,11 +2428,11 @@ export default function CustomerLedgerReport({
       {/* KPI Balance Summary Cards */}
       {searched && (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3 non-printable">
-          {/* Gold Balance */}
+          {/* Metal Balance */}
           <div className="p-4 rounded-2xl bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-900/50 flex flex-col justify-between">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-amber-800 dark:text-amber-300">
-                مانده طلا (۷۵۰)
+                مانده {metalLabel} ({selectedMetal === 'gold' ? '۷۵۰' : selectedMetal === 'silver' ? '۹۹۹/عادی' : 'پلاتین'})
               </span>
               <span className="p-1.5 rounded-lg bg-amber-500/20 text-amber-700 dark:text-amber-300">
                 <Scale size={16} />
@@ -2224,7 +2456,7 @@ export default function CustomerLedgerReport({
                   ? 'طلبکار از ما (بستانکار)'
                   : totalStats.finalGold < -0.0005
                   ? 'بدهکار به ما (بدهکار)'
-                  : 'حساب طلایی تسویه است'}
+                  : `حساب ${metalLabel} تسویه است`}
               </p>
             </div>
             <div className="mt-2 pt-2 border-t border-amber-200/60 dark:border-amber-900/40 flex justify-between text-[11px] text-slate-500 tabular-nums">
@@ -2389,15 +2621,35 @@ export default function CustomerLedgerReport({
                 <span>خروجی HTML</span>
               </button>
 
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-sky-300 dark:border-sky-700/80 bg-white dark:bg-slate-900 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-950/40 transition-all font-bold text-[11px] shadow-2xs"
-                title="چاپ یا ذخیره PDF محیط جدول به صورت افقی در اندازه A4"
-              >
-                <Printer size={13} className="text-sky-600" />
-                <span>چاپ A4</span>
-              </button>
+              <div className="flex items-center rounded-lg border border-sky-300 dark:border-sky-700/80 bg-white dark:bg-slate-900 p-0.5 shadow-2xs">
+                <button
+                  type="button"
+                  onClick={() => handleTriggerPrint('A4')}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-md text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-950/40 transition-all font-bold text-[11px]"
+                  title={
+                    tickedStats.count > 0
+                      ? `چاپ اقلام انتخابی (${toPersianDigits(tickedStats.count)} ردیف) در اندازه A4 افقی استاندارد`
+                      : 'چاپ کامل گزارش در اندازه A4 افقی استاندارد'
+                  }
+                >
+                  <Printer size={13} className="text-sky-600" />
+                  <span>چاپ A4</span>
+                </button>
+                <span className="w-px h-3.5 bg-sky-200 dark:bg-sky-800" />
+                <button
+                  type="button"
+                  onClick={() => handleTriggerPrint('A5')}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-md text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-950/40 transition-all font-bold text-[11px]"
+                  title={
+                    tickedStats.count > 0
+                      ? `چاپ اقلام انتخابی (${toPersianDigits(tickedStats.count)} ردیف) در اندازه A5 عمودی استاندارد`
+                      : 'چاپ کامل گزارش در اندازه A5 عمودی استاندارد'
+                  }
+                >
+                  <Printer size={13} className="text-sky-600" />
+                  <span>چاپ A5</span>
+                </button>
+              </div>
 
               <span className="text-slate-300 dark:text-slate-700 mx-0.5">|</span>
 
@@ -2480,7 +2732,7 @@ export default function CustomerLedgerReport({
                     </div>
 
                     <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
-                      {COLUMN_GROUPS.map((group) => (
+                      {columnGroups.map((group) => (
                         <div key={group.id} className="space-y-1.5">
                           <h4 className="text-[11px] font-bold text-slate-400 dark:text-slate-500">
                             {group.title}
@@ -2652,21 +2904,6 @@ export default function CustomerLedgerReport({
             id="printable-ledger-table-area"
             className="border border-slate-300 dark:border-slate-700 rounded-2xl overflow-hidden shadow-sm bg-white dark:bg-slate-900"
           >
-            {/* Dedicated Print-only Header for Official Accounting Table */}
-            <div className="hidden print:block p-4 border-b-2 border-slate-900 text-slate-950 bg-white">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h1 className="text-base font-black text-slate-950">گزارش جامع ریز اسناد و صورت‌حساب طرف‌حساب‌ها</h1>
-                  <p className="text-xs font-bold text-slate-700 mt-1">
-                    طرف‌حساب: {selectedCustomer ? `${selectedCustomer.name} (${selectedCustomer.customerCode || '—'})` : 'کلیه طرف‌حساب‌ها'}
-                  </p>
-                </div>
-                <div className="text-left text-xs font-mono text-slate-700 space-y-0.5">
-                  <div>تاریخ گزارش: {new Date().toLocaleDateString('fa-IR')}</div>
-                  <div>بازه تاریخی: از {fromDate || 'ابتدای دوره'} تا {toDate || 'اکنون'}</div>
-                </div>
-              </div>
-            </div>
             <div className="overflow-auto max-h-[calc(100vh-220px)] min-h-[400px] relative scrollbar-thin">
               <table
                 className="w-full text-xs text-right whitespace-nowrap border-collapse border border-slate-200 dark:border-slate-700/80 font-sans table-fixed"
@@ -2972,7 +3209,7 @@ export default function CustomerLedgerReport({
                       >
                         <div className="flex items-center justify-center gap-1">
                           <Scale size={13} className="text-amber-600 dark:text-amber-400" />
-                          <span>گردش و مانده فلزات</span>
+                          <span>گردش و مانده {metalLabel}</span>
                         </div>
                       </th>
                     )}
@@ -3043,7 +3280,7 @@ export default function CustomerLedgerReport({
                           className="relative p-2 text-left border-l border-slate-300 dark:border-slate-700 bg-amber-200 dark:bg-amber-900 font-black text-amber-950 dark:text-amber-100 select-none overflow-visible"
                         >
                           <SortableHeader column="goldBalance" currentSort={sortState} onSort={handleHeaderSort} align="left">
-                            مانده فلزات (g)
+                            مانده {metalLabel} (g)
                           </SortableHeader>
                           <ColumnResizer
                             colKey="goldBalance"
@@ -3193,8 +3430,8 @@ export default function CustomerLedgerReport({
                           className="p-2.5 text-left tabular-nums text-rose-600 dark:text-rose-400 border-l border-slate-200 dark:border-slate-800"
                           dir="ltr"
                         >
-                          {openingBalances.goldAmount < 0
-                            ? formatWeight(Math.abs(openingBalances.goldAmount))
+                          {openingMetalAmount < 0
+                            ? formatWeight(Math.abs(openingMetalAmount))
                             : '—'}
                         </td>
                       )}
@@ -3203,8 +3440,8 @@ export default function CustomerLedgerReport({
                           className="p-2.5 text-left tabular-nums text-emerald-600 dark:text-emerald-400 border-l border-slate-200 dark:border-slate-800"
                           dir="ltr"
                         >
-                          {openingBalances.goldAmount > 0
-                            ? formatWeight(openingBalances.goldAmount)
+                          {openingMetalAmount > 0
+                            ? formatWeight(openingMetalAmount)
                             : '—'}
                         </td>
                       )}
@@ -3215,18 +3452,18 @@ export default function CustomerLedgerReport({
                         >
                           <span
                             className={
-                              openingBalances.goldAmount > 0.0005
+                              openingMetalAmount > 0.0005
                                 ? 'text-emerald-700 dark:text-emerald-300'
-                                : openingBalances.goldAmount < -0.0005
+                                : openingMetalAmount < -0.0005
                                 ? 'text-rose-700 dark:text-rose-300'
                                 : 'text-slate-400'
                             }
                           >
-                            {formatWeight(Math.abs(openingBalances.goldAmount))}{' '}
+                            {formatWeight(Math.abs(openingMetalAmount))}{' '}
                             <span className="text-[10px]">
-                              {openingBalances.goldAmount > 0.0005
+                              {openingMetalAmount > 0.0005
                                 ? '(بس)'
-                                : openingBalances.goldAmount < -0.0005
+                                : openingMetalAmount < -0.0005
                                 ? '(بد)'
                                 : ''}
                             </span>
@@ -3884,78 +4121,24 @@ export default function CustomerLedgerReport({
         </div>
       )}
 
-      {/* Printable Styles for Clean A4 Landscape (محیط جدول فقط) */}
-      <style
-        dangerouslySetInnerHTML={{
-          __html: `
-        @media print {
-          /* پنهان کردن کل بدنه و عناصر صفحه وب */
-          body * {
-            visibility: hidden !important;
-          }
-          /* نمایش انحصاری محیط جدول ریز اسناد */
-          #printable-ledger-table-area,
-          #printable-ledger-table-area * {
-            visibility: visible !important;
-          }
-          #printable-ledger-table-area {
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
-            width: 100% !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            background: white !important;
-            color: black !important;
-            box-shadow: none !important;
-            border: none !important;
-            border-radius: 0 !important;
-            overflow: visible !important;
-          }
-          .non-printable {
-            display: none !important;
-          }
-          #printable-ledger-table-area .overflow-auto,
-          #printable-ledger-table-area .overflow-hidden {
-            overflow: visible !important;
-            max-height: none !important;
-            height: auto !important;
-          }
-          #printable-ledger-table-area table {
-            border-collapse: collapse !important;
-            width: 100% !important;
-            min-width: 100% !important;
-            max-width: 100% !important;
-            table-layout: auto !important;
-            page-break-inside: auto !important;
-          }
-          #printable-ledger-table-area colgroup {
-            display: none !important;
-          }
-          thead {
-            display: table-header-group !important;
-          }
-          tfoot {
-            display: table-footer-group !important;
-          }
-          tr {
-            page-break-inside: avoid !important;
-            page-break-after: auto !important;
-          }
-          th, td {
-            border: 1px solid #475569 !important;
-            padding: 3px 5px !important;
-            font-size: 8pt !important;
-            color: #000000 !important;
-            background: transparent !important;
-          }
-          @page {
-            size: A4 landscape;
-            margin: 8mm;
-          }
-        }
-      `,
-        }}
+      {/* Dedicated Multi-Page Print Portal (A4 Landscape & A5 Portrait with repeated headers, footer page numbering & final summary) */}
+      <LedgerReportPrintPortal
+        paperSize={printPaperSize}
+        metalType={selectedMetal}
+        metalLabel={metalLabel}
+        customer={selectedCustomer}
+        fromDate={fromDate}
+        toDate={toDate}
+        categoryLabel={CATEGORY_FILTER_BUTTONS.find((b) => b.id === activeTab)?.label}
+        hasPreviousBalance={printHasPreviousBalance}
+        openingBalances={openingBalances}
+        rows={rowsForPrint}
+        totalStats={printStats}
+        visibleColumns={visibleColumns}
+        baseCurrencySymbol={baseCurrencySymbol}
+        settings={settings}
+        formatMoney={formatMoney}
+        formatWeight={formatWeight}
       />
     </div>
   );
