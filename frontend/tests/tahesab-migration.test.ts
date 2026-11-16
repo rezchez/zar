@@ -2842,6 +2842,289 @@ describe('Tahesab Accounting Migration Engine Tests', () => {
     expect(details.claimDocumentTypeLabel).toBe('بدهی ما');
     expect(details.claimWeight).toBe('32');
   });
+
+  // 36. Weight Debt Migration & Breakdown (e.g. Factor 4806)
+  it('36. Weight Debt Migration & Breakdown: accurately identifies weight-only debt as "بدهی وزنی ما" and displays correct ledger line description', async () => {
+    const { getDocumentLineDescription, getJournalLineBadge, parseTransactionBreakdown } = await import('@/features/customers/utils/document-breakdown');
+
+    const mockDebtRow: any = {
+      id: 'tx_test_debt_4806',
+      documentNumber: 'ZF74661138',
+      description: 'بدهی وزنی ما',
+      transactionType: 'document',
+      documentTab: 'claim',
+      documentSubType: 'our-debt',
+      documentNature: 'received',
+      goldAmount: 0.084,
+      rialAmount: 0,
+      documentDetails: JSON.stringify({
+        sourceSystem: 'tahesab',
+        sourceFactorCode: '670517514202611151524292897924806',
+        sourceLineNumber: 2,
+        metalType: 'gold',
+        baseKarat: 750,
+        weight: 0.084,
+        grade: 750,
+        convertedWeight750: 0.084,
+        documentTypeLabel: 'بدهی وزنی ما',
+        claimDocumentTypeLabel: 'بدهی وزنی ما',
+        claimWeight: '0.084',
+        claimFinancial: '',
+        sourceTab: 'claim',
+      }),
+    };
+
+    const lineDesc = getDocumentLineDescription(mockDebtRow);
+    expect(lineDesc.primary).toBe('بدهی وزنی ما');
+
+    const badge = getJournalLineBadge(mockDebtRow);
+    expect(badge.accountCode).toBe('۲۱۲۰');
+    expect(badge.accountTitle).toBe('بدهی به طرف حساب‌ها');
+    expect(badge.subCategory).toBe('بدهی وزنی ما');
+
+    const breakdown = parseTransactionBreakdown(mockDebtRow);
+    expect(breakdown.category).toBe('claim');
+    expect(breakdown.categoryLabel).toBe('بدهی وزنی ما');
+  });
+
+  // 37. Hawala Remittance Direction & Accounting Badge (ZF72687185)
+  it('37. Hawala Direction & Accounting Badge: accurately maps incoming remittance to "حواله طلا از: ..." and accounting 2120', async () => {
+    const {
+      getDocumentLineDescription,
+      getJournalLineBadge,
+      parseTransactionBreakdown,
+    } = await import('@/features/customers/utils/document-breakdown');
+
+    const mockHawalaRow: any = {
+      id: 'diinkkk7rkme0an',
+      documentNumber: 'ZF72687185',
+      customerCode: 514,
+      description: '(حواله از: 399 مغازه)',
+      documentTab: 'raw-gold',
+      documentSubType: 'incoming-molten',
+      documentNature: 'received',
+      goldAmount: -0.082,
+      rialAmount: 0,
+      documentDetails: JSON.stringify({
+        sourceSystem: 'tahesab',
+        sourceFactorCode: '955382514202609222245058199854778',
+        sourceLineNumber: 1,
+        metalType: 'gold',
+        baseKarat: 750,
+        rawKind: 'molten',
+        rawWeight: '0.082',
+        purity: '750',
+        transferToken: '130912399202609222244213176024787#51322',
+        transferSide: 'destination',
+        weight: 0.082,
+        grade: 750,
+        convertedWeight750: 0.082,
+        isConditional: false,
+        partySide: 'creditor',
+        signedGoldAmount: -0.082,
+        isHawala: true,
+        hawalaGroupId: '130912399202609222244213176024787#51322',
+        hawalaCounterCustomerId: '7esd5c8kbktbfvo',
+        hawalaCounterCustomerCode: '399',
+        hawalaCounterCustomerName: 'مغازه',
+        documentTypeLabel: 'حواله طلا',
+      }),
+    };
+
+    const lineDesc = getDocumentLineDescription(mockHawalaRow);
+    expect(lineDesc.primary).toBe('حواله طلا از: مغازه (399)');
+
+    const badge = getJournalLineBadge(mockHawalaRow);
+    expect(badge.accountCode).toBe('۲۱۲۰');
+    expect(badge.accountTitle).toBe('بدهی به طرف حساب‌ها');
+    expect(badge.subCategory).toBe('حواله دریافتی طلا');
+    expect(badge.badgeColor).toBe('purple');
+
+    const breakdown = parseTransactionBreakdown(mockHawalaRow);
+    expect(breakdown.category).toBe('gold-raw');
+    expect(breakdown.categoryLabel).toBe('حواله طلا');
+    expect(breakdown.badgeColor).toBe('purple');
+
+    // Counterpart (Maghaze 399 - Hawala TO Reza Chegini)
+    const mockHawalaCounterpart: any = {
+      id: 'k5vs8uobcgwv045',
+      documentNumber: 'ZF11171771',
+      customerCode: 399,
+      description: '(حواله به: 514 رضا چگینی)',
+      documentTab: 'raw-gold',
+      documentSubType: 'incoming-molten',
+      documentNature: 'received',
+      goldAmount: 0.082,
+      rialAmount: 0,
+      documentDetails: JSON.stringify({
+        sourceSystem: 'tahesab',
+        sourceFactorCode: '130912399202609222244213176024787',
+        sourceLineNumber: 3,
+        metalType: 'gold',
+        baseKarat: 750,
+        rawKind: 'molten',
+        rawWeight: '0.082',
+        purity: '750',
+        transferToken: '130912399202609222244213176024787#51322',
+        transferSide: 'source',
+        weight: 0.082,
+        grade: 750,
+        convertedWeight750: 0.082,
+        isConditional: false,
+        partySide: 'debtor',
+        signedGoldAmount: 0.082,
+        isHawala: true,
+        hawalaGroupId: '130912399202609222244213176024787#51322',
+        hawalaCounterCustomerId: 'kacn4iepcv5slnu',
+        hawalaCounterCustomerCode: '514',
+        hawalaCounterCustomerName: 'رضا چگینی',
+        documentTypeLabel: 'حواله طلا',
+      }),
+    };
+
+    const counterDesc = getDocumentLineDescription(mockHawalaCounterpart);
+    expect(counterDesc.primary).toBe('حواله طلا به: رضا چگینی (514)');
+
+    const counterBadge = getJournalLineBadge(mockHawalaCounterpart);
+    expect(counterBadge.accountCode).toBe('۱۱۲۰');
+    expect(counterBadge.accountTitle).toBe('اسناد و حساب‌های دریافتنی');
+    expect(counterBadge.subCategory).toBe('حواله پرداختی طلا');
+    expect(counterBadge.badgeColor).toBe('purple');
+  });
+
+  // 38. Cash Remittance Direction & Debtor/Creditor Ledger Assignment
+  it('38. Cash Remittance Direction & Debtor/Creditor Ledger Assignment: accurately identifies cash hawala from raw rkh as debtor and displays 1120 badge', async () => {
+    const {
+      getDocumentLineDescription,
+      getJournalLineBadge,
+    } = await import('@/features/customers/utils/document-breakdown');
+
+    // 1. Normalization verification
+    const rawDb: TahesabRawDatabase = {
+      moshtarian: [
+        { code: '514', name: 'رضا چگینی', Arz: 'IRR', tahesabtala: '0', tahesabriali: '0', JamV_T: '0', JamV_P: '0' },
+        { code: '577', name: 'خانم عبدی', Arz: 'IRR', tahesabtala: '0', tahesabriali: '0', JamV_T: '0', JamV_P: '0' },
+      ],
+      hesab: [
+        {
+          Factor_Code: 'F_CASH_HAWALA_REC',
+          mcode: '514',
+          sh_factor: '6',
+          Tarikh: '2026-08-03 15:13:36.537',
+          Rec: 'رضا چگینی',
+        },
+        {
+          Factor_Code: 'F_CASH_HAWALA_SND',
+          mcode: '577',
+          sh_factor: '6',
+          Tarikh: '2026-08-03 16:28:01',
+          Rec: 'خانم عبدی',
+        },
+      ],
+      hesab_detail: [
+        {
+          Factor_Code: 'F_CASH_HAWALA_REC',
+          mcode: '514',
+          no: 'طلب',
+          Sharh: '(حواله از: 577 خانم عبدی)',
+          Command: '#HAVALEH#231424577#47090',
+          rial_kh: '8295000',
+          Tahesab_p: '-8295000',
+        },
+        {
+          Factor_Code: 'F_CASH_HAWALA_SND',
+          mcode: '577',
+          no: 'بدهی',
+          Sharh: '(حواله به: 514 رضا چگینی)',
+          Command: '#hshbe#231424577#47090',
+          rial_V: '8295000',
+          Tahesab_p: '0',
+        },
+      ],
+      Hesab_bank: [],
+      bank: [],
+      Sekeh_Shemsh: [],
+      Sang: [],
+      raygiri: [],
+      khar_sakhte: [],
+      Cities: [],
+      Hazine_Baabat: [],
+      gorooh: [],
+      otherTables: {},
+    };
+
+    const norm = normalizeTahesabData(rawDb, { mohitCount: 1, dbType: 'SQL', version: '10.0', archiveCount: 0 });
+    const docRec = norm.documents.find((d) => d.sourceFactorCode === 'F_CASH_HAWALA_REC');
+    expect(docRec).toBeDefined();
+    const lineRec = docRec!.lines[0];
+    expect(lineRec.kind).toBe('cash');
+    expect(lineRec.nature).toBe('paid');
+    expect(lineRec.partySide).toBe('debtor');
+    expect(lineRec.signedRialAmount).toBe(-8295000);
+    expect(lineRec.documentTypeLabel).toBe('حواله نقدی');
+
+    const docSnd = norm.documents.find((d) => d.sourceFactorCode === 'F_CASH_HAWALA_SND');
+    expect(docSnd).toBeDefined();
+    const lineSnd = docSnd!.lines[0];
+    expect(lineSnd.kind).toBe('cash');
+    expect(lineSnd.nature).toBe('received');
+    expect(lineSnd.partySide).toBe('creditor');
+    expect(lineSnd.signedRialAmount).toBe(8295000);
+    expect(lineSnd.documentTypeLabel).toBe('حواله نقدی');
+
+    // 2. Ledger breakdown & badge verification
+    const mockTx514: any = {
+      id: '14pzjtf8agd9ese',
+      documentNumber: 'ZF85062996',
+      customerCode: 514,
+      description: '(حواله از: 577 خانم عبدی)',
+      documentTab: 'cash',
+      documentSubType: 'cash-out',
+      documentNature: 'paid',
+      goldAmount: 0,
+      rialAmount: -8295000,
+      documentDetails: JSON.stringify({
+        ...lineRec,
+        hawalaCounterCustomerCode: '577',
+        hawalaCounterCustomerName: 'خانم عبدی',
+      }),
+    };
+
+    const desc514 = getDocumentLineDescription(mockTx514);
+    expect(desc514.primary).toBe('حواله نقدی از: خانم عبدی (577)');
+
+    const badge514 = getJournalLineBadge(mockTx514);
+    expect(badge514.accountCode).toBe('۱۱۲۰');
+    expect(badge514.accountTitle).toBe('اسناد و حساب‌های دریافتنی');
+    expect(badge514.subCategory).toBe('حواله دریافتی نقدی');
+    expect(badge514.badgeColor).toBe('purple');
+
+    const mockTx577: any = {
+      id: 'ezetluqlbqk2yfi',
+      documentNumber: 'ZF98288226',
+      customerCode: 577,
+      description: '(حواله به: 514 رضا چگینی)',
+      documentTab: 'cash',
+      documentSubType: 'cash-in',
+      documentNature: 'received',
+      goldAmount: 0,
+      rialAmount: 8295000,
+      documentDetails: JSON.stringify({
+        ...lineSnd,
+        hawalaCounterCustomerCode: '514',
+        hawalaCounterCustomerName: 'رضا چگینی',
+      }),
+    };
+
+    const desc577 = getDocumentLineDescription(mockTx577);
+    expect(desc577.primary).toBe('حواله نقدی به: رضا چگینی (514)');
+
+    const badge577 = getJournalLineBadge(mockTx577);
+    expect(badge577.accountCode).toBe('۲۱۲۰');
+    expect(badge577.accountTitle).toBe('بدهی به طرف حساب‌ها');
+    expect(badge577.subCategory).toBe('حواله پرداختی نقدی');
+    expect(badge577.badgeColor).toBe('purple');
+  });
 });
 
 

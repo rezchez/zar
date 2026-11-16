@@ -703,7 +703,9 @@ export async function importTahesabData(
                     migrationId,
                     metalType: isSilverLine ? 'silver' : isGoldLine ? 'gold' : undefined,
                     baseKarat: isSilverLine ? 999 : isGoldLine ? 750 : undefined,
-                    rawKind: isGoldLine
+                    rawKind: (line.kind === 'claim' || line.documentTypeLabel?.includes('بدهی') || line.documentTypeLabel?.includes('طلب'))
+                      ? undefined
+                      : isGoldLine
                       ? (line.kind === 'conditional' || line.isConditional)
                         ? 'conditional'
                         : line.kind === 'melted'
@@ -891,7 +893,7 @@ export async function importTahesabData(
                     documentSequence: docSeq,
                     documentNumberPrefixSnapshot: activePrefix,
                     documentNumber: lineDocNum,
-                    description: line.description || `سند ته‌حساب #${doc.documentNumber}`,
+                    description: line.description || line.documentTypeLabel || `سند ته‌حساب #${doc.documentNumber}`,
                     goldAmount:
                       line.metalType === 'gold'
                         ? (typeof line.signedGoldAmount === 'number'

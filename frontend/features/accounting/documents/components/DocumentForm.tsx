@@ -135,7 +135,7 @@ export default function DocumentForm({
     if (initialEditDocumentId) return initialEditDocumentId;
     if (typeof window !== 'undefined') {
       const sp = new URLSearchParams(window.location.search);
-      return sp.get('editDocumentId') || sp.get('editId') || '';
+      return sp.get('editDocumentId') || sp.get('editId') || sp.get('edit') || '';
     }
     return '';
   });

@@ -604,7 +604,7 @@ export function normalizeTahesabData(
         (Boolean(detectedForeignCurrency) || isCurrencyTrade || isForeignCashOrClaim) &&
         !hasGoldWeight;
 
-      if (isCurrency) {
+      if (isCurrency || (!hasGoldWeight && (rv > 0 || rkh > 0) && tabdil === 0 && vazn === 0)) {
         metalType = 'none';
       }
 
@@ -678,21 +678,31 @@ export function normalizeTahesabData(
 
       // Determine Money Direction (ورود / خروج)
       let moneyNature: 'received' | 'paid' | 'none' = 'none';
-      if (isHavalehAz) {
-        moneyNature = 'received';
-      } else if (isHavalehBe) {
-        moneyNature = 'paid';
-      } else if (rowNo.includes('خرید ارز')) {
-        moneyNature = 'received';
-      } else if (rowNo.includes('فروش ارز')) {
-        moneyNature = 'paid';
-      } else if (isCurrency && (rowNo === 'طلب' || rowNo.includes('ورود'))) {
-        moneyNature = 'received';
-      } else if (isCurrency && (rowNo === 'بدهی' || rowNo.includes('خروج'))) {
-        moneyNature = 'paid';
+      if (isCurrency) {
+        if (isHavalehAz) {
+          moneyNature = 'received';
+        } else if (isHavalehBe) {
+          moneyNature = 'paid';
+        } else if (rowNo.includes('خرید ارز')) {
+          moneyNature = 'received';
+        } else if (rowNo.includes('فروش ارز')) {
+          moneyNature = 'paid';
+        } else if (rowNo === 'طلب' || rowNo.includes('ورود')) {
+          moneyNature = 'received';
+        } else if (rowNo === 'بدهی' || rowNo.includes('خروج')) {
+          moneyNature = 'paid';
+        } else if (rv > 0) {
+          moneyNature = 'received';
+        } else if (rkh > 0) {
+          moneyNature = 'paid';
+        }
       } else if (rv > 0) {
         moneyNature = 'received';
       } else if (rkh > 0) {
+        moneyNature = 'paid';
+      } else if (isHavalehAz) {
+        moneyNature = 'received';
+      } else if (isHavalehBe) {
         moneyNature = 'paid';
       } else if (amountIrr > 0 || (foreignAmt && foreignAmt > 0)) {
         if (rowNo.includes('ورود') || rowNo.includes('خرید') || rowNo.includes('بدهی')) {
@@ -775,7 +785,7 @@ export function normalizeTahesabData(
       } else if (isCurrencyTrade) {
         kind = 'currency';
       } else if (isHawala) {
-        if (converted750 > 0 || vazn > 0 || metalType === 'gold' || metalType === 'silver') {
+        if ((converted750 > 0 || vazn > 0) && (metalType === 'gold' || metalType === 'silver')) {
           kind = isConditional ? 'conditional' : 'melted';
         } else if (isCurrency || (foreignAmt && foreignAmt > 0)) {
           kind = 'currency';
@@ -815,18 +825,30 @@ export function normalizeTahesabData(
         documentTypeLabel = nature === 'paid' ? 'خروج کار ساخته' : 'ورود کار ساخته';
       } else if (isHawala) {
         // If remittance to/from shop account (حساب مغازه) with بدهی/طلب, it reflects direct store debt/claim
-        const isShopAccountTransfer = dSharh.includes('حساب مغازه') || dSharh.includes('مغازه');
+        const isShopAccountTransfer = dSharh.includes('حساب مغازه');
         if (isShopAccountTransfer && rowNo === 'بدهی') {
           documentTypeLabel = 'بدهی ما';
         } else if (isShopAccountTransfer && rowNo === 'طلب') {
           documentTypeLabel = 'طلب ما';
+        } else if (isCurrency) {
+          documentTypeLabel = 'حواله ارزی';
+        } else if (amountIrr > 0 && converted750 === 0 && vazn === 0 && !hasGoldWeight) {
+          documentTypeLabel = 'حواله نقدی';
         } else {
-          documentTypeLabel = 'حواله طلا';
+          documentTypeLabel = isConditional ? 'حواله طلای شرطی' : 'حواله طلا';
         }
       } else if (rowNo === 'بدهی' || kind === 'claim') {
-        documentTypeLabel = (rowNo === 'بدهی' || nature === 'received') ? 'بدهی ما' : 'طلب ما';
+        const hasFin = amountIrr > 0;
+        const hasWt = vazn > 0 || converted750 > 0;
+        if (rowNo === 'بدهی' || nature === 'received') {
+          documentTypeLabel = (hasFin && hasWt) ? 'بدهی مالی و وزنی ما' : hasWt ? 'بدهی وزنی ما' : hasFin ? 'بدهی مالی ما' : 'بدهی ما';
+        } else {
+          documentTypeLabel = (hasFin && hasWt) ? 'طلب مالی و وزنی ما' : hasWt ? 'طلب وزنی ما' : hasFin ? 'طلب مالی ما' : 'طلب ما';
+        }
       } else if (rowNo === 'طلب') {
-        documentTypeLabel = 'طلب ما';
+        const hasFin = amountIrr > 0;
+        const hasWt = vazn > 0 || converted750 > 0;
+        documentTypeLabel = (hasFin && hasWt) ? 'طلب مالی و وزنی ما' : hasWt ? 'طلب وزنی ما' : hasFin ? 'طلب مالی ما' : 'طلب ما';
       }
 
       const isLineOpening =
@@ -845,6 +867,7 @@ export function normalizeTahesabData(
         dBaabat ||
         dNoKar ||
         (dTemp ? dTemp : '') ||
+        (kind === 'claim' && documentTypeLabel ? documentTypeLabel : '') ||
         (isConditional
           ? `${nature === 'received' ? 'ورود' : 'خروج'} آبشده شرطی (${vazn > 0 ? `${vazn} گرم` : ''}${ayar > 0 ? ` عیار ${ayar}` : ''})${shSharti ? ` [رسید ${shSharti}${parseText(dRow.name_az) ? ' ' + parseText(dRow.name_az) : ''}]` : ''}`.trim()
           : '')

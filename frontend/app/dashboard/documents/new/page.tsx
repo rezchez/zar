@@ -12,13 +12,13 @@ export const dynamic = 'force-dynamic';
 export default async function NewDocumentPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ editDocumentId?: string; editId?: string }>;
+  searchParams?: Promise<{ editDocumentId?: string; editId?: string; edit?: string }>;
 }) {
   const context = await getServerAuthContext();
   if (!context) redirect('/');
 
   const resolvedParams = searchParams ? await searchParams : {};
-  const editDocumentId = resolvedParams.editDocumentId || resolvedParams.editId || '';
+  const editDocumentId = resolvedParams.editDocumentId || resolvedParams.editId || resolvedParams.edit || '';
 
   const [customers, currencies, quotes] = await Promise.all([
     getCustomers(context.pb),

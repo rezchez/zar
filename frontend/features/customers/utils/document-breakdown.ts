@@ -37,8 +37,68 @@ export function parseTransactionBreakdown(transaction: CustomerTransaction): Lin
     Boolean(details.currencyQuantity);
   const hasGold = (Number(transaction.goldAmount) || 0) !== 0 || Boolean(details.rawWeight || details.weight);
 
+  const isHawala =
+    details.isHawala === true ||
+    Boolean(details.hawalaGroupId) ||
+    Boolean(details.transferToken);
+
+  const isClaim =
+    !isHawala &&
+    (tab === 'claim' ||
+      details.sourceTab === 'claim' ||
+      subType === 'our-debt' ||
+      subType === 'our-claim' ||
+      subType === 'debt' ||
+      subType === 'claim' ||
+      Boolean(details.claimDocumentTypeLabel));
+
+  // 0. Claim / Debt (طلب / بدهی ما)
+  if (isClaim) {
+    const isPaid = (transaction.documentNature === 'paid') || transaction.goldAmount < 0 || transaction.rialAmount < 0;
+    const hasWt = (Number(transaction.goldAmount) || 0) !== 0 || Boolean(details.claimWeight || details.rawWeight);
+    const hasFin = (Number(transaction.rialAmount) || 0) !== 0 || Boolean(details.claimFinancial || details.totalAmount);
+    const label =
+      details.claimDocumentTypeLabel && details.claimDocumentTypeLabel !== 'بدهی ما' && details.claimDocumentTypeLabel !== 'طلب ما'
+        ? details.claimDocumentTypeLabel
+        : isPaid
+        ? hasWt && hasFin
+          ? 'طلب مالی و وزنی ما'
+          : hasWt
+          ? 'طلب وزنی ما'
+          : hasFin
+          ? 'طلب مالی ما'
+          : 'طلب ما'
+        : hasWt && hasFin
+        ? 'بدهی مالی و وزنی ما'
+        : hasWt
+        ? 'بدهی وزنی ما'
+        : hasFin
+        ? 'بدهی مالی ما'
+        : 'بدهی ما';
+
+    if (hasWt) {
+      const wtVal = Math.abs(Number(transaction.goldAmount) || Number(details.claimWeight) || Number(details.rawWeight) || 0);
+      attributes.push({ label: 'وزن', value: `${wtVal.toFixed(3).replace(/\.?0+$/, '')} گرم`, isMono: true });
+    }
+    if (hasFin) {
+      const finVal = Math.abs(Number(transaction.rialAmount) || Number(details.claimFinancial) || Number(details.totalAmount) || 0);
+      attributes.push({ label: 'مبلغ', value: `${Math.floor(finVal / 10).toLocaleString('fa-IR')} تومان`, isMono: true });
+    }
+    if (details.claimPurpose) {
+      attributes.push({ label: 'بابت', value: String(details.claimPurpose) });
+    }
+
+    return {
+      category: 'claim',
+      categoryLabel: label,
+      badgeColor: isPaid ? 'sky' : 'slate',
+      attributes,
+    };
+  }
+
   // 1. Raw Gold / Molten / Conditional / Misc (ورود و خروج وزنی)
   if (
+    !isClaim &&
     !isCurrency &&
     tab !== 'bank' && tab !== 'check' && tab !== 'cash' &&
     tab !== 'workmanship' && !subType.includes('workmanship') &&
@@ -742,6 +802,7 @@ export function getJournalLineBadge(transaction: CustomerTransaction): JournalLi
   const subType = (transaction.documentSubType || '').toLowerCase();
   const nature = transaction.documentNature;
   const isPaid = nature === 'paid' || transaction.goldAmount < 0 || transaction.rialAmount < 0;
+  const isReceived = !isPaid;
 
   const isCurrency =
     tab === 'currency' ||
@@ -753,6 +814,145 @@ export function getJournalLineBadge(transaction: CustomerTransaction): JournalLi
     details.isUnsettled === true ||
     details.unsettledTrade === true ||
     transaction.settlementMethod === 'unsettled';
+
+  const isHawala =
+    details.isHawala === true ||
+    Boolean(details.hawalaGroupId) ||
+    Boolean(details.transferToken);
+
+  const isClaim =
+    !isHawala &&
+    (tab === 'claim' ||
+      details.sourceTab === 'claim' ||
+      subType === 'our-debt' ||
+      subType === 'our-claim' ||
+      subType === 'debt' ||
+      subType === 'claim' ||
+      Boolean(details.claimDocumentTypeLabel));
+
+  // 0. Claim / Debt (اسناد و حساب‌های دریافتنی ۱۱۲۰ / بدهی به طرف حساب‌ها ۲۱۲۰)
+  if (isClaim) {
+    const hasWt = (Number(transaction.goldAmount) || 0) !== 0 || Boolean(details.claimWeight || details.rawWeight);
+    const hasFin = (Number(transaction.rialAmount) || 0) !== 0 || Boolean(details.claimFinancial || details.totalAmount);
+    if (isPaid) {
+      const subCat = hasWt && hasFin ? 'طلب مالی و وزنی ما' : hasWt ? 'طلب وزنی ما' : hasFin ? 'طلب مالی ما' : 'طلب ما';
+      return {
+        accountCode: '۱۱۲۰',
+        accountTitle: 'اسناد و حساب‌های دریافتنی',
+        generalCode: '۱۱۰۰',
+        generalTitle: 'دارایی‌های جاری',
+        groupCode: '۱۰۰۰',
+        groupTitle: 'دارایی‌ها',
+        treePath: 'دارایی‌ها > دارایی‌های جاری > اسناد و حساب‌های دریافتنی (۱۱۲۰)',
+        subCategory: subCat,
+        badgeColor: 'sky',
+      };
+    } else {
+      const subCat = hasWt && hasFin ? 'بدهی مالی و وزنی ما' : hasWt ? 'بدهی وزنی ما' : hasFin ? 'بدهی مالی ما' : 'بدهی ما';
+      return {
+        accountCode: '۲۱۲۰',
+        accountTitle: 'بدهی به طرف حساب‌ها',
+        generalCode: '۲۱۰۰',
+        generalTitle: 'بدهی‌های جاری',
+        groupCode: '۲۰۰۰',
+        groupTitle: 'بدهی‌ها',
+        treePath: 'بدهی‌ها > بدهی‌های جاری > بدهی به طرف حساب‌ها (۲۱۲۰)',
+        subCategory: subCat,
+        badgeColor: 'slate',
+      };
+    }
+  }
+
+  // 0.5. Hawala (حواله طلا، حواله نقدی، حواله ارزی)
+  if (isHawala) {
+    const isHawalaReceived =
+      transaction.description?.includes('حواله از')
+        ? true
+        : transaction.description?.includes('حواله به')
+        ? false
+        : details.transferSide === 'destination'
+        ? true
+        : details.transferSide === 'source'
+        ? false
+        : details.hawalaDirection === 'incoming'
+        ? true
+        : details.hawalaDirection === 'outgoing'
+        ? false
+        : subType.includes('incoming')
+        ? true
+        : subType.includes('outgoing')
+        ? false
+        : nature === 'received' || isReceived;
+
+    let subCat = '';
+    if (hasGold) {
+      const isConditional =
+        details.isConditional || subType.includes('conditional') || details.rawKind === 'conditional';
+      subCat = isConditional
+        ? (isHawalaReceived ? 'حواله دریافتی طلای شرطی' : 'حواله پرداختی طلای شرطی')
+        : (isHawalaReceived ? 'حواله دریافتی طلا' : 'حواله پرداختی طلا');
+    } else if (isCurrency) {
+      subCat = isHawalaReceived ? 'حواله دریافتی ارزی' : 'حواله پرداختی ارزی';
+    } else {
+      subCat = isHawalaReceived ? 'حواله دریافتی نقدی' : 'حواله پرداختی نقدی';
+    }
+
+    if (isCurrency) {
+      if (!isPaid || isHawalaReceived) {
+        return {
+          accountCode: '۱۱۲۰',
+          accountTitle: 'اسناد و حساب‌های دریافتنی',
+          generalCode: '۱۱۰۰',
+          generalTitle: 'دارایی‌های جاری',
+          groupCode: '۱۰۰۰',
+          groupTitle: 'دارایی‌ها',
+          treePath: 'دارایی‌ها > دارایی‌های جاری > اسناد و حساب‌های دریافتنی (۱۱۲۰)',
+          subCategory: subCat,
+          badgeColor: 'sky',
+        };
+      } else {
+        return {
+          accountCode: '۲۱۲۰',
+          accountTitle: 'بدهی به طرف حساب‌ها',
+          generalCode: '۲۱۰۰',
+          generalTitle: 'بدهی‌های جاری',
+          groupCode: '۲۰۰۰',
+          groupTitle: 'بدهی‌ها',
+          treePath: 'بدهی‌ها > بدهی‌های جاری > بدهی به طرف حساب‌ها (۲۱۲۰)',
+          subCategory: subCat,
+          badgeColor: 'sky',
+        };
+      }
+    }
+
+    const isPartyDebtor = details.partySide === 'debtor' || (!details.partySide && (nature === 'paid' || isPaid));
+    const isCreditor = details.partySide === 'creditor' || (!isPartyDebtor && isHawalaReceived);
+    if (isCreditor) {
+      return {
+        accountCode: '۲۱۲۰',
+        accountTitle: 'بدهی به طرف حساب‌ها',
+        generalCode: '۲۱۰۰',
+        generalTitle: 'بدهی‌های جاری',
+        groupCode: '۲۰۰۰',
+        groupTitle: 'بدهی‌ها',
+        treePath: 'بدهی‌ها > بدهی‌های جاری > بدهی به طرف حساب‌ها (۲۱۲۰)',
+        subCategory: subCat,
+        badgeColor: 'purple',
+      };
+    } else {
+      return {
+        accountCode: '۱۱۲۰',
+        accountTitle: 'اسناد و حساب‌های دریافتنی',
+        generalCode: '۱۱۰۰',
+        generalTitle: 'دارایی‌های جاری',
+        groupCode: '۱۰۰۰',
+        groupTitle: 'دارایی‌ها',
+        treePath: 'دارایی‌ها > دارایی‌های جاری > اسناد و حساب‌های دریافتنی (۱۱۲۰)',
+        subCategory: subCat,
+        badgeColor: 'purple',
+      };
+    }
+  }
 
   // 1. Discount (تخفیفات فروش ۴۱۶۰ / تخفیفات نقدی خرید ۵۱۶۰)
   if (tab === 'discount' || subType.includes('discount')) {
@@ -904,6 +1104,7 @@ export function getJournalLineBadge(transaction: CustomerTransaction): JournalLi
 
   // 5. Raw Gold / Molten / Conditional / Misc / Trade (طلای آبشده، خام، شرطی، متفرقه، معاملات خرید و فروش طلا)
   if (
+    !isClaim &&
     !isCurrency &&
     (tab === 'raw-gold' ||
       tab === 'gold-raw' ||
@@ -1213,6 +1414,16 @@ export function getDocumentLineDescription(transaction: CustomerTransaction): Do
     Boolean(details.hawalaGroupId) ||
     Boolean(details.transferToken);
 
+  const isClaim =
+    !isHawala &&
+    (tab === 'claim' ||
+      details.sourceTab === 'claim' ||
+      subType === 'our-debt' ||
+      subType === 'our-claim' ||
+      subType === 'debt' ||
+      subType === 'claim' ||
+      Boolean(details.claimDocumentTypeLabel));
+
   const hawalaPartner =
     details.hawalaCounterCustomerName ||
     details.counterCustomerName ||
@@ -1228,19 +1439,67 @@ export function getDocumentLineDescription(transaction: CustomerTransaction): Do
     ? (hawalaCode ? `${hawalaPartner} (${hawalaCode})` : hawalaPartner)
     : '';
 
-  // 1. Hawala (حواله طلا، حواله نقدی، حواله ارزی)
-  if (isHawala) {
+  const isHawalaReceived =
+    transaction.description?.includes('حواله از')
+      ? true
+      : transaction.description?.includes('حواله به')
+      ? false
+      : details.transferSide === 'destination'
+      ? true
+      : details.transferSide === 'source'
+      ? false
+      : details.hawalaDirection === 'incoming'
+      ? true
+      : details.hawalaDirection === 'outgoing'
+      ? false
+      : subType.includes('incoming')
+      ? true
+      : subType.includes('outgoing')
+      ? false
+      : nature === 'received' || isReceived;
+
+  // 1. Claim & Debt (طلب / بدهی ما)
+  if (isClaim) {
+    const hasWt = (Number(transaction.goldAmount) || 0) !== 0 || Boolean(details.claimWeight || details.rawWeight);
+    const hasFin = (Number(transaction.rialAmount) || 0) !== 0 || Boolean(details.claimFinancial || details.totalAmount);
+
+    let claimTitle = '';
+    if (details.claimDocumentTypeLabel && details.claimDocumentTypeLabel !== 'بدهی ما' && details.claimDocumentTypeLabel !== 'طلب ما') {
+      claimTitle = details.claimDocumentTypeLabel;
+    } else if (details.documentTypeLabel && details.documentTypeLabel !== 'بدهی ما' && details.documentTypeLabel !== 'طلب ما' && (details.documentTypeLabel.includes('طلب') || details.documentTypeLabel.includes('بدهی'))) {
+      claimTitle = details.documentTypeLabel;
+    } else if (isPaid) {
+      claimTitle = (hasFin && hasWt) ? 'طلب مالی و وزنی ما' : hasWt ? 'طلب وزنی ما' : hasFin ? 'طلب مالی ما' : 'طلب ما';
+    } else {
+      claimTitle = (hasFin && hasWt) ? 'بدهی مالی و وزنی ما' : hasWt ? 'بدهی وزنی ما' : hasFin ? 'بدهی مالی ما' : 'بدهی ما';
+    }
+
+    if (isHawala && hawalaDisplay) {
+      primary = isHawalaReceived
+        ? `${claimTitle} (حواله از: ${hawalaDisplay})`
+        : `${claimTitle} (حواله به: ${hawalaDisplay})`;
+    } else {
+      primary = claimTitle;
+    }
+
+    if (details.claimPurpose) {
+      extraInfoParts.push(`بابت: ${details.claimPurpose}`);
+    }
+  }
+
+  // 1.5. Hawala (حواله طلا، حواله نقدی، حواله ارزی)
+  else if (isHawala) {
     if (hasGold) {
       const hawalaTitle = isConditional ? 'حواله طلای شرطی' : 'حواله طلا';
-      primary = isReceived
+      primary = isHawalaReceived
         ? (hawalaDisplay ? `${hawalaTitle} از: ${hawalaDisplay}` : `دریافت ${hawalaTitle}`)
         : (hawalaDisplay ? `${hawalaTitle} به: ${hawalaDisplay}` : `پرداخت ${hawalaTitle}`);
     } else if (isCurrency) {
-      primary = isReceived
+      primary = isHawalaReceived
         ? (hawalaDisplay ? `حواله ارزی از: ${hawalaDisplay}` : 'دریافت حواله ارزی')
         : (hawalaDisplay ? `حواله ارزی به: ${hawalaDisplay}` : 'پرداخت حواله ارزی');
     } else {
-      primary = isReceived
+      primary = isHawalaReceived
         ? (hawalaDisplay ? `حواله نقدی از: ${hawalaDisplay}` : 'دریافت حواله نقدی')
         : (hawalaDisplay ? `حواله نقدی به: ${hawalaDisplay}` : 'پرداخت حواله نقدی');
     }
@@ -1248,6 +1507,7 @@ export function getDocumentLineDescription(transaction: CustomerTransaction): Do
 
   // 2. Raw Gold / Molten / Conditional / Misc / Gold Trade
   else if (
+    !isClaim &&
     !isCurrency &&
     tab !== 'bank' && tab !== 'check' && tab !== 'cash' &&
     !isWorkmanshipItem &&
@@ -1642,13 +1902,25 @@ export function getDocumentLineDescription(transaction: CustomerTransaction): Do
       (trimmedDesc === primary.trim() ||
         primary.includes(trimmedDesc) ||
         (hawalaPartner && trimmedDesc.includes(hawalaPartner)));
+    const isRedundantClaimDesc =
+      isClaim &&
+      (trimmedDesc === primary.trim() ||
+        trimmedDesc === 'بدهی ما' ||
+        trimmedDesc === 'طلب ما' ||
+        trimmedDesc === 'بدهی وزنی ما' ||
+        trimmedDesc === 'طلب وزنی ما' ||
+        trimmedDesc === 'بدهی مالی ما' ||
+        trimmedDesc === 'طلب مالی ما' ||
+        trimmedDesc === 'بدهی مالی و وزنی ما' ||
+        trimmedDesc === 'طلب مالی و وزنی ما');
     if (
       !isRedundantCoinDesc &&
       !isRedundantCheckDesc &&
       !isRedundantStoneDesc &&
       !isRedundantWorkmanshipDesc &&
       !isRedundantRawGoldDesc &&
-      !isRedundantHawalaDesc
+      !isRedundantHawalaDesc &&
+      !isRedundantClaimDesc
     ) {
       secondaryParts.push(trimmedDesc);
     }
