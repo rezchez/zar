@@ -43,6 +43,8 @@ export type DetailState = {
   linkedLineId?: string;
   isForeignCash?: boolean;
   hasNoVault?: boolean;
+  conversionMode?: 'money_to_weight' | 'weight_to_money';
+  conversionTarget?: string;
   coinTypeName?: string;
   claimFinancial?: string;
   claimWeight?: string;
@@ -210,7 +212,7 @@ export type DetailState = {
 export type DocumentLine = {
   id: string;
   documentNature: 'received' | 'paid';
-  documentTab: 'raw-gold' | 'gold-sale' | 'currency' | 'cash' | 'workmanship' | 'etiquette' | 'itak' | 'coin' | 'bank' | 'claim' | 'refining' | 'stone' | 'goods' | 'discount' | 'income-expense';
+  documentTab: 'raw-gold' | 'gold-sale' | 'currency' | 'cash' | 'workmanship' | 'etiquette' | 'itak' | 'coin' | 'bank' | 'claim' | 'refining' | 'stone' | 'goods' | 'discount' | 'income-expense' | 'conversion';
   sourceTab?: string;
   documentSubType: string;
   documentTypeLabel?: string;

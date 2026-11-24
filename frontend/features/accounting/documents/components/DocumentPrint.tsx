@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useId, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Printer } from 'lucide-react';
 import type { Customer } from '@/lib/customer';
@@ -20,6 +20,109 @@ import {
 } from '@/lib/print-templates';
 import { toPersianDigits } from '@/lib/jalali';
 import { QrCodeSvg } from '@/lib/qr-code';
+import {
+  isMetalBearingLine,
+  getLineDocumentTypeLabel,
+} from '@/features/accounting/documents/utils/document-helpers';
+
+export function getCapacityForPageSize(size: string, heightMm: number): {
+  singlePageCapacity: number;
+  firstPageCapacity: number;
+  middlePageCapacity: number;
+  lastPageCapacity: number;
+} {
+  if (size.startsWith('receipt')) {
+    return {
+      singlePageCapacity: 9999,
+      firstPageCapacity: 9999,
+      middlePageCapacity: 9999,
+      lastPageCapacity: 9999,
+    };
+  }
+
+  if (heightMm >= 280) {
+    // A4 Portrait (~297mm)
+    return {
+      singlePageCapacity: 12,
+      firstPageCapacity: 16,
+      middlePageCapacity: 22,
+      lastPageCapacity: 12,
+    };
+  } else if (heightMm >= 200) {
+    // A4 Landscape (~210mm) or A5 Portrait (~210mm)
+    return {
+      singlePageCapacity: 8,
+      firstPageCapacity: 11,
+      middlePageCapacity: 15,
+      lastPageCapacity: 8,
+    };
+  } else {
+    // A5 Landscape (~148mm) or smaller
+    return {
+      singlePageCapacity: 5,
+      firstPageCapacity: 7,
+      middlePageCapacity: 9,
+      lastPageCapacity: 5,
+    };
+  }
+}
+
+export function chunkDocumentLinesForPrint(
+  items: DocumentLine[],
+  capacities: {
+    singlePageCapacity: number;
+    firstPageCapacity: number;
+    middlePageCapacity: number;
+    lastPageCapacity: number;
+  },
+): DocumentLine[][] {
+  const { singlePageCapacity, firstPageCapacity, middlePageCapacity, lastPageCapacity } = capacities;
+  if (items.length === 0) return [[]];
+  if (items.length <= singlePageCapacity) {
+    return [items];
+  }
+
+  const pages: DocumentLine[][] = [];
+  let remaining = [...items];
+
+  // If remaining lines fit in exactly 2 pages:
+  if (remaining.length <= firstPageCapacity + lastPageCapacity) {
+    const firstTake = Math.min(
+      firstPageCapacity,
+      Math.max(Math.ceil(remaining.length / 2), remaining.length - lastPageCapacity),
+    );
+    pages.push(remaining.slice(0, firstTake));
+    pages.push(remaining.slice(firstTake));
+    return pages;
+  }
+
+  // First page takes firstPageCapacity
+  pages.push(remaining.slice(0, firstPageCapacity));
+  remaining = remaining.slice(firstPageCapacity);
+
+  // Subsequent pages
+  while (remaining.length > 0) {
+    if (remaining.length <= lastPageCapacity) {
+      pages.push(remaining);
+      break;
+    }
+
+    if (remaining.length <= middlePageCapacity + lastPageCapacity) {
+      const take = Math.min(
+        middlePageCapacity,
+        Math.max(Math.ceil(remaining.length / 2), remaining.length - lastPageCapacity),
+      );
+      pages.push(remaining.slice(0, take));
+      pages.push(remaining.slice(take));
+      break;
+    }
+
+    pages.push(remaining.slice(0, middlePageCapacity));
+    remaining = remaining.slice(middlePageCapacity);
+  }
+
+  return pages;
+}
 
 const DEFAULT_INVOICE_TEMPLATE = DEFAULT_SYSTEM_TEMPLATES.find(
   (template) => template.templateType !== 'customer',
@@ -50,6 +153,8 @@ export default function DocumentPrint({
   className,
 }: DocumentPrintProps) {
   const { settings } = useAppSettings();
+  const printRootId = `document-print-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
+  const printableContentId = `${printRootId}-content`;
 
   const [activeTemplate, setActiveTemplate] = useState<InvoicePrintTemplate>(DEFAULT_INVOICE_TEMPLATE);
   const [isMounted, setIsMounted] = useState(false);
@@ -84,8 +189,38 @@ export default function DocumentPrint({
     let secondFrame = 0;
     const firstFrame = window.requestAnimationFrame(() => {
       secondFrame = window.requestAnimationFrame(() => {
-        window.print();
-        setPrintRequested(false);
+        document.body.setAttribute('data-printing-document', printRootId);
+        const selectedPrintRoot = document.getElementById(printRootId);
+        if (!selectedPrintRoot) {
+          document.body.removeAttribute('data-printing-document');
+          setPrintRequested(false);
+          return;
+        }
+
+        const printRoots = Array.from(document.querySelectorAll<HTMLElement>('.document-print-root'));
+        const previousDisplayStyles = printRoots.map((root) => ({
+          root,
+          value: root.style.getPropertyValue('display'),
+          priority: root.style.getPropertyPriority('display'),
+        }));
+
+        for (const root of printRoots) {
+          root.style.setProperty('display', root === selectedPrintRoot ? 'block' : 'none', 'important');
+        }
+
+        try {
+          window.print();
+        } finally {
+          for (const { root, value, priority } of previousDisplayStyles) {
+            if (value) {
+              root.style.setProperty('display', value, priority);
+            } else {
+              root.style.removeProperty('display');
+            }
+          }
+          document.body.removeAttribute('data-printing-document');
+          setPrintRequested(false);
+        }
       });
     });
 
@@ -120,6 +255,16 @@ export default function DocumentPrint({
     activeTemplate.page.heightMm,
   );
 
+  const capacities = useMemo(
+    () => getCapacityForPageSize(activeTemplate.page.size, pageDims.heightMm),
+    [activeTemplate.page.size, pageDims.heightMm],
+  );
+
+  const pages = useMemo(
+    () => chunkDocumentLinesForPrint(lines, capacities),
+    [lines, capacities],
+  );
+
   return (
     <>
       {iconOnly ? (
@@ -146,7 +291,7 @@ export default function DocumentPrint({
       )}
 
       {isMounted && createPortal(
-        <div className="document-print-root hidden bg-white p-0 font-sans leading-relaxed text-right text-black" dir="rtl">
+        <div id={printRootId} className="document-print-root hidden bg-white p-0 font-sans leading-relaxed text-right text-black" dir="rtl">
         <style>{`
           @media print {
             @page {
@@ -155,70 +300,311 @@ export default function DocumentPrint({
             }
             html, body {
               width: ${pageDims.widthMm}mm;
-              height: ${pageDims.heightMm}mm;
+              margin: 0 !important;
+              padding: 0 !important;
+              background-color: #ffffff !important;
+            }
+            body > *:not(.document-print-root) { display: none !important; }
+            body .document-print-root { display: block !important; }
+            body[data-printing-document="${printRootId}"] #${printRootId} { display: block !important; }
+            #${printRootId} {
+              display: block !important;
+              width: ${pageDims.widthMm}mm;
               margin: 0 !important;
               padding: 0 !important;
             }
-            body > *:not(.document-print-root) { display: none !important; }
-            .document-print-root { display: block !important; }
-            #printable-document {
+            #${printRootId} .document-print-page {
               position: relative;
               width: ${pageDims.widthMm}mm;
-              height: ${pageDims.heightMm}mm;
+              min-height: ${activeTemplate.page.size.startsWith('receipt') ? 'auto' : `${pageDims.heightMm}mm`};
+              height: ${activeTemplate.page.size.startsWith('receipt') ? 'auto' : `${pageDims.heightMm}mm`};
               margin: 0;
               padding: 0;
               box-sizing: border-box;
               overflow: hidden !important;
-              break-after: avoid-page;
-              page-break-after: avoid;
+              page-break-after: always;
+              break-after: page;
             }
+            #${printRootId} .document-print-page:last-child {
+              page-break-after: auto !important;
+              break-after: auto !important;
+            }
+            ${activeTemplate.page.size.startsWith('receipt') ? `
+              #${printRootId} .document-print-page {
+                page-break-after: auto !important;
+                break-after: auto !important;
+                height: auto !important;
+                min-height: auto !important;
+                overflow: visible !important;
+              }
+            ` : ''}
           }
         `}</style>
 
-        <div
-          id="printable-document"
-          style={{
-            width: `${pageDims.widthMm}mm`,
-            height: `${pageDims.heightMm}mm`,
-            backgroundColor: activeTemplate.page.backgroundColor || '#ffffff',
-            borderWidth: activeTemplate.page.borderEnabled ? `${activeTemplate.page.borderWidthMm}mm` : '0',
-            borderColor: activeTemplate.page.borderColor || '#cbd5e1',
-            borderStyle: activeTemplate.page.borderEnabled ? 'solid' : 'none',
-            paddingTop: `${activeTemplate.page.marginTopMm || 0}mm`,
-            paddingRight: `${activeTemplate.page.marginRightMm || 0}mm`,
-            paddingBottom: `${activeTemplate.page.marginBottomMm || 0}mm`,
-            paddingLeft: `${activeTemplate.page.marginLeftMm || 0}mm`,
-          }}
-          className="relative box-border text-slate-900 overflow-hidden"
-        >
-          {activeTemplate.elements.map((el) => {
-            if (!el.visible) return null;
+        <div id={printableContentId} className="flex flex-col">
+          {pages.map((pageLines, pageIdx) => {
+            const isSinglePage = pages.length === 1;
+            const isFirstPage = pageIdx === 0;
+            const isLastPage = pageIdx === pages.length - 1;
+            const lineOffset = pages.slice(0, pageIdx).reduce((acc, p) => acc + p.length, 0);
+
+            const tableEl = activeTemplate.elements.find((el) => el.type === 'items_table' && el.visible);
+            const tableTopY = tableEl ? tableEl.position.yMm : 45;
+            const tableWidth = tableEl ? tableEl.size.widthMm : (pageDims.widthMm - 20);
+            const tableRightX = tableEl ? tableEl.position.xMm : 10;
+
+            const isFooterType = (t: string) => [
+              'totals_summary',
+              'custom_table',
+              'seller_signature',
+              'customer_signature',
+              'stamp',
+              'footer_text',
+              'print_datetime',
+            ].includes(t);
+
+            const isBelowTable = (el: InvoicePrintElement) =>
+              isFooterType(el.type) || el.position.yMm >= (tableEl ? tableEl.position.yMm + tableEl.size.heightMm - 5 : 150);
 
             return (
               <div
-                key={el.id}
+                key={`page-${pageIdx}`}
                 style={{
-                  position: 'absolute',
-                  right: `${el.position.xMm}mm`, // RTL position
-                  top: `${el.position.yMm}mm`,
-                  width: `${el.size.widthMm}mm`,
-                  height: `${el.size.heightMm}mm`,
-                  fontFamily: el.style.fontFamily || 'Vazirmatn',
-                  fontSize: el.style.fontSizePt ? `${el.style.fontSizePt}pt` : '9pt',
-                  fontWeight: getFontWeightCss(el.style.fontWeight),
-                  color: el.style.color || '#0f172a',
-                  backgroundColor: el.style.backgroundColor || 'transparent',
-                  textAlign: el.style.textAlign || 'right',
-                  borderWidth: el.type === 'items_table' ? '0' : (el.style.borderWidthMm ? `${el.style.borderWidthMm}mm` : '0'),
-                  borderColor: el.style.borderColor || 'transparent',
-                  borderStyle: el.style.borderStyle || (el.style.borderWidthMm ? 'solid' : 'none'),
-                  borderRadius: el.style.borderRadiusMm ? `${el.style.borderRadiusMm}mm` : '0',
-                  opacity: el.style.opacity ?? 1,
-                  zIndex: el.zIndex || 10,
+                  width: `${pageDims.widthMm}mm`,
+                  height: activeTemplate.page.size.startsWith('receipt') ? 'auto' : `${pageDims.heightMm}mm`,
+                  minHeight: activeTemplate.page.size.startsWith('receipt') ? 'auto' : `${pageDims.heightMm}mm`,
+                  backgroundColor: activeTemplate.page.backgroundColor || '#ffffff',
+                  borderWidth: activeTemplate.page.borderEnabled ? `${activeTemplate.page.borderWidthMm}mm` : '0',
+                  borderColor: activeTemplate.page.borderColor || '#cbd5e1',
+                  borderStyle: activeTemplate.page.borderEnabled ? 'solid' : 'none',
+                  paddingTop: `${activeTemplate.page.marginTopMm || 0}mm`,
+                  paddingRight: `${activeTemplate.page.marginRightMm || 0}mm`,
+                  paddingBottom: `${activeTemplate.page.marginBottomMm || 0}mm`,
+                  paddingLeft: `${activeTemplate.page.marginLeftMm || 0}mm`,
                 }}
-                className="box-border overflow-hidden"
+                className="document-print-page relative box-border text-slate-900 overflow-hidden"
               >
-                {renderRealPrintElementContent(el, settings, customer, documentNumber, documentDateJalali, lines, isFinalized, activeTemplate)}
+                {isSinglePage ? (
+                  // Single page mode: render all configured template elements
+                  activeTemplate.elements.map((el) => {
+                    if (!el.visible) return null;
+
+                    return (
+                      <div
+                        key={el.id}
+                        style={{
+                          position: 'absolute',
+                          right: `${el.position.xMm}mm`,
+                          top: `${el.position.yMm}mm`,
+                          width: `${el.size.widthMm}mm`,
+                          height: el.type === 'items_table' ? 'auto' : `${el.size.heightMm}mm`,
+                          maxHeight: el.type === 'items_table' ? `${el.size.heightMm}mm` : undefined,
+                          fontFamily: el.style.fontFamily || 'Vazirmatn',
+                          fontSize: el.style.fontSizePt ? `${el.style.fontSizePt}pt` : '9pt',
+                          fontWeight: getFontWeightCss(el.style.fontWeight),
+                          color: el.style.color || '#0f172a',
+                          backgroundColor: el.style.backgroundColor || 'transparent',
+                          textAlign: el.style.textAlign || 'right',
+                          borderWidth: el.type === 'items_table' ? '0' : (el.style.borderWidthMm ? `${el.style.borderWidthMm}mm` : '0'),
+                          borderColor: el.style.borderColor || 'transparent',
+                          borderStyle: el.style.borderStyle || (el.style.borderWidthMm ? 'solid' : 'none'),
+                          borderRadius: el.style.borderRadiusMm ? `${el.style.borderRadiusMm}mm` : '0',
+                          opacity: el.style.opacity ?? 1,
+                          zIndex: el.zIndex || 10,
+                        }}
+                        className="box-border overflow-hidden"
+                      >
+                        {renderRealPrintElementContent(
+                          el,
+                          settings,
+                          customer,
+                          documentNumber,
+                          documentDateJalali,
+                          pageLines,
+                          isFinalized,
+                          activeTemplate,
+                          0,
+                          lines,
+                        )}
+                      </div>
+                    );
+                  })
+                ) : (
+                  // Multi-page mode:
+                  <>
+                    {/* 1. Header Area */}
+                    {isFirstPage ? (
+                      activeTemplate.elements
+                        .filter((el) => el.visible && !isBelowTable(el) && el.type !== 'items_table')
+                        .map((el) => (
+                          <div
+                            key={el.id}
+                            style={{
+                              position: 'absolute',
+                              right: `${el.position.xMm}mm`,
+                              top: `${el.position.yMm}mm`,
+                              width: `${el.size.widthMm}mm`,
+                              height: `${el.size.heightMm}mm`,
+                              fontFamily: el.style.fontFamily || 'Vazirmatn',
+                              fontSize: el.style.fontSizePt ? `${el.style.fontSizePt}pt` : '9pt',
+                              fontWeight: getFontWeightCss(el.style.fontWeight),
+                              color: el.style.color || '#0f172a',
+                              backgroundColor: el.style.backgroundColor || 'transparent',
+                              textAlign: el.style.textAlign || 'right',
+                              borderWidth: el.style.borderWidthMm ? `${el.style.borderWidthMm}mm` : '0',
+                              borderColor: el.style.borderColor || 'transparent',
+                              borderStyle: el.style.borderStyle || (el.style.borderWidthMm ? 'solid' : 'none'),
+                              borderRadius: el.style.borderRadiusMm ? `${el.style.borderRadiusMm}mm` : '0',
+                              opacity: el.style.opacity ?? 1,
+                              zIndex: el.zIndex || 10,
+                            }}
+                            className="box-border overflow-hidden"
+                          >
+                            {renderRealPrintElementContent(
+                              el,
+                              settings,
+                              customer,
+                              documentNumber,
+                              documentDateJalali,
+                              pageLines,
+                              isFinalized,
+                              activeTemplate,
+                              0,
+                              lines,
+                            )}
+                          </div>
+                        ))
+                    ) : (
+                      // Compact top bar on subsequent pages
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: `${(activeTemplate.page.marginTopMm || 6)}mm`,
+                          right: `${tableRightX}mm`,
+                          width: `${tableWidth}mm`,
+                        }}
+                        className="flex items-center justify-between border-b border-slate-300 pb-1.5 text-[8.5pt]"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-slate-800">{settings.printStoreName || settings.organizationName}</span>
+                          <span className="text-slate-300">|</span>
+                          <span>شماره سند: <strong className="font-mono">{documentNumber || 'پیش‌نمایش'}</strong></span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span>طرف‌حساب: <strong>{customer ? customer.name : 'عمومی'}</strong></span>
+                          <span className="text-slate-300">|</span>
+                          <span>تاریخ: <strong className="font-mono">{documentDateJalali}</strong></span>
+                          <span className="text-slate-300">|</span>
+                          <span className="bg-slate-100 px-2 py-0.5 rounded font-bold text-slate-700">
+                            صفحه {toPersianDigits(pageIdx + 1)} از {toPersianDigits(pages.length)} {isLastPage ? '(پایان سند)' : ''}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 2. Items Table for current page */}
+                    {tableEl && (
+                      <div
+                        key={tableEl.id}
+                        style={{
+                          position: 'absolute',
+                          right: `${tableRightX}mm`,
+                          top: `${isFirstPage ? tableTopY : (activeTemplate.page.marginTopMm || 6) + 12}mm`,
+                          width: `${tableWidth}mm`,
+                          fontFamily: tableEl.style.fontFamily || 'Vazirmatn',
+                          color: tableEl.style.color || '#0f172a',
+                          zIndex: tableEl.zIndex || 10,
+                        }}
+                        className="box-border overflow-hidden"
+                      >
+                        {renderRealPrintElementContent(
+                          tableEl,
+                          settings,
+                          customer,
+                          documentNumber,
+                          documentDateJalali,
+                          pageLines,
+                          isFinalized,
+                          activeTemplate,
+                          lineOffset,
+                          lines,
+                        )}
+                      </div>
+                    )}
+
+                    {/* 3. Bottom continuation notice on intermediate/first pages */}
+                    {!isLastPage && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          bottom: `${(activeTemplate.page.marginBottomMm || 6) + 2}mm`,
+                          right: `${tableRightX}mm`,
+                          width: `${tableWidth}mm`,
+                        }}
+                        className="flex items-center justify-between border-t border-dashed border-slate-300 pt-1 text-[8pt] text-slate-500"
+                      >
+                        <span className="font-bold text-amber-700">ادامه اقلام در صفحه بعدی...</span>
+                        <span>صفحه {toPersianDigits(pageIdx + 1)} از {toPersianDigits(pages.length)}</span>
+                      </div>
+                    )}
+
+                    {/* 4. Footer elements on last page dynamically flowed below the table */}
+                    {isLastPage && (() => {
+                      const lastPageTableTop = (activeTemplate.page.marginTopMm || 6) + 12;
+                      const lastPageTableHeight = 8 + (pageLines.length * (activeTemplate.table?.rowHeightMm || 7.5));
+                      const lastPageTableBottom = lastPageTableTop + lastPageTableHeight;
+                      const originalTableBottom = (tableEl?.position.yMm || 45) + (tableEl?.size.heightMm || 120);
+
+                      const footerElements = activeTemplate.elements.filter((el) => el.visible && isBelowTable(el));
+
+                      return footerElements.map((el) => {
+                        const deltaFromOriginalTable = el.position.yMm - originalTableBottom;
+                        const dynamicTop = deltaFromOriginalTable >= 0
+                          ? lastPageTableBottom + 3 + deltaFromOriginalTable
+                          : Math.max(el.position.yMm, lastPageTableBottom + 3);
+
+                        return (
+                          <div
+                            key={el.id}
+                            style={{
+                              position: 'absolute',
+                              right: `${el.position.xMm}mm`,
+                              top: `${dynamicTop}mm`,
+                              width: `${el.size.widthMm}mm`,
+                              height: `${el.size.heightMm}mm`,
+                              fontFamily: el.style.fontFamily || 'Vazirmatn',
+                              fontSize: el.style.fontSizePt ? `${el.style.fontSizePt}pt` : '9pt',
+                              fontWeight: getFontWeightCss(el.style.fontWeight),
+                              color: el.style.color || '#0f172a',
+                              backgroundColor: el.style.backgroundColor || 'transparent',
+                              textAlign: el.style.textAlign || 'right',
+                              borderWidth: el.style.borderWidthMm ? `${el.style.borderWidthMm}mm` : '0',
+                              borderColor: el.style.borderColor || 'transparent',
+                              borderStyle: el.style.borderStyle || (el.style.borderWidthMm ? 'solid' : 'none'),
+                              borderRadius: el.style.borderRadiusMm ? `${el.style.borderRadiusMm}mm` : '0',
+                              opacity: el.style.opacity ?? 1,
+                              zIndex: el.zIndex || 10,
+                            }}
+                            className="box-border overflow-hidden"
+                          >
+                            {renderRealPrintElementContent(
+                              el,
+                              settings,
+                              customer,
+                              documentNumber,
+                              documentDateJalali,
+                              pageLines,
+                              isFinalized,
+                              activeTemplate,
+                              lineOffset,
+                              lines,
+                            )}
+                          </div>
+                        );
+                      });
+                    })()}
+                  </>
+                )}
               </div>
             );
           })}
@@ -240,6 +626,8 @@ function renderRealPrintElementContent(
   lines: DocumentLine[],
   isFinalized: boolean,
   template: InvoicePrintTemplate,
+  lineIndexOffset = 0,
+  allLines: DocumentLine[] = lines,
 ) {
   switch (el.type) {
     case 'shop_name':
@@ -320,7 +708,7 @@ function renderRealPrintElementContent(
         );
         return (
           <div className="w-full h-full flex flex-col items-center justify-center p-0.5 bg-white rounded overflow-hidden">
-            <QrCodeSvg value={qrValue} backgroundColor="#ffffff" color="#000000" />
+            <QrCodeSvg value={qrValue} margin={0.5} backgroundColor="#ffffff" color="#000000" />
             {showLabel && label && (
               <span className="text-[70%] font-bold text-center text-slate-900 truncate max-w-full mt-0.5">{label}</span>
             )}
@@ -328,7 +716,7 @@ function renderRealPrintElementContent(
         );
       }
 
-      const resolvedMap = computeDocumentCustomTableValues(customer, lines, settings);
+      const resolvedMap = computeDocumentCustomTableValues(customer, allLines.length > 0 ? allLines : lines, settings);
       const val = resolvedMap[fieldKey] || '-';
 
       return (
@@ -402,19 +790,21 @@ function renderRealPrintElementContent(
       const showHorizontal = tableConfig?.showHorizontalBorders !== false;
       const striped = Boolean(tableConfig?.stripedRows);
       const altBg = tableConfig?.alternateRowColor || '#f8fafc';
+      const rowMinHeight = tableConfig?.rowHeightMm ? `${tableConfig.rowHeightMm}mm` : '7.5mm';
+      const fontSize = tableConfig?.fontSizePt ? `${tableConfig.fontSizePt}pt` : '8.5pt';
 
       return (
         <div
-          className="w-full h-full overflow-hidden"
+          className="w-full overflow-hidden"
           style={{
             borderRadius: tableRadius,
             border: `${tableBorderWidth} ${tableBorderStyle} ${tableBorderColor}`,
           }}
         >
           <table
-            className="h-full w-full table-fixed border-collapse"
+            className="w-full table-fixed border-collapse"
             style={{
-              fontSize: tableConfig?.fontSizePt ? `${tableConfig.fontSizePt}pt` : '85%',
+              fontSize,
               color: tableConfig?.bodyTextColor || el.style.color || '#0f172a',
             }}
           >
@@ -424,13 +814,14 @@ function renderRealPrintElementContent(
                   backgroundColor: tableConfig?.headerBackgroundColor || '#f1f5f9',
                   color: tableConfig?.headerTextColor || '#0f172a',
                   fontWeight: 700,
+                  height: '8mm',
                   borderBottom: `${tableBorderWidth} ${tableBorderStyle} ${tableBorderColor}`,
                 }}
               >
                 {configuredCols.map((col: InvoiceTableColumn, cIdx: number) => (
                   <th
                     key={col.id}
-                    className="p-1 text-center"
+                    className="py-1 px-1.5 text-center align-middle whitespace-nowrap"
                     style={{
                       width: col.widthMm ? `${col.widthMm}mm` : 'auto',
                       borderLeft: showVertical && cIdx < configuredCols.length - 1 ? `${tableBorderWidth} ${tableBorderStyle} ${tableBorderColor}` : undefined,
@@ -443,26 +834,48 @@ function renderRealPrintElementContent(
             </thead>
             <tbody>
               {lines.map((line, idx) => {
-                const rawWeight = Number(line.details.rawWeight) || 0;
-                const purity = Number(line.details.purity) || 0;
-                const c750 = line.converted750 || (rawWeight * purity) / 750;
+                const det = (line.details || {}) as Record<string, any>;
+                const isMetal = isMetalBearingLine(line);
+                const rawWeight = Number(det.rawWeight) || 0;
+                const purity = Number(det.purity) || 0;
+                const c750 = typeof line.converted750 === 'number' && Number.isFinite(line.converted750)
+                  ? line.converted750
+                  : (rawWeight > 0 && purity > 0 ? (rawWeight * purity) / 750 : 0);
                 const isEven = idx % 2 === 1;
+                const docTab = String(line.documentTab || line.sourceTab || '');
 
                 return (
                   <tr
-                    key={line.id}
+                    key={line.id || `line-${lineIndexOffset + idx}`}
                     style={{
-                      height: template.table?.rowHeightMm ? `${template.table.rowHeightMm}mm` : undefined,
+                      minHeight: rowMinHeight,
+                      height: tableConfig?.rowHeightMm ? `${tableConfig.rowHeightMm}mm` : undefined,
                       backgroundColor: striped && isEven ? altBg : undefined,
                       borderBottom: showHorizontal && idx < lines.length - 1 ? `${tableBorderWidth} ${tableBorderStyle} ${tableBorderColor}` : undefined,
                     }}
                   >
                     {configuredCols.map((col: InvoiceTableColumn, cIdx: number) => {
                       let cellVal: React.ReactNode = '-';
-                      if (col.id === 'index') cellVal = toPersianDigits(idx + 1);
-                      if (col.id === 'operation_type') {
-                        const baseLabel = line.documentTypeLabel || line.documentSubType || 'فروش کار ساخته';
-                        const wName = line.details?.workmanshipName?.trim();
+                      if (col.id === 'index') {
+                        cellVal = toPersianDigits(lineIndexOffset + idx + 1);
+                      } else if (col.id === 'operation_type') {
+                        const rawOpKind = (line as any).rawOperationKind || det?.rawOperationKind;
+                        const unsettledTrade = Boolean((line as any).unsettledTrade || det?.unsettledTrade);
+                        const baseLabel = getLineDocumentTypeLabel(
+                          line.documentNature === 'paid' ? 'paid' : 'received',
+                          docTab,
+                          rawOpKind,
+                          unsettledTrade,
+                          det.refiningOpKind,
+                          det.workmanshipOptionId,
+                          line.documentSubType || det.workmanshipSubType,
+                          det.metalType,
+                          det.claimFinancial,
+                          det.claimWeight,
+                          det.percentage,
+                        ) || line.documentTypeLabel || line.documentSubType || 'ثبت سند';
+
+                        const wName = det?.workmanshipName?.trim();
                         const mode = tableConfig?.workmanshipDisplayMode || 'name_only';
                         if (wName) {
                           if (mode === 'name_only') {
@@ -472,44 +885,77 @@ function renderRealPrintElementContent(
                           } else {
                             cellVal = `${baseLabel} (${wName})`;
                           }
+                        } else if (docTab === 'coin' && Number(det.coinCount) > 1) {
+                          cellVal = `${baseLabel} (${toPersianDigits(det.coinCount)} عدد)`;
+                        } else if (docTab === 'etiquette' && det.barcode) {
+                          cellVal = `${baseLabel} [${toPersianDigits(det.barcode)}]`;
                         } else {
                           cellVal = baseLabel;
                         }
-                      }
-                      if (col.id === 'metal_type') {
-                        cellVal = line.details.metalType === 'silver' ? 'نقره' : line.details.metalType === 'platinum' ? 'پلاتین' : 'طلا';
-                      }
-                      if (col.id === 'weight') cellVal = rawWeight ? toPersianDigits(rawWeight.toFixed(3)) : '-';
-                      if (col.id === 'purity') cellVal = purity ? toPersianDigits(purity) : '-';
-                      if (col.id === 'converted_weight') cellVal = c750 ? toPersianDigits(c750.toFixed(3)) : '-';
-                      if (col.id === 'price_per_gram') {
-                        const p = Number(line.details?.metalPrice) || 0;
+                      } else if (col.id === 'metal_type') {
+                        if (isMetal) {
+                          cellVal = det.metalType === 'silver' ? 'نقره' : det.metalType === 'platinum' ? 'پلاتین' : 'طلا';
+                        } else if (docTab === 'currency') {
+                          cellVal = det.currencyUnit || 'ارز';
+                        } else if (docTab === 'cash' || docTab === 'bank' || docTab === 'cheque') {
+                          cellVal = 'مالی';
+                        } else if (docTab === 'conversion') {
+                          cellVal = det.conversionTargetMetal === 'silver' ? 'نقره' : 'طلا';
+                        } else {
+                          cellVal = '-';
+                        }
+                      } else if (col.id === 'weight') {
+                        if (isMetal && rawWeight > 0) {
+                          cellVal = toPersianDigits(rawWeight.toFixed(3));
+                        } else if (docTab === 'coin' && det.coinWeight) {
+                          cellVal = toPersianDigits(Number(det.coinWeight).toFixed(3));
+                        } else if (docTab === 'conversion' && det.conversionWeight) {
+                          cellVal = toPersianDigits(Number(det.conversionWeight).toFixed(3));
+                        } else {
+                          cellVal = '-';
+                        }
+                      } else if (col.id === 'purity') {
+                        if (isMetal && purity > 0) {
+                          cellVal = toPersianDigits(purity);
+                        } else if (docTab === 'conversion' && det.conversionPurity) {
+                          cellVal = toPersianDigits(det.conversionPurity);
+                        } else {
+                          cellVal = '-';
+                        }
+                      } else if (col.id === 'converted_weight') {
+                        if (isMetal && c750 > 0) {
+                          cellVal = toPersianDigits(c750.toFixed(3));
+                        } else if (docTab === 'conversion' && det.conversionConvertedWeight) {
+                          cellVal = toPersianDigits(Number(det.conversionConvertedWeight).toFixed(3));
+                        } else {
+                          cellVal = '-';
+                        }
+                      } else if (col.id === 'price_per_gram') {
+                        const p = Number(det?.metalPrice || det?.pricePerGram || det?.coinPrice || det?.exchangeRate) || 0;
                         cellVal = p > 0 ? toPersianDigits(p.toLocaleString('en-US')) : '-';
-                      }
-                      if (col.id === 'subtotal_price') {
-                        const tot = Number(line.details?.totalAmount) || 0;
-                        const disc = Number(line.details?.discountAmount) || 0;
-                        const sub = tot > 0 || disc > 0 ? tot + disc : (Number(line.details?.metalTotalPrice) || 0);
+                      } else if (col.id === 'subtotal_price') {
+                        const tot = Number(det?.totalAmount || det?.metalTotalPrice || det?.amount || det?.conversionMoneyAmount) || 0;
+                        const disc = Number(det?.discountAmount) || 0;
+                        const sub = tot > 0 || disc > 0 ? tot + disc : 0;
                         cellVal = sub > 0 ? toPersianDigits(sub.toLocaleString('en-US')) : '-';
-                      }
-                      if (col.id === 'discount_amount') {
-                        const disc = Number(line.details?.discountAmount) || 0;
+                      } else if (col.id === 'discount_amount') {
+                        const disc = Number(det?.discountAmount) || 0;
                         cellVal = disc > 0 ? toPersianDigits(disc.toLocaleString('en-US')) : '۰';
-                      }
-                      if (col.id === 'total_price') {
-                        const tot = Number(line.details?.totalAmount) || 0;
+                      } else if (col.id === 'total_price') {
+                        const tot = Number(det?.totalAmount || det?.metalTotalPrice || det?.amount || det?.conversionMoneyAmount) || 0;
                         cellVal = tot > 0 ? toPersianDigits(tot.toLocaleString('en-US')) : '-';
-                      }
-                      if (col.id === 'lab_name') cellVal = line.details.labName || '-';
-                      if (col.id === 'stamp_number') cellVal = line.details.stampNumber || '-';
-                      if (col.id === 'description') {
-                        cellVal = line.description || (line.details?.workmanshipName ? `کار ساخته: ${line.details.workmanshipName}` : '-');
+                      } else if (col.id === 'lab_name') {
+                        cellVal = det.labName || det.assayLabName || '-';
+                      } else if (col.id === 'stamp_number') {
+                        cellVal = det.stampNumber || det.assayNumber || '-';
+                      } else if (col.id === 'description') {
+                        cellVal = line.description || det?.description || (det?.workmanshipName ? `کار ساخته: ${det.workmanshipName}` : '-');
                       }
 
                       return (
                         <td
                           key={col.id}
-                          className="break-words p-1 text-center align-middle"
+                          className="py-1 px-1.5 text-center align-middle break-words leading-snug"
                           style={{
                             borderLeft: showVertical && cIdx < configuredCols.length - 1 ? `${tableBorderWidth} ${tableBorderStyle} ${tableBorderColor}` : undefined,
                             textAlign: col.textAlign || 'center',
@@ -529,10 +975,11 @@ function renderRealPrintElementContent(
     }
 
     case 'totals_summary': {
-      // Distinct Multi-metal accumulation logic: Gold, Silver, Platinum strictly kept separate
-      const goldLines = lines.filter((l) => (l.details?.metalType || 'gold') === 'gold');
-      const silverLines = lines.filter((l) => l.details?.metalType === 'silver');
-      const platinumLines = lines.filter((l) => l.details?.metalType === 'platinum');
+      // Use allLines for complete document totals across multiple pages
+      const linesForSummary = allLines.length > 0 ? allLines : lines;
+      const goldLines = linesForSummary.filter((l) => (l.details?.metalType || 'gold') === 'gold');
+      const silverLines = linesForSummary.filter((l) => l.details?.metalType === 'silver');
+      const platinumLines = linesForSummary.filter((l) => l.details?.metalType === 'platinum');
 
       const totalGoldWeight = goldLines.reduce((acc, l) => acc + (Number(l.details?.rawWeight) || 0), 0);
       const totalGold750 = goldLines.reduce((acc, l) => {
@@ -548,10 +995,11 @@ function renderRealPrintElementContent(
       let totalDiscount = 0;
       let totalAmount = 0;
 
-      for (const l of lines) {
-        const tot = Number(l.details?.totalAmount) || 0;
-        const disc = Number(l.details?.discountAmount) || 0;
-        const sub = tot > 0 || disc > 0 ? tot + disc : (Number(l.details?.metalTotalPrice) || 0);
+      for (const l of linesForSummary) {
+        const det = (l.details || {}) as Record<string, any>;
+        const tot = Number(det?.totalAmount || det?.amount || det?.metalTotalPrice || det?.conversionMoneyAmount) || 0;
+        const disc = Number(det?.discountAmount) || 0;
+        const sub = tot > 0 || disc > 0 ? tot + disc : (Number(det?.metalTotalPrice) || 0);
         totalAmount += tot;
         totalDiscount += disc;
         totalSubtotal += sub;
@@ -609,7 +1057,7 @@ function renderRealPrintElementContent(
           )}
           <span className="whitespace-nowrap">
             <span>تعداد ردیف: </span>
-            <bdi className="font-mono">{toPersianDigits(lines.length)}</bdi>
+            <bdi className="font-mono">{toPersianDigits(linesForSummary.length)}</bdi>
           </span>
         </div>
       );
@@ -640,7 +1088,7 @@ function renderRealPrintElementContent(
       const altBg = customTable?.alternateRowColor || '#f8fafc';
       const fontSize = customTable?.fontSizePt ? `${customTable.fontSizePt}pt` : (el.style.fontSizePt ? `${el.style.fontSizePt}pt` : '8.5pt');
 
-      const resolvedValues = computeDocumentCustomTableValues(customer, lines, settings);
+      const resolvedValues = computeDocumentCustomTableValues(customer, allLines.length > 0 ? allLines : lines, settings);
 
       const renderCustomCell = (f: InvoiceCustomTableField, val: string) => {
         if (f.key === 'custom_qrcode') {
@@ -656,7 +1104,7 @@ function renderRealPrintElementContent(
           return (
             <div className="flex items-center justify-center p-0.5">
               <div className="p-0.5 bg-white rounded inline-flex">
-                <QrCodeSvg value={qrVal} size={24} backgroundColor="#ffffff" color="#000000" />
+                <QrCodeSvg value={qrVal} size={24} margin={0.5} backgroundColor="#ffffff" color="#000000" />
               </div>
             </div>
           );
@@ -962,11 +1410,25 @@ function computeDocumentCustomTableValues(
         effectGold += weightDirection * convertedWeight;
       }
     } else if (docTab === 'workmanship' || docTab === 'claim') {
-      if (line.documentSubType !== 'workmanship-wage') {
-        const weight = typeof line.converted750 === 'number' && Number.isFinite(line.converted750)
-          ? line.converted750
-          : (Number(det.claimWeight || det.rawWeight) || 0);
-        effectGold += direction * weight;
+      const weight = typeof line.converted750 === 'number' && Number.isFinite(line.converted750)
+        ? line.converted750
+        : (Number(det.claimWeight || det.rawWeight) || 0);
+      effectGold += direction * weight;
+    } else if (docTab === 'conversion') {
+      const metal = String(det.conversionTargetMetal || 'gold');
+      const convWeight = Number(det.conversionConvertedWeight || det.conversionWeight) || 0;
+      const convRial = Number(det.conversionMoneyAmount || det.totalAmount) || 0;
+      const isWeightToMoney = line.documentSubType === 'conversion-weight-to-money';
+      if (isWeightToMoney) {
+        // Gold decreases, money increases
+        if (metal === 'silver') effectSilver -= convWeight;
+        else effectGold -= convWeight;
+        effectRial += convRial;
+      } else {
+        // Money decreases, gold increases
+        if (metal === 'silver') effectSilver += convWeight;
+        else effectGold += convWeight;
+        effectRial -= convRial;
       }
     }
 
@@ -985,9 +1447,7 @@ function computeDocumentCustomTableValues(
       const rawClaimAmt = Number(det.claimFinancial || det.totalAmount) || 0;
       lineRial = (isToman && !det.rialAmountInIrr) ? rawClaimAmt * 10 : rawClaimAmt;
     } else if (docTab === 'coin' || docTab === 'workmanship') {
-      if (line.documentSubType !== 'workmanship-golden-percentage') {
-        lineRial = Number(det.totalAmount || det.metalTotalPrice) || 0;
-      }
+      lineRial = Number(det.totalAmount || det.metalTotalPrice) || 0;
     }
     if (lineRial > 0) {
       effectRial += direction * lineRial;

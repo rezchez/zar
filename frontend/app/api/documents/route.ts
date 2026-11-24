@@ -795,7 +795,7 @@ export async function POST(request: Request) {
         const isMetalAmount = field === 'goldAmount' || field === 'silverAmount' || field === 'platinumAmount';
         const isCurrencyForeign = line.documentTab === 'currency' && field === 'foreignAmount';
         let direction = lineNature === 'received' ? 1 : -1;
-        if (line.documentTab === 'gold-sale' && isMetalAmount) {
+        if ((line.documentTab === 'gold-sale' || line.documentTab === 'conversion') && isMetalAmount) {
           direction = lineNature === 'received' ? -1 : 1;
         } else if (isCurrencyForeign) {
           const isCurrencyClaim =
@@ -1069,6 +1069,43 @@ export async function POST(request: Request) {
 
         lineAmounts.rialAmount = Math.round(effectiveAbsRial) * (lineNature === 'received' ? 1 : -1);
         details.rialAmountInIrr = true;
+      }
+
+      const isConversionLine = line.documentTab === 'conversion' || line.sourceTab === 'conversion';
+      if (isConversionLine) {
+        const convCurrency = normalizeCurrencyCode(String(details.currencyUnit || details.baseCurrency || body?.baseCurrency || ''));
+        const isToman = convCurrency === 'IRT' || details.baseCurrency === 'IRT' || body?.baseCurrency === 'IRT';
+        const rawLineRial = Math.abs(readAmount(line.rialAmount) || 0);
+        const detailTotal = Math.abs(readAmount(details.totalAmount) || 0);
+        const alreadyInIrr = details.rialAmountInIrr === true;
+
+        const effectiveAbsRial = isToman
+          ? (alreadyInIrr && rawLineRial > 0 && rawLineRial !== detailTotal
+              ? rawLineRial
+              : convertTomanToRial(detailTotal || rawLineRial))
+          : (rawLineRial || detailTotal);
+
+        lineAmounts.rialAmount = Math.round(effectiveAbsRial) * (lineNature === 'received' ? 1 : -1);
+        details.rialAmountInIrr = true;
+
+        const rawWeight = Math.abs(
+          readAmount(details.rawWeight) ||
+          readAmount(details.convertedWeight) ||
+          readAmount(line.goldAmount) ||
+          readAmount(line.silverAmount) ||
+          readAmount(line.platinumAmount) || 0,
+        );
+        const metal = String(details.metalType || 'gold');
+        const purity = Number(details.purity) || 750;
+        const convertedWeight = (rawWeight * purity) / 750;
+        const metalDirection = lineNature === 'received' ? -1 : 1;
+
+        lineAmounts.goldAmount = metal === 'gold' ? convertedWeight * metalDirection : 0;
+        lineAmounts.silverAmount = metal === 'silver' ? convertedWeight * metalDirection : 0;
+        lineAmounts.platinumAmount = metal === 'platinum' ? convertedWeight * metalDirection : 0;
+        details.rawWeight = String(rawWeight);
+        details.convertedWeight = convertedWeight;
+        details.converted750 = convertedWeight;
       }
 
       const isCashLine = (line.documentTab === 'cash' || line.sourceTab === 'cash') && !details.isForeignCash;
@@ -1555,6 +1592,11 @@ export async function POST(request: Request) {
           lineDescription = breakdownDesc.secondary
             ? `${breakdownDesc.primary} — ${breakdownDesc.secondary}`
             : breakdownDesc.primary;
+        } else if (
+          !lineDescription &&
+          (tab === 'conversion' || String(prepared.line?.documentSubType || '').includes('conversion'))
+        ) {
+          lineDescription = prepared.documentDetails?.description || prepared.line?.description || 'تبدیل حساب';
         }
 
         return {

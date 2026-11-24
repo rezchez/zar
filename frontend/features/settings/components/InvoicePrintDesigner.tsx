@@ -161,6 +161,7 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
   const [displayUnit, setDisplayUnit] = useState<UnitType>('mm');
 
   // Menu and Table Subtab state
+  const [isPaperSettingsOpen, setIsPaperSettingsOpen] = useState(true);
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const [tableSubTab, setTableSubTab] = useState<'columns' | 'borders' | 'colors'>('columns');
   const [customTableSubTab, setCustomTableSubTab] = useState<'fields' | 'layout' | 'appearance'>('fields');
@@ -604,6 +605,10 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
     if (isPanning) {
       setPan({ x: e.clientX - panStart.x, y: e.clientY - panStart.y });
     } else if (resizingElementId && activeTemplate && activeHandle) {
+      const targetEl = activeTemplate.elements.find((el) => el.id === resizingElementId);
+      const isQr = targetEl?.content?.fieldKey === 'custom_qrcode';
+      const isSquareShape = isQr || targetEl?.type === 'shape_circle';
+
       // 1mm = ~3.7795px at 96 DPI, scaled by Zoom.
       const pxPerMm = 3.7795 * zoom;
       const dxPx = e.clientX - resizeStart.clientX;
@@ -617,27 +622,96 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
       let newXMm = resizeStart.initialXMm;
       let newYMm = resizeStart.initialYMm;
 
-      // Handle calculations for RTL (where `right` is xMm)
+      // Minimum allowed dimensions
+      const minW = isQr ? 10 : (targetEl?.type === 'items_table' ? 40 : 10);
+      const minH = isQr ? 10 : (targetEl?.type === 'items_table' ? 30 : 5);
+
+      // Handle calculations for RTL (where `right` is xMm in mm from right edge of page):
+      // Dragging East (Right edge, cursor moving right/left):
       if (activeHandle.includes('e')) {
-        // Dragging east handle (right edge in LTR) reduces right-margin in RTL
-        newWidthMm = Math.max(10, resizeStart.initialWidthMm + dxMm);
+        // Moving mouse right (dxMm > 0) expands right edge to the right: xMm decreases, width increases
+        newXMm = resizeStart.initialXMm - dxMm;
+        newWidthMm = resizeStart.initialWidthMm + dxMm;
       }
+
+      // Dragging West (Left edge, cursor moving left/right):
       if (activeHandle.includes('w')) {
-        // Dragging west handle (left edge in LTR) increases right-margin in RTL
-        newWidthMm = Math.max(10, resizeStart.initialWidthMm - dxMm);
-        newXMm = Math.max(0, resizeStart.initialXMm + dxMm);
+        // Moving mouse left (dxMm < 0) expands left edge to the left: xMm stays fixed, width increases
+        newWidthMm = resizeStart.initialWidthMm - dxMm;
+        newXMm = resizeStart.initialXMm;
       }
+
+      // Dragging South (Bottom edge, cursor moving down/up):
       if (activeHandle.includes('s')) {
-        newHeightMm = Math.max(5, resizeStart.initialHeightMm + dyMm);
+        // Moving mouse down (dyMm > 0) expands bottom edge downward: yMm stays fixed, height increases
+        newHeightMm = resizeStart.initialHeightMm + dyMm;
+        newYMm = resizeStart.initialYMm;
       }
+
+      // Dragging North (Top edge, cursor moving up/down):
       if (activeHandle.includes('n')) {
-        newHeightMm = Math.max(5, resizeStart.initialHeightMm - dyMm);
-        newYMm = Math.max(0, resizeStart.initialYMm + dyMm);
+        // Moving mouse up (dyMm < 0) expands top edge upward: yMm decreases, height increases
+        newYMm = resizeStart.initialYMm + dyMm;
+        newHeightMm = resizeStart.initialHeightMm - dyMm;
+      }
+
+      // QR Code and Circle special aspect-ratio locking (1:1 square)
+      if (isSquareShape) {
+        if (activeHandle.length === 2) {
+          // Corner handle: scale proportionally maintaining 1:1 aspect ratio
+          const squareSize = Math.max(minW, Math.round(Math.max(newWidthMm, newHeightMm) * 2) / 2);
+          newWidthMm = squareSize;
+          newHeightMm = squareSize;
+
+          if (activeHandle.includes('e')) {
+            newXMm = (resizeStart.initialXMm + resizeStart.initialWidthMm) - squareSize;
+          } else {
+            newXMm = resizeStart.initialXMm;
+          }
+
+          if (activeHandle.includes('n')) {
+            newYMm = (resizeStart.initialYMm + resizeStart.initialHeightMm) - squareSize;
+          } else {
+            newYMm = resizeStart.initialYMm;
+          }
+        } else if (activeHandle === 'e' || activeHandle === 'w') {
+          newHeightMm = newWidthMm;
+        } else if (activeHandle === 's' || activeHandle === 'n') {
+          newWidthMm = newHeightMm;
+        }
+      }
+
+      // Enforce minimum size boundaries
+      if (newWidthMm < minW) {
+        if (activeHandle.includes('e')) {
+          newXMm = (resizeStart.initialXMm + resizeStart.initialWidthMm) - minW;
+        }
+        newWidthMm = minW;
+      }
+      if (newHeightMm < minH) {
+        if (activeHandle.includes('n')) {
+          newYMm = (resizeStart.initialYMm + resizeStart.initialHeightMm) - minH;
+        }
+        newHeightMm = minH;
       }
 
       // Constrain within page boundaries
-      newWidthMm = Math.min(newWidthMm, pageDimensions.widthMm - newXMm);
-      newHeightMm = Math.min(newHeightMm, pageDimensions.heightMm - newYMm);
+      if (newXMm < 0) {
+        newWidthMm = Math.max(minW, newWidthMm + newXMm);
+        newXMm = 0;
+      }
+      if (newYMm < 0) {
+        newHeightMm = Math.max(minH, newHeightMm + newYMm);
+        newYMm = 0;
+      }
+      if (newXMm + newWidthMm > pageDimensions.widthMm) {
+        newWidthMm = pageDimensions.widthMm - newXMm;
+        if (isSquareShape) newHeightMm = newWidthMm;
+      }
+      if (newYMm + newHeightMm > pageDimensions.heightMm) {
+        newHeightMm = pageDimensions.heightMm - newYMm;
+        if (isSquareShape) newWidthMm = newHeightMm;
+      }
 
       updateActiveTemplate((prev) => ({
         ...prev,
@@ -1951,7 +2025,9 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
                       cursor: 'move',
                       transition: draggingElementId || resizingElementId ? 'none' : 'right 0.3s ease, top 0.3s ease',
                     }}
-                    className={`p-1 box-border transition-shadow relative ${
+                    className={`box-border transition-shadow relative ${
+                      el.content?.fieldKey === 'custom_qrcode' ? 'p-0.5' : 'p-1'
+                    } ${
                       isSelected
                         ? 'ring-2 ring-amber-500 ring-offset-1 bg-amber-500/10 rounded-sm z-30'
                         : 'hover:ring-1 hover:ring-amber-400/60'
@@ -1964,35 +2040,53 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
                     {isSelected && (
                       <div className="absolute inset-0 pointer-events-none border border-amber-500">
                         {/* Interactive Resize Handles */}
-                        <div
-                          onMouseDown={(e) => handleResizeMouseDown(e, el, 'nw')}
-                          className="pointer-events-auto absolute -top-1.5 -right-1.5 w-3 h-3 bg-amber-500 border border-white rounded-full cursor-nwse-resize hover:scale-125 transition-transform"
-                          title="Resize"
-                        />
+                        {/* Top-Right (NE): right: -1.5, top: -1.5 */}
                         <div
                           onMouseDown={(e) => handleResizeMouseDown(e, el, 'ne')}
-                          className="pointer-events-auto absolute -top-1.5 -left-1.5 w-3 h-3 bg-amber-500 border border-white rounded-full cursor-nesw-resize hover:scale-125 transition-transform"
-                          title="Resize"
+                          className="pointer-events-auto absolute -top-1.5 -right-1.5 w-3 h-3 bg-amber-500 border border-white rounded-full cursor-nesw-resize hover:scale-125 transition-transform"
+                          title="تغییر ابعاد (بالا - راست)"
                         />
+                        {/* Top-Left (NW): left: -1.5, top: -1.5 */}
                         <div
-                          onMouseDown={(e) => handleResizeMouseDown(e, el, 'se')}
-                          className="pointer-events-auto absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-amber-500 border border-white rounded-full cursor-nwse-resize hover:scale-125 transition-transform"
-                          title="Resize"
+                          onMouseDown={(e) => handleResizeMouseDown(e, el, 'nw')}
+                          className="pointer-events-auto absolute -top-1.5 -left-1.5 w-3 h-3 bg-amber-500 border border-white rounded-full cursor-nwse-resize hover:scale-125 transition-transform"
+                          title="تغییر ابعاد (بالا - چپ)"
                         />
+                        {/* Bottom-Left (SW): left: -1.5, bottom: -1.5 */}
                         <div
                           onMouseDown={(e) => handleResizeMouseDown(e, el, 'sw')}
-                          className="pointer-events-auto absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-amber-500 border border-white rounded-full cursor-nesw-resize hover:scale-125 transition-transform"
-                          title="Resize"
+                          className="pointer-events-auto absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-amber-500 border border-white rounded-full cursor-nesw-resize hover:scale-125 transition-transform"
+                          title="تغییر ابعاد (پایین - چپ)"
                         />
+                        {/* Bottom-Right (SE): right: -1.5, bottom: -1.5 */}
+                        <div
+                          onMouseDown={(e) => handleResizeMouseDown(e, el, 'se')}
+                          className="pointer-events-auto absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-amber-500 border border-white rounded-full cursor-nwse-resize hover:scale-125 transition-transform"
+                          title="تغییر ابعاد (پایین - راست)"
+                        />
+                        {/* Left edge (W): left: -1.5, top: 50% */}
+                        <div
+                          onMouseDown={(e) => handleResizeMouseDown(e, el, 'w')}
+                          className="pointer-events-auto absolute top-1/2 -left-1.5 -translate-y-1/2 w-2.5 h-3 bg-amber-500 border border-white rounded-sm cursor-ew-resize hover:scale-125 transition-transform"
+                          title="تغییر عرض (چپ)"
+                        />
+                        {/* Right edge (E): right: -1.5, top: 50% */}
                         <div
                           onMouseDown={(e) => handleResizeMouseDown(e, el, 'e')}
-                          className="pointer-events-auto absolute top-1/2 -left-1.5 -translate-y-1/2 w-2.5 h-3 bg-amber-500 border border-white rounded-sm cursor-ew-resize hover:scale-125 transition-transform"
-                          title="Resize Width"
+                          className="pointer-events-auto absolute top-1/2 -right-1.5 -translate-y-1/2 w-2.5 h-3 bg-amber-500 border border-white rounded-sm cursor-ew-resize hover:scale-125 transition-transform"
+                          title="تغییر عرض (راست)"
                         />
+                        {/* Top edge (N): top: -1.5, left: 50% */}
+                        <div
+                          onMouseDown={(e) => handleResizeMouseDown(e, el, 'n')}
+                          className="pointer-events-auto absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-2.5 bg-amber-500 border border-white rounded-sm cursor-ns-resize hover:scale-125 transition-transform"
+                          title="تغییر ارتفاع (بالا)"
+                        />
+                        {/* Bottom edge (S): bottom: -1.5, left: 50% */}
                         <div
                           onMouseDown={(e) => handleResizeMouseDown(e, el, 's')}
                           className="pointer-events-auto absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-2.5 bg-amber-500 border border-white rounded-sm cursor-ns-resize hover:scale-125 transition-transform"
-                          title="Resize Height"
+                          title="تغییر ارتفاع (پایین)"
                         />
                       </div>
                     )}
@@ -2006,145 +2100,174 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
         {/* COLUMN 3: Right Selected Element, Margins & Table Inspector (3 Cols) */}
         <div className="lg:col-span-3 space-y-4">
           {/* Page, Margins & Paper Settings Box */}
-          <div className="dashboard-panel p-4 space-y-3">
-            <h3 className="font-extrabold text-xs text-slate-800 dark:text-slate-200 pb-2 border-b border-slate-100 dark:border-slate-800 flex items-center gap-1.5">
-              <Layout size={15} className="text-amber-600" />
-              تنظیمات کاغذ و حاشیه‌ها
-            </h3>
-
-            <div className="space-y-3">
-              {/* Paper Size Selector */}
-              <label className="account-field">
-                <span className="font-bold text-[11px] text-slate-700 dark:text-slate-300">اندازه صفحه</span>
-                <select
-                  value={activeTemplate.page.size}
-                  onChange={(e) => {
-                    const size = e.target.value as PageSizeOption;
-                    const dims = getPageDimensions(size, activeTemplate.page.orientation);
-                    updateActiveTemplate((prev) => ({
-                      ...prev,
-                      page: {
-                        ...prev.page,
-                        size,
-                        widthMm: dims.widthMm,
-                        heightMm: dims.heightMm,
-                      },
-                    }));
-                  }}
-                >
-                  <option value="A4">A4 (۲۱۰ × ۲۹۷ mm)</option>
-                  <option value="A5">A5 (۱۴۸ × ۲۱۰ mm)</option>
-                  <option value="A6">A6 (۱۰۵ × ۱۴۸ mm)</option>
-                  <option value="receipt-80">رسید حرارتی ۸۰ mm</option>
-                  <option value="receipt-58">رسید حرارتی ۵۸ mm</option>
-                  <option value="custom">اندازه سفارشی</option>
-                </select>
-              </label>
-
-              {/* Margins Top, Right, Bottom, Left */}
-              <div className="space-y-1">
-                <span className="font-bold text-[10px] text-slate-700 dark:text-slate-300">حاشیه‌های صفحه (mm)</span>
-                <div className="grid grid-cols-2 gap-2">
-                  <label className="account-field">
-                    <span className="text-[9px]">بالا</span>
-                    <input
-                      type="number"
-                      value={activeTemplate.page.marginTopMm || 0}
-                      onChange={(e) => {
-                        const val = Number(e.target.value);
-                        updateActiveTemplate((prev) => ({
-                          ...prev,
-                          page: { ...prev.page, marginTopMm: val },
-                        }));
-                      }}
-                    />
-                  </label>
-                  <label className="account-field">
-                    <span className="text-[9px]">پایین</span>
-                    <input
-                      type="number"
-                      value={activeTemplate.page.marginBottomMm || 0}
-                      onChange={(e) => {
-                        const val = Number(e.target.value);
-                        updateActiveTemplate((prev) => ({
-                          ...prev,
-                          page: { ...prev.page, marginBottomMm: val },
-                        }));
-                      }}
-                    />
-                  </label>
-                  <label className="account-field">
-                    <span className="text-[9px]">راست</span>
-                    <input
-                      type="number"
-                      value={activeTemplate.page.marginRightMm || 0}
-                      onChange={(e) => {
-                        const val = Number(e.target.value);
-                        updateActiveTemplate((prev) => ({
-                          ...prev,
-                          page: { ...prev.page, marginRightMm: val },
-                        }));
-                      }}
-                    />
-                  </label>
-                  <label className="account-field">
-                    <span className="text-[9px]">چپ</span>
-                    <input
-                      type="number"
-                      value={activeTemplate.page.marginLeftMm || 0}
-                      onChange={(e) => {
-                        const val = Number(e.target.value);
-                        updateActiveTemplate((prev) => ({
-                          ...prev,
-                          page: { ...prev.page, marginLeftMm: val },
-                        }));
-                      }}
-                    />
-                  </label>
-                </div>
-              </div>
-
-              {/* Orientation Selector */}
-              <label className="account-field">
-                <span className="font-bold text-[11px] text-slate-700 dark:text-slate-300">جهت صفحه</span>
-                <select
-                  value={activeTemplate.page.orientation}
-                  onChange={(e) => {
-                    const orientation = e.target.value as PageOrientation;
-                    const dims = getPageDimensions(activeTemplate.page.size, orientation);
-                    updateActiveTemplate((prev) => ({
-                      ...prev,
-                      page: {
-                        ...prev.page,
-                        orientation,
-                        widthMm: dims.widthMm,
-                        heightMm: dims.heightMm,
-                      },
-                    }));
-                  }}
-                >
-                  <option value="portrait">عمودی (Portrait)</option>
-                  <option value="landscape">افقی (Landscape)</option>
-                </select>
-              </label>
-
-              {/* Border Toggle */}
-              <div className="flex items-center justify-between pt-1">
-                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">کادر دور صفحه</span>
-                <input
-                  type="checkbox"
-                  checked={activeTemplate.page.borderEnabled}
-                  onChange={(e) => {
-                    const checked = e.target.checked;
-                    updateActiveTemplate((prev) => ({
-                      ...prev,
-                      page: { ...prev.page, borderEnabled: checked },
-                    }));
-                  }}
-                  className="accent-amber-500"
+          <div className="dashboard-panel p-4 transition-all">
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => setIsPaperSettingsOpen((prev) => !prev)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setIsPaperSettingsOpen((prev) => !prev);
+                }
+              }}
+              className={`w-full flex items-center justify-between text-right group cursor-pointer select-none transition-colors ${
+                isPaperSettingsOpen ? 'pb-2 border-b border-slate-100 dark:border-slate-800' : ''
+              }`}
+              title={isPaperSettingsOpen ? 'بستن تنظیمات کاغذ و حاشیه‌ها' : 'باز کردن تنظیمات کاغذ و حاشیه‌ها'}
+            >
+              <h3 className="font-extrabold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-1.5 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
+                <Layout size={15} className="text-amber-600" />
+                <span>تنظیمات کاغذ و حاشیه‌ها</span>
+              </h3>
+              <div className="flex items-center gap-1.5 text-slate-400 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
+                {!isPaperSettingsOpen && (
+                  <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                    {activeTemplate.page.size} • {activeTemplate.page.orientation === 'portrait' ? 'عمودی' : 'افقی'}
+                  </span>
+                )}
+                <ChevronDown
+                  size={14}
+                  className={`transition-transform duration-200 ${isPaperSettingsOpen ? 'rotate-180' : ''}`}
                 />
               </div>
             </div>
+
+            {isPaperSettingsOpen && (
+              <div className="space-y-3 pt-3">
+                {/* Paper Size Selector */}
+                <label className="account-field">
+                  <span className="font-bold text-[11px] text-slate-700 dark:text-slate-300">اندازه صفحه</span>
+                  <select
+                    value={activeTemplate.page.size}
+                    onChange={(e) => {
+                      const size = e.target.value as PageSizeOption;
+                      const dims = getPageDimensions(size, activeTemplate.page.orientation);
+                      updateActiveTemplate((prev) => ({
+                        ...prev,
+                        page: {
+                          ...prev.page,
+                          size,
+                          widthMm: dims.widthMm,
+                          heightMm: dims.heightMm,
+                        },
+                      }));
+                    }}
+                  >
+                    <option value="A4">A4 (۲۱۰ × ۲۹۷ mm)</option>
+                    <option value="A5">A5 (۱۴۸ × ۲۱۰ mm)</option>
+                    <option value="A6">A6 (۱۰۵ × ۱۴۸ mm)</option>
+                    <option value="receipt-80">رسید حرارتی ۸۰ mm</option>
+                    <option value="receipt-58">رسید حرارتی ۵۸ mm</option>
+                    <option value="custom">اندازه سفارشی</option>
+                  </select>
+                </label>
+
+                {/* Margins Top, Right, Bottom, Left */}
+                <div className="space-y-1">
+                  <span className="font-bold text-[10px] text-slate-700 dark:text-slate-300">حاشیه‌های صفحه (mm)</span>
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="account-field">
+                      <span className="text-[9px]">بالا</span>
+                      <input
+                        type="number"
+                        value={activeTemplate.page.marginTopMm || 0}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          updateActiveTemplate((prev) => ({
+                            ...prev,
+                            page: { ...prev.page, marginTopMm: val },
+                          }));
+                        }}
+                      />
+                    </label>
+                    <label className="account-field">
+                      <span className="text-[9px]">پایین</span>
+                      <input
+                        type="number"
+                        value={activeTemplate.page.marginBottomMm || 0}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          updateActiveTemplate((prev) => ({
+                            ...prev,
+                            page: { ...prev.page, marginBottomMm: val },
+                          }));
+                        }}
+                      />
+                    </label>
+                    <label className="account-field">
+                      <span className="text-[9px]">راست</span>
+                      <input
+                        type="number"
+                        value={activeTemplate.page.marginRightMm || 0}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          updateActiveTemplate((prev) => ({
+                            ...prev,
+                            page: { ...prev.page, marginRightMm: val },
+                          }));
+                        }}
+                      />
+                    </label>
+                    <label className="account-field">
+                      <span className="text-[9px]">چپ</span>
+                      <input
+                        type="number"
+                        value={activeTemplate.page.marginLeftMm || 0}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          updateActiveTemplate((prev) => ({
+                            ...prev,
+                            page: { ...prev.page, marginLeftMm: val },
+                          }));
+                        }}
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                {/* Orientation Selector */}
+                <label className="account-field">
+                  <span className="font-bold text-[11px] text-slate-700 dark:text-slate-300">جهت صفحه</span>
+                  <select
+                    value={activeTemplate.page.orientation}
+                    onChange={(e) => {
+                      const orientation = e.target.value as PageOrientation;
+                      const dims = getPageDimensions(activeTemplate.page.size, orientation);
+                      updateActiveTemplate((prev) => ({
+                        ...prev,
+                        page: {
+                          ...prev.page,
+                          orientation,
+                          widthMm: dims.widthMm,
+                          heightMm: dims.heightMm,
+                        },
+                      }));
+                    }}
+                  >
+                    <option value="portrait">عمودی (Portrait)</option>
+                    <option value="landscape">افقی (Landscape)</option>
+                  </select>
+                </label>
+
+                {/* Border Toggle */}
+                <div className="flex items-center justify-between pt-1">
+                  <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">کادر دور صفحه</span>
+                  <input
+                    type="checkbox"
+                    checked={activeTemplate.page.borderEnabled}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      updateActiveTemplate((prev) => ({
+                        ...prev,
+                        page: { ...prev.page, borderEnabled: checked },
+                      }));
+                    }}
+                    className="accent-amber-500"
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Selected Element & Table Comprehensive Inspector */}
@@ -4783,8 +4906,8 @@ function renderElementPreviewContent(el: InvoicePrintElement, settings: any, tem
           },
         );
         return (
-          <div className="w-full h-full flex flex-col items-center justify-center p-1 bg-white rounded overflow-hidden shadow-2xs">
-            <QrCodeSvg value={qrVal} backgroundColor="#ffffff" color="#000000" />
+          <div className="w-full h-full flex flex-col items-center justify-center p-0.5 bg-white rounded overflow-hidden shadow-2xs">
+            <QrCodeSvg value={qrVal} margin={0.5} backgroundColor="#ffffff" color="#000000" />
             {showLabel && (
               <span className="text-[70%] font-bold text-center text-slate-900 truncate max-w-full mt-0.5">{label}</span>
             )}
@@ -4889,7 +5012,7 @@ function renderElementPreviewContent(el: InvoicePrintElement, settings: any, tem
           }}
         >
           <table
-            className="w-full h-full text-center border-collapse table-fixed"
+            className="w-full text-center border-collapse table-fixed"
             style={{
               color: tableConfig.bodyTextColor || el.style.color || '#0f172a',
               fontSize: tableConfig.fontSizePt ? `${tableConfig.fontSizePt}pt` : '80%',
@@ -4902,13 +5025,14 @@ function renderElementPreviewContent(el: InvoicePrintElement, settings: any, tem
                   fontWeight: getFontWeightCss(el.style?.fontWeight || 'bold'),
                   backgroundColor: tableConfig.headerBackgroundColor || '#f1f5f9',
                   color: tableConfig.headerTextColor || '#0f172a',
+                  height: '8mm',
                   borderBottom: `${tableBorderWidth} ${tableBorderStyle} ${tableBorderColor}`,
                 }}
               >
                 {cols.map((col, cIdx) => (
                   <th
                     key={col.id}
-                    className="p-1"
+                    className="py-1 px-1.5 whitespace-nowrap align-middle"
                     style={{
                       width: col.widthMm ? `${col.widthMm}mm` : 'auto',
                       borderLeft: showVertical && cIdx < cols.length - 1 ? `${tableBorderWidth} ${tableBorderStyle} ${tableBorderColor}` : undefined,
@@ -4958,6 +5082,8 @@ function renderElementPreviewContent(el: InvoicePrintElement, settings: any, tem
                   <tr
                     key={idx}
                     style={{
+                      minHeight: tableConfig.rowHeightMm ? `${tableConfig.rowHeightMm}mm` : '7.5mm',
+                      height: tableConfig.rowHeightMm ? `${tableConfig.rowHeightMm}mm` : undefined,
                       backgroundColor: striped && idx % 2 === 1 ? altBg : undefined,
                       borderBottom: showHorizontal && idx === 0 ? `${tableBorderWidth} ${tableBorderStyle} ${tableBorderColor}` : undefined,
                     }}
@@ -4965,7 +5091,7 @@ function renderElementPreviewContent(el: InvoicePrintElement, settings: any, tem
                     {cols.map((col, cIdx) => (
                       <td
                         key={col.id}
-                        className="p-1"
+                        className="py-1 px-1.5 align-middle leading-snug break-words"
                         style={{
                           borderLeft: showVertical && cIdx < cols.length - 1 ? `${tableBorderWidth} ${tableBorderStyle} ${tableBorderColor}` : undefined,
                           textAlign: col.textAlign || 'center',
@@ -5066,7 +5192,7 @@ function renderElementPreviewContent(el: InvoicePrintElement, settings: any, tem
           return (
             <div className="flex items-center justify-center p-0.5">
               <div className="p-0.5 bg-white rounded shadow-2xs inline-flex">
-                <QrCodeSvg value={qrVal} size={24} backgroundColor="#ffffff" color="#000000" />
+                <QrCodeSvg value={qrVal} size={24} margin={0.5} backgroundColor="#ffffff" color="#000000" />
               </div>
             </div>
           );

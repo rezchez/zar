@@ -7,6 +7,7 @@ export interface QrCodeSvgProps {
   className?: string;
   color?: string;
   backgroundColor?: string;
+  margin?: number;
 }
 
 export function QrCodeSvg({
@@ -15,19 +16,20 @@ export function QrCodeSvg({
   className,
   color = '#000000',
   backgroundColor = '#ffffff',
+  margin = 0.5,
 }: QrCodeSvgProps) {
   if (!value || typeof value !== 'string') return null;
 
   try {
     const qr = QRCode.create(value, { errorCorrectionLevel: 'M' });
     const count = qr.modules.size;
-    const margin = 1.5;
-    const total = count + margin * 2;
+    const quietZone = typeof margin === 'number' && margin >= 0 ? margin : 0.5;
+    const total = count + quietZone * 2;
     let path = '';
     for (let r = 0; r < count; r++) {
       for (let c = 0; c < count; c++) {
         if (qr.modules.get(r, c)) {
-          path += `M${c + margin},${r + margin}h1v1h-1z `;
+          path += `M${c + quietZone},${r + quietZone}h1v1h-1z `;
         }
       }
     }

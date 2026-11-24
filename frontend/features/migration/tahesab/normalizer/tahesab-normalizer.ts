@@ -207,6 +207,43 @@ export function normalizeTahesabData(
     }
   }
 
+  // Pre-index conditional gold pieces (by stamp receipt number and assay lab)
+  // In Tahesab, conditional melted gold is entered with Command2 = '171' or with explicit 'شرطی' text.
+  // When that piece is subsequently spent, delivered to counterparties, or remitted via Hawala,
+  // Tahesab often leaves Command2 as null in the outflow row. Pre-indexing ensures the entire lifecycle
+  // of the conditional piece retains isConditional: true and kind: 'conditional'.
+  const conditionalStampSet = new Set<string>();
+  const conditionalStampLabKeySet = new Set<string>();
+
+  for (const d of rawDb.hesab_detail) {
+    const dCmd2 = parseText(d.Command2);
+    const dCmd = parseText(d.Command);
+    const dTmp = parseText(d.Temp);
+    const dSh = parseText(d.Sharh);
+    const dNo = parseText(d.no);
+    const dNoK = parseText(d.NO_kar);
+    const dBaab = parseText(d.Baabat);
+
+    const isDirectlySharti =
+      dCmd2.includes('171') ||
+      dTmp.includes('شرطی') ||
+      dNo.includes('شرطی') ||
+      dSh.includes('شرطی') ||
+      dBaab.includes('شرطی') ||
+      dNoK.includes('شرطی') ||
+      dCmd.includes('شرطی') ||
+      dCmd.toLowerCase().includes('sharti');
+
+    if (isDirectlySharti) {
+      const stamp = parseText(d.sh_sharti);
+      const lab = parseText(d.name_az);
+      if (stamp) {
+        conditionalStampSet.add(stamp);
+        if (lab) conditionalStampLabKeySet.add(`${stamp}|${lab}`);
+      }
+    }
+  }
+
   const allCurrencies = new Set<string>(['IRR', 'USD']);
   for (const p of parties) {
     if (p.currency && p.currency !== 'IRR') allCurrencies.add(p.currency.toUpperCase());
@@ -722,8 +759,29 @@ export function normalizeTahesabData(
       const signedRialAmount = (moneyNature === 'received' ? amountIrr : moneyNature === 'paid' ? -amountIrr : 0) || 0;
       const signedForeignAmount = foreignAmt ? (moneyNature === 'received' ? foreignAmt : -foreignAmt) || 0 : 0;
 
-      const nature: 'received' | 'paid' =
+      const isConversion =
+        dSharh.includes('پولی کردن') ||
+        dSharh.includes('پول به طلا') ||
+        dSharh.includes('طلا به پول') ||
+        dSharh.includes('#2296') ||
+        dSharh.includes('#2295');
+
+      const conversionMode: 'money_to_weight' | 'weight_to_money' =
+        dSharh.includes('طلا به پول') || dSharh.includes('#2295')
+          ? 'weight_to_money'
+          : 'money_to_weight';
+
+      const metalPriceType: 'mesghal17' | 'gram18' =
+        parseText(dRow.MazanehISmesghal) === '1' || parseText(dRow.Check_tozih).includes('MBS')
+          ? 'mesghal17'
+          : 'gram18';
+
+      let nature: 'received' | 'paid' =
         goldNature === 'received' || moneyNature === 'received' ? 'received' : 'paid';
+
+      if (isConversion) {
+        nature = (tkh > 0 && rv > 0) || moneyNature === 'received' ? 'received' : 'paid';
+      }
 
       // Party side in double-entry:
       // If customer brings gold or pays cash / transfers in -> customer is Creditor (بستانکار)
@@ -737,11 +795,20 @@ export function normalizeTahesabData(
       const dCommand = parseText(dRow.Command);
       const dCommand2 = parseText(dRow.Command2);
       const dBaabat = parseText(dRow.Baabat);
+      const dNameAz = parseText(dRow.name_az);
+
+      const isStampConditional = Boolean(
+        shSharti && (
+          (dNameAz && conditionalStampLabKeySet.has(`${shSharti}|${dNameAz}`)) ||
+          conditionalStampSet.has(shSharti)
+        )
+      );
 
       // In Tahesab, conditional gold (طلای شرطی / عیار شرطی) is identified by:
       // 1. Command2 containing '171' (the dedicated Tahesab machine operation code for conditional melted gold)
       // 2. Temp description containing 'شرطی' (e.g. "ورود آبشده شرطی (40/57*746) [460917 بلوط]")
       // 3. User description in Sharh, Baabat, no, NO_kar, or Command containing 'شرطی' or 'sharti'
+      // 4. Pre-indexed conditional stamp/lab key from matching transactions in the database lifecycle
       // Note: Items frequently possess an assumed/temporary karat (e.g. 746, 750) yet remain strictly conditional.
       const isConditional =
         dCommand2.includes('171') ||
@@ -751,7 +818,8 @@ export function normalizeTahesabData(
         dBaabat.includes('شرطی') ||
         dNoKar.includes('شرطی') ||
         dCommand.includes('شرطی') ||
-        dCommand.toLowerCase().includes('sharti');
+        dCommand.toLowerCase().includes('sharti') ||
+        isStampConditional;
 
       const isAbshode =
         dRow.Abshode === '-1' ||
@@ -778,6 +846,8 @@ export function normalizeTahesabData(
       let kind: NormalizedDocumentLine['kind'] = 'general_metal';
       if (isBankRow) {
         kind = 'bank';
+      } else if (isConversion) {
+        kind = 'conversion';
       } else if (isEtiquette) {
         kind = 'etiquette';
       } else if (isWorkmanship) {
@@ -817,7 +887,9 @@ export function normalizeTahesabData(
       }
 
       let documentTypeLabel: string | undefined;
-      if (isConditional) {
+      if (isConversion) {
+        documentTypeLabel = conversionMode === 'weight_to_money' ? 'تبدیل وزنی به مالی' : 'تبدیل مالی به وزنی';
+      } else if (isConditional) {
         documentTypeLabel = isHawala ? 'حواله طلای شرطی' : (nature === 'received' ? 'ورود آب شده شرطی' : 'خروج آب شده شرطی');
       } else if (kind === 'etiquette') {
         documentTypeLabel = nature === 'paid' ? 'خروج اتیکت طلا' : 'ورود اتیکت طلا';
@@ -893,6 +965,9 @@ export function normalizeTahesabData(
         transferToken,
         transferSide,
         transferPartnerName: parseText(dRow.name_az) || undefined,
+        conversionMode: isConversion ? conversionMode : undefined,
+        metalPriceType: isConversion ? metalPriceType : undefined,
+        unitPrice: isConversion && rawFiF > 0 ? rawFiF : undefined,
         description: cleanDesc,
         isConditional,
         bankName,

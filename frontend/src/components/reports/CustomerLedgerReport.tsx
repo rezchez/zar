@@ -49,6 +49,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import type { Customer } from '@/lib/customer';
+import { normalizeCurrencyCode } from '@/lib/customer';
 import type { CustomerTransaction } from '@/lib/transaction';
 import { useAppSettings } from '@/src/components/SettingsProvider';
 import { Calendar } from '@/components/ui/calendar';
@@ -123,6 +124,216 @@ const CATEGORY_FILTER_BUTTONS = [
   },
 ] as const;
 
+export type AvailableCashFund = {
+  id: string;
+  name: string;
+  currencyId?: string;
+  currencyCode?: string;
+  currencyName?: string;
+  currencySymbol?: string;
+};
+
+export type CurrencyVisualMeta = {
+  label: string;
+  symbol: string;
+  activeClass: string;
+  inactiveBadgeClass: string;
+};
+
+export function getCurrencyVisualMeta(code: string): CurrencyVisualMeta {
+  const norm = normalizeCurrencyCode(code) || code;
+  switch (norm) {
+    case 'USD':
+      return {
+        label: 'دلار',
+        symbol: '$',
+        activeClass: 'bg-emerald-600 text-white font-bold border-emerald-700 shadow-xs ring-1 ring-emerald-400/50',
+        inactiveBadgeClass: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30',
+      };
+    case 'EUR':
+      return {
+        label: 'یورو',
+        symbol: '€',
+        activeClass: 'bg-sky-600 text-white font-bold border-sky-700 shadow-xs ring-1 ring-sky-400/50',
+        inactiveBadgeClass: 'bg-sky-500/15 text-sky-700 dark:text-sky-300 border border-sky-500/30',
+      };
+    case 'AED':
+      return {
+        label: 'درهم',
+        symbol: 'د.إ',
+        activeClass: 'bg-amber-500 text-slate-950 font-black border-amber-600 shadow-xs ring-1 ring-amber-400/50',
+        inactiveBadgeClass: 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30',
+      };
+    case 'GBP':
+      return {
+        label: 'پوند',
+        symbol: '£',
+        activeClass: 'bg-purple-600 text-white font-bold border-purple-700 shadow-xs ring-1 ring-purple-400/50',
+        inactiveBadgeClass: 'bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30',
+      };
+    case 'TRY':
+      return {
+        label: 'لیر',
+        symbol: '₺',
+        activeClass: 'bg-rose-600 text-white font-bold border-rose-700 shadow-xs ring-1 ring-rose-400/50',
+        inactiveBadgeClass: 'bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-500/30',
+      };
+    case 'CAD':
+      return {
+        label: 'دلار کانادا',
+        symbol: 'C$',
+        activeClass: 'bg-cyan-600 text-white font-bold border-cyan-700 shadow-xs ring-1 ring-cyan-400/50',
+        inactiveBadgeClass: 'bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 border border-cyan-500/30',
+      };
+    case 'AUD':
+      return {
+        label: 'دلار استرالیا',
+        symbol: 'A$',
+        activeClass: 'bg-teal-600 text-white font-bold border-teal-700 shadow-xs ring-1 ring-teal-400/50',
+        inactiveBadgeClass: 'bg-teal-500/15 text-teal-700 dark:text-teal-300 border border-teal-500/30',
+      };
+    case 'CNY':
+      return {
+        label: 'یوآن',
+        symbol: '¥',
+        activeClass: 'bg-red-600 text-white font-bold border-red-700 shadow-xs ring-1 ring-red-400/50',
+        inactiveBadgeClass: 'bg-red-500/15 text-red-700 dark:text-red-300 border border-red-500/30',
+      };
+    case 'IRT':
+    case 'IRR':
+    case 'TOMAN':
+      return {
+        label: 'تومان',
+        symbol: 'تومان',
+        activeClass: 'bg-indigo-600 text-white font-bold border-indigo-700 shadow-xs ring-1 ring-indigo-400/50',
+        inactiveBadgeClass: 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border border-indigo-500/30',
+      };
+    default:
+      return {
+        label: code,
+        symbol: code,
+        activeClass: 'bg-slate-700 text-white font-bold border-slate-800 shadow-xs ring-1 ring-slate-500/40',
+        inactiveBadgeClass: 'bg-slate-500/15 text-slate-700 dark:text-slate-300 border border-slate-500/30',
+      };
+  }
+}
+
+export function getTransactionCurrencies(
+  t: CustomerTransaction,
+  baseCurrency: 'IRR' | 'IRT' = 'IRT',
+  fundsList: AvailableCashFund[] = []
+): string[] {
+  const currencies = new Set<string>();
+
+  const fCurr = normalizeCurrencyCode(String(t.foreignCurrency || ''));
+  if (fCurr && fCurr !== 'IRR' && fCurr !== 'IRT') {
+    currencies.add(fCurr);
+  }
+
+  const tCurr = normalizeCurrencyCode(String(t.tertiaryCurrency || ''));
+  if (tCurr && tCurr !== 'IRR' && tCurr !== 'IRT') {
+    currencies.add(tCurr);
+  }
+
+  let details: Record<string, any> = {};
+  if (t.documentDetails) {
+    try {
+      details =
+        typeof t.documentDetails === 'object'
+          ? (t.documentDetails as Record<string, any>)
+          : JSON.parse(t.documentDetails);
+    } catch {}
+  }
+
+  const detailUnits = [
+    details.currencyUnit,
+    details.currencyCode,
+    details.cashFundCurrencyCode,
+    details.settlementCurrencyUnit,
+    details.wageCurrency,
+    details.foreignCurrency,
+    details.foreignCurrencyUnit,
+    details.currency,
+    details.sourceCurrency,
+  ];
+  for (const u of detailUnits) {
+    if (u) {
+      const norm = normalizeCurrencyCode(String(u));
+      if (norm && norm !== 'IRR' && norm !== 'IRT') {
+        currencies.add(norm);
+      }
+    }
+  }
+
+  const fundId = details.cashFundId || details.vaultId || details.fundId;
+  if (fundId) {
+    const matchedFund = fundsList.find((f) => f.id === fundId);
+    if (matchedFund) {
+      const raw = matchedFund.currencyCode || matchedFund.currencyName || matchedFund.name || '';
+      const norm = normalizeCurrencyCode(raw);
+      if (norm) currencies.add(norm);
+    }
+  }
+
+  const isRialNonZero = (Number(t.rialAmount) || 0) !== 0;
+  const isBankOrCheck = t.documentTab === 'bank' || t.documentTab === 'check';
+  const isDomesticCash = t.documentTab === 'cash' && details.isForeignCash !== true;
+  const isDomesticUnit = details.currencyUnit === 'IRR' || details.currencyUnit === 'IRT';
+
+  if (isRialNonZero || isBankOrCheck || isDomesticCash || isDomesticUnit) {
+    currencies.add(baseCurrency);
+    currencies.add(baseCurrency === 'IRT' ? 'IRR' : 'IRT');
+    currencies.add('TOMAN');
+  }
+
+  return Array.from(currencies);
+}
+
+export function isTransactionForeign(
+  t: CustomerTransaction,
+  baseCurrency: 'IRR' | 'IRT' = 'IRT',
+  fundsList: AvailableCashFund[] = []
+): boolean {
+  const currs = getTransactionCurrencies(t, baseCurrency, fundsList);
+  return currs.some((c) => c !== 'IRR' && c !== 'IRT' && c !== 'TOMAN');
+}
+
+export function isTransactionDomestic(
+  t: CustomerTransaction,
+  baseCurrency: 'IRR' | 'IRT' = 'IRT',
+  fundsList: AvailableCashFund[] = []
+): boolean {
+  const currs = getTransactionCurrencies(t, baseCurrency, fundsList);
+  return currs.some((c) => c === 'IRR' || c === 'IRT' || c === 'TOMAN');
+}
+
+export function transactionMatchesCurrency(
+  t: CustomerTransaction,
+  targetCode: string,
+  baseCurrency: 'IRR' | 'IRT' = 'IRT',
+  fundsList: AvailableCashFund[] = []
+): boolean {
+  if (!targetCode || targetCode === 'all') return true;
+  if (targetCode === 'foreign-only') {
+    return isTransactionForeign(t, baseCurrency, fundsList);
+  }
+  if (targetCode === 'domestic') {
+    return isTransactionDomestic(t, baseCurrency, fundsList);
+  }
+  const txCurrs = getTransactionCurrencies(t, baseCurrency, fundsList);
+  const targetNorm = normalizeCurrencyCode(targetCode);
+  return txCurrs.some((c) => {
+    if (c === targetNorm) return true;
+    if (
+      (targetNorm === 'IRT' || targetNorm === 'IRR' || targetNorm === 'TOMAN') &&
+      (c === 'IRT' || c === 'IRR' || c === 'TOMAN')
+    ) {
+      return true;
+    }
+    return false;
+  });
+}
+
 export type ColumnVisibility = {
   tick: boolean;
   rowNumber: boolean;
@@ -178,12 +389,12 @@ export type MetalFilterType = 'gold' | 'silver' | 'platinum';
 export const METAL_FILTER_OPTIONS: {
   id: MetalFilterType;
   label: string;
-  icon: string;
+  icon?: string;
   activeColor: string;
 }[] = [
-  { id: 'gold', label: 'طلا', icon: '🟡', activeColor: 'bg-amber-500 text-white border-amber-600 shadow-sm' },
-  { id: 'silver', label: 'نقره', icon: '🥈', activeColor: 'bg-slate-600 text-white border-slate-700 shadow-sm' },
-  { id: 'platinum', label: 'پلاتین', icon: '⚪', activeColor: 'bg-zinc-700 text-white border-zinc-800 shadow-sm' },
+  { id: 'gold', label: 'طلا', activeColor: 'bg-amber-500 text-slate-950 font-black shadow-sm ring-1 ring-amber-400/50' },
+  { id: 'silver', label: 'نقره', activeColor: 'bg-slate-600 text-white font-bold shadow-sm ring-1 ring-slate-400/40' },
+  { id: 'platinum', label: 'پلاتین', activeColor: 'bg-zinc-700 text-white font-bold shadow-sm ring-1 ring-zinc-500/40' },
 ];
 
 export function getColumnGroups(metalLabel: string = 'طلا'): {
@@ -512,7 +723,8 @@ export default function CustomerLedgerReport({
   availableCustomers: Customer[];
 }) {
   const { settings, formatMoney, formatWeight } = useAppSettings();
-  const baseCurrencySymbol = settings.baseCurrency === 'IRT' ? 'تومان' : 'ریال';
+  const baseCurrency: 'IRR' | 'IRT' = settings.baseCurrency === 'IRR' ? 'IRR' : 'IRT';
+  const baseCurrencySymbol = baseCurrency === 'IRT' ? 'تومان' : 'ریال';
 
   // Filters state
   const [customerId, setCustomerId] = useState<string>('');
@@ -528,10 +740,30 @@ export default function CustomerLedgerReport({
   const [datePickerCalendarType, setDatePickerCalendarType] = useState<'shamsi' | 'miladi'>('shamsi');
   const dateRangeRef = useRef<HTMLDivElement>(null);
   const datePickerDialogRef = useRef<HTMLDivElement>(null);
-  const [activeTab, setActiveTab] = useState('all');
+  const [selectedCategories, setSelectedCategories] = useState<string[]>(['all']);
+  const [selectedCurrencies, setSelectedCurrencies] = useState<string[]>(['all']);
+  const [availableFunds, setAvailableFunds] = useState<AvailableCashFund[]>([]);
   const [selectedMetal, setSelectedMetal] = useState<MetalFilterType>('gold');
+  const [serverMetalCounts, setServerMetalCounts] = useState<{ gold: number; silver: number; platinum: number } | null>(null);
+  const [serverCurrencyCounts, setServerCurrencyCounts] = useState<{ foreignOnly: number; domestic: number } | null>(null);
   const [sortParam, setSortParam] = useState<'date_asc' | 'date_desc' | 'doc_num'>('date_asc');
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Load created cash funds for the currency filter
+  useEffect(() => {
+    let isMounted = true;
+    fetch('/api/cash-vault')
+      .then((res) => res.json())
+      .then((data) => {
+        if (isMounted && Array.isArray(data?.vaults)) {
+          setAvailableFunds(data.vaults);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const metalLabel = useMemo(() => {
     switch (selectedMetal) {
@@ -900,12 +1132,70 @@ export default function CustomerLedgerReport({
     return `${toPersianDigits(Math.abs(distance))} روز ${distance < 0 ? 'پیش' : 'بعد'}`;
   }
 
-  function handleSelectCategory(catId: string) {
-    setActiveTab(catId);
+  function handleToggleCategory(catId: string) {
+    if (catId === 'all') {
+      setSelectedCategories(['all']);
+      setCurrentPage(1);
+      return;
+    }
+
+    setSelectedCategories((prev) => {
+      let next: string[];
+      if (prev.includes('all')) {
+        next = [catId];
+      } else if (prev.includes(catId)) {
+        next = prev.filter((id) => id !== catId);
+        if (next.length === 0) {
+          next = ['all'];
+        }
+      } else {
+        next = [...prev, catId];
+        const individualIds = CATEGORY_FILTER_BUTTONS.filter((b) => b.id !== 'all').map((b) => b.id);
+        if (individualIds.every((id) => next.includes(id))) {
+          next = ['all'];
+        }
+      }
+      return next;
+    });
     setCurrentPage(1);
   }
 
-  async function handleSearch() {
+  function handleToggleCurrency(currCode: string) {
+    let next: string[];
+    if (currCode === 'all') {
+      next = ['all'];
+    } else {
+      if (selectedCurrencies.includes('all')) {
+        next = [currCode];
+      } else if (selectedCurrencies.includes(currCode)) {
+        next = selectedCurrencies.filter((c) => c !== currCode);
+        if (next.length === 0) {
+          next = ['all'];
+        }
+      } else {
+        next = [...selectedCurrencies, currCode];
+        if (activeCurrencyOptions.every((c) => next.includes(c.code))) {
+          next = ['all'];
+        }
+      }
+    }
+    setSelectedCurrencies(next);
+    setCurrentPage(1);
+    if (searched) {
+      handleSearch(selectedMetal, next);
+    }
+  }
+
+  async function handleSearch(
+    overrideMetal?: MetalFilterType | React.MouseEvent | unknown,
+    overrideCurrencies?: string[]
+  ) {
+    const metalToQuery =
+      typeof overrideMetal === 'string' &&
+      (overrideMetal === 'gold' || overrideMetal === 'silver' || overrideMetal === 'platinum')
+        ? (overrideMetal as MetalFilterType)
+        : selectedMetal;
+    const currsToQuery = overrideCurrencies ?? selectedCurrencies;
     setLoading(true);
     setError('');
     setCurrentPage(1);
@@ -919,12 +1209,20 @@ export default function CustomerLedgerReport({
           toDateJalali: toDate || undefined,
           sort: sortParam,
           search: searchTerm || undefined,
+          metal: metalToQuery,
+          currencies: currsToQuery,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'خطا در دریافت گزارش.');
 
       setTransactions(data.transactions || []);
+      if (data.metalCounts) {
+        setServerMetalCounts(data.metalCounts);
+      }
+      if (data.currencyCounts) {
+        setServerCurrencyCounts(data.currencyCounts);
+      }
       setOpeningBalances(
         data.openingBalances || {
           goldAmount: 0,
@@ -933,6 +1231,9 @@ export default function CustomerLedgerReport({
           rialAmount: 0,
         }
       );
+      if (Array.isArray(data.cashFunds) && data.cashFunds.length > 0) {
+        setAvailableFunds(data.cashFunds);
+      }
       setSearched(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'خطای ناشناخته');
@@ -954,7 +1255,21 @@ export default function CustomerLedgerReport({
     let runningRial = openingBalances.rialAmount || 0;
 
     // Filter transactions relevant to selected metal (strictly separate metals)
+    const isCurrencyFiltered =
+      !selectedCurrencies.includes('all') && selectedCurrencies.length > 0;
+
     const filteredByMetal = transactions.filter((t) => {
+      // If a specific currency filter is active, any transaction matching that currency MUST NOT be omitted by metal!
+      if (isCurrencyFiltered) {
+        if (
+          selectedCurrencies.some((currCode) =>
+            transactionMatchesCurrency(t, currCode, baseCurrency, availableFunds)
+          )
+        ) {
+          return true;
+        }
+      }
+
       const gAmt = Number(t.goldAmount) || 0;
       const sAmt = Number(t.silverAmount) || 0;
       const pAmt = Number(t.platinumAmount) || 0;
@@ -966,13 +1281,13 @@ export default function CustomerLedgerReport({
       }
       if (selectedMetal === 'silver') {
         if (sAmt !== 0) return true;
-        if (gAmt !== 0 || pAmt !== 0) return false;
-        return true;
+        if (customerId && gAmt === 0 && pAmt === 0) return true;
+        return false;
       }
       if (selectedMetal === 'platinum') {
         if (pAmt !== 0) return true;
-        if (gAmt !== 0 || sAmt !== 0) return false;
-        return true;
+        if (customerId && gAmt === 0 && sAmt === 0) return true;
+        return false;
       }
       return true;
     });
@@ -1068,7 +1383,16 @@ export default function CustomerLedgerReport({
     }
 
     return mapped;
-  }, [transactions, openingBalances, selectedMetal, sortState, sortParam]);
+  }, [
+    transactions,
+    openingBalances,
+    selectedMetal,
+    sortState,
+    sortParam,
+    selectedCurrencies,
+    baseCurrency,
+    availableFunds,
+  ]);
 
   // Check if there is a non-zero balance carried forward strictly prior to fromDate
   const hasPreviousBalance = useMemo(() => {
@@ -1088,6 +1412,9 @@ export default function CustomerLedgerReport({
 
   // Dynamic counts for each metal option
   const metalCounts = useMemo(() => {
+    if (serverMetalCounts) {
+      return serverMetalCounts;
+    }
     let gold = 0;
     let silver = 0;
     let platinum = 0;
@@ -1100,7 +1427,7 @@ export default function CustomerLedgerReport({
       if (pAmt !== 0) platinum++;
     }
     return { gold, silver, platinum };
-  }, [transactions]);
+  }, [transactions, serverMetalCounts]);
 
   // Dynamic counts for each category filter button
   const categoryCounts = useMemo(() => {
@@ -1124,16 +1451,180 @@ export default function CustomerLedgerReport({
     return counts;
   }, [fullCalculatedLedger]);
 
-  // Visible Ledger Rows: filtered by active category tab and live search
+  // Count of foreign-only transactions (independent of metal filter)
+  const foreignOnlyCount = useMemo(() => {
+    let count = 0;
+    for (const t of transactions) {
+      if (isTransactionForeign(t, baseCurrency, availableFunds)) count++;
+    }
+    if (serverCurrencyCounts && serverCurrencyCounts.foreignOnly > count) {
+      return serverCurrencyCounts.foreignOnly;
+    }
+    return count;
+  }, [transactions, baseCurrency, availableFunds, serverCurrencyCounts]);
+
+  // Count of domestic transactions (independent of metal filter)
+  const domesticCount = useMemo(() => {
+    let count = 0;
+    for (const t of transactions) {
+      if (isTransactionDomestic(t, baseCurrency, availableFunds)) count++;
+    }
+    if (serverCurrencyCounts && serverCurrencyCounts.domestic > count) {
+      return serverCurrencyCounts.domestic;
+    }
+    return count;
+  }, [transactions, baseCurrency, availableFunds, serverCurrencyCounts]);
+
+  // Currencies that have a cash fund created ("صندوقشون ایجاد شده") AND/OR transaction in transactions
+  const activeCurrencyOptions = useMemo(() => {
+    const currencyMap = new Map<
+      string,
+      {
+        code: string;
+        label: string;
+        symbol: string;
+        count: number;
+        fundNames: string[];
+        visual: CurrencyVisualMeta;
+      }
+    >();
+
+    // 1. From created funds
+    for (const fund of availableFunds) {
+      const rawCode = fund.currencyCode || fund.currencyName || fund.name || '';
+      const norm = normalizeCurrencyCode(rawCode);
+      if (!norm || norm === 'IRR' || norm === 'IRT' || norm === 'TOMAN') continue;
+
+      const canonicalCode = norm;
+      const visual = getCurrencyVisualMeta(canonicalCode);
+      const existing = currencyMap.get(canonicalCode);
+      if (existing) {
+        if (fund.name && !existing.fundNames.includes(fund.name)) {
+          existing.fundNames.push(fund.name);
+        }
+      } else {
+        let label = fund.currencyName || visual.label;
+        if (canonicalCode === 'USD') label = 'دلار';
+        else if (canonicalCode === 'EUR') label = 'یورو';
+        else if (canonicalCode === 'AED') label = 'درهم';
+        else if (canonicalCode === 'GBP') label = 'پوند';
+        else if (canonicalCode === 'TRY') label = 'لیر';
+
+        currencyMap.set(canonicalCode, {
+          code: canonicalCode,
+          label,
+          symbol: fund.currencySymbol || visual.symbol,
+          count: 0,
+          fundNames: fund.name ? [fund.name] : [],
+          visual,
+        });
+      }
+    }
+
+    // 2. From transactions directly (across all transactions, independent of metal)
+    for (const t of transactions) {
+      const currs = getTransactionCurrencies(t, baseCurrency, availableFunds);
+      for (const c of currs) {
+        if (c === 'IRR' || c === 'IRT' || c === 'TOMAN') continue;
+        if (!currencyMap.has(c)) {
+          const visual = getCurrencyVisualMeta(c);
+          let label = visual.label;
+          if (c === 'USD') label = 'دلار';
+          else if (c === 'EUR') label = 'یورو';
+          else if (c === 'AED') label = 'درهم';
+          else if (c === 'GBP') label = 'پوند';
+          else if (c === 'TRY') label = 'لیر';
+
+          currencyMap.set(c, {
+            code: c,
+            label,
+            symbol: visual.symbol,
+            count: 0,
+            fundNames: [],
+            visual,
+          });
+        }
+      }
+    }
+
+    // 3. Count matching transactions across all transactions
+    for (const t of transactions) {
+      for (const [code, item] of currencyMap.entries()) {
+        if (transactionMatchesCurrency(t, code, baseCurrency, availableFunds)) {
+          item.count++;
+        }
+      }
+    }
+
+    return Array.from(currencyMap.values()).filter((item) => item.count > 0);
+  }, [availableFunds, transactions, baseCurrency]);
+
+  // Visible Ledger Rows: filtered by active category tab(s) and currency filter(s)
   const ledgerRows = useMemo(() => {
     let rows = fullCalculatedLedger;
 
-    if (activeTab !== 'all') {
-      rows = rows.filter((r) => matchesLedgerCategoryFilter(r, activeTab));
+    // Filter by selectedCategories (multi-select)
+    const isAllCategories =
+      selectedCategories.includes('all') || selectedCategories.length === 0;
+    if (!isAllCategories) {
+      rows = rows.filter((r) =>
+        selectedCategories.some((catId) => matchesLedgerCategoryFilter(r, catId))
+      );
+    }
+
+    // Filter by selectedCurrencies (multi-select)
+    const isAllCurrencies =
+      selectedCurrencies.includes('all') || selectedCurrencies.length === 0;
+    if (!isAllCurrencies) {
+      rows = rows.filter((r) =>
+        selectedCurrencies.some((currCode) =>
+          transactionMatchesCurrency(r, currCode, baseCurrency, availableFunds)
+        )
+      );
     }
 
     return rows;
-  }, [fullCalculatedLedger, activeTab]);
+  }, [
+    fullCalculatedLedger,
+    selectedCategories,
+    selectedCurrencies,
+    baseCurrency,
+    availableFunds,
+  ]);
+
+  const categoryLabel = useMemo(() => {
+    if (selectedCategories.includes('all') || selectedCategories.length === 0) {
+      return 'همه اقلام';
+    }
+    return selectedCategories
+      .map((id) => CATEGORY_FILTER_BUTTONS.find((b) => b.id === id)?.label)
+      .filter(Boolean)
+      .join('، ');
+  }, [selectedCategories]);
+
+  const currencyLabel = useMemo(() => {
+    if (selectedCurrencies.includes('all') || selectedCurrencies.length === 0) {
+      return 'همه ارزها';
+    }
+    return selectedCurrencies
+      .map((code) => {
+        if (code === 'foreign-only') return 'فقط معاملات ارزی';
+        if (code === 'domestic') return baseCurrency === 'IRT' ? 'تومان' : 'ریال';
+        return activeCurrencyOptions.find((c) => c.code === code)?.label || code;
+      })
+      .join('، ');
+  }, [selectedCurrencies, activeCurrencyOptions, baseCurrency]);
+
+  const combinedPrintFilterLabel = useMemo(() => {
+    const parts: string[] = [];
+    if (!selectedCategories.includes('all') && selectedCategories.length > 0) {
+      parts.push(`اقلام: ${categoryLabel}`);
+    }
+    if (!selectedCurrencies.includes('all') && selectedCurrencies.length > 0) {
+      parts.push(`ارز: ${currencyLabel}`);
+    }
+    return parts.length > 0 ? parts.join(' | ') : 'همه اقلام';
+  }, [selectedCategories, selectedCurrencies, categoryLabel, currencyLabel]);
 
   // Overall Totals (Calculated from filtered dataset)
   const totalStats = useMemo(() => {
@@ -1929,9 +2420,6 @@ export default function CustomerLedgerReport({
               <FileText size={22} />
             </span>
             <div>
-              <p className="eyebrow text-xs font-bold text-amber-600 dark:text-amber-400 tracking-wide">
-                گزارش‌های جامع مالی و طلایی
-              </p>
               <h2 className="text-xl md:text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight">
                 ریز اسناد و صورت‌حساب طرف‌حساب‌ها
               </h2>
@@ -1946,7 +2434,7 @@ export default function CustomerLedgerReport({
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
           
           {/* Enhanced Searchable Counterparty (طرف‌حساب) Combobox */}
-          <div className="lg:col-span-5 flex flex-col gap-1.5" ref={customerDropdownRef}>
+          <div className="lg:col-span-4 flex flex-col gap-1.5" ref={customerDropdownRef}>
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                 <span className="p-1 rounded-md bg-amber-500/10 text-amber-600">
@@ -1971,25 +2459,25 @@ export default function CustomerLedgerReport({
               <button
                 type="button"
                 onClick={() => setIsCustomerDropdownOpen((prev) => !prev)}
-                className={`w-full flex items-center justify-between gap-2 p-2.5 text-xs border rounded-xl bg-slate-50/70 dark:bg-slate-800/80 text-right transition-all hover:bg-slate-100/70 dark:hover:bg-slate-800 ${
+                className={`w-full flex items-center justify-between gap-2 py-1.5 px-2.5 min-h-[36px] text-xs border rounded-xl bg-slate-50/70 dark:bg-slate-800/80 text-right transition-all hover:bg-slate-100/70 dark:hover:bg-slate-800 ${
                   isCustomerDropdownOpen
                     ? 'border-amber-500 ring-2 ring-amber-500/20 bg-white dark:bg-slate-800 shadow-sm'
                     : 'border-slate-300 dark:border-slate-700'
                 }`}
               >
-                <div className="flex items-center gap-2 overflow-hidden">
+                <div className="flex items-center gap-1.5 overflow-hidden">
                   {selectedCustomer ? (
                     <>
-                      <span className="w-7 h-7 shrink-0 rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-300 font-bold flex items-center justify-center text-xs">
+                      <span className="w-6 h-6 shrink-0 rounded-md bg-amber-500/15 text-amber-700 dark:text-amber-300 font-bold flex items-center justify-center text-[11px]">
                         {selectedCustomer.name.slice(0, 1)}
                       </span>
                       <div className="flex flex-col items-start min-w-0">
                         <span className="font-bold text-slate-900 dark:text-slate-100 truncate text-xs">
                           {selectedCustomer.name}
                         </span>
-                        <div className="flex items-center gap-1.5 text-[10px] text-slate-500 font-mono">
+                        <div className="flex items-center gap-1 text-[10px] text-slate-500 font-mono">
                           {selectedCustomer.customerCode && (
-                            <span className="bg-slate-200/70 dark:bg-slate-700 px-1.5 py-0.2 rounded font-mono font-bold text-slate-700 dark:text-slate-300">
+                            <span className="bg-slate-200/70 dark:bg-slate-700 px-1 py-0.1 rounded font-mono font-bold text-slate-700 dark:text-slate-300">
                               کد: {selectedCustomer.customerCode}
                             </span>
                           )}
@@ -2002,12 +2490,12 @@ export default function CustomerLedgerReport({
                       </div>
                     </>
                   ) : (
-                    <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400 py-0.5">
-                      <span className="p-1 rounded-md bg-slate-200/80 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
-                        <Users size={14} />
+                    <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
+                      <span className="p-0.5 rounded-md bg-slate-200/80 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+                        <Users size={13} />
                       </span>
-                      <span className="font-semibold text-xs">
-                        تمامی طرف‌حساب‌ها (گزارش جامع دفتر)
+                      <span className="font-semibold text-xs truncate">
+                        تمامی طرف‌حساب‌ها (گزارش جامع)
                       </span>
                     </div>
                   )}
@@ -2020,14 +2508,14 @@ export default function CustomerLedgerReport({
                         e.stopPropagation();
                         setCustomerId('');
                       }}
-                      className="p-1 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-700 transition-colors"
+                      className="p-0.5 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-700 transition-colors"
                       title="حذف انتخاب"
                     >
-                      <X size={13} />
+                      <X size={12} />
                     </span>
                   )}
                   <ChevronDown
-                    size={15}
+                    size={14}
                     className={`transition-transform duration-200 ${
                       isCustomerDropdownOpen ? 'rotate-180 text-amber-500' : ''
                     }`}
@@ -2160,7 +2648,7 @@ export default function CustomerLedgerReport({
           </div>
 
           {/* Enhanced Date Range: Segmented Presets + Manual Inputs */}
-          <div className="lg:col-span-7 flex flex-col gap-1.5">
+          <div className="lg:col-span-8 flex flex-col gap-1">
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                 <span className="p-1 rounded-md bg-amber-500/10 text-amber-600">
@@ -2175,9 +2663,9 @@ export default function CustomerLedgerReport({
               )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5">
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-start">
               {/* Segmented Control for Quick Date Presets */}
-              <div className="md:col-span-7 flex items-center p-1 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 shadow-inner">
+              <div className="md:col-span-7 flex items-center p-0.5 sm:p-1 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 shadow-inner">
                 {DATE_PRESETS.map((preset) => {
                   const isActive = activeDatePreset === preset.id;
                   return (
@@ -2185,9 +2673,9 @@ export default function CustomerLedgerReport({
                       key={preset.id}
                       type="button"
                       onClick={() => applyDatePreset(preset.id)}
-                      className={`flex-1 py-1.5 text-xs rounded-lg font-bold transition-all text-center whitespace-nowrap ${
+                      className={`flex-1 py-1 px-1 sm:px-1.5 text-[11px] rounded-lg font-bold transition-all text-center whitespace-nowrap active:scale-[0.98] ${
                         isActive
-                          ? 'bg-amber-500 text-slate-950 shadow-sm scale-100 font-black'
+                          ? 'bg-amber-500 text-slate-950 shadow-xs scale-100 font-black'
                           : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-white/60 dark:hover:bg-slate-700/50'
                       }`}
                     >
@@ -2199,10 +2687,7 @@ export default function CustomerLedgerReport({
 
               {/* Jalali From and To Date Inputs */}
               <div className="md:col-span-5 grid grid-cols-2 gap-1.5" ref={dateRangeRef}>
-                <div className="relative flex flex-col gap-1">
-                  <span className="min-h-4 text-center text-[10px] font-medium text-slate-500 dark:text-slate-400" aria-live="polite">
-                    {getDateDistanceLabel(fromDate)}
-                  </span>
+                <div className="relative">
                   <input
                     type="text"
                     placeholder="از: 1403/01/01"
@@ -2218,7 +2703,7 @@ export default function CustomerLedgerReport({
                   <button
                     type="button"
                     onClick={() => toggleDatePickerFor('from')}
-                    className="absolute left-1.5 top-[2.25rem] -translate-y-1/2 p-1 rounded-md text-amber-600 hover:bg-amber-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+                    className="absolute left-1.5 top-1/2 -translate-y-1/2 p-1 rounded-md text-amber-600 hover:bg-amber-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
                     title="انتخاب تاریخ شروع از تقویم"
                     aria-label="باز کردن تقویم تاریخ شروع"
                     aria-haspopup="dialog"
@@ -2227,10 +2712,7 @@ export default function CustomerLedgerReport({
                     <CalendarIcon size={14} />
                   </button>
                 </div>
-                <div className="relative flex flex-col gap-1">
-                  <span className="min-h-4 text-center text-[10px] font-medium text-slate-500 dark:text-slate-400" aria-live="polite">
-                    {getDateDistanceLabel(toDate)}
-                  </span>
+                <div className="relative">
                   <input
                     type="text"
                     placeholder="تا: 1403/12/29"
@@ -2246,7 +2728,7 @@ export default function CustomerLedgerReport({
                   <button
                     type="button"
                     onClick={() => toggleDatePickerFor('to')}
-                    className="absolute left-1.5 top-[2.25rem] -translate-y-1/2 p-1 rounded-md text-amber-600 hover:bg-amber-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+                    className="absolute left-1.5 top-1/2 -translate-y-1/2 p-1 rounded-md text-amber-600 hover:bg-amber-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
                     title="انتخاب تاریخ پایان از تقویم"
                     aria-label="باز کردن تقویم تاریخ پایان"
                     aria-haspopup="dialog"
@@ -2260,75 +2742,49 @@ export default function CustomerLedgerReport({
           </div>
         </div>
 
-        {/* Metal Separation Filter Row */}
-        <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
-            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300">
-              <Scale size={14} className="text-amber-500" />
-              <span>تفکیک فلز گزارش:</span>
-            </div>
-            <div className="flex items-center gap-2 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0 scrollbar-none">
-              {METAL_FILTER_OPTIONS.map((metal) => {
-                const isActive = selectedMetal === metal.id;
-                const count = metalCounts[metal.id] ?? 0;
-                return (
-                  <button
-                    key={metal.id}
-                    type="button"
-                    onClick={() => {
-                      setSelectedMetal(metal.id);
-                      setCurrentPage(1);
-                    }}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-xl font-bold transition-all border whitespace-nowrap cursor-pointer select-none active:scale-95 ${
-                      isActive
-                        ? metal.activeColor
-                        : 'bg-slate-50/80 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-700/60 border-slate-200 dark:border-slate-700/80'
-                    }`}
-                  >
-                    <span>{metal.icon}</span>
-                    <span>{metal.label}</span>
-                    {searched && (
-                      <span
-                        className={`px-1.5 py-0.2 text-[10px] rounded-full font-mono font-bold leading-tight ${
-                          isActive
-                            ? 'bg-black/20 dark:bg-white/25'
-                            : 'bg-slate-200/80 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
-                        }`}
-                      >
-                        {count.toLocaleString('fa-IR')}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-        {/* Category Filter Buttons Row */}
-        <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80">
+        {/* Category Filter Buttons Row (چند انتخابی همزمان) */}
+        <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800/80">
           <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-2.5">
-            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-500 dark:text-slate-400">
-              <SlidersHorizontal size={14} className="text-amber-500" />
-              <span>فیلتر اقلام:</span>
+            <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300">
+                <SlidersHorizontal size={14} className="text-amber-500" />
+                <span>فیلتر اقلام:</span>
+              </div>
+              {!selectedCategories.includes('all') && selectedCategories.length > 0 && (
+                <div className="flex items-center gap-1 text-[10px] font-bold text-amber-700 dark:text-amber-300 bg-amber-500/15 px-2 py-0.5 rounded-md border border-amber-500/30">
+                  <span>{toPersianDigits(selectedCategories.length)} قلم فعال</span>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleCategory('all')}
+                    className="hover:text-red-500 transition-colors p-0.5 cursor-pointer"
+                    title="بازنشانی فیلتر اقلام به همه اقلام"
+                  >
+                    <RotateCcw size={10} />
+                  </button>
+                </div>
+              )}
             </div>
             <div className="flex items-center gap-1.5 overflow-x-auto w-full lg:w-auto pb-1 lg:pb-0 scrollbar-none flex-wrap">
               {CATEGORY_FILTER_BUTTONS.map((tab) => {
                 const Icon = tab.icon;
-                const isActive = activeTab === tab.id;
+                const isAll = tab.id === 'all';
+                const isActive = isAll
+                  ? selectedCategories.includes('all') || selectedCategories.length === 0
+                  : selectedCategories.includes(tab.id) && !selectedCategories.includes('all');
                 const count = categoryCounts[tab.id] ?? 0;
                 return (
                   <button
                     key={tab.id}
                     type="button"
-                    onClick={() => handleSelectCategory(tab.id)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-xl font-bold transition-all border whitespace-nowrap cursor-pointer select-none active:scale-95 ${
+                    onClick={() => handleToggleCategory(tab.id)}
+                    className={`flex items-center gap-1.5 py-1 px-2.5 text-[11px] rounded-lg font-bold transition-all border whitespace-nowrap cursor-pointer select-none active:scale-95 ${
                       isActive
                         ? tab.activeColor
                         : 'bg-slate-50/80 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-700/60 border-slate-200 dark:border-slate-700/80'
                     }`}
                   >
-                    <Icon size={13} className={isActive ? 'opacity-100' : 'opacity-70'} />
+                    {isActive && !isAll && <Check size={11} className="stroke-[3]" />}
+                    <Icon size={12} className={isActive ? 'opacity-100' : 'opacity-70'} />
                     <span>{tab.label}</span>
                     {searched && (
                       <span
@@ -2348,50 +2804,279 @@ export default function CustomerLedgerReport({
           </div>
         </div>
 
-        {/* Live Search, Sort & Create Report Button */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-100 dark:border-slate-800/80">
-          <div className="flex items-center gap-2 w-full sm:w-auto flex-1 max-w-lg">
-            <div className="relative flex-1">
-              <Search
-                size={14}
-                className="absolute right-3 top-2.5 text-slate-400"
-              />
-              <input
-                type="text"
-                placeholder="جستجو در شماره سند، شرح، کد پیگیری، شماره انگ..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                className="w-full pr-9 pl-3 py-1.5 text-xs border rounded-xl bg-slate-50/70 dark:bg-slate-800/80 text-slate-900 dark:text-slate-100 border-slate-300 dark:border-slate-700 focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 transition-all placeholder:text-slate-400"
-              />
+        {/* Currency Filter Buttons Row (ارزهایی که صندوقشون ایجاد شده و معامله انجام شده) */}
+        <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800/80">
+          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300">
+                <Coins size={14} className="text-amber-500" />
+                <span>فیلتر ارز:</span>
+              </div>
+              {!selectedCurrencies.includes('all') && selectedCurrencies.length > 0 && (
+                <div className="flex items-center gap-1 text-[10px] font-bold text-amber-700 dark:text-amber-300 bg-amber-500/15 px-2 py-0.5 rounded-md border border-amber-500/30">
+                  <span>{toPersianDigits(selectedCurrencies.length)} ارز فعال</span>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleCurrency('all')}
+                    className="hover:text-red-500 transition-colors p-0.5 cursor-pointer"
+                    title="بازنشانی فیلتر ارز به همه ارزها"
+                  >
+                    <RotateCcw size={10} />
+                  </button>
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5 overflow-x-auto w-full lg:w-auto pb-1 lg:pb-0 scrollbar-none flex-wrap">
+              {/* دکمه همه ارزها */}
+              <button
+                type="button"
+                onClick={() => handleToggleCurrency('all')}
+                className={`flex items-center gap-1.5 py-1 px-2.5 text-[11px] rounded-lg font-bold transition-all border whitespace-nowrap cursor-pointer select-none active:scale-95 ${
+                  selectedCurrencies.includes('all') || selectedCurrencies.length === 0
+                    ? 'bg-amber-500 text-slate-950 font-black border-amber-600 shadow-xs ring-1 ring-amber-400/50'
+                    : 'bg-slate-50/80 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-700/60 border-slate-200 dark:border-slate-700/80'
+                }`}
+              >
+                <span>همه ارزها</span>
+                {searched && (
+                  <span
+                    className={`px-1.5 py-0.2 text-[10px] rounded-full font-mono font-bold leading-tight ${
+                      selectedCurrencies.includes('all') || selectedCurrencies.length === 0
+                        ? 'bg-black/15 text-slate-950'
+                        : 'bg-slate-200/80 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
+                    }`}
+                  >
+                    {transactions.length.toLocaleString('fa-IR')}
+                  </span>
+                )}
+              </button>
+
+              {/* دکمه فقط معاملات ارزی */}
+              <button
+                type="button"
+                onClick={() => handleToggleCurrency('foreign-only')}
+                title="نمایش صرفاً تراکنش‌های حاوی ارزهای خارجی"
+                className={`flex items-center gap-1.5 py-1 px-2.5 text-[11px] rounded-lg font-bold transition-all border whitespace-nowrap cursor-pointer select-none active:scale-95 ${
+                  selectedCurrencies.includes('foreign-only') && !selectedCurrencies.includes('all')
+                    ? 'bg-emerald-600 text-white font-black border-emerald-700 shadow-xs ring-1 ring-emerald-400/50'
+                    : 'bg-slate-50/80 dark:bg-slate-800/80 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800/50'
+                }`}
+              >
+                {selectedCurrencies.includes('foreign-only') && !selectedCurrencies.includes('all') && (
+                  <Check size={11} className="stroke-[3]" />
+                )}
+                <Banknote size={12} className="stroke-[2.5]" />
+                <span>فقط معاملات ارزی</span>
+                {searched && (
+                  <span
+                    className={`px-1.5 py-0.2 text-[10px] rounded-full font-mono font-bold leading-tight ${
+                      selectedCurrencies.includes('foreign-only') && !selectedCurrencies.includes('all')
+                        ? 'bg-black/20 text-current'
+                        : 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300'
+                    }`}
+                  >
+                    {foreignOnlyCount.toLocaleString('fa-IR')}
+                  </span>
+                )}
+              </button>
+
+              {/* دکمه ارز پایه (ریال یا تومان وابسته به تنظیمات) */}
+              <button
+                type="button"
+                onClick={() => handleToggleCurrency('domestic')}
+                title={`نمایش تراکنش‌های دارای ${baseCurrency === 'IRT' ? 'تومان' : 'ریال'}`}
+                className={`flex items-center gap-1.5 py-1 px-2.5 text-[11px] rounded-lg font-bold transition-all border whitespace-nowrap cursor-pointer select-none active:scale-95 ${
+                  selectedCurrencies.includes('domestic') && !selectedCurrencies.includes('all')
+                    ? 'bg-blue-600 text-white font-black border-blue-700 shadow-xs ring-1 ring-blue-400/50'
+                    : 'bg-slate-50/80 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-700/60 border-slate-200 dark:border-slate-700/80'
+                }`}
+              >
+                {selectedCurrencies.includes('domestic') && !selectedCurrencies.includes('all') && (
+                  <Check size={11} className="stroke-[3]" />
+                )}
+                <span
+                  className={`px-1 py-0.2 rounded text-[10px] font-mono font-bold leading-none ${
+                    selectedCurrencies.includes('domestic') && !selectedCurrencies.includes('all')
+                      ? 'bg-black/20 text-current'
+                      : 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+                  }`}
+                >
+                  {baseCurrency === 'IRT' ? 'IRT' : 'IRR'}
+                </span>
+                <span>{baseCurrency === 'IRT' ? 'تومان' : 'ریال'}</span>
+                {searched && (
+                  <span
+                    className={`px-1.5 py-0.2 text-[10px] rounded-full font-mono font-bold leading-tight ${
+                      selectedCurrencies.includes('domestic') && !selectedCurrencies.includes('all')
+                        ? 'bg-black/20 text-current'
+                        : 'bg-slate-200/80 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
+                    }`}
+                  >
+                    {domesticCount.toLocaleString('fa-IR')}
+                  </span>
+                )}
+              </button>
+
+              {/* دکمه‌های ارزهای فعال مجزا دارای تراکنش */}
+              {activeCurrencyOptions.map((curr) => {
+                const isActive =
+                  selectedCurrencies.includes(curr.code) &&
+                  !selectedCurrencies.includes('all');
+                return (
+                  <button
+                    key={curr.code}
+                    type="button"
+                    onClick={() => handleToggleCurrency(curr.code)}
+                    title={
+                      curr.fundNames.length > 0
+                        ? `صندوق‌های متصل: ${curr.fundNames.join('، ')} (${toPersianDigits(curr.count)} تراکنش)`
+                        : `${curr.label} (${toPersianDigits(curr.count)} تراکنش)`
+                    }
+                    className={`flex items-center gap-1.5 py-1 px-2.5 text-[11px] rounded-lg font-bold transition-all border whitespace-nowrap cursor-pointer select-none active:scale-95 ${
+                      isActive
+                        ? curr.visual.activeClass
+                        : 'bg-slate-50/80 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-700/60 border-slate-200 dark:border-slate-700/80'
+                    }`}
+                  >
+                    {isActive && <Check size={11} className="stroke-[3]" />}
+                    {curr.symbol && (
+                      <span
+                        className={`px-1 py-0.2 rounded text-[10px] font-mono font-bold leading-none ${
+                          isActive
+                            ? 'bg-black/20 text-current'
+                            : curr.visual.inactiveBadgeClass
+                        }`}
+                      >
+                        {curr.symbol}
+                      </span>
+                    )}
+                    <span>{curr.label}</span>
+                    {searched && (
+                      <span
+                        className={`px-1.5 py-0.2 text-[10px] rounded-full font-mono font-bold leading-tight ${
+                          isActive
+                            ? 'bg-black/20 text-current'
+                            : 'bg-slate-200/80 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
+                        }`}
+                      >
+                        {curr.count.toLocaleString('fa-IR')}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+
+              {activeCurrencyOptions.length === 0 && foreignOnlyCount === 0 && searched && (
+                <span className="text-[11px] text-slate-400 dark:text-slate-500 italic py-1 px-2.5 bg-slate-100/50 dark:bg-slate-800/40 rounded-lg border border-dashed border-slate-200 dark:border-slate-700/60">
+                  (در این دوره، صرفاً تراکنش با ارز پایه ثبت شده و معامله ارزی یافت نشد)
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Metal Separation, Search, Sort & Action Button Row */}
+        <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80">
+          <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-2.5">
+            <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 flex-1 min-w-0">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 shrink-0">
+                <Scale size={14} className="text-amber-500" />
+                <span>تفکیک فلز گزارش:</span>
+              </div>
+              {/* دکمه سه حالته تفکیک فلز (طلا / نقره / پلاتین) هم‌اندازه دکمه‌های بازه زمانی */}
+              <div
+                role="radiogroup"
+                aria-label="تفکیک فلز گزارش"
+                className="inline-flex items-center p-0.5 sm:p-1 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 shadow-inner shrink-0"
+              >
+                {METAL_FILTER_OPTIONS.map((metal) => {
+                  const isActive = selectedMetal === metal.id;
+                  const count = metalCounts[metal.id] ?? 0;
+                  return (
+                    <button
+                      key={metal.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={isActive}
+                      onClick={() => {
+                        setSelectedMetal(metal.id);
+                        setCurrentPage(1);
+                        const isCurrencyFiltered =
+                          !selectedCurrencies.includes('all') && selectedCurrencies.length > 0;
+                        if (!isCurrencyFiltered) {
+                          handleSearch(metal.id, selectedCurrencies);
+                        }
+                      }}
+                      className={`flex-1 sm:flex-initial sm:min-w-[76px] flex items-center justify-center gap-1.5 py-1 px-2.5 sm:px-3 text-[11px] rounded-lg font-bold transition-all whitespace-nowrap cursor-pointer select-none active:scale-[0.98] ${
+                        isActive
+                          ? metal.activeColor
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-white/60 dark:hover:bg-slate-700/50'
+                      }`}
+                    >
+                      <span>{metal.label}</span>
+                      {searched && (
+                        <span
+                          className={`px-1.5 py-0.2 text-[10px] rounded-full font-mono font-bold leading-tight ${
+                            isActive
+                              ? metal.id === 'gold'
+                                ? 'bg-black/15 text-slate-950'
+                                : 'bg-white/25 text-white'
+                              : 'bg-slate-200/80 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
+                          }`}
+                        >
+                          {count.toLocaleString('fa-IR')}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* فیلد جستجو در امتداد دکمه‌های تفکیک فلز */}
+              <div className="relative flex-1 min-w-[200px]">
+                <Search
+                  size={14}
+                  className="absolute right-3 top-2.5 text-slate-400"
+                />
+                <input
+                  type="text"
+                  placeholder="جستجو در شماره سند، شرح، کد پیگیری، شماره انگ..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                  className="w-full pr-9 pl-3 py-1.5 text-xs border rounded-xl bg-slate-50/70 dark:bg-slate-800/80 text-slate-900 dark:text-slate-100 border-slate-300 dark:border-slate-700 focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 transition-all placeholder:text-slate-400"
+                />
+              </div>
+
+              {/* فیلد سورت */}
+              <select
+                value={sortParam}
+                onChange={(e) => {
+                  const val = e.target.value as any;
+                  setSortParam(val);
+                  if (val === 'date_asc') setSortState({ column: 'date', direction: 'asc' });
+                  else if (val === 'date_desc') setSortState({ column: 'date', direction: 'desc' });
+                  else if (val === 'doc_num') setSortState({ column: 'docNumber', direction: 'desc' });
+                }}
+                className="py-1.5 px-2.5 text-xs border rounded-xl bg-slate-50/70 dark:bg-slate-800/80 text-slate-900 dark:text-slate-100 border-slate-300 dark:border-slate-700 focus:ring-2 focus:ring-amber-500/30 font-medium shrink-0"
+              >
+                <option value="date_asc">تاریخ (صعودی)</option>
+                <option value="date_desc">تاریخ (نزولی)</option>
+                <option value="doc_num">شماره سند</option>
+              </select>
             </div>
 
-            <select
-              value={sortParam}
-              onChange={(e) => {
-                const val = e.target.value as any;
-                setSortParam(val);
-                if (val === 'date_asc') setSortState({ column: 'date', direction: 'asc' });
-                else if (val === 'date_desc') setSortState({ column: 'date', direction: 'desc' });
-                else if (val === 'doc_num') setSortState({ column: 'docNumber', direction: 'desc' });
-              }}
-              className="p-2 text-xs border rounded-xl bg-slate-50/70 dark:bg-slate-800/80 text-slate-900 dark:text-slate-100 border-slate-300 dark:border-slate-700 focus:ring-2 focus:ring-amber-500/30 font-medium"
+            {/* دکمه ایجاد گزارش */}
+            <button
+              type="button"
+              onClick={handleSearch}
+              disabled={loading}
+              className="w-full xl:w-auto shrink-0 flex items-center justify-center gap-1.5 px-5 py-2 text-xs font-black rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 shadow-xs active:scale-98 transition-all disabled:opacity-50 whitespace-nowrap cursor-pointer"
             >
-              <option value="date_asc">تاریخ (صعودی)</option>
-              <option value="date_desc">تاریخ (نزولی)</option>
-              <option value="doc_num">شماره سند</option>
-            </select>
+              <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+              <span>ایجاد گزارش</span>
+            </button>
           </div>
-
-          <button
-            type="button"
-            onClick={handleSearch}
-            disabled={loading}
-            className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-5 py-2 text-xs font-black rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 shadow-xs active:scale-98 transition-all disabled:opacity-50 whitespace-nowrap cursor-pointer"
-          >
-            <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
-            <span>ایجاد گزارش</span>
-          </button>
         </div>
       </div>
 
@@ -2591,10 +3276,32 @@ export default function CustomerLedgerReport({
                   {ledgerRows.length.toLocaleString('fa-IR')}
                 </strong>{' '}
                 ردیف
-                {activeTab !== 'all' && (
+                {!selectedCategories.includes('all') && selectedCategories.length > 0 && (
                   <span className="inline-flex items-center gap-1 mr-2 px-2 py-0.5 rounded-lg bg-amber-100 dark:bg-amber-950/60 text-amber-900 dark:text-amber-200 text-[11px] font-bold border border-amber-300 dark:border-amber-800">
-                    <span>فیلتر:</span>
-                    <span>{CATEGORY_FILTER_BUTTONS.find((b) => b.id === activeTab)?.label}</span>
+                    <span>اقلام:</span>
+                    <span>{categoryLabel}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleCategory('all')}
+                      className="hover:text-red-600 p-0.5 cursor-pointer"
+                      title="حذف فیلتر اقلام"
+                    >
+                      <X size={11} />
+                    </button>
+                  </span>
+                )}
+                {!selectedCurrencies.includes('all') && selectedCurrencies.length > 0 && (
+                  <span className="inline-flex items-center gap-1 mr-1 px-2 py-0.5 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-200 text-[11px] font-bold border border-emerald-300 dark:border-emerald-800">
+                    <span>ارز:</span>
+                    <span>{currencyLabel}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleCurrency('all')}
+                      className="hover:text-red-600 p-0.5 cursor-pointer"
+                      title="حذف فیلتر ارز"
+                    >
+                      <X size={11} />
+                    </button>
                   </span>
                 )}
               </span>
@@ -3349,6 +4056,7 @@ export default function CustomerLedgerReport({
                   {/* Carried-forward Balance Row (on Page 1 only, and ONLY if hasPreviousBalance) */}
                   {safeCurrentPage === 1 && hasPreviousBalance && (
                     <tr
+                      key="carried-forward-balance"
                       onClick={() => setActiveRowId('carried-forward')}
                       className={`bg-amber-50/90 dark:bg-amber-950/40 font-bold border-b border-amber-300 dark:border-amber-900/60 ${
                         selectedRowIds['carried-forward']
@@ -4129,7 +4837,7 @@ export default function CustomerLedgerReport({
         customer={selectedCustomer}
         fromDate={fromDate}
         toDate={toDate}
-        categoryLabel={CATEGORY_FILTER_BUTTONS.find((b) => b.id === activeTab)?.label}
+        categoryLabel={combinedPrintFilterLabel}
         hasPreviousBalance={printHasPreviousBalance}
         openingBalances={openingBalances}
         rows={rowsForPrint}

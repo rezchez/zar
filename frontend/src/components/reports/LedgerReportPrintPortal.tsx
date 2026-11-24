@@ -488,7 +488,8 @@ export default function LedgerReportPrintPortal({
                       </td>
                     </tr>
                   ) : (
-                    pageRows.map((row) => {
+                    pageRows.map((row, rowIdx) => {
+                      const rowKey = row.id ? `row-${row.id}-${pageIdx}-${rowIdx}` : `row-${pageIdx}-${rowIdx}`;
                       if (row.isOpeningBalance) {
                         const gBal = row.runningGold || 0;
                         const rBal = row.runningRial || 0;
@@ -503,7 +504,7 @@ export default function LedgerReportPrintPortal({
                         const rColor = rBal > 50 ? '#047857' : rBal < -50 ? '#b91c1c' : '#000000';
 
                         return (
-                          <tr key="opening-bal" className="opening-row" style={{ backgroundColor: '#f1f5f9' }}>
+                          <tr key={rowKey} className="opening-row" style={{ backgroundColor: '#f1f5f9' }}>
                             <td style={{ textAlign: 'center', fontWeight: 'bold' }}>—</td>
                             <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>{row.documentDateJalali}</td>
                             <td style={{ textAlign: 'center' }}>—</td>
@@ -543,7 +544,7 @@ export default function LedgerReportPrintPortal({
                       const sDesc = row.lineDescription?.secondary;
 
                       return (
-                        <tr key={row.id}>
+                        <tr key={rowKey}>
                           <td style={{ textAlign: 'center' }}>
                             {row.rowNumber ? toPersianDigits(row.rowNumber) : '—'}
                           </td>

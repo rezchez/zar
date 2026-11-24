@@ -415,6 +415,31 @@ export function parseTransactionBreakdown(transaction: CustomerTransaction): Lin
     };
   }
 
+  // 5.5 Conversion
+  if (tab === 'conversion' || subType.includes('conversion')) {
+    const metalLabel = details.metalType === 'silver' ? 'نقره' : details.metalType === 'platinum' ? 'پلاتین' : 'طلا';
+    if (details.metalPrice) {
+      attributes.push({
+        label: 'نرخ تبدیل',
+        value: `${Number(details.metalPrice).toLocaleString('fa-IR')} ${details.baseCurrency === 'IRT' ? 'تومان' : 'ریال'}`,
+        isMono: true,
+      });
+    }
+    if (details.rawWeight) {
+      attributes.push({
+        label: `وزن معادل (${metalLabel})`,
+        value: `${Number(details.rawWeight).toLocaleString('fa-IR')} گرم`,
+        isMono: true,
+      });
+    }
+    return {
+      category: 'conversion',
+      categoryLabel: subType === 'conversion-weight-to-money' ? 'تبدیل وزنی به مالی' : 'تبدیل مالی به وزنی',
+      badgeColor: 'amber',
+      attributes,
+    };
+  }
+
   // 6. Coins
   if (tab === 'coin' || subType.includes('coin')) {
     const coinDisplay = getCoinDisplayPersianName(details.coinType, details.coinName, details.coinTypeName, details.mintYear || details.coinYear);

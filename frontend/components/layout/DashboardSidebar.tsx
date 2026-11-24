@@ -367,6 +367,7 @@ export default function DashboardSidebar({
                   </span>
                   <button
                     type="button"
+                    suppressHydrationWarning
                     onClick={() => setChangelogOpen(true)}
                     dir="ltr"
                     className="shrink-0 inline-flex items-center rounded bg-amber-100 dark:bg-blue-950/80 px-1.5 py-0.5 text-[9px] font-bold text-amber-800 dark:text-blue-300 border border-amber-300/40 dark:border-blue-700/50 hover:bg-amber-200/80 dark:hover:bg-blue-900/60 transition-colors cursor-pointer select-none origin-right scale-[0.8]"

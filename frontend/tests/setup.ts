@@ -70,7 +70,19 @@ mock.module('next/server', () => ({
 mock.module('qrcode', () => ({
   default: {
     toDataURL: async () => 'data:image/png;base64,mock',
+    create: () => ({
+      modules: {
+        size: 21,
+        get: (r: number, c: number) => (r + c) % 2 === 0,
+      },
+    }),
   },
+  create: () => ({
+    modules: {
+      size: 21,
+      get: (r: number, c: number) => (r + c) % 2 === 0,
+    },
+  }),
 }));
 
 class MockPocketBase {

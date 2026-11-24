@@ -34,6 +34,7 @@ import ClaimTab from '@/src/components/documents/ClaimTab';
 import WorkmanshipTab from './WorkmanshipTab';
 import EtiquetteTab from './EtiquetteTab';
 import DiscountTab from './DiscountTab';
+import ConversionTab from './ConversionTab';
 import IncomeExpenseTab from './IncomeExpenseTab';
 import GoodsTab from './GoodsTab';
 
@@ -96,6 +97,7 @@ export const VALID_ENTRY_TABS = [
   'bank',
   'cash',
   'claim',
+  'conversion',
   'stone',
   'goods',
   'income-expense',
@@ -917,6 +919,8 @@ export default function DocumentForm({
               ? (nextNature === 'received' ? 'debt' : 'claim')
             : current.sourceTab === 'discount' || activeEntryTab === 'discount'
               ? (nextNature === 'received' ? 'discount-given' : 'discount-received')
+              : current.sourceTab === 'conversion' || activeEntryTab === 'conversion'
+                ? 'conversion'
               : current.sourceTab === 'gold-sale' || activeEntryTab === 'gold-sale'
               ? `${nextNature === 'received' ? 'gold-purchase' : 'gold-sale'}-${current.details?.rawKind || 'molten'}`
               : current.sourceTab === 'workmanship' || activeEntryTab === 'workmanship'
@@ -3492,6 +3496,25 @@ export default function DocumentForm({
               baseCurrency={baseCurrency}
               selectedCustomer={selectedCustomer}
               onNatureChange={changeNature}
+            />
+          )}
+          conversionTabContent={(
+            <ConversionTab
+              nature={documentNature}
+              onNatureChange={changeNature}
+              selectedCustomer={selectedCustomer}
+              draftLine={draftLine}
+              setDraftLine={setDraftLine}
+              committedLines={committedLines}
+              editingLineId={editingLineId}
+              isLinesPinned={isLinesPinned}
+              commitDraftLine={handleCommitDraft}
+              updateDraftDetail={updateDraftDetail}
+              handleKeyDownEnter={handleKeyDownEnter}
+              draftReady={draftReady}
+              baseCurrency={baseCurrency}
+              weightPrecision={weightPrecision}
+              quotes={quotes}
             />
           )}
         />

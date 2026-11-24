@@ -64,7 +64,8 @@ export interface NormalizedDocumentLine {
     | 'wage'
     | 'workmanship'
     | 'etiquette'
-    | 'opening';
+    | 'opening'
+    | 'conversion';
   metalType: 'gold' | 'silver' | 'none';
   weight: number;
   grade: number;
@@ -78,6 +79,8 @@ export interface NormalizedDocumentLine {
   transferToken?: string; // UUID from #HAVALEH# or #hshbe#
   transferSide?: 'source' | 'destination';
   transferPartnerName?: string;
+  conversionMode?: 'money_to_weight' | 'weight_to_money';
+  metalPriceType?: 'mesghal17' | 'gram18';
   hawalaCounterCustomerCode?: string | number;
   hawalaCounterCustomerName?: string;
   hawalaCounterFactorCode?: string;

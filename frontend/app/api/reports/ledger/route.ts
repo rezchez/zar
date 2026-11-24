@@ -29,6 +29,8 @@ export async function POST(request: Request) {
       documentTabs,
       sort,
       search,
+      metal,
+      currencies,
     } = body;
 
     let client = context.pb;
@@ -37,6 +39,8 @@ export async function POST(request: Request) {
       const servicePb = await getPocketBaseServiceClient();
       if (servicePb) client = servicePb;
     } catch {}
+
+    client.autoCancellation?.(false);
 
     const filterArray = ['is_deleted = false'];
 
@@ -76,6 +80,65 @@ export async function POST(request: Request) {
       filterArray.push(`(${tabFilters})`);
     }
 
+    // Filter by currency or metal
+    // If a specific currency filter is active, transactions MUST NOT be restricted by metal!
+    // ("یعنی هر معامله ای که داخلش دلار داشت یا ریال/ تومان بود، منوط به فلز نباید کم و زیاد بشه")
+    const isCurrencyFilterActive =
+      Array.isArray(currencies) &&
+      !currencies.includes('all') &&
+      currencies.length > 0;
+
+    if (isCurrencyFilterActive) {
+      const currConditions: string[] = [];
+      for (const c of currencies) {
+        if (c === 'foreign-only') {
+          currConditions.push(
+            '(foreignAmount != 0 || tertiaryAmount != 0 || (foreignCurrency != "" && foreignCurrency != "IRR" && foreignCurrency != "IRT"))'
+          );
+        } else if (c === 'domestic') {
+          currConditions.push(
+            '(rialAmount != 0 || documentTab = "bank" || documentTab = "check" || documentTab = "cash")'
+          );
+        } else if (c) {
+          const sanitized = String(c).replace(/"/g, '');
+          currConditions.push(
+            `(foreignCurrency = "${sanitized}" || tertiaryCurrency = "${sanitized}" || documentDetails ~ "${sanitized}")`
+          );
+        }
+      }
+      if (currConditions.length > 0) {
+        filterArray.push(`(${currConditions.join(' || ')})`);
+      }
+    } else {
+      // Filter by metal when no specific currency filter is selected
+      if (metal === 'silver') {
+        filterArray.push(
+          customerId
+            ? '(silverAmount != 0 || (goldAmount = 0 && platinumAmount = 0))'
+            : 'silverAmount != 0'
+        );
+        openingBalanceFilter.push(
+          customerId
+            ? '(silverAmount != 0 || (goldAmount = 0 && platinumAmount = 0))'
+            : 'silverAmount != 0'
+        );
+      } else if (metal === 'platinum') {
+        filterArray.push(
+          customerId
+            ? '(platinumAmount != 0 || (goldAmount = 0 && silverAmount = 0))'
+            : 'platinumAmount != 0'
+        );
+        openingBalanceFilter.push(
+          customerId
+            ? '(platinumAmount != 0 || (goldAmount = 0 && silverAmount = 0))'
+            : 'platinumAmount != 0'
+        );
+      } else if (metal === 'gold') {
+        filterArray.push('(goldAmount != 0 || (silverAmount = 0 && platinumAmount = 0))');
+        openingBalanceFilter.push('(goldAmount != 0 || (silverAmount = 0 && platinumAmount = 0))');
+      }
+    }
+
     // Sorting
     let sortParam = '-transactionDate,-created';
     if (sort === 'date_asc') sortParam = 'transactionDate,created';
@@ -84,7 +147,7 @@ export async function POST(request: Request) {
 
     // Safety limit: if no customer and no date filter is provided, enforce a maximum limit
     // to prevent fetching 50,000+ records and crashing browser memory.
-    const maxLimit = customerId ? 2000 : 500;
+    const maxLimit = 5000;
 
     // Fetch matching transactions
     let records: any[] = [];
@@ -93,6 +156,7 @@ export async function POST(request: Request) {
         filter: filterArray.join(' && '),
         sort: sortParam,
         expand: 'customer',
+        requestKey: null,
       }).catch(() => []);
     } else {
       // For general query without specific customer, fetch up to maxLimit
@@ -100,6 +164,7 @@ export async function POST(request: Request) {
         filter: filterArray.join(' && '),
         sort: sortParam,
         expand: 'customer',
+        requestKey: null,
       }).catch(() => ({ items: [] }));
       records = pageResult.items || [];
     }
@@ -117,6 +182,7 @@ export async function POST(request: Request) {
       const pastRecords = await client.collection('transactions').getFullList({
         filter: openingBalanceFilter.join(' && '),
         fields: 'goldAmount,silverAmount,platinumAmount,rialAmount,foreignCurrency,foreignAmount',
+        requestKey: null,
       }).catch(() => []);
 
       for (const rec of pastRecords) {
@@ -165,10 +231,80 @@ export async function POST(request: Request) {
       });
     }
 
+    // Query created cash funds to provide verified created funds
+    const createdFundsRecords = await client.collection('cash_funds').getFullList({
+      expand: 'currency',
+      sort: 'name',
+    }).catch(() => []);
+
+    const cashFunds = createdFundsRecords.map((f: any) => {
+      const curr = f.expand?.currency;
+      const code = String(curr?.code || f.currency_code || f.currency || f.currency_name || f.name || '').trim().toUpperCase();
+      const name = String(curr?.name || f.currency_name || f.name || code).trim();
+      const symbol = String(curr?.symbol || f.currency_symbol || '').trim();
+      return {
+        id: f.id,
+        name: f.name,
+        currencyId: String(curr?.id || f.currency || ''),
+        currencyCode: code,
+        currencyName: name,
+        currencySymbol: symbol,
+      };
+    });
+
+    // Query metal counts and currency counts across the filtered period (for tab badges)
+    let metalCounts = { gold: 0, silver: 0, platinum: 0 };
+    let currencyCounts = { foreignOnly: 0, domestic: 0 };
+    try {
+      const baseCountFilter = filterArray.filter(
+        (f) =>
+          !f.includes('silverAmount') &&
+          !f.includes('goldAmount') &&
+          !f.includes('platinumAmount') &&
+          !f.includes('foreignAmount') &&
+          !f.includes('foreignCurrency') &&
+          !f.includes('rialAmount')
+      );
+      const [goldRes, silverRes, platRes, foreignRes, domesticRes] = await Promise.all([
+        client.collection('transactions').getList(1, 1, {
+          filter: [...baseCountFilter, '(goldAmount != 0 || (silverAmount = 0 && platinumAmount = 0))'].join(' && '),
+          requestKey: null,
+        }).catch(() => ({ totalItems: 0 })),
+        client.collection('transactions').getList(1, 1, {
+          filter: [...baseCountFilter, 'silverAmount != 0'].join(' && '),
+          requestKey: null,
+        }).catch(() => ({ totalItems: 0 })),
+        client.collection('transactions').getList(1, 1, {
+          filter: [...baseCountFilter, 'platinumAmount != 0'].join(' && '),
+          requestKey: null,
+        }).catch(() => ({ totalItems: 0 })),
+        client.collection('transactions').getList(1, 1, {
+          filter: [...baseCountFilter, '(foreignAmount != 0 || tertiaryAmount != 0 || (foreignCurrency != "" && foreignCurrency != "IRR" && foreignCurrency != "IRT"))'].join(' && '),
+          requestKey: null,
+        }).catch(() => ({ totalItems: 0 })),
+        client.collection('transactions').getList(1, 1, {
+          filter: [...baseCountFilter, '(rialAmount != 0 || documentTab = "bank" || documentTab = "check" || documentTab = "cash")'].join(' && '),
+          requestKey: null,
+        }).catch(() => ({ totalItems: 0 })),
+      ]);
+      metalCounts = {
+        gold: goldRes.totalItems || 0,
+        silver: silverRes.totalItems || 0,
+        platinum: platRes.totalItems || 0,
+      };
+      currencyCounts = {
+        foreignOnly: foreignRes.totalItems || 0,
+        domestic: domesticRes.totalItems || 0,
+      };
+    } catch {}
+
     return NextResponse.json({
       transactions: mapped,
       openingBalances,
       customer: customerInfo,
+      cashFunds,
+      metalCounts,
+      currencyCounts,
     });
   } catch (err: any) {
     console.error('Error fetching ledger report:', err);

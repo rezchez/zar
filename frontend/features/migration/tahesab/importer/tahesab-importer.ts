@@ -508,6 +508,55 @@ export async function importTahesabData(
     message: 'در حال ثبت اسناد و تراکنش‌های مالی در موتور حسابداری زرفولیو...',
   });
 
+  // 2.5 Pre-calculate physical inventory lifecycle for all melted & conditional gold/silver pieces.
+  // In Zarfolio, metal_inventory represents actual physical warehouse/vault stock.
+  // When gold is spent/delivered to counterparties (خرج شده به طرف‌حساب‌ها, net <= 0.005),
+  // it MUST NOT be brought into metal_inventory at all, while keeping full transactions in customer ledgers.
+  interface PieceInventoryLifecycle {
+    totalIn: number;
+    totalOut: number;
+    netWeight: number;
+    isConditional: boolean;
+    lotCreated: boolean;
+  }
+  const pieceLifecycleMap = new Map<string, PieceInventoryLifecycle>();
+
+  const getPieceKey = (metalType: string, stamp?: string, lab?: string, grade?: number) => {
+    const s = (stamp || '').trim();
+    const l = (lab || '').trim();
+    if (s) {
+      return `${metalType}:${s}:${l}`;
+    }
+    return `${metalType}:NO_STAMP:${grade || 750}`;
+  };
+
+  for (const doc of data.documents) {
+    for (const line of doc.lines) {
+      if (line.weight <= 0) continue;
+      if (line.kind !== 'melted' && line.kind !== 'conditional') continue;
+      if (line.metalType !== 'gold' && line.metalType !== 'silver') continue;
+
+      const pKey = getPieceKey(line.metalType, line.assayStampNumber, line.assayLabName, line.grade);
+      let entry = pieceLifecycleMap.get(pKey);
+      if (!entry) {
+        entry = { totalIn: 0, totalOut: 0, netWeight: 0, isConditional: false, lotCreated: false };
+        pieceLifecycleMap.set(pKey, entry);
+      }
+      if (line.isConditional || line.kind === 'conditional') {
+        entry.isConditional = true;
+      }
+      if (line.nature === 'received') {
+        entry.totalIn += line.weight;
+      } else {
+        entry.totalOut += line.weight;
+      }
+    }
+  }
+
+  for (const entry of pieceLifecycleMap.values()) {
+    entry.netWeight = Math.round((entry.totalIn - entry.totalOut) * 1000) / 1000;
+  }
+
   const activePrefix = session.activePrefix || 'ZF';
   const totalDocs = data.documents.length;
   const startIndex = Math.max(0, docOffset);
@@ -551,6 +600,17 @@ export async function importTahesabData(
                   (line.kind === 'melted' || line.kind === 'conditional') &&
                   (line.metalType === 'gold' || line.metalType === 'silver')
                 ) {
+                  const pKey = getPieceKey(line.metalType, line.assayStampNumber, line.assayLabName, line.grade);
+                  const lifecycle = pieceLifecycleMap.get(pKey);
+
+                  // If this piece was spent out to counterparties (netWeight <= 0.005) or lot already created,
+                  // do NOT bring it into warehouse inventory at all!
+                  if (!lifecycle || lifecycle.netWeight <= 0.005 || lifecycle.lotCreated) {
+                    importedLines++;
+                    docImported = true;
+                    continue;
+                  }
+
                   if (!dryRun) {
                     try {
                       let matchedAssayLabName = line.assayLabName || '';
@@ -561,22 +621,28 @@ export async function importTahesabData(
                         if (m) matchedAssayLabName = m.name;
                       }
                       const baseKarat = line.metalType === 'silver' ? 999 : 750;
+                      const remainingWeight = lifecycle.netWeight;
+                      const remainingConverted = Math.round(((remainingWeight * line.grade) / baseKarat) * 1000) / 1000;
+
                       await writer.collection('metal_inventory').create({
                         metal: line.metalType,
-                        inventory_type: line.kind === 'conditional' ? 'conditional' : 'melted',
+                        inventory_type: lifecycle.isConditional ? 'conditional' : 'melted',
                         direction: 'in',
                         transaction_type: 'opening-balance',
-                        raw_weight: line.weight,
+                        raw_weight: remainingWeight,
                         purity: line.grade,
                         base_karat: baseKarat,
-                        converted_weight: line.convertedWeight750,
+                        converted_weight: remainingConverted,
                         stamp_number: line.assayStampNumber || '',
                         lab_name: matchedAssayLabName || '',
                         date: line.dateIso || new Date().toISOString(),
                         is_opening_balance: true,
                         created_by: effectiveUserId || undefined,
-                        description: line.description || `موجودی اول دوره طلا سند #${doc.documentNumber}`,
+                        description: lifecycle.isConditional
+                          ? `موجودی اولیه طلای شرطی انبار (انتقال از ته‌حساب)`
+                          : (line.description || `موجودی اول دوره طلا سند #${doc.documentNumber}`),
                       });
+                      lifecycle.lotCreated = true;
                       importedMetalLots++;
                       importedLines++;
                       docImported = true;
@@ -584,6 +650,7 @@ export async function importTahesabData(
                       // Non-blocking
                     }
                   } else {
+                    lifecycle.lotCreated = true;
                     importedMetalLots++;
                     importedLines++;
                     docImported = true;
@@ -732,6 +799,17 @@ export async function importTahesabData(
                     signedForeignAmount: line.signedForeignAmount,
                   };
 
+                  if (line.kind === 'conversion') {
+                    docDetailsObj.conversionMode = line.conversionMode || 'money_to_weight';
+                    docDetailsObj.calculationMethod = line.conversionMode === 'weight_to_money' ? 'weight' : 'money';
+                    docDetailsObj.metalPriceType = line.metalPriceType || 'mesghal17';
+                    docDetailsObj.metalPrice = line.unitPrice ? String(line.unitPrice) : '';
+                    docDetailsObj.totalAmount = String(line.amountIrr || 0);
+                    docDetailsObj.convertedWeight = line.convertedWeight750;
+                    docDetailsObj.documentTypeLabel = line.documentTypeLabel || (line.conversionMode === 'weight_to_money' ? 'تبدیل وزنی به مالی' : 'تبدیل مالی به وزنی');
+                    docDetailsObj.documentSubType = line.conversionMode === 'weight_to_money' ? 'conversion-weight-to-money' : 'conversion-money-to-weight';
+                  }
+
                   const isHawala = Boolean(line.isHawala || line.transferToken);
                   if (isHawala) {
                     docDetailsObj.isHawala = true;
@@ -765,12 +843,12 @@ export async function importTahesabData(
                     if (line.documentTypeLabel) {
                       docDetailsObj.documentTypeLabel = line.documentTypeLabel;
                       if (isGoldLine) {
-                        docDetailsObj.rawKind = line.isConditional ? 'conditional' : 'molten';
+                        docDetailsObj.rawKind = (line.isConditional || line.kind === 'conditional') ? 'conditional' : 'molten';
                         docDetailsObj.inventorySourceId = '';
                       }
                     } else if (isGoldLine) {
-                      docDetailsObj.documentTypeLabel = line.isConditional ? 'حواله طلای شرطی' : 'حواله طلا';
-                      docDetailsObj.rawKind = line.isConditional ? 'conditional' : 'molten';
+                      docDetailsObj.documentTypeLabel = (line.isConditional || line.kind === 'conditional') ? 'حواله طلای شرطی' : 'حواله طلا';
+                      docDetailsObj.rawKind = (line.isConditional || line.kind === 'conditional') ? 'conditional' : 'molten';
                       docDetailsObj.inventorySourceId = '';
                     } else if (isCurrencyLine) {
                       docDetailsObj.documentTypeLabel = 'حواله ارزی';
@@ -927,7 +1005,9 @@ export async function importTahesabData(
                     foreignCurrencySymbol: lineCurrencySymbol,
                     documentNature: line.nature,
                     documentTab:
-                      line.kind === 'bank'
+                      line.kind === 'conversion'
+                        ? 'conversion'
+                        : line.kind === 'bank'
                         ? 'bank'
                         : line.kind === 'workmanship'
                         ? 'workmanship'
@@ -943,7 +1023,9 @@ export async function importTahesabData(
                         ? 'cash'
                         : 'general',
                     documentSubType:
-                      line.kind === 'bank'
+                      line.kind === 'conversion'
+                        ? (line.conversionMode === 'weight_to_money' ? 'conversion-weight-to-money' : 'conversion-money-to-weight')
+                        : line.kind === 'bank'
                         ? line.nature === 'paid'
                           ? 'pay-to-customer'
                           : 'receive-from-customer'
@@ -1018,50 +1100,61 @@ export async function importTahesabData(
                   importedLines++;
                   docImported = true;
 
-                  // Register in metal_inventory if raw/melted/conditional metal (both incoming and outgoing)
-                  // Note: Interpersonal Hawala lines do NOT touch physical inventory.
+                  // Register in metal_inventory if raw/melted/conditional metal with positive remaining stock in vault
+                  // Note: Interpersonal Hawala lines and gold spent to counterparties (netWeight <= 0.005) do NOT touch physical inventory.
+                  // Deliveries to counterparties (nature === 'paid') do NOT create standalone inventory lots.
                   if (
                     !isHawala &&
                     line.weight > 0 &&
                     (line.kind === 'melted' || line.kind === 'conditional') &&
-                    (line.metalType === 'gold' || line.metalType === 'silver')
+                    (line.metalType === 'gold' || line.metalType === 'silver') &&
+                    line.nature === 'received'
                   ) {
-                    try {
-                      const baseKarat = line.metalType === 'silver' ? 999 : 750;
-                      const invDirection = line.nature === 'received' ? 'in' : 'out';
-                      const invTxType =
-                        line.isOpeningInventory
-                          ? 'opening-balance'
-                          : line.kind === 'melted'
-                          ? invDirection === 'in'
-                            ? 'incoming-molten'
-                            : 'outgoing-molten'
-                          : invDirection === 'in'
-                          ? 'incoming-conditional'
-                          : 'outgoing-conditional';
+                    const pKey = getPieceKey(line.metalType, line.assayStampNumber, line.assayLabName, line.grade);
+                    const lifecycle = pieceLifecycleMap.get(pKey);
 
-                      await writer.collection('metal_inventory').create({
-                        metal: line.metalType,
-                        inventory_type: line.kind === 'conditional' ? 'conditional' : 'melted',
-                        direction: invDirection,
-                        transaction_type: invTxType,
-                        raw_weight: line.weight,
-                        purity: line.grade,
-                        base_karat: baseKarat,
-                        converted_weight: line.convertedWeight750,
-                        stamp_number: line.assayStampNumber || '',
-                        lab_name: matchedAssayLabName || '',
-                        date: line.dateIso || new Date().toISOString(),
-                        transaction_id: txRecord.id,
-                        document_id: docUuid,
-                        customer: targetCustId,
-                        is_opening_balance: Boolean(line.isOpeningInventory),
-                        created_by: effectiveUserId || undefined,
-                        description: `مهاجرت از ته‌حساب سند #${doc.documentNumber}`,
-                      });
-                      importedMetalLots++;
-                    } catch {
-                      // Non-blocking lot registration
+                    // If gold was spent to counterparties (netWeight <= 0.005) or lot already created, do NOT create lot
+                    if (lifecycle && lifecycle.netWeight > 0.005 && !lifecycle.lotCreated) {
+                      try {
+                        const baseKarat = line.metalType === 'silver' ? 999 : 750;
+                        const remainingWeight = lifecycle.netWeight;
+                        const remainingConverted = Math.round(((remainingWeight * line.grade) / baseKarat) * 1000) / 1000;
+                        const invTxType = lifecycle.isConditional ? 'incoming-conditional' : 'incoming-molten';
+
+                        let matchedAssayLabName = line.assayLabName || '';
+                        if (matchedAssayLabName) {
+                          const m = session.assayLabMapByName.get(normalizeAssayLabText(matchedAssayLabName)) ||
+                                    session.assayLabMapByName.get(normalizeAssayLabText(stripAssayLabAffixes(matchedAssayLabName))) ||
+                                    session.assayLabMapByName.get(matchedAssayLabName.trim());
+                          if (m) matchedAssayLabName = m.name;
+                        }
+
+                        await writer.collection('metal_inventory').create({
+                          metal: line.metalType,
+                          inventory_type: lifecycle.isConditional ? 'conditional' : 'melted',
+                          direction: 'in',
+                          transaction_type: invTxType,
+                          raw_weight: remainingWeight,
+                          purity: line.grade,
+                          base_karat: baseKarat,
+                          converted_weight: remainingConverted,
+                          stamp_number: line.assayStampNumber || '',
+                          lab_name: matchedAssayLabName || '',
+                          date: line.dateIso || new Date().toISOString(),
+                          transaction_id: txRecord.id,
+                          document_id: docUuid,
+                          customer: targetCustId,
+                          is_opening_balance: Boolean(line.isOpeningInventory),
+                          created_by: effectiveUserId || undefined,
+                          description: lifecycle.isConditional
+                            ? `موجودی طلای شرطی در انبار سند #${doc.documentNumber}`
+                            : `مهاجرت از ته‌حساب سند #${doc.documentNumber}`,
+                        });
+                        lifecycle.lotCreated = true;
+                        importedMetalLots++;
+                      } catch {
+                        // Non-blocking lot registration
+                      }
                     }
                   }
 
@@ -1072,7 +1165,9 @@ export async function importTahesabData(
                       const partySide = line.partySide || (line.nature === 'received' ? 'creditor' : 'debtor');
 
                       let counterpartAccountId: string = SYSTEM_ACCOUNT_CODES.CASH_AND_BANK; // 1110
-                      if (line.kind === 'sale') {
+                      if (line.kind === 'conversion') {
+                        counterpartAccountId = SYSTEM_ACCOUNT_CODES.GOLD_INVENTORY; // 1130
+                      } else if (line.kind === 'sale') {
                         counterpartAccountId = SYSTEM_ACCOUNT_CODES.GOLD_SALES_REVENUE; // 4110
                       } else if (line.kind === 'purchase') {
                         counterpartAccountId = SYSTEM_ACCOUNT_CODES.GOLD_INVENTORY; // 1130

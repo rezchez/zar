@@ -185,6 +185,13 @@ export function getLineDocumentTypeLabel(
     return nature === 'received' ? 'تخفیف اعطایی' : 'تخفیف دریافتی';
   }
 
+  if (tab === 'conversion') {
+    if (workmanshipSubType === 'conversion-weight-to-money') {
+      return 'تبدیل وزنی به مالی';
+    }
+    return 'تبدیل مالی به وزنی';
+  }
+
   if (tab === 'etiquette' || tab === 'itak') {
     if (workmanshipSubType === 'workmanship-golden-percentage') {
       const pctStr = percentage ? String(percentage).trim() : '';
@@ -552,7 +559,7 @@ export function findCashVault<T extends { currencyCode?: string; currencyName?: 
  */
 export function isMetalBearingTab(tab: string | undefined): boolean {
   if (!tab) return false;
-  return ['metals', 'raw-gold', 'gold-sale', 'coin', 'workmanship', 'refining', 'etiquette', 'itak'].includes(tab);
+  return ['metals', 'raw-gold', 'gold-sale', 'coin', 'workmanship', 'refining', 'etiquette', 'itak', 'conversion'].includes(tab);
 }
 
 /**
@@ -1192,6 +1199,27 @@ export function sanitizeLineDetailsForTab(
         hawalaCounterCustomerCode: details.hawalaCounterCustomerCode,
         allowNegativeBalance: details.allowNegativeBalance,
         isHawalaNegativeConfirmed: details.isHawalaNegativeConfirmed,
+      };
+    }
+
+    case 'conversion': {
+      return {
+        ...baseDefaults,
+        metalType: details.metalType || 'gold',
+        baseKarat: details.baseKarat || baseKarat,
+        calculationMethod: 'money',
+        metalPriceType: details.metalPriceType || 'gram18',
+        metalPrice: String(details.metalPrice || ''),
+        totalAmount: String(details.totalAmount || ''),
+        rawWeight: String(details.rawWeight || ''),
+        purity: String(details.purity || String(baseKarat)),
+        currencyUnit: details.currencyUnit || baseCurrency,
+        baseCurrency: details.baseCurrency || baseCurrency,
+        convertedWeight: details.convertedWeight,
+        conversionMode: details.conversionMode || 'money_to_weight',
+        conversionTarget: details.conversionTarget || 'debt',
+        documentTypeLabel: details.documentTypeLabel || 'تبدیل مالی به وزنی',
+        documentSubType: details.documentSubType || 'conversion-money-to-weight',
       };
     }
 

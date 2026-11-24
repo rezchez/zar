@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  ArrowLeftRight,
   Banknote,
   CircleDollarSign,
   Coins,
@@ -23,6 +24,7 @@ import { fetchBankAccounts } from '@/src/components/documents/BankTab';
 import { fetchCashFunds } from '@/src/components/documents/CashTab';
 import CoinEntryComponent from '@/src/components/documents/CoinEntryComponent';
 import PlaceholderTab from '@/src/components/documents/PlaceholderTab';
+import ConversionTab from './ConversionTab';
 
 type DocumentEntryTabsProps = {
   firstTabContent: ReactNode;
@@ -39,6 +41,7 @@ type DocumentEntryTabsProps = {
   workmanshipTabContent?: ReactNode;
   etiquetteTabContent?: ReactNode;
   discountTabContent?: ReactNode;
+  conversionTabContent?: ReactNode;
   goodsTabContent?: ReactNode;
   goodsTabLabel?: string;
   accountCodeZero?: string;
@@ -73,6 +76,7 @@ export default function DocumentEntryTabs({
   workmanshipTabContent,
   etiquetteTabContent,
   discountTabContent,
+  conversionTabContent,
   goodsTabContent,
   goodsTabLabel,
   accountCodeZero = '0',
@@ -137,6 +141,14 @@ export default function DocumentEntryTabs({
       label: nature === 'received' ? 'بدهی ما' : 'طلب ما',
       icon: HandCoins,
       content: claimTabContent ?? <PlaceholderTab label={nature === 'received' ? 'بدهی ما' : 'طلب ما'} />,
+    },
+    {
+      id: 'conversion',
+      label: 'تبدیل',
+      icon: ArrowLeftRight,
+      content: conversionTabContent ?? (
+        <ConversionTab nature={nature} selectedCustomer={selectedCustomer} />
+      ),
     },
     {
       id: 'stone',

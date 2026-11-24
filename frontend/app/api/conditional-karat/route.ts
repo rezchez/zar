@@ -183,16 +183,63 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json().catch(() => ({}));
-    const id = String(body.id || '').trim();
-    const newPurity = Number(body.newPurity);
-    const notes = String(body.notes || '').trim();
+    const globalNotes = String(body.notes || '').trim();
+    const fallbackPurity = Number(body.newPurity);
 
-    if (!id) {
-      return NextResponse.json({ message: 'شناسه رکورد مشخص نشده است.' }, { status: 400 });
+    type SettleTarget = {
+      id: string;
+      newPurity: number;
+      notes?: string;
+    };
+
+    const targets: SettleTarget[] = [];
+
+    if (Array.isArray(body.items) && body.items.length > 0) {
+      for (const item of body.items) {
+        const itemId = String(item?.id || '').trim();
+        const itemPurity = Number(item?.newPurity);
+        const itemNotes = item?.notes !== undefined && item?.notes !== null ? String(item.notes).trim() : globalNotes;
+
+        if (!itemId) continue;
+        if (!Number.isFinite(itemPurity) || itemPurity <= 0 || itemPurity > 1000) {
+          return NextResponse.json({
+            message: `عیار وارد شده برای یکی از اقلام نامعتبر است (باید بین ۱ تا ۱۰۰۰ باشد).`,
+          }, { status: 400 });
+        }
+
+        targets.push({
+          id: itemId,
+          newPurity: itemPurity,
+          notes: itemNotes,
+        });
+      }
+    } else {
+      const rawIds: string[] = Array.isArray(body.ids)
+        ? body.ids.map((x: unknown) => String(x || '').trim()).filter(Boolean)
+        : body.id
+          ? [String(body.id).trim()]
+          : [];
+      const ids: string[] = Array.from(new Set<string>(rawIds));
+
+      if (ids.length === 0) {
+        return NextResponse.json({ message: 'شناسه یا شناسه‌های رکورد مشخص نشده است.' }, { status: 400 });
+      }
+
+      if (!Number.isFinite(fallbackPurity) || fallbackPurity <= 0 || fallbackPurity > 1000) {
+        return NextResponse.json({ message: 'عیار صحیح باید عددی معتبر بین ۱ تا ۱۰۰۰ باشد.' }, { status: 400 });
+      }
+
+      for (const id of ids) {
+        targets.push({
+          id,
+          newPurity: fallbackPurity,
+          notes: globalNotes,
+        });
+      }
     }
 
-    if (!Number.isFinite(newPurity) || newPurity <= 0 || newPurity > 1000) {
-      return NextResponse.json({ message: 'عیار صحیح باید عددی معتبر بین ۱ تا ۱۰۰۰ باشد.' }, { status: 400 });
+    if (targets.length === 0) {
+      return NextResponse.json({ message: 'هیچ رکوردی برای ثبت عیار مشخص نشده است.' }, { status: 400 });
     }
 
     let writer = context.pb;
@@ -202,139 +249,160 @@ export async function POST(request: Request) {
       if (servicePb) writer = servicePb;
     } catch {}
 
-    // 1. Fetch the target metal_inventory record
-    const record = await writer.collection('metal_inventory').getOne(id).catch(() => null);
-    if (!record || record.is_deleted) {
-      return NextResponse.json({ message: 'رکورد مورد نظر یافت نشد یا حذف شده است.' }, { status: 404 });
-    }
+    const updatedItems = [];
 
-    const rawWeight = Number(record.raw_weight) || 0;
-    const oldPurity = Number(record.purity) || 750;
-    const baseKarat = Number(record.base_karat) || 750;
+    for (const target of targets) {
+      const targetId = target.id;
+      const targetPurity = target.newPurity;
+      const targetNotes = target.notes;
 
-    const newConvertedWeight = roundWeight(
-      metalAtBaseKarat(rawWeight, newPurity, baseKarat, 3),
-      3,
-    );
-    const weightDifference = roundWeight(newConvertedWeight - Number(record.converted_weight), 3);
+      // 1. Fetch the target metal_inventory record
+      const record = await writer.collection('metal_inventory').getOne(targetId).catch(() => null);
+      if (!record || record.is_deleted) {
+        continue;
+      }
 
-    // Build descriptive log
-    const prevDesc = String(record.description || '').trim();
-    const settlementNote = `[عیار قطعی ری‌گیری: ${newPurity}${notes ? ` - ${notes}` : ''}]`;
-    const updatedDescription = prevDesc ? `${prevDesc} | ${settlementNote}` : settlementNote;
+      const rawWeight = Number(record.raw_weight) || 0;
+      const oldPurity = Number(record.purity) || 750;
+      const baseKarat = Number(record.base_karat) || 750;
 
-    // 2. Update metal_inventory to 'melted'
-    const updatedInventory = await writer.collection('metal_inventory').update(id, {
-      inventory_type: 'melted',
-      purity: newPurity,
-      converted_weight: newConvertedWeight,
-      description: updatedDescription,
-      updated_by: context.user.id,
-    });
+      const newConvertedWeight = roundWeight(
+        metalAtBaseKarat(rawWeight, targetPurity, baseKarat, 3),
+        3,
+      );
+      const weightDifference = roundWeight(newConvertedWeight - Number(record.converted_weight), 3);
 
-    // 3. Update downstream outflows if this inventory item was consumed elsewhere
-    const downstreamOutflows = await writer.collection('metal_inventory').getFullList({
-      filter: writer.filter('source_inventory_id = {:id} && is_deleted = false', { id }),
-    }).catch(() => []);
+      // Build descriptive log
+      const prevDesc = String(record.description || '').trim();
+      const settlementNote = `[عیار قطعی ری‌گیری: ${targetPurity}${targetNotes ? ` - ${targetNotes}` : ''}]`;
+      const updatedDescription = prevDesc ? `${prevDesc} | ${settlementNote}` : settlementNote;
 
-    for (const outflow of downstreamOutflows) {
-      const outRaw = Number(outflow.raw_weight) || 0;
-      const outConverted = roundWeight(metalAtBaseKarat(outRaw, newPurity, baseKarat, 3), 3);
-      await writer.collection('metal_inventory').update(outflow.id, {
+      // 2. Update metal_inventory to 'melted'
+      const updatedInventory = await writer.collection('metal_inventory').update(targetId, {
         inventory_type: 'melted',
-        purity: newPurity,
-        converted_weight: outConverted,
-        description: outflow.description ? `${outflow.description} | ${settlementNote}` : settlementNote,
+        purity: targetPurity,
+        converted_weight: newConvertedWeight,
+        description: updatedDescription,
         updated_by: context.user.id,
-      }).catch(() => null);
-    }
+      });
 
-    // 4. Update linked transactions row (if transaction_id is present)
-    if (record.transaction_id) {
-      const tx = await writer.collection('transactions').getOne(record.transaction_id).catch(() => null);
-      if (tx) {
-        let details: Record<string, unknown> = {};
-        if (tx.documentDetails) {
-          try {
-            details = typeof tx.documentDetails === 'object'
-              ? tx.documentDetails
-              : JSON.parse(tx.documentDetails);
-          } catch {}
-        }
+      // 3. Update downstream outflows if this inventory item was consumed elsewhere
+      const downstreamOutflows = await writer.collection('metal_inventory').getFullList({
+        filter: writer.filter('source_inventory_id = {:id} && is_deleted = false', { id: targetId }),
+      }).catch(() => []);
 
-        const isReceived = record.direction === 'in' || tx.documentNature === 'received';
-        const signedNewGoldAmount = isReceived ? newConvertedWeight : -newConvertedWeight;
-
-        const updatedDetails = {
-          ...details,
-          purity: newPurity,
-          grade: newPurity,
-          convertedWeight750: newConvertedWeight,
-          isConditional: false,
-          rawKind: 'molten',
-          previousPurity: oldPurity,
-          weightDifference,
-          settledAt: new Date().toISOString(),
-          settledBy: context.user.name || context.user.email,
-        };
-
-        const nextSubType =
-          tx.documentSubType === 'incoming-conditional'
-            ? 'incoming-molten'
-            : tx.documentSubType === 'outgoing-conditional'
-              ? 'outgoing-molten'
-              : tx.documentSubType;
-
-        await writer.collection('transactions').update(tx.id, {
-          goldAmount: signedNewGoldAmount,
-          documentSubType: nextSubType,
-          documentDetails: JSON.stringify(updatedDetails),
-          updatedBy: context.user.id,
+      for (const outflow of downstreamOutflows) {
+        const outRaw = Number(outflow.raw_weight) || 0;
+        const outConverted = roundWeight(metalAtBaseKarat(outRaw, targetPurity, baseKarat, 3), 3);
+        await writer.collection('metal_inventory').update(outflow.id, {
+          inventory_type: 'melted',
+          purity: targetPurity,
+          converted_weight: outConverted,
+          description: outflow.description ? `${outflow.description} | ${settlementNote}` : settlementNote,
+          updated_by: context.user.id,
         }).catch(() => null);
       }
-    }
 
-    // 5. Update linked refining_items row if linked
-    const linkedRefiningItems = await writer.collection('refining_items').getFullList({
-      filter: writer.filter('metal_inventory_id = {:id}', { id }),
-    }).catch(() => []);
+      // 4. Update linked transactions row (if transaction_id is present)
+      if (record.transaction_id) {
+        const tx = await writer.collection('transactions').getOne(record.transaction_id).catch(() => null);
+        if (tx) {
+          let details: Record<string, unknown> = {};
+          if (tx.documentDetails) {
+            try {
+              details = typeof tx.documentDetails === 'object'
+                ? tx.documentDetails
+                : JSON.parse(tx.documentDetails);
+            } catch {}
+          }
 
-    for (const refItem of linkedRefiningItems) {
-      await writer.collection('refining_items').update(refItem.id, {
-        purity: newPurity,
-        converted_weight: newConvertedWeight,
-        inventory_type: 'melted',
-        updated_by: context.user.id,
+          const isReceived = record.direction === 'in' || tx.documentNature === 'received';
+          const signedNewGoldAmount = isReceived ? newConvertedWeight : -newConvertedWeight;
+
+          const updatedDetails = {
+            ...details,
+            purity: targetPurity,
+            grade: targetPurity,
+            convertedWeight750: newConvertedWeight,
+            isConditional: false,
+            rawKind: 'molten',
+            previousPurity: oldPurity,
+            weightDifference,
+            settledAt: new Date().toISOString(),
+            settledBy: context.user.name || context.user.email,
+          };
+
+          const nextSubType =
+            tx.documentSubType === 'incoming-conditional'
+              ? 'incoming-molten'
+              : tx.documentSubType === 'outgoing-conditional'
+                ? 'outgoing-molten'
+                : tx.documentSubType;
+
+          await writer.collection('transactions').update(tx.id, {
+            goldAmount: signedNewGoldAmount,
+            documentSubType: nextSubType,
+            documentDetails: JSON.stringify(updatedDetails),
+            updatedBy: context.user.id,
+          }).catch(() => null);
+        }
+      }
+
+      // 5. Update linked refining_items row if linked
+      const linkedRefiningItems = await writer.collection('refining_items').getFullList({
+        filter: writer.filter('metal_inventory_id = {:id}', { id: targetId }),
+      }).catch(() => []);
+
+      for (const refItem of linkedRefiningItems) {
+        await writer.collection('refining_items').update(refItem.id, {
+          purity: targetPurity,
+          converted_weight: newConvertedWeight,
+          inventory_type: 'melted',
+          updated_by: context.user.id,
+        }).catch(() => null);
+      }
+
+      // 6. Record Audit Event
+      await recordAuditEvent({
+        event: 'conditional_purity_settled',
+        userId: context.user.id,
+        entityType: 'metal_inventory',
+        entityId: targetId,
+        entityLabel: record.stamp_number ? `شماره انگ: ${record.stamp_number}` : `رکورد ${targetId}`,
+        details: `تبدیل آبشده شرطی به قطعی - عیار از ${oldPurity} به ${targetPurity} به‌روزرسانی شد. (تغییر وزن معادل: ${weightDifference >= 0 ? '+' : ''}${weightDifference} گرم)`,
+        changes: {
+          purity: { before: oldPurity, after: targetPurity },
+          convertedWeight: { before: record.converted_weight, after: newConvertedWeight },
+        },
       }).catch(() => null);
-    }
 
-    // 6. Record Audit Event
-    await recordAuditEvent({
-      event: 'conditional_purity_settled',
-      userId: context.user.id,
-      entityType: 'metal_inventory',
-      entityId: id,
-      entityLabel: record.stamp_number ? `شماره انگ: ${record.stamp_number}` : `رکورد ${id}`,
-      details: `تبدیل آبشده شرطی به قطعی - عیار از ${oldPurity} به ${newPurity} به‌روزرسانی شد. (تغییر وزن معادل: ${weightDifference >= 0 ? '+' : ''}${weightDifference} گرم)`,
-      changes: {
-        purity: { before: oldPurity, after: newPurity },
-        convertedWeight: { before: record.converted_weight, after: newConvertedWeight },
-      },
-    }).catch(() => null);
-
-    return NextResponse.json({
-      success: true,
-      message: `عیار آبشده با شماره انگ «${record.stamp_number || id}» با موفقیت به ${newPurity} تغییر یافت و از وضعیت شرطی خارج شد.`,
-      item: {
+      updatedItems.push({
         id: updatedInventory.id,
         stampNumber: record.stamp_number,
         labName: record.lab_name,
         rawWeight,
         oldPurity,
-        newPurity,
+        newPurity: targetPurity,
         newConvertedWeight,
         weightDifference,
-      },
+      });
+    }
+
+    if (updatedItems.length === 0) {
+      return NextResponse.json({ message: 'هیچ رکوردی برای به‌روزرسانی یافت نشد یا رکوردها حذف شده‌اند.' }, { status: 404 });
+    }
+
+    const isBatch = targets.length > 1;
+    const message = isBatch
+      ? `عیار قطعی با موفقیت برای ${updatedItems.length} قطعه آبشده ثبت شد و از وضعیت شرطی خارج شدند.`
+      : `عیار آبشده با شماره انگ «${updatedItems[0].stampNumber || updatedItems[0].id}» با موفقیت به ${updatedItems[0].newPurity} تغییر یافت و از وضعیت شرطی خارج شد.`;
+
+    return NextResponse.json({
+      success: true,
+      message,
+      count: updatedItems.length,
+      item: updatedItems[0],
+      items: updatedItems,
     });
   } catch (err: any) {
     console.error('Error settling conditional karat:', err);

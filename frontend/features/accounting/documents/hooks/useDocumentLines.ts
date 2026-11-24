@@ -115,7 +115,9 @@ export function createLine(nature: DocumentNature = 'received', sourceTab = 'met
                       ? 'refining'
                       : sourceTab === 'discount'
                         ? 'discount'
-                        : sourceTab === 'goods'
+                        : sourceTab === 'conversion'
+                          ? 'conversion'
+                          : sourceTab === 'goods'
                           ? 'goods'
                           : sourceTab === 'income-expense'
                             ? 'income-expense'
@@ -124,7 +126,9 @@ export function createLine(nature: DocumentNature = 'received', sourceTab = 'met
   const docSubType =
     sourceTab === 'discount'
       ? (nature === 'received' ? 'discount-given' : 'discount-received')
-      : sourceTab === 'gold-sale'
+      : sourceTab === 'conversion'
+        ? 'conversion'
+        : sourceTab === 'gold-sale'
       ? `${nature === 'received' ? 'gold-purchase' : 'gold-sale'}-molten`
       : sourceTab === 'stone'
         ? (nature === 'received' ? 'stone-purchase' : 'stone-sale')
@@ -351,6 +355,12 @@ export function isLineReady(
   if (line.documentTab === 'discount' || line.sourceTab === 'discount') {
     return numberValue(line.details.discountAmount || line.details.totalAmount) > 0;
   }
+  if (line.documentTab === 'conversion' || line.sourceTab === 'conversion') {
+    const fin = numberValue(line.details.totalAmount);
+    const wt = numberValue(line.details.rawWeight || line.details.convertedWeight);
+    const price = numberValue(line.details.metalPrice);
+    return fin > 0 && wt > 0 && price > 0;
+  }
   const isRawGoldOrGoldSale =
     line.documentTab === 'raw-gold' ||
     line.documentTab === 'gold-sale' ||
@@ -468,6 +478,15 @@ export function validateLine(
   if (line.documentTab === 'discount' || line.sourceTab === 'discount') {
     const amt = numberValue(line.details.discountAmount || line.details.totalAmount);
     if (amt <= 0) return 'مبلغ تخفیف باید بیشتر از صفر باشد.';
+    return '';
+  }
+  if (line.documentTab === 'conversion' || line.sourceTab === 'conversion') {
+    const fin = numberValue(line.details.totalAmount);
+    if (fin <= 0) return 'مبلغ مالی تبدیل باید بیشتر از صفر باشد.';
+    const price = numberValue(line.details.metalPrice);
+    if (price <= 0) return 'نرخ یا قیمت تبدیل باید بیشتر از صفر باشد.';
+    const wt = numberValue(line.details.rawWeight || line.details.convertedWeight);
+    if (wt <= 0) return 'وزن تبدیل‌شده باید بیشتر از صفر باشد.';
     return '';
   }
   const isBankOrCheckLine =
@@ -676,7 +695,7 @@ export function useDocumentLines({
               selectedCurrency || 'IRR',
             )
           : createLine(nature, sourceTab);
-      if (sourceTab === 'claim' || sourceTab === 'discount') {
+      if (sourceTab === 'claim' || sourceTab === 'discount' || sourceTab === 'conversion') {
         line.details.currencyUnit = baseCurr;
         line.details.baseCurrency = baseCurr;
       }

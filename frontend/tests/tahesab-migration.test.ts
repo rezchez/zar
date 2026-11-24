@@ -3125,6 +3125,359 @@ describe('Tahesab Accounting Migration Engine Tests', () => {
     expect(badge577.subCategory).toBe('حواله پرداختی نقدی');
     expect(badge577.badgeColor).toBe('purple');
   });
+
+  // 39. Melted Gold Spent to Counterparty
+  it('39. Melted Gold Spent to Counterparty: excludes spent gold from warehouse stock (metal_inventory) while fully preserving customer transactions', async () => {
+    const rawDb: any = {
+      moshtarian: [
+        { code: '154', name: 'آنا اسلامی' },
+        { code: '91', name: 'محمد جواد رحیمیان' },
+      ],
+      hesab: [
+        {
+          Factor_Code: 'FACT_IN_SPENT_1',
+          code: '154',
+          mcode: '154',
+          sh_factor: '1',
+          Tarikh: '2024-04-15 13:53:54',
+          Rec: 'انا اسلامی',
+        },
+        {
+          Factor_Code: 'FACT_OUT_SPENT_2',
+          code: '91',
+          mcode: '91',
+          sh_factor: '2',
+          Tarikh: '2024-04-23 11:59:38',
+          Rec: 'محمد جواد رحیمیان',
+        },
+      ],
+      hesab_detail: [
+        {
+          Factor_Code: 'FACT_IN_SPENT_1',
+          mcode: '154',
+          no: 'ورود طلا',
+          vazn: '34.04',
+          ayar: '749',
+          tabdil750_v: '33.995',
+          sh_sharti: '31153',
+          name_az: 'اسدی گرگان',
+          Command2: null,
+          Sharh: '',
+        },
+        {
+          Factor_Code: 'FACT_OUT_SPENT_2',
+          mcode: '91',
+          no: 'خروج طلا',
+          vazn: '34.04',
+          ayar: '749',
+          tabdil750_kh: '33.995',
+          sh_sharti: '31153',
+          name_az: 'اسدی گرگان',
+          Command2: null,
+          Sharh: '',
+        },
+      ],
+      bank: [],
+      Hesab_bank: [],
+      Sekeh_Shemsh: [],
+      Sang: [],
+      raygiri: [{ name: 'اسدی گرگان', Tel: '', Add: '' }],
+      khar_sakhte: [],
+      Cities: [],
+      Hazine_Baabat: [],
+      gorooh: [],
+      otherTables: {},
+    };
+
+    const norm = normalizeTahesabData(rawDb, parseBackupInfo('Version=10.0'));
+    const docIn = norm.documents.find((d) => d.sourceFactorCode === 'FACT_IN_SPENT_1');
+    const docOut = norm.documents.find((d) => d.sourceFactorCode === 'FACT_OUT_SPENT_2');
+    expect(docIn).toBeDefined();
+    expect(docOut).toBeDefined();
+
+    const createdRecords: Record<string, any[]> = {};
+    const mockWriter = {
+      collection: (col: string) => ({
+        getFirstListItem: async () => { throw new Error('Not found'); },
+        create: async (data: Record<string, any>) => {
+          if (!createdRecords[col]) createdRecords[col] = [];
+          const rec = { id: `rec_${Date.now()}_${Math.random()}`, ...data };
+          createdRecords[col].push(rec);
+          return rec;
+        },
+        getFullList: async () => createdRecords[col] || [],
+      }),
+    } as any;
+
+    await importTahesabData(mockWriter, norm, buildInitialMappings(norm, [], [], [], []), {
+      migrationId: 'test_spent_gold_mig',
+      dryRun: false,
+    });
+
+    // 1. Transactions must be recorded for both counterparties
+    const txRecords = createdRecords['transactions'] || [];
+    expect(txRecords.length).toBe(2);
+
+    const txIn = txRecords.find((t) => t.customerCode === 154);
+    const txOut = txRecords.find((t) => t.customerCode === 91);
+    expect(txIn).toBeDefined();
+    expect(txIn.goldAmount).toBe(33.995);
+    expect(txOut).toBeDefined();
+    expect(txOut.goldAmount).toBe(-33.995);
+
+    // 2. Crucial domain rule: Gold spent to counterparties (net <= 0.005) MUST NOT be in metal_inventory!
+    const inventoryLots = createdRecords['metal_inventory'] || [];
+    expect(inventoryLots.length).toBe(0);
+  });
+
+  // 40. Conditional Gold Full Lifecycle
+  it('40. Conditional Gold Full Lifecycle: preserves kind="conditional" across inflows and outflows even when outflow has Command2=null', async () => {
+    const rawDb: any = {
+      moshtarian: [
+        { code: '154', name: 'آنا اسلامی' },
+        { code: '91', name: 'محمد جواد رحیمیان' },
+      ],
+      hesab: [
+        {
+          Factor_Code: 'FACT_COND_IN_1',
+          code: '154',
+          mcode: '154',
+          sh_factor: '1',
+          Tarikh: '2024-04-15 13:53:54',
+          Rec: 'انا اسلامی',
+        },
+        {
+          Factor_Code: 'FACT_COND_OUT_2',
+          code: '91',
+          mcode: '91',
+          sh_factor: '2',
+          Tarikh: '2024-04-23 11:59:38',
+          Rec: 'محمد جواد رحیمیان',
+        },
+      ],
+      hesab_detail: [
+        {
+          Factor_Code: 'FACT_COND_IN_1',
+          mcode: '154',
+          no: 'ورود طلا',
+          vazn: '34.04',
+          ayar: '749',
+          tabdil750_v: '33.995',
+          sh_sharti: '31153',
+          name_az: 'اسدی گرگان',
+          Command2: '171', // Marked conditional on entry in Tahesab
+          Sharh: '',
+        },
+        {
+          Factor_Code: 'FACT_COND_OUT_2',
+          mcode: '91',
+          no: 'خروج طلا',
+          vazn: '34.04',
+          ayar: '749',
+          tabdil750_kh: '33.995',
+          sh_sharti: '31153',
+          name_az: 'اسدی گرگان',
+          Command2: null, // Command2 is null in Tahesab outflow!
+          Sharh: '',
+        },
+      ],
+      bank: [],
+      Hesab_bank: [],
+      Sekeh_Shemsh: [],
+      Sang: [],
+      raygiri: [{ name: 'اسدی گرگان', Tel: '', Add: '' }],
+      khar_sakhte: [],
+      Cities: [],
+      Hazine_Baabat: [],
+      gorooh: [],
+      otherTables: {},
+    };
+
+    const norm = normalizeTahesabData(rawDb, parseBackupInfo('Version=10.0'));
+    const docIn = norm.documents.find((d) => d.sourceFactorCode === 'FACT_COND_IN_1');
+    const docOut = norm.documents.find((d) => d.sourceFactorCode === 'FACT_COND_OUT_2');
+
+    expect(docIn).toBeDefined();
+    expect(docOut).toBeDefined();
+
+    // Verify Inflow is conditional
+    const lineIn = docIn!.lines[0];
+    expect(lineIn.isConditional).toBe(true);
+    expect(lineIn.kind).toBe('conditional');
+    expect(lineIn.documentTypeLabel).toBe('ورود آب شده شرطی');
+
+    // Verify Outflow inherits conditional lifecycle from stamp
+    const lineOut = docOut!.lines[0];
+    expect(lineOut.isConditional).toBe(true);
+    expect(lineOut.kind).toBe('conditional');
+    expect(lineOut.documentTypeLabel).toBe('خروج آب شده شرطی');
+
+    const createdRecords: Record<string, any[]> = {};
+    const mockWriter = {
+      collection: (col: string) => ({
+        getFirstListItem: async () => { throw new Error('Not found'); },
+        create: async (data: Record<string, any>) => {
+          if (!createdRecords[col]) createdRecords[col] = [];
+          const rec = { id: `rec_${Date.now()}_${Math.random()}`, ...data };
+          createdRecords[col].push(rec);
+          return rec;
+        },
+        getFullList: async () => createdRecords[col] || [],
+      }),
+    } as any;
+
+    await importTahesabData(mockWriter, norm, buildInitialMappings(norm, [], [], [], []), {
+      migrationId: 'test_cond_lifecycle_mig',
+      dryRun: false,
+    });
+
+    const txRecords = createdRecords['transactions'] || [];
+    expect(txRecords.length).toBe(2);
+
+    const txIn = txRecords.find((t) => t.customerCode === 154);
+    expect(txIn.documentTab).toBe('raw-gold');
+    expect(txIn.documentSubType).toBe('incoming-conditional');
+    const detailsIn = JSON.parse(txIn.documentDetails);
+    expect(detailsIn.rawKind).toBe('conditional');
+    expect(detailsIn.isConditional).toBe(true);
+
+    const txOut = txRecords.find((t) => t.customerCode === 91);
+    expect(txOut.documentTab).toBe('raw-gold');
+    expect(txOut.documentSubType).toBe('outgoing-conditional');
+    const detailsOut = JSON.parse(txOut.documentDetails);
+    expect(detailsOut.rawKind).toBe('conditional');
+    expect(detailsOut.isConditional).toBe(true);
+
+    // Because bar 31153 was spent to counterparty 91, it is NOT in warehouse stock
+    const inventoryLots = createdRecords['metal_inventory'] || [];
+    expect(inventoryLots.length).toBe(0);
+  });
+
+  // 41. Pooli Kardan (پولی کردن)
+  it('41. Pooli Kardan (پولی کردن طلا به پول و پول به طلا): accurately identifies conversion lines, sets kind="conversion", maps to documentTab="conversion" and prevents physical inventory lots', async () => {
+    const rawDb: TahesabRawDatabase = {
+      moshtarian: [
+        { code: '212', name: 'مهرگان', JamV_T: '0', JamV_P: '0' },
+        { code: '425', name: 'سعیدکاشانی', JamV_T: '0', JamV_P: '0' },
+      ],
+      hesab: [
+        { Factor_Code: 'FC_POOL_1', mcode: '212', sh_factor: '10', Tarikh: '2024-04-15 16:45:05' },
+        { Factor_Code: 'FC_POOL_2', mcode: '425', sh_factor: '11', Tarikh: '2024-04-23 12:42:14' },
+      ],
+      hesab_detail: [
+        // 1. پول به طلا (Money to Gold conversion)
+        {
+          Factor_Code: 'FC_POOL_1',
+          mcode: '212',
+          no: 'فروش طلا',
+          vazn: '10',
+          ayar: '750',
+          tabdil750_kh: '10',
+          rial_V: '368660000',
+          FiF: '159700000',
+          MazanehISmesghal: '1',
+          Check_tozih: '#MBS#',
+          Sharh: 'پولی کردن (پول به طلا)  #2296',
+        },
+        // 2. طلا به پول (Gold to Money conversion)
+        {
+          Factor_Code: 'FC_POOL_2',
+          mcode: '425',
+          no: 'خرید طلا',
+          vazn: '11.032',
+          ayar: '750',
+          tabdil750_v: '11.032',
+          rial_kh: '394746085',
+          FiF: '155000000',
+          MazanehISmesghal: '1',
+          Sharh: 'پولی کردن (طلا به پول)  #2295',
+        },
+      ],
+      Hesab_bank: [],
+      bank: [],
+      Sekeh_Shemsh: [],
+      Sang: [],
+      raygiri: [],
+      khar_sakhte: [],
+      Cities: [],
+      Hazine_Baabat: [],
+      gorooh: [],
+      otherTables: {},
+    };
+
+    const norm = normalizeTahesabData(rawDb, {
+      version: '10.1405.4.20',
+      dbType: 'SQL',
+      dateJalali: '1403/01/27',
+      archiveCount: 1,
+      mohitCount: 1,
+    });
+
+    expect(norm.documents.length).toBe(2);
+
+    const doc1 = norm.documents[0];
+    expect(doc1.lines.length).toBe(1);
+    const line1 = doc1.lines[0];
+    expect(line1.kind).toBe('conversion');
+    expect(line1.conversionMode).toBe('money_to_weight');
+    expect(line1.metalPriceType).toBe('mesghal17');
+    expect(line1.unitPrice).toBe(159700000);
+    expect(line1.amountIrr).toBe(368660000);
+    expect(line1.convertedWeight750).toBe(10);
+    expect(line1.documentTypeLabel).toBe('تبدیل مالی به وزنی');
+    expect(line1.nature).toBe('received');
+
+    const doc2 = norm.documents[1];
+    expect(doc2.lines.length).toBe(1);
+    const line2 = doc2.lines[0];
+    expect(line2.kind).toBe('conversion');
+    expect(line2.conversionMode).toBe('weight_to_money');
+    expect(line2.metalPriceType).toBe('mesghal17');
+    expect(line2.unitPrice).toBe(155000000);
+    expect(line2.amountIrr).toBe(394746085);
+    expect(line2.convertedWeight750).toBe(11.032);
+    expect(line2.documentTypeLabel).toBe('تبدیل وزنی به مالی');
+    expect(line2.nature).toBe('paid');
+
+    // Test import behavior
+    const createdRecords: Record<string, any[]> = {};
+    const mockWriter = {
+      collection: (col: string) => ({
+        getFirstListItem: async () => { throw new Error('Not found'); },
+        create: async (data: Record<string, any>) => {
+          if (!createdRecords[col]) createdRecords[col] = [];
+          const rec = { id: `rec_${Date.now()}_${Math.random()}`, ...data };
+          createdRecords[col].push(rec);
+          return rec;
+        },
+        getFullList: async () => createdRecords[col] || [],
+      }),
+    } as any;
+
+    await importTahesabData(mockWriter, norm, buildInitialMappings(norm, [], [], [], []), {
+      migrationId: 'test_pooli_kardan_mig',
+      dryRun: false,
+    });
+
+    const txRecords = createdRecords['transactions'] || [];
+    expect(txRecords.length).toBe(2);
+
+    const tx1 = txRecords.find((t) => t.customerCode === 212);
+    expect(tx1.documentTab).toBe('conversion');
+    expect(tx1.documentSubType).toBe('conversion-money-to-weight');
+    expect(tx1.goldAmount).toBe(-10);
+    expect(tx1.rialAmount).toBe(368660000);
+
+    const tx2 = txRecords.find((t) => t.customerCode === 425);
+    expect(tx2.documentTab).toBe('conversion');
+    expect(tx2.documentSubType).toBe('conversion-weight-to-money');
+    expect(tx2.goldAmount).toBe(11.032);
+    expect(tx2.rialAmount).toBe(-394746085);
+
+    // Conversions MUST NOT create physical inventory lots in metal_inventory
+    const inventoryLots = createdRecords['metal_inventory'] || [];
+    expect(inventoryLots.length).toBe(0);
+  });
 });
 
 

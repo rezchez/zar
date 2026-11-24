@@ -218,6 +218,7 @@ export async function POST(request: Request) {
         docTab === 'silver' ||
         docTab === 'platinum' ||
         docTab === 'gold-sale' ||
+        docTab === 'conversion' ||
         (docTab === 'refining' && details.refiningOpKind !== 'fee')
       ) {
         const metal = String(
@@ -235,7 +236,7 @@ export async function POST(request: Request) {
           ? line.converted750
           : (rawWeight > 0 && purity > 0 ? (rawWeight * purity) / baseKarat : 0);
 
-        const weightDirection = docTab === 'gold-sale'
+        const weightDirection = (docTab === 'gold-sale' || docTab === 'conversion')
           ? (lineNature === 'received' ? -1 : 1)
           : direction;
 
@@ -294,7 +295,7 @@ export async function POST(request: Request) {
           details.baseCurrency === 'IRT' ||
           body?.baseCurrency === 'IRT';
         rialAmount = isToman ? convertTomanToRial(rawAmt) : rawAmt;
-      } else if (docTab === 'gold-sale') {
+      } else if (docTab === 'gold-sale' || docTab === 'conversion') {
         const rawAmt = numberValue(details.totalAmount);
         const isToman =
           details.currencyUnit === 'IRT' ||

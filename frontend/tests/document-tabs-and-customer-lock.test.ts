@@ -22,7 +22,7 @@ describe('DocumentForm Tabs URL Sync & Customer Lock Persistence Tests', () => {
   };
 
   describe('Entry Tabs Configuration & URL Hash Resolution', () => {
-    it('defines all 13 expected document entry tabs with exact requested tab order', () => {
+    it('defines all 14 expected document entry tabs with exact requested tab order', () => {
       expect(VALID_ENTRY_TABS).toEqual([
         'metals',
         'gold-sale',
@@ -31,6 +31,7 @@ describe('DocumentForm Tabs URL Sync & Customer Lock Persistence Tests', () => {
         'bank',
         'cash',
         'claim',
+        'conversion',
         'stone',
         'goods',
         'income-expense',
@@ -43,8 +44,10 @@ describe('DocumentForm Tabs URL Sync & Customer Lock Persistence Tests', () => {
       expect(VALID_ENTRY_TABS[4]).toBe('bank');
       expect(VALID_ENTRY_TABS[5]).toBe('cash');
       expect(VALID_ENTRY_TABS[6]).toBe('claim');
-      expect(VALID_ENTRY_TABS[11]).toBe('etiquette');
-      expect(VALID_ENTRY_TABS[12]).toBe('discount');
+      expect(VALID_ENTRY_TABS[7]).toBe('conversion');
+      expect(VALID_ENTRY_TABS[8]).toBe('stone');
+      expect(VALID_ENTRY_TABS[12]).toBe('etiquette');
+      expect(VALID_ENTRY_TABS[13]).toBe('discount');
     });
 
     it('resolves valid URL hash to matching active tab without falling back to default', () => {
@@ -66,6 +69,7 @@ describe('DocumentForm Tabs URL Sync & Customer Lock Persistence Tests', () => {
       expect(resolveTab('#claim')).toBe('claim');
       expect(resolveTab('#workmanship')).toBe('workmanship');
       expect(resolveTab('#discount')).toBe('discount');
+      expect(resolveTab('#conversion')).toBe('conversion');
       expect(resolveTab('#income-expense')).toBe('income-expense');
       expect(resolveTab('#coin')).toBe('coin');
       expect(resolveTab('#stone')).toBe('stone');

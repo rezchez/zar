@@ -107,6 +107,7 @@ export default function CommittedLineRow({
   if (isMetalLine) {
     const isTradeLine =
       line.documentTab === 'gold-sale' ||
+      line.documentTab === 'conversion' ||
       ((line.documentTab === 'coin' || line.sourceTab === 'coin') &&
         (line.documentSubType === 'receipt_buy' || line.documentSubType === 'payment_sale'));
 

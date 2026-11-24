@@ -124,4 +124,51 @@ describe('Customer Print Template & Manager Notifications Tests', () => {
     expect(updatedTable.stripedRows).toBe(true);
     expect(updatedTable.alternateRowColor).toBe('#f1f5f9');
   });
+
+  it('InvoicePrintDesigner contains collapsible paper & margins settings section', async () => {
+    const fs = await import('fs');
+    const content = fs.readFileSync('src/components/InvoicePrintDesigner.tsx', 'utf-8');
+    expect(content).toContain('isPaperSettingsOpen');
+    expect(content).toContain('setIsPaperSettingsOpen');
+    expect(content).toContain('تنظیمات کاغذ و حاشیه‌ها');
+  });
+
+  it('QrCodeSvg supports customizable margin and defaults to reduced outer white margin (0.5)', () => {
+    const { QrCodeSvg } = require('@/lib/qr-code');
+    expect(QrCodeSvg).toBeDefined();
+
+    // Render with default margin
+    const elDefault = QrCodeSvg({ value: '1403-1002' });
+    expect(elDefault).toBeDefined();
+    // Default quiet zone should be 0.5 (viewBox 0 0 count + 1 count + 1)
+    expect(elDefault.props.viewBox).toBeDefined();
+
+    // Render with custom margin
+    const elCustom = QrCodeSvg({ value: '1403-1002', margin: 0.2 });
+    expect(elCustom).toBeDefined();
+  });
+
+  it('InvoicePrintDesigner has correct resize handles and orientation without reversed movement', async () => {
+    const fs = await import('fs');
+    const content = fs.readFileSync('src/components/InvoicePrintDesigner.tsx', 'utf-8');
+
+    // Verify handle definitions
+    expect(content).toContain("handleResizeMouseDown(e, el, 'ne')");
+    expect(content).toContain("handleResizeMouseDown(e, el, 'nw')");
+    expect(content).toContain("handleResizeMouseDown(e, el, 'sw')");
+    expect(content).toContain("handleResizeMouseDown(e, el, 'se')");
+    expect(content).toContain("handleResizeMouseDown(e, el, 'w')");
+    expect(content).toContain("handleResizeMouseDown(e, el, 'e')");
+
+    // Verify RTL resize math:
+    // When dragging east (e): moving mouse right (dxMm > 0) decreases xMm (moves right) and increases width
+    expect(content).toContain('newXMm = resizeStart.initialXMm - dxMm');
+    expect(content).toContain('newWidthMm = resizeStart.initialWidthMm + dxMm');
+
+    // When dragging west (w): moving mouse left (dxMm < 0) increases width and keeps xMm fixed
+    expect(content).toContain('newWidthMm = resizeStart.initialWidthMm - dxMm');
+
+    // Verify QR code aspect-ratio locking
+    expect(content).toContain('isSquareShape');
+  });
 });

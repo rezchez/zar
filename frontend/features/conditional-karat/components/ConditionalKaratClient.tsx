@@ -13,6 +13,7 @@ import {
   HandCoins,
   History,
   Layers,
+  ListChecks,
   RefreshCw,
   Scale,
   Search,
@@ -89,6 +90,13 @@ export default function ConditionalKaratClient() {
   const [directionFilter, setDirectionFilter] = useState<'all' | 'in' | 'out'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedItemForSettle, setSelectedItemForSettle] = useState<ConditionalGoldItem | null>(null);
+
+  // Multi-selection state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
+  const [batchItemPurities, setBatchItemPurities] = useState<Record<string, string>>({});
+  const [batchGlobalFillPurity, setBatchGlobalFillPurity] = useState('');
+  const [batchNotes, setBatchNotes] = useState('');
 
   // Quick inputs drafts for inline settle (item.id -> purity string)
   const [inputPurities, setInputPurities] = useState<Record<string, string>>({});
@@ -187,6 +195,170 @@ export default function ConditionalKaratClient() {
       return str.includes(q);
     });
   }, [items, searchQuery]);
+
+  // Derived selections
+  const selectedItems = useMemo(() => {
+    return items.filter((item) => selectedIds.has(item.id));
+  }, [items, selectedIds]);
+
+  const selectedRawWeight = useMemo(() => {
+    return roundWeight(
+      selectedItems.reduce((acc, item) => acc + item.rawWeight, 0),
+      3,
+    );
+  }, [selectedItems]);
+
+  const selectedConvertedWeight = useMemo(() => {
+    return roundWeight(
+      selectedItems.reduce((acc, item) => acc + item.convertedWeight, 0),
+      3,
+    );
+  }, [selectedItems]);
+
+  const isAllSelected = useMemo(() => {
+    return displayItems.length > 0 && displayItems.every((item) => selectedIds.has(item.id));
+  }, [displayItems, selectedIds]);
+
+  const isSomeSelected = useMemo(() => {
+    return displayItems.some((item) => selectedIds.has(item.id)) && !isAllSelected;
+  }, [displayItems, selectedIds, isAllSelected]);
+
+  function toggleSelectItem(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (isAllSelected) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        for (const item of displayItems) {
+          next.delete(item.id);
+        }
+        return next;
+      });
+    } else {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        for (const item of displayItems) {
+          next.add(item.id);
+        }
+        return next;
+      });
+    }
+  }
+
+  function openBatchSettleModal() {
+    if (selectedIds.size === 0) return;
+    const initialBatchPurities: Record<string, string> = {};
+    for (const item of selectedItems) {
+      // Use existing draft from table if typed, otherwise current item purity
+      const draft = inputPurities[item.id]?.trim();
+      initialBatchPurities[item.id] = draft || String(item.purity || '750');
+    }
+    setBatchItemPurities(initialBatchPurities);
+    setBatchGlobalFillPurity('');
+    setBatchNotes('');
+    setActionError('');
+    setIsBatchModalOpen(true);
+  }
+
+  function applyPurityToAllBatch(val: string) {
+    const num = Number(val);
+    if (!val.trim() || !Number.isFinite(num) || num <= 0 || num > 1000) return;
+    setBatchItemPurities((prev) => {
+      const next = { ...prev };
+      for (const item of selectedItems) {
+        next[item.id] = val.trim();
+      }
+      return next;
+    });
+  }
+
+  const batchSummary = useMemo(() => {
+    let totalNewConverted = 0;
+    let allValid = selectedItems.length > 0;
+
+    for (const item of selectedItems) {
+      const p = Number(batchItemPurities[item.id]);
+      if (!Number.isFinite(p) || p <= 0 || p > 1000) {
+        allValid = false;
+        totalNewConverted += item.convertedWeight;
+      } else {
+        totalNewConverted += metalAtBaseKarat(item.rawWeight, p, item.baseKarat, 3);
+      }
+    }
+
+    const roundedNewConverted = roundWeight(totalNewConverted, 3);
+    const totalDiff = roundWeight(roundedNewConverted - selectedConvertedWeight, 3);
+
+    return {
+      totalNewConverted: roundedNewConverted,
+      totalDiff,
+      allValid,
+    };
+  }, [selectedItems, batchItemPurities, selectedConvertedWeight]);
+
+  async function handleBatchSettleSubmit() {
+    if (selectedItems.length === 0) {
+      setActionError('هیچ آیتمی انتخاب نشده است.');
+      return;
+    }
+
+    const payloadItems = [];
+    for (const item of selectedItems) {
+      const p = Number(batchItemPurities[item.id]);
+      if (!Number.isFinite(p) || p <= 0 || p > 1000) {
+        setActionError(
+          `عیار وارد شده برای آبشده «${item.stampNumber ? `انگ ${item.stampNumber}` : item.customer.name}» نامعتبر است (باید بین ۱ تا ۱۰۰۰ باشد).`,
+        );
+        return;
+      }
+      payloadItems.push({
+        id: item.id,
+        newPurity: p,
+      });
+    }
+
+    setSettling(true);
+    setActionError('');
+    setActionSuccess('');
+
+    try {
+      const res = await fetch('/api/conditional-karat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: payloadItems,
+          notes: batchNotes.trim(),
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setActionError(data.message || 'خطا در ثبت عیار قطعی گروهی.');
+        return;
+      }
+
+      setActionSuccess(data.message || `عیار قطعی برای ${selectedItems.length} مورد با موفقیت ثبت شد.`);
+      setIsBatchModalOpen(false);
+      setSelectedIds(new Set());
+      setBatchItemPurities({});
+      setBatchNotes('');
+      await loadData();
+    } catch {
+      setActionError('خطا در برقراری ارتباط با سرور.');
+    } finally {
+      setSettling(false);
+    }
+  }
 
   return (
     <div className="space-y-6 dir-rtl text-right" dir="rtl">
@@ -403,6 +575,18 @@ export default function ConditionalKaratClient() {
                   پرداختی (خروج)
                 </button>
               </div>
+
+              {/* Batch Action Button in Toolbar */}
+              {selectedIds.size > 0 ? (
+                <button
+                  type="button"
+                  onClick={openBatchSettleModal}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-sm font-black text-[11px] transition-all active:scale-95"
+                >
+                  <Sparkles size={13} />
+                  <span>ثبت عیار قطعی برای انتخاب‌شده‌ها ({selectedIds.size})</span>
+                </button>
+              ) : null}
             </div>
           </div>
         </div>
@@ -412,6 +596,18 @@ export default function ConditionalKaratClient() {
           <table className="w-full text-right border-collapse">
             <thead>
               <tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/75 dark:bg-slate-950/40 text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                <th className="py-4 px-4 w-12 text-center">
+                  <input
+                    type="checkbox"
+                    checked={isAllSelected}
+                    ref={(el) => {
+                      if (el) el.indeterminate = isSomeSelected;
+                    }}
+                    onChange={toggleSelectAll}
+                    aria-label="انتخاب همه"
+                    className="w-4 h-4 rounded text-amber-500 focus:ring-amber-500/30 cursor-pointer accent-amber-500"
+                  />
+                </th>
                 <th className="py-4 px-6">شماره انگ و آزمایشگاه</th>
                 <th className="py-4 px-4">طرف حساب / مشتری</th>
                 <th className="py-4 px-4">جهت و تاریخ</th>
@@ -424,13 +620,14 @@ export default function ConditionalKaratClient() {
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-400 font-bold">
+                  <td colSpan={8} className="py-12 text-center text-slate-400 font-bold">
                     <RefreshCw size={24} className="animate-spin mx-auto mb-2 text-amber-500" />
                     در حال دریافت فهرست آبشده‌های شرطی...
                   </td>
                 </tr>
               ) : displayItems.length ? (
                 displayItems.map((item) => {
+                  const isSelected = selectedIds.has(item.id);
                   const draftPurity = inputPurities[item.id] ?? '';
                   const numDraft = Number(draftPurity);
                   const hasDraft = draftPurity.trim() !== '' && Number.isFinite(numDraft) && numDraft > 0;
@@ -444,8 +641,24 @@ export default function ConditionalKaratClient() {
                   return (
                     <tr
                       key={item.id}
-                      className="hover:bg-slate-50/70 dark:hover:bg-slate-800/30 transition-colors"
+                      onClick={() => toggleSelectItem(item.id)}
+                      className={`cursor-pointer transition-colors ${
+                        isSelected
+                          ? 'bg-amber-500/10 dark:bg-amber-500/15'
+                          : 'hover:bg-slate-50/70 dark:hover:bg-slate-800/30'
+                      }`}
                     >
+                      {/* Checkbox Column */}
+                      <td className="py-4 px-4 text-center" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelectItem(item.id)}
+                          aria-label={`انتخاب آبشده ${item.stampNumber || item.id}`}
+                          className="w-4 h-4 rounded text-amber-500 focus:ring-amber-500/30 cursor-pointer accent-amber-500"
+                        />
+                      </td>
+
                       {/* Stamp & Lab */}
                       <td className="py-4 px-6">
                         <div className="space-y-1">
@@ -585,7 +798,7 @@ export default function ConditionalKaratClient() {
                 })
               ) : (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-400 font-bold">
+                  <td colSpan={8} className="py-12 text-center text-slate-400 font-bold">
                     {statusTab === 'pending'
                       ? 'هیچ آبشده‌ای با عیار شرطی در انتظار ثبت وجود ندارد.'
                       : 'موردی برای نمایش یافت نشد.'}
@@ -778,6 +991,318 @@ export default function ConditionalKaratClient() {
                     <CheckCircle2 size={16} />
                   )}
                   تایید و خروج از حالت شرطی
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        ) : null}
+      </AnimatePresence>
+
+      {/* Sticky Bottom Multi-Select Floating Bar */}
+      <AnimatePresence>
+        {selectedIds.size > 0 ? (
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 30 }}
+            className="sticky bottom-6 z-40 mx-auto max-w-4xl bg-slate-900/95 dark:bg-slate-900/95 text-white backdrop-blur-md border border-slate-700/80 rounded-3xl p-4 px-6 shadow-2xl flex flex-wrap items-center justify-between gap-4"
+          >
+            <div className="flex items-center gap-4 flex-wrap">
+              <div className="flex items-center gap-2">
+                <span className="w-8 h-8 rounded-xl bg-amber-500 text-slate-950 font-black flex items-center justify-center text-xs shadow-sm">
+                  {selectedIds.size}
+                </span>
+                <span className="text-xs font-black">
+                  {selectedIds.size} قطعه آبشده انتخاب شده
+                </span>
+              </div>
+              <div className="h-5 w-px bg-slate-700 hidden sm:block" />
+              <div className="text-xs text-slate-300">
+                <span>مجموع وزن ناخالص: </span>
+                <span className="font-mono font-black text-amber-400">
+                  {formatWeightNumber(selectedRawWeight)}
+                </span>
+                <span className="text-[10px] text-slate-400 mr-1">گرم</span>
+              </div>
+              <div className="text-xs text-slate-300">
+                <span>معادل ۷۵۰ فعلی: </span>
+                <span className="font-mono font-black text-indigo-400">
+                  {formatWeightNumber(selectedConvertedWeight)}
+                </span>
+                <span className="text-[10px] text-slate-400 mr-1">گرم</span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedIds(new Set())}
+                className="px-4 py-2 rounded-2xl text-xs font-bold text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
+              >
+                لغو انتخاب
+              </button>
+              <button
+                type="button"
+                onClick={openBatchSettleModal}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs transition-all shadow-md active:scale-95"
+              >
+                <Sparkles size={14} />
+                ثبت عیار قطعی گروهی
+              </button>
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      {/* Batch Settle Confirmation Modal */}
+      <AnimatePresence>
+        {isBatchModalOpen && selectedItems.length > 0 ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-md p-4 dir-rtl">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="relative w-full max-w-2xl max-h-[90vh] flex flex-col rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl text-right overflow-hidden"
+              role="dialog"
+              aria-modal="true"
+            >
+              {/* Modal Header */}
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 p-6 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                    <ListChecks size={22} />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-slate-900 dark:text-slate-100 text-base">
+                      ثبت عیار قطعی آبشده‌های انتخاب‌شده ({selectedItems.length} قطعه)
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      عیار قطعی هر قطعه آبشده را به تفکیک وارد کنید. تراز طلا برای تک‌تک اقلام به‌طور مجزا محاسبه و ثبت خواهد شد.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsBatchModalOpen(false)}
+                  className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Scrollable Content */}
+              <div className="p-6 space-y-5 overflow-y-auto max-h-[calc(90vh-140px)]">
+                {/* Summary Metrics */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="bg-slate-50 dark:bg-slate-950/60 p-3.5 rounded-2xl border border-slate-200/60 dark:border-slate-800 text-center">
+                    <span className="text-[11px] font-bold text-slate-400 block mb-1">
+                      تعداد اقلام انتخابی
+                    </span>
+                    <span className="text-lg font-black text-slate-900 dark:text-slate-100 font-mono">
+                      {selectedItems.length}
+                    </span>
+                    <span className="text-[10px] text-slate-400 block mt-0.5">قطعه</span>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-950/60 p-3.5 rounded-2xl border border-slate-200/60 dark:border-slate-800 text-center">
+                    <span className="text-[11px] font-bold text-slate-400 block mb-1">
+                      مجموع وزن ناخالص
+                    </span>
+                    <span className="text-lg font-black text-slate-900 dark:text-slate-100 font-mono">
+                      {formatWeightNumber(selectedRawWeight)}
+                    </span>
+                    <span className="text-[10px] text-slate-400 block mt-0.5">گرم</span>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-950/60 p-3.5 rounded-2xl border border-slate-200/60 dark:border-slate-800 text-center">
+                    <span className="text-[11px] font-bold text-indigo-500 block mb-1">
+                      معادل ۷۵۰ قبلی
+                    </span>
+                    <span className="text-lg font-black text-indigo-600 dark:text-indigo-400 font-mono">
+                      {formatWeightNumber(selectedConvertedWeight)}
+                    </span>
+                    <span className="text-[10px] text-slate-400 block mt-0.5">گرم</span>
+                  </div>
+                </div>
+
+                {/* Optional Quick Batch Filler Toolbar */}
+                <div className="p-3 bg-slate-50 dark:bg-slate-950/60 rounded-2xl border border-slate-200/70 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+                  <span className="text-slate-500 font-bold text-[11px]">
+                    تنظیم سریع عیار اولیه برای همه (اختیاری):
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="1"
+                      max="1000"
+                      value={batchGlobalFillPurity}
+                      onChange={(e) => setBatchGlobalFillPurity(e.target.value)}
+                      placeholder="مثال: 750"
+                      className="w-24 h-8 px-2 text-center text-xs font-mono font-bold rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => applyPurityToAllBatch(batchGlobalFillPurity)}
+                      className="px-3 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 text-[11px] font-bold transition-colors"
+                    >
+                      اعمال به همه
+                    </button>
+                  </div>
+                </div>
+
+                {/* Per-Item Carat Form Table */}
+                <div className="border border-slate-200/80 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">
+                  <table className="w-full text-right border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-slate-100 dark:bg-slate-800/70 text-[11px] font-black text-slate-500 border-b border-slate-200 dark:border-slate-700">
+                        <th className="py-3 px-3">#</th>
+                        <th className="py-3 px-3">مشخصات آبشده و مشتری</th>
+                        <th className="py-3 px-3 text-center">وزن ناخالص</th>
+                        <th className="py-3 px-3 text-center">عیار اولیه</th>
+                        <th className="py-3 px-3 text-center">عیار قطعی جدید</th>
+                        <th className="py-3 px-3 text-center">معادل ۷۵۰ جدید</th>
+                        <th className="py-3 px-3 text-center">تغییر تراز طلا</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {selectedItems.map((item, idx) => {
+                        const curPurityStr = batchItemPurities[item.id] ?? '';
+                        const curPurity = Number(curPurityStr);
+                        const hasValidPurity = Number.isFinite(curPurity) && curPurity > 0 && curPurity <= 1000;
+                        const newConverted = hasValidPurity
+                          ? roundWeight(metalAtBaseKarat(item.rawWeight, curPurity, item.baseKarat, 3), 3)
+                          : null;
+                        const diff = newConverted !== null
+                          ? roundWeight(newConverted - item.convertedWeight, 3)
+                          : null;
+
+                        return (
+                          <tr
+                            key={item.id}
+                            className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
+                          >
+                            <td className="py-3 px-3 text-slate-400 font-mono text-[11px] text-center">
+                              {idx + 1}
+                            </td>
+                            <td className="py-3 px-3">
+                              <div className="font-bold text-slate-900 dark:text-slate-100 font-mono">
+                                {item.stampNumber ? `انگ ${item.stampNumber}` : 'فاقد شماره انگ'}
+                              </div>
+                              <div className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
+                                <span>{item.customer.name}</span>
+                                {item.labName ? <span>· {item.labName}</span> : null}
+                              </div>
+                            </td>
+                            <td className="py-3 px-3 text-center font-mono font-bold text-slate-800 dark:text-slate-200 whitespace-nowrap">
+                              {formatWeightNumber(item.rawWeight)} <span className="text-[10px] text-slate-400 font-normal">گرم</span>
+                            </td>
+                            <td className="py-3 px-3 text-center font-mono text-slate-500 font-bold">
+                              {item.purity}
+                            </td>
+                            <td className="py-3 px-3 text-center">
+                              <input
+                                type="number"
+                                step="0.1"
+                                min="1"
+                                max="1000"
+                                required
+                                value={curPurityStr}
+                                onChange={(e) =>
+                                  setBatchItemPurities((prev) => ({
+                                    ...prev,
+                                    [item.id]: e.target.value,
+                                  }))
+                                }
+                                placeholder="عیار..."
+                                className={`w-24 h-9 px-2 text-center text-xs font-mono font-black rounded-xl border focus:outline-none focus:ring-2 ${
+                                  hasValidPurity
+                                    ? 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-amber-500/40'
+                                    : 'border-rose-400 bg-rose-50/40 dark:bg-rose-950/20 text-rose-600 focus:ring-rose-500/40'
+                                }`}
+                              />
+                            </td>
+                            <td className="py-3 px-3 text-center font-mono font-bold text-indigo-600 dark:text-indigo-400 whitespace-nowrap">
+                              {newConverted !== null ? `${formatWeightNumber(newConverted)} گرم` : '—'}
+                            </td>
+                            <td className="py-3 px-3 text-center font-mono font-black text-[11px] whitespace-nowrap">
+                              {diff !== null ? (
+                                <span className={diff >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
+                                  {diff >= 0 ? `+${diff}` : diff} گ
+                                </span>
+                              ) : (
+                                '—'
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Live Total Calculation Banner */}
+                <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs space-y-2">
+                  <div className="flex items-center justify-between font-bold">
+                    <span className="text-slate-600 dark:text-slate-400">
+                      مجموع معادل ۷۵۰ جدید کلیه اقلام:
+                    </span>
+                    <span className="font-mono font-black text-slate-900 dark:text-slate-100 text-sm">
+                      {formatWeightNumber(batchSummary.totalNewConverted)} گرم
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs font-bold">
+                    <span className="text-slate-500 dark:text-slate-400">
+                      مجموع تغییر در تراز کل طلای سیستم:
+                    </span>
+                    <span
+                      className={`font-mono font-black ${
+                        batchSummary.totalDiff >= 0
+                          ? 'text-emerald-600 dark:text-emerald-400'
+                          : 'text-rose-600 dark:text-rose-400'
+                      }`}
+                    >
+                      {batchSummary.totalDiff >= 0 ? `+${batchSummary.totalDiff}` : batchSummary.totalDiff} گرم طلا
+                    </span>
+                  </div>
+                </div>
+
+                {/* Common Notes */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
+                    یادداشت یا شماره قبض ری‌گیری کلی (اختیاری)
+                  </label>
+                  <input
+                    type="text"
+                    value={batchNotes}
+                    onChange={(e) => setBatchNotes(e.target.value)}
+                    placeholder="مثال: قبض شماره ۴۸۲۹ ری‌گیری مرکزی"
+                    className="w-full h-10 px-3 text-xs font-bold rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 focus:bg-white dark:focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/30"
+                  />
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex justify-end gap-2 p-4 px-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/40">
+                <button
+                  type="button"
+                  className="px-5 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                  onClick={() => setIsBatchModalOpen(false)}
+                  disabled={settling}
+                >
+                  انصراف
+                </button>
+                <button
+                  type="button"
+                  disabled={settling || !batchSummary.allValid}
+                  onClick={() => handleBatchSettleSubmit()}
+                  className="inline-flex items-center gap-2 px-6 py-2.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs transition-all shadow-md disabled:opacity-50"
+                >
+                  {settling ? (
+                    <RefreshCw size={14} className="animate-spin" />
+                  ) : (
+                    <CheckCircle2 size={16} />
+                  )}
+                  تایید و ثبت عیار قطعی {selectedItems.length} آبشده
                 </button>
               </div>
             </motion.div>

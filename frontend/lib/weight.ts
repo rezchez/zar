@@ -1,6 +1,6 @@
 import { normalizeDigits } from './jalali';
 
-export type WeightDecimalPlaces = 1 | 2 | 3;
+export type WeightDecimalPlaces = 1 | 2 | 3 | 4;
 
 /**
  * Parses Persian or English localized weight strings or numbers into a JavaScript number (in grams).
