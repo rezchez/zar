@@ -171,4 +171,75 @@ describe('Customer Print Template & Manager Notifications Tests', () => {
     // Verify QR code aspect-ratio locking
     expect(content).toContain('isSquareShape');
   });
+
+  it('verifies items_table has full border integrity and proportional column width fitting', async () => {
+    const fs = await import('fs');
+    const designerContent = fs.readFileSync('src/components/InvoicePrintDesigner.tsx', 'utf-8');
+    const printContent = fs.readFileSync('src/components/documents/DocumentPrint.tsx', 'utf-8');
+
+    // 1. Proportional column widths (summing to 100% so left/right borders are never clipped)
+    expect(designerContent).toContain('totalColsWidthMm = cols.reduce');
+    expect(designerContent).toContain('(col.widthMm || 20) / totalColsWidthMm');
+    expect(printContent).toContain('totalColsWidthMm = configuredCols.reduce');
+    expect(printContent).toContain('(col.widthMm || 20) / totalColsWidthMm');
+
+    // 2. Table container has full border intact (top, bottom, left, right)
+    expect(designerContent).toContain('border: `${tableBorderWidth} ${tableBorderStyle} ${tableBorderColor}`');
+    expect(printContent).toContain('border: `${tableBorderWidth} ${tableBorderStyle} ${tableBorderColor}`');
+
+    // 3. Page container padding does not double-offset absolute coordinates and push table off-page
+    expect(printContent).toContain('padding: 0');
+    expect(designerContent).toContain('title="محدوده حاشیه امن کاغذ (Page Margins)"');
+
+    // 4. Designer table fills height with grid rows so vertical and horizontal borders are intact
+    expect(designerContent).toContain('targetRowCount = Math.max(2');
+    expect(designerContent).toContain('designerRows.map(');
+  });
+
+  it('numberToPersianWords converts numbers to Persian words accurately', () => {
+    const { numberToPersianWords } = require('@/lib/print-templates');
+    expect(numberToPersianWords(0, 'تومان')).toBe('صفر تومان');
+    expect(numberToPersianWords(23350000, 'تومان')).toBe('بیست و سه میلیون و سیصد و پنجاه هزار تومان');
+    expect(numberToPersianWords(1005)).toBe('یک هزار و پنج');
+  });
+
+  it('buildTemplateFromPreset builds valid A4, A5, receipt-80, and blank templates', () => {
+    const { buildTemplateFromPreset, TEMPLATE_STARTER_PRESETS, AVAILABLE_DATABASE_FIELDS } = require('@/lib/print-templates');
+    expect(TEMPLATE_STARTER_PRESETS.length).toBe(4);
+
+    const receipt = buildTemplateFromPreset('receipt_80', 'فیش تست');
+    expect(receipt.name).toBe('فیش تست');
+    expect(receipt.page.size).toBe('receipt-80');
+    expect(receipt.page.widthMm).toBe(80);
+    expect(receipt.elements.length).toBeGreaterThan(5);
+
+    const blank = buildTemplateFromPreset('blank_a4', 'بوم خالی');
+    expect(blank.elements).toEqual([]);
+    expect(blank.page.size).toBe('A4');
+
+    const keys = AVAILABLE_DATABASE_FIELDS.map((f: { key: string }) => f.key);
+    expect(keys).toContain('doc_total_price_words');
+    expect(keys).toContain('customer_national_id');
+    expect(keys).toContain('customer_address');
+  });
+
+  it('InvoicePrintDesigner supports Undo/Redo (Ctrl+Z), element grouping (Ctrl+G), and interactive out-of-bounds actions', async () => {
+    const fs = await import('fs');
+    const content = fs.readFileSync('src/components/InvoicePrintDesigner.tsx', 'utf-8');
+
+    expect(content).toContain('handleUndo');
+    expect(content).toContain('handleRedo');
+    expect(content).toContain("e.code === 'KeyZ'");
+    expect(content).toContain("e.code === 'KeyG'");
+    expect(content).toContain('handleGroupElements');
+    expect(content).toContain('handleUngroupElements');
+    expect(content).toContain('handleMoveAllOutOfBoundsInside');
+    expect(content).toContain('انتقال همه به داخل صفحه');
+    expect(content).toContain('انتخاب و مدیریت');
+    expect(content).toContain("case 'shop_logo':");
+
+    const printContent = fs.readFileSync('src/components/documents/DocumentPrint.tsx', 'utf-8');
+    expect(printContent).toContain("case 'shop_logo':");
+    expect(printContent).toContain('settings?.printLogoUrl');
+  });
 });

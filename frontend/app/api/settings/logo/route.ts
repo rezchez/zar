@@ -1,14 +1,19 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { NextResponse } from 'next/server';
 
 import { recordAuditEvent } from '@/lib/audit';
 import { getServerAuthContext } from '@/lib/auth';
 import { hasPermission } from '@/lib/authorization';
-import { getServerAppSettings } from '@/lib/server-settings';
 
 export const runtime = 'nodejs';
 
 const ALLOWED_MIME_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'];
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
+
+const LOGO_DIR = path.join(process.cwd(), '.zar-uploads');
+const LOGO_BIN_PATH = path.join(LOGO_DIR, 'store-logo.bin');
+const LOGO_META_PATH = path.join(LOGO_DIR, 'store-logo.json');
 
 function sanitizeSvg(svgContent: string): boolean {
   const lower = svgContent.toLowerCase();
@@ -23,6 +28,30 @@ function sanitizeSvg(svgContent: string): boolean {
     return false;
   }
   return true;
+}
+
+export async function GET() {
+  try {
+    const [metaRaw, fileBuffer] = await Promise.all([
+      fs.readFile(LOGO_META_PATH, 'utf-8'),
+      fs.readFile(LOGO_BIN_PATH),
+    ]);
+    const meta = JSON.parse(metaRaw) as { mimeType?: string };
+    const contentType =
+      meta.mimeType && ALLOWED_MIME_TYPES.includes(meta.mimeType)
+        ? meta.mimeType
+        : 'image/png';
+
+    return new NextResponse(fileBuffer, {
+      status: 200,
+      headers: {
+        'Content-Type': contentType,
+        'Cache-Control': 'no-store, max-age=0',
+      },
+    });
+  } catch {
+    return NextResponse.json({ message: 'لوگویی ثبت نشده است.' }, { status: 404 });
+  }
 }
 
 export async function POST(request: Request) {
@@ -70,24 +99,23 @@ export async function POST(request: Request) {
       }
     }
 
-    const base64Data = buffer.toString('base64');
-    const dataUrl = `data:${file.type};base64;${base64Data}`;
+    await fs.mkdir(LOGO_DIR, { recursive: true });
+    await Promise.all([
+      fs.writeFile(LOGO_BIN_PATH, buffer),
+      fs.writeFile(LOGO_META_PATH, JSON.stringify({ mimeType: file.type, name: file.name }), 'utf-8'),
+    ]);
 
-    // Update settings
-    const settings = await getServerAppSettings();
-    const updatedSettings = {
-      ...settings,
-      printLogoUrl: dataUrl,
-    };
+    // Store compact versioned API path (< 40 chars) so it always fits PocketBase TextField max: 250
+    const logoUrl = `/api/settings/logo?v=${Date.now()}`;
 
     const records = await context.pb.collection('app_settings').getFullList({ sort: '-created' });
     if (records.length > 0) {
       await context.pb.collection('app_settings').update(records[0].id, {
-        printLogoUrl: dataUrl,
+        printLogoUrl: logoUrl,
       });
     } else {
       await context.pb.collection('app_settings').create({
-        printLogoUrl: dataUrl,
+        printLogoUrl: logoUrl,
       });
     }
 
@@ -102,7 +130,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      logoUrl: dataUrl,
+      logoUrl,
       message: 'لوگو با موفقیت ذخیره شد.',
     });
   } catch (error) {
@@ -122,6 +150,11 @@ export async function DELETE(request: Request) {
   }
 
   try {
+    await Promise.all([
+      fs.rm(LOGO_BIN_PATH, { force: true }).catch(() => null),
+      fs.rm(LOGO_META_PATH, { force: true }).catch(() => null),
+    ]);
+
     const records = await context.pb.collection('app_settings').getFullList({ sort: '-created' });
     if (records.length > 0) {
       await context.pb.collection('app_settings').update(records[0].id, {

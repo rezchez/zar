@@ -140,6 +140,8 @@ export interface InvoicePrintElement {
   type: ElementType;
   label?: string;
   visible: boolean;
+  locked?: boolean;
+  groupId?: string;
   position: {
     xMm: number;
     yMm: number;
@@ -172,6 +174,9 @@ export interface InvoicePrintTemplateDesign {
   zoom?: number;
   gridEnabled: boolean;
   gridSizeMm: number;
+  showRulers?: boolean;
+  snapToGrid?: boolean;
+  snapToGuides?: boolean;
   table?: InvoiceTableConfiguration;
   footer?: InvoiceFooterConfiguration;
 }
@@ -229,9 +234,9 @@ export const DEFAULT_TABLE_COLUMNS: InvoiceTableColumnConfig[] = [
   { id: 'purity', label: 'عیار', visible: true, widthMm: 14, textAlign: 'center' },
   { id: 'converted_weight', label: 'وزن معادل ۷۵۰', visible: true, widthMm: 22, textAlign: 'center' },
   { id: 'price_per_gram', label: 'قیمت هر گرم طلا', visible: true, widthMm: 24, textAlign: 'center' },
-  { id: 'subtotal_price', label: 'قیمت کل قبل از تخفیف', visible: true, widthMm: 26, textAlign: 'center' },
-  { id: 'discount_amount', label: 'تخفیف', visible: true, widthMm: 18, textAlign: 'center' },
-  { id: 'total_price', label: 'مبلغ کل', visible: true, widthMm: 26, textAlign: 'center' },
+  { id: 'subtotal_price', label: 'قیمت کل قبل از تخفیف', visible: true, widthMm: 24, textAlign: 'center' },
+  { id: 'discount_amount', label: 'تخفیف', visible: true, widthMm: 16, textAlign: 'center' },
+  { id: 'total_price', label: 'مبلغ کل', visible: true, widthMm: 22, textAlign: 'center' },
   { id: 'lab_name', label: 'نام آزمایشگاه / ری‌گیری', visible: false, widthMm: 24, textAlign: 'center' },
   { id: 'stamp_number', label: 'شماره پاکت / انگ', visible: false, widthMm: 20, textAlign: 'center' },
   { id: 'description', label: 'توضیحات', visible: false, widthMm: 26, textAlign: 'right' },
@@ -696,7 +701,104 @@ export const AVAILABLE_DATABASE_FIELDS: AvailableDataField[] = [
     sampleValue: 'QR Code',
     description: 'نمایش بارکد دو بعدی (QR Code) از متن دلخواه، شماره سند یا لینک استعلام فاکتور',
   },
+  {
+    key: 'doc_total_price_words',
+    category: 'financial',
+    categoryLabel: 'ارقام مالی فاکتور',
+    label: 'مبلغ نهایی به حروف',
+    defaultUnit: '',
+    sampleValue: 'بیست و سه میلیون و سیصد و پنجاه هزار تومان',
+    description: 'تبدیل خودکار مبلغ نهایی قابل پرداخت فاکتور به حروف فارسی',
+  },
+  {
+    key: 'doc_type_label',
+    category: 'document_summary',
+    categoryLabel: 'خلاصه و اثر این سند',
+    label: 'نوع سند (خرید / فروش / حواله)',
+    defaultUnit: '',
+    sampleValue: 'فاکتور فروش',
+    description: 'عنوان نوع سند بر اساس ردیف‌های ثبت‌شده در فاکتور',
+  },
+  {
+    key: 'customer_code',
+    category: 'customer_balance',
+    categoryLabel: 'مانده حساب طرف‌حساب',
+    label: 'کد اشتراک طرف‌حساب',
+    defaultUnit: '',
+    sampleValue: '۱۰۴۲',
+    description: 'کد اختصاصی مشتری یا همکار در سیستم',
+  },
+  {
+    key: 'customer_phone',
+    category: 'customer_balance',
+    categoryLabel: 'مانده حساب طرف‌حساب',
+    label: 'شماره تماس طرف‌حساب',
+    defaultUnit: '',
+    sampleValue: '۰۹۱۲۳۴۵۶۷۸۹',
+    description: 'شماره تلفن یا موبایل ثبت‌شده برای طرف‌حساب',
+  },
+  {
+    key: 'customer_national_id',
+    category: 'customer_balance',
+    categoryLabel: 'مانده حساب طرف‌حساب',
+    label: 'کد ملی / شناسه طرف‌حساب',
+    defaultUnit: '',
+    sampleValue: '۰۰۱۲۳۴۵۶۷۸',
+    description: 'کد ملی یا شناسه اقتصادی مشتری (مناسب فاکتور رسمی)',
+  },
+  {
+    key: 'customer_address',
+    category: 'customer_balance',
+    categoryLabel: 'مانده حساب طرف‌حساب',
+    label: 'آدرس طرف‌حساب',
+    defaultUnit: '',
+    sampleValue: 'تهران، بازار بزرگ، راسته زرگرها',
+    description: 'نشانی ثبت‌شده در پرونده طرف‌حساب',
+  },
 ];
+
+export function numberToPersianWords(rawNum: number, currencyLabel = ''): string {
+  const num = Math.floor(Math.abs(Number(rawNum) || 0));
+  if (num === 0) return currencyLabel ? `صفر ${currencyLabel}` : 'صفر';
+
+  const ones = ['', 'یک', 'دو', 'سه', 'چهار', 'پنج', 'شش', 'هفت', 'هشت', 'نه'];
+  const teens = ['ده', 'یازده', 'دوازده', 'سیزده', 'چهارده', 'پانزده', 'شانزده', 'هفده', 'هجده', 'نوزده'];
+  const tens = ['', '', 'بیست', 'سی', 'چهل', 'پنجاه', 'شصت', 'هفتاد', 'هشتاد', 'نود'];
+  const hundreds = ['', 'صد', 'دویست', 'سیصد', 'چهارصد', 'پانصد', 'ششصد', 'هفتصد', 'هشتصد', 'نهصد'];
+  const scales = ['', 'هزار', 'میلیون', 'میلیارد', 'تریلیون'];
+
+  const threeDigitsToWords = (n: number): string => {
+    const parts: string[] = [];
+    const h = Math.floor(n / 100);
+    const rem = n % 100;
+    if (h > 0) parts.push(hundreds[h]);
+    if (rem >= 10 && rem < 20) {
+      parts.push(teens[rem - 10]);
+    } else {
+      const t = Math.floor(rem / 10);
+      const o = rem % 10;
+      if (t > 0) parts.push(tens[t]);
+      if (o > 0) parts.push(ones[o]);
+    }
+    return parts.join(' و ');
+  };
+
+  const groups: string[] = [];
+  let temp = num;
+  let scaleIndex = 0;
+  while (temp > 0 && scaleIndex < scales.length) {
+    const chunk = temp % 1000;
+    if (chunk > 0) {
+      const words = threeDigitsToWords(chunk);
+      groups.unshift(scales[scaleIndex] ? `${words} ${scales[scaleIndex]}` : words);
+    }
+    temp = Math.floor(temp / 1000);
+    scaleIndex++;
+  }
+
+  const result = groups.join(' و ');
+  return currencyLabel ? `${result} ${currencyLabel}` : result;
+}
 
 export function createCustomTableElement(
   xMm = 10,
@@ -1402,3 +1504,225 @@ export const DEFAULT_SYSTEM_TEMPLATES: InvoicePrintTemplate[] = [
     elements: createCustomerStandardElements(210),
   },
 ];
+
+export type StarterPresetId = 'a4_formal' | 'a5_compact' | 'receipt_80' | 'blank_a4';
+
+export interface StarterPresetMeta {
+  id: StarterPresetId;
+  title: string;
+  subtitle: string;
+  sizeLabel: string;
+}
+
+export const TEMPLATE_STARTER_PRESETS: StarterPresetMeta[] = [
+  {
+    id: 'a4_formal',
+    title: 'فاکتور رسمی A4 زرگری',
+    subtitle: 'چیدمان کامل شامل سربرگ، جدول اقلام، جمع‌بندی مانده‌ها و امضا',
+    sizeLabel: '210 × 297 mm',
+  },
+  {
+    id: 'a5_compact',
+    title: 'فاکتور مدرن A5',
+    subtitle: 'مناسب چاپ نیم‌برگ سریع با المان‌های ضروری',
+    sizeLabel: '148 × 210 mm',
+  },
+  {
+    id: 'receipt_80',
+    title: 'فیش حرارتی ۸۰ میلی‌متری',
+    subtitle: 'مناسب فیش‌پرینت صندوق با چیدمان عمودی متراکم',
+    sizeLabel: '80 × 200 mm',
+  },
+  {
+    id: 'blank_a4',
+    title: 'بوم خالی A4 (طراحی از صفر)',
+    subtitle: 'صفحه تمیز بدون المان برای چیدمان کاملاً سفارشی',
+    sizeLabel: '210 × 297 mm',
+  },
+];
+
+export function buildTemplateFromPreset(
+  presetId: StarterPresetId,
+  name: string,
+): Partial<InvoicePrintTemplate> {
+  if (presetId === 'a5_compact') {
+    const a5Base = DEFAULT_SYSTEM_TEMPLATES.find((t) => t.id === 'tpl_a5_compact') || DEFAULT_SYSTEM_TEMPLATES[1];
+    return {
+      name,
+      templateType: 'invoice',
+      isActive: false,
+      isSystemDefault: false,
+      page: JSON.parse(JSON.stringify(a5Base.page)),
+      design: { zoom: 1, gridEnabled: true, gridSizeMm: 5, showRulers: true, snapToGrid: true, snapToGuides: true },
+      table: JSON.parse(JSON.stringify(a5Base.table)),
+      footer: JSON.parse(JSON.stringify(a5Base.footer)),
+      elements: JSON.parse(JSON.stringify(a5Base.elements)),
+    };
+  }
+
+  if (presetId === 'receipt_80') {
+    const w = 80;
+    const elements: InvoicePrintElement[] = [
+      {
+        id: 'shop_name',
+        type: 'shop_name',
+        visible: true,
+        position: { xMm: 4, yMm: 5 },
+        size: { widthMm: 72, heightMm: 7 },
+        style: { fontSizePt: 11, fontWeight: 'extrabold', textAlign: 'center', color: '#0f172a' },
+        zIndex: 10,
+      },
+      {
+        id: 'shop_phone',
+        type: 'shop_phone',
+        visible: true,
+        position: { xMm: 4, yMm: 12 },
+        size: { widthMm: 72, heightMm: 5 },
+        style: { fontSizePt: 8, fontWeight: 'normal', textAlign: 'center', color: '#475569' },
+        zIndex: 10,
+      },
+      createShapeElement('line_h', 4, 18, w),
+      {
+        id: 'invoice_title',
+        type: 'invoice_title',
+        visible: true,
+        position: { xMm: 4, yMm: 20 },
+        size: { widthMm: 72, heightMm: 6 },
+        style: { fontSizePt: 9.5, fontWeight: 'bold', textAlign: 'center', color: '#0f172a' },
+        content: { text: 'رسید / فاکتور فروش' },
+        zIndex: 10,
+      },
+      {
+        id: 'invoice_number',
+        type: 'invoice_number',
+        visible: true,
+        position: { xMm: 4, yMm: 27 },
+        size: { widthMm: 36, heightMm: 5 },
+        style: { fontSizePt: 8, fontWeight: 'bold', textAlign: 'right', color: '#0f172a' },
+        zIndex: 10,
+      },
+      {
+        id: 'invoice_date',
+        type: 'invoice_date',
+        visible: true,
+        position: { xMm: 40, yMm: 27 },
+        size: { widthMm: 36, heightMm: 5 },
+        style: { fontSizePt: 8, fontWeight: 'normal', textAlign: 'left', color: '#0f172a' },
+        zIndex: 10,
+      },
+      {
+        id: 'customer_name',
+        type: 'customer_name',
+        visible: true,
+        position: { xMm: 4, yMm: 33 },
+        size: { widthMm: 72, heightMm: 7 },
+        style: { fontSizePt: 8, fontWeight: 'normal', textAlign: 'right', color: '#0f172a' },
+        zIndex: 10,
+      },
+      {
+        id: 'items_table',
+        type: 'items_table',
+        visible: true,
+        position: { xMm: 4, yMm: 42 },
+        size: { widthMm: 72, heightMm: 60 },
+        style: { fontSizePt: 7.5, color: '#0f172a' },
+        zIndex: 10,
+      },
+      {
+        id: 'totals_summary',
+        type: 'totals_summary',
+        visible: true,
+        position: { xMm: 4, yMm: 105 },
+        size: { widthMm: 72, heightMm: 22 },
+        style: { fontSizePt: 8, fontWeight: 'bold', color: '#0f172a' },
+        zIndex: 10,
+      },
+      createDbFieldElement('custom_qrcode', 29, 132),
+      {
+        id: 'footer_text',
+        type: 'footer_text',
+        visible: true,
+        position: { xMm: 4, yMm: 158 },
+        size: { widthMm: 72, heightMm: 10 },
+        style: { fontSizePt: 7.5, fontWeight: 'normal', textAlign: 'center', color: '#475569' },
+        content: { text: 'از خرید شما سپاسگزاریم' },
+        zIndex: 10,
+      },
+    ];
+    return {
+      name,
+      templateType: 'invoice',
+      isActive: false,
+      isSystemDefault: false,
+      page: {
+        size: 'receipt-80',
+        orientation: 'portrait',
+        widthMm: 80,
+        heightMm: 200,
+        marginTopMm: 4,
+        marginRightMm: 4,
+        marginBottomMm: 4,
+        marginLeftMm: 4,
+        backgroundColor: '#ffffff',
+        borderEnabled: false,
+        borderColor: '#e2e8f0',
+        borderWidthMm: 0.3,
+      },
+      design: { zoom: 1, gridEnabled: true, gridSizeMm: 2, showRulers: true, snapToGrid: true, snapToGuides: true },
+      table: {
+        columns: DEFAULT_TABLE_COLUMNS.map((c) => ({
+          ...c,
+          visible: ['index', 'operation_type', 'weight', 'total_price'].includes(c.id),
+        })),
+        headerBackgroundColor: '#0f172a',
+        headerTextColor: '#ffffff',
+        bodyTextColor: '#0f172a',
+        borderColor: '#cbd5e1',
+        borderWidthMm: 0.3,
+        fontSizePt: 7.5,
+        showVerticalBorders: true,
+        showHorizontalBorders: true,
+      },
+      elements,
+    };
+  }
+
+  if (presetId === 'blank_a4') {
+    return {
+      name,
+      templateType: 'invoice',
+      isActive: false,
+      isSystemDefault: false,
+      page: {
+        size: 'A4',
+        orientation: 'portrait',
+        widthMm: 210,
+        heightMm: 297,
+        marginTopMm: 10,
+        marginRightMm: 10,
+        marginBottomMm: 10,
+        marginLeftMm: 10,
+        backgroundColor: '#ffffff',
+        borderEnabled: true,
+        borderColor: '#e2e8f0',
+        borderWidthMm: 0.5,
+      },
+      design: { zoom: 1, gridEnabled: true, gridSizeMm: 5, showRulers: true, snapToGrid: true, snapToGuides: true },
+      elements: [],
+    };
+  }
+
+  // Default: a4_formal
+  const a4Base = DEFAULT_SYSTEM_TEMPLATES[0];
+  return {
+    name,
+    templateType: 'invoice',
+    isActive: false,
+    isSystemDefault: false,
+    page: JSON.parse(JSON.stringify(a4Base.page)),
+    design: { zoom: 1, gridEnabled: true, gridSizeMm: 5, showRulers: true, snapToGrid: true, snapToGuides: true },
+    table: JSON.parse(JSON.stringify(a4Base.table)),
+    footer: JSON.parse(JSON.stringify(a4Base.footer)),
+    elements: createStandardElements(210),
+  };
+}
