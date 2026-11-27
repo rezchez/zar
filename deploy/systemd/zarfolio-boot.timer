@@ -1,0 +1,10 @@
+[Unit]
+Description=Start Zarfolio 90 seconds after system boot
+
+[Timer]
+OnBootSec=90s
+AccuracySec=1s
+Unit=zarfolio-frontend.service
+
+[Install]
+WantedBy=timers.target

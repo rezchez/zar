@@ -6,6 +6,7 @@
 # Ensure script resolves its own root directory regardless of invocation path
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$SCRIPT_DIR"
+SCRIPT_PATH="$ROOT_DIR/$(basename "${BASH_SOURCE[0]}")"
 cd "$ROOT_DIR" || exit 1
 
 # Add bun to PATH if installed in user's home directory
@@ -17,12 +18,14 @@ fi
 # automatically spawn a terminal emulator so the user can see live output.
 if [ "$1" != "--in-terminal" ] && { [ ! -t 0 ] || [ ! -t 1 ]; }; then
     if [ -n "$DISPLAY" ] || [ -n "$WAYLAND_DISPLAY" ]; then
-        if command -v xfce4-terminal >/dev/null 2>&1; then
-            exec xfce4-terminal --title="Zarfolio Development" --working-directory="$ROOT_DIR" -x "$BASH_SOURCE" --in-terminal "$@"
+        if command -v ptyxis >/dev/null 2>&1; then
+            exec ptyxis --new-window --title="Zarfolio Development" --working-directory="$ROOT_DIR" -- "$SCRIPT_PATH" --in-terminal "$@"
+        elif command -v xfce4-terminal >/dev/null 2>&1; then
+            exec xfce4-terminal --title="Zarfolio Development" --working-directory="$ROOT_DIR" -x "$SCRIPT_PATH" --in-terminal "$@"
         elif command -v gnome-terminal >/dev/null 2>&1; then
-            exec gnome-terminal --title="Zarfolio Development" --working-directory="$ROOT_DIR" -- "$BASH_SOURCE" --in-terminal "$@"
-        elif command -v x-terminal-emulator >/dev/null 2>&1; then
-            exec x-terminal-emulator -e "$BASH_SOURCE --in-terminal $*"
+            exec gnome-terminal --title="Zarfolio Development" --working-directory="$ROOT_DIR" -- "$SCRIPT_PATH" --in-terminal "$@"
+        elif command -v kgx >/dev/null 2>&1; then
+            exec kgx --working-directory="$ROOT_DIR" -e "$SCRIPT_PATH --in-terminal $*"
         elif command -v konsole >/dev/null 2>&1; then
             exec konsole --workdir "$ROOT_DIR" -e "$BASH_SOURCE" --in-terminal "$@"
         elif command -v kitty >/dev/null 2>&1; then
@@ -30,7 +33,9 @@ if [ "$1" != "--in-terminal" ] && { [ ! -t 0 ] || [ ! -t 1 ]; }; then
         elif command -v alacritty >/dev/null 2>&1; then
             exec alacritty --working-directory "$ROOT_DIR" -e "$BASH_SOURCE" --in-terminal "$@"
         elif command -v xterm >/dev/null 2>&1; then
-            exec xterm -title "Zarfolio Development" -e "$BASH_SOURCE" --in-terminal "$@"
+            exec xterm -title "Zarfolio Development" -e "$SCRIPT_PATH" --in-terminal "$@"
+        elif command -v x-terminal-emulator >/dev/null 2>&1; then
+            exec x-terminal-emulator -e "$SCRIPT_PATH --in-terminal $*"
         fi
     fi
 fi

@@ -1974,7 +1974,10 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
                 borderWidth: activeTemplate.page.borderEnabled ? `${activeTemplate.page.borderWidthMm}mm` : '0',
                 borderColor: activeTemplate.page.borderColor || '#cbd5e1',
                 borderStyle: activeTemplate.page.borderEnabled ? 'solid' : 'none',
-                padding: 0,
+                paddingTop: `${activeTemplate.page.marginTopMm || 0}mm`,
+                paddingRight: `${activeTemplate.page.marginRightMm || 0}mm`,
+                paddingBottom: `${activeTemplate.page.marginBottomMm || 0}mm`,
+                paddingLeft: `${activeTemplate.page.marginLeftMm || 0}mm`,
                 transform: `scale(${zoom}) translate(${pan.x}px, ${pan.y}px)`,
                 transformOrigin: 'top center',
                 transition: draggingElementId || resizingElementId ? 'none' : 'transform 0.05s ease-out',
@@ -1982,24 +1985,6 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
               }}
               className="relative select-none text-slate-900 overflow-hidden shrink-0 transition-shadow"
             >
-              {/* Visual Page Margin Guides (if margins > 0) */}
-              {Boolean(activeTemplate.page.marginTopMm || activeTemplate.page.marginRightMm || activeTemplate.page.marginBottomMm || activeTemplate.page.marginLeftMm) && (
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: `${activeTemplate.page.marginTopMm || 0}mm`,
-                    right: `${activeTemplate.page.marginRightMm || 0}mm`,
-                    bottom: `${activeTemplate.page.marginBottomMm || 0}mm`,
-                    left: `${activeTemplate.page.marginLeftMm || 0}mm`,
-                    border: '1px dashed #94a3b8',
-                    pointerEvents: 'none',
-                    opacity: 0.5,
-                    zIndex: 1,
-                  }}
-                  title="محدوده حاشیه امن کاغذ (Page Margins)"
-                />
-              )}
-
               {/* Optional Grid Background */}
               {activeTemplate.design.gridEnabled && (
                 <div
@@ -2032,7 +2017,7 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
                       color: el.style.color || '#0f172a',
                       backgroundColor: el.style.backgroundColor || 'transparent',
                       textAlign: el.style.textAlign || 'right',
-                      borderWidth: el.type === 'items_table' || el.type === 'custom_table' ? '0' : (el.style.borderWidthMm ? `${el.style.borderWidthMm}mm` : '0'),
+                      borderWidth: el.style.borderWidthMm ? `${el.style.borderWidthMm}mm` : '0',
                       borderColor: el.style.borderColor || 'transparent',
                       borderStyle: el.style.borderWidthMm ? 'solid' : 'none',
                       borderRadius: el.style.borderRadiusMm ? `${el.style.borderRadiusMm}mm` : '0',
@@ -2041,7 +2026,7 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
                       transition: draggingElementId || resizingElementId ? 'none' : 'right 0.3s ease, top 0.3s ease',
                     }}
                     className={`box-border transition-shadow relative ${
-                      el.type === 'items_table' || el.type === 'custom_table' ? 'p-0' : (el.content?.fieldKey === 'custom_qrcode' ? 'p-0.5' : 'p-1')
+                      el.content?.fieldKey === 'custom_qrcode' ? 'p-0.5' : 'p-1'
                     } ${
                       isSelected
                         ? 'ring-2 ring-amber-500 ring-offset-1 bg-amber-500/10 rounded-sm z-30'
@@ -5018,94 +5003,16 @@ function renderElementPreviewContent(el: InvoicePrintElement, settings: any, tem
       const striped = Boolean(tableConfig.stripedRows);
       const altBg = tableConfig.alternateRowColor || '#f8fafc';
 
-      const totalColsWidthMm = cols.reduce((sum, c) => sum + (c.widthMm || 20), 0) || 1;
-
-      // Realistic sample dataset pool for preview
-      const sampleDataPool = [
-        {
-          type: 'فروش کار ساخته',
-          wName: 'مدال پناه',
-          metal: 'طلا',
-          w: '۱۲٫۴۵۰',
-          k: '۷۵۰',
-          c: '۱۲٫۴۵۰',
-          pricePerGram: '۴٬۸۵۰٬۰۰۰',
-          subtotal: '۶۰٬۳۸۲٬۵۰۰',
-          discount: '۳۸۲٬۵۰۰',
-          total: '۶۰٬۰۰۰٬۰۰۰',
-        },
-        {
-          type: 'خرید متفرقه',
-          wName: '',
-          metal: 'طلا',
-          w: '۸٫۱۲۰',
-          k: '۷۴۰',
-          c: '۸٫۰۱۲',
-          pricePerGram: '۴٬۸۰۰٬۰۰۰',
-          subtotal: '۳۸٬۴۵۷٬۶۰۰',
-          discount: '۰',
-          total: '۳۸٬۴۵۷٬۶۰۰',
-        },
-        {
-          type: 'فروش شمش',
-          wName: 'شمش آبشده ۱۰۰ گرمی',
-          metal: 'طلا',
-          w: '۱۰۰٫۰۰۰',
-          k: '۷۵۰',
-          c: '۱۰۰٫۰۰۰',
-          pricePerGram: '۴٬۸۲۰٬۰۰۰',
-          subtotal: '۴۸۲٬۰۰۰٬۰۰۰',
-          discount: '۲٬۰۰۰٬۰۰۰',
-          total: '۴۸۰٬۰۰۰٬۰۰۰',
-        },
-        {
-          type: 'تعویض طلا',
-          wName: 'سرویس عروس',
-          metal: 'طلا',
-          w: '۲۴٫۵۰۰',
-          k: '۷۵۰',
-          c: '۲۴٫۵۰۰',
-          pricePerGram: '۴٬۸۵۰٬۰۰۰',
-          subtotal: '۱۱۸٬۸۲۵٬۰۰۰',
-          discount: '۸۲۵٬۰۰۰',
-          total: '۱۱۸٬۰۰۰٬۰۰۰',
-        },
-      ];
-
-      const rowHeightMm = tableConfig.rowHeightMm || 7.5;
-      const availableHeightMm = Math.max(15, el.size.heightMm - 8);
-      const targetRowCount = Math.max(2, Math.min(25, Math.floor(availableHeightMm / rowHeightMm)));
-
-      const designerRows = Array.from({ length: targetRowCount }).map((_, idx) => {
-        if (idx < sampleDataPool.length) {
-          return { ...sampleDataPool[idx], isEmpty: false };
-        }
-        return {
-          type: '',
-          wName: '',
-          metal: '',
-          w: '',
-          k: '',
-          c: '',
-          pricePerGram: '',
-          subtotal: '',
-          discount: '',
-          total: '',
-          isEmpty: true,
-        };
-      });
-
       return (
         <div
-          className="w-full h-full text-[80%] overflow-hidden flex flex-col"
+          className="w-full h-full text-[80%] overflow-hidden"
           style={{
             borderRadius: tableRadius,
             border: `${tableBorderWidth} ${tableBorderStyle} ${tableBorderColor}`,
-            boxSizing: 'border-box',
           }}
         >
           <table
-            className="w-full text-center border-collapse table-fixed flex-1"
+            className="w-full text-center border-collapse table-fixed"
             style={{
               color: tableConfig.bodyTextColor || el.style.color || '#0f172a',
               fontSize: tableConfig.fontSizePt ? `${tableConfig.fontSizePt}pt` : '80%',
@@ -5122,25 +5029,47 @@ function renderElementPreviewContent(el: InvoicePrintElement, settings: any, tem
                   borderBottom: `${tableBorderWidth} ${tableBorderStyle} ${tableBorderColor}`,
                 }}
               >
-                {cols.map((col, cIdx) => {
-                  const colPercent = ((col.widthMm || 20) / totalColsWidthMm) * 100;
-                  return (
-                    <th
-                      key={col.id}
-                      className="py-1 px-1 text-center align-middle whitespace-normal break-words leading-tight"
-                      style={{
-                        width: `${colPercent.toFixed(3)}%`,
-                        borderLeft: showVertical && cIdx < cols.length - 1 ? `${tableBorderWidth} ${tableBorderStyle} ${tableBorderColor}` : undefined,
-                      }}
-                    >
-                      {col.label}
-                    </th>
-                  );
-                })}
+                {cols.map((col, cIdx) => (
+                  <th
+                    key={col.id}
+                    className="py-1 px-1.5 whitespace-nowrap align-middle"
+                    style={{
+                      width: col.widthMm ? `${col.widthMm}mm` : 'auto',
+                      borderLeft: showVertical && cIdx < cols.length - 1 ? `${tableBorderWidth} ${tableBorderStyle} ${tableBorderColor}` : undefined,
+                    }}
+                  >
+                    {col.label}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {designerRows.map((row, idx) => {
+              {[
+                {
+                  type: 'فروش کار ساخته',
+                  wName: 'مدال پناه',
+                  metal: 'طلا',
+                  w: '۱۲٫۴۵۰',
+                  k: '۷۵۰',
+                  c: '۱۲٫۴۵۰',
+                  pricePerGram: '۴٬۸۵۰٬۰۰۰',
+                  subtotal: '۶۰٬۳۸۲٬۵۰۰',
+                  discount: '۳۸۲٬۵۰۰',
+                  total: '۶۰٬۰۰۰٬۰۰۰',
+                },
+                {
+                  type: 'خرید متفرقه',
+                  wName: '',
+                  metal: 'طلا',
+                  w: '۸٫۱۲۰',
+                  k: '۷۴۰',
+                  c: '۸٫۰۱۲',
+                  pricePerGram: '۴٬۸۰۰٬۰۰۰',
+                  subtotal: '۳۸٬۴۵۷٬۶۰۰',
+                  discount: '۰',
+                  total: '۳۸٬۴۵۷٬۶۰۰',
+                },
+              ].map((row, idx) => {
                 const mode = tableConfig?.workmanshipDisplayMode || 'name_only';
                 let opLabel = row.type;
                 if (row.wName) {
@@ -5153,51 +5082,44 @@ function renderElementPreviewContent(el: InvoicePrintElement, settings: any, tem
                   <tr
                     key={idx}
                     style={{
-                      minHeight: `${rowHeightMm}mm`,
-                      height: `${rowHeightMm}mm`,
+                      minHeight: tableConfig.rowHeightMm ? `${tableConfig.rowHeightMm}mm` : '7.5mm',
+                      height: tableConfig.rowHeightMm ? `${tableConfig.rowHeightMm}mm` : undefined,
                       backgroundColor: striped && idx % 2 === 1 ? altBg : undefined,
-                      borderBottom: showHorizontal && idx < designerRows.length - 1 ? `${tableBorderWidth} ${tableBorderStyle} ${tableBorderColor}` : undefined,
+                      borderBottom: showHorizontal && idx === 0 ? `${tableBorderWidth} ${tableBorderStyle} ${tableBorderColor}` : undefined,
                     }}
                   >
-                    {cols.map((col, cIdx) => {
-                      let cellVal: React.ReactNode = '-';
-                      if (row.isEmpty) {
-                        cellVal = '\u00A0';
-                      } else if (col.id === 'index') {
-                        cellVal = idx + 1;
-                      } else if (col.id === 'operation_type') {
-                        cellVal = opLabel || '-';
-                      } else if (col.id === 'metal_type') {
-                        cellVal = row.metal || '-';
-                      } else if (col.id === 'weight') {
-                        cellVal = row.w || '-';
-                      } else if (col.id === 'purity') {
-                        cellVal = row.k || '-';
-                      } else if (col.id === 'converted_weight') {
-                        cellVal = row.c || '-';
-                      } else if (col.id === 'price_per_gram') {
-                        cellVal = row.pricePerGram || '-';
-                      } else if (col.id === 'subtotal_price') {
-                        cellVal = row.subtotal || '-';
-                      } else if (col.id === 'discount_amount') {
-                        cellVal = row.discount || '-';
-                      } else if (col.id === 'total_price') {
-                        cellVal = row.total || '-';
-                      }
-
-                      return (
-                        <td
-                          key={col.id}
-                          className="py-1 px-1.5 align-middle leading-snug break-words"
-                          style={{
-                            borderLeft: showVertical && cIdx < cols.length - 1 ? `${tableBorderWidth} ${tableBorderStyle} ${tableBorderColor}` : undefined,
-                            textAlign: col.textAlign || 'center',
-                          }}
-                        >
-                          {cellVal}
-                        </td>
-                      );
-                    })}
+                    {cols.map((col, cIdx) => (
+                      <td
+                        key={col.id}
+                        className="py-1 px-1.5 align-middle leading-snug break-words"
+                        style={{
+                          borderLeft: showVertical && cIdx < cols.length - 1 ? `${tableBorderWidth} ${tableBorderStyle} ${tableBorderColor}` : undefined,
+                          textAlign: col.textAlign || 'center',
+                        }}
+                      >
+                        {col.id === 'index'
+                          ? idx + 1
+                          : col.id === 'operation_type'
+                          ? opLabel
+                          : col.id === 'metal_type'
+                          ? row.metal
+                          : col.id === 'weight'
+                          ? row.w
+                          : col.id === 'purity'
+                          ? row.k
+                          : col.id === 'converted_weight'
+                          ? row.c
+                          : col.id === 'price_per_gram'
+                          ? row.pricePerGram
+                          : col.id === 'subtotal_price'
+                          ? row.subtotal
+                          : col.id === 'discount_amount'
+                          ? row.discount
+                          : col.id === 'total_price'
+                          ? row.total
+                          : '-'}
+                      </td>
+                    ))}
                   </tr>
                 );
               })}

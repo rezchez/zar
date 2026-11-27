@@ -1,0 +1,24 @@
+[Unit]
+Description=Zarfolio Next.js Frontend
+After=network.target zarfolio-backend.service
+Requires=zarfolio-backend.service
+
+[Service]
+Type=simple
+User=zf
+Group=zf
+WorkingDirectory=/home/zf/website/zar-main/frontend
+Environment=PATH=/home/zf/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=NODE_ENV=production
+Environment=NEXT_TELEMETRY_DISABLED=1
+Environment=PORT=3000
+Environment=HOSTNAME=127.0.0.1
+ExecStart=/home/zf/.bun/bin/bun run start -- -H 127.0.0.1 -p 3000
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=zarfolio-frontend
+
+[Install]
+WantedBy=multi-user.target

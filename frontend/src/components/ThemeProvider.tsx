@@ -34,10 +34,6 @@ function applyTheme(mode: ThemeMode) {
   document.documentElement.dataset.themeMode = mode;
   document.documentElement.style.colorScheme = theme;
   document.documentElement.classList.toggle('dark', theme === 'dark');
-  const meta = document.querySelector('meta[name="color-scheme"]');
-  if (meta) {
-    meta.setAttribute('content', mode === 'system' ? 'light dark' : mode);
-  }
   return theme;
 }
 
@@ -76,20 +72,9 @@ export default function ThemeProvider({
     const handleChange = () => {
       if (mode === 'system') setResolvedTheme(applyTheme('system'));
     };
-    const handleStorage = (event: StorageEvent) => {
-      if (event.key === STORAGE_KEY) {
-        const nextMode = getStoredThemeMode();
-        setMode(nextMode);
-        setResolvedTheme(applyTheme(nextMode));
-      }
-    };
 
     media.addEventListener('change', handleChange);
-    window.addEventListener('storage', handleStorage);
-    return () => {
-      media.removeEventListener('change', handleChange);
-      window.removeEventListener('storage', handleStorage);
-    };
+    return () => media.removeEventListener('change', handleChange);
   }, [mode]);
 
   function changeTheme(nextMode: ThemeMode) {

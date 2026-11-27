@@ -377,7 +377,10 @@ export default function DocumentPrint({
                   borderWidth: activeTemplate.page.borderEnabled ? `${activeTemplate.page.borderWidthMm}mm` : '0',
                   borderColor: activeTemplate.page.borderColor || '#cbd5e1',
                   borderStyle: activeTemplate.page.borderEnabled ? 'solid' : 'none',
-                  padding: 0,
+                  paddingTop: `${activeTemplate.page.marginTopMm || 0}mm`,
+                  paddingRight: `${activeTemplate.page.marginRightMm || 0}mm`,
+                  paddingBottom: `${activeTemplate.page.marginBottomMm || 0}mm`,
+                  paddingLeft: `${activeTemplate.page.marginLeftMm || 0}mm`,
                 }}
                 className="document-print-page relative box-border text-slate-900 overflow-hidden"
               >
@@ -395,7 +398,7 @@ export default function DocumentPrint({
                           top: `${el.position.yMm}mm`,
                           width: `${el.size.widthMm}mm`,
                           height: el.type === 'items_table' ? 'auto' : `${el.size.heightMm}mm`,
-                          maxHeight: undefined,
+                          maxHeight: el.type === 'items_table' ? `${el.size.heightMm}mm` : undefined,
                           fontFamily: el.style.fontFamily || 'Vazirmatn',
                           fontSize: el.style.fontSizePt ? `${el.style.fontSizePt}pt` : '9pt',
                           fontWeight: getFontWeightCss(el.style.fontWeight),
@@ -409,7 +412,7 @@ export default function DocumentPrint({
                           opacity: el.style.opacity ?? 1,
                           zIndex: el.zIndex || 10,
                         }}
-                        className={`box-border ${el.type === 'items_table' ? 'overflow-visible' : 'overflow-hidden'}`}
+                        className="box-border overflow-hidden"
                       >
                         {renderRealPrintElementContent(
                           el,
@@ -789,16 +792,13 @@ function renderRealPrintElementContent(
       const altBg = tableConfig?.alternateRowColor || '#f8fafc';
       const rowMinHeight = tableConfig?.rowHeightMm ? `${tableConfig.rowHeightMm}mm` : '7.5mm';
       const fontSize = tableConfig?.fontSizePt ? `${tableConfig.fontSizePt}pt` : '8.5pt';
-      const totalColsWidthMm = configuredCols.reduce((sum: number, c: InvoiceTableColumn) => sum + (c.widthMm || 20), 0) || 1;
 
       return (
         <div
-          className="w-full"
+          className="w-full overflow-hidden"
           style={{
             borderRadius: tableRadius,
             border: `${tableBorderWidth} ${tableBorderStyle} ${tableBorderColor}`,
-            overflow: tableRadius && tableRadius !== '0' && tableRadius !== '0mm' ? 'hidden' : 'visible',
-            boxSizing: 'border-box',
           }}
         >
           <table
@@ -818,21 +818,18 @@ function renderRealPrintElementContent(
                   borderBottom: `${tableBorderWidth} ${tableBorderStyle} ${tableBorderColor}`,
                 }}
               >
-                {configuredCols.map((col: InvoiceTableColumn, cIdx: number) => {
-                  const colPercent = ((col.widthMm || 20) / totalColsWidthMm) * 100;
-                  return (
-                    <th
-                      key={col.id}
-                      className="py-1 px-1 text-center align-middle whitespace-normal break-words leading-tight"
-                      style={{
-                        width: `${colPercent.toFixed(3)}%`,
-                        borderLeft: showVertical && cIdx < configuredCols.length - 1 ? `${tableBorderWidth} ${tableBorderStyle} ${tableBorderColor}` : undefined,
-                      }}
-                    >
-                      {col.label}
-                    </th>
-                  );
-                })}
+                {configuredCols.map((col: InvoiceTableColumn, cIdx: number) => (
+                  <th
+                    key={col.id}
+                    className="py-1 px-1.5 text-center align-middle whitespace-nowrap"
+                    style={{
+                      width: col.widthMm ? `${col.widthMm}mm` : 'auto',
+                      borderLeft: showVertical && cIdx < configuredCols.length - 1 ? `${tableBorderWidth} ${tableBorderStyle} ${tableBorderColor}` : undefined,
+                    }}
+                  >
+                    {col.label}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>

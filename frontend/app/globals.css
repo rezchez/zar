@@ -67,32 +67,12 @@
 }
 
 :root {
-  color-scheme: light dark;
   --background: #f6f8fb;
   --foreground: #0f172a;
   --border: #cbd5e1;
   --input: #cbd5e1;
   --muted-foreground: #64748b;
   --accent: #f1f5f9;
-
-  &:has(> head > meta[name="color-scheme"][content="dark"]) {
-    color-scheme: dark;
-  }
-
-  &:has(> head > meta[name="color-scheme"][content="light"]) {
-    color-scheme: light;
-  }
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --background: #090d16;
-    --foreground: #f8fafc;
-    --border: #334155;
-    --input: #334155;
-    --muted-foreground: #94a3b8;
-    --accent: #1e293b;
-  }
 }
 
 [data-theme="dark"],

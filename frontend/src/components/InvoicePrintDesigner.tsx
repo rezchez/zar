@@ -51,19 +51,6 @@ import {
   Link as LinkIcon,
   Hash,
   Globe,
-  Undo2,
-  Redo2,
-  Ruler,
-  Magnet,
-  Lock,
-  Unlock,
-  Printer,
-  LayoutGrid,
-  Group,
-  Ungroup,
-  MousePointerClick,
-  ArrowDownToLine,
-  ArrowUpToLine,
 } from 'lucide-react';
 import { QrCodeSvg } from '@/lib/qr-code';
 import {
@@ -73,11 +60,8 @@ import {
   type PageSizeOption,
   type PageOrientation,
   type UnitType,
-  type StarterPresetId,
   ELEMENT_LABELS,
   DEFAULT_SYSTEM_TEMPLATES,
-  TEMPLATE_STARTER_PRESETS,
-  buildTemplateFromPreset,
   getPageDimensions,
   convertToMm,
   convertFromMm,
@@ -101,11 +85,6 @@ import {
 } from '@/lib/print-templates';
 import { useAppSettings } from '@/src/components/SettingsProvider';
 import { useToastManager } from '@/components/ui/toast';
-import { StudioDialog } from '@/src/components/print-designer/StudioDialog';
-import { ElementPalette } from '@/src/components/print-designer/ElementPalette';
-import { LayersPanel } from '@/src/components/print-designer/LayersPanel';
-import { CanvasRulers } from '@/src/components/print-designer/CanvasRulers';
-import { PrintPreviewModal } from '@/src/components/print-designer/PrintPreviewModal';
 
 type Props = {
   onUnsavedChange?: (hasUnsaved: boolean) => void;
@@ -184,12 +163,6 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
   // Menu and Table Subtab state
   const [isPaperSettingsOpen, setIsPaperSettingsOpen] = useState(true);
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
-  const [leftPanelTab, setLeftPanelTab] = useState<'palette' | 'layers'>('palette');
-  const [selectedStarterPreset, setSelectedStarterPreset] = useState<StarterPresetId>('a4_formal');
-  const [isPrintPreviewOpen, setIsPrintPreviewOpen] = useState(false);
-  const [snapLines, setSnapLines] = useState<{ verticalMm?: number; horizontalMm?: number }>({});
-  const [historyPast, setHistoryPast] = useState<InvoicePrintTemplate[]>([]);
-  const [historyFuture, setHistoryFuture] = useState<InvoicePrintTemplate[]>([]);
   const [tableSubTab, setTableSubTab] = useState<'columns' | 'borders' | 'colors'>('columns');
   const [customTableSubTab, setCustomTableSubTab] = useState<'fields' | 'layout' | 'appearance'>('fields');
   const [isFieldPickerOpen, setIsFieldPickerOpen] = useState(false);
@@ -199,190 +172,28 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
 
   const canvasContainerRef = useRef<HTMLDivElement>(null);
 
-  const pushHistorySnapshot = useCallback((snapshot: InvoicePrintTemplate | null) => {
-    if (!snapshot) return;
-    const cloned = JSON.parse(JSON.stringify(snapshot)) as InvoicePrintTemplate;
-    setHistoryPast((prev) => [...prev.slice(-39), cloned]);
-    setHistoryFuture([]);
-  }, []);
-
-  const handleUndo = useCallback(() => {
-    if (historyPast.length === 0 || !activeTemplate) return;
-    const previous = historyPast[historyPast.length - 1];
-    const currentClone = JSON.parse(JSON.stringify(activeTemplate)) as InvoicePrintTemplate;
-    setHistoryPast((prev) => prev.slice(0, -1));
-    setHistoryFuture((prev) => [currentClone, ...prev.slice(0, 39)]);
-    setActiveTemplate(previous);
-    setIsDirty(JSON.stringify(previous) !== JSON.stringify(originalTemplate));
-  }, [historyPast, activeTemplate, originalTemplate]);
-
-  const handleRedo = useCallback(() => {
-    if (historyFuture.length === 0 || !activeTemplate) return;
-    const next = historyFuture[0];
-    const currentClone = JSON.parse(JSON.stringify(activeTemplate)) as InvoicePrintTemplate;
-    setHistoryFuture((prev) => prev.slice(1));
-    setHistoryPast((prev) => [...prev.slice(-39), currentClone]);
-    setActiveTemplate(next);
-    setIsDirty(JSON.stringify(next) !== JSON.stringify(originalTemplate));
-  }, [historyFuture, activeTemplate, originalTemplate]);
-
-  // Check if activeTemplate changed vs originalTemplate
-  const checkDirty = (current: InvoicePrintTemplate | null, original: InvoicePrintTemplate | null) => {
-    if (!current || !original) return false;
-    return JSON.stringify(current) !== JSON.stringify(original);
-  };
-
-  const updateActiveTemplate = useCallback(
-    (updater: (prev: InvoicePrintTemplate) => InvoicePrintTemplate, options?: { skipHistory?: boolean }) => {
-      setActiveTemplate((prev) => {
-        if (!prev) return prev;
-        if (!options?.skipHistory) {
-          pushHistorySnapshot(prev);
-        }
-        const next = updater(prev);
-        const dirty = checkDirty(next, originalTemplate);
-        setIsDirty(dirty);
-        return next;
-      });
-    },
-    [originalTemplate, pushHistorySnapshot],
-  );
-
-  const handleGroupElements = useCallback(() => {
-    if (!activeTemplate || selectedElementIds.length < 2) return;
-    const newGroupId = `grp_${Date.now()}`;
-    updateActiveTemplate((prev) => ({
-      ...prev,
-      elements: prev.elements.map((el) =>
-        selectedElementIds.includes(el.id) ? { ...el, groupId: newGroupId } : el,
-      ),
-    }));
-    toast.success('گروه‌بندی المان‌ها', `${selectedElementIds.length} المان با موفقیت در یک گروه قرار گرفتند.`);
-  }, [activeTemplate, selectedElementIds, updateActiveTemplate, toast]);
-
-  const handleUngroupElements = useCallback(() => {
-    if (!activeTemplate || selectedElementIds.length === 0) return;
-    const groupIdsToBreak = new Set(
-      activeTemplate.elements
-        .filter((el) => selectedElementIds.includes(el.id) && el.groupId)
-        .map((el) => el.groupId as string),
-    );
-    if (groupIdsToBreak.size === 0) return;
-
-    updateActiveTemplate((prev) => ({
-      ...prev,
-      elements: prev.elements.map((el) =>
-        el.groupId && groupIdsToBreak.has(el.groupId) ? { ...el, groupId: undefined } : el,
-      ),
-    }));
-    toast.success('لغو گروه‌بندی', 'المان‌ها از حالت گروه خارج شدند.');
-  }, [activeTemplate, selectedElementIds, updateActiveTemplate, toast]);
-
-  // Keyboard shortcuts for Undo/Redo, Group/Ungroup, Duplicate, Lock, Arrow Nudge, and Delete (using e.code for Persian layout support)
+  // Keyboard shortcuts for delete and duplicate
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+      if ((e.target as HTMLElement)?.tagName === 'INPUT' || (e.target as HTMLElement)?.tagName === 'TEXTAREA') {
         return;
       }
-
-      const mod = e.ctrlKey || e.metaKey;
-
-      if (mod && e.code === 'KeyZ') {
-        e.preventDefault();
-        if (e.shiftKey) handleRedo();
-        else handleUndo();
-        return;
-      }
-      if (mod && e.code === 'KeyY') {
-        e.preventDefault();
-        handleRedo();
-        return;
-      }
-      if (mod && e.code === 'KeyG') {
-        e.preventDefault();
-        if (e.shiftKey) handleUngroupElements();
-        else handleGroupElements();
-        return;
-      }
-      if (mod && e.code === 'KeyD' && selectedElementId) {
-        e.preventDefault();
-        handleDuplicateElement();
-        return;
-      }
-      if (mod && e.code === 'KeyL' && selectedElementId) {
-        e.preventDefault();
-        updateActiveTemplate((prev) => ({
-          ...prev,
-          elements: prev.elements.map((el) =>
-            el.id === selectedElementId ? { ...el, locked: !el.locked } : el,
-          ),
-        }));
-        return;
-      }
-      if (e.key === 'Escape') {
-        setSelectedElementIds([]);
-        return;
-      }
-
-      if (
-        (e.key === 'ArrowRight' || e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'ArrowDown') &&
-        selectedElementIds.length > 0 &&
-        activeTemplate
-      ) {
-        e.preventDefault();
-        const step = e.shiftKey ? 5 : 1;
-        const dx = e.key === 'ArrowRight' ? -step : e.key === 'ArrowLeft' ? step : 0;
-        const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
-        updateActiveTemplate((prev) => ({
-          ...prev,
-          elements: prev.elements.map((el) =>
-            selectedElementIds.includes(el.id) && !el.locked
-              ? {
-                  ...el,
-                  position: {
-                    xMm: Number(Math.max(0, el.position.xMm + dx).toFixed(1)),
-                    yMm: Number(Math.max(0, el.position.yMm + dy).toFixed(1)),
-                  },
-                }
-              : el,
-          ),
-        }));
-        return;
-      }
-
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedElementId) {
         const target = activeTemplate?.elements.find((el) => el.id === selectedElementId);
-        if (target && !target.locked) {
+        if (target && (target.type.startsWith('shape_') || target.type === 'custom_text' || target.type === 'custom_table')) {
           e.preventDefault();
-          if (
-            target.type.startsWith('shape_') ||
-            target.type === 'custom_text' ||
-            target.type === 'custom_table' ||
-            target.type === 'db_field'
-          ) {
-            updateActiveTemplate((prev) => ({
-              ...prev,
-              elements: prev.elements.filter((el) => el.id !== selectedElementId),
-            }));
-            setSelectedElementId(null);
-            toast.success('حذف المان', 'المان مورد نظر حذف گردید.');
-          } else {
-            updateActiveTemplate((prev) => ({
-              ...prev,
-              elements: prev.elements.map((el) =>
-                el.id === selectedElementId ? { ...el, visible: false } : el,
-              ),
-            }));
-            setSelectedElementId(null);
-            toast.success('مخفی‌سازی المان', 'المان از روی صفحه مخفی شد (از بخش لایه‌ها قابل بازگردانی است).');
-          }
+          updateActiveTemplate((prev) => ({
+            ...prev,
+            elements: prev.elements.filter((el) => el.id !== selectedElementId),
+          }));
+          setSelectedElementId(null);
+          toast.success('حذف المان', 'المان مورد نظر حذف گردید.');
         }
       }
     }
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedElementId, selectedElementIds, activeTemplate, handleUndo, handleRedo, handleGroupElements, handleUngroupElements, updateActiveTemplate]);
+  }, [selectedElementId, activeTemplate]);
 
   // Sync isDirty with parent
   useEffect(() => {
@@ -434,6 +245,22 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
     fetchTemplates();
   }, [fetchTemplates]);
 
+  // Check if activeTemplate changed vs originalTemplate
+  const checkDirty = (current: InvoicePrintTemplate | null, original: InvoicePrintTemplate | null) => {
+    if (!current || !original) return false;
+    return JSON.stringify(current) !== JSON.stringify(original);
+  };
+
+  const updateActiveTemplate = (updater: (prev: InvoicePrintTemplate) => InvoicePrintTemplate) => {
+    setActiveTemplate((prev) => {
+      if (!prev) return prev;
+      const next = updater(prev);
+      const dirty = checkDirty(next, originalTemplate);
+      setIsDirty(dirty);
+      return next;
+    });
+  };
+
   // Switch Template Action
   const handleSelectTemplate = (targetId: string) => {
     if (targetId === selectedTemplateId) return;
@@ -455,8 +282,6 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
       setActiveTemplate(cloned);
       setOriginalTemplate(cloned);
       setSelectedElementId(null);
-      setHistoryPast([]);
-      setHistoryFuture([]);
       setIsDirty(false);
       setStatusMsg(null);
     }
@@ -640,7 +465,27 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
 
     setIsLoading(true);
     try {
-      const newTplPayload = buildTemplateFromPreset(selectedStarterPreset, name);
+      const newTplPayload: Partial<InvoicePrintTemplate> = {
+        name,
+        isActive: false,
+        isSystemDefault: false,
+        page: {
+          size: 'A4',
+          orientation: 'portrait',
+          widthMm: 210,
+          heightMm: 297,
+          marginTopMm: 10,
+          marginRightMm: 10,
+          marginBottomMm: 10,
+          marginLeftMm: 10,
+          backgroundColor: '#ffffff',
+          borderEnabled: true,
+          borderColor: '#e2e8f0',
+          borderWidthMm: 0.5,
+        },
+        design: { zoom: 1, gridEnabled: true, gridSizeMm: 5 },
+        elements: createStandardElements(210),
+      };
 
       const res = await fetch('/api/settings/print-templates', {
         method: 'POST',
@@ -740,9 +585,7 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
   const handleResizeMouseDown = (e: React.MouseEvent, el: InvoicePrintElement, handle: ResizeHandleType) => {
     e.stopPropagation();
     e.preventDefault();
-    if (el.locked) return;
 
-    pushHistorySnapshot(activeTemplate);
     setSelectedElementId(el.id);
     setResizingElementId(el.id);
     setActiveHandle(handle);
@@ -881,7 +724,7 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
               }
             : el,
         ),
-      }), { skipHistory: true });
+      }));
     } else if (draggingElementId && activeTemplate) {
       const canvasRect = canvasContainerRef.current?.getBoundingClientRect();
       if (!canvasRect) return;
@@ -893,76 +736,12 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
       let newXMm = deltaXPx / pxPerMm;
       let newYMm = deltaYPx / pxPerMm;
 
-      // Snap to Grid if enabled (hold Alt to temporarily bypass)
-      const useGridSnap = (activeTemplate.design.snapToGrid ?? activeTemplate.design.gridEnabled) && !e.altKey;
-      if (useGridSnap && activeTemplate.design.gridSizeMm > 0) {
+      // Snap to Grid if enabled
+      if (activeTemplate.design.gridEnabled && activeTemplate.design.gridSizeMm > 0) {
         const step = activeTemplate.design.gridSizeMm;
         newXMm = Math.round(newXMm / step) * step;
         newYMm = Math.round(newYMm / step) * step;
       }
-
-      // Smart alignment guides (page center, margins, and other visible elements)
-      const draggedEl = activeTemplate.elements.find((el) => el.id === draggingElementId);
-      const nextSnapLines: { verticalMm?: number; horizontalMm?: number } = {};
-      if (draggedEl && activeTemplate.design.snapToGuides !== false && !e.altKey) {
-        const threshold = 1.5;
-        const w = draggedEl.size.widthMm;
-        const h = draggedEl.size.heightMm;
-
-        const vCandidates = [
-          pageDimensions.widthMm / 2,
-          activeTemplate.page.marginRightMm || 0,
-          pageDimensions.widthMm - (activeTemplate.page.marginLeftMm || 0),
-        ];
-        const hCandidates = [
-          pageDimensions.heightMm / 2,
-          activeTemplate.page.marginTopMm || 0,
-          pageDimensions.heightMm - (activeTemplate.page.marginBottomMm || 0),
-        ];
-
-        activeTemplate.elements.forEach((other) => {
-          if (!other.visible || selectedElementIds.includes(other.id)) return;
-          vCandidates.push(other.position.xMm, other.position.xMm + other.size.widthMm / 2, other.position.xMm + other.size.widthMm);
-          hCandidates.push(other.position.yMm, other.position.yMm + other.size.heightMm / 2, other.position.yMm + other.size.heightMm);
-        });
-
-        for (const targetX of vCandidates) {
-          if (Math.abs(newXMm - targetX) <= threshold) {
-            newXMm = targetX;
-            nextSnapLines.verticalMm = targetX;
-            break;
-          }
-          if (Math.abs(newXMm + w / 2 - targetX) <= threshold) {
-            newXMm = targetX - w / 2;
-            nextSnapLines.verticalMm = targetX;
-            break;
-          }
-          if (Math.abs(newXMm + w - targetX) <= threshold) {
-            newXMm = targetX - w;
-            nextSnapLines.verticalMm = targetX;
-            break;
-          }
-        }
-
-        for (const targetY of hCandidates) {
-          if (Math.abs(newYMm - targetY) <= threshold) {
-            newYMm = targetY;
-            nextSnapLines.horizontalMm = targetY;
-            break;
-          }
-          if (Math.abs(newYMm + h / 2 - targetY) <= threshold) {
-            newYMm = targetY - h / 2;
-            nextSnapLines.horizontalMm = targetY;
-            break;
-          }
-          if (Math.abs(newYMm + h - targetY) <= threshold) {
-            newYMm = targetY - h;
-            nextSnapLines.horizontalMm = targetY;
-            break;
-          }
-        }
-      }
-      setSnapLines(nextSnapLines);
 
       const primaryStartPos = dragStartPositions[draggingElementId];
       if (primaryStartPos) {
@@ -972,7 +751,7 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
         updateActiveTemplate((prev) => ({
           ...prev,
           elements: prev.elements.map((el) => {
-            if (selectedElementIds.includes(el.id) && !el.locked && dragStartPositions[el.id]) {
+            if (selectedElementIds.includes(el.id) && dragStartPositions[el.id]) {
               const start = dragStartPositions[el.id];
               const itemXMm = Number((start.xMm + diffX).toFixed(1));
               const itemYMm = Number((start.yMm + diffY).toFixed(1));
@@ -980,14 +759,13 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
             }
             return el;
           }),
-        }), { skipHistory: true });
+        }));
       }
     }
   };
 
   const handleCanvasMouseUp = () => {
     setIsPanning(false);
-    setSnapLines({});
 
     // Check if the dragged or resized element went out of bounds
     if ((draggingElementId || resizingElementId) && activeTemplate) {
@@ -1019,28 +797,16 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
   const handleElementMouseDown = (e: React.MouseEvent, el: InvoicePrintElement) => {
     e.stopPropagation();
 
-    const groupMemberIds =
-      el.groupId && !e.altKey && activeTemplate
-        ? activeTemplate.elements
-            .filter((item) => item.visible && item.groupId === el.groupId)
-            .map((item) => item.id)
-        : [el.id];
-
-    let nextSelected: string[];
+    // Multi-select with Ctrl or Cmd key
     if (e.ctrlKey || e.metaKey) {
-      const allInGroupSelected = groupMemberIds.every((id) => selectedElementIds.includes(id));
-      nextSelected = allInGroupSelected
-        ? selectedElementIds.filter((id) => !groupMemberIds.includes(id))
-        : Array.from(new Set([...selectedElementIds, ...groupMemberIds]));
-    } else if (selectedElementIds.includes(el.id)) {
-      nextSelected = Array.from(new Set([...selectedElementIds, ...groupMemberIds]));
+      setSelectedElementIds((prev) =>
+        prev.includes(el.id) ? prev.filter((id) => id !== el.id) : [...prev, el.id],
+      );
     } else {
-      nextSelected = groupMemberIds;
+      if (!selectedElementIds.includes(el.id)) {
+        setSelectedElementIds([el.id]);
+      }
     }
-    setSelectedElementIds(nextSelected);
-
-    if (el.locked) return;
-    pushHistorySnapshot(activeTemplate);
 
     const canvasRect = canvasContainerRef.current?.getBoundingClientRect();
     if (!canvasRect) return;
@@ -1052,8 +818,16 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
     // Save initial positions of all currently selected elements for group drag
     if (activeTemplate) {
       const initialPositions: Record<string, { xMm: number; yMm: number }> = {};
+      const currentSelected = (e.ctrlKey || e.metaKey) && selectedElementIds.includes(el.id)
+        ? selectedElementIds
+        : (e.ctrlKey || e.metaKey)
+          ? [...selectedElementIds, el.id]
+          : selectedElementIds.includes(el.id)
+            ? selectedElementIds
+            : [el.id];
+
       activeTemplate.elements.forEach((item) => {
-        if (nextSelected.includes(item.id)) {
+        if (currentSelected.includes(item.id)) {
           initialPositions[item.id] = { ...item.position };
         }
       });
@@ -1361,92 +1135,6 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
     toast.success('افزودن فیلد داده', `فیلد «${def?.label || fieldKey}» به فاکتور افزوده شد. می‌توانید آن را به هر نقطه دلخواه جابجا کنید.`);
   };
 
-  // Add or reveal a standard singleton element from the Element Palette
-  const handleAddOrRevealSingleton = (type: ElementType, dropPos?: { xMm: number; yMm: number }) => {
-    if (!activeTemplate) return;
-    const existing = activeTemplate.elements.find((el) => el.type === type);
-    if (existing) {
-      updateActiveTemplate((prev) => ({
-        ...prev,
-        elements: prev.elements.map((el) =>
-          el.id === existing.id
-            ? {
-                ...el,
-                visible: true,
-                ...(dropPos ? { position: dropPos } : {}),
-              }
-            : el,
-        ),
-      }));
-      setSelectedElementId(existing.id);
-      return;
-    }
-
-    const defaults = createStandardElements(pageDimensions.widthMm);
-    const templateEl = defaults.find((el) => el.type === type);
-    const newEl: InvoicePrintElement = templateEl
-      ? {
-          ...templateEl,
-          visible: true,
-          ...(dropPos ? { position: dropPos } : {}),
-        }
-      : {
-          id: `${type}_${Date.now()}`,
-          type,
-          visible: true,
-          position: dropPos || (type === 'shop_logo' ? { xMm: 10, yMm: 8 } : { xMm: 15, yMm: 40 }),
-          size: type === 'shop_logo' ? { widthMm: 24, heightMm: 24 } : { widthMm: 60, heightMm: 12 },
-          style: { fontSizePt: 9, color: '#0f172a', textAlign: 'right' },
-          zIndex: 10,
-        };
-
-    updateActiveTemplate((prev) => ({
-      ...prev,
-      elements: [...prev.elements, newEl],
-    }));
-    setSelectedElementId(newEl.id);
-  };
-
-  // Drop handler for dragging items from the left palette directly onto the paper
-  const handleCanvasDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    const raw = e.dataTransfer.getData('application/zar-palette-item');
-    if (!raw || !activeTemplate) return;
-
-    let payload: { type: ElementType | 'db_quick'; fieldKey?: string; shapeType?: 'rectangle' | 'circle' | 'line_h' | 'line_v' | 'badge' };
-    try {
-      payload = JSON.parse(raw);
-    } catch {
-      return;
-    }
-
-    const paperRect = e.currentTarget.getBoundingClientRect();
-    const pxPerMm = 3.7795 * zoom;
-    // RTL: xMm is measured from the right edge of the paper
-    const xMm = Math.max(2, Math.min(pageDimensions.widthMm - 20, Number(((paperRect.right - e.clientX) / pxPerMm).toFixed(1))));
-    const yMm = Math.max(2, Math.min(pageDimensions.heightMm - 15, Number(((e.clientY - paperRect.top) / pxPerMm).toFixed(1))));
-
-    if (payload.type === 'custom_text') {
-      const newEl = createCustomTextElement(xMm, yMm, 'متن دلخواه جدید');
-      updateActiveTemplate((prev) => ({ ...prev, elements: [...prev.elements, newEl] }));
-      setSelectedElementId(newEl.id);
-    } else if (payload.type === 'custom_table') {
-      const newEl = createCustomTableElement(Math.max(5, Math.min(xMm, 20)), yMm, pageDimensions.widthMm - 20, 32);
-      updateActiveTemplate((prev) => ({ ...prev, elements: [...prev.elements, newEl] }));
-      setSelectedElementId(newEl.id);
-    } else if (payload.type === 'db_quick' && payload.fieldKey) {
-      const newEl = createDbFieldElement(payload.fieldKey, xMm, yMm);
-      updateActiveTemplate((prev) => ({ ...prev, elements: [...prev.elements, newEl] }));
-      setSelectedElementId(newEl.id);
-    } else if (payload.shapeType) {
-      const newEl = createShapeElement(payload.shapeType, xMm, yMm, pageDimensions.widthMm);
-      updateActiveTemplate((prev) => ({ ...prev, elements: [...prev.elements, newEl] }));
-      setSelectedElementId(newEl.id);
-    } else if (payload.type !== 'db_quick') {
-      handleAddOrRevealSingleton(payload.type, { xMm, yMm });
-    }
-  };
-
   // Helper to update custom table content
   const updateCustomTable = (updater: (prevTable: CustomTableConfiguration) => CustomTableConfiguration) => {
     if (!selectedElement || selectedElement.type !== 'custom_table') return;
@@ -1632,8 +1320,8 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
 
   // Check Overlaps or Out of Bounds Warnings
   const layoutWarnings = useMemo(() => {
-    if (!activeTemplate) return [] as { elementId: string; message: string }[];
-    const warnings: { elementId: string; message: string }[] = [];
+    if (!activeTemplate) return [];
+    const warnings: string[] = [];
 
     const visibleElements = activeTemplate.elements.filter((el) => el.visible);
 
@@ -1644,45 +1332,12 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
         el.position.xMm < 0 ||
         el.position.yMm < 0
       ) {
-        const label =
-          el.type === 'db_field' && el.content?.fieldLabel
-            ? `داده: ${el.content.fieldLabel}`
-            : ELEMENT_LABELS[el.type] || el.id;
-        warnings.push({
-          elementId: el.id,
-          message: `المان «${label}» از محدوده صفحه چاپ بیرون زده است.`,
-        });
+        warnings.push(`المان «${ELEMENT_LABELS[el.type] || el.id}» از محدوده صفحه چاپ بیرون زده است.`);
       }
     }
 
     return warnings;
   }, [activeTemplate, pageDimensions]);
-
-  const handleMoveAllOutOfBoundsInside = () => {
-    if (!activeTemplate || layoutWarnings.length === 0) return;
-    const outIds = new Set(layoutWarnings.map((w) => w.elementId));
-    const marginR = activeTemplate.page.marginRightMm || 0;
-    const marginT = activeTemplate.page.marginTopMm || 0;
-
-    updateActiveTemplate((prev) => ({
-      ...prev,
-      elements: prev.elements.map((el) => {
-        if (!outIds.has(el.id)) return el;
-        const maxW = Math.max(5, pageDimensions.widthMm - marginR);
-        const maxH = Math.max(5, pageDimensions.heightMm - marginT);
-        const clampedW = Math.min(el.size.widthMm, maxW);
-        const clampedH = Math.min(el.size.heightMm, maxH);
-        const clampedX = Math.max(0, Math.min(el.position.xMm, pageDimensions.widthMm - clampedW));
-        const clampedY = Math.max(0, Math.min(el.position.yMm, pageDimensions.heightMm - clampedH));
-        return {
-          ...el,
-          position: { xMm: Number(clampedX.toFixed(1)), yMm: Number(clampedY.toFixed(1)) },
-          size: { widthMm: Number(clampedW.toFixed(1)), heightMm: Number(clampedH.toFixed(1)) },
-        };
-      }),
-    }));
-    toast.success('اصلاح چیدمان', 'تمام المان‌های بیرون‌زده به داخل محدوده صفحه منتقل شدند.');
-  };
 
   if (isLoading || !activeTemplate) {
     return (
@@ -1708,19 +1363,19 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
 
   return (
     <div
-      className={`invoice-print-designer-container space-y-3 text-xs select-none transition-all ${
-        isFullscreen ? 'fixed inset-0 z-50 h-dvh bg-slate-950 p-3 sm:p-4 overflow-y-auto overscroll-contain' : ''
+      className={`invoice-print-designer-container space-y-4 text-xs select-none transition-all ${
+        isFullscreen ? 'fixed inset-0 z-50 bg-slate-950 p-6 overflow-auto' : ''
       }`}
       dir="rtl"
     >
       {/* Top Banner Bar */}
-      <div className="dashboard-panel p-3 sm:p-4 flex flex-wrap items-center justify-between gap-3 bg-slate-900 text-white rounded-2xl shadow-xl">
+      <div className="dashboard-panel p-4 flex flex-wrap items-center justify-between gap-3 bg-slate-900 text-white rounded-2xl shadow-xl">
         <div className="flex items-center gap-3">
           <div className="p-2.5 bg-amber-500/20 text-amber-400 rounded-xl border border-amber-500/30">
             <Sparkles size={18} />
           </div>
           <div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-2">
               <h2 className="text-sm font-black">{activeTemplate.name}</h2>
               {activeTemplate.isActive ? (
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">
@@ -1732,7 +1387,7 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
                   onClick={handleSetActive}
                   className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-300 hover:bg-amber-500/20 hover:text-amber-300 transition-colors"
                 >
-                  انتخاب به‌عنوان قالب فعال
+                  انتخاب به‌عنون قالب فعال
                 </button>
               )}
               {activeTemplate.isSystemDefault && (
@@ -1754,40 +1409,7 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
         </div>
 
         {/* Action Controls */}
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Undo / Redo */}
-          <div className="flex items-center gap-0.5 bg-slate-800/90 p-1 rounded-xl border border-slate-700/70">
-            <button
-              type="button"
-              onClick={handleUndo}
-              disabled={historyPast.length === 0}
-              className="p-1.5 rounded-lg text-slate-200 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              title="بازگشت به مرحله قبل (Ctrl+Z)"
-            >
-              <Undo2 size={14} />
-            </button>
-            <button
-              type="button"
-              onClick={handleRedo}
-              disabled={historyFuture.length === 0}
-              className="p-1.5 rounded-lg text-slate-200 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              title="انجام مجدد (Ctrl+Shift+Z)"
-            >
-              <Redo2 size={14} />
-            </button>
-          </div>
-
-          {/* Live Print Preview */}
-          <button
-            type="button"
-            onClick={() => setIsPrintPreviewOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 font-bold transition-all border border-emerald-500/30"
-            title="پیش‌نمایش خروجی چاپ"
-          >
-            <Printer size={14} />
-            <span className="hidden sm:inline">پیش‌نمایش چاپ</span>
-          </button>
-
+        <div className="flex items-center gap-2">
           {/* Fullscreen Toggle */}
           <button
             type="button"
@@ -1796,7 +1418,7 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
             title={isFullscreen ? 'خروج از حالت تمام‌صفحه' : 'ویرایش تمام‌صفحه'}
           >
             {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
-            <span className="hidden md:inline">{isFullscreen ? 'خروج از تمام‌صفحه' : 'ویرایش تمام‌صفحه'}</span>
+            <span>{isFullscreen ? 'خروج از تمام‌صفحه' : 'ویرایش تمام‌صفحه'}</span>
           </button>
 
           <button
@@ -1856,40 +1478,14 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
       )}
 
       {layoutWarnings.length > 0 && (
-        <div className="p-3 bg-amber-500/15 border border-amber-500/40 rounded-xl text-amber-800 dark:text-amber-300 space-y-2">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2 font-black">
-              <AlertTriangle size={15} />
-              <span>هشدارهای چیدمان و چاپ ({layoutWarnings.length}):</span>
-            </div>
-            <button
-              type="button"
-              onClick={handleMoveAllOutOfBoundsInside}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-[11px] shadow-xs transition-colors"
-            >
-              <ArrowDownToLine size={13} />
-              <span>انتقال همه به داخل صفحه</span>
-            </button>
+        <div className="p-3 bg-amber-500/15 border border-amber-500/40 rounded-xl text-amber-800 dark:text-amber-300 space-y-1">
+          <div className="flex items-center gap-2 font-black">
+            <AlertTriangle size={15} />
+            <span>هشدارهای چیدمان و چاپ:</span>
           </div>
-          <ul className="space-y-1.5 text-[11px]">
-            {layoutWarnings.map((w) => (
-              <li
-                key={w.elementId}
-                className="flex flex-wrap items-center justify-between gap-2 bg-amber-500/10 px-2.5 py-1.5 rounded-lg border border-amber-500/20"
-              >
-                <span>{w.message}</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedElementId(w.elementId);
-                    setLeftPanelTab('layers');
-                  }}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-white/90 dark:bg-slate-900 hover:bg-amber-500 hover:text-slate-950 text-amber-800 dark:text-amber-300 font-bold text-[10.5px] border border-amber-500/30 transition-colors shrink-0"
-                >
-                  <MousePointerClick size={12} />
-                  <span>انتخاب و مدیریت</span>
-                </button>
-              </li>
+          <ul className="list-disc list-inside space-y-0.5 text-[11px] pr-2">
+            {layoutWarnings.map((w, i) => (
+              <li key={i}>{w}</li>
             ))}
           </ul>
         </div>
@@ -1971,82 +1567,187 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
             </div>
           </div>
 
-          {/* Tabbed Palette & Layers Studio Box */}
-          <div className="dashboard-panel p-3.5 space-y-3">
-            <div className="grid grid-cols-2 gap-1 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl">
-              <button
-                type="button"
-                onClick={() => setLeftPanelTab('palette')}
-                className={`flex items-center justify-center gap-1.5 py-2 rounded-lg text-[11px] font-extrabold transition-all ${
-                  leftPanelTab === 'palette'
-                    ? 'bg-white dark:bg-slate-900 text-amber-600 dark:text-amber-400 shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-                }`}
-              >
-                <LayoutGrid size={14} />
-                <span>افزودن المان</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setLeftPanelTab('layers')}
-                className={`flex items-center justify-center gap-1.5 py-2 rounded-lg text-[11px] font-extrabold transition-all ${
-                  leftPanelTab === 'layers'
-                    ? 'bg-white dark:bg-slate-900 text-amber-600 dark:text-amber-400 shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-                }`}
-              >
-                <Layers size={14} />
-                <span>لایه‌ها ({activeTemplate.elements.filter((e) => e.visible).length})</span>
-              </button>
+          {/* Elements List / Visibility Toggle Box */}
+          <div className="dashboard-panel p-4 space-y-3 relative">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+              <h3 className="font-extrabold text-xs text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                <Layers size={15} className="text-amber-600" />
+                المان‌های فاکتور
+              </h3>
+
+              {/* Add Element / Shape Dropdown Trigger */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setIsAddMenuOpen((prev) => !prev)}
+                  className="px-2 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg font-extrabold text-[10px] flex items-center gap-1 shadow-sm transition-colors"
+                  title="افزودن متن دلخواه یا اشکال هندسی"
+                >
+                  <Plus size={13} />
+                  <span>افزودن</span>
+                  <ChevronDown size={12} className={`transition-transform ${isAddMenuOpen ? 'rotate-180' : ''}`} />
+                </button>
+
+                {isAddMenuOpen && (
+                  <div
+                    className="absolute left-0 mt-1 w-44 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 p-1.5 space-y-1 text-right"
+                    onClick={() => setIsAddMenuOpen(false)}
+                  >
+                    <button
+                      type="button"
+                      onClick={handleAddCustomText}
+                      className="w-full flex items-center gap-2 p-1.5 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-amber-500/15 hover:text-amber-700 dark:hover:text-amber-300 font-bold transition-colors"
+                    >
+                      <FileText size={14} className="text-amber-600" />
+                      <span>متن دلخواه جدید</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFieldPickerMode('standalone');
+                        setIsFieldPickerOpen(true);
+                        setIsAddMenuOpen(false);
+                      }}
+                      className="w-full flex items-center gap-2 p-1.5 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-emerald-500/15 hover:text-emerald-700 dark:hover:text-emerald-300 font-bold transition-colors"
+                    >
+                      <Database size={14} className="text-emerald-600" />
+                      <span>فیلد داده از دیتابیس (آزاد)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleAddCustomTable}
+                      className="w-full flex items-center gap-2 p-1.5 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-teal-500/15 hover:text-teal-700 dark:hover:text-teal-300 font-bold transition-colors"
+                    >
+                      <Table size={14} className="text-teal-600" />
+                      <span>جدول محاسبات و مانده‌ها (خام)</span>
+                    </button>
+                    <div className="h-px bg-slate-200 dark:bg-slate-800 my-1" />
+                    <button
+                      type="button"
+                      onClick={() => handleAddShape('rectangle')}
+                      className="w-full flex items-center gap-2 p-1.5 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-amber-500/15 hover:text-amber-700 dark:hover:text-amber-300 font-bold transition-colors"
+                    >
+                      <Square size={14} className="text-blue-500" />
+                      <span>کادر مستطیل</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAddShape('circle')}
+                      className="w-full flex items-center gap-2 p-1.5 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-amber-500/15 hover:text-amber-700 dark:hover:text-amber-300 font-bold transition-colors"
+                    >
+                      <Circle size={14} className="text-emerald-500" />
+                      <span>دایره / بیضی</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAddShape('line_h')}
+                      className="w-full flex items-center gap-2 p-1.5 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-amber-500/15 hover:text-amber-700 dark:hover:text-amber-300 font-bold transition-colors"
+                    >
+                      <Minus size={14} className="text-purple-500" />
+                      <span>خط جداکننده افقی</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAddShape('line_v')}
+                      className="w-full flex items-center gap-2 p-1.5 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-amber-500/15 hover:text-amber-700 dark:hover:text-amber-300 font-bold transition-colors"
+                    >
+                      <Minus size={14} className="rotate-90 text-purple-500" />
+                      <span>خط جداکننده عمودی</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAddShape('badge')}
+                      className="w-full flex items-center gap-2 p-1.5 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-amber-500/15 hover:text-amber-700 dark:hover:text-amber-300 font-bold transition-colors"
+                    >
+                      <Tag size={14} className="text-amber-500" />
+                      <span>نشان / برچسب</span>
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
 
-            {leftPanelTab === 'palette' ? (
-              <div className="max-h-[520px] overflow-y-auto pr-0.5 overscroll-contain">
-                <ElementPalette
-                  elements={activeTemplate.elements}
-                  onAddOrRevealSingleton={(type) => handleAddOrRevealSingleton(type)}
-                  onAddCustomText={handleAddCustomText}
-                  onAddShape={handleAddShape}
-                  onAddCustomTable={handleAddCustomTable}
-                  onAddDbField={handleAddStandaloneDbField}
-                  onOpenFullFieldPicker={() => {
-                    setFieldPickerMode('standalone');
-                    setIsFieldPickerOpen(true);
-                  }}
-                />
-              </div>
-            ) : (
-              <LayersPanel
-                elements={activeTemplate.elements}
-                selectedElementIds={selectedElementIds}
-                onSelectElement={(id, multi) => {
-                  if (multi) {
-                    setSelectedElementIds((prev) =>
-                      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
-                    );
-                  } else {
-                    setSelectedElementId(id);
-                  }
-                }}
-                onToggleVisibility={(id) => {
-                  updateActiveTemplate((prev) => ({
-                    ...prev,
-                    elements: prev.elements.map((item) =>
-                      item.id === id ? { ...item, visible: !item.visible } : item,
-                    ),
-                  }));
-                }}
-                onToggleLock={(id) => {
-                  updateActiveTemplate((prev) => ({
-                    ...prev,
-                    elements: prev.elements.map((item) =>
-                      item.id === id ? { ...item, locked: !item.locked } : item,
-                    ),
-                  }));
-                }}
-                onDeleteElement={handleDeleteElement}
-              />
-            )}
+            <div className="flex items-center justify-between text-[10px] text-slate-400">
+              <span>تعداد: {activeTemplate.elements.length}</span>
+              <span>{activeTemplate.elements.filter((e) => e.visible).length} نمایان</span>
+            </div>
+
+            <div className="space-y-1 max-h-[320px] overflow-y-auto pr-1">
+              {activeTemplate.elements.map((el) => {
+                const isSelected = selectedElementIds.includes(el.id);
+                const isCustomOrShape = el.type === 'custom_text' || el.type === 'custom_table' || el.type === 'db_field' || el.type.startsWith('shape_');
+                return (
+                  <div
+                    key={el.id}
+                    onClick={() => setSelectedElementId(el.id)}
+                    className={`flex items-center justify-between p-2 rounded-xl cursor-pointer transition-all border ${
+                      isSelected
+                        ? 'bg-amber-500/20 border-amber-500/50 text-slate-900 dark:text-slate-100 font-bold shadow-xs'
+                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:bg-slate-50 text-slate-700 dark:text-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 truncate flex-1">
+                      {el.type === 'custom_text' ? (
+                        <FileText size={13} className="text-amber-500 shrink-0" />
+                      ) : el.type === 'custom_table' ? (
+                        <Table size={13} className="text-emerald-500 shrink-0" />
+                      ) : el.type === 'db_field' ? (
+                        <Database size={13} className="text-emerald-500 shrink-0" />
+                      ) : el.type === 'shape_rectangle' ? (
+                        <Square size={13} className="text-blue-500 shrink-0" />
+                      ) : el.type === 'shape_circle' ? (
+                        <Circle size={13} className="text-emerald-500 shrink-0" />
+                      ) : el.type === 'shape_line_h' ? (
+                        <Minus size={13} className="text-purple-500 shrink-0" />
+                      ) : el.type === 'shape_line_v' ? (
+                        <Minus size={13} className="rotate-90 text-purple-500 shrink-0" />
+                      ) : el.type === 'shape_badge' ? (
+                        <Tag size={13} className="text-amber-500 shrink-0" />
+                      ) : el.type === 'items_table' ? (
+                        <Table size={13} className="text-sky-500 shrink-0" />
+                      ) : (
+                        <Layers size={13} className="text-slate-400 shrink-0" />
+                      )}
+                      <span className="truncate">{el.type === 'db_field' && el.content?.fieldLabel ? `داده: ${el.content.fieldLabel}` : (ELEMENT_LABELS[el.type] || el.id)}</span>
+                    </div>
+
+                    <div className="flex items-center gap-1 shrink-0">
+                      {isCustomOrShape && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteElement(el.id);
+                          }}
+                          className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-500/10 rounded-lg transition-colors"
+                          title="حذف المان"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          updateActiveTemplate((prev) => ({
+                            ...prev,
+                            elements: prev.elements.map((item) =>
+                              item.id === el.id ? { ...item, visible: !item.visible } : item,
+                            ),
+                          }));
+                        }}
+                        className={`p-1 rounded-lg transition-colors ${
+                          el.visible ? 'text-amber-600 hover:bg-amber-500/10' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                        }`}
+                        title={el.visible ? 'مخفی کردن المان' : 'نمایش المان'}
+                      >
+                        {el.visible ? <Eye size={13} /> : <EyeOff size={13} />}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
 
@@ -2054,30 +1755,8 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
         <div className="lg:col-span-6 space-y-3">
           {/* Canvas Toolbar Controls */}
           <div className="dashboard-panel p-2.5 flex flex-wrap items-center justify-between gap-2 bg-slate-800 text-slate-200 rounded-xl">
-            {/* Undo / Redo & Zoom Controls */}
-            <div className="flex items-center gap-1.5">
-              <div className="flex items-center gap-0.5 bg-slate-900/80 p-1 rounded-xl">
-                <button
-                  type="button"
-                  onClick={handleUndo}
-                  disabled={historyPast.length === 0}
-                  className="p-1.5 hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed rounded-lg text-slate-200 transition-colors"
-                  title="بازگشت به مرحله قبل (Ctrl+Z)"
-                >
-                  <Undo2 size={14} />
-                </button>
-                <button
-                  type="button"
-                  onClick={handleRedo}
-                  disabled={historyFuture.length === 0}
-                  className="p-1.5 hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed rounded-lg text-slate-200 transition-colors"
-                  title="انجام مجدد (Ctrl+Shift+Z)"
-                >
-                  <Redo2 size={14} />
-                </button>
-              </div>
-
-              <div className="flex items-center gap-1 bg-slate-900/80 p-1 rounded-xl">
+            {/* Zoom Controls */}
+            <div className="flex items-center gap-1 bg-slate-900/80 p-1 rounded-xl">
               <button
                 type="button"
                 onClick={handleZoomOut}
@@ -2119,7 +1798,6 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
               >
                 <Maximize2 size={14} />
               </button>
-              </div>
             </div>
 
             {/* Grid, Pan & Alignment Tools */}
@@ -2163,9 +1841,9 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
                   onClick={() => handleAlignElements('top')}
                   disabled={selectedElementIds.length === 0}
                   className="p-1.5 hover:bg-slate-800 disabled:opacity-30 rounded-lg text-slate-300 transition-colors"
-                  title="تراز از بالا"
+                  title="تراز بالا"
                 >
-                  <ArrowUpToLine size={14} />
+                  <ArrowUp size={14} />
                 </button>
                 <button
                   type="button"
@@ -2181,9 +1859,9 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
                   onClick={() => handleAlignElements('bottom')}
                   disabled={selectedElementIds.length === 0}
                   className="p-1.5 hover:bg-slate-800 disabled:opacity-30 rounded-lg text-slate-300 transition-colors"
-                  title="تراز از پایین"
+                  title="تراز پایین"
                 >
-                  <ArrowDownToLine size={14} />
+                  <ArrowDown size={14} />
                 </button>
 
                 <div className="h-3.5 w-px bg-slate-700 mx-0.5" />
@@ -2256,32 +1934,6 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
                     <Copy size={13} />
                   </button>
                 )}
-
-                {/* Group / Ungroup */}
-                {selectedElementIds.length >= 2 && (
-                  <button
-                    type="button"
-                    onClick={handleGroupElements}
-                    className="p-1.5 hover:bg-slate-800 rounded-lg text-indigo-400 transition-colors flex items-center gap-1 text-[10px] font-bold"
-                    title="گروه‌بندی المان‌های انتخاب‌شده (Ctrl+G)"
-                  >
-                    <Group size={13} />
-                    <span className="hidden md:inline">گروه</span>
-                  </button>
-                )}
-                {activeTemplate.elements.some(
-                  (el) => selectedElementIds.includes(el.id) && Boolean(el.groupId),
-                ) && (
-                  <button
-                    type="button"
-                    onClick={handleUngroupElements}
-                    className="p-1.5 hover:bg-slate-800 rounded-lg text-rose-300 transition-colors flex items-center gap-1 text-[10px] font-bold"
-                    title="لغو گروه‌بندی (Ctrl+Shift+G)"
-                  >
-                    <Ungroup size={13} />
-                    <span className="hidden md:inline">لغو گروه</span>
-                  </button>
-                )}
               </div>
 
               {/* Grid Toggle */}
@@ -2299,44 +1951,8 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
                 }`}
                 title="روشن/خاموش کردن شبکه راهنما (Grid)"
               >
-                <Grid size={14} />
-                <span className="hidden sm:inline">شبکه</span>
-              </button>
-
-              {/* Rulers Toggle */}
-              <button
-                type="button"
-                onClick={() =>
-                  updateActiveTemplate((prev) => ({
-                    ...prev,
-                    design: { ...prev.design, showRulers: prev.design.showRulers === false },
-                  }))}
-                className={`p-1.5 rounded-xl font-bold flex items-center gap-1 transition-all ${
-                  activeTemplate.design.showRulers !== false
-                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                    : 'bg-slate-900/80 text-slate-400 hover:bg-slate-700'
-                }`}
-                title="نمایش/مخفی کردن خط‌کش میلی‌متری"
-              >
-                <Ruler size={14} />
-              </button>
-
-              {/* Smart Snap Toggle */}
-              <button
-                type="button"
-                onClick={() =>
-                  updateActiveTemplate((prev) => ({
-                    ...prev,
-                    design: { ...prev.design, snapToGuides: prev.design.snapToGuides === false },
-                  }))}
-                className={`p-1.5 rounded-xl font-bold flex items-center gap-1 transition-all ${
-                  activeTemplate.design.snapToGuides !== false
-                    ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
-                    : 'bg-slate-900/80 text-slate-400 hover:bg-slate-700'
-                }`}
-                title="آهنربای هوشمند تراز خودکار (نگه‌داشتن Alt برای غیرفعال‌سازی موقت)"
-              >
-                <Magnet size={14} />
+                <Grid size={15} />
+                <span>Grid</span>
               </button>
             </div>
           </div>
@@ -2347,88 +1963,28 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
             onMouseDown={handleCanvasMouseDown}
             onMouseMove={handleCanvasMouseMove}
             onMouseUp={handleCanvasMouseUp}
-            className="dashboard-panel relative overflow-auto bg-slate-200 dark:bg-slate-950 p-6 min-h-[620px] flex justify-center items-start cursor-grab active:cursor-grabbing border border-slate-300 dark:border-slate-800 shadow-inner rounded-2xl overscroll-contain"
+            className="dashboard-panel relative overflow-hidden bg-slate-200 dark:bg-slate-950 p-6 min-h-[620px] flex justify-center items-start cursor-grab active:cursor-grabbing border border-slate-300 dark:border-slate-800 shadow-inner rounded-2xl"
           >
-            <div className="relative flex flex-col items-center shrink-0">
-              {activeTemplate.design.showRulers !== false && (
-                <CanvasRulers
-                  widthMm={pageDimensions.widthMm}
-                  heightMm={pageDimensions.heightMm}
-                  zoom={zoom}
-                />
-              )}
-
-              {/* Scaled Page Container */}
-              <div
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  e.dataTransfer.dropEffect = 'copy';
-                }}
-                onDrop={handleCanvasDrop}
-                style={{
-                  width: `${pageDimensions.widthMm}mm`,
-                  height: `${pageDimensions.heightMm}mm`,
-                  backgroundColor: activeTemplate.page.backgroundColor || '#ffffff',
-                  borderWidth: activeTemplate.page.borderEnabled ? `${activeTemplate.page.borderWidthMm}mm` : '0',
-                  borderColor: activeTemplate.page.borderColor || '#cbd5e1',
-                  borderStyle: activeTemplate.page.borderEnabled ? 'solid' : 'none',
-                  padding: 0,
-                  transform: `scale(${zoom}) translate(${pan.x}px, ${pan.y}px)`,
-                  transformOrigin: 'top center',
-                  transition: draggingElementId || resizingElementId ? 'none' : 'transform 0.05s ease-out',
-                  boxShadow: '0 10px 30px rgba(0,0,0,0.15)',
-                }}
-                className="relative select-none text-slate-900 overflow-hidden shrink-0 transition-shadow"
-              >
-                {/* Smart Alignment Snap Lines */}
-                {snapLines.verticalMm !== undefined && (
-                  <div
-                    aria-hidden="true"
-                    style={{
-                      position: 'absolute',
-                      right: `${snapLines.verticalMm}mm`,
-                      top: 0,
-                      bottom: 0,
-                      width: '1px',
-                      backgroundColor: '#f59e0b',
-                      zIndex: 45,
-                      pointerEvents: 'none',
-                    }}
-                  />
-                )}
-                {snapLines.horizontalMm !== undefined && (
-                  <div
-                    aria-hidden="true"
-                    style={{
-                      position: 'absolute',
-                      top: `${snapLines.horizontalMm}mm`,
-                      left: 0,
-                      right: 0,
-                      height: '1px',
-                      backgroundColor: '#f59e0b',
-                      zIndex: 45,
-                      pointerEvents: 'none',
-                    }}
-                  />
-                )}
-              {/* Visual Page Margin Guides (if margins > 0) */}
-              {Boolean(activeTemplate.page.marginTopMm || activeTemplate.page.marginRightMm || activeTemplate.page.marginBottomMm || activeTemplate.page.marginLeftMm) && (
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: `${activeTemplate.page.marginTopMm || 0}mm`,
-                    right: `${activeTemplate.page.marginRightMm || 0}mm`,
-                    bottom: `${activeTemplate.page.marginBottomMm || 0}mm`,
-                    left: `${activeTemplate.page.marginLeftMm || 0}mm`,
-                    border: '1px dashed #94a3b8',
-                    pointerEvents: 'none',
-                    opacity: 0.5,
-                    zIndex: 1,
-                  }}
-                  title="محدوده حاشیه امن کاغذ (Page Margins)"
-                />
-              )}
-
+            {/* Scaled Page Container */}
+            <div
+              style={{
+                width: `${pageDimensions.widthMm}mm`,
+                height: `${pageDimensions.heightMm}mm`,
+                backgroundColor: activeTemplate.page.backgroundColor || '#ffffff',
+                borderWidth: activeTemplate.page.borderEnabled ? `${activeTemplate.page.borderWidthMm}mm` : '0',
+                borderColor: activeTemplate.page.borderColor || '#cbd5e1',
+                borderStyle: activeTemplate.page.borderEnabled ? 'solid' : 'none',
+                paddingTop: `${activeTemplate.page.marginTopMm || 0}mm`,
+                paddingRight: `${activeTemplate.page.marginRightMm || 0}mm`,
+                paddingBottom: `${activeTemplate.page.marginBottomMm || 0}mm`,
+                paddingLeft: `${activeTemplate.page.marginLeftMm || 0}mm`,
+                transform: `scale(${zoom}) translate(${pan.x}px, ${pan.y}px)`,
+                transformOrigin: 'top center',
+                transition: draggingElementId || resizingElementId ? 'none' : 'transform 0.05s ease-out',
+                boxShadow: '0 10px 30px rgba(0,0,0,0.15)',
+              }}
+              className="relative select-none text-slate-900 overflow-hidden shrink-0 transition-shadow"
+            >
               {/* Optional Grid Background */}
               {activeTemplate.design.gridEnabled && (
                 <div
@@ -2461,7 +2017,7 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
                       color: el.style.color || '#0f172a',
                       backgroundColor: el.style.backgroundColor || 'transparent',
                       textAlign: el.style.textAlign || 'right',
-                      borderWidth: el.type === 'items_table' || el.type === 'custom_table' ? '0' : (el.style.borderWidthMm ? `${el.style.borderWidthMm}mm` : '0'),
+                      borderWidth: el.style.borderWidthMm ? `${el.style.borderWidthMm}mm` : '0',
                       borderColor: el.style.borderColor || 'transparent',
                       borderStyle: el.style.borderWidthMm ? 'solid' : 'none',
                       borderRadius: el.style.borderRadiusMm ? `${el.style.borderRadiusMm}mm` : '0',
@@ -2470,7 +2026,7 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
                       transition: draggingElementId || resizingElementId ? 'none' : 'right 0.3s ease, top 0.3s ease',
                     }}
                     className={`box-border transition-shadow relative ${
-                      el.type === 'items_table' || el.type === 'custom_table' ? 'p-0' : (el.content?.fieldKey === 'custom_qrcode' ? 'p-0.5' : 'p-1')
+                      el.content?.fieldKey === 'custom_qrcode' ? 'p-0.5' : 'p-1'
                     } ${
                       isSelected
                         ? 'ring-2 ring-amber-500 ring-offset-1 bg-amber-500/10 rounded-sm z-30'
@@ -2479,15 +2035,6 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
                   >
                     {/* Render Content */}
                     {renderElementPreviewContent(el, settings, activeTemplate)}
-
-                    {el.locked && (
-                      <div
-                        className="absolute top-0.5 left-0.5 p-0.5 rounded bg-amber-500/90 text-slate-950 pointer-events-none z-20"
-                        title="المان قفل شده"
-                      >
-                        <Lock size={9} />
-                      </div>
-                    )}
 
                     {/* Selected Active Element Border & RESIZE HANDLES */}
                     {isSelected && (
@@ -2546,10 +2093,11 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
                   </div>
                 );
               })}
-              </div>
             </div>
           </div>
         </div>
+
+        {/* COLUMN 3: Right Selected Element, Margins & Table Inspector (3 Cols) */}
         <div className="lg:col-span-3 space-y-4">
           {/* Page, Margins & Paper Settings Box */}
           <div className="dashboard-panel p-4 transition-all">
@@ -4900,384 +4448,341 @@ export default function InvoicePrintDesigner({ onUnsavedChange }: Props) {
       </div>
 
       {/* CONFIRMATION DIALOG: Unsaved Changes Alert */}
-      <StudioDialog
-        open={unsavedWarningDialogOpen}
-        onClose={() => {
-          setUnsavedWarningDialogOpen(false);
-          setPendingTemplateIdSwitch(null);
-        }}
-        title="تغییرات ذخیره‌نشده"
-        titleId="unsaved-warning-title"
-        icon={<AlertTriangle size={18} className="text-amber-500" />}
-        lightDismiss={false}
-      >
-        <div className="space-y-4">
-          <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-            تغییرات قالب چاپ هنوز ذخیره نشده‌اند. آیا می‌خواهید بدون ذخیره‌سازی از این قالب خارج شوید؟
-          </p>
-          <div className="flex flex-col gap-2 pt-1">
-            <button
-              type="button"
-              onClick={async () => {
-                await handleSave();
-                setUnsavedWarningDialogOpen(false);
-                if (pendingTemplateIdSwitch) {
-                  doSwitchTemplate(pendingTemplateIdSwitch);
-                  setPendingTemplateIdSwitch(null);
-                }
-              }}
-              className="w-full py-2.5 bg-amber-500 text-slate-950 font-extrabold rounded-xl hover:bg-amber-400 transition-colors"
-            >
-              ادامه و ذخیره تغییرات
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setUnsavedWarningDialogOpen(false);
-                if (pendingTemplateIdSwitch) {
-                  doSwitchTemplate(pendingTemplateIdSwitch);
-                  setPendingTemplateIdSwitch(null);
-                }
-              }}
-              className="w-full py-2 bg-rose-500/15 text-rose-700 dark:text-rose-300 font-bold rounded-xl hover:bg-rose-500/25 transition-colors"
-            >
-              خروج بدون ذخیره
-            </button>
-            <button
-              type="button"
-              autoFocus
-              onClick={() => {
-                setUnsavedWarningDialogOpen(false);
-                setPendingTemplateIdSwitch(null);
-              }}
-              className="w-full py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-            >
-              ماندن در صفحه
-            </button>
-          </div>
-        </div>
-      </StudioDialog>
-
-      {/* CONFIRMATION DIALOG: Delete Template */}
-      <StudioDialog
-        open={confirmDeleteDialogOpen}
-        onClose={() => setConfirmDeleteDialogOpen(false)}
-        title="تأیید حذف قالب"
-        titleId="confirm-delete-title"
-        icon={<Trash2 size={18} className="text-rose-500" />}
-      >
-        <div className="space-y-4">
-          <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-            آیا از حذف قالب «{activeTemplate.name}» اطمینان دارید؟ این عمل غیرقابل بازگشت است.
-          </p>
-          <div className="flex items-center justify-end gap-2 pt-2">
-            <button
-              type="button"
-              autoFocus
-              onClick={() => setConfirmDeleteDialogOpen(false)}
-              className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold rounded-xl"
-            >
-              انصراف
-            </button>
-            <button
-              type="button"
-              onClick={handleDeleteTemplate}
-              className="px-4 py-2 bg-rose-600 text-white font-extrabold rounded-xl hover:bg-rose-500 transition-colors"
-            >
-              حذف قالب
-            </button>
-          </div>
-        </div>
-      </StudioDialog>
-
-      {/* MODAL: Rename Template */}
-      <StudioDialog
-        open={isRenaming}
-        onClose={() => setIsRenaming(false)}
-        title="تغییر نام قالب"
-        titleId="rename-template-title"
-        icon={<Edit3 size={17} className="text-amber-500" />}
-      >
-        <form onSubmit={handleRename} className="space-y-4">
-          <label className="account-field">
-            <span className="text-[11px] font-bold">نام جدید قالب</span>
-            <input
-              type="text"
-              value={renameInput}
-              onChange={(e) => setRenameInput(e.target.value)}
-              required
-              autoFocus
-            />
-          </label>
-          <div className="flex items-center justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setIsRenaming(false)}
-              className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold rounded-xl"
-            >
-              انصراف
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 bg-amber-500 text-slate-950 font-extrabold rounded-xl hover:bg-amber-400"
-            >
-              تغییر نام
-            </button>
-          </div>
-        </form>
-      </StudioDialog>
-
-      {/* MODAL: Create New Template with Starter Preset Picker */}
-      <StudioDialog
-        open={isCreatingNew}
-        onClose={() => setIsCreatingNew(false)}
-        title="ساخت قالب جدید چاپ"
-        titleId="create-template-title"
-        icon={<Sparkles size={18} className="text-amber-500" />}
-        maxWidthClass="max-w-lg"
-      >
-        <form onSubmit={handleCreateNewTemplate} className="space-y-4">
-          <label className="account-field">
-            <span className="text-[11px] font-bold">نام قالب (الزامی)</span>
-            <input
-              type="text"
-              value={newTemplateName}
-              onChange={(e) => setNewTemplateName(e.target.value)}
-              placeholder="مثال: فاکتور تک‌فروشی پلاتین"
-              required
-              autoFocus
-            />
-          </label>
-
-          <div className="space-y-2">
-            <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block">
-              انتخاب چیدمان پایه (Starter Preset)
-            </span>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {TEMPLATE_STARTER_PRESETS.map((preset) => {
-                const active = selectedStarterPreset === preset.id;
-                return (
-                  <button
-                    key={preset.id}
-                    type="button"
-                    onClick={() => setSelectedStarterPreset(preset.id)}
-                    className={`p-3 rounded-xl border text-right transition-all space-y-1 ${
-                      active
-                        ? 'bg-amber-500/15 border-amber-500 text-slate-900 dark:text-slate-100 shadow-xs'
-                        : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-amber-400'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-1">
-                      <span className="font-extrabold text-[11px]">{preset.title}</span>
-                      <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                        {preset.sizeLabel}
-                      </span>
-                    </div>
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-snug">
-                      {preset.subtitle}
-                    </p>
-                  </button>
-                );
-              })}
+      {unsavedWarningDialogOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 max-w-md w-full space-y-4 shadow-2xl text-right">
+            <div className="flex items-center gap-2 text-amber-600 font-black text-sm">
+              <AlertTriangle size={20} />
+              <span>تغییرات ذخیره‌نشده</span>
             </div>
-          </div>
-
-          <div className="flex items-center justify-end gap-2 pt-2">
-            <button
-              type="button"
-              onClick={() => setIsCreatingNew(false)}
-              className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold rounded-xl"
-            >
-              انصراف
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 bg-amber-500 text-slate-950 font-extrabold rounded-xl hover:bg-amber-400"
-            >
-              ایجاد قالب
-            </button>
-          </div>
-        </form>
-      </StudioDialog>
-
-      {/* MODAL: Out of Bounds Warning & Auto-Center */}
-      <StudioDialog
-        open={Boolean(outOfBoundsElementId)}
-        onClose={() => setOutOfBoundsElementId(null)}
-        title="هشدار خروج المان از محدوده چاپ"
-        titleId="oob-warning-title"
-        icon={<AlertTriangle size={18} className="text-amber-500" />}
-      >
-        <div className="space-y-4">
-          <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-            المان از محدوده قابل چاپ فاکتور خارج شده است. آیا می‌خواهید المان به وسط فاکتور منتقل شود؟
-          </p>
-          <div className="flex items-center justify-end gap-2 pt-2">
-            <button
-              type="button"
-              autoFocus
-              onClick={() => setOutOfBoundsElementId(null)}
-              className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold rounded-xl"
-            >
-              لغو
-            </button>
-            <button
-              type="button"
-              onClick={handleCenterOutOfBoundsElement}
-              className="px-4 py-2 bg-amber-500 text-slate-950 font-extrabold rounded-xl hover:bg-amber-400 transition-colors"
-            >
-              انتقال به مرکز فاکتور
-            </button>
-          </div>
-        </div>
-      </StudioDialog>
-
-      {/* MODAL: Database Field Picker */}
-      <StudioDialog
-        open={isFieldPickerOpen}
-        onClose={() => setIsFieldPickerOpen(false)}
-        title={
-          fieldPickerMode === 'standalone'
-            ? 'افزودن فیلد داده داینامیک به فاکتور (آزاد)'
-            : 'افزودن فیلد داده از دیتابیس به جدول'
-        }
-        titleId="field-picker-title"
-        icon={<Database size={18} className="text-emerald-500" />}
-        maxWidthClass="max-w-2xl"
-      >
-        <div className="space-y-3">
-          {/* Search & Category Filter */}
-          <div className="space-y-2.5">
-            <div className="relative">
-              <Search size={14} className="absolute right-3 top-3 text-slate-400" />
-              <input
-                type="text"
-                value={fieldSearchQuery}
-                onChange={(e) => setFieldSearchQuery(e.target.value)}
-                placeholder="جستجو در بین فیلدها و شاخص‌ها (مثال: طلا، مانده، تخفیف، حروف)..."
-                className="w-full pl-3 pr-9 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-emerald-500"
-                autoFocus
-              />
-            </div>
-
-            {/* Category Pills */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-[10px] font-bold">
-              {[
-                { id: 'all', label: 'همه شاخص‌ها' },
-                { id: 'customer_balance', label: 'مانده و مشخصات طرف‌حساب' },
-                { id: 'document_summary', label: 'خلاصه و اثر این سند' },
-                { id: 'financial', label: 'ارقام مالی فاکتور' },
-                { id: 'weights', label: 'اوزان و فلزات' },
-              ].map((cat) => (
-                <button
-                  key={cat.id}
-                  type="button"
-                  onClick={() => setFieldFilterCategory(cat.id)}
-                  className={`px-2.5 py-1 rounded-lg shrink-0 transition-colors ${
-                    fieldFilterCategory === cat.id
-                      ? 'bg-emerald-600 text-white shadow-xs'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
-                  }`}
-                >
-                  {cat.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Fields Grid / List */}
-          <div className="max-h-[45dvh] overflow-y-auto space-y-2 pr-1 overscroll-contain">
-            {(() => {
-              const query = fieldSearchQuery.trim().toLowerCase();
-              const filtered = AVAILABLE_DATABASE_FIELDS.filter((item) => {
-                if (fieldFilterCategory !== 'all' && item.category !== fieldFilterCategory) return false;
-                if (!query) return true;
-                return (
-                  item.label.toLowerCase().includes(query) ||
-                  item.description.toLowerCase().includes(query) ||
-                  item.categoryLabel.toLowerCase().includes(query)
-                );
-              });
-
-              if (filtered.length === 0) {
-                return (
-                  <div className="py-8 text-center text-slate-400 space-y-1">
-                    <p className="text-xs font-bold">فیلدی با این مشخصات یافت نشد.</p>
-                    <p className="text-[10px]">می‌توانید از «سطر دلخواه دستی» برای اضافه کردن اطلاعات مورد نظر استفاده کنید.</p>
-                  </div>
-                );
-              }
-
-              return (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {filtered.map((item) => (
-                    <div
-                      key={item.key}
-                      onClick={() =>
-                        fieldPickerMode === 'standalone'
-                          ? handleAddStandaloneDbField(item.key)
-                          : handleAddDatabaseFieldToCustomTable(item.key)
-                      }
-                      className="p-2.5 bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 hover:border-emerald-500 dark:hover:border-emerald-500/80 rounded-xl cursor-pointer hover:bg-emerald-500/5 transition-all space-y-1.5 group text-right"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-extrabold text-[11px] text-slate-800 dark:text-slate-200 group-hover:text-emerald-700 dark:group-hover:text-emerald-400">
-                          {item.label}
-                        </span>
-                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold">
-                          {item.categoryLabel}
-                        </span>
-                      </div>
-                      <p className="text-[9px] text-slate-500 line-clamp-1">
-                        {item.description}
-                      </p>
-                      <div className="flex items-center justify-between pt-1 border-t border-slate-200/50 dark:border-slate-800/50 text-[9px]">
-                        <span className="text-slate-400">
-                          نمونه: <strong className="text-slate-600 dark:text-slate-300">{item.sampleValue} {item.defaultUnit}</strong>
-                        </span>
-                        <span className="text-emerald-600 font-bold flex items-center gap-0.5 opacity-80 group-hover:opacity-100">
-                          <Plus size={11} />
-                          {fieldPickerMode === 'standalone' ? 'افزودن به فاکتور' : 'افزودن به جدول'}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              );
-            })()}
-          </div>
-
-          {/* Custom Row Option Footer */}
-          <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
-            {fieldPickerMode === 'custom_table' ? (
+            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+              تغییرات قالب چاپ هنوز ذخیره نشده‌اند. آیا می‌خواهید بدون ذخیره‌سازی از این قالب خارج شوید؟
+            </p>
+            <div className="flex flex-col gap-2 pt-2">
               <button
                 type="button"
-                onClick={handleAddCustomRowToCustomTable}
-                className="py-1.5 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors"
+                onClick={async () => {
+                  await handleSave();
+                  setUnsavedWarningDialogOpen(false);
+                  if (pendingTemplateIdSwitch) {
+                    doSwitchTemplate(pendingTemplateIdSwitch);
+                    setPendingTemplateIdSwitch(null);
+                  }
+                }}
+                className="w-full py-2.5 bg-amber-500 text-slate-950 font-extrabold rounded-xl hover:bg-amber-400 transition-colors"
               >
-                <Plus size={13} />
-                <span>افزودن سطر دلخواه دستی</span>
+                ادامه و ذخیره تغییرات
               </button>
-            ) : <div />}
-            <button
-              type="button"
-              onClick={() => setIsFieldPickerOpen(false)}
-              className="py-1.5 px-4 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-xl hover:bg-slate-300 transition-colors"
-            >
-              بستن
-            </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setUnsavedWarningDialogOpen(false);
+                  if (pendingTemplateIdSwitch) {
+                    doSwitchTemplate(pendingTemplateIdSwitch);
+                    setPendingTemplateIdSwitch(null);
+                  }
+                }}
+                className="w-full py-2 bg-rose-500/15 text-rose-700 dark:text-rose-300 font-bold rounded-xl hover:bg-rose-500/25 transition-colors"
+              >
+                خروج بدون ذخیره
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setUnsavedWarningDialogOpen(false);
+                  setPendingTemplateIdSwitch(null);
+                }}
+                className="w-full py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold rounded-xl hover:bg-slate-200 transition-colors"
+              >
+                ماندن در صفحه
+              </button>
+            </div>
           </div>
         </div>
-      </StudioDialog>
+      )}
 
-      {/* MODAL: Live Print Preview */}
-      <PrintPreviewModal
-        open={isPrintPreviewOpen}
-        onClose={() => setIsPrintPreviewOpen(false)}
-        template={activeTemplate}
-        pageDimensions={pageDimensions}
-        renderPreviewContent={(el) => renderElementPreviewContent(el, settings, activeTemplate)}
-      />
+      {/* CONFIRMATION DIALOG: Delete Template */}
+      {confirmDeleteDialogOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 max-w-md w-full space-y-4 shadow-2xl text-right">
+            <div className="flex items-center gap-2 text-rose-600 font-black text-sm">
+              <Trash2 size={20} />
+              <span>تأیید حذف قالب</span>
+            </div>
+            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+              آیا از حذف قالب «{activeTemplate.name}» اطمینان دارید؟ این عمل غیرقابل بازگشت است.
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteDialogOpen(false)}
+                className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold rounded-xl"
+              >
+                انصراف
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteTemplate}
+                className="px-4 py-2 bg-rose-600 text-white font-extrabold rounded-xl hover:bg-rose-500 transition-colors"
+              >
+                حذف قالب
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Rename Template */}
+      {isRenaming && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <form
+            onSubmit={handleRename}
+            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 max-w-md w-full space-y-4 shadow-2xl text-right"
+          >
+            <h3 className="font-extrabold text-sm text-slate-800 dark:text-slate-200">تغییر نام قالب</h3>
+            <label className="account-field">
+              <span className="text-[11px] font-bold">نام جدید قالب</span>
+              <input
+                type="text"
+                value={renameInput}
+                onChange={(e) => setRenameInput(e.target.value)}
+                required
+                autoFocus
+              />
+            </label>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setIsRenaming(false)}
+                className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold rounded-xl"
+              >
+                انصراف
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 bg-amber-500 text-slate-950 font-extrabold rounded-xl hover:bg-amber-400"
+              >
+                تغییر نام
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* MODAL: Create New Template */}
+      {isCreatingNew && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <form
+            onSubmit={handleCreateNewTemplate}
+            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 max-w-md w-full space-y-4 shadow-2xl text-right"
+          >
+            <h3 className="font-extrabold text-sm text-slate-800 dark:text-slate-200">ساخت قالب جدید چاپ</h3>
+            <label className="account-field">
+              <span className="text-[11px] font-bold">نام قالب (الزامی)</span>
+              <input
+                type="text"
+                value={newTemplateName}
+                onChange={(e) => setNewTemplateName(e.target.value)}
+                placeholder="مثال: فاکتور تک‌فروشی پلاتین"
+                required
+                autoFocus
+              />
+            </label>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setIsCreatingNew(false)}
+                className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold rounded-xl"
+              >
+                انصراف
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 bg-amber-500 text-slate-950 font-extrabold rounded-xl hover:bg-amber-400"
+              >
+                ایجاد قالب
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* MODAL: Out of Bounds Warning & Auto-Center */}
+      {outOfBoundsElementId && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 max-w-md w-full space-y-4 shadow-2xl text-right">
+            <div className="flex items-center gap-2 text-amber-600 font-black text-sm">
+              <AlertTriangle size={20} />
+              <span>هشدار خروج المان از محدوده چاپ</span>
+            </div>
+            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+              المان از محدوده قابل چاپ فاکتور خارج شده است. آیا می‌خواهید المان به وسط فاکتور منتقل شود؟
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setOutOfBoundsElementId(null)}
+                className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold rounded-xl"
+              >
+                لغو
+              </button>
+              <button
+                type="button"
+                onClick={handleCenterOutOfBoundsElement}
+                className="px-4 py-2 bg-amber-500 text-slate-950 font-extrabold rounded-xl hover:bg-amber-400 transition-colors"
+              >
+                انتقال به مرکز فاکتور
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Database Field Picker for Custom Table */}
+      {isFieldPickerOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 max-w-xl w-full max-h-[85vh] flex flex-col shadow-2xl text-right">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+              <div className="flex items-center gap-2 text-emerald-600 font-black text-sm">
+                <Database size={18} />
+                <span>
+                  {fieldPickerMode === 'standalone' ? 'افزودن فیلد داده داینامیک به فاکتور (آزاد)' : 'افزودن فیلد داده از دیتابیس به جدول'}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsFieldPickerOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Search & Category Filter */}
+            <div className="py-3 space-y-2.5">
+              <div className="relative">
+                <Search size={14} className="absolute right-3 top-3 text-slate-400" />
+                <input
+                  type="text"
+                  value={fieldSearchQuery}
+                  onChange={(e) => setFieldSearchQuery(e.target.value)}
+                  placeholder="جستجو در بین فیلدها و شاخص‌ها (مثال: طلا، مانده، تخفیف)..."
+                  className="w-full pl-3 pr-9 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-emerald-500"
+                  autoFocus
+                />
+              </div>
+
+              {/* Category Pills */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-[10px] font-bold">
+                {[
+                  { id: 'all', label: 'همه شاخص‌ها' },
+                  { id: 'customer_balance', label: 'مانده حساب طرف‌حساب' },
+                  { id: 'document_summary', label: 'خلاصه و اثر این سند' },
+                  { id: 'financial', label: 'ارقام مالی فاکتور' },
+                  { id: 'weights', label: 'اوزان و فلزات' },
+                ].map((cat) => (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => setFieldFilterCategory(cat.id)}
+                    className={`px-2.5 py-1 rounded-lg shrink-0 transition-colors ${
+                      fieldFilterCategory === cat.id
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
+                    }`}
+                  >
+                    {cat.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Fields Grid / List */}
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1 min-h-[250px]">
+              {(() => {
+                const query = fieldSearchQuery.trim().toLowerCase();
+                const filtered = AVAILABLE_DATABASE_FIELDS.filter((item) => {
+                  if (fieldFilterCategory !== 'all' && item.category !== fieldFilterCategory) return false;
+                  if (!query) return true;
+                  return (
+                    item.label.toLowerCase().includes(query) ||
+                    item.description.toLowerCase().includes(query) ||
+                    item.categoryLabel.toLowerCase().includes(query)
+                  );
+                });
+
+                if (filtered.length === 0) {
+                  return (
+                    <div className="py-8 text-center text-slate-400 space-y-1">
+                      <p className="text-xs font-bold">فیلدی با این مشخصات یافت نشد.</p>
+                      <p className="text-[10px]">می‌توانید از «سطر دلخواه دستی» برای اضافه کردن اطلاعات مورد نظر استفاده کنید.</p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {filtered.map((item) => (
+                      <div
+                        key={item.key}
+                        onClick={() =>
+                          fieldPickerMode === 'standalone'
+                            ? handleAddStandaloneDbField(item.key)
+                            : handleAddDatabaseFieldToCustomTable(item.key)
+                        }
+                        className="p-2.5 bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 hover:border-emerald-500 dark:hover:border-emerald-500/80 rounded-xl cursor-pointer hover:bg-emerald-500/5 transition-all space-y-1.5 group text-right"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-extrabold text-[11px] text-slate-800 dark:text-slate-200 group-hover:text-emerald-700 dark:group-hover:text-emerald-400">
+                            {item.label}
+                          </span>
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold">
+                            {item.categoryLabel}
+                          </span>
+                        </div>
+                        <p className="text-[9px] text-slate-500 line-clamp-1">
+                          {item.description}
+                        </p>
+                        <div className="flex items-center justify-between pt-1 border-t border-slate-200/50 dark:border-slate-800/50 text-[9px]">
+                          <span className="text-slate-400">
+                            نمونه: <strong className="text-slate-600 dark:text-slate-300">{item.sampleValue} {item.defaultUnit}</strong>
+                          </span>
+                          <span className="text-emerald-600 font-bold flex items-center gap-0.5 opacity-80 group-hover:opacity-100">
+                            <Plus size={11} />
+                            {fieldPickerMode === 'standalone' ? 'افزودن به فاکتور' : 'افزودن به جدول'}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Custom Row Option Footer */}
+            <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
+              {fieldPickerMode === 'custom_table' ? (
+                <button
+                  type="button"
+                  onClick={handleAddCustomRowToCustomTable}
+                  className="py-1.5 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors"
+                >
+                  <Plus size={13} />
+                  <span>افزودن سطر دلخواه دستی</span>
+                </button>
+              ) : <div />}
+              <button
+                type="button"
+                onClick={() => setIsFieldPickerOpen(false)}
+                className="py-1.5 px-4 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-xl hover:bg-slate-300 transition-colors"
+              >
+                بستن
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -5291,7 +4796,7 @@ function renderElementPreviewContent(el: InvoicePrintElement, settings: any, tem
           className="truncate"
           style={{ fontWeight: getFontWeightCss(el.style?.fontWeight || 'bold') }}
         >
-          {settings.organizationName || settings.printStoreName}
+          {settings.printStoreName || settings.organizationName}
         </div>
       );
 
@@ -5312,21 +4817,6 @@ function renderElementPreviewContent(el: InvoicePrintElement, settings: any, tem
           style={{ fontWeight: getFontWeightCss(el.style?.fontWeight || 'bold') }}
         >
           {el.content?.text || 'فاکتور فروش طلا'}
-        </div>
-      );
-
-    case 'shop_logo':
-      return settings?.printLogoUrl ? (
-        <div className="w-full h-full flex items-center justify-center overflow-hidden">
-          <img
-            src={settings.printLogoUrl}
-            alt={settings.printStoreName || settings.organizationName || 'لوگوی فروشگاه'}
-            className="w-full h-full object-contain pointer-events-none"
-          />
-        </div>
-      ) : (
-        <div className="w-full h-full flex items-center justify-center border border-dashed border-slate-300 rounded text-[9px] text-slate-400 bg-slate-50/70 text-center px-1">
-          لوگوی فروشگاه (آپلود نشده)
         </div>
       );
 
@@ -5513,94 +5003,16 @@ function renderElementPreviewContent(el: InvoicePrintElement, settings: any, tem
       const striped = Boolean(tableConfig.stripedRows);
       const altBg = tableConfig.alternateRowColor || '#f8fafc';
 
-      const totalColsWidthMm = cols.reduce((sum, c) => sum + (c.widthMm || 20), 0) || 1;
-
-      // Realistic sample dataset pool for preview
-      const sampleDataPool = [
-        {
-          type: 'فروش کار ساخته',
-          wName: 'مدال پناه',
-          metal: 'طلا',
-          w: '۱۲٫۴۵۰',
-          k: '۷۵۰',
-          c: '۱۲٫۴۵۰',
-          pricePerGram: '۴٬۸۵۰٬۰۰۰',
-          subtotal: '۶۰٬۳۸۲٬۵۰۰',
-          discount: '۳۸۲٬۵۰۰',
-          total: '۶۰٬۰۰۰٬۰۰۰',
-        },
-        {
-          type: 'خرید متفرقه',
-          wName: '',
-          metal: 'طلا',
-          w: '۸٫۱۲۰',
-          k: '۷۴۰',
-          c: '۸٫۰۱۲',
-          pricePerGram: '۴٬۸۰۰٬۰۰۰',
-          subtotal: '۳۸٬۴۵۷٬۶۰۰',
-          discount: '۰',
-          total: '۳۸٬۴۵۷٬۶۰۰',
-        },
-        {
-          type: 'فروش شمش',
-          wName: 'شمش آبشده ۱۰۰ گرمی',
-          metal: 'طلا',
-          w: '۱۰۰٫۰۰۰',
-          k: '۷۵۰',
-          c: '۱۰۰٫۰۰۰',
-          pricePerGram: '۴٬۸۲۰٬۰۰۰',
-          subtotal: '۴۸۲٬۰۰۰٬۰۰۰',
-          discount: '۲٬۰۰۰٬۰۰۰',
-          total: '۴۸۰٬۰۰۰٬۰۰۰',
-        },
-        {
-          type: 'تعویض طلا',
-          wName: 'سرویس عروس',
-          metal: 'طلا',
-          w: '۲۴٫۵۰۰',
-          k: '۷۵۰',
-          c: '۲۴٫۵۰۰',
-          pricePerGram: '۴٬۸۵۰٬۰۰۰',
-          subtotal: '۱۱۸٬۸۲۵٬۰۰۰',
-          discount: '۸۲۵٬۰۰۰',
-          total: '۱۱۸٬۰۰۰٬۰۰۰',
-        },
-      ];
-
-      const rowHeightMm = tableConfig.rowHeightMm || 7.5;
-      const availableHeightMm = Math.max(15, el.size.heightMm - 8);
-      const targetRowCount = Math.max(2, Math.min(25, Math.floor(availableHeightMm / rowHeightMm)));
-
-      const designerRows = Array.from({ length: targetRowCount }).map((_, idx) => {
-        if (idx < sampleDataPool.length) {
-          return { ...sampleDataPool[idx], isEmpty: false };
-        }
-        return {
-          type: '',
-          wName: '',
-          metal: '',
-          w: '',
-          k: '',
-          c: '',
-          pricePerGram: '',
-          subtotal: '',
-          discount: '',
-          total: '',
-          isEmpty: true,
-        };
-      });
-
       return (
         <div
-          className="w-full h-full text-[80%] overflow-hidden flex flex-col"
+          className="w-full h-full text-[80%] overflow-hidden"
           style={{
             borderRadius: tableRadius,
             border: `${tableBorderWidth} ${tableBorderStyle} ${tableBorderColor}`,
-            boxSizing: 'border-box',
           }}
         >
           <table
-            className="w-full text-center border-collapse table-fixed flex-1"
+            className="w-full text-center border-collapse table-fixed"
             style={{
               color: tableConfig.bodyTextColor || el.style.color || '#0f172a',
               fontSize: tableConfig.fontSizePt ? `${tableConfig.fontSizePt}pt` : '80%',
@@ -5617,25 +5029,47 @@ function renderElementPreviewContent(el: InvoicePrintElement, settings: any, tem
                   borderBottom: `${tableBorderWidth} ${tableBorderStyle} ${tableBorderColor}`,
                 }}
               >
-                {cols.map((col, cIdx) => {
-                  const colPercent = ((col.widthMm || 20) / totalColsWidthMm) * 100;
-                  return (
-                    <th
-                      key={col.id}
-                      className="py-1 px-1 text-center align-middle whitespace-normal break-words leading-tight"
-                      style={{
-                        width: `${colPercent.toFixed(3)}%`,
-                        borderLeft: showVertical && cIdx < cols.length - 1 ? `${tableBorderWidth} ${tableBorderStyle} ${tableBorderColor}` : undefined,
-                      }}
-                    >
-                      {col.label}
-                    </th>
-                  );
-                })}
+                {cols.map((col, cIdx) => (
+                  <th
+                    key={col.id}
+                    className="py-1 px-1.5 whitespace-nowrap align-middle"
+                    style={{
+                      width: col.widthMm ? `${col.widthMm}mm` : 'auto',
+                      borderLeft: showVertical && cIdx < cols.length - 1 ? `${tableBorderWidth} ${tableBorderStyle} ${tableBorderColor}` : undefined,
+                    }}
+                  >
+                    {col.label}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {designerRows.map((row, idx) => {
+              {[
+                {
+                  type: 'فروش کار ساخته',
+                  wName: 'مدال پناه',
+                  metal: 'طلا',
+                  w: '۱۲٫۴۵۰',
+                  k: '۷۵۰',
+                  c: '۱۲٫۴۵۰',
+                  pricePerGram: '۴٬۸۵۰٬۰۰۰',
+                  subtotal: '۶۰٬۳۸۲٬۵۰۰',
+                  discount: '۳۸۲٬۵۰۰',
+                  total: '۶۰٬۰۰۰٬۰۰۰',
+                },
+                {
+                  type: 'خرید متفرقه',
+                  wName: '',
+                  metal: 'طلا',
+                  w: '۸٫۱۲۰',
+                  k: '۷۴۰',
+                  c: '۸٫۰۱۲',
+                  pricePerGram: '۴٬۸۰۰٬۰۰۰',
+                  subtotal: '۳۸٬۴۵۷٬۶۰۰',
+                  discount: '۰',
+                  total: '۳۸٬۴۵۷٬۶۰۰',
+                },
+              ].map((row, idx) => {
                 const mode = tableConfig?.workmanshipDisplayMode || 'name_only';
                 let opLabel = row.type;
                 if (row.wName) {
@@ -5648,51 +5082,44 @@ function renderElementPreviewContent(el: InvoicePrintElement, settings: any, tem
                   <tr
                     key={idx}
                     style={{
-                      minHeight: `${rowHeightMm}mm`,
-                      height: `${rowHeightMm}mm`,
+                      minHeight: tableConfig.rowHeightMm ? `${tableConfig.rowHeightMm}mm` : '7.5mm',
+                      height: tableConfig.rowHeightMm ? `${tableConfig.rowHeightMm}mm` : undefined,
                       backgroundColor: striped && idx % 2 === 1 ? altBg : undefined,
-                      borderBottom: showHorizontal && idx < designerRows.length - 1 ? `${tableBorderWidth} ${tableBorderStyle} ${tableBorderColor}` : undefined,
+                      borderBottom: showHorizontal && idx === 0 ? `${tableBorderWidth} ${tableBorderStyle} ${tableBorderColor}` : undefined,
                     }}
                   >
-                    {cols.map((col, cIdx) => {
-                      let cellVal: React.ReactNode = '-';
-                      if (row.isEmpty) {
-                        cellVal = '\u00A0';
-                      } else if (col.id === 'index') {
-                        cellVal = idx + 1;
-                      } else if (col.id === 'operation_type') {
-                        cellVal = opLabel || '-';
-                      } else if (col.id === 'metal_type') {
-                        cellVal = row.metal || '-';
-                      } else if (col.id === 'weight') {
-                        cellVal = row.w || '-';
-                      } else if (col.id === 'purity') {
-                        cellVal = row.k || '-';
-                      } else if (col.id === 'converted_weight') {
-                        cellVal = row.c || '-';
-                      } else if (col.id === 'price_per_gram') {
-                        cellVal = row.pricePerGram || '-';
-                      } else if (col.id === 'subtotal_price') {
-                        cellVal = row.subtotal || '-';
-                      } else if (col.id === 'discount_amount') {
-                        cellVal = row.discount || '-';
-                      } else if (col.id === 'total_price') {
-                        cellVal = row.total || '-';
-                      }
-
-                      return (
-                        <td
-                          key={col.id}
-                          className="py-1 px-1.5 align-middle leading-snug break-words"
-                          style={{
-                            borderLeft: showVertical && cIdx < cols.length - 1 ? `${tableBorderWidth} ${tableBorderStyle} ${tableBorderColor}` : undefined,
-                            textAlign: col.textAlign || 'center',
-                          }}
-                        >
-                          {cellVal}
-                        </td>
-                      );
-                    })}
+                    {cols.map((col, cIdx) => (
+                      <td
+                        key={col.id}
+                        className="py-1 px-1.5 align-middle leading-snug break-words"
+                        style={{
+                          borderLeft: showVertical && cIdx < cols.length - 1 ? `${tableBorderWidth} ${tableBorderStyle} ${tableBorderColor}` : undefined,
+                          textAlign: col.textAlign || 'center',
+                        }}
+                      >
+                        {col.id === 'index'
+                          ? idx + 1
+                          : col.id === 'operation_type'
+                          ? opLabel
+                          : col.id === 'metal_type'
+                          ? row.metal
+                          : col.id === 'weight'
+                          ? row.w
+                          : col.id === 'purity'
+                          ? row.k
+                          : col.id === 'converted_weight'
+                          ? row.c
+                          : col.id === 'price_per_gram'
+                          ? row.pricePerGram
+                          : col.id === 'subtotal_price'
+                          ? row.subtotal
+                          : col.id === 'discount_amount'
+                          ? row.discount
+                          : col.id === 'total_price'
+                          ? row.total
+                          : '-'}
+                      </td>
+                    ))}
                   </tr>
                 );
               })}
